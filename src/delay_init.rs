@@ -77,7 +77,7 @@ fn delay_uses<E: Target>(ctx: &Context<E>) -> Vec<DelayUseSite> {
         let sym = &ctx.symbols[id];
         let sec = &ctx.isecs[isec as usize];
         let hdr = ctx.hdr_of(sec);
-        if hdr.sectname() == "__objc_classrefs"
+        if hdr.sectname() == b"__objc_classrefs"
             && let Some(class) = sym.name().strip_prefix("_OBJC_CLASS_$_")
         {
             let file = crate::passes::resolved_file_name(ctx.objs[sec.file as usize].mf);
@@ -167,8 +167,8 @@ fn input_cstrings<E: Target>(ctx: &Context<E>, names: &[Vec<u8>]) -> Vec<(u32, u
             continue;
         }
         let hdr = ctx.hdr_of(isec);
-        if hdr.segname() != "__TEXT"
-            || hdr.sectname() != "__cstring"
+        if hdr.segname() != b"__TEXT"
+            || hdr.sectname() != b"__cstring"
             || hdr.section_type() != S_CSTRING_LITERALS
         {
             continue;
@@ -185,8 +185,8 @@ fn input_cstrings<E: Target>(ctx: &Context<E>, names: &[Vec<u8>]) -> Vec<(u32, u
 /// returns its subsection.
 fn add_cstring<E: Target>(ctx: &mut Context<E>, s: &[u8]) -> u32 {
     let (file, shndx) = ctx.add_synthetic_section(MachSection {
-        sectname: str_to_name("__cstring"),
-        segname: str_to_name("__TEXT"),
+        sectname: bytes_to_name(b"__cstring"),
+        segname: bytes_to_name(b"__TEXT"),
         flags: S_CSTRING_LITERALS,
         ..Default::default()
     });

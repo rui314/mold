@@ -13,7 +13,7 @@ pub struct EhFrameSection {
 
 impl EhFrameSection {
     pub fn new() -> Self {
-        let mut hdr = ChunkHeader::new("__TEXT", "__eh_frame");
+        let mut hdr = ChunkHeader::new(b"__TEXT", b"__eh_frame");
         hdr.p2align = 3;
         Self { hdr }
     }

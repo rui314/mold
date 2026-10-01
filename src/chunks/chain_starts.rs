@@ -19,7 +19,7 @@ pub struct ChainStartsSection {
 
 impl ChainStartsSection {
     pub fn new() -> Self {
-        let mut hdr = ChunkHeader::new("__TEXT", "__chain_starts");
+        let mut hdr = ChunkHeader::new(b"__TEXT", b"__chain_starts");
         hdr.p2align = 2;
         hdr.size = Self::size(0);
         Self { hdr, starts: Vec::new() }

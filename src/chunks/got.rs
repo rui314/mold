@@ -34,10 +34,10 @@ pub struct GotSection {
 
 impl GotSection {
     pub fn new() -> Self {
-        let mut hdr = ChunkHeader::new("__DATA", "__got");
+        let mut hdr = ChunkHeader::new(b"__DATA", b"__got");
         hdr.flags = S_NON_LAZY_SYMBOL_POINTERS;
         hdr.p2align = 3;
-        let mut weak_hdr = ChunkHeader::new("__DATA", "__weak_got");
+        let mut weak_hdr = ChunkHeader::new(b"__DATA", b"__weak_got");
         weak_hdr.flags = S_NON_LAZY_SYMBOL_POINTERS;
         weak_hdr.p2align = 3;
         Self {

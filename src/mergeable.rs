@@ -641,69 +641,69 @@ impl Reader<'_> {
 /// The section ld-prime gives an entry of a content type: its segment
 /// and section names and Mach-O flags, as an object would have them
 /// (its StandardSection::fromContentType).
-pub(crate) fn standard_section(ct: u8) -> Option<(&'static str, &'static str, u32)> {
+pub(crate) fn standard_section(ct: u8) -> Option<(&'static [u8], &'static [u8], u32)> {
     const TEXT: u32 = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
     Some(match ct {
-        2 => ("__TEXT", "__text", TEXT),
-        9 => ("__TEXT", "__const", 0),
-        10 => ("__TEXT", "__cstring", S_CSTRING_LITERALS),
-        11 => ("__TEXT", "__objc_classname", S_CSTRING_LITERALS),
-        12 => ("__TEXT", "__objc_methname", S_CSTRING_LITERALS),
-        13 => ("__TEXT", "__objc_methtype", S_CSTRING_LITERALS),
-        14 => ("__TEXT", "__oslogstring", S_CSTRING_LITERALS),
-        15 => ("__TEXT", "__objc_methlist", 0),
-        16 => ("__TEXT", "__ustring", 0),
-        17 => ("__TEXT", "__literal4", S_4BYTE_LITERALS),
-        18 => ("__TEXT", "__literal8", S_8BYTE_LITERALS),
-        19 => ("__TEXT", "__literal16", S_16BYTE_LITERALS),
+        2 => (b"__TEXT", b"__text", TEXT),
+        9 => (b"__TEXT", b"__const", 0),
+        10 => (b"__TEXT", b"__cstring", S_CSTRING_LITERALS),
+        11 => (b"__TEXT", b"__objc_classname", S_CSTRING_LITERALS),
+        12 => (b"__TEXT", b"__objc_methname", S_CSTRING_LITERALS),
+        13 => (b"__TEXT", b"__objc_methtype", S_CSTRING_LITERALS),
+        14 => (b"__TEXT", b"__oslogstring", S_CSTRING_LITERALS),
+        15 => (b"__TEXT", b"__objc_methlist", 0),
+        16 => (b"__TEXT", b"__ustring", 0),
+        17 => (b"__TEXT", b"__literal4", S_4BYTE_LITERALS),
+        18 => (b"__TEXT", b"__literal8", S_8BYTE_LITERALS),
+        19 => (b"__TEXT", b"__literal16", S_16BYTE_LITERALS),
         // A slot of an object's GOT, which an object has as a regular
         // section (one of non-lazy pointers is refused).
-        22 => ("__DATA", "__got", 0),
-        26 => ("__DATA", "__const", 0),
-        27 => ("__DATA", "__data", 0),
-        28 => ("__DATA", "__cfstring", 0),
-        29 => ("__DATA", "__const_cfobj2", 0),
-        30 => ("__TEXT", "__gcc_except_tab", 0),
+        22 => (b"__DATA", b"__got", 0),
+        26 => (b"__DATA", b"__const", 0),
+        27 => (b"__DATA", b"__data", 0),
+        28 => (b"__DATA", b"__cfstring", 0),
+        29 => (b"__DATA", b"__const_cfobj2", 0),
+        30 => (b"__TEXT", b"__gcc_except_tab", 0),
         31 => (
-            "__TEXT",
-            "__eh_frame",
+            b"__TEXT",
+            b"__eh_frame",
             S_COALESCED | S_ATTR_NO_TOC | S_ATTR_STRIP_STATIC_SYMS | S_ATTR_LIVE_SUPPORT,
         ),
-        32 => ("__LD", "__compact_unwind", S_ATTR_DEBUG),
-        33 => ("__DATA", "__objc_classrefs", S_ATTR_NO_DEAD_STRIP),
-        34 => ("__DATA", "__objc_superrefs", S_ATTR_NO_DEAD_STRIP),
-        35 => ("__DATA", "__objc_selrefs", S_LITERAL_POINTERS | S_ATTR_NO_DEAD_STRIP),
-        36 => ("__DATA", "__objc_protorefs", S_COALESCED | S_ATTR_NO_DEAD_STRIP),
-        37 => ("__DATA", "__objc_ivar", 0),
-        38 => ("__DATA", "__objc_data", 0),
-        39 => ("__DATA", "__objc_const", 0),
-        40 => ("__DATA", "__objc_classlist", S_ATTR_NO_DEAD_STRIP),
-        41 => ("__DATA", "__objc_catlist", S_ATTR_NO_DEAD_STRIP),
-        42 => ("__DATA", "__objc_protolist", S_COALESCED),
-        43 => ("__DATA", "__objc_imageinfo", 0),
-        44 => ("__DATA", "__objc_nlclslist", S_ATTR_NO_DEAD_STRIP),
-        45 => ("__DATA", "__objc_nlcatlist", S_ATTR_NO_DEAD_STRIP),
-        46 => ("__DATA", "__objc_intobj", 0),
-        47 => ("__DATA", "__objc_floatobj", 0),
-        48 => ("__DATA", "__objc_doubleobj", 0),
-        49 => ("__DATA", "__objc_dateobj", 0),
-        50 => ("__DATA", "__objc_dictobj", 0),
-        51 => ("__DATA", "__objc_arrayobj", 0),
-        52 => ("__DATA", "__objc_arraydata", 0),
+        32 => (b"__LD", b"__compact_unwind", S_ATTR_DEBUG),
+        33 => (b"__DATA", b"__objc_classrefs", S_ATTR_NO_DEAD_STRIP),
+        34 => (b"__DATA", b"__objc_superrefs", S_ATTR_NO_DEAD_STRIP),
+        35 => (b"__DATA", b"__objc_selrefs", S_LITERAL_POINTERS | S_ATTR_NO_DEAD_STRIP),
+        36 => (b"__DATA", b"__objc_protorefs", S_COALESCED | S_ATTR_NO_DEAD_STRIP),
+        37 => (b"__DATA", b"__objc_ivar", 0),
+        38 => (b"__DATA", b"__objc_data", 0),
+        39 => (b"__DATA", b"__objc_const", 0),
+        40 => (b"__DATA", b"__objc_classlist", S_ATTR_NO_DEAD_STRIP),
+        41 => (b"__DATA", b"__objc_catlist", S_ATTR_NO_DEAD_STRIP),
+        42 => (b"__DATA", b"__objc_protolist", S_COALESCED),
+        43 => (b"__DATA", b"__objc_imageinfo", 0),
+        44 => (b"__DATA", b"__objc_nlclslist", S_ATTR_NO_DEAD_STRIP),
+        45 => (b"__DATA", b"__objc_nlcatlist", S_ATTR_NO_DEAD_STRIP),
+        46 => (b"__DATA", b"__objc_intobj", 0),
+        47 => (b"__DATA", b"__objc_floatobj", 0),
+        48 => (b"__DATA", b"__objc_doubleobj", 0),
+        49 => (b"__DATA", b"__objc_dateobj", 0),
+        50 => (b"__DATA", b"__objc_dictobj", 0),
+        51 => (b"__DATA", b"__objc_arrayobj", 0),
+        52 => (b"__DATA", b"__objc_arraydata", 0),
         // An initializer offset the dylib's link made of a pointer
         // becomes one again (see Synth::place).
-        53 | 55 => ("__DATA", "__mod_init_func", S_MOD_INIT_FUNC_POINTERS),
-        54 => ("__DATA", "__mod_term_func", S_MOD_TERM_FUNC_POINTERS),
-        56 => ("__TEXT", "__StaticInit", TEXT),
-        57 => ("__DATA", "__thread_vars", S_THREAD_LOCAL_VARIABLES),
-        58 => ("__DATA", "__thread_ptrs", S_THREAD_LOCAL_VARIABLE_POINTERS),
-        64 => ("__DATA", "__thread_data", S_THREAD_LOCAL_REGULAR),
-        65 => ("__DATA", "__thread_bss", S_THREAD_LOCAL_ZEROFILL),
-        66 => ("__DATA", "__common", S_ZEROFILL),
-        67 => ("__DATA", "__bss", S_ZEROFILL),
-        70 => ("__DATA", "__objc_catlist2", S_ATTR_NO_DEAD_STRIP),
-        72 => ("__DATA", "__objc_clsrolist", S_ATTR_NO_DEAD_STRIP),
-        73 => ("__LD", "__func_variants", 0),
+        53 | 55 => (b"__DATA", b"__mod_init_func", S_MOD_INIT_FUNC_POINTERS),
+        54 => (b"__DATA", b"__mod_term_func", S_MOD_TERM_FUNC_POINTERS),
+        56 => (b"__TEXT", b"__StaticInit", TEXT),
+        57 => (b"__DATA", b"__thread_vars", S_THREAD_LOCAL_VARIABLES),
+        58 => (b"__DATA", b"__thread_ptrs", S_THREAD_LOCAL_VARIABLE_POINTERS),
+        64 => (b"__DATA", b"__thread_data", S_THREAD_LOCAL_REGULAR),
+        65 => (b"__DATA", b"__thread_bss", S_THREAD_LOCAL_ZEROFILL),
+        66 => (b"__DATA", b"__common", S_ZEROFILL),
+        67 => (b"__DATA", b"__bss", S_ZEROFILL),
+        70 => (b"__DATA", b"__objc_catlist2", S_ATTR_NO_DEAD_STRIP),
+        72 => (b"__DATA", b"__objc_clsrolist", S_ATTR_NO_DEAD_STRIP),
+        73 => (b"__LD", b"__func_variants", 0),
         _ => return None,
     })
 }
@@ -737,7 +737,7 @@ fn is_record_section(flags: u32, sectname: &[u8; 16]) -> bool {
         "__objc_clsrolist",
     ]
     .iter()
-    .any(|n| str_to_name(n) == *sectname)
+    .any(|n| bytes_to_name(n.as_bytes()) == *sectname)
 }
 
 /// Sections beyond which an object can't number its symbols'.
@@ -747,14 +747,14 @@ const MAX_SECTIONS: usize = 255;
 /// where it merges several (see output_sections::merged_name):
 /// __StaticInit joins __text, the literal pools __TEXT,__const.
 fn output_group(segname: &[u8; 16], sectname: &[u8; 16]) -> ([u8; 16], [u8; 16]) {
-    let text = str_to_name("__TEXT");
-    if *segname == text && *sectname == str_to_name("__StaticInit") {
-        return (text, str_to_name("__text"));
+    let text = bytes_to_name(b"__TEXT");
+    if *segname == text && *sectname == bytes_to_name(b"__StaticInit") {
+        return (text, bytes_to_name(b"__text"));
     }
     if *segname == text
-        && ["__literal4", "__literal8", "__literal16"].iter().any(|n| str_to_name(n) == *sectname)
+        && matches!(name_to_bytes(sectname), b"__literal4" | b"__literal8" | b"__literal16")
     {
-        return (text, str_to_name("__const"));
+        return (text, bytes_to_name(b"__const"));
     }
     (*segname, *sectname)
 }
@@ -926,7 +926,7 @@ impl<E: Target> Synth<'_, E> {
             return (s.segname, s.sectname, s.flags);
         }
         match standard_section(entry.content_type) {
-            Some((seg, sect, flags)) => (str_to_name(seg), str_to_name(sect), flags),
+            Some((seg, sect, flags)) => (bytes_to_name(seg), bytes_to_name(sect), flags),
             None => fatal!(
                 "{}: unsupported content type {} in LC_ATOM_INFO",
                 path.display(),
@@ -977,7 +977,8 @@ impl<E: Target> Synth<'_, E> {
         if flags & FLAG_SIGNED_CLASS_RO != 0 {
             info |= 0x10;
         }
-        let mut sect = Section::new(str_to_name("__DATA"), str_to_name("__objc_imageinfo"), 0, 2);
+        let mut sect =
+            Section::new(bytes_to_name(b"__DATA"), bytes_to_name(b"__objc_imageinfo"), 0, 2);
         sect.append(Some(&[[0; 4], info.to_le_bytes()].concat()), 8, 2, 0);
         self.sections.push(sect);
     }

@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use rayon::prelude::*;
 
 use crate::context::Context;
+use crate::error::{Message, raw};
 use crate::fatal;
 use crate::input_sections::InputSection;
 use crate::macho::*;
@@ -283,14 +284,14 @@ pub fn is_record_list(hdr: &MachSection, split: bool) -> bool {
     hdr.section_type() == S_LITERAL_POINTERS
         || matches!(
             hdr.sectname(),
-            "__cfstring"
-                | "__objc_classrefs"
-                | "__objc_classlist"
-                | "__objc_nlclslist"
-                | "__objc_catlist"
-                | "__objc_nlcatlist"
+            b"__cfstring"
+                | b"__objc_classrefs"
+                | b"__objc_classlist"
+                | b"__objc_nlclslist"
+                | b"__objc_catlist"
+                | b"__objc_nlcatlist"
         )
-        || split && hdr.sectname_is("__ustring")
+        || split && hdr.sectname_is(b"__ustring")
 }
 
 /// How ld-prime prefers a symbol at a subsection's start to name the
@@ -592,7 +593,7 @@ fn is_discarded_section(hdr: &MachSection) -> bool {
     // a section with S_ATTR_DEBUG elsewhere is copied like any other
     // (the attribute is dropped in a final image), and one in those
     // segments without it is dropped all the same.
-    hdr.segname() == "__DWARF" || hdr.segname() == "__LD"
+    hdr.segname() == b"__DWARF" || hdr.segname() == b"__LD"
 }
 
 /// The alignment of every record of a section of fixed-size records (see
@@ -625,8 +626,8 @@ fn record_p2align(hdr: &MachSection, relocatable: bool) -> Option<u8> {
         S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS | S_NON_LAZY_SYMBOL_POINTERS => 3,
         S_THREAD_LOCAL_VARIABLES if relocatable => p2align.max(3),
         S_THREAD_LOCAL_VARIABLES => 3,
-        _ if hdr.segname() == "__DATA"
-            && matches!(hdr.sectname(), "__cfstring" | "__auth_ptr" | "__got") =>
+        _ if hdr.segname() == b"__DATA"
+            && matches!(hdr.sectname(), b"__cfstring" | b"__auth_ptr" | b"__got") =>
         {
             3
         }
@@ -645,13 +646,13 @@ pub(crate) fn record_size(hdr: &MachSection) -> Option<u64> {
     let regular = hdr.section_type() == S_REGULAR;
     match (hdr.segname(), hdr.sectname()) {
         (
-            "__DATA",
-            "__got" | "__objc_classlist" | "__objc_catlist" | "__objc_catlist2"
-            | "__objc_clsrolist" | "__objc_nlclslist" | "__objc_nlcatlist" | "__objc_protolist"
-            | "__objc_selrefs" | "__objc_classrefs" | "__objc_superrefs" | "__objc_protorefs",
+            b"__DATA",
+            b"__got" | b"__objc_classlist" | b"__objc_catlist" | b"__objc_catlist2"
+            | b"__objc_clsrolist" | b"__objc_nlclslist" | b"__objc_nlcatlist" | b"__objc_protolist"
+            | b"__objc_selrefs" | b"__objc_classrefs" | b"__objc_superrefs" | b"__objc_protorefs",
         ) => return Some(8),
-        ("__DATA", "__auth_ptr" | "__lazy_load_got") if regular => return Some(8),
-        ("__DATA", "__cfstring") | ("__LD", "__compact_unwind") if regular => return Some(32),
+        (b"__DATA", b"__auth_ptr" | b"__lazy_load_got") if regular => return Some(8),
+        (b"__DATA", b"__cfstring") | (b"__LD", b"__compact_unwind") if regular => return Some(32),
         _ => {}
     }
     match hdr.section_type() {
@@ -692,8 +693,8 @@ fn check_sections(
         {
             crate::error!(
                 "section {}/{} size {} is not a multiple of {size} in '{}'",
-                hdr.segname(),
-                hdr.sectname(),
+                raw(hdr.segname()),
+                raw(hdr.sectname()),
                 hdr.size,
                 file.display()
             );
@@ -704,7 +705,7 @@ fn check_sections(
         {
             crate::error!(
                 "unknown fixed size section __DATA,{} with content type: {content} in '{}'",
-                hdr.sectname(),
+                raw(hdr.sectname()),
                 file.display()
             );
             return Some(i);
@@ -735,15 +736,15 @@ fn check_sections(
 /// fold_input_got), nor with the slots of lazily loaded dylibs. A
 /// section of one of those names but of another type is data.
 fn linker_pointer_content(hdr: &MachSection) -> Option<&'static str> {
-    if hdr.segname() != "__DATA" {
+    if hdr.segname() != b"__DATA" {
         return None;
     }
     match (hdr.section_type(), hdr.sectname()) {
-        (S_LAZY_SYMBOL_POINTERS, "__la_symbol_ptr") => Some("lazy-pointer"),
-        (S_NON_LAZY_SYMBOL_POINTERS, "__auth_got") => Some("auth-got"),
-        (S_NON_LAZY_SYMBOL_POINTERS, "__weak_got") => Some("weak-got"),
-        (S_NON_LAZY_SYMBOL_POINTERS, "__weak_auth_got") => Some("weak-auth-got"),
-        (S_REGULAR, "__lazy_load_got") => Some("lazy-load-GOT"),
+        (S_LAZY_SYMBOL_POINTERS, b"__la_symbol_ptr") => Some("lazy-pointer"),
+        (S_NON_LAZY_SYMBOL_POINTERS, b"__auth_got") => Some("auth-got"),
+        (S_NON_LAZY_SYMBOL_POINTERS, b"__weak_got") => Some("weak-got"),
+        (S_NON_LAZY_SYMBOL_POINTERS, b"__weak_auth_got") => Some("weak-auth-got"),
+        (S_REGULAR, b"__lazy_load_got") => Some("lazy-load-GOT"),
         _ => None,
     }
 }
@@ -755,15 +756,15 @@ fn linker_pointer_content(hdr: &MachSection) -> Option<&'static str> {
 /// assembler's ltmpN too) in an object it splits at symbols, "unknown
 /// symboled section type", and takes one without as data.
 fn is_linker_code_section(hdr: &MachSection) -> bool {
-    hdr.segname() == "__TEXT"
+    hdr.segname() == b"__TEXT"
         && hdr.section_type() == S_REGULAR
         && matches!(
             hdr.sectname(),
-            "__stub_helper"
-                | "__objc_stubs"
-                | "__lazy_helpers"
-                | "__delay_stubs"
-                | "__delay_helper"
+            b"__stub_helper"
+                | b"__objc_stubs"
+                | b"__lazy_helpers"
+                | b"__delay_stubs"
+                | b"__delay_helper"
         )
 }
 
@@ -773,14 +774,14 @@ fn is_linker_code_section(hdr: &MachSection) -> bool {
 /// __DATA alone, and links an __objc_imageinfo of another segment as
 /// any other section.
 pub fn is_objc_image_info(hdr: &MachSection) -> bool {
-    hdr.segname() == "__DATA" && hdr.sectname() == "__objc_imageinfo"
+    hdr.segname() == b"__DATA" && hdr.sectname() == b"__objc_imageinfo"
 }
 
 /// Whether a section is one of the __LD segment's that ld-prime doesn't
 /// know. It reads only __LD,__compact_unwind and drops any other with a
 /// warning; a symbol defined in one is gone.
 pub fn is_unknown_ld_section(hdr: &MachSection) -> bool {
-    hdr.segname() == "__LD" && hdr.sectname() != "__compact_unwind"
+    hdr.segname() == b"__LD" && hdr.sectname() != b"__compact_unwind"
 }
 
 /// An object file parsed in isolation: all cross-references are local
@@ -1191,7 +1192,7 @@ pub fn stage_object<E: Target>(
             u32::from_le_bytes(data[off..off + 4].try_into().unwrap())
         });
     let has_debug_info =
-        sect_hdrs.iter().any(|s| s.segname() == "__DWARF" && s.sectname() == "__debug_info");
+        sect_hdrs.iter().any(|s| s.segname() == b"__DWARF" && s.sectname() == b"__debug_info");
 
     let mut obj = StagedObject {
         mf,
@@ -1251,7 +1252,7 @@ pub fn stage_object<E: Target>(
     if relocs_ok
         && let Some(i) = sect_hdrs
             .iter()
-            .position(|s| s.segname() == "__LD" && s.sectname() == "__compact_unwind")
+            .position(|s| s.segname() == b"__LD" && s.sectname() == b"__compact_unwind")
     {
         let end = sect_hdrs[i].size as u32;
         let record_at = |off: u32| {
@@ -1276,7 +1277,7 @@ pub fn stage_object<E: Target>(
     if relocs_ok
         && kept_fdes != KeptFdes::None
         && let Some(hdr) =
-            sect_hdrs.iter().find(|s| s.segname() == "__TEXT" && s.sectname() == "__eh_frame")
+            sect_hdrs.iter().find(|s| s.segname() == b"__TEXT" && s.sectname() == b"__eh_frame")
     {
         obj.data_fde = obj.parse_eh_frame::<E>(hdr, kept_fdes == KeptFdes::All);
     }
@@ -1426,7 +1427,7 @@ impl StagedObject {
             // the __objc_imageinfo records are merged into one synthesized
             // record; neither is copied through.
             if is_discarded_section(sect)
-                || (sect.segname() == "__TEXT" && sect.sectname() == "__eh_frame")
+                || (sect.segname() == b"__TEXT" && sect.sectname() == b"__eh_frame")
                 || is_objc_image_info(sect)
             {
                 continue;
@@ -1618,8 +1619,8 @@ impl StagedObject {
         if matches!(sect.section_type(), S_ZEROFILL | S_THREAD_LOCAL_ZEROFILL) {
             crate::error!(
                 "section '{}/{}' has a non-zero nreloc field in '{}'",
-                sect.segname(),
-                sect.sectname(),
+                raw(sect.segname()),
+                raw(sect.sectname()),
                 mf.name.display()
             );
             return None;
@@ -1836,7 +1837,8 @@ pub fn is_literal_section(sect: &MachSection) -> bool {
             | S_8BYTE_LITERALS
             | S_16BYTE_LITERALS
             | S_LITERAL_POINTERS
-    ) || (sect.segname() == "__DATA" && (sect.sectname() == "__cfstring" || is_pointer_list(sect)))
+    ) || (sect.segname() == b"__DATA"
+        && (sect.sectname() == b"__cfstring" || is_pointer_list(sect)))
 }
 
 /// Whether ld-prime merges a section's subsections by their content - the
@@ -1844,7 +1846,7 @@ pub fn is_literal_section(sect: &MachSection) -> bool {
 /// pointer lists it takes one by one - which the labels an assembler
 /// makes for itself name none of (see Context::subsec_label).
 pub fn has_merged_subsecs(sect: &MachSection) -> bool {
-    is_literal_section(sect) && !(sect.segname() == "__DATA" && is_pointer_list(sect))
+    is_literal_section(sect) && !(sect.segname() == b"__DATA" && is_pointer_list(sect))
 }
 
 /// Whether a section's subsections are its literals or fixed-size
@@ -1862,7 +1864,7 @@ pub fn is_record_section(sect: &MachSection) -> bool {
 fn is_pointer_list(sect: &MachSection) -> bool {
     matches!(
         sect.sectname(),
-        "__objc_classrefs" | "__objc_superrefs" | "__objc_protorefs" | "__got"
+        b"__objc_classrefs" | b"__objc_superrefs" | b"__objc_protorefs" | b"__got"
     )
 }
 
@@ -2199,14 +2201,14 @@ pub fn integrate_object<E: Target>(ctx: &mut Context<E>, mut staged: StagedObjec
 /// object's subsections are warned of (see passes::load_pending): the
 /// warnings and, for an FDE in a section of data, the object's name.
 pub struct UnwindCheck {
-    warnings: Vec<String>,
+    warnings: Vec<Message>,
     data_fde: Option<String>,
 }
 
 impl UnwindCheck {
     pub fn report(self) {
         for msg in self.warnings {
-            crate::warn!("{msg}");
+            crate::warn!("{}", raw(&msg));
         }
         if let Some(file) = self.data_fde {
             fatal!("invalid function target for dwarf unwind in '{file}'");
@@ -3044,12 +3046,12 @@ impl StagedObject {
             .into_iter()
             .map(|shndx| {
                 let sect = &self.sect_hdrs[shndx as usize];
-                format!(
+                crate::error::render(format_args!(
                     "symbols in {},{} ({file}) have unwind information, but it's not a code \
                      section (missing 'regular,pure_instructions' section flag)",
-                    sect.segname(),
-                    sect.sectname(),
-                )
+                    raw(sect.segname()),
+                    raw(sect.sectname()),
+                ))
             })
             .collect();
         UnwindCheck { warnings, data_fde: self.data_fde.then_some(file) }
@@ -3065,8 +3067,8 @@ impl StagedObject {
             let shndx = isec.shndx as usize;
             let hdr = &self.sect_hdrs[shndx];
             if isec.size == 0
-                || !hdr.sectname_is("__cfstring")
-                || !hdr.segname_is("__DATA")
+                || !hdr.sectname_is(b"__cfstring")
+                || !hdr.segname_is(b"__DATA")
                 || hdr.section_type() != S_REGULAR
             {
                 return None;
@@ -3102,7 +3104,7 @@ impl StagedObject {
             let rels = &self.relocs[isec.rel_offset as usize..][..isec.nrels as usize];
             if matches!(hdr.section_type(), S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS) {
                 (isec.size != 0 && rels.is_empty()).then_some("initializer pointer")
-            } else if hdr.segname() == "__DATA" && hdr.sectname() == "__objc_clsrolist" {
+            } else if hdr.segname() == b"__DATA" && hdr.sectname() == b"__objc_clsrolist" {
                 let bare = |off| !rels.iter().any(|r| r.offset as u64 == off);
                 (0..isec.size as u64).step_by(8).any(bare).then_some("__objc_clsrolist pointer")
             } else {
@@ -3120,7 +3122,7 @@ impl StagedObject {
         use crate::input_sections::RelocTarget;
         let lists = self.isecs.iter().filter(|isec| {
             let hdr = &self.sect_hdrs[isec.shndx as usize];
-            hdr.segname() == "__DATA" && hdr.sectname() == "__objc_classlist"
+            hdr.segname() == b"__DATA" && hdr.sectname() == b"__objc_classlist"
         });
         let rels =
             |isec: &InputSection| &self.relocs[isec.rel_offset as usize..][..isec.nrels as usize];
@@ -3151,7 +3153,7 @@ impl StagedObject {
 /// any other with S_ATTR_PURE_INSTRUCTIONS that is not one it knows for
 /// data.
 fn is_code_section(hdr: &MachSection) -> bool {
-    matches!((hdr.segname(), hdr.sectname()), ("__TEXT", "__text" | "__StaticInit"))
+    matches!((hdr.segname(), hdr.sectname()), (b"__TEXT", b"__text" | b"__StaticInit"))
         || (hdr.flags & S_ATTR_PURE_INSTRUCTIONS != 0 && !is_typed_data_section(hdr))
 }
 
@@ -3175,39 +3177,39 @@ fn is_typed_data_section(hdr: &MachSection) -> bool {
         S_REGULAR => matches!(
             (hdr.segname(), hdr.sectname()),
             (
-                "__TEXT",
-                "__const"
-                    | "__ustring"
-                    | "__gcc_except_tab"
-                    | "__objc_classname"
-                    | "__objc_methname"
-                    | "__objc_methtype"
-                    | "__objc_methlist"
+                b"__TEXT",
+                b"__const"
+                    | b"__ustring"
+                    | b"__gcc_except_tab"
+                    | b"__objc_classname"
+                    | b"__objc_methname"
+                    | b"__objc_methtype"
+                    | b"__objc_methlist"
             ) | (
-                "__DATA",
-                "__data"
-                    | "__const"
-                    | "__got"
-                    | "__auth_ptr"
-                    | "__const_cfobj2"
-                    | "__objc_data"
-                    | "__objc_const"
-                    | "__objc_ivar"
-                    | "__objc_selrefs"
-                    | "__objc_classrefs"
-                    | "__objc_superrefs"
-                    | "__objc_protorefs"
-                    | "__objc_protolist"
-                    | "__objc_nlclslist"
-                    | "__objc_nlcatlist"
-                    | "__objc_intobj"
-                    | "__objc_floatobj"
-                    | "__objc_doubleobj"
-                    | "__objc_dateobj"
-                    | "__objc_dictobj"
-                    | "__objc_arrayobj"
-                    | "__objc_arraydata"
-            ) | ("__LD", "__func_variants")
+                b"__DATA",
+                b"__data"
+                    | b"__const"
+                    | b"__got"
+                    | b"__auth_ptr"
+                    | b"__const_cfobj2"
+                    | b"__objc_data"
+                    | b"__objc_const"
+                    | b"__objc_ivar"
+                    | b"__objc_selrefs"
+                    | b"__objc_classrefs"
+                    | b"__objc_superrefs"
+                    | b"__objc_protorefs"
+                    | b"__objc_protolist"
+                    | b"__objc_nlclslist"
+                    | b"__objc_nlcatlist"
+                    | b"__objc_intobj"
+                    | b"__objc_floatobj"
+                    | b"__objc_doubleobj"
+                    | b"__objc_dateobj"
+                    | b"__objc_dictobj"
+                    | b"__objc_arrayobj"
+                    | b"__objc_arraydata"
+            ) | (b"__LD", b"__func_variants")
         ),
         _ => false,
     }
@@ -3446,8 +3448,11 @@ pub fn has_objc_sections(mf: &MappedFile) -> bool {
                 let sect = MachSection::read_from(&data[sect_off..]);
                 if matches!(
                     sect.sectname(),
-                    "__objc_classlist" | "__objc_catlist" | "__objc_nlclslist" | "__objc_nlcatlist"
-                ) || (sect.segname() == "__TEXT" && sect.sectname().starts_with("__swift"))
+                    b"__objc_classlist"
+                        | b"__objc_catlist"
+                        | b"__objc_nlclslist"
+                        | b"__objc_nlcatlist"
+                ) || (sect.segname() == b"__TEXT" && sect.sectname().starts_with(b"__swift"))
                 {
                     return true;
                 }

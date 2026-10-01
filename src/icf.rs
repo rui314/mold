@@ -421,8 +421,8 @@ fn is_text_function<E: Target>(ctx: &Context<E>, isec: &InputSection) -> bool {
     let hdr = ctx.hdr_of(isec);
     isec.is_alive()
         && isec.replacement == crate::input_sections::NO_REPLACEMENT
-        && hdr.segname_is("__TEXT")
-        && hdr.sectname_is("__text")
+        && hdr.segname_is(b"__TEXT")
+        && hdr.sectname_is(b"__text")
 }
 
 /// Whether each subsection is a function -keep_duplicate or

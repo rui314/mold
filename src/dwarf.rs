@@ -223,16 +223,16 @@ fn read_form<'a>(
 /// strings inline, in __debug_str or __debug_line_str, or indexed
 /// through __debug_str_offsets.
 pub fn compile_unit_name(file: &[u8], sects: &[MachSection]) -> Option<(Vec<u8>, Vec<u8>)> {
-    let section = |name: &str| -> Option<&[u8]> {
-        let s = sects.iter().find(|s| s.segname() == "__DWARF" && s.sectname() == name)?;
+    let section = |name: &[u8]| -> Option<&[u8]> {
+        let s = sects.iter().find(|s| s.segname() == b"__DWARF" && s.sectname() == name)?;
         file.get(s.offset as usize..(s.offset as u64 + s.size) as usize)
     };
-    let info = section("__debug_info")?;
-    let abbrev_sect = section("__debug_abbrev")?;
-    let str_sect = section("__debug_str").unwrap_or(&[]);
-    let line_str_sect = section("__debug_line_str").unwrap_or(&[]);
+    let info = section(b"__debug_info")?;
+    let abbrev_sect = section(b"__debug_abbrev")?;
+    let str_sect = section(b"__debug_str").unwrap_or(&[]);
+    let line_str_sect = section(b"__debug_line_str").unwrap_or(&[]);
     // Mach-O section names are 16 bytes: "__debug_str_offsets" is truncated.
-    let str_offsets_sect = section("__debug_str_offs").unwrap_or(&[]);
+    let str_offsets_sect = section(b"__debug_str_offs").unwrap_or(&[]);
 
     let mut r = Reader { data: info, pos: 0 };
     let length = r.u32()?;

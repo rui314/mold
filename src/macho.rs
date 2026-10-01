@@ -57,24 +57,32 @@ pub fn write_array<T: FileRecord>(buf: &mut [u8], off: usize, records: &[T]) {
     }
 }
 
-/// Returns a 16-byte, NUL-padded section or segment name as a string.
-pub fn name_to_str(name: &[u8; 16]) -> &str {
+/// Returns the bytes of a 16-byte, NUL-padded section or segment name.
+/// A name is bytes, not text: ld-prime takes any but NUL, UTF-8 or
+/// not, and writes them to the output as they came.
+pub fn name_to_bytes(name: &[u8; 16]) -> &[u8] {
     let len = name.iter().position(|&b| b == 0).unwrap_or(16);
-    std::str::from_utf8(&name[..len]).unwrap_or("")
+    &name[..len]
 }
 
 /// Whether a 16-byte, NUL-padded section or segment name is `s`.
 #[inline]
-fn name_is(name: &[u8; 16], s: &str) -> bool {
-    let s = s.as_bytes();
+fn name_is(name: &[u8; 16], s: &[u8]) -> bool {
     name.starts_with(s) && name.get(s.len()).is_none_or(|&b| b == 0)
 }
 
-/// Converts a string to a 16-byte, NUL-padded section or segment name.
-pub fn str_to_name(s: &str) -> [u8; 16] {
+/// Converts bytes to a 16-byte, NUL-padded section or segment name.
+pub fn bytes_to_name(s: &[u8]) -> [u8; 16] {
     let mut name = [0; 16];
-    name[..s.len()].copy_from_slice(s.as_bytes());
+    name[..s.len()].copy_from_slice(s);
     name
+}
+
+/// A section or segment name an option gives, cut to fit the 16 bytes
+/// of a header's name field.
+pub fn cut_name(name: &[u8]) -> &[u8] {
+    let text = std::str::from_utf8(name).unwrap();
+    &name[..text.floor_char_boundary(16)]
 }
 
 #[derive(Clone, Copy, Default, Debug)]
@@ -153,24 +161,25 @@ impl Default for MachSection {
 }
 
 impl MachSection {
-    pub fn sectname(&self) -> &str {
-        name_to_str(&self.sectname)
+    pub fn sectname(&self) -> &[u8] {
+        name_to_bytes(&self.sectname)
     }
 
-    pub fn segname(&self) -> &str {
-        name_to_str(&self.segname)
+    pub fn segname(&self) -> &[u8] {
+        name_to_bytes(&self.segname)
     }
 
     /// Whether the section is named `s`, as sectname() == s says but
-    /// without converting the name: for loops over millions of symbols.
+    /// without finding the name's end: for loops over millions of
+    /// symbols.
     #[inline]
-    pub fn sectname_is(&self, s: &str) -> bool {
+    pub fn sectname_is(&self, s: &[u8]) -> bool {
         name_is(&self.sectname, s)
     }
 
     /// Whether the segment is named `s`; see sectname_is.
     #[inline]
-    pub fn segname_is(&self, s: &str) -> bool {
+    pub fn segname_is(&self, s: &[u8]) -> bool {
         name_is(&self.segname, s)
     }
 

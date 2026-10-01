@@ -70,11 +70,11 @@ pub struct OutputSection {
     /// output_sections::output_section_rank), which its first member
     /// took along through moves and renames; None for one that ranks
     /// by its type alone.
-    pub rank_name: Option<(&'static str, &'static str)>,
+    pub rank_name: Option<(&'static [u8], &'static [u8])>,
 }
 
 impl OutputSection {
-    pub fn new(segname: &'static str, sectname: &str) -> Self {
+    pub fn new(segname: &'static [u8], sectname: &'static [u8]) -> Self {
         Self {
             hdr: ChunkHeader::new(segname, sectname),
             members: Vec::new(),

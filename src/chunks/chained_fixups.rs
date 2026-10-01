@@ -410,10 +410,11 @@ pub fn write_fixup_chains<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
                             .iter()
                             .map(|&id| ctx.chunk_header(id))
                             .find(|hdr| hdr.addr <= addr && addr < hdr.addr + hdr.size)
-                            .map(|hdr| format!("{},{}", hdr.segname, hdr.sectname))
+                            .map(|hdr| [hdr.segname, b",", hdr.sectname].concat())
                             .unwrap_or_default();
                         fatal!(
-                            "rebase target unencodable at {addr:#x} in {sect} (value {val:#x}); re-link with -no_fixup_chains"
+                            "rebase target unencodable at {addr:#x} in {} (value {val:#x}); re-link with -no_fixup_chains",
+                            crate::error::raw(&sect)
                         );
                     }
                     target | (high8 << 36) | (next << 51)
@@ -620,10 +621,10 @@ pub fn small_pointer_subsecs<E: Target>(ctx: &Context<E>, obj: usize) -> Vec<u32
             let isec = &ctx.isecs[id];
             let hdr = ctx.hdr_of(isec);
             isec.p2align % 32 < 3
-                && !hdr.segname_is("__DWARF")
-                && !hdr.segname_is("__LLVM")
-                && !hdr.sectname_is("__compact_unwind")
-                && !hdr.sectname_is("__eh_frame")
+                && !hdr.segname_is(b"__DWARF")
+                && !hdr.segname_is(b"__LLVM")
+                && !hdr.sectname_is(b"__compact_unwind")
+                && !hdr.sectname_is(b"__eh_frame")
                 && ctx.isec_relocs(id as usize).iter().any(is_pointer)
         })
         .collect();
@@ -651,6 +652,7 @@ pub fn report_bad_page_size<E: Target>(ctx: &Context<E>) {
     // chains them: it names the segment of the first and its offset
     // there.
     if let Some((seg, off, dist)) = unchainable_fixups(ctx) {
+        let seg = crate::error::raw(seg);
         crate::layout_error_at!(
             u64::MAX,
             "distance between fixups ({dist}) is not encodable in chain for fixup at {seg}+{off:#x}, "
@@ -666,7 +668,7 @@ pub fn report_bad_page_size<E: Target>(ctx: &Context<E>) {
 /// The first fixup of the image that the next one of its page is too
 /// far from to chain to: its segment's name, its offset there, and the
 /// distance.
-fn unchainable_fixups<E: Target>(ctx: &Context<E>) -> Option<(&'static str, u64, u64)> {
+fn unchainable_fixups<E: Target>(ctx: &Context<E>) -> Option<(&'static [u8], u64, u64)> {
     let page_size = chain_page_size(ctx);
     let fixups = &ctx.chained_fixups.fixups;
     for seg in &ctx.segments {

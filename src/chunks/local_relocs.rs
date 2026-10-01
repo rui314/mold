@@ -51,7 +51,7 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u64> {
 fn check_fixup_range<E: Target>(ctx: &Context<E>, locs: &[(u64, u64)]) {
     let base = if E::CPUTYPE == CPU_TYPE_ARM64 {
         let image_base = ctx.args.image_base.unwrap_or(0);
-        ctx.args.segaddr("__TEXT").unwrap_or(image_base.wrapping_add(ctx.args.pagezero_size))
+        ctx.args.segaddr(b"__TEXT").unwrap_or(image_base.wrapping_add(ctx.args.pagezero_size))
     } else {
         relocation_base(ctx)
     };
@@ -84,7 +84,7 @@ fn subsec_name<E: Target>(ctx: &Context<E>, addr: u64) -> (String, String) {
 pub(crate) fn relocation_base<E: Target>(ctx: &Context<E>) -> u64 {
     ctx.segments
         .iter()
-        .filter(|seg| seg.name != "__PAGEZERO")
+        .filter(|seg| seg.name != b"__PAGEZERO")
         .find(|seg| {
             E::CPUTYPE != CPU_TYPE_X86_64
                 || ctx.args.is_kext()

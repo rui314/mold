@@ -16,7 +16,7 @@ pub struct ObjcImageInfoSection {
 
 impl ObjcImageInfoSection {
     pub fn new() -> Self {
-        let mut hdr = ChunkHeader::new("__DATA", "__objc_imageinfo");
+        let mut hdr = ChunkHeader::new(b"__DATA", b"__objc_imageinfo");
         hdr.p2align = 2;
         Self { hdr, flags: 0 }
     }

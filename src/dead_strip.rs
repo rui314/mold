@@ -15,6 +15,7 @@ use rayon::prelude::*;
 
 use crate::chunks::init_offsets::InitFunc;
 use crate::context::Context;
+use crate::error::{Message, raw, render};
 use crate::input_files::{FileId, is_literal_section};
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
@@ -151,7 +152,7 @@ fn should_keep<E: Target>(ctx: &Context<E>, isec: &InputSection) -> bool {
         || crate::dtrace::is_dof(ctx, isec)
         || hdr.section_type() == S_INIT_FUNC_OFFSETS
         || (hdr.flags & S_ATTR_NO_DEAD_STRIP != 0
-            && !(hdr.segname() == "__DATA" && hdr.sectname() == "__objc_classrefs"))
+            && !(hdr.segname() == b"__DATA" && hdr.sectname() == b"__objc_classrefs"))
         || (!ctx.objs[isec.file as usize].subsections_via_symbols
             && !is_literal_section(hdr)
             && hdr.section_type() != S_THREAD_LOCAL_VARIABLES)
@@ -838,18 +839,20 @@ impl<'a, E: Target> WhyLive<'a, E> {
         if self.ctx.args.why_live.find(name.as_bytes()) == -1 {
             return;
         }
-        crate::error::notice(format_args!("{}", self.describe(node, name)));
+        crate::error::notice(format_args!("{}", raw(&self.describe(node, name.as_bytes()))));
         if let Some(why) = why {
             crate::error::notice(format_args!("  {}", why.name()));
         }
         for (depth, frame) in stack.iter().rev().enumerate() {
             let referrer = frame.node;
-            let name =
-                self.name(referrer, true).map_or_else(|| self.section_name(referrer), String::from);
+            let name = match self.name(referrer, true) {
+                Some(name) => name.as_bytes().to_vec(),
+                None => self.section_name(referrer),
+            };
             crate::error::notice(format_args!(
                 "{:indent$}{}",
                 "",
-                self.describe(referrer, &name),
+                raw(&self.describe(referrer, &name)),
                 indent = depth * 2 + 2
             ));
         }
@@ -881,40 +884,41 @@ impl<'a, E: Target> WhyLive<'a, E> {
         }
     }
 
-    fn section_name(&self, node: Node) -> String {
+    fn section_name(&self, node: Node) -> Vec<u8> {
         let Node::Isec(id) = node else { unreachable!() };
         let hdr = self.ctx.hdr_of(&self.ctx.isecs[id]);
-        format!("{},{}", hdr.segname(), hdr.sectname())
+        [hdr.segname(), b",", hdr.sectname()].concat()
     }
 
     /// "name from file", but the linker's own sections have no file. A
     /// dylib goes by its real path, as ld-prime reports the files it
-    /// loads.
-    fn describe(&self, node: Node, name: &str) -> String {
+    /// loads. The name is bytes: a section's may be any.
+    fn describe(&self, node: Node, name: &[u8]) -> Message {
         let ctx = self.ctx;
+        let from = |file: &dyn std::fmt::Display| render(format_args!("{} from {file}", raw(name)));
         let isec = match node {
             Node::Isec(id) => id,
             Node::Label(sym) => ctx.symbols[sym].input_section().unwrap() as usize,
-            Node::Boundary(_) => return format!("{name} from boundary-file"),
-            Node::Dof(_) => return format!("{name} from dtrace-file"),
+            Node::Boundary(_) => return from(&"boundary-file"),
+            Node::Dof(_) => return from(&"dtrace-file"),
             Node::Dtrace(sym) => {
                 let mut objs = ctx.objs.iter().filter(|obj| obj.is_alive);
                 let obj = objs.find(|obj| crate::dtrace::refers_to(obj, sym));
                 let path = obj.map(|obj| crate::passes::resolved_file_name(obj.mf));
-                return format!("{name} from {}", path.unwrap_or_default());
+                return from(&path.unwrap_or_default());
             }
             Node::Import(sym) => {
                 let Some(FileId::Dylib(i)) = ctx.symbols[sym].file() else { unreachable!() };
                 let path = self.providers.get(&sym).copied();
                 let path = path.unwrap_or(&ctx.dylibs[i as usize].path);
                 let (real, _) = crate::passes::real_path(path);
-                return format!("{name} from {}", real.display());
+                return from(&real.display());
             }
         };
         let file = ctx.isecs[isec].file as usize;
         if ctx.is_internal(file) {
-            return name.to_string();
+            return name.to_vec();
         }
-        format!("{name} from {}", crate::passes::resolved_file_name(ctx.objs[file].mf))
+        from(&crate::passes::resolved_file_name(ctx.objs[file].mf))
     }
 }

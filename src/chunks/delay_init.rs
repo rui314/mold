@@ -116,9 +116,9 @@ pub struct DelayInit {
 impl DelayInit {
     pub fn new() -> Self {
         let flags = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
-        let mut stubs_hdr = ChunkHeader::new("__TEXT", "__delay_stubs");
+        let mut stubs_hdr = ChunkHeader::new(b"__TEXT", b"__delay_stubs");
         stubs_hdr.flags = flags;
-        let mut helper_hdr = ChunkHeader::new("__TEXT", "__delay_helper");
+        let mut helper_hdr = ChunkHeader::new(b"__TEXT", b"__delay_helper");
         helper_hdr.flags = flags;
         Self {
             stubs_hdr,

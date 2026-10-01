@@ -24,7 +24,7 @@ pub struct LazyLoadGotSection {
 
 impl LazyLoadGotSection {
     pub fn new() -> Self {
-        let mut hdr = ChunkHeader::new("__DATA", "__lazy_load_got");
+        let mut hdr = ChunkHeader::new(b"__DATA", b"__lazy_load_got");
         hdr.p2align = 3;
         Self { hdr, slots: Vec::new() }
     }

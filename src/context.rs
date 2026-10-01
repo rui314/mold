@@ -90,6 +90,11 @@ macro_rules! chunk_header {
     };
 }
 
+/// A section$start/end or segment$start/end symbol: (symbol, is_start,
+/// segment, section), the names those the symbol gives until the
+/// layout renames them.
+pub type BoundarySym = (SymbolId, bool, &'static [u8], Option<&'static [u8]>);
+
 pub struct Context<E: Target> {
     pub args: Args,
     pub objs: Vec<ObjectFile>,
@@ -286,8 +291,8 @@ pub struct Context<E: Target> {
     /// each.
     pub objc_filled_ro_fields: Vec<u32>,
     /// section$start/end and segment$start/end symbols to resolve
-    /// after layout: (symbol, is_start, segment, section).
-    pub boundary_syms: Vec<(SymbolId, bool, String, Option<String>)>,
+    /// after layout.
+    pub boundary_syms: Vec<BoundarySym>,
     /// For -why_load: the symbol that made each object live, refreshed
     /// each resolution round.
     pub why_load: std::collections::HashMap<usize, &'static str>,
@@ -1228,11 +1233,11 @@ impl<E: Target> Context<E> {
         let mut n = 0;
         for (shndx, hdr) in obj.sect_hdrs.iter().enumerate() {
             let shndx = shndx as u32;
-            if (hdr.segname(), hdr.sectname()) == ("__LD", "__compact_unwind") {
+            if (hdr.segname(), hdr.sectname()) == (b"__LD", b"__compact_unwind") {
                 n += (hdr.size / 32) as usize;
                 continue;
             }
-            if hdr.segname() == "__LLVM" {
+            if hdr.segname() == b"__LLVM" {
                 continue;
             }
             let lo = subs.partition_point(|&i| self.isecs[i].shndx < shndx);
@@ -1241,7 +1246,7 @@ impl<E: Target> Context<E> {
             let lo = labels.partition_point(|l| l.0 < shndx);
             let hi = labels.partition_point(|l| l.0 <= shndx);
             let sect_labels = &labels[lo..hi];
-            let merged = has_merged_subsecs(hdr) || hdr.sectname() == "__objc_classrefs";
+            let merged = has_merged_subsecs(hdr) || hdr.sectname() == b"__objc_classrefs";
             let records = is_record_section(hdr);
             for (j, &sub) in sect_subs.iter().enumerate() {
                 let isec = &self.isecs[sub];
@@ -1356,7 +1361,7 @@ impl<E: Target> Context<E> {
             return format!("anon-{}", self.stubs_got_ordinal(class)).into();
         }
         if let Some(isec) = self.reloc_target_isec(obj, rel)
-            && self.hdr_of(&self.isecs[isec]).sectname() == "__objc_classrefs"
+            && self.hdr_of(&self.isecs[isec]).sectname() == b"__objc_classrefs"
         {
             return format!("anon-{}", self.subsec_ordinal(self.resolve_isec(isec))).into();
         }
@@ -1382,7 +1387,7 @@ impl<E: Target> Context<E> {
             RelocTarget::Section(idx) => idx as usize,
         };
         let isec = &self.isecs[slot];
-        if self.hdr_of(isec).sectname() != "__objc_classrefs" {
+        if self.hdr_of(isec).sectname() != b"__objc_classrefs" {
             return None;
         }
         let stand_in = self.got.stand_ins.iter().find(|&&(id, _)| id == isec.replacement)?;

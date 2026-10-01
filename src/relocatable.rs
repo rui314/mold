@@ -34,7 +34,7 @@ use crate::mapfile::RelocatableRecord;
 use crate::output_file;
 use crate::symbol::SymbolId;
 use crate::target::Target;
-use crate::util::{align_to, encode_uleb, name_sort_key};
+use crate::util::{align_to, encode_uleb, leak_bytes, name_sort_key};
 
 /// ld64's section order in a -r output, measured with ld-prime 27037:
 /// __TEXT first, __LD last, and the other segments - __DATA and
@@ -48,39 +48,39 @@ use crate::util::{align_to, encode_uleb, name_sort_key};
 /// zero-fill sections close every segment but __TEXT: an object's
 /// file image mirrors its address space. The first element ranks the
 /// segment.
-fn section_rank(segname: &str, sectname: &str, flags: u32) -> (u32, u32) {
+fn section_rank(segname: &[u8], sectname: &[u8], flags: u32) -> (u32, u32) {
     let seg = match segname {
-        "__TEXT" => 0,
-        "__LD" => 2,
+        b"__TEXT" => 0,
+        b"__LD" => 2,
         _ => 1,
     };
     let sect = match (segname, sectname) {
-        ("__TEXT", "__StaticInit") => 1,
+        (b"__TEXT", b"__StaticInit") => 1,
         // After __const and __cstring, whatever the input order.
-        ("__TEXT", "__gcc_except_tab") => 3,
-        ("__TEXT", "__eh_frame") => 4,
-        ("__TEXT", _) if flags & S_ATTR_PURE_INSTRUCTIONS != 0 => 0,
-        ("__TEXT", _) => 2,
-        ("__DATA", "__got") => 0,
-        ("__DATA", "__const") => 1,
-        ("__DATA", "__cfstring") => 2,
-        ("__DATA", "__objc_classlist") => 3,
-        ("__DATA", "__objc_nlclslist") => 4,
-        ("__DATA", "__objc_catlist") => 5,
-        ("__DATA", "__objc_catlist2") => 6,
-        ("__DATA", "__objc_nlcatlist") => 7,
-        ("__DATA", "__objc_protolist") => 8,
-        ("__DATA", "__objc_imageinfo") => 9,
-        ("__DATA", "__objc_const") => 10,
-        ("__DATA", "__objc_selrefs") => 11,
-        ("__DATA", "__objc_protorefs") => 12,
-        ("__DATA", "__objc_classrefs") => 13,
-        ("__DATA", "__objc_superrefs") => 14,
-        ("__DATA", "__objc_ivar") => 15,
-        ("__DATA", "__objc_data") => 16,
-        ("__DATA", "__mod_init_func") => 17,
-        ("__DATA", "__mod_term_func") => 18,
-        ("__DATA", "__data") => 19,
+        (b"__TEXT", b"__gcc_except_tab") => 3,
+        (b"__TEXT", b"__eh_frame") => 4,
+        (b"__TEXT", _) if flags & S_ATTR_PURE_INSTRUCTIONS != 0 => 0,
+        (b"__TEXT", _) => 2,
+        (b"__DATA", b"__got") => 0,
+        (b"__DATA", b"__const") => 1,
+        (b"__DATA", b"__cfstring") => 2,
+        (b"__DATA", b"__objc_classlist") => 3,
+        (b"__DATA", b"__objc_nlclslist") => 4,
+        (b"__DATA", b"__objc_catlist") => 5,
+        (b"__DATA", b"__objc_catlist2") => 6,
+        (b"__DATA", b"__objc_nlcatlist") => 7,
+        (b"__DATA", b"__objc_protolist") => 8,
+        (b"__DATA", b"__objc_imageinfo") => 9,
+        (b"__DATA", b"__objc_const") => 10,
+        (b"__DATA", b"__objc_selrefs") => 11,
+        (b"__DATA", b"__objc_protorefs") => 12,
+        (b"__DATA", b"__objc_classrefs") => 13,
+        (b"__DATA", b"__objc_superrefs") => 14,
+        (b"__DATA", b"__objc_ivar") => 15,
+        (b"__DATA", b"__objc_data") => 16,
+        (b"__DATA", b"__mod_init_func") => 17,
+        (b"__DATA", b"__mod_term_func") => 18,
+        (b"__DATA", b"__data") => 19,
         _ => match flags & SECTION_TYPE {
             S_THREAD_LOCAL_REGULAR => 21,
             S_THREAD_LOCAL_ZEROFILL => 22,
@@ -102,7 +102,7 @@ fn section_desc<E: Target>(ctx: &Context<E>, isec: usize) -> u16 {
     let roots = matches!(h.section_type(), S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS);
     if roots
         || h.flags & S_ATTR_NO_DEAD_STRIP != 0
-            && !(h.segname() == "__DATA" && h.sectname() == "__objc_classrefs")
+            && !(h.segname() == b"__DATA" && h.sectname() == b"__objc_classrefs")
     {
         N_NO_DEAD_STRIP
     } else {
@@ -542,7 +542,9 @@ fn sectcreate_locals<E: Target>(ctx: &Context<E>) -> Vec<Local> {
         .map(|(i, (input, sc))| {
             let (addr, n_sect) = input.place(ctx);
             Local {
-                name: format!("l<sect-create>{},{}", sc.segname, sc.sectname).leak(),
+                name: leak_bytes(
+                    [b"l<sect-create>", &sc.segname[..], b",", &sc.sectname[..]].concat(),
+                ),
                 n_type: N_SECT,
                 n_desc: N_NO_DEAD_STRIP,
                 n_sect,
@@ -631,7 +633,7 @@ fn sort_sections<E: Target>(ctx: &Context<E>, synthetic: &[SyntheticSection]) ->
     let own = (0..ctx.sectcreate_sections.len()).map(Sect::Created);
     let mut sects: Vec<Sect> =
         merged.chain(own).chain((0..synthetic.len()).map(Sect::Synthetic)).collect();
-    let mut segs_seen: Vec<&str> = Vec::new();
+    let mut segs_seen: Vec<&[u8]> = Vec::new();
     for &s in &sects {
         let seg = sect_hdr(ctx, synthetic, s).segname;
         if !segs_seen.contains(&seg) {
@@ -668,8 +670,8 @@ fn sort_sections<E: Target>(ctx: &Context<E>, synthetic: &[SyntheticSection]) ->
     sects.sort_by_key(|&s| {
         let hdr = sect_hdr(ctx, synthetic, s);
         let (seg_rank, sect_rank) = match s {
-            Sect::Created(_) => section_rank(hdr.segname, "", 0),
-            _ => section_rank(hdr.segname, &hdr.sectname, hdr.flags),
+            Sect::Created(_) => section_rank(hdr.segname, b"", 0),
+            _ => section_rank(hdr.segname, hdr.sectname, hdr.flags),
         };
         (seg_rank, segs_seen.iter().position(|&x| x == hdr.segname), sect_rank, seen(s))
     });
@@ -846,8 +848,8 @@ enum SyntheticKind {
 
 impl SyntheticSection {
     fn new(
-        segname: &'static str,
-        sectname: &str,
+        segname: &'static [u8],
+        sectname: &'static [u8],
         flags: u32,
         p2align: u32,
         size: u64,
@@ -893,7 +895,7 @@ fn objc_imageinfo_section<E: Target>(ctx: &Context<E>) -> Option<SyntheticSectio
     if !ctx.objs.iter().any(|o| o.is_alive && o.objc_image_info.is_some()) {
         return None;
     }
-    let (seg, sect) = crate::output_sections::renamed(&ctx.args, ("__DATA", "__objc_imageinfo"));
+    let (seg, sect) = crate::output_sections::renamed(&ctx.args, (b"__DATA", b"__objc_imageinfo"));
     Some(SyntheticSection::new(seg, sect, 0, 2, 8, SyntheticKind::ObjcImageInfo))
 }
 
@@ -929,14 +931,16 @@ fn compact_unwind_section<E: Target>(ctx: &Context<E>) -> Option<SyntheticSectio
         .par_iter()
         .filter_map(|&i| {
             let obj = &ctx.objs[ctx.isecs[ctx.unwind_records[i].isec as usize].file as usize];
-            obj.sect_hdrs.iter().find(|s| s.segname_is("__LD") && s.sectname_is("__compact_unwind"))
+            obj.sect_hdrs
+                .iter()
+                .find(|s| s.segname_is(b"__LD") && s.sectname_is(b"__compact_unwind"))
         })
         .map(|s| s.p2align)
         .max()
         .unwrap_or(3);
     let size = 32 * records.len() as u64;
     let kind = SyntheticKind::CompactUnwind(records);
-    Some(SyntheticSection::new("__LD", "__compact_unwind", S_ATTR_DEBUG, p2align, size, kind))
+    Some(SyntheticSection::new(b"__LD", b"__compact_unwind", S_ATTR_DEBUG, p2align, size, kind))
 }
 
 /// A record of __TEXT,__eh_frame: an input CIE or FDE.
@@ -1006,8 +1010,8 @@ fn eh_frame_section<E: Target>(ctx: &Context<E>) -> Option<SyntheticSection> {
     }
     let size = records.iter().map(|&(r, _)| r.data(ctx).len() as u64).sum();
     Some(SyntheticSection::new(
-        "__TEXT",
-        "__eh_frame",
+        b"__TEXT",
+        b"__eh_frame",
         S_COALESCED | S_ATTR_NO_TOC | S_ATTR_STRIP_STATIC_SYMS | S_ATTR_LIVE_SUPPORT,
         3,
         size,
@@ -1316,8 +1320,8 @@ struct FileLayout {
 /// A section's header in the segment command.
 fn section_header(hdr: &ChunkHeader, relocs: &[MachRel], reloff: u64) -> MachSection {
     MachSection {
-        sectname: str_to_name(&hdr.sectname),
-        segname: str_to_name(hdr.segname),
+        sectname: bytes_to_name(hdr.sectname),
+        segname: bytes_to_name(hdr.segname),
         addr: hdr.addr,
         size: hdr.size,
         offset: hdr.fileoff as u32,
@@ -1537,7 +1541,7 @@ impl RSymtab {
 /// A local symbol of a -r output.
 #[derive(Clone, Copy)]
 struct Local {
-    name: &'static str,
+    name: &'static [u8],
     n_type: u8,
     n_desc: u16,
     n_sect: u8,
@@ -1643,9 +1647,7 @@ fn build_symtab<E: Target>(
     let total = locals.len() + nasts + usize::from(nstabs != 0) + externals.len();
     let mut names: Vec<&'static [u8]> = Vec::with_capacity(total);
     table.entries.reserve_exact(total);
-    par_push_entries(&mut names, &mut table.entries, &locals, |l| {
-        (l.name.as_bytes(), l.nlist(), None)
-    });
+    par_push_entries(&mut names, &mut table.entries, &locals, |l| (l.name, l.nlist(), None));
     crate::chunks::symtab::push_ast_paths(ctx, &mut names, &mut table.entries);
     if nstabs != 0 {
         names.push(b"");
@@ -1912,8 +1914,10 @@ fn literal_size<E: Target>(ctx: &Context<E>, isec: usize) -> Option<u64> {
             .then_some(8);
     }
     match h.sectname() {
-        "__cfstring" => Some(32),
-        "__objc_selrefs" | "__objc_classrefs" | "__objc_superrefs" | "__objc_protorefs" => Some(8),
+        b"__cfstring" => Some(32),
+        b"__objc_selrefs" | b"__objc_classrefs" | b"__objc_superrefs" | b"__objc_protorefs" => {
+            Some(8)
+        }
         _ => Some(0),
     }
 }
@@ -1921,8 +1925,8 @@ fn literal_size<E: Target>(ctx: &Context<E>, isec: usize) -> Option<u64> {
 impl<'a, E: Target> Locals<'a, E> {
     /// Starts the locals with the literals ld64 names itself.
     fn new(ctx: &'a Context<E>, merged: &[OutputSectionId]) -> Self {
-        let names_literals = |segname: &str, sectname: &str| {
-            E::CPUTYPE == CPU_TYPE_ARM64 || (segname == "__TEXT" && sectname == "__cstring")
+        let names_literals = |segname: &[u8], sectname: &[u8]| {
+            E::CPUTYPE == CPU_TYPE_ARM64 || (segname == b"__TEXT" && sectname == b"__cstring")
         };
 
         let mut locals = Vec::new();
@@ -1934,7 +1938,7 @@ impl<'a, E: Target> Locals<'a, E> {
             else {
                 continue;
             };
-            if !names_literals(chunk.hdr.segname, &chunk.hdr.sectname) {
+            if !names_literals(chunk.hdr.segname, chunk.hdr.sectname) {
                 unnamed.insert(chunk_idx);
                 continue;
             }
@@ -1959,7 +1963,7 @@ impl<'a, E: Target> Locals<'a, E> {
                 for k in 0..n {
                     literals.literals.insert((id, k), locals.len());
                     locals.push(Local {
-                        name: "",
+                        name: b"",
                         n_type: N_PEXT | N_SECT,
                         n_desc: section_desc(ctx, id),
                         n_sect: chunk.hdr.n_sect,
@@ -2000,8 +2004,8 @@ impl<'a, E: Target> Locals<'a, E> {
             return !t.is_labeled();
         }
         let h = ctx.hdr_of(t);
-        h.segname_is("__DATA")
-            && (h.sectname_is("__objc_superrefs") || h.sectname_is("__objc_protorefs"))
+        h.segname_is(b"__DATA")
+            && (h.sectname_is(b"__objc_superrefs") || h.sectname_is(b"__objc_protorefs"))
             && ctx.symbols[sym_id].name().starts_with('l')
     }
 
@@ -2095,7 +2099,7 @@ impl<'a, E: Target> Locals<'a, E> {
             // its aliases.
             let section_desc = if aliases.contains(&i) { 0 } else { section_desc(ctx, input) };
             labels.push(Local {
-                name: local_symbol_name(sym.name()),
+                name: local_symbol_name(sym.name()).as_bytes(),
                 n_type: nlist.n_type,
                 n_desc: whole_desc(nlist.n_desc, whole) | section_desc,
                 n_sect: ctx.isec_n_sect(&ctx.isecs[isec]),
@@ -2202,7 +2206,7 @@ impl<'a, E: Target> Locals<'a, E> {
                 continue;
             }
             out.push(Local {
-                name: local_symbol_name(sym.name()),
+                name: local_symbol_name(sym.name()).as_bytes(),
                 n_type: N_PEXT | N_SECT,
                 n_desc: whole_desc(
                     nlist.n_desc & (N_ALT_ENTRY | N_NO_DEAD_STRIP | N_WEAK_DEF),
@@ -2233,7 +2237,7 @@ impl<'a, E: Target> Locals<'a, E> {
     ) -> Local {
         let sym = &self.ctx.symbols[sym_id];
         Local {
-            name: sym.name(),
+            name: sym.name().as_bytes(),
             n_type,
             n_desc: 0,
             n_sect: 0,
@@ -2285,7 +2289,7 @@ impl<'a, E: Target> Locals<'a, E> {
                 Rename::Cstring => format!("LC{counter}"),
                 Rename::Anon => format!("l{counter:03}"),
             };
-            l.name = name.leak();
+            l.name = name.leak().as_bytes();
             counter += 1;
         }
 

@@ -54,10 +54,13 @@ use crate::target::Target;
 
 pub use output_section::{OutputSection, Tail, Thunk};
 
+/// A chunk's place in the output: its section header's fields, the
+/// names among them bytes, as Mach-O names are (see
+/// macho::name_to_bytes).
 #[derive(Debug)]
 pub struct ChunkHeader {
-    pub segname: &'static str,
-    pub sectname: String,
+    pub segname: &'static [u8],
+    pub sectname: &'static [u8],
     pub addr: u64,
     pub fileoff: u64,
     pub size: u64,
@@ -81,10 +84,10 @@ pub struct ChunkHeader {
 
 impl ChunkHeader {
     /// The header of a section of the image.
-    pub fn new(segname: &'static str, sectname: &str) -> Self {
+    pub fn new(segname: &'static [u8], sectname: &'static [u8]) -> Self {
         Self {
             segname,
-            sectname: sectname.to_string(),
+            sectname,
             addr: 0,
             fileoff: 0,
             size: 0,
@@ -101,7 +104,7 @@ impl ChunkHeader {
     /// The header of a __LINKEDIT table, which no section header
     /// describes.
     pub fn linkedit() -> Self {
-        let mut hdr = Self::new("__LINKEDIT", "");
+        let mut hdr = Self::new(b"__LINKEDIT", b"");
         hdr.is_sect = false;
         hdr
     }
@@ -262,7 +265,7 @@ pub struct OutputMachHeader {
 
 impl OutputMachHeader {
     pub fn new() -> Self {
-        let mut hdr = ChunkHeader::new("__TEXT", "");
+        let mut hdr = ChunkHeader::new(b"__TEXT", b"");
         hdr.is_sect = false;
         Self { hdr }
     }
@@ -277,23 +280,23 @@ impl Default for OutputMachHeader {
 /// A segment of the output file, grouping chunks.
 #[derive(Debug, Default)]
 pub struct OutputSegment {
-    pub name: &'static str,
+    pub name: &'static [u8],
     pub chunks: Vec<ChunkId>,
     pub cmd: SegmentCommand,
 }
 
 impl OutputSegment {
-    pub fn new(name: &'static str) -> Self {
+    pub fn new(name: &'static [u8]) -> Self {
         Self { name, chunks: Vec::new(), cmd: SegmentCommand::default() }
     }
 }
 
 /// Returns the maxprot/initprot for a well-known segment name.
-pub fn segment_prot(name: &str) -> u32 {
+pub fn segment_prot(name: &[u8]) -> u32 {
     match name {
-        "__PAGEZERO" => 0,
-        "__TEXT" | "__TEXT_EXEC" => VM_PROT_READ | VM_PROT_EXECUTE,
-        "__LINKEDIT" => VM_PROT_READ,
+        b"__PAGEZERO" => 0,
+        b"__TEXT" | b"__TEXT_EXEC" => VM_PROT_READ | VM_PROT_EXECUTE,
+        b"__LINKEDIT" => VM_PROT_READ,
         _ => VM_PROT_READ | VM_PROT_WRITE,
     }
 }
@@ -304,7 +307,7 @@ pub fn segment_and_offset<E: Target>(ctx: &Context<E>, addr: u64) -> (usize, u64
     for (i, seg) in ctx.segments.iter().enumerate() {
         if seg.cmd.vmaddr <= addr
             && addr < seg.cmd.vmaddr + seg.cmd.vmsize
-            && seg.name != "__PAGEZERO"
+            && seg.name != b"__PAGEZERO"
         {
             return (i, addr - seg.cmd.vmaddr);
         }
@@ -392,7 +395,7 @@ pub fn segment_prots<E: Target>(ctx: &Context<E>, seg: &OutputSegment) -> (u32, 
         return (u32::from(max), u32::from(init));
     }
     // With __TEXT_EXEC, __TEXT holds no code.
-    if name == "__TEXT" && ctx.args.text_exec {
+    if name == b"__TEXT" && ctx.args.text_exec {
         return (VM_PROT_READ, VM_PROT_READ);
     }
     if holds_moved_code(ctx, seg) {
@@ -420,7 +423,7 @@ fn holds_moved_code<E: Target>(ctx: &Context<E>, seg: &OutputSegment) -> bool {
 fn create_segment_cmd<E: Target>(ctx: &Context<E>, seg: &OutputSegment) -> Vec<u8> {
     let mut cmd = seg.cmd;
     cmd.cmd = LC_SEGMENT_64;
-    cmd.segname = str_to_name(seg.name);
+    cmd.segname = bytes_to_name(seg.name);
 
     let sects: Vec<&ChunkHeader> =
         seg.chunks.iter().map(|&id| ctx.chunk_header(id)).filter(|hdr| hdr.is_sect).collect();
@@ -432,7 +435,7 @@ fn create_segment_cmd<E: Target>(ctx: &Context<E>, seg: &OutputSegment) -> Vec<u
     // an image bound for the shared region, which ld-prime leaves to
     // the cache (or kernel collection) builder, but for dyld itself,
     // which makes its own read-only once it has slid itself.
-    if seg.name == "__DATA_CONST" && (!ctx.args.shared_region || ctx.args.is_dylinker()) {
+    if seg.name == b"__DATA_CONST" && (!ctx.args.shared_region || ctx.args.is_dylinker()) {
         cmd.flags = SG_READ_ONLY;
     }
     // A segment of nothing but sections the command line made
@@ -452,8 +455,8 @@ fn create_segment_cmd<E: Target>(ctx: &Context<E>, seg: &OutputSegment) -> Vec<u
     let mut buf = to_vec(&cmd);
     for hdr in sects {
         let mut sect = MachSection {
-            sectname: str_to_name(&hdr.sectname),
-            segname: str_to_name(seg.name),
+            sectname: bytes_to_name(hdr.sectname),
+            segname: bytes_to_name(seg.name),
             addr: hdr.addr,
             size: hdr.size,
             offset: hdr.fileoff as u32,
@@ -729,7 +732,7 @@ fn create_main_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     // is zero. The layout sizes the command before the entry point has
     // an address (0) - also when it lays the segments out again, with
     // __TEXT placed by the first round.
-    let text = ctx.segments.iter().find(|s| s.name == "__TEXT").unwrap();
+    let text = ctx.segments.iter().find(|s| s.name == b"__TEXT").unwrap();
     let cmd = EntryPointCommand {
         cmd: LC_MAIN,
         cmdsize: size_of::<EntryPointCommand>() as u32,
@@ -767,7 +770,7 @@ fn create_unixthread_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     buf.resize(size, 0);
     let pc = 16 + E::THREAD_STATE_PC_OFFSET;
     buf[pc..pc + 8].copy_from_slice(&ctx.entry_addr.to_le_bytes());
-    if let Some(stack) = ctx.segments.iter().find(|seg| seg.name == "__UNIXSTACK") {
+    if let Some(stack) = ctx.segments.iter().find(|seg| seg.name == b"__UNIXSTACK") {
         let sp = 16 + E::THREAD_STATE_SP_OFFSET;
         buf[sp..sp + 8].copy_from_slice(&(stack.cmd.vmaddr + stack.cmd.vmsize).to_le_bytes());
     }
@@ -783,7 +786,7 @@ fn create_unixthread_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
 fn create_encryption_info_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     let text = |id: &&ChunkId| {
         let hdr = ctx.chunk_header(**id);
-        **id != ChunkId::MachHeader && hdr.segname == "__TEXT" && hdr.sectname != "__oslogstring"
+        **id != ChunkId::MachHeader && hdr.segname == b"__TEXT" && hdr.sectname != b"__oslogstring"
     };
     let sections = || ctx.chunks.iter().filter(text).map(|&id| ctx.chunk_header(id));
     let start = sections().map(|hdr| hdr.fileoff).min().unwrap_or(0);
@@ -821,7 +824,7 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
     // A -preload image's __LINKEDIT is no segment: its tables follow
     // the segments in the file, and nothing maps them.
     for seg in &ctx.segments {
-        if !(ctx.args.preload && seg.name == "__LINKEDIT") {
+        if !(ctx.args.preload && seg.name == b"__LINKEDIT") {
             vec.push(create_segment_cmd(ctx, seg));
         }
     }
@@ -1024,7 +1027,7 @@ fn header_pad<E: Target>(ctx: &Context<E>, cmds: &[Vec<u8>]) -> u64 {
     };
     // The estimate gives __UNIXSTACK the header of a __stack section,
     // which the segment's command goes without.
-    if ctx.segments.iter().any(|seg| seg.name == "__UNIXSTACK") {
+    if ctx.segments.iter().any(|seg| seg.name == b"__UNIXSTACK") {
         excess += size_of::<MachSection>() as u64;
     }
     for (cmd, bytes) in dylib_cmds {

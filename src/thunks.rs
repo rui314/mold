@@ -148,7 +148,7 @@ fn is_code<E: Target>(ctx: &Context<E>, id: ChunkId) -> bool {
     let hdr = ctx.chunk_header(id);
     hdr.flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0
         && hdr.size > 0
-        && hdr.segname == "__TEXT"
+        && hdr.segname == b"__TEXT"
 }
 
 /// The positions in the output order of the first and the last code
@@ -220,7 +220,7 @@ impl Reach {
         last: usize,
     ) -> Self {
         let side = |i: usize| match i {
-            _ if ctx.chunk_header(ctx.chunks[i]).segname != "__TEXT" => Side::OtherSegment,
+            _ if ctx.chunk_header(ctx.chunks[i]).segname != b"__TEXT" => Side::OtherSegment,
             _ if i < first || last < i => Side::Outside,
             _ if i < pos => Side::Before,
             _ => Side::After,

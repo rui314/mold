@@ -423,7 +423,7 @@ impl<'a, E: Target> Builder<'a, E> {
         // terminator, and what its section says (but a class reference,
         // which ld-prime reads as a pointer to the class whatever its
         // section's attributes; not so a reference to a superclass).
-        let classref = hdr.sectname() == "__objc_classrefs";
+        let classref = hdr.sectname() == b"__objc_classrefs";
         entry.no_dead_strip |= hdr.flags & S_ATTR_NO_DEAD_STRIP != 0 && !classref
             || matches!(hdr.section_type(), S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS);
         entry.dds_if_refs_live = hdr.flags & S_ATTR_LIVE_SUPPORT != 0;
@@ -956,7 +956,7 @@ impl<'a, E: Target> Builder<'a, E> {
             let sect = obj
                 .sect_hdrs
                 .iter()
-                .position(|h| h.segname() == "__LD" && h.sectname() == "__compact_unwind");
+                .position(|h| h.segname() == b"__LD" && h.sectname() == b"__compact_unwind");
             if let Some(sect) = sect {
                 let entries = self.object_unwind_entries(obj, sect);
                 self.tail.extend(entries);
@@ -1156,16 +1156,16 @@ impl<'a, E: Target> Builder<'a, E> {
 /// their own) and the image info the link makes afresh.
 fn has_entries(hdr: &MachSection) -> bool {
     hdr.flags & S_ATTR_DEBUG == 0
-        && hdr.segname() != "__LLVM"
-        && !(hdr.segname() == "__LD" && hdr.sectname() == "__compact_unwind")
-        && hdr.sectname() != "__eh_frame"
+        && hdr.segname() != b"__LLVM"
+        && !(hdr.segname() == b"__LD" && hdr.sectname() == b"__compact_unwind")
+        && hdr.sectname() != b"__eh_frame"
         && !crate::input_files::is_objc_image_info(hdr)
 }
 
 /// Whether a section is an object's __DATA,__got, whose slots the link
 /// moves into its GOT (see passes::fold_input_got).
 fn is_input_got(hdr: &MachSection) -> bool {
-    hdr.segname() == "__DATA" && hdr.sectname() == "__got"
+    hdr.segname() == b"__DATA" && hdr.sectname() == b"__got"
 }
 
 /// Whether ld-prime merges a section's subsections by their contents:
@@ -1173,21 +1173,21 @@ fn is_input_got(hdr: &MachSection) -> bool {
 /// all the same), and the UTF-16 strings.
 fn merges_by_content(hdr: &MachSection) -> bool {
     crate::input_files::is_literal_section(hdr) && !is_input_got(hdr)
-        || (hdr.segname() == "__TEXT" && hdr.sectname() == "__ustring")
+        || (hdr.segname() == b"__TEXT" && hdr.sectname() == b"__ustring")
 }
 
 /// The size of the records of a section that ld-prime takes one by
 /// one, each an entry (as mold takes literals): the Objective-C pointer
 /// lists and references, and the CFStrings.
 fn record_size(hdr: &MachSection) -> Option<u32> {
-    if !hdr.segname().starts_with("__DATA") {
+    if !hdr.segname().starts_with(b"__DATA") {
         return None;
     }
     match hdr.sectname() {
-        "__objc_classlist" | "__objc_nlclslist" | "__objc_catlist" | "__objc_catlist2"
-        | "__objc_nlcatlist" | "__objc_protolist" | "__objc_classrefs" | "__objc_superrefs"
-        | "__objc_protorefs" | "__objc_selrefs" => Some(8),
-        "__cfstring" => Some(32),
+        b"__objc_classlist" | b"__objc_nlclslist" | b"__objc_catlist" | b"__objc_catlist2"
+        | b"__objc_nlcatlist" | b"__objc_protolist" | b"__objc_classrefs" | b"__objc_superrefs"
+        | b"__objc_protorefs" | b"__objc_selrefs" => Some(8),
+        b"__cfstring" => Some(32),
         _ => None,
     }
 }
@@ -1359,7 +1359,7 @@ fn record_flags<E: Target>(ctx: &Context<E>) -> u64 {
             .filter(|(i, o)| o.is_alive && !ctx.is_internal(*i))
             .map(|(_, o)| o)
     };
-    let has_section = |names: &[&str]| {
+    let has_section = |names: &[&[u8]]| {
         live_objs().any(|o| o.sect_hdrs.iter().any(|h| h.size > 0 && names.contains(&h.sectname())))
     };
     let mut flags = 0u64;
@@ -1367,10 +1367,10 @@ fn record_flags<E: Target>(ctx: &Context<E>) -> u64 {
         flags |= 1 << 24;
     }
     let swift = live_objs().any(|o| {
-        o.sect_hdrs.iter().any(|h| h.segname() == "__TEXT" && h.sectname().starts_with("__swift"))
+        o.sect_hdrs.iter().any(|h| h.segname() == b"__TEXT" && h.sectname().starts_with(b"__swift"))
     });
-    let has_classes = has_section(&["__objc_classlist", "__objc_nlclslist"]);
-    if swift || has_classes || has_section(&["__objc_catlist", "__objc_nlcatlist"]) {
+    let has_classes = has_section(&[b"__objc_classlist", b"__objc_nlclslist"]);
+    if swift || has_classes || has_section(&[b"__objc_catlist", b"__objc_nlcatlist"]) {
         flags |= FLAG_HAS_SWIFT_OR_OBJC;
     }
     if !ctx.has_chunk(crate::chunks::ChunkId::ObjcImageInfo) {

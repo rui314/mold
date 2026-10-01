@@ -20,7 +20,7 @@ pub struct StubsSection {
 
 impl StubsSection {
     pub fn new() -> Self {
-        let mut hdr = ChunkHeader::new("__TEXT", "__stubs");
+        let mut hdr = ChunkHeader::new(b"__TEXT", b"__stubs");
         hdr.flags = S_SYMBOL_STUBS | S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
         hdr.p2align = 2;
         Self { hdr, symbols: Vec::new(), lazy: Vec::new() }

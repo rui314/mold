@@ -519,7 +519,7 @@ fn check_linkedit(data: &[u8], cmds: &[Cmd]) -> Result<(), String> {
 fn check_section_contents(data: &[u8], cmds: &[Cmd]) -> Result<(), String> {
     let len = data.len() as u64;
     for sect in sections(cmds) {
-        let name = format!("{}/{}", sect.segname(), sect.sectname());
+        let name = format!("{}/{}", c_name(&sect.segname), c_name(&sect.sectname));
         if !is_zerofill(sect.flags) && sect.offset as u64 + sect.size > len {
             return Err(format!("section '{name}' content extends beyond end of file"));
         }

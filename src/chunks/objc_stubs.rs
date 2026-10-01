@@ -47,7 +47,7 @@ pub struct ObjcStubsSection {
 
 impl ObjcStubsSection {
     pub fn new() -> Self {
-        let mut hdr = ChunkHeader::new("__TEXT", "__objc_stubs");
+        let mut hdr = ChunkHeader::new(b"__TEXT", b"__objc_stubs");
         hdr.flags = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
         hdr.p2align = 5;
         Self {

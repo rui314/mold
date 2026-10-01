@@ -28,7 +28,7 @@ pub enum InitFunc {
 
 impl InitOffsetsSection {
     pub fn new() -> Self {
-        let mut hdr = ChunkHeader::new("__TEXT", "__init_offsets");
+        let mut hdr = ChunkHeader::new(b"__TEXT", b"__init_offsets");
         hdr.flags = S_INIT_FUNC_OFFSETS;
         hdr.p2align = 2;
         Self { hdr, init_funcs: Vec::new() }

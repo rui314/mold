@@ -17,7 +17,7 @@ pub struct ObjcMethlistSection {
 
 impl ObjcMethlistSection {
     pub fn new() -> Self {
-        let mut hdr = ChunkHeader::new("__TEXT", "__objc_methlist");
+        let mut hdr = ChunkHeader::new(b"__TEXT", b"__objc_methlist");
         hdr.p2align = 3;
         Self { hdr, lists: Vec::new() }
     }

@@ -144,7 +144,8 @@ pub fn create_class_table<E: Target>(ctx: &mut Context<E>) {
 /// struct entry. Returns its subsection.
 fn add_table<E: Target>(ctx: &mut Context<E>, libraries: &[(Vec<u8>, Vec<ObjcRef>)]) -> u32 {
     let names = libraries.iter().flat_map(|(name, _)| [&name[..], b"\0"].concat()).collect();
-    let names = crate::objc::add_data_blob(ctx, "__data", S_REGULAR, vec![DataField::Bytes(names)]);
+    let names =
+        crate::objc::add_data_blob(ctx, b"__data", S_REGULAR, vec![DataField::Bytes(names)]);
     let count: usize = libraries.iter().map(|(_, classes)| classes.len()).sum();
     let mut fields = vec![DataField::Bytes((count as u64).to_le_bytes().to_vec())];
     let mut name_off = 0;
@@ -155,7 +156,7 @@ fn add_table<E: Target>(ctx: &mut Context<E>, libraries: &[(Vec<u8>, Vec<ObjcRef
         }
         name_off += name.len() as u64 + 1;
     }
-    crate::objc::add_data_blob(ctx, "__data", S_REGULAR, fields)
+    crate::objc::add_data_blob(ctx, b"__data", S_REGULAR, fields)
 }
 
 /// The classes the hook is for, by library, as the table lists them: a
@@ -197,7 +198,7 @@ fn listed_classes<E: Target>(ctx: &Context<E>, of: impl Fn(usize) -> bool) -> Ve
         of(file)
             && ctx.objs[file].is_alive
             && isec.is_alive()
-            && ctx.hdr_of(isec).sectname() == "__objc_classlist"
+            && ctx.hdr_of(isec).sectname() == b"__objc_classlist"
     });
     lists.flat_map(|i| crate::objc::list_entries(ctx, i).flatten()).collect()
 }

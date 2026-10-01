@@ -797,13 +797,13 @@ fn merged_providers<E: Target>(
 struct MapSection<'a> {
     addr: u64,
     size: u64,
-    segname: &'a str,
-    sectname: &'a str,
+    segname: &'a [u8],
+    sectname: &'a [u8],
 }
 
 impl<'a> MapSection<'a> {
     fn of(hdr: &'a crate::chunks::ChunkHeader) -> Self {
-        Self { addr: hdr.addr, size: hdr.size, segname: hdr.segname, sectname: &hdr.sectname }
+        Self { addr: hdr.addr, size: hdr.size, segname: hdr.segname, sectname: hdr.sectname }
     }
 }
 
@@ -820,9 +820,9 @@ pub fn print_map<E: Target>(ctx: &Context<E>) {
         // ld-prime models a static executable's stack as a zero-fill
         // section holding one linker-made subsection, which its
         // segment's load command doesn't list.
-        if seg.name == "__UNIXSTACK" {
+        if seg.name == b"__UNIXSTACK" {
             let (addr, size) = (seg.cmd.vmaddr, seg.cmd.vmsize);
-            sections.push(MapSection { addr, size, segname: "__UNIXSTACK", sectname: "__stack" });
+            sections.push(MapSection { addr, size, segname: b"__UNIXSTACK", sectname: b"__stack" });
         }
     }
 
@@ -1024,11 +1024,9 @@ fn write_map<E: Target>(
     let _ = writeln!(out, "# Sections:");
     let _ = writeln!(out, "# Address\tSize    \tSegment\tSection");
     for sec in sections {
-        let _ = writeln!(
-            out,
-            "0x{:08X}\t0x{:08X}\t{}\t{}",
-            sec.addr, sec.size, sec.segname, sec.sectname
-        );
+        let _ = write!(out, "0x{:08X}\t0x{:08X}\t", sec.addr, sec.size);
+        let _ = out.write_all(&[sec.segname, b"\t", sec.sectname].concat());
+        let _ = writeln!(out);
     }
 
     let _ = writeln!(out, "# Symbols:");
@@ -1447,7 +1445,7 @@ impl CstringAliases {
 /// rewrote in the relative form.
 pub(crate) fn is_rewritten_method_list<E: Target>(ctx: &Context<E>, isec: usize) -> bool {
     let isec = &ctx.isecs[isec];
-    ctx.is_internal(isec.file as usize) && ctx.hdr_of(isec).sectname() == "__objc_methlist"
+    ctx.is_internal(isec.file as usize) && ctx.hdr_of(isec).sectname() == b"__objc_methlist"
 }
 
 /// What ld-prime calls a literal no symbol names, wherever it ends up
@@ -1570,8 +1568,8 @@ fn objc_list_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Ve
         })
         .collect();
     for blob in &ctx.data_blobs {
-        let of_categories = matches!(blob.sect, "__objc_catlist" | "__objc_nlcatlist");
-        if !of_categories && blob.sect != "__objc_nlclslist" {
+        let of_categories = matches!(blob.sect, b"__objc_catlist" | b"__objc_nlcatlist");
+        if !of_categories && blob.sect != b"__objc_nlclslist" {
             continue;
         }
         let addr = ctx.isec_addr(blob.isec as usize);
@@ -1687,7 +1685,7 @@ fn linker_symbol_entries<'a, E: Target>(
     entries.extend(sectcreate_entries(ctx, files));
     for sec in ctx.sectcreate_sections.iter().filter(|sec| !sec.from_option) {
         let hdr = &sec.hdr;
-        let name = format!("{},{}", hdr.segname, hdr.sectname).into_bytes();
+        let name = [hdr.segname, b",", hdr.sectname].concat();
         entries.push(MapEntry { addr: hdr.addr, size: 0, file: 0, name: Cow::Owned(name) });
     }
     entries
@@ -1709,7 +1707,7 @@ fn empty_text_entry<E: Target>(ctx: &Context<E>, named: &[SymbolId]) -> Option<M
     if hdr.size != 0 || named.iter().any(in_text) {
         return None;
     }
-    let name = format!("{},{}", hdr.segname, hdr.sectname).into_bytes();
+    let name = [hdr.segname, b",", hdr.sectname].concat();
     Some(MapEntry { addr: hdr.addr, size: 0, file: 0, name: Cow::Owned(name) })
 }
 
@@ -1728,7 +1726,7 @@ fn sectcreate_entries<E: Target>(ctx: &Context<E>, files: &MapFiles) -> Vec<MapE
     (inputs.into_iter())
         .map(|(addr, .., i)| {
             let sc = &ctx.args.sectcreate[i];
-            let name = format!("l<sect-create>{},{}", sc.segname, sc.sectname).into_bytes();
+            let name = [b"l<sect-create>", &sc.segname[..], b",", &sc.sectname[..]].concat();
             let (size, file) = (ctx.sectcreate_inputs[i].size, files.sectcreate[i]);
             MapEntry { addr, size, file, name: Cow::Owned(name) }
         })
@@ -1849,7 +1847,7 @@ fn synthetic_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Ve
     if ctx.has_chunk(ChunkId::ObjcImageInfo) {
         entries.push(anon(ctx.objc_imageinfo.hdr.addr, ctx.objc_imageinfo.hdr.size));
     }
-    if let Some(stack) = ctx.segments.iter().find(|seg| seg.name == "__UNIXSTACK") {
+    if let Some(stack) = ctx.segments.iter().find(|seg| seg.name == b"__UNIXSTACK") {
         let (addr, size) = (stack.cmd.vmaddr, stack.cmd.vmsize);
         entries.push(MapEntry { addr, size, file: 0, name: name("l__unixstack") });
     }
@@ -1970,7 +1968,7 @@ impl GoneSubsecs {
             return false;
         }
         if isec.replacement != crate::input_sections::NO_REPLACEMENT {
-            let list = matches!(hdr.sectname(), "__objc_catlist" | "__objc_nlcatlist");
+            let list = matches!(hdr.sectname(), b"__objc_catlist" | b"__objc_nlcatlist");
             return list || !self.rewritten.contains(&isec.replacement);
         }
         !isec.is_alive() || self.stub_names.contains(&id)
@@ -2182,7 +2180,7 @@ fn dead_commons<'a, E: Target>(
 /// Objective-C passes rebuilt names a category that wasn't merged into
 /// its class, which the rebuilt list keeps (see objc_list_entries).
 fn is_kept_category_entry<E: Target>(ctx: &Context<E>, id: usize, off: u64) -> bool {
-    if !matches!(ctx.hdr_of(&ctx.isecs[id]).sectname(), "__objc_catlist" | "__objc_nlcatlist") {
+    if !matches!(ctx.hdr_of(&ctx.isecs[id]).sectname(), b"__objc_catlist" | b"__objc_nlcatlist") {
         return false;
     }
     let obj = &ctx.objs[ctx.isecs[id].file as usize];

@@ -190,7 +190,7 @@ fn push_code_directory<E: Target>(
         .chunks
         .iter()
         .map(|&id| ctx.chunk_header(id))
-        .find(|hdr| hdr.segname == "__TEXT" && hdr.sectname == "__text")
+        .find(|hdr| hdr.segname == b"__TEXT" && hdr.sectname == b"__text")
         .map_or(0, |hdr| hdr.size);
 
     push_be32(sig, CSMAGIC_CODEDIRECTORY);

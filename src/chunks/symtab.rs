@@ -202,8 +202,8 @@ pub(crate) fn keep_local_symbol_in<E: Target>(
         return false;
     }
     demoted
-        || !(hdr.segname_is("__DATA")
-            && (hdr.sectname_is("__objc_protolist") || hdr.sectname_is("__objc_imageinfo")))
+        || !(hdr.segname_is(b"__DATA")
+            && (hdr.sectname_is(b"__objc_protolist") || hdr.sectname_is(b"__objc_imageinfo")))
 }
 
 /// Whether a symbol names a method list convert_objc_method_lists
@@ -211,7 +211,7 @@ pub(crate) fn keep_local_symbol_in<E: Target>(
 fn names_relative_method_list<E: Target>(ctx: &Context<E>, id: crate::symbol::SymbolId) -> bool {
     ctx.symbols[id].input_section().is_some_and(|isec| {
         let hdr = ctx.hdr_of(&ctx.isecs[ctx.resolve_isec(isec as usize)]);
-        hdr.segname_is("__TEXT") && hdr.sectname_is("__objc_methlist")
+        hdr.segname_is(b"__TEXT") && hdr.sectname_is(b"__objc_methlist")
     })
 }
 
@@ -735,7 +735,7 @@ fn symbol_stabs<E: Target>(
         return None;
     }
     let n_sect = ctx.isec_n_sect(isec);
-    let is_text = hdr.segname_is("__TEXT")
+    let is_text = hdr.segname_is(b"__TEXT")
         && hdr.flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0;
     Some(if is_text {
         SymbolStabs { size: isec.size, n_sect, n_type: N_FUN, ..global }
@@ -764,14 +764,14 @@ pub(crate) fn has_stabs(hdr: &MachSection) -> bool {
     );
     let init_term =
         matches!(hdr.section_type(), S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS);
-    let text = hdr.segname_is("__TEXT")
+    let text = hdr.segname_is(b"__TEXT")
         && ["__gcc_except_tab", "__objc_methlist", "__ustring"]
             .iter()
-            .any(|name| hdr.sectname_is(name));
-    let objc = hdr.segname_is("__DATA")
+            .any(|name| hdr.sectname_is(name.as_bytes()));
+    let objc = hdr.segname_is(b"__DATA")
         && ["__objc_ivar", "__objc_protolist", "__objc_protorefs", "__objc_superrefs"]
             .iter()
-            .any(|name| hdr.sectname_is(name));
+            .any(|name| hdr.sectname_is(name.as_bytes()));
     !(literals
         || init_term
         || text

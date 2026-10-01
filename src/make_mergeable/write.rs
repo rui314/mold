@@ -283,7 +283,7 @@ impl MergeableRecord {
         let at = w.align(8);
         for s in &self.sections {
             let mut rec = [0u8; crate::mergeable::SECTION_SIZE];
-            let prot: u32 = if s.segname == str_to_name("__TEXT") { 5 } else { 3 };
+            let prot: u32 = if s.segname == bytes_to_name(b"__TEXT") { 5 } else { 3 };
             rec[0..4].copy_from_slice(&prot.to_le_bytes());
             rec[4..8].copy_from_slice(&s.flags.to_le_bytes());
             rec[8..24].copy_from_slice(&s.segname);

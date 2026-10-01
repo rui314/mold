@@ -13,6 +13,7 @@ use crate::chunks::{
 };
 use crate::context::Context;
 use crate::error;
+use crate::error::raw;
 use crate::fatal;
 use crate::input_files::FileId;
 use crate::input_sections::InputSection;
@@ -41,11 +42,11 @@ use crate::util::align_to;
 /// sections (and crt1.o's), which it knows in an input's __TEXT and
 /// __DATA alone: `name` is the one a section ranks by (see rank_name),
 /// None for a section that ranks by its type alone.
-fn output_section_rank(name: Option<(&str, &str)>, flags: u32, static_link: bool) -> u32 {
+fn output_section_rank(name: Option<(&[u8], &[u8])>, flags: u32, static_link: bool) -> u32 {
     const UNKNOWN: u32 = 32;
     let dyld = !static_link;
     let (segname, sectname) = name.unwrap_or_default();
-    if (segname, sectname) == ("__TEXT", "__text") {
+    if (segname, sectname) == (b"__TEXT", b"__text") {
         return 0;
     }
     if flags & S_ATTR_PURE_INSTRUCTIONS != 0 {
@@ -68,46 +69,46 @@ fn output_section_rank(name: Option<(&str, &str)>, flags: u32, static_link: bool
         _ => {}
     }
     match segname {
-        "__TEXT" => match sectname {
-            "__stubs" => 3,
-            "__stub_helper" => 4,
-            "__delay_stubs" => 5,
-            "__delay_helper" => 6,
-            "__lazy_helpers" => 7,
-            "__objc_stubs" => 8,
-            "__init_offsets" => 9,
-            "__objc_methlist" => 10,
+        b"__TEXT" => match sectname {
+            b"__stubs" => 3,
+            b"__stub_helper" => 4,
+            b"__delay_stubs" => 5,
+            b"__delay_helper" => 6,
+            b"__lazy_helpers" => 7,
+            b"__objc_stubs" => 8,
+            b"__init_offsets" => 9,
+            b"__objc_methlist" => 10,
             _ => UNKNOWN,
         },
-        "__DATA" | "__DATA_CONST" => match sectname {
+        b"__DATA" | b"__DATA_CONST" => match sectname {
             // crt1.o's tables for dyld and the C runtime, in input
             // order, ahead of the lazy pointers.
-            "__dyld" | "__program_vars" if segname == "__DATA" => 2,
-            "__la_symbol_ptr" => 11,
-            "__const" if dyld => 14,
-            "__cfstring" if dyld => 15,
-            "__objc_classlist" => 16,
-            "__objc_nlclslist" => 17,
-            "__objc_catlist" => 18,
-            "__objc_catlist2" => 19,
-            "__objc_nlcatlist" => 20,
-            "__objc_protolist" => 21,
-            "__objc_imageinfo" => 22,
-            "__objc_const" => 23,
-            "__weak_got" => 24,
-            "__objc_selrefs" => 25,
-            "__objc_protorefs" => 26,
-            "__objc_classrefs" => 27,
-            "__objc_superrefs" => 28,
-            "__objc_ivar" => 29,
-            "__objc_data" => 30,
-            "__lazy_load_got" => 31,
-            "__got" => 34,
-            "__auth_ptr" if dyld => 35,
+            b"__dyld" | b"__program_vars" if segname == b"__DATA" => 2,
+            b"__la_symbol_ptr" => 11,
+            b"__const" if dyld => 14,
+            b"__cfstring" if dyld => 15,
+            b"__objc_classlist" => 16,
+            b"__objc_nlclslist" => 17,
+            b"__objc_catlist" => 18,
+            b"__objc_catlist2" => 19,
+            b"__objc_nlcatlist" => 20,
+            b"__objc_protolist" => 21,
+            b"__objc_imageinfo" => 22,
+            b"__objc_const" => 23,
+            b"__weak_got" => 24,
+            b"__objc_selrefs" => 25,
+            b"__objc_protorefs" => 26,
+            b"__objc_classrefs" => 27,
+            b"__objc_superrefs" => 28,
+            b"__objc_ivar" => 29,
+            b"__objc_data" => 30,
+            b"__lazy_load_got" => 31,
+            b"__got" => 34,
+            b"__auth_ptr" if dyld => 35,
             // ld-prime keeps a place for -merge_zero_fill_sections's
             // __zerofill, whether or not given, ahead of the other
             // zero-fill sections.
-            "__zerofill" if flags & SECTION_TYPE == S_ZEROFILL => 1,
+            b"__zerofill" if flags & SECTION_TYPE == S_ZEROFILL => 1,
             // The rest, __data among them, and the other zero-fill
             // sections, __bss and __common too, go in first-seen
             // order: the synthesized __common counts from the first
@@ -125,29 +126,29 @@ fn output_section_rank(name: Option<(&str, &str)>, flags: u32, static_link: bool
 /// names in a fixed order. (__oslogstring goes there in any image: its
 /// page is left unencrypted.)
 fn late_text_rank<E: Target>(ctx: &Context<E>, hdr: &crate::chunks::ChunkHeader) -> Option<u32> {
-    if hdr.segname != "__TEXT" {
+    if hdr.segname != b"__TEXT" {
         return None;
     }
-    if ctx.args.encryptable && hdr.sectname == "__oslogstring" {
+    if ctx.args.encryptable && hdr.sectname == b"__oslogstring" {
         return Some(102);
     }
     if !ctx.args.shared_region {
         return None;
     }
-    match hdr.sectname.as_str() {
-        "__objc_stubs" => Some(103),
-        "__stubs" => Some(104),
-        "__objc_classname" => Some(105),
-        "__objc_methname" => Some(106),
-        "__objc_methtype" => Some(107),
+    match hdr.sectname {
+        b"__objc_stubs" => Some(103),
+        b"__stubs" => Some(104),
+        b"__objc_classname" => Some(105),
+        b"__objc_methname" => Some(106),
+        b"__objc_methtype" => Some(107),
         _ => None,
     }
 }
 
 /// The segment for read-only-after-fixup data: __DATA_CONST unless
 /// -no_data_const.
-pub(crate) fn data_seg<E: Target>(ctx: &Context<E>) -> &'static str {
-    if ctx.args.data_const { "__DATA_CONST" } else { "__DATA" }
+pub(crate) fn data_seg<E: Target>(ctx: &Context<E>) -> &'static [u8] {
+    if ctx.args.data_const { b"__DATA_CONST" } else { b"__DATA" }
 }
 
 /// Sections a final link places in __DATA_CONST: data that needs no
@@ -156,28 +157,28 @@ pub(crate) fn data_seg<E: Target>(ctx: &Context<E>) -> &'static str {
 /// initializer lists - but for the ones only a condition moves (see
 /// SectionMap::const_name). A section not on it, such as
 /// __objc_boolobj, stays in __DATA.
-const DATA_CONST_SECTIONS: &[&str] = &[
-    "__auth_ptr",
-    "__cfstring",
-    "__const",
-    "__const_cfobj2",
-    "__got",
-    "__mod_init_func",
-    "__mod_term_func",
-    "__objc_arraydata",
-    "__objc_arrayobj",
-    "__objc_dateobj",
-    "__objc_dictobj",
-    "__objc_doubleobj",
-    "__objc_floatobj",
-    "__objc_intobj",
-    "__objc_catlist",
-    "__objc_catlist2",
-    "__objc_classlist",
-    "__objc_imageinfo",
-    "__objc_nlcatlist",
-    "__objc_nlclslist",
-    "__objc_protolist",
+const DATA_CONST_SECTIONS: &[&[u8]] = &[
+    b"__auth_ptr",
+    b"__cfstring",
+    b"__const",
+    b"__const_cfobj2",
+    b"__got",
+    b"__mod_init_func",
+    b"__mod_term_func",
+    b"__objc_arraydata",
+    b"__objc_arrayobj",
+    b"__objc_dateobj",
+    b"__objc_dictobj",
+    b"__objc_doubleobj",
+    b"__objc_floatobj",
+    b"__objc_intobj",
+    b"__objc_catlist",
+    b"__objc_catlist2",
+    b"__objc_classlist",
+    b"__objc_imageinfo",
+    b"__objc_nlcatlist",
+    b"__objc_nlclslist",
+    b"__objc_protolist",
 ];
 
 /// Class, protocol and superclass references are written by the
@@ -203,7 +204,7 @@ fn interpose_is_const<E: Target>(ctx: &Context<E>) -> bool {
 }
 
 /// An output section's name: (segment, section).
-type SectionName = (&'static str, &'static str);
+type SectionName = (&'static [u8], &'static [u8]);
 
 /// The output section an input section with `flags` lands in, and the
 /// name its flags follow; None for one the link consumes or drops.
@@ -230,8 +231,8 @@ type SectionName = (&'static str, &'static str);
 fn output_section_for(
     args: &crate::cmdline::Args,
     map: SectionMap,
-    segname: &str,
-    sectname: &str,
+    segname: &[u8],
+    sectname: &[u8],
     flags: u32,
 ) -> Option<(SectionName, SectionName)> {
     output_section_traced(args, map, segname, sectname, flags, &mut |_, _| {})
@@ -243,12 +244,12 @@ fn output_section_for(
 fn output_section_traced(
     args: &crate::cmdline::Args,
     map: SectionMap,
-    segname: &str,
-    sectname: &str,
+    segname: &[u8],
+    sectname: &[u8],
     flags: u32,
     note: &mut dyn FnMut(&'static str, SectionName),
 ) -> Option<(SectionName, SectionName)> {
-    if segname == "__LLVM" {
+    if segname == b"__LLVM" {
         return None;
     }
     let input = (static_name(segname), static_name(sectname));
@@ -258,13 +259,13 @@ fn output_section_traced(
         step.inspect(|&how| note(how, name));
         return Some((renamed(args, name), name));
     }
-    if name == ("__DATA", "__objc_clsrolist") {
+    if name == (b"__DATA", b"__objc_clsrolist") {
         return None;
     }
     let moved = map.builtin_name(name, flags);
     if moved != name {
         step.inspect(|&how| note(how, name));
-        step = Some(if moved.0 == "__TEXT_EXEC" { "-text_exec" } else { "-data_const" });
+        step = Some(if moved.0 == b"__TEXT_EXEC" { "-text_exec" } else { "-data_const" });
     }
     let name = moved;
     let out = traced_renames(args, step, name, map.renamed_section(args, name), note);
@@ -304,16 +305,18 @@ fn traced_renames(
 /// Whether a final image copies an input section into no output
 /// section, as the link consumes it: the __LLVM segment's sections and
 /// __objc_clsrolist (see output_section_for).
-pub(crate) fn is_consumed_in_image(segname: &str, sectname: &str) -> bool {
-    segname == "__LLVM" || (segname == "__DATA" && sectname == "__objc_clsrolist")
+pub(crate) fn is_consumed_in_image(segname: &[u8], sectname: &[u8]) -> bool {
+    segname == b"__LLVM" || (segname == b"__DATA" && sectname == b"__objc_clsrolist")
 }
 
 /// The section a final link merges a __TEXT section into, like ld64:
 /// __StaticInit joins __text, and the literal pools join __const.
-fn merged_name(name: (&str, &str)) -> Option<SectionName> {
+fn merged_name(name: (&[u8], &[u8])) -> Option<SectionName> {
     match name {
-        ("__TEXT", "__StaticInit") => Some(("__TEXT", "__text")),
-        ("__TEXT", "__literal4" | "__literal8" | "__literal16") => Some(("__TEXT", "__const")),
+        (b"__TEXT", b"__StaticInit") => Some((b"__TEXT", b"__text")),
+        (b"__TEXT", b"__literal4" | b"__literal8" | b"__literal16") => {
+            Some((b"__TEXT", b"__const"))
+        }
         _ => None,
     }
 }
@@ -349,15 +352,15 @@ fn section_renamed(args: &crate::cmdline::Args, name: SectionName) -> SectionNam
 /// move follow the old name: a __DATA,__const_coal stays in __DATA.
 fn modern_name(name: SectionName) -> SectionName {
     match name {
-        ("__TEXT", "__textcoal_nt") => ("__TEXT", "__text"),
-        ("__TEXT" | "__DATA" | "__DATA_CONST", "__const_coal") => (name.0, "__const"),
-        ("__DATA" | "__DATA_DIRTY", "__datacoal_nt") => (name.0, "__data"),
+        (b"__TEXT", b"__textcoal_nt") => (b"__TEXT", b"__text"),
+        (b"__TEXT" | b"__DATA" | b"__DATA_CONST", b"__const_coal") => (name.0, b"__const"),
+        (b"__DATA" | b"__DATA_DIRTY", b"__datacoal_nt") => (name.0, b"__data"),
         _ => name,
     }
 }
 
 /// The segment -rename_segment moves a segment's sections to.
-fn renamed_segment(args: &crate::cmdline::Args, seg: &'static str) -> &'static str {
+fn renamed_segment(args: &crate::cmdline::Args, seg: &'static [u8]) -> &'static [u8] {
     match args.rename_segments.iter().find(|(old, _)| old == seg) {
         Some((_, new)) => static_name(new),
         None => seg,
@@ -367,12 +370,12 @@ fn renamed_segment(args: &crate::cmdline::Args, seg: &'static str) -> &'static s
 /// A section or segment name that lives as long as the output's
 /// headers: the usual segment names are literals, and the rest are
 /// leaked (the callers name each distinct section once).
-fn static_name(name: &str) -> &'static str {
+pub(crate) fn static_name(name: &[u8]) -> &'static [u8] {
     match name {
-        "__TEXT" => "__TEXT",
-        "__DATA_CONST" => "__DATA_CONST",
-        "__DATA" => "__DATA",
-        _ => String::leak(name.to_string()),
+        b"__TEXT" => b"__TEXT",
+        b"__DATA_CONST" => b"__DATA_CONST",
+        b"__DATA" => b"__DATA",
+        _ => crate::util::leak_bytes(name.to_vec()),
     }
 }
 
@@ -402,15 +405,15 @@ impl SectionMap {
     /// output_section_flags).
     fn builtin_name(self, name: SectionName, flags: u32) -> SectionName {
         if self.text_exec && flags & S_ATTR_PURE_INSTRUCTIONS != 0 {
-            return ("__TEXT_EXEC", "__text");
+            return (b"__TEXT_EXEC", b"__text");
         }
         if !is_standard_section(name.0, name.1, flags) {
             let is_const = matches!(
                 flags & SECTION_TYPE,
                 S_NON_LAZY_SYMBOL_POINTERS | S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS
             );
-            if name.0 == "__DATA" && is_const && self.data_const {
-                return ("__DATA_CONST", name.1);
+            if name.0 == b"__DATA" && is_const && self.data_const {
+                return (b"__DATA_CONST", name.1);
             }
             return name;
         }
@@ -428,14 +431,14 @@ impl SectionMap {
     fn const_name(self, name: SectionName) -> SectionName {
         let (seg, sect) = name;
         let is_const = match sect {
-            "__objc_classrefs" | "__objc_protorefs" | "__objc_superrefs" => self.objc_const_refs,
-            "__objc_selrefs" => self.const_selrefs,
+            b"__objc_classrefs" | b"__objc_protorefs" | b"__objc_superrefs" => self.objc_const_refs,
+            b"__objc_selrefs" => self.const_selrefs,
             // Unless it holds absolute method lists, which the runtime
             // sorts in place.
-            "__objc_const" => self.shared_region && self.relative_methods,
+            b"__objc_const" => self.shared_region && self.relative_methods,
             _ => DATA_CONST_SECTIONS.contains(&sect),
         };
-        if seg == "__DATA" && self.data_const && is_const { ("__DATA_CONST", sect) } else { name }
+        if seg == b"__DATA" && self.data_const && is_const { (b"__DATA_CONST", sect) } else { name }
     }
 
     /// The name a symbol move (see symbol_moves) gives a subsection of
@@ -449,8 +452,8 @@ impl SectionMap {
     fn moved_name(
         self,
         m: Move,
-        seg: &str,
-        sect: &str,
+        seg: &[u8],
+        sect: &[u8],
         flags: u32,
     ) -> Option<(SectionName, SectionName)> {
         let name = self.zero_fill_name((static_name(seg), static_name(sect)), flags);
@@ -458,7 +461,7 @@ impl SectionMap {
             MoveOption::Rw | MoveOption::Ro => name,
             MoveOption::Dirty => self.builtin_name(name, flags),
         };
-        if m.option == MoveOption::Dirty && from.0 != "__DATA" {
+        if m.option == MoveOption::Dirty && from.0 != b"__DATA" {
             return None;
         }
         Some(((m.segment, from.1), from))
@@ -472,7 +475,7 @@ impl SectionMap {
     /// thread-local template.)
     fn zero_fill_name(self, name: SectionName, flags: u32) -> SectionName {
         if self.merge_zero_fill && matches!(flags & SECTION_TYPE, S_ZEROFILL | S_GB_ZEROFILL) {
-            (name.0, "__zerofill")
+            (name.0, b"__zerofill")
         } else {
             name
         }
@@ -486,11 +489,11 @@ impl SectionMap {
     /// other to ld-prime, which rejects one typed as pointers.)
     fn boundary_name(self, name: SectionName) -> SectionName {
         let is_const = match name {
-            ("__DATA", "__auth_got" | "__weak_got" | "__weak_auth_got") => true,
-            ("__DATA", "__la_symbol_ptr" | "__lazy_load_got") => self.shared_region,
+            (b"__DATA", b"__auth_got" | b"__weak_got" | b"__weak_auth_got") => true,
+            (b"__DATA", b"__la_symbol_ptr" | b"__lazy_load_got") => self.shared_region,
             _ => false,
         };
-        if self.data_const && is_const { ("__DATA_CONST", name.1) } else { self.const_name(name) }
+        if self.data_const && is_const { (b"__DATA_CONST", name.1) } else { self.const_name(name) }
     }
 
     /// A final image's section name after -rename_section and
@@ -509,8 +512,8 @@ impl SectionMap {
     /// renamed but for -rename_segment.
     fn renamed_section(self, args: &crate::cmdline::Args, name: SectionName) -> SectionName {
         let is_renamed = args.rename_sections.iter().any(|(s, t, _, _)| s == name.0 && t == name.1);
-        if name == ("__DATA", "__interpose") && self.const_interpose && !is_renamed {
-            return ("__DATA_CONST", name.1);
+        if name == (b"__DATA", b"__interpose") && self.const_interpose && !is_renamed {
+            return (b"__DATA_CONST", name.1);
         }
         section_renamed(args, name)
     }
@@ -564,13 +567,13 @@ impl SectionMap {
 /// either linker all the same. __eh_frame carries the compiler's fixed
 /// flags in both.
 fn output_section_flags(
-    segname: &str,
-    sectname: &str,
+    segname: &[u8],
+    sectname: &[u8],
     input: u32,
     standard: bool,
     relocatable: bool,
 ) -> u32 {
-    if segname == "__TEXT" && sectname == "__eh_frame" {
+    if segname == b"__TEXT" && sectname == b"__eh_frame" {
         return S_COALESCED | S_ATTR_NO_TOC | S_ATTR_STRIP_STATIC_SYMS | S_ATTR_LIVE_SUPPORT;
     }
     // Superclass and protocol references of the literal-pointer type
@@ -585,7 +588,7 @@ fn output_section_flags(
         _ => input,
     };
     if relocatable {
-        if (segname, sectname) == ("__DATA", "__got") {
+        if (segname, sectname) == (b"__DATA", b"__got") {
             return input & !SECTION_TYPE;
         }
         return input;
@@ -593,12 +596,12 @@ fn output_section_flags(
     // The two reference lists the runtime may still write keep the
     // flags they came with (coalesced, no-dead-strip) while in __DATA
     // of a final image, and the protocol list its coalesced type.
-    if standard && segname == "__DATA" {
+    if standard && segname == b"__DATA" {
         match sectname {
-            "__objc_protorefs" | "__objc_superrefs" => {
+            b"__objc_protorefs" | b"__objc_superrefs" => {
                 return input & (SECTION_TYPE | S_ATTR_NO_DEAD_STRIP);
             }
-            "__objc_protolist" => return input & SECTION_TYPE,
+            b"__objc_protolist" => return input & SECTION_TYPE,
             _ => {}
         }
     }
@@ -606,8 +609,8 @@ fn output_section_flags(
     // stay literal pointers whatever their type - but those typed so,
     // which it makes plain data once constant (in the shared region),
     // as it does the class references.
-    if standard && sectname == "__objc_selrefs" {
-        return if segname == "__DATA_CONST" && input & SECTION_TYPE == S_LITERAL_POINTERS {
+    if standard && sectname == b"__objc_selrefs" {
+        return if segname == b"__DATA_CONST" && input & SECTION_TYPE == S_LITERAL_POINTERS {
             S_REGULAR
         } else {
             S_LITERAL_POINTERS | S_ATTR_NO_DEAD_STRIP
@@ -638,12 +641,12 @@ fn output_section_flags(
     if standard
         && (matches!(
             sectname,
-            "__objc_classlist"
-                | "__objc_catlist"
-                | "__objc_catlist2"
-                | "__objc_nlclslist"
-                | "__objc_nlcatlist"
-        ) || (segname == "__DATA" && sectname == "__objc_classrefs"))
+            b"__objc_classlist"
+                | b"__objc_catlist"
+                | b"__objc_catlist2"
+                | b"__objc_nlclslist"
+                | b"__objc_nlcatlist"
+        ) || (segname == b"__DATA" && sectname == b"__objc_classrefs"))
     {
         attrs |= S_ATTR_NO_DEAD_STRIP;
     }
@@ -669,23 +672,23 @@ fn output_section_flags(
 /// literal-pointer type, whose references all merge (see
 /// has_unnamed_subsecs), though the output has the table's flags. Its
 /// own flags otherwise.
-pub(crate) fn canonical_section_flags(segname: &str, sectname: &str, flags: u32) -> u32 {
-    if (segname, sectname) == ("__TEXT", "__constructor") {
+pub(crate) fn canonical_section_flags(segname: &[u8], sectname: &[u8], flags: u32) -> u32 {
+    if (segname, sectname) == (b"__TEXT", b"__constructor") {
         return S_MOD_INIT_FUNC_POINTERS;
     }
     let ty = flags & SECTION_TYPE;
     let is_literal =
         matches!(ty, S_CSTRING_LITERALS | S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS);
-    if (segname, sectname) == ("__DATA", "__got") {
+    if (segname, sectname) == (b"__DATA", b"__got") {
         return if is_literal { flags & !SECTION_TYPE } else { flags };
     }
-    if !sectname.starts_with("__objc_") {
+    if !sectname.starts_with(b"__objc_") {
         return flags;
     }
     let Some(table) = standard_section_flags(segname, sectname) else {
         return flags;
     };
-    if sectname == "__objc_selrefs" {
+    if sectname == b"__objc_selrefs" {
         return if is_literal { flags & !SECTION_TYPE } else { flags };
     }
     if ty == table & SECTION_TYPE
@@ -704,13 +707,13 @@ pub(crate) fn canonical_section_flags(segname: &str, sectname: &str, flags: u32)
 /// __DATA_CONST or merges into another section in a final image; any
 /// other, such as a __mod_init_func or __literal8 assembled without
 /// its type, stays where data of its name goes.
-fn is_standard_section(segname: &str, sectname: &str, flags: u32) -> bool {
+fn is_standard_section(segname: &[u8], sectname: &[u8], flags: u32) -> bool {
     let Some(table) = standard_section_flags(segname, sectname) else {
         return false;
     };
     table & SECTION_TYPE == flags & SECTION_TYPE
-        || sectname.starts_with("__objc_")
-        || (segname, sectname) == ("__DATA", "__got")
+        || sectname.starts_with(b"__objc_")
+        || (segname, sectname) == (b"__DATA", b"__got")
 }
 
 /// The flags ld-prime reads an input section as having, from its
@@ -721,7 +724,7 @@ fn is_standard_section(segname: &str, sectname: &str, flags: u32) -> bool {
 /// code - and its own otherwise (a regular __cstring holds no literals
 /// to merge). (A final image has no input __got left: its slots are
 /// the GOT's, see fold_input_got.)
-fn input_section_flags(segname: &str, sectname: &str, flags: u32) -> u32 {
+fn input_section_flags(segname: &[u8], sectname: &[u8], flags: u32) -> u32 {
     match standard_section_flags(segname, sectname) {
         Some(table) if table & SECTION_TYPE == flags & SECTION_TYPE => table,
         _ => flags,
@@ -734,53 +737,55 @@ fn input_section_flags(segname: &str, sectname: &str, flags: u32) -> u32 {
 /// lists, the thread-local and zero-fill types, no-dead-strip for the
 /// lists the Objective-C runtime scans, and none for the rest of the
 /// data. None for another name, or in another segment.
-fn standard_section_flags(segname: &str, sectname: &str) -> Option<u32> {
+fn standard_section_flags(segname: &[u8], sectname: &[u8]) -> Option<u32> {
     let flags = match (segname, sectname) {
         (
-            "__TEXT",
-            "__text" | "__StaticInit" | "__stub_helper" | "__objc_stubs" | "__objc_clsstubs"
-            | "__delay_stubs" | "__delay_helper" | "__lazy_helpers" | "__resolver_help",
+            b"__TEXT",
+            b"__text" | b"__StaticInit" | b"__stub_helper" | b"__objc_stubs" | b"__objc_clsstubs"
+            | b"__delay_stubs" | b"__delay_helper" | b"__lazy_helpers" | b"__resolver_help",
         ) => S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS,
         (
-            "__TEXT",
-            "__cstring" | "__objc_classname" | "__objc_methname" | "__objc_methtype"
-            | "__oslogstring",
+            b"__TEXT",
+            b"__cstring" | b"__objc_classname" | b"__objc_methname" | b"__objc_methtype"
+            | b"__oslogstring",
         ) => S_CSTRING_LITERALS,
-        ("__TEXT", "__literal4") => S_4BYTE_LITERALS,
-        ("__TEXT", "__literal8") => S_8BYTE_LITERALS,
-        ("__TEXT", "__literal16") => S_16BYTE_LITERALS,
-        ("__TEXT", "__eh_frame") => output_section_flags(segname, sectname, 0, true, false),
-        ("__TEXT", "__const" | "__ustring" | "__gcc_except_tab" | "__objc_methlist") => S_REGULAR,
-        ("__DATA", "__got" | "__auth_got" | "__weak_got" | "__weak_auth_got") => {
+        (b"__TEXT", b"__literal4") => S_4BYTE_LITERALS,
+        (b"__TEXT", b"__literal8") => S_8BYTE_LITERALS,
+        (b"__TEXT", b"__literal16") => S_16BYTE_LITERALS,
+        (b"__TEXT", b"__eh_frame") => output_section_flags(segname, sectname, 0, true, false),
+        (b"__TEXT", b"__const" | b"__ustring" | b"__gcc_except_tab" | b"__objc_methlist") => {
+            S_REGULAR
+        }
+        (b"__DATA", b"__got" | b"__auth_got" | b"__weak_got" | b"__weak_auth_got") => {
             S_NON_LAZY_SYMBOL_POINTERS
         }
-        ("__DATA", "__la_symbol_ptr" | "__la_resolver") => S_LAZY_SYMBOL_POINTERS,
-        ("__DATA", "__mod_init_func") => S_MOD_INIT_FUNC_POINTERS,
-        ("__DATA", "__mod_term_func") => S_MOD_TERM_FUNC_POINTERS,
+        (b"__DATA", b"__la_symbol_ptr" | b"__la_resolver") => S_LAZY_SYMBOL_POINTERS,
+        (b"__DATA", b"__mod_init_func") => S_MOD_INIT_FUNC_POINTERS,
+        (b"__DATA", b"__mod_term_func") => S_MOD_TERM_FUNC_POINTERS,
         (
-            "__DATA",
-            "__objc_classlist" | "__objc_nlclslist" | "__objc_catlist" | "__objc_catlist2"
-            | "__objc_nlcatlist" | "__objc_classrefs" | "__objc_superrefs" | "__objc_clsrolist",
+            b"__DATA",
+            b"__objc_classlist" | b"__objc_nlclslist" | b"__objc_catlist" | b"__objc_catlist2"
+            | b"__objc_nlcatlist" | b"__objc_classrefs" | b"__objc_superrefs" | b"__objc_clsrolist",
         ) => S_ATTR_NO_DEAD_STRIP,
-        ("__DATA", "__objc_protolist") => S_COALESCED,
-        ("__DATA", "__objc_protorefs") => S_COALESCED | S_ATTR_NO_DEAD_STRIP,
-        ("__DATA", "__objc_selrefs") => S_LITERAL_POINTERS | S_ATTR_NO_DEAD_STRIP,
-        ("__DATA", "__thread_vars") => S_THREAD_LOCAL_VARIABLES,
-        ("__DATA", "__thread_ptrs") => S_THREAD_LOCAL_VARIABLE_POINTERS,
-        ("__DATA", "__thread_data") => S_THREAD_LOCAL_REGULAR,
-        ("__DATA", "__thread_bss") => S_THREAD_LOCAL_ZEROFILL,
-        ("__DATA", "__bss" | "__common") => S_ZEROFILL,
+        (b"__DATA", b"__objc_protolist") => S_COALESCED,
+        (b"__DATA", b"__objc_protorefs") => S_COALESCED | S_ATTR_NO_DEAD_STRIP,
+        (b"__DATA", b"__objc_selrefs") => S_LITERAL_POINTERS | S_ATTR_NO_DEAD_STRIP,
+        (b"__DATA", b"__thread_vars") => S_THREAD_LOCAL_VARIABLES,
+        (b"__DATA", b"__thread_ptrs") => S_THREAD_LOCAL_VARIABLE_POINTERS,
+        (b"__DATA", b"__thread_data") => S_THREAD_LOCAL_REGULAR,
+        (b"__DATA", b"__thread_bss") => S_THREAD_LOCAL_ZEROFILL,
+        (b"__DATA", b"__bss" | b"__common") => S_ZEROFILL,
         (
-            "__DATA",
-            "__data" | "__const" | "__cfstring" | "__auth_ptr" | "__objc_data" | "__objc_const"
-            | "__objc_ivar" | "__objc_imageinfo" | "__objc_intobj" | "__objc_floatobj"
-            | "__objc_doubleobj" | "__objc_dateobj" | "__objc_dictobj" | "__objc_arrayobj"
-            | "__objc_arraydata" | "__const_cfobj2",
+            b"__DATA",
+            b"__data" | b"__const" | b"__cfstring" | b"__auth_ptr" | b"__objc_data"
+            | b"__objc_const" | b"__objc_ivar" | b"__objc_imageinfo" | b"__objc_intobj"
+            | b"__objc_floatobj" | b"__objc_doubleobj" | b"__objc_dateobj" | b"__objc_dictobj"
+            | b"__objc_arrayobj" | b"__objc_arraydata" | b"__const_cfobj2",
         ) => S_REGULAR,
         // The compiler's records for the linker to encode into
         // __unwind_info, which no output carries (but a boundary
         // symbol's empty section).
-        ("__LD", "__compact_unwind") => S_ATTR_DEBUG,
+        (b"__LD", b"__compact_unwind") => S_ATTR_DEBUG,
         _ => return None,
     };
     Some(flags)
@@ -797,7 +802,7 @@ fn is_stub_selector_name<E: Target>(
     stub_sels: &hashbrown::HashSet<&[u8]>,
 ) -> bool {
     !stub_sels.is_empty()
-        && ctx.hdr_of(isec).sectname() == "__objc_methname"
+        && ctx.hdr_of(isec).sectname() == b"__objc_methname"
         && stub_sels.contains(cstring_of(isec.data()))
 }
 
@@ -909,14 +914,14 @@ fn place_replacing_blobs<E: Target>(
 fn place_tail_blobs<E: Target>(ctx: &mut Context<E>) {
     let unplaced =
         |ctx: &Context<E>, b: &DataBlob| ctx.isecs[b.isec as usize].output_section().is_none();
-    let mut sects: Vec<&'static str> =
+    let mut sects: Vec<&'static [u8]> =
         ctx.data_blobs.iter().filter(|b| unplaced(ctx, b)).map(|b| b.sect).collect();
     sects.sort();
     sects.dedup();
     for sect in sects {
         let map = SectionMap::final_link(ctx);
         let ((seg, out), flags_name) =
-            output_section_for(&ctx.args, map, "__DATA", sect, 0).unwrap();
+            output_section_for(&ctx.args, map, b"__DATA", sect, 0).unwrap();
         let flags = output_section_flags(flags_name.0, flags_name.1, 0, true, false);
         // Each record at its own alignment (a pointer's, but for the
         // lazy-load flag words), the tail at the first one's; laid out
@@ -965,7 +970,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     if !ctx.args.relocatable && find_output_section(ctx, text).is_none() {
         let flags = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
         let id = add_output_section(ctx, text.0, text.1, flags);
-        ctx.output_section_mut(id).rank_name = Some(("__TEXT", "__text"));
+        ctx.output_section_mut(id).rank_name = Some((b"__TEXT", b"__text"));
     }
     place_sectcreate_inputs(ctx);
 
@@ -1038,12 +1043,11 @@ fn assign_input_sections<E: Target>(
     // linear scans - and by its flags too, which say whether -text_exec
     // moves it and whether it is the standard section of its name (see
     // is_standard_section), and by the move of a moved subsection.
-    type Key = ([u8; 16], [u8; 16], u32, Option<(MoveOption, &'static str)>);
+    type Key = ([u8; 16], [u8; 16], u32, Option<(MoveOption, &'static [u8])>);
     let mut by_name: hashbrown::HashMap<Key, Option<OutputSectionId>> = hashbrown::HashMap::new();
     // Output sections by their (possibly renamed) names: several input
     // section names can land in one output section.
-    let mut by_out: hashbrown::HashMap<(&'static str, &'static str), OutputSectionId> =
-        hashbrown::HashMap::new();
+    let mut by_out: hashbrown::HashMap<SectionName, OutputSectionId> = hashbrown::HashMap::new();
     // All subsections of one input section share the exact same leaked
     // header pointer and are contiguous in the arena, and a header
     // uniquely names one (object, section) - so a section's whole run
@@ -1178,11 +1182,14 @@ fn trace_symbol_layout<E: Target>(ctx: &Context<E>, moves: &hashbrown::HashMap<u
     let map = SectionMap::new(ctx);
     let mut write = |name: &str, steps: Vec<(&str, SectionName)>, out_name: SectionName| {
         if steps.is_empty() {
-            let (seg, sect) = out_name;
-            let _ = writeln!(out, "symbol '{name}', use default mapping to {seg}/{sect}");
+            let (seg, sect) = (raw(out_name.0), raw(out_name.1));
+            let line = format_args!("symbol '{name}', use default mapping to {seg}/{sect}\n");
+            let _ = out.write_all(&crate::error::render(line));
         }
         for (how, (seg, sect)) in steps {
-            let _ = writeln!(out, "symbol '{name}', {how} mapped it to {seg}/{sect}");
+            let (seg, sect) = (raw(seg), raw(sect));
+            let line = format_args!("symbol '{name}', {how} mapped it to {seg}/{sect}\n");
+            let _ = out.write_all(&crate::error::render(line));
         }
     };
 
@@ -1203,9 +1210,9 @@ fn trace_symbol_layout<E: Target>(ctx: &Context<E>, moves: &hashbrown::HashMap<u
         }
     }
     let mut steps = Vec::new();
-    let mut stubs = ("__TEXT", "__objc_stubs");
+    let mut stubs: SectionName = (b"__TEXT", b"__objc_stubs");
     if args.text_exec {
-        stubs.0 = "__TEXT_EXEC";
+        stubs.0 = b"__TEXT_EXEC";
     }
     let step = args.text_exec.then_some("-text_exec");
     let section = map.renamed_section(args, stubs);
@@ -1350,8 +1357,8 @@ fn first_member_flags<E: Target>(
 /// Adds an empty output section named `seg`,`sect` with `flags`.
 fn add_output_section<E: Target>(
     ctx: &mut Context<E>,
-    seg: &'static str,
-    sect: &str,
+    seg: &'static [u8],
+    sect: &'static [u8],
     flags: u32,
 ) -> OutputSectionId {
     let mut osec = OutputSection::new(seg, sect);
@@ -1421,8 +1428,8 @@ fn finish_section_alignments<E: Target>(ctx: &mut Context<E>, text: SectionName)
             if p2align < hdr.p2align {
                 crate::warn!(
                     "-sectalign reduces alignment of {},{} from {} to {}",
-                    hdr.segname,
-                    hdr.sectname,
+                    raw(hdr.segname),
+                    raw(hdr.sectname),
                     1u64 << hdr.p2align,
                     1u64 << p2align
                 );
@@ -1433,8 +1440,8 @@ fn finish_section_alignments<E: Target>(ctx: &mut Context<E>, text: SectionName)
             if warn_capped {
                 crate::warn!(
                     "reducing alignment of section {},{} from 0x{:x} to 0x{:x} because it exceeds segment maximum alignment",
-                    hdr.segname,
-                    hdr.sectname,
+                    raw(hdr.segname),
+                    raw(hdr.sectname),
                     1u64 << (hdr.p2align % 32),
                     1u64 << max
                 );
@@ -1584,7 +1591,7 @@ fn add_objc_stubs<E: Target>(ctx: &mut Context<E>) {
         ctx.objc_stubs.hdr.size = ctx.objc_stubs.symbols.len() as u64 * ctx.objc_stub_size();
         // Code, which -text_exec moves as it does __stubs.
         if ctx.args.text_exec {
-            ctx.objc_stubs.hdr.segname = "__TEXT_EXEC";
+            ctx.objc_stubs.hdr.segname = b"__TEXT_EXEC";
         }
         // 32-byte stubs on arm64, small ones word-aligned; ld-prime
         // leaves x86-64's byte-aligned.
@@ -1602,7 +1609,7 @@ fn add_objc_stubs<E: Target>(ctx: &mut Context<E>) {
     let map = SectionMap::final_link(ctx);
     if methname_size > 0 {
         let (name, flags_name) =
-            output_section_for(&ctx.args, map, "__TEXT", "__objc_methname", S_CSTRING_LITERALS)
+            output_section_for(&ctx.args, map, b"__TEXT", b"__objc_methname", S_CSTRING_LITERALS)
                 .unwrap();
         let flags = S_CSTRING_LITERALS;
         let tail = Tail::ObjcMethname;
@@ -1611,7 +1618,7 @@ fn add_objc_stubs<E: Target>(ctx: &mut Context<E>) {
     }
     if selrefs_size > 0 {
         let (name, flags_name) =
-            output_section_for(&ctx.args, map, "__DATA", "__objc_selrefs", S_LITERAL_POINTERS)
+            output_section_for(&ctx.args, map, b"__DATA", b"__objc_selrefs", S_LITERAL_POINTERS)
                 .unwrap();
         let flags =
             output_section_flags(flags_name.0, flags_name.1, S_LITERAL_POINTERS, true, false);
@@ -1778,8 +1785,8 @@ fn add_sectcreate_isec<E: Target>(
 ) -> u32 {
     let sc = &ctx.args.sectcreate[i];
     let (file, shndx) = ctx.add_synthetic_section(MachSection {
-        sectname: str_to_name(&sc.sectname),
-        segname: str_to_name(&sc.segname),
+        sectname: bytes_to_name(&sc.sectname),
+        segname: bytes_to_name(&sc.segname),
         size: data.len() as u64,
         ..Default::default()
     });
@@ -1885,7 +1892,7 @@ fn lay_out_eh_frame<E: Target>(ctx: &mut Context<E>) {
     if ctx.fdes.is_empty() && !ctx.cies.iter().any(|cie| cie.is_alive) {
         return;
     }
-    ctx.eh_frame.hdr.flags = output_section_flags("__TEXT", "__eh_frame", 0, true, false);
+    ctx.eh_frame.hdr.flags = output_section_flags(b"__TEXT", b"__eh_frame", 0, true, false);
     ctx.eh_frame.hdr.size = assign_eh_frame_offsets(ctx) as u64;
     ctx.chunks.push(ChunkId::EhFrame);
 }
@@ -2024,7 +2031,7 @@ fn warn_eh_frame_too_large<E: Target>(ctx: &Context<E>) {
 fn sort_chunks<E: Target>(ctx: &mut Context<E>, lto_ranks: Option<&[u32]>) {
     let section_first_seen = section_first_seen(ctx, lto_ranks);
     let mut order = ctx.chunks.clone();
-    let mut first_seen: hashbrown::HashMap<&'static str, usize> = hashbrown::HashMap::new();
+    let mut first_seen: hashbrown::HashMap<&'static [u8], usize> = hashbrown::HashMap::new();
     for &id in &order {
         let n = first_seen.len();
         first_seen.entry(ctx.chunk_header(id).segname).or_insert(n);
@@ -2043,13 +2050,13 @@ fn sort_chunks<E: Target>(ctx: &mut Context<E>, lto_ranks: Option<&[u32]>) {
         // knows no __DATA_CONST, that one too (with -data_const or in
         // the shared region).
         let standard = match hdr.segname {
-            "__TEXT" | "__TEXT_EXEC" => 0,
-            "__DATA_CONST" if !ctx.args.without_dyld() => 1,
-            "__AUTH_CONST" if !static_link => 2,
-            "__AUTH" if !static_link => 3,
-            "__DATA" => 4,
-            "__DATA_CONST" if !static_link => 5,
-            "__DATA_DIRTY" if !ctx.args.without_dyld() => 5,
+            b"__TEXT" | b"__TEXT_EXEC" => 0,
+            b"__DATA_CONST" if !ctx.args.without_dyld() => 1,
+            b"__AUTH_CONST" if !static_link => 2,
+            b"__AUTH" if !static_link => 3,
+            b"__DATA" => 4,
+            b"__DATA_CONST" if !static_link => 5,
+            b"__DATA_DIRTY" if !ctx.args.without_dyld() => 5,
             _ => 6,
         };
         // -segment_order orders the rest: __TEXT, which holds the
@@ -2058,8 +2065,8 @@ fn sort_chunks<E: Target>(ctx: &mut Context<E>, lto_ranks: Option<&[u32]>) {
         // its __TEXT goes where the list says.
         let seg_rank = match (id, hdr.segname) {
             (ChunkId::MachHeader, _) if ctx.args.preload => 0,
-            (_, "__TEXT") if !ctx.args.preload => 0,
-            (_, "__LINKEDIT") => usize::MAX,
+            (_, b"__TEXT") if !ctx.args.preload => 0,
+            (_, b"__LINKEDIT") => usize::MAX,
             (_, name) => match segment_order.iter().position(|s| s == name) {
                 Some(i) => 1 + i,
                 None => 1 + segment_order.len() + standard,
@@ -2102,26 +2109,26 @@ fn sort_chunks<E: Target>(ctx: &mut Context<E>, lto_ranks: Option<&[u32]>) {
 /// or the name a section$start$ or section$end$ symbol gives one it
 /// makes. -sectcreate's and -add_empty_section's sections, which
 /// ld-prime adds after the inputs', rank by their type alone.
-fn rank_name<E: Target>(ctx: &Context<E>, id: ChunkId) -> Option<(&str, &str)> {
-    let name = match id {
+fn rank_name<E: Target>(ctx: &Context<E>, id: ChunkId) -> Option<SectionName> {
+    let name: SectionName = match id {
         ChunkId::Output(osec) => return ctx.output_section(osec).rank_name,
         ChunkId::SectCreate(i) => {
             let sec = &ctx.sectcreate_sections[i as usize];
-            return (!sec.from_option).then_some((sec.hdr.segname, sec.hdr.sectname.as_str()));
+            return (!sec.from_option).then_some((sec.hdr.segname, sec.hdr.sectname));
         }
-        ChunkId::Stubs => ("__TEXT", "__stubs"),
-        ChunkId::StubHelper => ("__TEXT", "__stub_helper"),
-        ChunkId::DelayStubs => ("__TEXT", "__delay_stubs"),
-        ChunkId::DelayHelper => ("__TEXT", "__delay_helper"),
-        ChunkId::LazyHelpers => ("__TEXT", "__lazy_helpers"),
-        ChunkId::ObjcStubs => ("__TEXT", "__objc_stubs"),
-        ChunkId::InitOffsets => ("__TEXT", "__init_offsets"),
-        ChunkId::ObjcMethlist => ("__TEXT", "__objc_methlist"),
-        ChunkId::LazyPtrs => ("__DATA", "__la_symbol_ptr"),
-        ChunkId::LazyLoadGot => ("__DATA", "__lazy_load_got"),
-        ChunkId::Got => ("__DATA", "__got"),
-        ChunkId::WeakGot => ("__DATA", "__weak_got"),
-        ChunkId::ObjcImageInfo => ("__DATA", "__objc_imageinfo"),
+        ChunkId::Stubs => (b"__TEXT", b"__stubs"),
+        ChunkId::StubHelper => (b"__TEXT", b"__stub_helper"),
+        ChunkId::DelayStubs => (b"__TEXT", b"__delay_stubs"),
+        ChunkId::DelayHelper => (b"__TEXT", b"__delay_helper"),
+        ChunkId::LazyHelpers => (b"__TEXT", b"__lazy_helpers"),
+        ChunkId::ObjcStubs => (b"__TEXT", b"__objc_stubs"),
+        ChunkId::InitOffsets => (b"__TEXT", b"__init_offsets"),
+        ChunkId::ObjcMethlist => (b"__TEXT", b"__objc_methlist"),
+        ChunkId::LazyPtrs => (b"__DATA", b"__la_symbol_ptr"),
+        ChunkId::LazyLoadGot => (b"__DATA", b"__lazy_load_got"),
+        ChunkId::Got => (b"__DATA", b"__got"),
+        ChunkId::WeakGot => (b"__DATA", b"__weak_got"),
+        ChunkId::ObjcImageInfo => (b"__DATA", b"__objc_imageinfo"),
         _ => return None,
     };
     Some(name)
@@ -2138,10 +2145,10 @@ fn rank_name<E: Target>(ctx: &Context<E>, id: ChunkId) -> Option<(&str, &str)> {
 fn member_rank_name(hdr: &MachSection, flags_name: SectionName) -> Option<SectionName> {
     let (seg, sect) = (hdr.segname(), hdr.sectname());
     let named = match seg {
-        "__TEXT" => true,
-        "__DATA" => {
+        b"__TEXT" => true,
+        b"__DATA" => {
             is_standard_section(seg, sect, hdr.flags)
-                || matches!(flags_name.1, "__dyld" | "__program_vars" | "__zerofill")
+                || matches!(flags_name.1, b"__dyld" | b"__program_vars" | b"__zerofill")
         }
         _ => false,
     };
@@ -2183,7 +2190,7 @@ fn section_first_seen<E: Target>(ctx: &Context<E>, lto_ranks: Option<&[u32]>) ->
     if let Some(obj) = ctx.common_first_obj {
         let place = if lto_ranks.is_some() { ctx.objs[obj as usize].priority } else { obj };
         for (i, osec) in ctx.output_sections.iter().enumerate() {
-            if osec.hdr.segname == "__DATA" && osec.hdr.sectname == "__common" {
+            if osec.hdr.segname == b"__DATA" && osec.hdr.sectname == b"__common" {
                 first_seen[i] = first_seen[i].min(((place as u64) << 32) | u32::MAX as u64);
             }
         }
@@ -2197,7 +2204,7 @@ fn section_first_seen<E: Target>(ctx: &Context<E>, lto_ranks: Option<&[u32]>) ->
 fn create_segments<E: Target>(ctx: &mut Context<E>) {
     let mut segments = Vec::new();
     if ctx.args.pagezero_size > 0 {
-        segments.push(OutputSegment::new("__PAGEZERO"));
+        segments.push(OutputSegment::new(b"__PAGEZERO"));
     }
     let mut n_sect = 1u8;
     for i in 0..ctx.chunks.len() {
@@ -2261,7 +2268,7 @@ fn listed_section_rank<E: Target>(ctx: &Context<E>, hdr: &ChunkHeader) -> usize 
 }
 
 fn is_text_section(hdr: &ChunkHeader) -> bool {
-    hdr.segname == "__TEXT" && hdr.sectname == "__text"
+    hdr.segname == b"__TEXT" && hdr.sectname == b"__text"
 }
 
 /// ld-prime refuses a -section_order that puts a zero-fill section, which
@@ -2279,15 +2286,17 @@ fn check_section_order<E: Target>(ctx: &Context<E>) {
         // ld-prime's order: the listed sections, then the others but an
         // unlisted __text, which leads them all.
         let listed = list.iter().filter_map(|name| sects.iter().find(|hdr| hdr.sectname == *name));
-        let others =
-            sects.iter().filter(|hdr| !list.contains(&hdr.sectname) && !is_text_section(hdr));
+        let others = sects
+            .iter()
+            .filter(|hdr| !list.iter().any(|s| s == hdr.sectname) && !is_text_section(hdr));
         let order: Vec<&&ChunkHeader> = listed.chain(others).collect();
         if let Some(i) = order.iter().position(|hdr| hdr.is_zerofill())
             && order[i..].iter().any(|hdr| !hdr.is_zerofill())
         {
             fatal!(
-                "{} is zero-fill, it should be ordered at the end of the segment {seg}, or alongside other zero-fill sections",
-                order[i].sectname
+                "{} is zero-fill, it should be ordered at the end of the segment {}, or alongside other zero-fill sections",
+                raw(order[i].sectname),
+                raw(seg)
             );
         }
     }
@@ -2305,15 +2314,16 @@ fn check_interposing<E: Target>(ctx: &Context<E>) {
     }
     let is_interpose = |hdr: &&ChunkHeader| {
         hdr.is_sect
-            && hdr.sectname == "__interpose"
-            && (hdr.segname.starts_with("__DATA") || hdr.segname.starts_with("__AUTH"))
+            && hdr.sectname == b"__interpose"
+            && (hdr.segname.starts_with(b"__DATA") || hdr.segname.starts_with(b"__AUTH"))
     };
     if let Some(hdr) = ctx.chunks.iter().map(|&id| ctx.chunk_header(id)).rfind(is_interpose) {
         error!(
             "Shared cache eligible dylib cannot use interposing tuples (found in '{} {}').  \
              Remove interposing tuples, or opt out of the shared cache using the build setting \
              'LD_SHARED_CACHE_ELIGIBLE=NO' (or linker flag '-not_for_dyld_shared_cache')",
-            hdr.segname, hdr.sectname
+            raw(hdr.segname),
+            raw(hdr.sectname)
         );
     }
 }
@@ -2321,8 +2331,8 @@ fn check_interposing<E: Target>(ctx: &Context<E>) {
 /// The segment of the mach header: __TEXT, which -rename_segment
 /// moves only in a -static image. A dynamic image's header stays in
 /// __TEXT, where dyld looks for it.
-pub(crate) fn header_segment<E: Target>(ctx: &Context<E>) -> &'static str {
-    if ctx.args.static_link { renamed_segment(&ctx.args, "__TEXT") } else { "__TEXT" }
+pub(crate) fn header_segment<E: Target>(ctx: &Context<E>) -> &'static [u8] {
+    if ctx.args.static_link { renamed_segment(&ctx.args, b"__TEXT") } else { b"__TEXT" }
 }
 
 /// The __text section a final image always has (see text_section_name).
@@ -2336,9 +2346,9 @@ pub(crate) fn text_section<E: Target>(ctx: &Context<E>) -> Option<OutputSectionI
 /// __TEXT leaves it with the mach header.
 fn text_section_name<E: Target>(ctx: &Context<E>) -> SectionName {
     let (seg, sect) =
-        SectionMap::final_link(ctx).builtin_name(("__TEXT", "__text"), S_ATTR_PURE_INSTRUCTIONS);
+        SectionMap::final_link(ctx).builtin_name((b"__TEXT", b"__text"), S_ATTR_PURE_INSTRUCTIONS);
     let is_renamed = ctx.args.rename_sections.iter().any(|(s, t, _, _)| s == seg && t == sect);
-    if seg == "__TEXT" && !is_renamed {
+    if seg == b"__TEXT" && !is_renamed {
         (header_segment(ctx), sect)
     } else {
         renamed(&ctx.args, (seg, sect))
@@ -2371,10 +2381,10 @@ fn rename_synthetic_sections<E: Target>(ctx: &mut Context<E>) {
         {
             continue;
         }
-        let (seg, sect) = map.renamed(&ctx.args, (hdr.segname, static_name(&hdr.sectname)));
+        let (seg, sect) = map.renamed(&ctx.args, (hdr.segname, hdr.sectname));
         let hdr = ctx.chunk_header_mut(id);
         hdr.segname = seg;
-        hdr.sectname = sect.to_string();
+        hdr.sectname = sect;
     }
 }
 
@@ -2468,8 +2478,8 @@ fn add_merged_stubs<E: Target>(ctx: &mut Context<E>, id: ChunkId) {
     let hdr = ctx.chunk_header(id);
     let size = hdr.size;
     let sect = MachSection {
-        segname: str_to_name(hdr.segname),
-        sectname: str_to_name(&hdr.sectname),
+        segname: bytes_to_name(hdr.segname),
+        sectname: bytes_to_name(hdr.sectname),
         flags: S_ATTR_PURE_INSTRUCTIONS,
         size,
         ..Default::default()
@@ -2494,18 +2504,16 @@ fn add_merged_stubs<E: Target>(ctx: &mut Context<E>, id: ChunkId) {
 fn add_boundary_sections<E: Target>(ctx: &mut Context<E>) {
     let map = SectionMap::final_link(ctx);
     for i in 0..ctx.boundary_syms.len() {
-        let (_, _, seg, sect) = &ctx.boundary_syms[i];
+        let (_, _, seg, sect) = ctx.boundary_syms[i];
         let Some(sect) = sect else {
-            let seg = renamed_segment(&ctx.args, static_name(seg));
-            ctx.boundary_syms[i].2 = seg.to_string();
+            ctx.boundary_syms[i].2 = renamed_segment(&ctx.args, seg);
             continue;
         };
         let flags = boundary_section_flags(seg, sect);
-        let name = map.zero_fill_name((static_name(seg), static_name(sect)), flags);
-        let name = map.boundary_name(name);
+        let name = map.boundary_name(map.zero_fill_name((seg, sect), flags));
         let (seg, sect) = map.renamed(&ctx.args, name);
-        ctx.boundary_syms[i].2 = seg.to_string();
-        ctx.boundary_syms[i].3 = Some(sect.to_string());
+        ctx.boundary_syms[i].2 = seg;
+        ctx.boundary_syms[i].3 = Some(sect);
         if !ctx.chunks.iter().any(|&id| {
             let hdr = ctx.chunk_header(id);
             hdr.is_sect && hdr.segname == seg && hdr.sectname == sect
@@ -2523,17 +2531,17 @@ fn add_boundary_sections<E: Target>(ctx: &mut Context<E>) {
 /// does: just before __LINKEDIT and at its address, in the order of
 /// the symbols' names.
 fn add_boundary_segments<E: Target>(ctx: &mut Context<E>) {
-    let mut syms: Vec<(&str, &str)> = ctx
+    let mut syms: Vec<(&str, &'static [u8])> = ctx
         .boundary_syms
         .iter()
-        .filter(|(_, _, seg, sect)| sect.is_none() && !ctx.segments.iter().any(|s| s.name == seg))
-        .map(|(id, _, seg, _)| (ctx.symbols[*id].name(), seg.as_str()))
+        .filter(|(_, _, seg, sect)| sect.is_none() && !ctx.segments.iter().any(|s| s.name == *seg))
+        .map(|&(id, _, seg, _)| (ctx.symbols[id].name(), seg))
         .collect();
     syms.sort_unstable();
-    let mut missing: Vec<&'static str> = Vec::new();
+    let mut missing: Vec<&'static [u8]> = Vec::new();
     for (_, seg) in syms {
         if !missing.contains(&seg) {
-            missing.push(static_name(seg));
+            missing.push(seg);
         }
     }
     let linkedit = ctx.segments.len() - 1;
@@ -2546,7 +2554,7 @@ fn add_boundary_segments<E: Target>(ctx: &mut Context<E>) {
 fn add_stack_segment<E: Target>(ctx: &mut Context<E>) {
     if ctx.args.unixthread && ctx.args.stack_size != 0 {
         let linkedit = ctx.segments.len() - 1;
-        ctx.segments.insert(linkedit, OutputSegment::new("__UNIXSTACK"));
+        ctx.segments.insert(linkedit, OutputSegment::new(b"__UNIXSTACK"));
     }
 }
 
@@ -2554,11 +2562,11 @@ fn add_stack_segment<E: Target>(ctx: &mut Context<E>) {
 /// section$end$ symbol makes, by the name the symbol gives (before any
 /// move or rename): a standard section's, though the initializer and
 /// terminator lists are plain data then, and none for another name.
-fn boundary_section_flags(segname: &str, sectname: &str) -> u32 {
+fn boundary_section_flags(segname: &[u8], sectname: &[u8]) -> u32 {
     match (segname, sectname) {
-        ("__DATA", "__mod_init_func" | "__mod_term_func") => S_REGULAR,
+        (b"__DATA", b"__mod_init_func" | b"__mod_term_func") => S_REGULAR,
         // -merge_zero_fill_sections's section, whether or not given.
-        ("__DATA", "__zerofill") => S_ZEROFILL,
+        (b"__DATA", b"__zerofill") => S_ZEROFILL,
         _ => standard_section_flags(segname, sectname).unwrap_or(S_REGULAR),
     }
 }
@@ -2569,7 +2577,7 @@ fn boundary_section_flags(segname: &str, sectname: &str) -> u32 {
 fn add_stub_and_got_chunks<E: Target>(ctx: &mut Context<E>) {
     if !ctx.stubs.symbols.is_empty() {
         if ctx.args.text_exec {
-            ctx.stubs.hdr.segname = "__TEXT_EXEC";
+            ctx.stubs.hdr.segname = b"__TEXT_EXEC";
         }
         ctx.stubs.hdr.reserved2 = E::STUB_SIZE as u32;
         ctx.stubs.hdr.size = ctx.stubs.symbols.len() as u64 * E::STUB_SIZE;
@@ -2786,8 +2794,8 @@ fn resolve_zerofill_conflict<E: Target>(
     let name = |file: u32| resolved_file_name(ctx.objs[file as usize].mf);
     let mut msg = format!(
         "section {},{} has a conflicting zerofill flag defined in {} but missing in:",
-        osec.hdr.segname,
-        osec.hdr.sectname,
+        raw(osec.hdr.segname),
+        raw(osec.hdr.sectname),
         name(defined_in)
     );
     for file in missing_in {
@@ -2832,23 +2840,23 @@ fn check_segment_order<E: Target>(ctx: &Context<E>) {
     }
     let (text_pos, text_place) =
         if ctx.args.pagezero_size > 0 { (1, "second") } else { (0, "first") };
-    let has_text = !ctx.args.preload && ctx.segments.iter().any(|s| s.name == "__TEXT");
-    if has_text && order.iter().position(|s| s == "__TEXT").is_some_and(|i| i != text_pos) {
+    let has_text = !ctx.args.preload && ctx.segments.iter().any(|s| s.name == b"__TEXT");
+    if has_text && order.iter().position(|s| s == b"__TEXT").is_some_and(|i| i != text_pos) {
         crate::warn!(
             "-segment_order of __TEXT is ignored, the segment must be ordered {text_place}"
         );
     }
-    if order.iter().position(|s| s == "__LINKEDIT").is_some_and(|i| i != order.len() - 1) {
+    if order.iter().position(|s| s == b"__LINKEDIT").is_some_and(|i| i != order.len() - 1) {
         crate::warn!("-segment_order of __LINKEDIT is ignored, the segment must be ordered last");
     }
     for seg in &ctx.segments {
         let fixed = match seg.name {
-            "__PAGEZERO" | "__LINKEDIT" => true,
-            "__TEXT" => !ctx.args.preload,
+            b"__PAGEZERO" | b"__LINKEDIT" => true,
+            b"__TEXT" => !ctx.args.preload,
             _ => false,
         };
         if !fixed && !order.iter().any(|s| s == seg.name) {
-            crate::warn!("-segment_order should list all segments, {} is missing", seg.name);
+            crate::warn!("-segment_order should list all segments, {} is missing", raw(seg.name));
         }
     }
 }

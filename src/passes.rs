@@ -12,6 +12,7 @@ use crate::chunks::{self, ChunkHeader, ChunkId, OutputSectionId, OutputSegment, 
 use crate::cmdline::{Args, InputArg, LibraryKind, LibraryName, Treatment};
 use crate::context::Context;
 use crate::error;
+use crate::error::raw;
 use crate::fatal;
 use crate::filetype::{FileType, get_file_type};
 use crate::input_files;
@@ -850,11 +851,11 @@ fn warn_about_sections(staged: &[input_files::StagedObject]) {
             if input_files::is_unknown_ld_section(hdr) {
                 crate::warn!(
                     "unknown section: __LD/{} in {}",
-                    hdr.sectname(),
+                    raw(hdr.sectname()),
                     resolved_file_name(obj.mf)
                 );
-            } else if hdr.segname() == "__DATA"
-                && hdr.sectname() == "__cfstring"
+            } else if hdr.segname() == b"__DATA"
+                && hdr.sectname() == b"__cfstring"
                 && hdr.p2align != 3
                 && obj.isecs.iter().any(|isec| isec.shndx == i as u32 && isec.is_alive())
             {
@@ -865,16 +866,16 @@ fn warn_about_sections(staged: &[input_files::StagedObject]) {
             } else if input_files::is_objc_image_info(hdr) && hdr.size > 8 {
                 crate::warn!(
                     "section {}/{} has unexpectedly large size {} in {}",
-                    hdr.segname(),
-                    hdr.sectname(),
+                    raw(hdr.segname()),
+                    raw(hdr.sectname()),
                     hdr.size,
                     resolved_file_name(obj.mf)
                 );
             } else if input_files::is_objc_image_info(hdr) && hdr.size != 0 && hdr.size < 8 {
                 crate::warn!(
                     "can't parse {}/{} section in {}",
-                    hdr.segname(),
-                    hdr.sectname(),
+                    raw(hdr.segname()),
+                    raw(hdr.sectname()),
                     resolved_file_name(obj.mf)
                 );
             }
@@ -896,7 +897,7 @@ fn warn_about_sections(staged: &[input_files::StagedObject]) {
             crate::warn!(
                 "ignoring extranenous label '{}' at end of section '{}'",
                 obj.sym_names[i as usize],
-                obj.sect_hdrs[nlist.n_sect as usize - 1].sectname()
+                raw(obj.sect_hdrs[nlist.n_sect as usize - 1].sectname())
             );
         }
         if let Some(what) = obj.pointer_without_target {
@@ -2983,8 +2984,8 @@ pub fn convert_common_symbols<E: Target>(ctx: &mut Context<E>) {
         };
 
         let (file, shndx) = ctx.add_synthetic_section(MachSection {
-            sectname: str_to_name("__common"),
-            segname: str_to_name("__DATA"),
+            sectname: bytes_to_name(b"__common"),
+            segname: bytes_to_name(b"__DATA"),
             size,
             p2align: p2align as u32,
             flags: S_ZEROFILL,
@@ -3105,7 +3106,7 @@ pub fn check_initializers<E: Target>(ctx: &Context<E>) {
         return;
     }
     let profiling = |obj: &input_files::ObjectFile| {
-        obj.sect_hdrs.iter().any(|hdr| hdr.sectname().starts_with("__llvm_prf_"))
+        obj.sect_hdrs.iter().any(|hdr| hdr.sectname().starts_with(b"__llvm_prf_"))
     };
     if ctx.objs.iter().any(|obj| obj.is_alive && profiling(obj)) {
         return;
@@ -3446,7 +3447,7 @@ pub fn warn_merged_library_versions<E: Target>(ctx: &Context<E>) {
 /// section: Swift's field descriptors, associated type records and the
 /// names they give (but not the type references), in any segment.
 pub(crate) fn is_swift_reflection_section(hdr: &MachSection) -> bool {
-    matches!(hdr.sectname(), "__swift5_fieldmd" | "__swift5_assocty" | "__swift5_reflstr")
+    matches!(hdr.sectname(), b"__swift5_fieldmd" | b"__swift5_assocty" | b"__swift5_reflstr")
 }
 
 /// -remove_swift_reflection_metadata_sections: drops the Swift
@@ -3714,10 +3715,10 @@ fn is_mergeable_literal(hdr: &MachSection, isec: &InputSection) -> bool {
     }
     match hdr.section_type() {
         S_CSTRING_LITERALS => !is_unterminated_string(hdr, isec),
-        S_4BYTE_LITERALS => hdr.segname_is("__TEXT") && hdr.sectname_is("__literal4"),
-        S_8BYTE_LITERALS => hdr.segname_is("__TEXT") && hdr.sectname_is("__literal8"),
-        S_16BYTE_LITERALS => hdr.segname_is("__TEXT") && hdr.sectname_is("__literal16"),
-        S_REGULAR => hdr.segname_is("__TEXT") && hdr.sectname_is("__ustring"),
+        S_4BYTE_LITERALS => hdr.segname_is(b"__TEXT") && hdr.sectname_is(b"__literal4"),
+        S_8BYTE_LITERALS => hdr.segname_is(b"__TEXT") && hdr.sectname_is(b"__literal8"),
+        S_16BYTE_LITERALS => hdr.segname_is(b"__TEXT") && hdr.sectname_is(b"__literal16"),
+        S_REGULAR => hdr.segname_is(b"__TEXT") && hdr.sectname_is(b"__ustring"),
         _ => false,
     }
 }
@@ -5511,8 +5512,8 @@ pub(crate) fn absorb_got_slots<E: Target>(
         return;
     }
     let sect = ctx.add_synthetic_section(MachSection {
-        sectname: str_to_name("__got"),
-        segname: str_to_name(data_seg(ctx)),
+        sectname: bytes_to_name(b"__got"),
+        segname: bytes_to_name(data_seg(ctx)),
         p2align: 3,
         flags: S_NON_LAZY_SYMBOL_POINTERS,
         ..Default::default()
@@ -5538,7 +5539,7 @@ pub fn fold_input_got<E: Target>(ctx: &mut Context<E>) {
     if ctx.args.relocatable {
         return;
     }
-    let is_got = |hdr: &MachSection| hdr.segname() == "__DATA" && hdr.sectname() == "__got";
+    let is_got = |hdr: &MachSection| hdr.segname() == b"__DATA" && hdr.sectname() == b"__got";
     let mut slots = Vec::new();
     let mut input_slots = Vec::new();
     for obj in ctx.objs.iter().filter(|obj| obj.is_alive) {
@@ -5631,8 +5632,8 @@ pub fn create_lazy_loads<E: Target>(ctx: &mut Context<E>) {
 fn add_keep_alive_subsec<E: Target>(ctx: &mut Context<E>) -> u32 {
     let flags = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
     let (file, shndx) = ctx.add_synthetic_section(MachSection {
-        sectname: str_to_name("__text"),
-        segname: str_to_name("__TEXT"),
+        sectname: bytes_to_name(b"__text"),
+        segname: bytes_to_name(b"__TEXT"),
         flags,
         ..Default::default()
     });
@@ -6109,10 +6110,10 @@ pub fn add_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
         let parsed = if let Some(rest) = sym.name().strip_prefix("section$") {
             rest.split_once('$').and_then(|(which, rest)| {
                 rest.split_once('$')
-                    .map(|(seg, sect)| (which == "start", seg.to_string(), Some(sect.to_string())))
+                    .map(|(seg, sect)| (which == "start", seg.as_bytes(), Some(sect.as_bytes())))
             })
         } else if let Some(rest) = sym.name().strip_prefix("segment$") {
-            rest.split_once('$').map(|(which, seg)| (which == "start", seg.to_string(), None))
+            rest.split_once('$').map(|(which, seg)| (which == "start", seg.as_bytes(), None))
         } else {
             None
         };
@@ -6147,14 +6148,14 @@ fn define_header_alias<E: Target>(
 /// segment has one.
 pub fn fix_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
     for i in 0..ctx.boundary_syms.len() {
-        let (id, is_start, seg, sect) = ctx.boundary_syms[i].clone();
-        let value = match &sect {
+        let (id, is_start, seg, sect) = ctx.boundary_syms[i];
+        let value = match sect {
             Some(sect) => {
                 let Some(hdr) = ctx
                     .chunks
                     .iter()
                     .map(|&id| ctx.chunk_header(id))
-                    .find(|hdr| hdr.is_sect && hdr.segname == seg && hdr.sectname == *sect)
+                    .find(|hdr| hdr.is_sect && hdr.segname == seg && hdr.sectname == sect)
                 else {
                     fatal!("no section for boundary symbol: {}", ctx.symbols[id]);
                 };
@@ -6174,7 +6175,7 @@ pub fn fix_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
     // names the start of __TEXT, where the header would be, as in
     // ld-prime.
     if ctx.args.preload
-        && let Some(text) = ctx.segments.iter().find(|s| s.name == "__TEXT")
+        && let Some(text) = ctx.segments.iter().find(|s| s.name == b"__TEXT")
         && let Some(id) = ctx.symbols.get("___dso_handle")
         && ctx.symbols[id].input_section().is_none()
     {
@@ -6207,7 +6208,7 @@ fn collect_relocations<E: Target>(ctx: &mut Context<E>) {
 /// __objc_catlist, __objc_catlist2 and __objc_nlcatlist, and
 /// __objc_clsrolist, which only a -r output keeps.
 pub(crate) fn is_unnamed_objc_list(hdr: &MachSection) -> bool {
-    hdr.segname_is("__DATA")
+    hdr.segname_is(b"__DATA")
         && hdr.sectname.starts_with(b"__objc_")
         && [
             "__objc_classlist",
@@ -6218,7 +6219,7 @@ pub(crate) fn is_unnamed_objc_list(hdr: &MachSection) -> bool {
             "__objc_clsrolist",
         ]
         .iter()
-        .any(|name| hdr.sectname_is(name))
+        .any(|name| hdr.sectname_is(name.as_bytes()))
 }
 
 /// The symbols of an object, by index, that name an entry of an
@@ -6282,13 +6283,13 @@ pub(crate) fn objc_list_aliases<E: Target>(
 /// false) the UTF-16 literals' section is one subsection, whose labels
 /// ld-prime keeps as any other's.
 pub(crate) fn has_unnamed_subsecs(hdr: &MachSection, split: bool) -> bool {
-    if hdr.segname_is("__TEXT") {
-        return split && hdr.sectname_is("__ustring");
+    if hdr.segname_is(b"__TEXT") {
+        return split && hdr.sectname_is(b"__ustring");
     }
-    if hdr.sectname_is("__objc_selrefs") {
-        return hdr.segname_is("__DATA") && hdr.section_type() == S_LITERAL_POINTERS;
+    if hdr.sectname_is(b"__objc_selrefs") {
+        return hdr.segname_is(b"__DATA") && hdr.section_type() == S_LITERAL_POINTERS;
     }
-    hdr.segname_is("__DATA")
+    hdr.segname_is(b"__DATA")
         && ([
             "__cfstring",
             "__objc_classrefs",
@@ -6301,7 +6302,7 @@ pub(crate) fn has_unnamed_subsecs(hdr: &MachSection, split: bool) -> bool {
             "__objc_dictobj",
         ]
         .iter()
-        .any(|name| hdr.sectname_is(name))
+        .any(|name| hdr.sectname_is(name.as_bytes()))
             || (hdr.section_type() == S_LITERAL_POINTERS && is_class_or_protocol_ref(hdr)))
 }
 
@@ -6312,11 +6313,11 @@ pub(crate) fn has_unnamed_subsecs(hdr: &MachSection, split: bool) -> bool {
 /// mark_labeled_literals), unless the section has the literal-pointer
 /// type, which merges them all (see has_unnamed_subsecs).
 pub(crate) fn is_class_or_protocol_ref(hdr: &MachSection) -> bool {
-    hdr.segname_is("__DATA") && is_class_or_protocol_ref_name(hdr.sectname())
+    hdr.segname_is(b"__DATA") && is_class_or_protocol_ref_name(hdr.sectname())
 }
 
-pub(crate) fn is_class_or_protocol_ref_name(sectname: &str) -> bool {
-    matches!(sectname, "__objc_superrefs" | "__objc_protorefs")
+pub(crate) fn is_class_or_protocol_ref_name(sectname: &[u8]) -> bool {
+    matches!(sectname, b"__objc_superrefs" | b"__objc_protorefs")
 }
 
 /// Lays out the output: each segment's contents in file order, and the
@@ -6330,7 +6331,7 @@ pub(crate) fn is_class_or_protocol_ref_name(sectname: &str) -> bool {
 /// __LINKEDIT comes last: its tables read every other address.
 pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
     let linkedit = ctx.segments.len() - 1;
-    debug_assert_eq!(ctx.segments[linkedit].name, "__LINKEDIT");
+    debug_assert_eq!(ctx.segments[linkedit].name, b"__LINKEDIT");
 
     // Range-extension thunks go in before the first placement, unless
     // only the placement can tell whether a branch may be out of reach;
@@ -6418,8 +6419,8 @@ fn text_reloc_ranges<E: Target>(ctx: &Context<E>) -> Vec<Range<u64>> {
     ctx.segments
         .iter()
         .filter(|seg| {
-            seg.name != "__PAGEZERO"
-                && seg.name != "__LINKEDIT"
+            seg.name != b"__PAGEZERO"
+                && seg.name != b"__LINKEDIT"
                 && chunks::segment_prots(ctx, seg).1 & VM_PROT_WRITE == 0
         })
         .map(|seg| seg.cmd.vmaddr..seg.cmd.vmaddr + seg.cmd.vmsize)
@@ -6503,30 +6504,42 @@ fn report_32bit_pointer<E: Target>(ctx: &Context<E>, text_relocs: bool) -> bool 
 /// ld-prime does - with its own layout's addresses, sizes and file
 /// offsets, the last in 32 bits.
 pub fn print_final_layout<E: Target>(ctx: &Context<E>) {
-    use std::fmt::Write;
+    use crate::error::render;
     if !crate::error::has_layout_error() {
         return;
     }
     crate::error::release_layout_error();
-    let mut out = String::from("final section layout:\n");
+    // The names are padded as printf's %-20s and %-16s pad them, by
+    // bytes.
+    let mut lines = vec![b"final section layout:".to_vec()];
     for seg in &ctx.segments {
         let cmd = &seg.cmd;
-        let _ = writeln!(
-            out,
-            "    {:<20} addr=0x{:09x}, size=0x{:09x}, fileOffset=0x{:08x}, fileSize=0x{:08x}",
-            seg.name, cmd.vmaddr, cmd.vmsize, cmd.fileoff as u32, cmd.filesize as u32
-        );
+        let pad = 20usize.saturating_sub(seg.name.len());
+        lines.push(render(format_args!(
+            "    {}{:pad$} addr=0x{:09x}, size=0x{:09x}, fileOffset=0x{:08x}, fileSize=0x{:08x}",
+            raw(seg.name),
+            "",
+            cmd.vmaddr,
+            cmd.vmsize,
+            cmd.fileoff as u32,
+            cmd.filesize as u32
+        )));
         for hdr in seg.chunks.iter().map(|&id| ctx.chunk_header(id)).filter(|hdr| hdr.is_sect) {
             let zerofill = hdr.is_zerofill();
             let fileoff = if zerofill { 0 } else { hdr.fileoff };
-            let _ = writeln!(
-                out,
-                "        {:<16} addr=0x{:09x}, size=0x{:09x}, fileOffset=0x{:08x} (zerofill={})",
-                hdr.sectname, hdr.addr, hdr.size, fileoff as u32, zerofill as u8
-            );
+            let pad = 16usize.saturating_sub(hdr.sectname.len());
+            lines.push(render(format_args!(
+                "        {}{:pad$} addr=0x{:09x}, size=0x{:09x}, fileOffset=0x{:08x} (zerofill={})",
+                raw(hdr.sectname),
+                "",
+                hdr.addr,
+                hdr.size,
+                fileoff as u32,
+                zerofill as u8
+            )));
         }
     }
-    crate::error::notice(format_args!("{}", out.trim_end_matches('\n')));
+    crate::error::notice(format_args!("{}", raw(&lines.join(&b'\n'))));
 }
 
 /// Lays out every segment but __LINKEDIT and gives each its address.
@@ -6552,7 +6565,7 @@ fn lay_out_segments<E: Target>(ctx: &mut Context<E>) -> u64 {
     let mut addr = ctx.image_base();
     for seg_idx in 0..ctx.segments.len() - 1 {
         let name = ctx.segments[seg_idx].name;
-        if name == "__PAGEZERO" {
+        if name == b"__PAGEZERO" {
             fileoff = layout_segment(ctx, seg_idx, fileoff, 0);
             continue;
         }
@@ -6576,13 +6589,13 @@ fn lay_out_segments<E: Target>(ctx: &mut Context<E>) -> u64 {
 /// The segment holding the mach header, laid out in place at the image
 /// base or its -segaddr: none in a -preload image, whose header
 /// precedes every segment in the file.
-fn in_place_segment<E: Target>(ctx: &Context<E>) -> Option<&'static str> {
+fn in_place_segment<E: Target>(ctx: &Context<E>) -> Option<&'static [u8]> {
     (!ctx.args.preload).then(|| header_segment(ctx))
 }
 
 /// The boundary the segment after a segment starts on, in memory and in
 /// the file: its -seg_page_size, else the page.
-fn seg_page_size<E: Target>(ctx: &Context<E>, segname: &str) -> u64 {
+fn seg_page_size<E: Target>(ctx: &Context<E>, segname: &[u8]) -> u64 {
     let sizes = &ctx.args.seg_page_sizes;
     sizes.iter().find(|(name, _)| name == segname).map_or(ctx.args.segment_align, |&(_, size)| size)
 }
@@ -6652,7 +6665,7 @@ fn layout_segment<E: Target>(
     vmaddr: u64,
 ) -> u64 {
     let page = ctx.args.segment_align;
-    if ctx.segments[seg_idx].name == "__PAGEZERO" {
+    if ctx.segments[seg_idx].name == b"__PAGEZERO" {
         let seg = &mut ctx.segments[seg_idx];
         seg.cmd.vmaddr = 0;
         seg.cmd.vmsize = ctx.args.pagezero_size;
@@ -6660,7 +6673,7 @@ fn layout_segment<E: Target>(
     }
     // The kernel maps a static executable's stack from nothing in the
     // file.
-    if ctx.segments[seg_idx].name == "__UNIXSTACK" {
+    if ctx.segments[seg_idx].name == b"__UNIXSTACK" {
         let seg = &mut ctx.segments[seg_idx];
         seg.cmd.vmaddr = vmaddr;
         seg.cmd.vmsize = ctx.args.stack_size;
@@ -6670,7 +6683,7 @@ fn layout_segment<E: Target>(
     let seg_fileoff = fileoff;
     let mut cursor = fileoff;
     let chunk_ids = ctx.segments[seg_idx].chunks.clone();
-    let linkedit = ctx.segments[seg_idx].name == "__LINKEDIT";
+    let linkedit = ctx.segments[seg_idx].name == b"__LINKEDIT";
 
     // Regular chunks, in file order
     for &id in &chunk_ids {
@@ -6771,7 +6784,7 @@ fn layout_segment<E: Target>(
     let seg = &mut ctx.segments[seg_idx];
     seg.cmd.vmaddr = vmaddr;
     seg.cmd.fileoff = if zerofill_only { 0 } else { seg_fileoff };
-    if seg.name == "__LINKEDIT" {
+    if seg.name == b"__LINKEDIT" {
         seg.cmd.filesize = filesize;
         seg.cmd.vmsize = align_to(vm_end - vmaddr, seg_page).max(filesize);
         return seg_fileoff + filesize;
@@ -6806,7 +6819,7 @@ fn place_segments<E: Target>(ctx: &mut Context<E>) {
     // __PAGEZERO and the mach header's segment are laid out in place
     // already.
     let in_place: Vec<bool> =
-        segs.iter().map(|seg| seg.name == "__PAGEZERO" || Some(seg.name) == header_seg).collect();
+        segs.iter().map(|seg| seg.name == b"__PAGEZERO" || Some(seg.name) == header_seg).collect();
     let mut addrs: Vec<Option<u64>> = (0..segs.len())
         .map(
             |i| if in_place[i] { Some(segs[i].cmd.vmaddr) } else { ctx.args.segaddr(segs[i].name) },
@@ -6830,7 +6843,7 @@ fn place_segments<E: Target>(ctx: &mut Context<E>) {
     let header = segs.iter().position(|seg| Some(seg.name) == header_seg);
     let mut used: Vec<Range<u64>> =
         header.map(|i| range(i, segs[i].cmd.vmaddr)).into_iter().collect();
-    if let Some(addr) = ctx.args.segaddr("__LINKEDIT") {
+    if let Some(addr) = ctx.args.segaddr(b"__LINKEDIT") {
         used.push(addr..addr);
     }
     for i in 0..segs.len() {
@@ -6855,7 +6868,7 @@ fn place_segments<E: Target>(ctx: &mut Context<E>) {
 
 /// Whether -segment_order lists a segment after one that -segaddr pins
 /// (ld64's segmentOrderAfterFixedAddressSegment).
-fn follows_pinned_segment<E: Target>(ctx: &Context<E>, segname: &str) -> bool {
+fn follows_pinned_segment<E: Target>(ctx: &Context<E>, segname: &[u8]) -> bool {
     let mut pinned = false;
     for name in &ctx.args.segment_order {
         if name == segname {
@@ -6927,7 +6940,7 @@ fn check_segment_overlaps<E: Target>(ctx: &Context<E>) {
     let mut addrs = Vec::with_capacity(segs.len());
     let mut next = ctx.image_base();
     for (i, seg) in segs.iter().enumerate() {
-        let addr = if seg.name == "__PAGEZERO" || Some(seg.name) == header_seg {
+        let addr = if seg.name == b"__PAGEZERO" || Some(seg.name) == header_seg {
             seg.cmd.vmaddr
         } else {
             ctx.args.segaddr(seg.name).unwrap_or(align_to(next, segment_start_align(ctx, i)))
@@ -6943,7 +6956,12 @@ fn check_segment_overlaps<E: Target>(ctx: &Context<E>) {
             if !a.is_empty() && !b.is_empty() && a.start < b.end && b.start < a.end {
                 error!(
                     "custom segments overlap: {}({:#x}-{:#x}) {}({:#x}-{:#x})",
-                    segs[i].name, a.start, a.end, segs[j].name, b.start, b.end
+                    raw(segs[i].name),
+                    a.start,
+                    a.end,
+                    raw(segs[j].name),
+                    b.start,
+                    b.end
                 );
                 return;
             }
@@ -6978,7 +6996,7 @@ fn check_segments<E: Target>(ctx: &Context<E>) -> usize {
     let mut nsects = 0;
     for (i, seg) in segs.iter().enumerate() {
         if slides && i > 0 && seg.cmd.vmaddr < segs[i - 1].cmd.vmaddr {
-            crate::layout_error!("segment {} address is out of order", seg.name);
+            crate::layout_error!("segment {} address is out of order", raw(seg.name));
             return 2;
         }
         let seg_end = (seg.cmd.fileoff + seg.cmd.filesize) as u32;
@@ -6986,19 +7004,18 @@ fn check_segments<E: Target>(ctx: &Context<E>) -> usize {
             if !hdr.is_zerofill() && hdr.fileoff + hdr.size > seg_end as u64 {
                 crate::layout_error!(
                     "section {},{} file end ({}) goes past the segment end ({seg_end}) ",
-                    hdr.segname,
-                    hdr.sectname,
+                    raw(hdr.segname),
+                    raw(hdr.sectname),
                     hdr.fileoff + hdr.size
                 );
                 return 2;
             }
-            if matches!(hdr.sectname.as_str(), "__thread_data" | "__thread_bss")
-                && !hdr.is_thread_local()
+            if matches!(hdr.sectname, b"__thread_data" | b"__thread_bss") && !hdr.is_thread_local()
             {
                 crate::layout_error!(
                     "Missing TLV section flags in {},{}",
-                    hdr.segname,
-                    hdr.sectname
+                    raw(hdr.segname),
+                    raw(hdr.sectname)
                 );
                 return 1;
             }
@@ -7008,10 +7025,10 @@ fn check_segments<E: Target>(ctx: &Context<E>) -> usize {
                 {
                     crate::layout_error!(
                         "TLV sections must be contiguous, but {},{} - {},{} aren't",
-                        prev.segname,
-                        prev.sectname,
-                        hdr.segname,
-                        hdr.sectname
+                        raw(prev.segname),
+                        raw(prev.sectname),
+                        raw(hdr.segname),
+                        raw(hdr.sectname)
                     );
                     return 1;
                 }
@@ -7024,7 +7041,7 @@ fn check_segments<E: Target>(ctx: &Context<E>) -> usize {
         && let (Some(addr), Some(last)) = (ctx.args.segaddr(linkedit.name), segs.last())
         && addr < last.cmd.vmaddr
     {
-        crate::layout_error!("segment {} address is out of order", linkedit.name);
+        crate::layout_error!("segment {} address is out of order", raw(linkedit.name));
         return 2;
     }
     0
@@ -7056,7 +7073,7 @@ fn unsized_linkedit_addr<E: Target>(ctx: &Context<E>) -> u64 {
     let header_seg = in_place_segment(ctx);
     let (mut top, mut end) = (0, 0);
     for seg in segs {
-        let in_place = seg.name == "__PAGEZERO" || Some(seg.name) == header_seg;
+        let in_place = seg.name == b"__PAGEZERO" || Some(seg.name) == header_seg;
         let pinned = ctx.args.segaddr(seg.name).is_some();
         let start = if in_place || pinned { seg.cmd.vmaddr } else { top };
         end = start + segment_span(ctx, seg);
@@ -7073,7 +7090,7 @@ fn unsized_linkedit_addr<E: Target>(ctx: &Context<E>) -> u64 {
 fn place_linkedit<E: Target>(ctx: &mut Context<E>) {
     let linkedit = ctx.segments.len() - 1;
     let others = &ctx.segments[..linkedit];
-    let addr = if let Some(addr) = ctx.args.segaddr("__LINKEDIT") {
+    let addr = if let Some(addr) = ctx.args.segaddr(b"__LINKEDIT") {
         addr
     } else if dyld_slides(ctx) || ctx.args.segaddrs.is_empty() {
         others.iter().map(|seg| seg.cmd.vmaddr + segment_span(ctx, seg)).max().unwrap_or(0)
@@ -7100,7 +7117,7 @@ fn dyld_slides<E: Target>(ctx: &Context<E>) -> bool {
 /// image dyld slides, unless it is a dylib's or a bundle's preferred
 /// address, which ld-prime honors without chained fixups (see
 /// cmdline::resolve_image_base; a PIE's it ignores).
-fn is_pin_no_base<E: Target>(ctx: &Context<E>, segname: &str) -> bool {
+fn is_pin_no_base<E: Target>(ctx: &Context<E>, segname: &[u8]) -> bool {
     ctx.args.segaddr(segname).is_some()
         && dyld_slides(ctx)
         && (ctx.args.output_type == MH_EXECUTE || ctx.args.fixup_chains)
@@ -7322,8 +7339,8 @@ pub(crate) fn ensure_stub_binder<E: Target>(ctx: &mut Context<E>) {
 pub(crate) fn add_data_word<E: Target>(ctx: &mut Context<E>, size: u32) -> u32 {
     let p2align = size.trailing_zeros() as u8;
     let (file, shndx) = ctx.add_synthetic_section(MachSection {
-        sectname: str_to_name("__data"),
-        segname: str_to_name("__DATA"),
+        sectname: bytes_to_name(b"__data"),
+        segname: bytes_to_name(b"__DATA"),
         p2align: p2align as u32,
         flags: 0,
         ..Default::default()
@@ -7346,7 +7363,7 @@ pub(crate) fn add_data_word<E: Target>(ctx: &mut Context<E>, size: u32) -> u32 {
     });
     let isec = (ctx.isecs.len() - 1) as u32;
     let fields = vec![DataField::Bytes(vec![0; size as usize])];
-    ctx.data_blobs.push(DataBlob { sect: "__data", isec, fields });
+    ctx.data_blobs.push(DataBlob { sect: b"__data", isec, fields });
     isec
 }
 

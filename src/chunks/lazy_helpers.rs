@@ -77,7 +77,7 @@ pub struct LazyHelpersSection {
 
 impl LazyHelpersSection {
     pub fn new() -> Self {
-        let mut hdr = ChunkHeader::new("__TEXT", "__lazy_helpers");
+        let mut hdr = ChunkHeader::new(b"__TEXT", b"__lazy_helpers");
         hdr.flags = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
         Self {
             hdr,

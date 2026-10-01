@@ -15,7 +15,7 @@ pub struct LazyPtrsSection {
 
 impl LazyPtrsSection {
     pub fn new() -> Self {
-        let mut hdr = ChunkHeader::new("__DATA", "__la_symbol_ptr");
+        let mut hdr = ChunkHeader::new(b"__DATA", b"__la_symbol_ptr");
         hdr.flags = S_LAZY_SYMBOL_POINTERS;
         hdr.p2align = 3;
         Self { hdr }

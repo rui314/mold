@@ -86,7 +86,7 @@ impl ObjcRef {
 /// synthetic subsection `isec`.
 #[derive(Debug)]
 pub struct DataBlob {
-    pub sect: &'static str,
+    pub sect: &'static [u8],
     pub isec: u32,
     pub fields: Vec<DataField>,
 }
@@ -175,13 +175,13 @@ pub(crate) fn add_slot_stand_in<E: Target>(ctx: &mut Context<E>, sect: (u32, u32
 /// with the given flags) and returns its subsection.
 pub(crate) fn add_data_blob<E: Target>(
     ctx: &mut Context<E>,
-    sect: &'static str,
+    sect: &'static [u8],
     flags: u32,
     fields: Vec<DataField>,
 ) -> u32 {
     let hdr = ctx.add_synthetic_section(MachSection {
-        sectname: str_to_name(sect),
-        segname: str_to_name("__DATA"),
+        sectname: bytes_to_name(sect),
+        segname: bytes_to_name(b"__DATA"),
         p2align: 3,
         flags,
         ..Default::default()
@@ -196,8 +196,8 @@ pub(crate) fn add_data_blob<E: Target>(
 /// method lists rewritten in the relative form.
 fn add_methlist_section<E: Target>(ctx: &mut Context<E>) -> (u32, u32) {
     ctx.add_synthetic_section(MachSection {
-        sectname: str_to_name("__objc_methlist"),
-        segname: str_to_name("__TEXT"),
+        sectname: bytes_to_name(b"__objc_methlist"),
+        segname: bytes_to_name(b"__TEXT"),
         p2align: 2,
         flags: S_REGULAR,
         ..Default::default()
@@ -366,7 +366,7 @@ pub fn coalesce_objc_refs<E: Target>(ctx: &mut Context<E>) {
             continue;
         }
         let h = ctx.hdr_of(isec);
-        if h.segname() != "__DATA" {
+        if h.segname() != b"__DATA" {
             continue;
         }
         let obj = isec.file as usize;
@@ -378,13 +378,13 @@ pub fn coalesce_objc_refs<E: Target>(ctx: &mut Context<E>) {
                 && !rel.is_subtracted
         };
         let key = match h.sectname() {
-            "__objc_classrefs" if folds_objc_classrefs(ctx) => continue,
-            "__objc_selrefs" if h.section_type() != S_LITERAL_POINTERS => continue,
-            "__objc_selrefs" | "__objc_classrefs" => {
+            b"__objc_classrefs" if folds_objc_classrefs(ctx) => continue,
+            b"__objc_selrefs" if h.section_type() != S_LITERAL_POINTERS => continue,
+            b"__objc_selrefs" | b"__objc_classrefs" => {
                 if isec.size != 8 || rels.len() != 1 || !plain_ptr(&rels[0]) {
                     continue;
                 }
-                if h.sectname() == "__objc_classrefs" {
+                if h.sectname() == b"__objc_classrefs" {
                     let RelocTarget::Sym(idx) = rels[0].target() else { continue };
                     if rels[0].addend != 0 {
                         continue;
@@ -394,18 +394,18 @@ pub fn coalesce_objc_refs<E: Target>(ctx: &mut Context<E>) {
                     Key::Sel(place(ctx, obj, &rels[0]))
                 }
             }
-            "__objc_superrefs" | "__objc_protorefs" => {
+            b"__objc_superrefs" | b"__objc_protorefs" => {
                 if isec.is_labeled() || isec.size != 8 || rels.len() != 1 || !plain_ptr(&rels[0]) {
                     continue;
                 }
                 let target = place(ctx, obj, &rels[0]);
-                if h.sectname() == "__objc_superrefs" {
+                if h.sectname() == b"__objc_superrefs" {
                     Key::Super(target)
                 } else {
                     Key::Proto(target)
                 }
             }
-            "__cfstring" => {
+            b"__cfstring" => {
                 if isec.size != 32 || !rels.iter().all(plain_ptr) {
                     continue;
                 }
@@ -544,9 +544,9 @@ pub fn scan_objc_stubs<E: Target>(ctx: &mut Context<E>) {
                 continue;
             }
             let h = ctx.hdr_of(isec);
-            if h.sectname() == "__objc_methname" && h.section_type() == S_CSTRING_LITERALS {
+            if h.sectname() == b"__objc_methname" && h.section_type() == S_CSTRING_LITERALS {
                 name_of.entry(cstring_of(isec.data())).or_insert(i as u32);
-            } else if h.sectname() == "__objc_selrefs"
+            } else if h.sectname() == b"__objc_selrefs"
                 && h.section_type() == S_LITERAL_POINTERS
                 && isec.size == 8
                 && let Some(target) = objc_pointer_at(ctx, i as u32, 0)
@@ -583,8 +583,8 @@ fn absorb_selrefs<E: Target>(ctx: &mut Context<E>, absorbed: Vec<(u32, u32)>) {
         return;
     }
     let sect = ctx.add_synthetic_section(MachSection {
-        sectname: str_to_name("__objc_selrefs"),
-        segname: str_to_name("__DATA"),
+        sectname: bytes_to_name(b"__objc_selrefs"),
+        segname: bytes_to_name(b"__DATA"),
         p2align: 3,
         flags: S_LITERAL_POINTERS,
         ..Default::default()
@@ -749,7 +749,7 @@ fn name_classref_targets<E: Target>(ctx: &mut Context<E>) {
             || !obj
                 .sect_hdrs
                 .iter()
-                .any(|h| h.segname() == "__DATA" && h.sectname() == "__objc_classrefs")
+                .any(|h| h.segname() == b"__DATA" && h.sectname() == b"__objc_classrefs")
         {
             continue;
         }
@@ -760,8 +760,8 @@ fn name_classref_targets<E: Target>(ctx: &mut Context<E>) {
             let h = ctx.hdr_of(isec);
             if !isec.is_alive()
                 || isec.replacement != crate::input_sections::NO_REPLACEMENT
-                || h.segname() != "__DATA"
-                || h.sectname() != "__objc_classrefs"
+                || h.segname() != b"__DATA"
+                || h.sectname() != b"__objc_classrefs"
                 || isec.size != 8
             {
                 continue;
@@ -807,7 +807,7 @@ fn classref_slots<E: Target>(
             continue;
         }
         let h = ctx.hdr_of(isec);
-        if h.segname() != "__DATA" || h.sectname() != "__objc_classrefs" {
+        if h.segname() != b"__DATA" || h.sectname() != b"__objc_classrefs" {
             continue;
         }
         if let Some(idx) = pointer_target(ctx, i as usize) {
@@ -957,24 +957,24 @@ fn runtime_method_lists<E: Target>(ctx: &Context<E>) -> Vec<u32> {
             continue;
         }
         let h = ctx.hdr_of(isec);
-        if !h.segname().starts_with("__DATA") {
+        if !h.segname().starts_with(b"__DATA") {
             continue;
         }
         let records = || list_entries(ctx, i as u32).filter_map(|r| objc_ref_location(ctx, r?));
         match h.sectname() {
-            "__objc_classlist" | "__objc_nlclslist" => {
+            b"__objc_classlist" | b"__objc_nlclslist" => {
                 for cls in records() {
                     found.visit_class(ctx, cls);
                 }
             }
-            "__objc_catlist" | "__objc_catlist2" | "__objc_nlcatlist" => {
+            b"__objc_catlist" | b"__objc_catlist2" | b"__objc_nlcatlist" => {
                 // category_t: name, cls, instanceMethods, classMethods.
                 for cat in records() {
                     found.note(ctx, cat, 16);
                     found.note(ctx, cat, 24);
                 }
             }
-            "__objc_protolist" => {
+            b"__objc_protolist" => {
                 // protocol_t: isa, name, protocols, then the four method
                 // lists.
                 for proto in records() {
@@ -983,7 +983,7 @@ fn runtime_method_lists<E: Target>(ctx: &Context<E>) -> Vec<u32> {
                     }
                 }
             }
-            "__objc_clsrolist" => {
+            b"__objc_clsrolist" => {
                 // class_ro_t: baseMethods at 32.
                 for ro in records() {
                     found.note(ctx, ro, 32);
@@ -1058,7 +1058,7 @@ impl SelrefFinder {
                 continue;
             }
             let h = ctx.hdr_of(isec);
-            if h.sectname() != "__objc_selrefs" || h.section_type() != S_LITERAL_POINTERS {
+            if h.sectname() != b"__objc_selrefs" || h.section_type() != S_LITERAL_POINTERS {
                 continue;
             }
             let Some(target) = objc_pointer_at(ctx, i as u32, 0) else { continue };
@@ -1233,7 +1233,7 @@ pub fn merge_objc_categories<E: Target>(ctx: &mut Context<E>) {
     for cls in nonlazy_classes {
         add_data_blob(
             ctx,
-            "__objc_nlclslist",
+            b"__objc_nlclslist",
             S_ATTR_NO_DEAD_STRIP,
             vec![DataField::Ptr(ObjcRef::Isec(cls.0, cls.1))],
         );
@@ -1266,8 +1266,8 @@ fn defined_classes<E: Target>(
             continue;
         }
         let nonlazy = match ctx.hdr_of(isec).sectname() {
-            "__objc_classlist" => false,
-            "__objc_nlclslist" => true,
+            b"__objc_classlist" => false,
+            b"__objc_nlclslist" => true,
             _ => continue,
         };
         for cls in list_entries(ctx, i as u32).filter_map(|r| objc_ref_location(ctx, r?)) {
@@ -1328,8 +1328,8 @@ fn find_categories<E: Target>(
             continue;
         }
         let nonlazy = match ctx.hdr_of(isec).sectname() {
-            "__objc_catlist" => false,
-            "__objc_nlcatlist" => true,
+            b"__objc_catlist" => false,
+            b"__objc_nlcatlist" => true,
             _ => continue,
         };
         let mut list = CategoryList { isec: i as u32, nonlazy, entries: Vec::new() };
@@ -1819,7 +1819,7 @@ impl MergedListWriter {
         }
         // ld-prime writes a merged absolute list into __objc_data (the
         // protocol and property lists stay in __objc_const).
-        add_data_blob(ctx, "__objc_data", 0, fields)
+        add_data_blob(ctx, b"__objc_data", 0, fields)
     }
 }
 
@@ -1827,7 +1827,7 @@ impl MergedListWriter {
 fn add_protocol_list<E: Target>(ctx: &mut Context<E>, protocols: &[ObjcRef]) -> u32 {
     let mut fields = vec![DataField::Bytes((protocols.len() as u64).to_le_bytes().to_vec())];
     fields.extend(protocols.iter().map(|&r| DataField::Ptr(r)));
-    add_data_blob(ctx, "__objc_const", 0, fields)
+    add_data_blob(ctx, b"__objc_const", 0, fields)
 }
 
 /// Writes a property list, as read_property_list reads it.
@@ -1839,7 +1839,7 @@ fn add_property_list<E: Target>(ctx: &mut Context<E>, props: &[(ObjcRef, ObjcRef
     for &(name, attrs) in props {
         fields.extend([DataField::Ptr(name), DataField::Ptr(attrs)]);
     }
-    let isec = add_data_blob(ctx, "__objc_const", 0, fields);
+    let isec = add_data_blob(ctx, b"__objc_const", 0, fields);
     ctx.objc_property_lists.push(isec);
     isec
 }
@@ -1928,9 +1928,9 @@ fn rewrite_ro<E: Target>(
     // The new record goes where the old one was: Swift puts a class's
     // ro data in __objc_data (ld64's output keeps __DATA__TtC...
     // there), clang's in __objc_const.
-    let sect = match ctx.hdr_of(&ctx.isecs[ro.0 as usize]).sectname() {
-        "__objc_data" => "__objc_data",
-        _ => "__objc_const",
+    let sect: &[u8] = match ctx.hdr_of(&ctx.isecs[ro.0 as usize]).sectname() {
+        b"__objc_data" => b"__objc_data",
+        _ => b"__objc_const",
     };
     let blob = add_data_blob(ctx, sect, 0, fields);
     let isec = &mut ctx.isecs[ro.0 as usize];
@@ -1984,7 +1984,7 @@ fn rebuild_category_lists<E: Target>(
         // from it, so the categories of the objects after it still come
         // after its others.
         if !survivors.is_empty() {
-            let sect = if list.nonlazy { "__objc_nlcatlist" } else { "__objc_catlist" };
+            let sect: &[u8] = if list.nonlazy { b"__objc_nlcatlist" } else { b"__objc_catlist" };
             let blob = add_data_blob(ctx, sect, S_ATTR_NO_DEAD_STRIP, survivors);
             ctx.isecs[list.isec as usize].replacement = blob;
         }

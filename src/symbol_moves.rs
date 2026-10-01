@@ -16,12 +16,14 @@ use std::os::unix::ffi::OsStrExt;
 use crate::chunks::symtab::keep_local_symbol_in;
 use crate::cmdline::SymbolMove;
 use crate::context::Context;
+use crate::error::raw;
 use crate::input_files::FileId;
 use crate::macho::*;
 use crate::output_sections::{canonical_section_flags, common_owners};
 use crate::passes::resolved_file_name;
 use crate::symbol::SymbolId;
 use crate::target::Target;
+use crate::util::leak_bytes;
 
 /// The option that moves a subsection.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -46,7 +48,7 @@ impl MoveOption {
 pub struct Move {
     pub option: MoveOption,
     /// The segment, cut to 16 bytes.
-    pub segment: &'static str,
+    pub segment: &'static [u8],
 }
 
 /// What a subsection holds, as ld-prime tells which option may move it:
@@ -74,7 +76,7 @@ struct Subsec<'a> {
     isec: Option<u32>,
     /// Where ld-prime comes to the subsection (see Place).
     place: Place,
-    segment: &'a str,
+    segment: &'a [u8],
     content: Content,
     kind: &'static str,
 }
@@ -106,12 +108,12 @@ enum SymbolFile {
 
 /// What a subsection of an input section holds, and ld-prime's name for
 /// it.
-fn content_of(seg: &str, sect: &str, flags: u32) -> (Content, &'static str) {
+fn content_of(seg: &[u8], sect: &[u8], flags: u32) -> (Content, &'static str) {
     use Content::*;
     let flags = canonical_section_flags(seg, sect, flags);
     if flags & S_ATTR_PURE_INSTRUCTIONS != 0 {
         let kind =
-            if (seg, sect) == ("__TEXT", "__StaticInit") { "staticInit" } else { "function" };
+            if (seg, sect) == (b"__TEXT", b"__StaticInit") { "staticInit" } else { "function" };
         return (Code, kind);
     }
     match flags & SECTION_TYPE {
@@ -124,10 +126,10 @@ fn content_of(seg: &str, sect: &str, flags: u32) -> (Content, &'static str) {
         S_16BYTE_LITERALS => return (Code, "literal16"),
         S_CSTRING_LITERALS => {
             let kind = match (seg, sect) {
-                ("__TEXT", "__objc_methname") => "objc-method-name",
-                ("__TEXT", "__objc_classname") => "objc-class-name",
-                ("__TEXT", "__objc_methtype") => "objc-method-type",
-                ("__TEXT", "__oslogstring") => "os-log-strings",
+                (b"__TEXT", b"__objc_methname") => "objc-method-name",
+                (b"__TEXT", b"__objc_classname") => "objc-class-name",
+                (b"__TEXT", b"__objc_methtype") => "objc-method-type",
+                (b"__TEXT", b"__oslogstring") => "os-log-strings",
                 _ => "c-string-literal",
             };
             return (Code, kind);
@@ -135,16 +137,16 @@ fn content_of(seg: &str, sect: &str, flags: u32) -> (Content, &'static str) {
         _ => {}
     }
     match (seg, sect) {
-        ("__TEXT", "__gcc_except_tab") => (Code, "LSDA"),
-        ("__DATA", "__data") => (Data, "data"),
-        ("__DATA", "__cfstring") => (Data, "cfstring"),
-        ("__DATA", "__auth_ptr") => (Data, "auth-ptr"),
-        ("__DATA", "__objc_data") => (Data, "objc-data"),
-        ("__DATA", "__objc_const") => (Data, "objc-const"),
-        ("__DATA", "__objc_ivar") => (Data, "objc-ivar"),
-        ("__DATA", "__objc_superrefs") => (Data, "objc-super-ref"),
-        ("__DATA", "__objc_protolist") => (Data, "objc-protocol-list"),
-        ("__DATA", "__objc_protorefs") => (Data, "objc-protocol-ref"),
+        (b"__TEXT", b"__gcc_except_tab") => (Code, "LSDA"),
+        (b"__DATA", b"__data") => (Data, "data"),
+        (b"__DATA", b"__cfstring") => (Data, "cfstring"),
+        (b"__DATA", b"__auth_ptr") => (Data, "auth-ptr"),
+        (b"__DATA", b"__objc_data") => (Data, "objc-data"),
+        (b"__DATA", b"__objc_const") => (Data, "objc-const"),
+        (b"__DATA", b"__objc_ivar") => (Data, "objc-ivar"),
+        (b"__DATA", b"__objc_superrefs") => (Data, "objc-super-ref"),
+        (b"__DATA", b"__objc_protolist") => (Data, "objc-protocol-list"),
+        (b"__DATA", b"__objc_protorefs") => (Data, "objc-protocol-ref"),
         _ => (Other, "custom"),
     }
 }
@@ -169,9 +171,8 @@ pub(crate) fn find_moves<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32,
     {
         return moves;
     }
-    let segments = |lists: &[SymbolMove]| -> Vec<&'static str> {
-        let cut = |seg: &str| seg[..seg.floor_char_boundary(16)].to_string();
-        lists.iter().map(|list| &*String::leak(cut(&list.segment))).collect()
+    let segments = |lists: &[SymbolMove]| -> Vec<&'static [u8]> {
+        lists.iter().map(|list| leak_bytes(cut_name(&list.segment).to_vec())).collect()
     };
     let (rw_segs, ro_segs) = (segments(&args.move_to_rw), segments(&args.move_to_ro));
     let (mut rw_warnings, mut ro_warnings) = (Vec::new(), Vec::new());
@@ -186,12 +187,12 @@ pub(crate) fn find_moves<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32,
             (_, SymbolFile::Obj(obj)) => resolved_file_name(ctx.objs[obj].mf),
         };
         let what = if subsec.content == Content::Code { "code" } else { "not code" };
-        let msg = format!(
+        let msg = crate::error::render(format_args!(
             "cannot move symbol '{}' ({file}) to segment '{}' because symbol is {what} (is {})",
             ctx.symbols[id].name(),
-            list.segment,
+            raw(&list.segment),
             subsec.kind
-        );
+        ));
         (place, msg)
     };
 
@@ -241,7 +242,7 @@ pub(crate) fn find_moves<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32,
             && find(&args.dirty_data).is_some()
             && !matches!(subsec.kind, "thread-data" | "thread-bss")
         {
-            chosen = Some(Move { option: MoveOption::Dirty, segment: "__DATA_DIRTY" });
+            chosen = Some(Move { option: MoveOption::Dirty, segment: b"__DATA_DIRTY" });
         }
         if let (Some(m), Some(isec)) = (chosen, subsec.isec) {
             moves.entry(isec).or_insert(m);
@@ -251,7 +252,7 @@ pub(crate) fn find_moves<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32,
     ro_warnings.sort_by_key(|&(place, _)| place);
     rw_warnings.sort_by_key(|&(place, _)| place);
     for (_, msg) in ro_warnings.iter().chain(&rw_warnings) {
-        crate::warn!("{msg}");
+        crate::warn!("{}", raw(msg));
     }
     moves
 }
@@ -341,7 +342,7 @@ fn subsec_named<'a, E: Target>(
         let isec = sym.input_section().filter(|isec| commons.get(isec) == Some(&(obj as u32)))?;
         let (content, kind) = (Content::Data, "common");
         let place = (obj as u32, isec as u64);
-        return Some(Subsec { isec: Some(isec), place, segment: "__DATA", content, kind });
+        return Some(Subsec { isec: Some(isec), place, segment: b"__DATA", content, kind });
     }
     if nlist.is_stab()
         || !matches!(nlist.n_type(), N_SECT | N_ABS)
@@ -357,7 +358,7 @@ fn subsec_named<'a, E: Target>(
     let Some(isec) = isec else {
         let (content, kind) = (Content::Data, "data");
         let place = (obj as u32, u64::MAX);
-        return Some(Subsec { isec: None, place, segment: "", content, kind });
+        return Some(Subsec { isec: None, place, segment: b"", content, kind });
     };
     let kept = ctx.resolve_isec(isec as usize);
     if !ctx.isecs[kept].is_alive() {

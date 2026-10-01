@@ -178,7 +178,7 @@ impl<'a, E: Target> Places<'a, E> {
             .boundary_syms
             .iter()
             .filter_map(|(id, is_start, seg, sect)| {
-                Some((*id, places.boundary(*is_start, seg, sect.as_deref())?))
+                Some((*id, places.boundary(*is_start, seg, *sect)?))
             })
             .collect();
         places
@@ -186,7 +186,7 @@ impl<'a, E: Target> Places<'a, E> {
 
     /// A section$ symbol's section, at its start or end; a segment$
     /// symbol's first section at its start, or last at its end.
-    fn boundary(&self, is_start: bool, seg: &str, sect: Option<&str>) -> Option<Place> {
+    fn boundary(&self, is_start: bool, seg: &[u8], sect: Option<&[u8]>) -> Option<Place> {
         let ctx = self.ctx;
         let mut hdrs = ctx.chunks.iter().map(|&id| ctx.chunk_header(id)).filter(|h| {
             h.is_sect && h.segname == seg && sect.is_none_or(|sect| h.sectname == sect)

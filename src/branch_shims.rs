@@ -33,7 +33,7 @@ use crate::target::{RelocClass, Target};
 
 /// Where ld-prime takes segment `segname` to be when it decides which
 /// references can't reach (see the module comment).
-fn provisional_addr<E: Target>(ctx: &Context<E>, segname: &str) -> u64 {
+fn provisional_addr<E: Target>(ctx: &Context<E>, segname: &[u8]) -> u64 {
     match ctx.args.segaddr(segname) {
         Some(addr) if addr != 0 => addr,
         _ => ctx.args.pagezero_size + ctx.args.segment_align,
@@ -41,7 +41,7 @@ fn provisional_addr<E: Target>(ctx: &Context<E>, segname: &str) -> u64 {
 }
 
 /// The segment subsection `isec` lands in, once output sections are made.
-fn segment_of<E: Target>(ctx: &Context<E>, isec: usize) -> Option<&'static str> {
+fn segment_of<E: Target>(ctx: &Context<E>, isec: usize) -> Option<&'static [u8]> {
     let isec = ctx.resolve_isec(isec);
     ctx.isecs[isec].output_section().map(|id| ctx.chunk_header(id).segname)
 }

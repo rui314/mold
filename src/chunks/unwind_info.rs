@@ -37,7 +37,7 @@ pub const MAX_FDE_OFFSET: u32 = 0xff_ffff;
 
 impl UnwindInfoSection {
     pub fn new() -> Self {
-        let mut hdr = ChunkHeader::new("__TEXT", "__unwind_info");
+        let mut hdr = ChunkHeader::new(b"__TEXT", b"__unwind_info");
         hdr.p2align = 2;
         Self {
             hdr,

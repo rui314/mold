@@ -300,7 +300,7 @@ fn add_dof_section<E: Target>(
     sectname[..name.len()].copy_from_slice(name);
     let (file, shndx) = ctx.add_synthetic_section(MachSection {
         sectname,
-        segname: str_to_name("__TEXT"),
+        segname: bytes_to_name(b"__TEXT"),
         flags: S_DTRACE_DOF,
         ..Default::default()
     });

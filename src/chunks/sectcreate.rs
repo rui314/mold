@@ -21,8 +21,8 @@ pub struct SectCreateSection {
 
 impl SectCreateSection {
     pub fn new(
-        segname: &'static str,
-        sectname: &str,
+        segname: &'static [u8],
+        sectname: &'static [u8],
         contents: &'static [u8],
         from_option: bool,
     ) -> Self {

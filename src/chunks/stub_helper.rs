@@ -31,7 +31,7 @@ pub struct StubHelperSection {
 
 impl StubHelperSection {
     pub fn new() -> Self {
-        let mut hdr = ChunkHeader::new("__TEXT", "__stub_helper");
+        let mut hdr = ChunkHeader::new(b"__TEXT", b"__stub_helper");
         hdr.flags = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
         hdr.p2align = 2;
         Self {

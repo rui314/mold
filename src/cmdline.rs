@@ -245,7 +245,7 @@ pub enum CommonsMode {
 pub struct SymbolMove {
     /// The segment, as given: ld-prime's warnings name it so, and the
     /// output cuts it to 16 bytes.
-    pub segment: String,
+    pub segment: Vec<u8>,
     /// The names listed, each found with value 1, and the patterns,
     /// with 0: ld-prime warns about a symbol it cannot move only if the
     /// list names it.
@@ -257,13 +257,16 @@ pub struct SymbolMove {
 /// takes its place among the inputs.
 #[derive(Debug)]
 pub struct SectCreate {
-    pub segname: String,
-    pub sectname: String,
+    pub segname: Vec<u8>,
+    pub sectname: Vec<u8>,
     /// The file of the contents; None for an empty section.
     pub path: Option<PathBuf>,
     /// How many inputs come before the option on the command line.
     pub position: usize,
 }
+
+/// A -rename_section: (old_seg, old_sect, new_seg, new_sect).
+pub type SectionRename = (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>);
 
 /// Parsed command line arguments.
 #[derive(Debug)]
@@ -660,7 +663,7 @@ pub struct Args {
     pub aliases: Vec<(String, String)>,
     /// -sectalign: (segment, section, p2align), the alignment of an
     /// output section whatever its members ask for.
-    pub sectalign: Vec<(String, String, u8)>,
+    pub sectalign: Vec<(Vec<u8>, Vec<u8>, u8)>,
     /// -allowable_client: clients that may link this subframework
     /// (LC_SUB_CLIENT).
     pub allowable_clients: Vec<Vec<u8>>,
@@ -729,14 +732,14 @@ pub struct Args {
     pub image_base: Option<u64>,
     /// -segaddr: (segment, address) pins, one per segment (the last
     /// one given wins).
-    pub segaddrs: Vec<(String, u64)>,
+    pub segaddrs: Vec<(Vec<u8>, u64)>,
     /// -segprot: (segment, max, init) protections.
-    pub segprots: Vec<(String, u8, u8)>,
+    pub segprots: Vec<(Vec<u8>, u8, u8)>,
     /// -segment_order: segment names in output order.
-    pub segment_order: Vec<String>,
+    pub segment_order: Vec<Vec<u8>>,
     /// -seg_page_size: (segment, size), the boundary the segment after
     /// the named one starts on, in memory and in the file.
-    pub seg_page_sizes: Vec<(String, u64)>,
+    pub seg_page_sizes: Vec<(Vec<u8>, u64)>,
     /// -segalign: the boundary segments start and end on, in memory and
     /// in the file, and the most a section may be aligned to. The
     /// target's page size unless given, but 4 KiB for a -preload image
@@ -751,11 +754,11 @@ pub struct Args {
     pub warn_reduced_section_align: bool,
     /// -section_order: (segment, section names), the sections that
     /// lead their segment, in this order.
-    pub section_order: Vec<(String, Vec<String>)>,
-    /// -rename_section: (old_seg, old_sect, new_seg, new_sect).
-    pub rename_sections: Vec<(String, String, String, String)>,
+    pub section_order: Vec<(Vec<u8>, Vec<Vec<u8>>)>,
+    /// -rename_section, in command-line order.
+    pub rename_sections: Vec<SectionRename>,
     /// -rename_segment: (old, new).
-    pub rename_segments: Vec<(String, String)>,
+    pub rename_segments: Vec<(Vec<u8>, Vec<u8>)>,
     /// -move_to_rw_segment and -move_to_ro_segment: the lists of the
     /// data and of the code to move to other segments, in command-line
     /// order (the first list naming a symbol decides where it goes).
@@ -1057,7 +1060,7 @@ impl Default for Args {
 
 impl Args {
     /// The address -segaddr pins a segment to.
-    pub fn segaddr(&self, segname: &str) -> Option<u64> {
+    pub fn segaddr(&self, segname: &[u8]) -> Option<u64> {
         self.segaddrs.iter().find(|(name, _)| name == segname).map(|&(_, addr)| addr)
     }
 }
@@ -1644,7 +1647,7 @@ fn read_symbol_list(opt: &str, path: &Path) -> Vec<String> {
 /// lines are those of an export list: names, patterns, and either
 /// qualified as file:name to match the symbol of an object of that
 /// leaf name ("foo.o", "libfoo.a(foo.o)") alone.
-fn symbol_move(opt: &str, segment: &str, path: &Path) -> SymbolMove {
+fn symbol_move(opt: &str, segment: &[u8], path: &Path) -> SymbolMove {
     let mut symbols = GlobBuilder::default();
     for entry in read_symbol_list(opt, path) {
         match exact_name(&entry) {
@@ -1652,7 +1655,7 @@ fn symbol_move(opt: &str, segment: &str, path: &Path) -> SymbolMove {
             None => add_patterns(&mut symbols, [entry.as_str()], 0),
         }
     }
-    SymbolMove { segment: segment.to_string(), symbols: symbols.build() }
+    SymbolMove { segment: segment.to_vec(), symbols: symbols.build() }
 }
 
 fn symbol_list(text: &str) -> Vec<String> {
@@ -1730,18 +1733,19 @@ fn parse_prot(val: &[u8], warnings: &mut OptionWarnings) -> u8 {
 /// a Mach-O header's name field, as ld-prime silently does for the new
 /// names of -rename_section and -rename_segment. (The names they
 /// rename from are matched as given, so a longer one matches nothing.)
-fn section_name(name: &str) -> String {
-    name[..name.floor_char_boundary(16)].to_string()
+fn section_name(name: &str) -> Vec<u8> {
+    cut_name(name.as_bytes()).to_vec()
 }
 
 /// A -sectcreate segment or section name, cut to 16 bytes with
 /// ld-prime's warning. (-add_empty_section's are cut silently: ld-prime
 /// fails an assertion on them.)
-fn sectcreate_name(kind: &str, name: &str, warnings: &mut OptionWarnings) -> String {
+fn sectcreate_name(kind: &str, name: &str, warnings: &mut OptionWarnings) -> Vec<u8> {
     let cut = section_name(name);
     if cut.len() < name.len() {
-        warnings.warn(format!(
-            "-sectcreate {kind} name too long ('{name}'), will be truncated to '{cut}'"
+        warnings.warn(format_args!(
+            "-sectcreate {kind} name too long ('{name}'), will be truncated to '{}'",
+            raw(&cut)
         ));
     }
     cut
@@ -2124,8 +2128,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut objc_relative_method_lists: Option<bool> = None;
     let mut warn_unused_dylibs: Option<bool> = None;
     let mut data_const: Option<bool> = None;
-    let mut segprots: Vec<(String, u8, u8)> = Vec::new();
-    let mut seg_page_sizes: Vec<(String, u64)> = Vec::new();
+    let mut segprots: Vec<(Vec<u8>, u8, u8)> = Vec::new();
+    let mut seg_page_sizes: Vec<(Vec<u8>, u64)> = Vec::new();
     let mut segalign: Option<u64> = None;
     let mut explicit_entry = false;
     // -read_only_relocs: whether its treatment allows text relocations.
@@ -2387,7 +2391,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 args.image_base = Some(parse_hex(name, text(name, next_arg(&mut i, name))));
             }
             b"-segaddr" => {
-                let seg = text(name, next_arg(&mut i, name)).to_string();
+                let seg = text(name, next_arg(&mut i, name)).as_bytes().to_vec();
                 let addr = parse_hex(name, text(name, next_arg(&mut i, name)));
                 args.segaddrs.push((seg, addr));
             }
@@ -2401,9 +2405,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 if seg.is_empty() || max.is_empty() || init.is_empty() {
                     fatal!("-segprot missing <seg> <max-prot> <init-prot>");
                 }
-                let seg = text(name, OsStr::from_bytes(seg)).to_string();
+                let seg = text(name, OsStr::from_bytes(seg)).as_bytes().to_vec();
                 // __LINKEDIT, which dyld reads, keeps its own.
-                if seg == "__LINKEDIT" {
+                if seg == b"__LINKEDIT" {
                     warnings.warn("-segprot cannot be used to modify __LINKEDIT protections");
                 } else {
                     let max = parse_prot(max, &mut warnings);
@@ -2418,7 +2422,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 args.segment_order = text(name, next_arg(&mut i, name))
                     .split(':')
                     .filter(|s| !s.is_empty())
-                    .map(String::from)
+                    .map(|s| s.as_bytes().to_vec())
                     .collect();
             }
             b"-seg_page_size" => {
@@ -2433,7 +2437,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 if size > u32::MAX as u64 {
                     fatal!("-seg_page_size {size}: size too big");
                 }
-                seg_page_sizes.push((text(name, seg).to_string(), size));
+                seg_page_sizes.push((text(name, seg).as_bytes().to_vec(), size));
             }
             b"-segalign" => {
                 let align = parse_hex(name, text(name, next_arg(&mut i, name)));
@@ -2452,36 +2456,36 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     fatal!("-section_order needs <segname> <section-list>");
                 }
                 i += 2;
-                let seg = text(name, seg).to_string();
-                let list: Vec<String> = text(name, list)
+                let seg = text(name, seg).as_bytes().to_vec();
+                let list: Vec<Vec<u8>> = text(name, list)
                     .split(':')
                     .filter(|s| !s.is_empty())
-                    .map(String::from)
+                    .map(|s| s.as_bytes().to_vec())
                     .collect();
                 if list.is_empty() {
                     fatal!("-section_order should specifify at least one section");
                 }
                 if args.section_order.iter().any(|(s, _)| *s == seg) {
-                    fatal!("-section_order {seg} used more than once");
+                    fatal!("-section_order {} used more than once", raw(&seg));
                 }
                 args.section_order.push((seg, list));
             }
             b"-rename_section" => {
                 let usage = "<from-segment> <from-section> <to-segment> <to-section>";
-                let old_seg = rename_operand(&mut i, name, usage).to_string();
-                let old_sect = rename_operand(&mut i, name, usage).to_string();
+                let old_seg = rename_operand(&mut i, name, usage).as_bytes().to_vec();
+                let old_sect = rename_operand(&mut i, name, usage).as_bytes().to_vec();
                 let new_seg = section_name(rename_operand(&mut i, name, usage));
                 let new_sect = section_name(rename_operand(&mut i, name, usage));
                 args.rename_sections.push((old_seg, old_sect, new_seg, new_sect));
             }
             b"-rename_segment" => {
                 let usage = "<from-segment> <to-segment>";
-                let old = rename_operand(&mut i, name, usage).to_string();
+                let old = rename_operand(&mut i, name, usage).as_bytes().to_vec();
                 let new = section_name(rename_operand(&mut i, name, usage));
                 args.rename_segments.push((old, new));
             }
             b"-move_to_rw_segment" | b"-move_to_ro_segment" => {
-                let segment = text(name, move_operand(&mut i, name));
+                let segment = text(name, move_operand(&mut i, name)).as_bytes();
                 let list = symbol_move(name, segment, &path(move_operand(&mut i, name)));
                 match name {
                     "-move_to_rw_segment" => args.move_to_rw.push(list),
@@ -2490,7 +2494,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             // ld-prime's error about a list it can't open names no option.
             b"-dirty_data_list" => {
-                let list = symbol_move("", "__DATA_DIRTY", &path(next_arg(&mut i, name)));
+                let list = symbol_move("", b"__DATA_DIRTY", &path(next_arg(&mut i, name)));
                 args.dirty_data.push(list);
             }
             b"-stack_size" => {
@@ -2759,16 +2763,18 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // alignment (1 for 0), and the first -sectalign given for a
             // section.
             b"-sectalign" => {
-                let seg = text(name, next_arg(&mut i, name)).to_string();
-                let sect = text(name, next_arg(&mut i, name)).to_string();
+                let seg = text(name, next_arg(&mut i, name)).as_bytes().to_vec();
+                let sect = text(name, next_arg(&mut i, name)).as_bytes().to_vec();
                 let align = parse_hex(name, text(name, next_arg(&mut i, name)));
                 if align > u32::MAX as u64 {
                     fatal!("-sectalign {align}: alignment too big");
                 }
                 let p2align = if align == 0 { 0 } else { align.trailing_zeros() as u8 };
                 if !align.is_power_of_two() {
-                    warnings.warn(format!(
-                        "alignment for -sectalign {seg} {sect} is not a power of two, using 0x{:X}",
+                    warnings.warn(format_args!(
+                        "alignment for -sectalign {} {} is not a power of two, using 0x{:X}",
+                        raw(&seg),
+                        raw(&sect),
                         1u64 << p2align
                     ));
                 }
@@ -3512,10 +3518,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     resolve_encryptable(&mut args);
     // An encryptable image's __oslogstring, which goes unencrypted,
     // starts a page of its own unless -sectalign says otherwise.
-    let oslog = |(seg, sect, _): &(String, String, u8)| seg == "__TEXT" && sect == "__oslogstring";
+    let oslog =
+        |(seg, sect, _): &(Vec<u8>, Vec<u8>, u8)| seg == b"__TEXT" && sect == b"__oslogstring";
     if args.encryptable && !args.sectalign.iter().any(oslog) {
         let p2align = args.segment_align.max(1).ilog2() as u8;
-        args.sectalign.push(("__TEXT".to_string(), "__oslogstring".to_string(), p2align));
+        args.sectalign.push((b"__TEXT".to_vec(), b"__oslogstring".to_vec(), p2align));
     }
     args.segprots = resolve_segprots(target, segprots);
     args.seg_page_sizes = resolve_seg_page_sizes(&args, seg_page_sizes);
@@ -3652,7 +3659,7 @@ fn resolve_dirty_data(args: &mut Args) {
     for sym in symbol_list(&text) {
         symbols.add_literal(sym.as_bytes(), 1);
     }
-    let segment = "__DATA_DIRTY".to_string();
+    let segment = b"__DATA_DIRTY".to_vec();
     args.dirty_data.push(SymbolMove { segment, symbols: symbols.build() });
 }
 
@@ -3963,8 +3970,8 @@ fn resolve_stack(target: &TargetTraits, args: &mut Args, size: Option<u64>, addr
         fatal!("-stack_size (0x{size:08X}) must be smaller than -stack_addr (0x{top:08X})");
     }
     args.stack_size = size;
-    if args.unixthread && args.segaddr("__UNIXSTACK").is_none() {
-        args.segaddrs.push(("__UNIXSTACK".to_string(), top - size));
+    if args.unixthread && args.segaddr(b"__UNIXSTACK").is_none() {
+        args.segaddrs.push((b"__UNIXSTACK".to_vec(), top - size));
     }
 }
 
@@ -4097,16 +4104,16 @@ fn check_segment_order(args: &Args) {
 /// before it refuses the option for an image that may not order its
 /// segments (only firmware may).
 fn complete_segment_order(args: &mut Args) {
-    let has = |name: &str| args.segment_order.iter().position(|s| s == name);
+    let has = |name: &[u8]| args.segment_order.iter().position(|s| s == name);
     if !args.without_dyld()
         && args.data_const
-        && has("__DATA_CONST").is_none()
-        && let Some(i) = has("__DATA")
+        && has(b"__DATA_CONST").is_none()
+        && let Some(i) = has(b"__DATA")
     {
         crate::warn!(
             "-segment_order lists __DATA, but not __DATA_CONST, assuming standard order. list __DATA_CONST explicitly or disable the segment using -no_data_const"
         );
-        args.segment_order.insert(i, "__DATA_CONST".to_string());
+        args.segment_order.insert(i, b"__DATA_CONST".to_vec());
     }
     if !args.segment_order.is_empty() && !custom_layout(args) {
         fatal!(
@@ -4163,13 +4170,15 @@ fn resolve_text_relocs(target: &TargetTraits, args: &Args, read_only_relocs: Opt
 
 /// -segaddr's (segment, address) pins, one per segment: ld-prime takes
 /// the last address given for a segment, with a warning.
-fn resolve_segaddrs(segaddrs: Vec<(String, u64)>) -> Vec<(String, u64)> {
-    let mut out: Vec<(String, u64)> = Vec::new();
+fn resolve_segaddrs(segaddrs: Vec<(Vec<u8>, u64)>) -> Vec<(Vec<u8>, u64)> {
+    let mut out: Vec<(Vec<u8>, u64)> = Vec::new();
     for (name, addr) in segaddrs {
         match out.iter_mut().find(|(seen, _)| *seen == name) {
-            Some((_, old)) if *old == addr => crate::warn!("-segaddr {name} used more than once"),
+            Some((_, old)) if *old == addr => {
+                crate::warn!("-segaddr {} used more than once", raw(&name))
+            }
             Some((_, old)) => {
-                crate::warn!("-segaddr {name} has conflicting values, using 0x{addr:X}");
+                crate::warn!("-segaddr {} has conflicting values, using 0x{addr:X}", raw(&name));
                 *old = addr;
             }
             None => out.push((name, addr)),
@@ -4183,9 +4192,9 @@ fn resolve_segaddrs(segaddrs: Vec<(String, u64)>) -> Vec<(String, u64)> {
 /// is its initial protection (nothing may raise it later there).
 fn resolve_segprots(
     target: &TargetTraits,
-    segprots: Vec<(String, u8, u8)>,
-) -> Vec<(String, u8, u8)> {
-    let mut out: Vec<(String, u8, u8)> = Vec::new();
+    segprots: Vec<(Vec<u8>, u8, u8)>,
+) -> Vec<(Vec<u8>, u8, u8)> {
+    let mut out: Vec<(Vec<u8>, u8, u8)> = Vec::new();
     for (name, max, init) in segprots {
         if out.iter().all(|(seen, _, _)| *seen != name) {
             out.push((name, if target.name == "arm64" { init } else { max }, init));
@@ -4232,18 +4241,22 @@ fn resolve_encryptable(args: &mut Args) {
 /// size rounds down to a power of two, with a warning; one below the
 /// page size (the segment alignment) is an error but in an object file,
 /// where it means nothing; and the first size given for a segment wins.
-fn resolve_seg_page_sizes(args: &Args, sizes: Vec<(String, u64)>) -> Vec<(String, u64)> {
+fn resolve_seg_page_sizes(args: &Args, sizes: Vec<(Vec<u8>, u64)>) -> Vec<(Vec<u8>, u64)> {
     let page = args.segment_align;
-    let mut out: Vec<(String, u64)> = Vec::new();
+    let mut out: Vec<(Vec<u8>, u64)> = Vec::new();
     for (name, mut size) in sizes {
         if size != 0 && !size.is_power_of_two() {
             size = 1 << size.ilog2();
             crate::warn!(
-                "-seg_page_size for {name} is not a power of two, rounding down to 0x{size:x}"
+                "-seg_page_size for {} is not a power of two, rounding down to 0x{size:x}",
+                raw(&name)
             );
         }
         if size < page && !args.relocatable {
-            fatal!("-seg_page_size {name} 0x{size:x} can't be smaller than page size (0x{page:x})");
+            fatal!(
+                "-seg_page_size {} 0x{size:x} can't be smaller than page size (0x{page:x})",
+                raw(&name)
+            );
         }
         if out.iter().all(|(seen, _)| *seen != name) {
             out.push((name, size));
@@ -4297,11 +4310,12 @@ fn check_segaddrs(args: &Args) {
     }
     let segaddrs = &args.segaddrs;
     for (i, (name, addr)) in segaddrs.iter().enumerate() {
+        let name = raw(name);
         if *addr < args.pagezero_size {
             fatal!("-segaddr {name} 0x{addr:X} conflicts with -pagezero_size");
         }
         if let Some((other, _)) = segaddrs[i + 1..].iter().find(|(_, a)| a == addr) {
-            fatal!("duplicate -segaddr addresses for {name} and {other}");
+            fatal!("duplicate -segaddr addresses for {name} and {}", raw(other));
         }
         if !addr.is_multiple_of(args.segment_align) {
             fatal!(
@@ -4345,7 +4359,7 @@ fn resolve_image_base(args: &mut Args) {
         return;
     }
 
-    let text = args.segaddr("__TEXT");
+    let text = args.segaddr(b"__TEXT");
     if let (Some(base), Some(text)) = (args.image_base, text)
         && base != text
     {
