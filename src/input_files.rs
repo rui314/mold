@@ -2238,22 +2238,30 @@ impl StagedObject {
                 ptr32.push((r.offset as usize / ENTRY_SIZE, 1 << (field / 8)));
             }
             let rec = &mut records[r.offset as usize / ENTRY_SIZE];
-            // The address a pointer field refers to. For an extern
+            // The address a pointer field refers to, and the section
+            // (1-based, as nlists count) it is in. For an extern
             // reference the target is this object's own definition,
-            // located by its nlist value.
-            let addr = match r.target() {
+            // located by its nlist.
+            let (n_sect, addr) = match r.target() {
                 RelocTarget::Sym(sym) => {
-                    self.nlists[sym as usize].n_value.wrapping_add_signed(r.addend)
+                    let nlist = &self.nlists[sym as usize];
+                    let n_sect = if nlist.n_type() == N_SECT { nlist.n_sect } else { 0 };
+                    (n_sect, nlist.n_value.wrapping_add_signed(r.addend))
                 }
                 RelocTarget::Section(sect) => {
-                    self.sect_hdrs[sect as usize].addr.wrapping_add_signed(r.addend)
+                    let addr = self.sect_hdrs[sect as usize].addr;
+                    (sect as u8 + 1, addr.wrapping_add_signed(r.addend))
                 }
             };
 
             match field {
-                // The function the record covers.
+                // The function the record covers, looked for in that
+                // section as a label's place is: the section's end is
+                // its last atom's, not the next section's first one's.
                 0 => {
-                    let Some((isec, off)) = subsec_at(addr) else {
+                    let Some((isec, off)) =
+                        find_symbol_subsec(&self.isecs, &self.subsecs, n_sect, addr)
+                    else {
                         fatal!("{file_name}: __compact_unwind: bad function reference");
                     };
                     rec.isec = isec as u32;

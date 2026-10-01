@@ -507,15 +507,16 @@ fn unsplit_bare_atoms(
     let mut records = records.to_vec();
     records.sort_unstable();
 
-    let starts = std::iter::once(0).chain(labels.iter().copied());
-    let ends = labels.iter().copied().chain(std::iter::once(isec.size));
-    starts
-        .zip(ends)
-        .filter(|&(start, end)| {
-            let next = records[records.partition_point(|&off| off < start)..].first();
-            next.is_none_or(|&off| end <= off)
+    // An atom has the records from its start to the next label; the
+    // last one, those at the section's end too.
+    (0..=labels.len())
+        .filter_map(|k| {
+            let start = if k == 0 { 0 } else { labels[k - 1] };
+            let next = labels.get(k).copied();
+            let rec = records[records.partition_point(|&off| off < start)..].first();
+            let bare = rec.is_none_or(|&off| next.is_some_and(|next| next <= off));
+            bare.then(|| (start, next.unwrap_or(isec.size) - start))
         })
-        .map(|(start, end)| (start, end - start))
         .collect()
 }
 
