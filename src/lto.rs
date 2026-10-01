@@ -60,6 +60,11 @@ pub struct Plugin {
     pub thinlto_codegen_add_module:
         unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char, c_int),
     pub thinlto_set_generated_objects_dir: unsafe extern "C" fn(*mut c_void, *const c_char),
+    pub thinlto_codegen_set_cache_dir: unsafe extern "C" fn(*mut c_void, *const c_char),
+    pub thinlto_codegen_set_cache_pruning_interval: unsafe extern "C" fn(*mut c_void, c_int),
+    pub thinlto_codegen_set_cache_entry_expiration: unsafe extern "C" fn(*mut c_void, u32),
+    pub thinlto_codegen_set_final_cache_size_relative_to_available_space:
+        unsafe extern "C" fn(*mut c_void, u32),
     pub thinlto_codegen_process: unsafe extern "C" fn(*mut c_void),
     pub thinlto_module_get_num_objects: unsafe extern "C" fn(*mut c_void) -> u32,
     pub thinlto_module_get_object: unsafe extern "C" fn(*mut c_void, u32) -> ObjectBuffer,
@@ -196,6 +201,19 @@ pub fn load_plugin(path: Option<&Path>) -> Plugin {
             ),
             thinlto_codegen_add_module: dlsym(handle, c"thinlto_codegen_add_module"),
             thinlto_set_generated_objects_dir: dlsym(handle, c"thinlto_set_generated_objects_dir"),
+            thinlto_codegen_set_cache_dir: dlsym(handle, c"thinlto_codegen_set_cache_dir"),
+            thinlto_codegen_set_cache_pruning_interval: dlsym(
+                handle,
+                c"thinlto_codegen_set_cache_pruning_interval",
+            ),
+            thinlto_codegen_set_cache_entry_expiration: dlsym(
+                handle,
+                c"thinlto_codegen_set_cache_entry_expiration",
+            ),
+            thinlto_codegen_set_final_cache_size_relative_to_available_space: dlsym(
+                handle,
+                c"thinlto_codegen_set_final_cache_size_relative_to_available_space",
+            ),
             thinlto_codegen_process: dlsym(handle, c"thinlto_codegen_process"),
             thinlto_module_get_num_objects: dlsym(handle, c"thinlto_module_get_num_objects"),
             thinlto_module_get_object: dlsym(handle, c"thinlto_module_get_object"),
@@ -324,6 +342,48 @@ pub struct ThinOptions<'a> {
     /// -object_path_lto: the directory libLTO writes the objects to,
     /// for the debugger.
     pub objects_dir: Option<&'a Path>,
+    /// -cache_path_lto and its policy.
+    pub cache: Option<CacheOptions<'a>>,
+}
+
+/// Where ThinLTO caches the objects it compiles, keyed by everything
+/// that goes into one, and how it prunes them (0 for libLTO's default).
+pub struct CacheOptions<'a> {
+    pub dir: &'a Path,
+    pub prune_interval: Option<i32>,
+    pub expiration: u32,
+    pub max_size: u32,
+}
+
+/// Hands ThinLTO the cache directory, which ld-prime creates (one level
+/// of it, owner-only) if it is not one yet - or warns and goes without.
+///
+/// # Safety
+///
+/// `cg` must be a live ThinLTO code generator.
+unsafe fn set_cache(plugin: &Plugin, cg: *mut c_void, cache: &CacheOptions) {
+    use std::os::unix::fs::DirBuilderExt;
+    if !cache.dir.is_dir()
+        && let Err(e) = std::fs::DirBuilder::new().mode(0o700).create(cache.dir)
+    {
+        let errno = e.raw_os_error().unwrap_or(0);
+        crate::warn!("unable to create ThinLTO cache directory: {} ({errno})", cache.dir.display());
+        return;
+    }
+    let dir = CString::new(crate::util::path_bytes(cache.dir)).unwrap_or_default();
+    // SAFETY: the generator is live per the caller; the path is
+    // NUL-terminated.
+    unsafe {
+        (plugin.thinlto_codegen_set_cache_dir)(cg, dir.as_ptr());
+        if let Some(interval) = cache.prune_interval {
+            (plugin.thinlto_codegen_set_cache_pruning_interval)(cg, interval);
+        }
+        (plugin.thinlto_codegen_set_cache_entry_expiration)(cg, cache.expiration);
+        (plugin.thinlto_codegen_set_final_cache_size_relative_to_available_space)(
+            cg,
+            cache.max_size,
+        );
+    }
 }
 
 /// An object ThinLTO compiled a module to: in memory, or written to a
@@ -362,6 +422,9 @@ pub unsafe fn compile_thin(
         let cg = (plugin.thinlto_create_codegen)();
         if cg.is_null() {
             fatal!("thinlto_create_codegen failed: {}", plugin.error_message());
+        }
+        if let Some(cache) = &opts.cache {
+            set_cache(plugin, cg, cache);
         }
         if let Some(cpu) = opts.cpu {
             (plugin.thinlto_codegen_set_cpu)(cg, c(cpu.as_bytes()).as_ptr());

@@ -29,12 +29,29 @@ grep -q "'bogus' is not a recognized processor for this target" $t/log
 not $mold -arch $ARCH -o $t/exe $t/a.o $t/b.o -mcpu 2> $t/log
 grep -q -- '-mcpu missing <cpu>' $t/log
 
-# mold compiles all bitcode as one module, as ld-prime does but for
-# ThinLTO: it has no ThinLTO cache, and takes the options that tune one
-# with their arguments' checks only.
+# The ThinLTO cache: ld-prime creates its directory (one level, owner
+# only) and hands libLTO the policy, the numbers read as strtoul reads
+# them and cut to 32 bits, so -1 never prunes and 4294967296 is 0. It
+# warns, and goes without, if it can't. Merged modules have no cache.
 link() { $CC -flto --ld-path=$mold -o $t/exe $t/a.o $t/b.o "$@"; }
-link -Wl,-cache_path_lto,$t/cache,-prune_interval_lto,10,-prune_after_lto,3600 \
-  -Wl,-max_relative_cache_size_lto,100,-arch_variant_lto_cache_mismatch,suppress
+rm -rf $t/cache
+link -Wl,-cache_path_lto,$t/cache,-arch_variant_lto_cache_mismatch,suppress
+[ ! -e $t/cache ]
+$CC -flto=thin -o $t/c.o -c -xc - <<< 'int times2(int x) { return x * 2; }'
+$CC -flto=thin -o $t/d.o -c -xc - \
+  <<< '#include <stdio.h>
+int times2(int);
+int main() { printf("%d\n", times2(21)); }'
+thinlink() { $CC -flto=thin --ld-path=$mold -o $t/exe $t/c.o $t/d.o "$@"; }
+thinlink -Wl,-cache_path_lto,$t/cache,-prune_interval_lto,-1,-prune_after_lto,3600 \
+  -Wl,-max_relative_cache_size_lto,4294967296
+$t/exe | grep -q '^42$'
+[ "$(stat -f %Lp $t/cache)" = 700 ]
+ls $t/cache | grep -q '^llvmcache-'
+thinlink -Wl,-cache_path_lto,$t/cache
+$t/exe | grep -q '^42$'
+thinlink -Wl,-cache_path_lto,$t/exe 2> $t/log
+grep -q "warning: unable to create ThinLTO cache directory: $t/exe (17)" $t/log
 # -mllvm options go to libLTO, which parses them as LLVM's command line
 # (clang passes one of its own): an unknown one ends the link.
 not link -Wl,-mllvm,-bogus-option 2> $t/log

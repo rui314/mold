@@ -346,6 +346,17 @@ pub struct Args {
     /// -mllvm: options for LLVM's optimizer and code generator, which
     /// libLTO parses as its own command line.
     pub mllvm: Vec<Vec<u8>>,
+    /// -cache_path_lto: the ThinLTO cache directory.
+    pub lto_cache_dir: Option<PathBuf>,
+    /// -prune_interval_lto: the seconds between prunings of the ThinLTO
+    /// cache (-1 for never), if given; libLTO's default otherwise.
+    pub lto_cache_prune_interval: Option<i32>,
+    /// -prune_after_lto: the seconds an unused ThinLTO cache entry
+    /// lasts; 0 for libLTO's default.
+    pub lto_cache_expiration: u32,
+    /// -max_relative_cache_size_lto: the percentage of the free space
+    /// the ThinLTO cache may take; 0 for libLTO's default.
+    pub lto_cache_max_size: u32,
     /// -stack_size: the main thread's stack size, recorded in LC_MAIN,
     /// or reserved as the __UNIXSTACK segment of an executable that
     /// starts from LC_UNIXTHREAD.
@@ -838,6 +849,10 @@ impl Default for Args {
             lto_softload: false,
             save_temps: false,
             mllvm: Vec::new(),
+            lto_cache_dir: None,
+            lto_cache_prune_interval: None,
+            lto_cache_expiration: 0,
+            lto_cache_max_size: 0,
             stack_size: 0,
             sectcreate: Vec::new(),
             relocatable: false,
@@ -1546,6 +1561,13 @@ fn hex_number(val: &str) -> Option<u64> {
 }
 
 /// The decimal arguments of the options ld64 reads with strtoul().
+/// A ThinLTO cache option's number, truncated to the 32 bits libLTO
+/// takes.
+fn lto_cache_number(name: &str, arg: &OsStr) -> i32 {
+    let value = arg.to_str().and_then(decimal_number);
+    value.unwrap_or_else(|| fatal!("invalid argument for {name}")) as i32
+}
+
 fn decimal_number(val: &str) -> Option<u64> {
     parse_unsigned(val, 10)
 }
@@ -2921,18 +2943,29 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-mcpu" => args.lto_cpu = Some(text(name, next_arg(&mut i, name)).to_string()),
             b"-mllvm" => args.mllvm.push(bytes(next_arg(&mut i, name))),
             b"-save-temps" => args.save_temps = true,
-            // The ThinLTO cache, which mold, compiling all bitcode as one
-            // module, has no use for, and the variant architectures'
-            // reuse of one another's entries in it.
-            b"-cache_path_lto" | b"-cache_dir" => {
-                next_arg(&mut i, name);
+            // The ThinLTO cache. ld-prime reads the numbers as strtoul
+            // does and hands libLTO their low 32 bits, as an int or an
+            // unsigned (so -1 never prunes), checking the percentage
+            // only then.
+            b"-cache_path_lto" => args.lto_cache_dir = Some(path(next_arg(&mut i, name))),
+            b"-prune_interval_lto" => {
+                args.lto_cache_prune_interval =
+                    Some(lto_cache_number(name, next_arg(&mut i, name)));
             }
-            b"-prune_interval_lto" | b"-prune_after_lto" | b"-max_relative_cache_size_lto" => {
-                let value = decimal_number(text(name, next_arg(&mut i, name)))
-                    .unwrap_or_else(|| fatal!("invalid argument for {name}"));
-                if name == "-max_relative_cache_size_lto" && value > 100 {
+            b"-prune_after_lto" => {
+                args.lto_cache_expiration = lto_cache_number(name, next_arg(&mut i, name)) as u32;
+            }
+            b"-max_relative_cache_size_lto" => {
+                let value = lto_cache_number(name, next_arg(&mut i, name)) as u32;
+                if value > 100 {
                     fatal!("Expect a value between 0 and 100 for -max_relative_cache_size_lto");
                 }
+                args.lto_cache_max_size = value;
+            }
+            // The variant architectures' reuse of one another's LTO
+            // results, which have no cache here.
+            b"-cache_dir" => {
+                next_arg(&mut i, name);
             }
             b"-arch_variant_lto_cache_mismatch" => {
                 let treatment = next_arg(&mut i, name);

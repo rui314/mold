@@ -2480,6 +2480,12 @@ fn thin_lto<E: Target>(
         debug_options: &ctx.args.mllvm,
         cpu: ctx.args.lto_cpu.as_deref(),
         objects_dir: ctx.args.object_path_lto.as_deref(),
+        cache: ctx.args.lto_cache_dir.as_deref().map(|dir| crate::lto::CacheOptions {
+            dir,
+            prune_interval: ctx.args.lto_cache_prune_interval,
+            expiration: ctx.args.lto_cache_expiration,
+            max_size: ctx.args.lto_cache_max_size,
+        }),
     };
     // SAFETY: the plugin is the library that parsed the modules.
     let objects = unsafe { crate::lto::compile_thin(plugin, &thin_modules, roots, &cross, &opts) };
