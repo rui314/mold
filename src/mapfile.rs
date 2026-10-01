@@ -1033,42 +1033,42 @@ impl GoneAtoms {
     }
 }
 
-/// The dead atoms of object `obj_idx` (see dead_entries), the `file`th
-/// of the map, keyed by where they were. An atom is named by the best
-/// of the labels at its start, as ld-prime ranks them (see
-/// atom_name_rank) - in an object without subsections, by the first
-/// in its symbol table -, which has the atom's size; the others are
-/// aliases of none, but for linker-private ones (l...), which the list
-/// leaves out. An ltmpN label of an empty section names nothing (the
-/// section has no atom). ld-prime makes a C string an atom per label
-/// at its start, and all but one of them are always dead, merged into
-/// that one. Of the tentative definitions, all but the one whose
-/// common symbol the output has (see MapFiles::commons) are dead.
-fn dead_entries_of<'a, E: Target>(
-    ctx: &'a Context<E>,
+/// A label of a gone atom (see dead_entries_of).
+struct DeadLabel {
+    isec: usize,
+    off: u64,
+    /// How the label ranks to name the atom, the best first.
+    rank: std::cmp::Reverse<LabelRank>,
+    name: &'static str,
+    /// An alternate entry point (N_ALT_ENTRY), an alias of none.
+    alt: bool,
+}
+
+/// The labels naming the gone atoms of an object (see dead_entries_of),
+/// by subsection, the alternate entry points last, and by place, the
+/// one naming the atom first; and how many labels each C string has at
+/// its start. An ltmpN label of an empty section names nothing (the
+/// section has no atom), nor does one of a C string in an object with
+/// subsections.
+fn gone_labels<E: Target>(
+    ctx: &Context<E>,
     gone: &GoneAtoms,
-    commons: &hashbrown::HashMap<u32, u32>,
-    obj_idx: usize,
-    file: usize,
-) -> Vec<(DeadKey, MapEntry<'a>)> {
-    use crate::input_files::find_symbol_subsec;
-    let obj = &ctx.objs[obj_idx];
+    obj: &crate::input_files::ObjectFile,
+) -> (Vec<DeadLabel>, hashbrown::HashMap<usize, u32>) {
     let split = obj.subsections_via_symbols;
     let is_ltmp = |name: &str| split && name.starts_with("ltmp");
-
-    // The labels of the gone atoms, as (subsection, offset, how the
-    // label ranks to name the atom, best first, name, alternate entry
-    // point), and the number of labels each C string has.
-    type Rank = std::cmp::Reverse<LabelRank>;
-    let mut labels: Vec<(usize, u64, Rank, &str, bool)> = Vec::new();
+    let mut labels = Vec::new();
     let mut cstring_labels: hashbrown::HashMap<usize, u32> = hashbrown::HashMap::new();
     for (k, nlist) in obj.nlists.iter().enumerate() {
         if nlist.is_stab() || nlist.n_type() != N_SECT {
             continue;
         }
-        let Some((isec, off)) =
-            find_symbol_subsec(&ctx.isecs, &obj.subsecs, nlist.n_sect, nlist.n_value)
-        else {
+        let Some((isec, off)) = crate::input_files::find_symbol_subsec(
+            &ctx.isecs,
+            &obj.subsecs,
+            nlist.n_sect,
+            nlist.n_value,
+        ) else {
             continue;
         };
         let name = ctx.symbols[obj.symbols[k]].name();
@@ -1083,19 +1083,39 @@ fn dead_entries_of<'a, E: Target>(
             continue;
         }
         let rank = std::cmp::Reverse(label_rank(obj, k as u32, name));
-        labels.push((isec, off, rank, name, nlist.n_desc & N_ALT_ENTRY != 0));
+        let alt = nlist.n_desc & N_ALT_ENTRY != 0;
+        labels.push(DeadLabel { isec, off, rank, name, alt });
     }
-    // By subsection, the alternate entry points last, and by place, the
-    // label naming the atom first.
-    labels.sort_unstable_by_key(|&(isec, off, rank, _, alt)| (isec, alt, off, rank));
+    labels.sort_unstable_by_key(|l| (l.isec, l.alt, l.off, l.rank));
+    (labels, cstring_labels)
+}
 
+/// The dead atoms of object `obj_idx` (see dead_entries), the `file`th
+/// of the map, keyed by where they were. An atom is named by the best
+/// of the labels at its start, as ld-prime ranks them (see
+/// atom_name_rank) - in an object without subsections, by the first
+/// in its symbol table -, which has the atom's size; the others are
+/// aliases of none, but for linker-private ones (l...), which the list
+/// leaves out. ld-prime makes a C string an atom per label at its
+/// start, and all but one of them are always dead, merged into that
+/// one.
+fn dead_entries_of<'a, E: Target>(
+    ctx: &'a Context<E>,
+    gone: &GoneAtoms,
+    commons: &hashbrown::HashMap<u32, u32>,
+    obj_idx: usize,
+    file: usize,
+) -> Vec<(DeadKey, MapEntry<'a>)> {
+    let obj = &ctx.objs[obj_idx];
+    let (labels, cstring_labels) = gone_labels(ctx, gone, obj);
     let mut rows: Vec<(usize, u64, u64, Cow<'a, [u8]>)> = Vec::new();
     let mut first_label: hashbrown::HashMap<usize, u64> = hashbrown::HashMap::new();
-    for (i, &(isec, off, _, name, alt)) in labels.iter().enumerate() {
-        let first = first_label.entry(isec).or_insert(off);
-        *first = (*first).min(off);
-        let is_alias = alt || (i > 0 && (labels[i - 1].0, labels[i - 1].1) == (isec, off));
-        if is_alias && name.starts_with('l') {
+    for (i, l) in labels.iter().enumerate() {
+        let first = first_label.entry(l.isec).or_insert(l.off);
+        *first = (*first).min(l.off);
+        let prev = i.checked_sub(1).map(|p| (labels[p].isec, labels[p].off));
+        let is_alias = l.alt || prev == Some((l.isec, l.off));
+        if is_alias && l.name.starts_with('l') {
             continue;
         }
         let size = match is_alias {
@@ -1103,13 +1123,13 @@ fn dead_entries_of<'a, E: Target>(
             false => {
                 let next = labels[i + 1..]
                     .iter()
-                    .take_while(|l| l.0 == isec && !l.4)
-                    .find(|l| l.1 != off)
-                    .map_or(ctx.isecs[isec].size as u64, |l| l.1);
-                next - off
+                    .take_while(|next| next.isec == l.isec && !next.alt)
+                    .find(|next| next.off != l.off)
+                    .map_or(ctx.isecs[l.isec].size as u64, |next| next.off);
+                next - l.off
             }
         };
-        rows.push((isec, off, size, Cow::Borrowed(name.as_bytes())));
+        rows.push((l.isec, l.off, size, Cow::Borrowed(l.name.as_bytes())));
     }
 
     // The unnamed atoms, from a gone subsection's start up to its first
@@ -1140,8 +1160,23 @@ fn dead_entries_of<'a, E: Target>(
             (key, MapEntry { addr: 0, size, file, name })
         })
         .collect();
+    entries.extend(dead_commons(ctx, commons, obj_idx, file));
+    entries
+}
 
+/// An object's tentative definitions that the output lacks, after its
+/// other atoms (see dead_entries_of): all but the one whose common
+/// symbol the output has (see MapFiles::commons), of the sizes they
+/// give.
+fn dead_commons<'a, E: Target>(
+    ctx: &'a Context<E>,
+    commons: &hashbrown::HashMap<u32, u32>,
+    obj_idx: usize,
+    file: usize,
+) -> Vec<(DeadKey, MapEntry<'a>)> {
+    let obj = &ctx.objs[obj_idx];
     let r = obj.global_range();
+    let mut entries = Vec::new();
     for (k, (nlist, &sym)) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]).enumerate() {
         let won = || {
             ctx.symbols[sym].input_section().is_some_and(|isec| {
