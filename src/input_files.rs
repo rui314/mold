@@ -782,6 +782,9 @@ pub struct StagedObject {
     /// where ld-prime requires one, as its refusal words it (unless it
     /// stopped at a bad relocation first): see pointer_without_target.
     pub pointer_without_target: Option<&'static str>,
+    /// The first class of the object's class list without class data,
+    /// which ld-prime refuses: see class_without_data.
+    pub class_without_data: Option<&'static str>,
     /// The __compact_unwind pointer fields a 4-byte relocation set, as
     /// (subsection, function offset, 1 << field offset / 8) of their
     /// records: x86-64 takes those as well as 8-byte ones, and a -r
@@ -1144,6 +1147,7 @@ pub fn stage_object<E: Target>(
         fdes: Vec::new(),
         data_fde: false,
         pointer_without_target: None,
+        class_without_data: None,
         unwind_ptr32: Vec::new(),
         unwind_labels: Vec::new(),
         objc_image_info,
@@ -1203,6 +1207,7 @@ pub fn stage_object<E: Target>(
     }
     if relocs_ok {
         obj.pointer_without_target = obj.pointer_without_target();
+        obj.class_without_data = obj.class_without_data();
     }
     // A DWARF-mode record whose FDE never turned up describes nothing.
     if kept_fdes != KeptFdes::None {
@@ -2909,6 +2914,40 @@ impl StagedObject {
             } else {
                 None
             }
+        })
+    }
+
+    /// The name of the first class of the object's __objc_classlist,
+    /// in list order, whose data field (the class_ro_t pointer, 32 bytes
+    /// in) has no relocation, whatever its bytes: ld-prime refuses it as
+    /// it reads the object ("null objc class data"). A class the list
+    /// names in another object is not looked at.
+    fn class_without_data(&self) -> Option<&'static str> {
+        use crate::input_sections::RelocTarget;
+        let lists = self.isecs.iter().filter(|isec| {
+            let hdr = &self.sect_hdrs[isec.shndx as usize];
+            hdr.segname() == "__DATA" && hdr.sectname() == "__objc_classlist"
+        });
+        let rels =
+            |isec: &InputSection| &self.relocs[isec.rel_offset as usize..][..isec.nrels as usize];
+        lists.flat_map(rels).find_map(|rel| {
+            let (addr, name) = match rel.target() {
+                RelocTarget::Sym(idx) => {
+                    let nlist = &self.nlists[idx as usize];
+                    if nlist.n_type() != N_SECT {
+                        return None;
+                    }
+                    (nlist.n_value, self.sym_names[idx as usize])
+                }
+                RelocTarget::Section(sub) => {
+                    let sub = &self.isecs[sub as usize];
+                    let addr = (sub.input_addr as u64).wrapping_add_signed(rel.addend);
+                    (addr, self.subsec_name(sub.shndx as usize + 1, addr))
+                }
+            };
+            let (class, off) = find_subsec(&self.isecs, &self.subsecs, addr)?;
+            let data = off + 32;
+            (!rels(&self.isecs[class]).iter().any(|r| r.offset as u64 == data)).then_some(name)
         })
     }
 }

@@ -867,6 +867,9 @@ fn warn_about_sections(staged: &[input_files::StagedObject]) {
         }
         if let Some(what) = obj.pointer_without_target {
             error!("{what} has no target in '{}'", resolved_file_name(obj.mf));
+        } else if let Some(class) = obj.class_without_data {
+            // (Named by the path it was given, not resolved.)
+            error!("null objc class data for '{class}' in '{}'", obj.mf.name.display());
         }
     }
 }
