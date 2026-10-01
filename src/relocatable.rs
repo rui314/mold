@@ -150,20 +150,17 @@ fn external_places<E: Target>(ctx: &Context<E>) -> HashSet<(u32, u8, u64)> {
     per_obj.into_iter().flatten().collect()
 }
 
-/// The places the -r output's symbols name, keyed by (subsection,
-/// offset): the symbol indices of the first and the last of their
-/// names, and their address. ld-prime ranks the names of a place
-/// non-weak before weak, then global, private external and local, each
-/// by descending name, an assembler's ltmpN label last. A reference to
-/// the place names the first, and so does one past it, into the atom's
-/// bytes: the names are aliases of one atom. But in an object without
+/// The places the -r output's symbols name, by subsection and offset:
+/// the symbol indices of the first and the last of their names, and
+/// their address. ld-prime ranks the names of a place non-weak before
+/// weak, then global, private external and local, each by descending
+/// name, an assembler's ltmpN label last. A reference to the place
+/// names the first, and so does one past it, into the atom's bytes:
+/// the names are aliases of one atom. But in an object without
 /// subsections only those at the start of a section are; elsewhere
 /// each name is an atom of its own, all empty but the last, which
 /// holds the bytes and is the one a reference into them names.
-fn symbol_places<E: Target>(
-    ctx: &Context<E>,
-    index_of_sym: &[u32],
-) -> BTreeMap<(usize, u64), (u32, u32, u64)> {
+fn symbol_places<E: Target>(ctx: &Context<E>, index_of_sym: &[u32]) -> Places {
     let mut names: Vec<_> = (0..index_of_sym.len())
         .into_par_iter()
         .filter(|&id| index_of_sym[id] != u32::MAX)
@@ -182,13 +179,39 @@ fn symbol_places<E: Target>(
         })
         .collect();
     names.par_sort_unstable();
-    names
+    let mut starts = vec![0u32; ctx.isecs.len() + 1];
+    let places = names
         .chunk_by(|a, b| a.0 == b.0)
         .map(|names| {
             let (isec, at) = names[0].0;
-            (names[0].0, (names[0].2, names[names.len() - 1].2, ctx.isec_addr(isec) + at))
+            starts[isec + 1] += 1;
+            (at, names[0].2, names[names.len() - 1].2, ctx.isec_addr(isec) + at)
         })
-        .collect()
+        .collect();
+    for i in 1..starts.len() {
+        starts[i] += starts[i - 1];
+    }
+    Places { places, starts }
+}
+
+/// The places a -r output's symbols name (see symbol_places), by
+/// subsection.
+struct Places {
+    /// Each place's offset in its subsection, the symbol indices of the
+    /// first and the last of its names, and its address, by subsection
+    /// and offset.
+    places: Vec<(u64, u32, u32, u64)>,
+    /// Where each subsection's places start in `places`, and where the
+    /// last one's end.
+    starts: Vec<u32>,
+}
+
+impl Places {
+    /// The nearest place at or before offset `off` of subsection `t`.
+    fn at_or_before(&self, t: usize, off: u64) -> Option<(u64, u32, u32, u64)> {
+        let places = &self.places[self.starts[t] as usize..self.starts[t + 1] as usize];
+        places[..places.partition_point(|p| p.0 <= off)].last().copied()
+    }
 }
 
 /// Which symbols the relocations of the live input sections that `pred`
@@ -403,8 +426,10 @@ pub fn link<E: Target>(ctx: &mut Context<E>) -> u64 {
         sec.build_contents(&targets);
     }
     let mut relocs: Vec<Vec<MachRel>> = vec![Vec::new(); ctx.output_sections.len()];
-    for &osec in &merged {
-        relocs[osec.index()] = section_relocs(&targets, osec);
+    let merged_relocs: Vec<Vec<MachRel>> =
+        merged.par_iter().map(|&osec| section_relocs(&targets, osec)).collect();
+    for (&osec, rels) in merged.iter().zip(merged_relocs) {
+        relocs[osec.index()] = rels;
     }
     drop(t);
 
@@ -753,6 +778,7 @@ fn objc_imageinfo_section<E: Target>(ctx: &Context<E>) -> Option<SyntheticSectio
 /// weak definition's record goes with it.
 fn compact_unwind_records<E: Target>(ctx: &Context<E>) -> Vec<usize> {
     (0..ctx.unwind_records.len())
+        .into_par_iter()
         .filter(|&i| {
             let rec = &ctx.unwind_records[i];
             let isec = &ctx.isecs[rec.isec as usize];
@@ -773,12 +799,10 @@ fn compact_unwind_section<E: Target>(ctx: &Context<E>) -> Option<SyntheticSectio
     // Each record keeps the alignment of the section it came from, as
     // an ld-prime atom does, so the section takes the largest.
     let p2align = records
-        .iter()
+        .par_iter()
         .filter_map(|&i| {
             let obj = &ctx.objs[ctx.isecs[ctx.unwind_records[i].isec as usize].file as usize];
-            obj.sect_hdrs
-                .iter()
-                .find(|s| s.segname() == "__LD" && s.sectname() == "__compact_unwind")
+            obj.sect_hdrs.iter().find(|s| s.segname_is("__LD") && s.sectname_is("__compact_unwind"))
         })
         .map(|s| s.p2align)
         .max()
@@ -860,46 +884,44 @@ fn eh_frame_section<E: Target>(ctx: &Context<E>) -> Option<SyntheticSection> {
 }
 
 /// __LD,__compact_unwind's contents, re-synthesized so unwind info
-/// survives the merge: one 32-byte entry per record, its pointer fields
-/// set by UNSIGNED relocations.
+/// survives the merge: one 32-byte entry per record - the function, its
+/// length and encoding, the personality and the LSDA - its pointer
+/// fields set by UNSIGNED relocations. Each entry is made on all cores.
 fn compact_unwind_contents<E: Target>(
     targets: &RelocTargets<E>,
     records: &[usize],
 ) -> (Vec<u8>, Vec<MachRel>) {
     let ctx = targets.ctx;
     let narrow_fields = narrow_unwind_fields(ctx);
-    let mut data: Vec<u8> = Vec::new();
-    let mut relocs: Vec<MachRel> = Vec::new();
-    for &r in records {
-        let rec = &ctx.unwind_records[r];
-        let entry = data.len() as u32;
-        // A field's relocation: r_length 2 (4 bytes) or 3 (8 bytes).
-        let narrow = narrow_fields.get(&(rec.isec, rec.input_offset)).copied().unwrap_or(0);
-        let len = |field: u32| if narrow & (1 << (field / 8)) != 0 { 2 << 25 } else { 3 << 25 };
-        let (func, bits) = targets.pointer_to(rec.isec as usize, rec.input_offset as u64, len(0));
-        data.extend_from_slice(&func.to_le_bytes());
-        relocs.push(MachRel { r_address: entry, bits });
-        data.extend_from_slice(&rec.code_len.to_le_bytes());
-        data.extend_from_slice(&rec.encoding.to_le_bytes());
-
-        match rec.personality() {
-            Some(p) => {
-                let symnum = targets.personality(p);
-                data.extend_from_slice(&0u64.to_le_bytes());
-                relocs.push(MachRel { r_address: entry + 16, bits: symnum | len(16) | (1 << 27) });
-            }
-            None => data.extend_from_slice(&0u64.to_le_bytes()),
-        }
-
-        match rec.lsda() {
-            Some((lsda, off)) => {
+    let mut data = vec![0u8; 32 * records.len()];
+    let relocs: Vec<MachRel> = data
+        .par_chunks_mut(32)
+        .zip(records)
+        .enumerate()
+        .flat_map_iter(|(i, (entry, &r))| {
+            let rec = &ctx.unwind_records[r];
+            let at = 32 * i as u32;
+            // A field's relocation: r_length 2 (4 bytes) or 3 (8 bytes).
+            let narrow = narrow_fields.get(&(rec.isec, rec.input_offset)).copied().unwrap_or(0);
+            let len = |field: u32| if narrow & (1 << (field / 8)) != 0 { 2 << 25 } else { 3 << 25 };
+            let (func, bits) =
+                targets.pointer_to(rec.isec as usize, rec.input_offset as u64, len(0));
+            entry[..8].copy_from_slice(&func.to_le_bytes());
+            entry[8..12].copy_from_slice(&rec.code_len.to_le_bytes());
+            entry[12..16].copy_from_slice(&rec.encoding.to_le_bytes());
+            let func = MachRel { r_address: at, bits };
+            let personality = rec.personality().map(|p| MachRel {
+                r_address: at + 16,
+                bits: targets.personality(p) | len(16) | (1 << 27),
+            });
+            let lsda = rec.lsda().map(|(lsda, off)| {
                 let (lsda, bits) = targets.pointer_to(ctx.resolve_isec(lsda), off as u64, len(24));
-                data.extend_from_slice(&lsda.to_le_bytes());
-                relocs.push(MachRel { r_address: entry + 24, bits });
-            }
-            None => data.extend_from_slice(&0u64.to_le_bytes()),
-        }
-    }
+                entry[24..].copy_from_slice(&lsda.to_le_bytes());
+                MachRel { r_address: at + 24, bits }
+            });
+            [Some(func), personality, lsda].into_iter().flatten()
+        })
+        .collect();
     (data, relocs)
 }
 
@@ -968,35 +990,43 @@ fn eh_frame_contents<E: Target>(
 }
 
 /// A -r output section's relocations, regenerated against the merged
-/// tables. ld-prime writes each atom's relocations by descending offset
-/// whatever the input's order, keeping a pair - a SUBTRACTOR and its
-/// UNSIGNED, an arm64 ADDEND and its PAGE21 or PAGEOFF12 - in order.
+/// tables, each subsection's on a core of its own. ld-prime writes each
+/// atom's relocations by descending offset whatever the input's order,
+/// keeping a pair - a SUBTRACTOR and its UNSIGNED, an arm64 ADDEND and
+/// its PAGE21 or PAGEOFF12 - in order.
 fn section_relocs<E: Target>(
     targets: &RelocTargets<E>,
     chunk_idx: OutputSectionId,
 ) -> Vec<MachRel> {
     let ctx = targets.ctx;
-    let mut rels = Vec::new();
-    for &id in &ctx.output_section(chunk_idx).members {
-        let isec = &ctx.isecs[id];
-        let mut groups: Vec<Vec<MachRel>> = Vec::new();
-        let mut open: Vec<MachRel> = Vec::new();
-        for rel in crate::input_files::isec_relocs_of(&ctx.objs, isec) {
-            let mut group = std::mem::take(&mut open);
-            push_reloc(targets, isec, rel, &mut group);
-            if rel.r_type == E::RELOC_SUBTRACTOR {
-                open = group;
-            } else {
-                groups.push(group);
+    ctx.output_section(chunk_idx)
+        .members
+        .par_iter()
+        .flat_map_iter(|&id| {
+            let isec = &ctx.isecs[id];
+            // The entries, and where each group of them starts: one
+            // relocation's, a SUBTRACTOR's with the next one's.
+            let mut rels: Vec<MachRel> = Vec::new();
+            let mut starts: Vec<usize> = Vec::new();
+            let mut open = false;
+            for rel in crate::input_files::isec_relocs_of(&ctx.objs, isec) {
+                if !open {
+                    starts.push(rels.len());
+                }
+                push_reloc(targets, isec, rel, &mut rels);
+                open = rel.r_type == E::RELOC_SUBTRACTOR;
             }
-        }
-        if !open.is_empty() {
-            groups.push(open);
-        }
-        groups.sort_by_key(|g| std::cmp::Reverse(g[0].r_address));
-        rels.extend(groups.into_iter().flatten());
-    }
-    rels
+            let ends = starts.iter().skip(1).copied().chain([rels.len()]);
+            let mut groups: Vec<std::ops::Range<usize>> =
+                starts.iter().zip(ends).map(|(&start, end)| start..end).collect();
+            groups.sort_by_key(|g| Reverse(rels[g.start].r_address));
+            let mut out = Vec::with_capacity(rels.len());
+            for g in groups {
+                out.extend_from_slice(&rels[g]);
+            }
+            out
+        })
+        .collect()
 }
 
 /// Appends the -r relocation entries standing for one input relocation.
@@ -1054,7 +1084,7 @@ struct RelocTargets<'a, E: Target> {
     ctx: &'a Context<E>,
     symtab: &'a RSymtab,
     /// The named places (see symbol_places).
-    places: BTreeMap<(usize, u64), (u32, u32, u64)>,
+    places: Places,
 }
 
 impl<'a, E: Target> RelocTargets<'a, E> {
@@ -1088,10 +1118,7 @@ impl<'a, E: Target> RelocTargets<'a, E> {
     /// without subsections, past a place that does not start the
     /// section, its last (see symbol_places).
     fn name_at(&self, t: usize, off: u64) -> Option<(u32, u64)> {
-        let (&(isec, at), &(first, last, addr)) = self.places.range(..=(t, off)).next_back()?;
-        if isec != t {
-            return None;
-        }
+        let (at, first, last, addr) = self.places.at_or_before(t, off)?;
         let whole = !self.ctx.objs[self.ctx.isecs[t].file as usize].subsections_via_symbols;
         Some((if whole && at != 0 && at != off { last } else { first }, addr))
     }
@@ -1249,7 +1276,8 @@ fn write_load_commands<E: Target>(
     }
 }
 
-/// Copies the merged sections' contents to the output: raw copies, with
+/// Copies the merged sections' contents to the output, each subsection
+/// on a core of its own (their ranges are disjoint): raw copies, with
 /// non-external targets' embedded addresses rewritten into the merged
 /// address space.
 fn copy_section_contents<E: Target>(
@@ -1258,24 +1286,30 @@ fn copy_section_contents<E: Target>(
     buf: &mut [u8],
 ) {
     let ctx = targets.ctx;
+    // Each subsection with contents, and its section's header.
+    let mut jobs: Vec<(&ChunkHeader, &InputSection)> = Vec::new();
     for &osec in merged {
-        let hdr = &ctx.output_section(osec).hdr;
-        if hdr.is_zerofill() {
-            continue;
-        }
-        for &id in &ctx.output_section(osec).members {
-            let isec = &ctx.isecs[id];
-            if isec.data().is_empty() {
-                continue;
-            }
-            let dst = hdr.fileoff as usize + isec.offset as usize;
-            buf[dst..dst + isec.data().len()].copy_from_slice(isec.data());
-            for rel in crate::input_files::isec_relocs_of(&ctx.objs, isec) {
-                let here = hdr.addr + isec.offset as u64 + rel.offset as u64;
-                rewrite_field(targets, isec, rel, here, &mut buf[dst + rel.offset as usize..]);
-            }
+        let osec = ctx.output_section(osec);
+        if !osec.hdr.is_zerofill() {
+            let isecs = osec.members.iter().map(|&id| &ctx.isecs[id]);
+            jobs.extend(isecs.filter(|isec| !isec.data().is_empty()).map(|isec| (&osec.hdr, isec)));
         }
     }
+    let ranges: Vec<std::ops::Range<u64>> = jobs
+        .iter()
+        .map(|&(hdr, isec)| {
+            let start = hdr.fileoff + isec.offset as u64;
+            start..start + isec.data().len() as u64
+        })
+        .collect();
+    let slices = output_file::split_ranges(buf, &ranges);
+    jobs.into_par_iter().zip(slices).for_each(|((hdr, isec), out)| {
+        out.copy_from_slice(isec.data());
+        for rel in crate::input_files::isec_relocs_of(&ctx.objs, isec) {
+            let here = hdr.addr + isec.offset as u64 + rel.offset as u64;
+            rewrite_field(targets, isec, rel, here, &mut out[rel.offset as usize..]);
+        }
+    });
 }
 
 /// Rewrites the field a relocation at address `here` applies to, as a
