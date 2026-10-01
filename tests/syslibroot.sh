@@ -39,6 +39,11 @@ not $CC --ld-path=$mold -shared -o $t/q.dylib $t/q.o -Wl,-syslibroot,$t/root \
   -Wl,/opt/lib/libqux.dylib 2> $t/log
 grep -q 'file cannot be open()ed' $t/log
 
+# A last -syslibroot of / drops the roots, those before it too.
+not $CC --ld-path=$mold -shared -o $t/q.dylib $t/q.o -Wl,-syslibroot,$t/root \
+  -Wl,-syslibroot,/ -Wl,-weak_library,/opt/lib/libqux.dylib 2> $t/log
+grep -q "library '/opt/lib/libqux.dylib' not found" $t/log
+
 # Outside the syslibroot the path is the file itself, whether or not a
 # stub sits next to it.
 mkdir -p $t/lib1 $t/lib2

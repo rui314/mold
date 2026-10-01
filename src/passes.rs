@@ -72,7 +72,7 @@ pub fn set_search_paths<E: Target>(ctx: &mut Context<E>) {
 /// taken the first time only. A -syslibroot of / anywhere, which
 /// configure scripts pass, puts none under a root (ld64 drops the roots
 /// only for a last one); the roots still hold the files the options
-/// naming a library's path look up (find_file).
+/// naming a library's path look up (find_file) unless it is last.
 fn search_dirs(args: &Args, dirs: &[PathBuf], standard: &[&str]) -> Vec<PathBuf> {
     let syslibroot: &[PathBuf] = if args.syslibroot.iter().any(|root| root.as_os_str() == "/") {
         &[]
@@ -1063,12 +1063,13 @@ fn find_input<E: Target>(ctx: &Context<E>, arg: &InputArg) -> Option<PathBuf> {
 /// a stub in place of the library where there is one there -
 /// `-weak_library /usr/lib/libz.dylib` links the SDK's
 /// usr/lib/libz.tbd - then the path as it is, itself only. An object
-/// is taken as it is. A library to merge is no stub (`stubs`).
+/// is taken as it is. A library to merge is no stub (`stubs`). A last
+/// -syslibroot of / drops the roots (see sdk_roots).
 fn find_file<E: Target>(ctx: &Context<E>, path: &Path, stubs: bool) -> Option<PathBuf> {
     let object = path.extension() == Some(OsStr::new("o"));
     let mut candidates: Vec<PathBuf> = Vec::new();
     if path.is_absolute() && !object {
-        for root in &ctx.args.syslibroot {
+        for root in sdk_roots(&ctx.args) {
             let path = under_root(root, path);
             if stubs {
                 candidates.push(path.with_extension("tbd"));
@@ -1096,14 +1097,19 @@ fn found_in_sdk(args: &Args, arg: &InputArg, found: &Path) -> bool {
 
 /// Whether a library search `found` a file in the SDK: in a directory
 /// under a -syslibroot as their paths spell them, the root joined to the
-/// directory or not (-L$SDK/usr/lib, say). ld64 drops the roots when
-/// the last one is /.
+/// directory or not (-L$SDK/usr/lib, say).
 fn searched_in_sdk(args: &Args, found: &Path) -> bool {
-    let roots = match args.syslibroot.last() {
-        Some(root) if root.as_os_str() == "/" => &[][..],
-        _ => &args.syslibroot[..],
-    };
-    roots.iter().any(|root| path_bytes(found).starts_with(path_bytes(root)))
+    sdk_roots(args).iter().any(|root| path_bytes(found).starts_with(path_bytes(root)))
+}
+
+/// The -syslibroots the files an option names by path are looked up
+/// under, and those of the SDK: none when the last one is /, as ld64
+/// drops them then.
+fn sdk_roots(args: &Args) -> &[PathBuf] {
+    match args.syslibroot.last() {
+        Some(root) if root.as_os_str() == "/" => &[],
+        _ => &args.syslibroot,
+    }
 }
 
 /// What a library option says of the library it names: the flags it
