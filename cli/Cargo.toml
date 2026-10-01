@@ -39,7 +39,7 @@ mold-target-loongarch32 = { path = "../arch/loongarch32", optional = true }
 
 # sparc64 uses the system allocator. See main.rs.
 [target.'cfg(not(target_arch = "sparc64"))'.dependencies]
-mimalloc = { git = "https://github.com/rui314/mimalloc_rust", rev = "3979460494f1cd1e7f936cb8e10f41e927c9f698" }
+mimalloc = { git = "https://github.com/rui314/mimalloc_rust", rev = "d4636c9f420065b29306de9deb128b7fa162892c" }
 
 [dev-dependencies]
 mold-tests = { path = "../tests" }
