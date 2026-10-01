@@ -48,3 +48,40 @@ not $CC --ld-path=$mold -o $t/exe6 $t/main.o -Wl,-segment_order,__TEXT:__DATA_CO
   2> $t/log6
 grep -q -- '-segment_order can only be used with -preload, -static' $t/log6
 not grep -q -- 'not __DATA_CONST' $t/log6
+
+# Without the option, an image no dyld loads has __TEXT and __DATA
+# first, then its other segments in the order they first appear - its
+# __DATA_CONST too (which -data_const fills with __DATA's read-only
+# sections), unlike a kext's, which follows __DATA.
+cat <<EOF2 | $CC -o $t/b.o -c -xassembler -
+.section __DATA,__yy
+.quad 1
+.section __DATA,__const
+.quad 1
+.section __FOO,__a
+.quad 1
+.section __DATA_CONST,__b
+.quad 1
+.section __BAR,__c
+.quad 1
+.text
+.globl __start
+__start: ret
+EOF2
+cat <<EOF2 | $CC -o $t/c.o -c -xassembler -
+.section __BAZ,__d
+.quad 1
+.data
+.quad 1
+EOF2
+$mold -arch $ARCH -static -e __start $t/b.o $t/c.o -o $t/exe7
+[ "$(segs $t/exe7)" = '__PAGEZERO __TEXT __DATA __FOO __DATA_CONST __BAR __BAZ __LINKEDIT ' ]
+$mold -arch $ARCH -static -e __start $t/c.o $t/b.o -o $t/exe8
+[ "$(segs $t/exe8)" = '__PAGEZERO __TEXT __DATA __BAZ __FOO __DATA_CONST __BAR __LINKEDIT ' ]
+$mold -arch $ARCH -static -e __start $t/b.o $t/c.o -data_const -o $t/exe9
+[ "$(segs $t/exe9)" = '__PAGEZERO __TEXT __DATA __DATA_CONST __FOO __BAR __BAZ __LINKEDIT ' ]
+$mold -arch $ARCH -preload -e __start $t/c.o $t/b.o -o $t/exe10
+[ "$(segs $t/exe10)" = '__TEXT __DATA __BAZ __FOO __DATA_CONST __BAR ' ]
+$mold -arch $ARCH -kext $t/b.o $t/c.o -o $t/kext
+segs $t/kext > $t/segs_kext
+grep -q "__DATA __DATA_CONST __FOO __BAR __BAZ __LINKEDIT " $t/segs_kext

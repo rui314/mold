@@ -1773,21 +1773,22 @@ fn sort_chunks<E: Target>(ctx: &mut Context<E>, lto_ranks: Option<&[u32]>) {
     let static_link = ctx.args.static_link;
     order.sort_by_key(|&id| {
         let hdr = ctx.chunk_header(id);
-        // Code in __TEXT_EXEC follows __TEXT. The __DATA_CONST of an
-        // image no dyld loads (a -static one with -data_const or in the
-        // shared region, a kext) comes after __DATA, as ld-prime
-        // places it. The segments of signed pointers, __AUTH_CONST then
-        // __AUTH, go before __DATA, but in an image no loader slides by
-        // its fixups (a -static or -preload one); __DATA_DIRTY (see
-        // symbol_moves) follows __DATA in an image dyld loads.
-        let auth = !ctx.args.static_link && !ctx.args.preload;
+        // Code in __TEXT_EXEC follows __TEXT. A kext's __DATA_CONST
+        // comes after __DATA, as ld-prime places it. The segments of
+        // signed pointers, __AUTH_CONST then __AUTH, go before __DATA,
+        // but in an image no loader slides by its fixups (a -static or
+        // -preload one); __DATA_DIRTY (see symbol_moves) follows __DATA
+        // in an image dyld loads. Other segments follow in the order
+        // they first appear - in a -static or -preload image, which
+        // knows no __DATA_CONST, that one too (with -data_const or in
+        // the shared region).
         let standard = match hdr.segname {
             "__TEXT" | "__TEXT_EXEC" => 0,
             "__DATA_CONST" if !ctx.args.without_dyld() => 1,
-            "__AUTH_CONST" if auth => 2,
-            "__AUTH" if auth => 3,
+            "__AUTH_CONST" if !static_link => 2,
+            "__AUTH" if !static_link => 3,
             "__DATA" => 4,
-            "__DATA_CONST" => 5,
+            "__DATA_CONST" if !static_link => 5,
             "__DATA_DIRTY" if !ctx.args.without_dyld() => 5,
             _ => 6,
         };
