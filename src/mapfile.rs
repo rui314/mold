@@ -831,7 +831,7 @@ pub fn print_map<E: Target>(ctx: &Context<E>) {
     entries.extend(unnamed_entries(ctx, &files, &first_labels));
     entries.extend(eh_frame_entries(ctx, &files, &entries[linker_symbols..]));
     entries.extend(synthetic_entries(ctx, &files));
-    let mut entries = sort_entries(ctx, entries, linker_symbols, &named.ids);
+    let mut entries = sort_entries(ctx, entries, linker_symbols, &named.ids, &named.leading);
     insert_literal_aliases(&mut entries, literal_aliases);
     if ctx.args.output_type == MH_EXECUTE && !ctx.args.preload {
         let addr = ctx.mach_header.hdr.addr;
@@ -840,30 +840,42 @@ pub fn print_map<E: Target>(ctx: &Context<E>) {
     write_map(ctx, path, &files, &sections, &entries, &dead_entries(ctx, &files));
 }
 
-/// The rows of the defined symbols (see symbol_entries), with the
-/// symbols of those but the fixed-size literals', which follow.
+/// The rows of the defined symbols (see symbol_entries) but the
+/// literals' labels, with their symbols, and where each row of an
+/// object without subsections that leads the one naming its subsection
+/// goes among those (see symbol_entries).
 struct NamedEntries<'a> {
     entries: Vec<MapEntry<'a>>,
     ids: Vec<SymbolId>,
+    leading: Vec<Option<u32>>,
 }
 
 /// Sorts the map's rows by address: the linker's symbols first of those
-/// at one place (the first `linker_symbols` rows), then the row with
-/// the size, then the labels of no size that alias it, in the symbol
-/// table's order (see symtab::put_subsec_names_last); `ids` are the
-/// symbols of the rows after the linker's.
+/// at one place (the first `linker_symbols` rows), then the labels of
+/// an object without subsections that lead the one naming their
+/// subsection (`leading`), then the row with the size, then the labels
+/// of no size that alias it, in the symbol table's order (see
+/// symtab::put_subsec_names_last); `ids` are the symbols of the rows
+/// after the linker's.
 fn sort_entries<'a, E: Target>(
     ctx: &Context<E>,
     entries: Vec<MapEntry<'a>>,
     linker_symbols: usize,
     ids: &[SymbolId],
+    leading: &[Option<u32>],
 ) -> Vec<MapEntry<'a>> {
     let indices = &ctx.symtab.output_sym_indices;
-    let place = |i: usize, e: &MapEntry| match ids.get(i.wrapping_sub(linker_symbols)) {
-        _ if i < linker_symbols => (e.addr, 0, 0),
-        _ if e.size > 0 => (e.addr, 1, e.size),
-        Some(&id) => (e.addr, 2, indices.get(id as usize).copied().unwrap_or(u32::MAX) as u64),
-        None => (e.addr, 2, 0),
+    let place = |i: usize, e: &MapEntry| {
+        let j = i.wrapping_sub(linker_symbols);
+        match (ids.get(j), leading.get(j).copied().flatten()) {
+            _ if i < linker_symbols => (e.addr, 0, 0),
+            (_, Some(n)) => (e.addr, 1, n as u64),
+            _ if e.size > 0 => (e.addr, 2, e.size),
+            (Some(&id), _) => {
+                (e.addr, 3, indices.get(id as usize).copied().unwrap_or(u32::MAX) as u64)
+            }
+            (None, _) => (e.addr, 3, 0),
+        }
     };
     let mut order: Vec<usize> = (0..entries.len()).collect();
     order.sort_by_key(|&i| place(i, &entries[i]));
@@ -871,8 +883,8 @@ fn sort_entries<'a, E: Target>(
     order.into_iter().filter_map(|i| entries[i].take()).collect()
 }
 
-/// Puts each of a literal's other labels right after the literal's own
-/// row in `entries`, sorted by address (see literal_labels).
+/// Puts the rows of each labeled literal (see literal_labels) after the
+/// others at its address in `entries`, sorted by address.
 fn insert_literal_aliases<'a>(entries: &mut Vec<MapEntry<'a>>, aliases: Vec<MapEntry<'a>>) {
     for alias in aliases {
         let at = entries.partition_point(|e| e.addr <= alias.addr);
@@ -912,7 +924,7 @@ pub fn print_relocatable_map<E: Target>(
     entries.extend(unnamed_entries(ctx, &files, &first_labels));
     let synthetic = relocatable_record_entries(ctx, &files, &entries[linker_symbols..], records);
     entries.extend(synthetic);
-    let mut entries = sort_entries(ctx, entries, linker_symbols, &named.ids);
+    let mut entries = sort_entries(ctx, entries, linker_symbols, &named.ids, &named.leading);
     insert_literal_aliases(&mut entries, literal_aliases);
     write_map(ctx, path, &files, &sections, &entries, &[]);
 }
@@ -1102,9 +1114,9 @@ pub(crate) fn names_its_subsec<E: Target>(ctx: &Context<E>, id: SymbolId) -> boo
 /// shares a place with. An arm64 assembler puts the label where each
 /// section starts; where symbols split the sections, a subsection there
 /// takes the label's name only if it has no other, as ld-prime ranks
-/// the labels a subsection may be named after (without subsections the
-/// section's first subsection has its name, which the other symbols
-/// there alias).
+/// the labels a subsection may be named after. (Without subsections,
+/// the label, the worst, names the section's first subsection; see
+/// symbol_entries.)
 fn drop_shadowed_ltmps<E: Target, T>(
     ctx: &Context<E>,
     syms: &mut Vec<T>,
@@ -1134,9 +1146,9 @@ fn drop_shadowed_ltmps<E: Target, T>(
 /// How a symbol ranks to name its subsection among the symbols at its
 /// place, lowest first: as ld-prime ranks the labels at a subsection's
 /// start (see subsec_name_rank) - _zb names the subsection of `_zb: _ab:
-/// lc:`, _loc5 that of a weak definition _wd it labels too -, but in an
-/// object without subsections, where the first in the symbol table
-/// names it (an ltmpN label before an exported function).
+/// lc:`, _loc5 that of a weak definition _wd it labels too. (In an
+/// object without subsections, the worst names it in the map's live
+/// part; see symbol_entries.)
 fn naming_rank<E: Target>(
     ctx: &Context<E>,
     nlists: &hashbrown::HashMap<SymbolId, (u32, bool)>,
@@ -1154,11 +1166,8 @@ fn naming_rank<E: Target>(
 type LabelRank = (u8, &'static str, std::cmp::Reverse<u32>);
 
 fn label_rank(obj: &crate::input_files::ObjectFile, k: u32, name: &'static str) -> LabelRank {
-    use crate::input_files::subsec_name_rank;
-    match obj.subsections_via_symbols {
-        true => (subsec_name_rank(&obj.nlists[k as usize], name), name, std::cmp::Reverse(k)),
-        false => (0, "", std::cmp::Reverse(k)),
-    }
+    let rank = crate::input_files::subsec_name_rank(&obj.nlists[k as usize], name);
+    (rank, name, std::cmp::Reverse(k))
 }
 
 /// The nlist of each defined symbol in its object's symbol table: its
@@ -1187,11 +1196,12 @@ fn defining_nlists<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<SymbolId, 
 /// it rewrote (a method list in the relative form), with the alias it
 /// makes of a function folded into an identical one (-deduplicate),
 /// which has no size, and with the names -alias gives; an ltmpN label
-/// of a weak definition another file's won names nothing. Also returns
-/// the symbols of the entries but those of fixed-size literals, which
-/// come last, where in its subsection the first symbol is, by
-/// subsection, and the rows of the labels of fixed-size literals that
-/// follow the literals' own (see literal_labels).
+/// of a weak definition another file's won names nothing. In an object
+/// without subsections, the worst of the labels at a place names its
+/// subsection, and ld-prime lists the others before it, the best first
+/// (`_main`, then the ltmp0 that names __text). Also returns where in
+/// its subsection the first symbol is, by subsection, and the rows of
+/// the labeled literals (see literal_labels).
 fn symbol_entries<'a, E: Target>(
     ctx: &'a Context<E>,
     files: &MapFiles,
@@ -1218,7 +1228,7 @@ fn symbol_entries<'a, E: Target>(
         if !ctx.isecs[isec].is_alive() {
             continue;
         }
-        if isec == own as usize && is_split_fixed_literal(ctx, isec) {
+        if isec == own as usize && is_literal(ctx, isec) {
             literal_syms.push(i);
             continue;
         }
@@ -1247,8 +1257,8 @@ fn symbol_entries<'a, E: Target>(
     }
     drop_shadowed_ltmps(ctx, &mut syms, |&(sym, _)| sym);
 
-    // Sizes: sort the symbols by place, the one naming the subsection
-    // last of those at one, and measure to the next place.
+    // Sizes: sort the symbols by place, the best last of those at one,
+    // and measure to the next place.
     let key = |sym: SymbolId| {
         let isec = ctx.resolve_isec(ctx.symbols[sym].input_section().unwrap() as usize);
         (isec, ctx.symbols[sym].value, naming_rank(ctx, &nlists, sym))
@@ -1257,16 +1267,27 @@ fn symbol_entries<'a, E: Target>(
         nlists.get(&sym).is_some_and(|&(_, alt)| alt)
             || is_coalesced_away(ctx, ctx.symbols[sym].input_section().unwrap() as usize)
     };
-    let mut order: Vec<usize> = (0..syms.len()).filter(|&i| !is_alias(syms[i].0)).collect();
-    order.sort_by_key(|&i| key(syms[i].0));
+    let mut order: Vec<(_, usize)> =
+        (0..syms.len()).filter(|&i| !is_alias(syms[i].0)).map(|i| (key(syms[i].0), i)).collect();
+    order.sort();
+    let places: Vec<_> = order.chunk_by(|(a, _), (b, _)| (a.0, a.1) == (b.0, b.1)).collect();
     let mut sizes = vec![0u64; syms.len()];
-    for (i, &idx) in order.iter().enumerate() {
-        let (isec, value, _) = key(syms[idx].0);
-        let end = match order.get(i + 1).map(|&next| key(syms[next].0)) {
+    let mut leading = vec![None; syms.len()];
+    for (i, place) in places.iter().enumerate() {
+        let (isec, value, _) = place[0].0;
+        let end = match places.get(i + 1).map(|next| next[0].0) {
             Some((next_isec, next_value, _)) if next_isec == isec => next_value,
             _ => ctx.isecs[isec].size as u64,
         };
-        sizes[idx] = end.saturating_sub(value);
+        let size = end.saturating_sub(value);
+        if ctx.objs[ctx.isecs[isec].file as usize].subsections_via_symbols {
+            sizes[place.last().unwrap().1] = size;
+        } else {
+            sizes[place[0].1] = size;
+            for (n, &(_, idx)) in place[1..].iter().rev().enumerate() {
+                leading[idx] = Some(n as u32);
+            }
+        }
     }
 
     let mut first_labels: hashbrown::HashMap<usize, u64> = hashbrown::HashMap::new();
@@ -1275,7 +1296,7 @@ fn symbol_entries<'a, E: Target>(
         let first = first_labels.entry(isec).or_insert(value);
         *first = (*first).min(value);
     }
-    let mut entries: Vec<MapEntry> = syms
+    let entries: Vec<MapEntry> = syms
         .iter()
         .zip(sizes)
         .map(|(&(sym, file), size)| MapEntry {
@@ -1286,64 +1307,127 @@ fn symbol_entries<'a, E: Target>(
         })
         .collect();
     let ids = syms.iter().map(|&(sym, _)| sym).collect();
-    let aliases =
-        literal_labels(ctx, files, &nlists, literal_syms, &mut entries, &mut first_labels);
-    (NamedEntries { entries, ids }, first_labels, aliases)
+    let literals = literal_labels(ctx, files, &nlists, literal_syms, &mut first_labels);
+    (NamedEntries { entries, ids, leading }, first_labels, literals)
 }
 
-/// Whether a subsection is a fixed-size literal (4, 8 or 16 bytes) of an
-/// object with subsections, which ld-prime names its own way (see
+/// Whether a subsection is a literal - a C string or a 4-, 8- or 16-byte
+/// literal -, whose labels ld-prime lists its own way (see
 /// literal_labels).
-fn is_split_fixed_literal<E: Target>(ctx: &Context<E>, isec: usize) -> bool {
-    let isec = &ctx.isecs[isec];
+fn is_literal<E: Target>(ctx: &Context<E>, isec: usize) -> bool {
     matches!(
-        ctx.hdr_of(isec).section_type(),
-        S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS
-    ) && ctx.objs[isec.file as usize].subsections_via_symbols
+        ctx.hdr_of(&ctx.isecs[isec]).section_type(),
+        S_CSTRING_LITERALS | S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS
+    )
 }
 
-/// The rows of the labels of fixed-size literals (see
-/// is_split_fixed_literal): of a literal's labels, the best (see
-/// naming_rank) names the literal - unless it is linker-private
-/// (lCPI0_0), which leaves the literal known by its size - and each
-/// other label, linker-private or not, has a row of no size after the
-/// literal's, the better first. (An ltmpN label is none.) Adds the
-/// literals' rows to `entries`, noting them in `first_labels`, and
-/// returns the others.
+/// The rows of the labels of literals (see is_literal), in order: of a
+/// literal's labels, the best (see naming_rank) names the literal -
+/// unless it is linker-private (lCPI0_0), which leaves the literal
+/// known by its size, as a C string always is by its contents - and
+/// each other label, linker-private or not, has a row of no size after
+/// it, the better first. The literal's size goes with the first row,
+/// but in an object without subsections with the last, the worst
+/// label's, which names the subsection there (an arm64 assembler's
+/// ltmpN, which an object with subsections doesn't list). A C string's
+/// other labels are subsections of their own (see CstringAliases):
+/// only its live aliases are listed here. Notes the literals in
+/// `first_labels`.
 fn literal_labels<'a, E: Target>(
     ctx: &'a Context<E>,
     files: &MapFiles,
     nlists: &hashbrown::HashMap<SymbolId, (u32, bool)>,
     syms: Vec<SymbolId>,
-    entries: &mut Vec<MapEntry<'a>>,
     first_labels: &mut hashbrown::HashMap<usize, u64>,
 ) -> Vec<MapEntry<'a>> {
+    use crate::input_files::is_private_label;
+    let is_cstring =
+        |isec: usize| ctx.hdr_of(&ctx.isecs[isec]).section_type() == S_CSTRING_LITERALS;
+    let is_listed = |id: SymbolId| {
+        let isec = ctx.symbols[id].input_section().unwrap() as usize;
+        let split = ctx.objs[ctx.isecs[isec].file as usize].subsections_via_symbols;
+        let name = ctx.symbols[id].name();
+        !name.is_empty()
+            && match is_cstring(isec) {
+                true => !name.starts_with("ltmp"),
+                false => !name.starts_with('L') && !(split && name.starts_with("ltmp")),
+            }
+    };
     let mut labels: Vec<(usize, u64, std::cmp::Reverse<LabelRank>, SymbolId)> = (syms.into_iter())
-        .filter(|&id| {
-            let name = ctx.symbols[id].name();
-            !name.is_empty() && !name.starts_with("ltmp") && !name.starts_with('L')
-        })
+        .filter(|&id| is_listed(id))
         .map(|id| {
             let (sym, rank) = (&ctx.symbols[id], naming_rank(ctx, nlists, id));
             (sym.input_section().unwrap() as usize, sym.value, std::cmp::Reverse(rank), id)
         })
         .collect();
     labels.sort_unstable();
-    let mut aliases = Vec::new();
+    let aliases = CstringAliases::default();
+    let mut rows = Vec::new();
     for place in labels.chunk_by(|a, b| (a.0, a.1) == (b.0, b.1)) {
         let (isec, value, _, best) = place[0];
-        let row = |id: SymbolId, size: u64| {
-            let Some(FileId::Obj(obj)) = ctx.symbols[id].file() else { unreachable!() };
-            let file = files.of_object(obj as usize, ctx.symbols[id].name());
-            MapEntry { addr: ctx.sym_addr(id), size, file, name: name(ctx.symbols[id].name()) }
+        let obj = ctx.isecs[isec].file as usize;
+        let row = |id: SymbolId| {
+            let file = files.of_object(obj, ctx.symbols[id].name());
+            MapEntry { addr: ctx.sym_addr(id), size: 0, file, name: name(ctx.symbols[id].name()) }
         };
-        if !crate::input_files::is_private_label(ctx.symbols[best].name()) {
-            entries.push(row(best, ctx.isecs[isec].size as u64 - value));
-            first_labels.insert(isec, value);
+        let listed = |&id: &SymbolId| !is_cstring(isec) || aliases.is_live(ctx, obj, id);
+        let others: Vec<SymbolId> = place[1..].iter().map(|&(.., id)| id).filter(listed).collect();
+        // A C string without aliases is listed as any literal no
+        // symbol names (see unnamed_entries).
+        if is_cstring(isec) && others.is_empty() {
+            continue;
         }
-        aliases.extend(place[1..].iter().map(|&(.., id)| row(id, 0)));
+        let first = rows.len();
+        match literal_name(ctx, &ctx.isecs[isec]) {
+            Some(literal) if is_cstring(isec) || is_private_label(ctx.symbols[best].name()) => {
+                let addr = ctx.sym_addr(best);
+                rows.push(MapEntry { addr, size: 0, file: files.objs[obj], name: literal });
+            }
+            _ => rows.push(row(best)),
+        }
+        rows.extend(others.into_iter().map(row));
+        let named = if ctx.objs[obj].subsections_via_symbols { first } else { rows.len() - 1 };
+        rows[named].size = ctx.isecs[isec].size as u64 - value;
+        first_labels.insert(isec, value);
     }
-    aliases
+    rows
+}
+
+/// The labels of C strings ld-prime keeps: it makes a subsection of each
+/// label at a string's start, the best (see naming_rank) the string's
+/// own; each other linker-private one is a copy of the string, merged
+/// into it, and each other one an alias of no size, which -dead_strip
+/// keeps in an object with subsections only if something live refers
+/// to it (or it is global). The symbols live code refers to are found
+/// once one is asked about.
+#[derive(Default)]
+struct CstringAliases {
+    referenced: std::sync::OnceLock<hashbrown::HashSet<SymbolId>>,
+}
+
+impl CstringAliases {
+    /// Whether the label `sym` of object `obj`, not the best of a C
+    /// string's, is an alias that stays live.
+    fn is_live<E: Target>(&self, ctx: &Context<E>, obj: usize, sym: SymbolId) -> bool {
+        if crate::input_files::is_private_label(ctx.symbols[sym].name()) {
+            return false;
+        }
+        if !ctx.args.dead_strip
+            || !ctx.objs[obj].subsections_via_symbols
+            || ctx.symbols[sym].is_extern()
+        {
+            return true;
+        }
+        let referenced = self.referenced.get_or_init(|| {
+            (ctx.isecs.iter().filter(|isec| isec.is_alive()))
+                .flat_map(|isec| {
+                    let relocs = crate::input_files::isec_relocs_of(&ctx.objs, isec);
+                    relocs.iter().filter_map(|rel| ctx.reloc_target_sym(isec.file as usize, rel))
+                })
+                .collect()
+        });
+        referenced.contains(&sym)
+    }
 }
 
 /// Whether a subsection is an Objective-C method list the linker
@@ -1826,17 +1910,21 @@ type DeadKey = (u64, u32, u32);
 /// (see is_kept_category_entry); and the C strings objc stubs take
 /// their selector names from, for which ld-prime makes its own.
 /// ld-prime makes no subsections of a section the link consumes, or of
-/// one -remove_swift_reflection_metadata_sections drops as it reads it.
+/// one -remove_swift_reflection_metadata_sections drops as it reads it,
+/// nor keeps a C string's alias that lost its place (see
+/// CstringAliases).
 struct GoneSubsecs {
     /// The records the Objective-C passes wrote for input ones.
     rewritten: hashbrown::HashSet<u32>,
     stub_names: hashbrown::HashSet<usize>,
+    cstring_aliases: CstringAliases,
 }
 
 impl GoneSubsecs {
     fn new<E: Target>(ctx: &Context<E>) -> Self {
         let rewritten = ctx.data_blobs.iter().map(|blob| blob.isec).collect();
-        Self { rewritten, stub_names: stub_name_isecs(ctx) }
+        let cstring_aliases = CstringAliases::default();
+        Self { rewritten, stub_names: stub_name_isecs(ctx), cstring_aliases }
     }
 
     fn contains<E: Target>(&self, ctx: &Context<E>, id: usize) -> bool {
@@ -1869,19 +1957,21 @@ struct DeadLabel {
 
 /// The labels naming the gone subsections of an object (see
 /// dead_entries_of), by subsection, the alternate entry points last,
-/// and by place, the one naming the subsection first; and how many
-/// labels each C string has at its start. An ltmpN label of an empty
-/// section names nothing (ld-prime makes no subsection of the section),
-/// nor does one of a C string in an object with subsections.
+/// and by place, the one naming the subsection first; and the labels at
+/// the start of each C string, the best first, with their symbols (see
+/// CstringAliases). An ltmpN label of an empty section names nothing
+/// (ld-prime makes no subsection of the section), nor does one of a
+/// literal in an object with subsections.
 fn gone_labels<E: Target>(
     ctx: &Context<E>,
     gone: &GoneSubsecs,
     obj: &crate::input_files::ObjectFile,
-) -> (Vec<DeadLabel>, hashbrown::HashMap<usize, u32>) {
+) -> (Vec<DeadLabel>, hashbrown::HashMap<usize, Vec<CstringLabel>>) {
     let split = obj.subsections_via_symbols;
     let is_ltmp = |name: &str| split && name.starts_with("ltmp");
     let mut labels = Vec::new();
-    let mut cstring_labels: hashbrown::HashMap<usize, u32> = hashbrown::HashMap::new();
+    let mut cstring_labels: hashbrown::HashMap<usize, Vec<CstringLabel>> =
+        hashbrown::HashMap::new();
     for (k, nlist) in obj.nlists.iter().enumerate() {
         if nlist.is_stab() || nlist.n_type() != N_SECT {
             continue;
@@ -1896,32 +1986,52 @@ fn gone_labels<E: Target>(
         };
         let name = ctx.symbols[obj.symbols[k]].name();
         let hdr = ctx.hdr_of(&ctx.isecs[isec]);
-        if hdr.section_type() == S_CSTRING_LITERALS && off == 0 && !is_ltmp(name) {
-            *cstring_labels.entry(isec).or_default() += 1;
-        }
-        if !gone.contains(ctx, isec)
-            || !names_subsec(hdr, split, nlist.is_extern(), name)
-            || (is_ltmp(name) && hdr.size == 0)
-        {
+        let rank = std::cmp::Reverse(label_rank(obj, k as u32, name));
+        if hdr.section_type() == S_CSTRING_LITERALS {
+            if off == 0 && !name.is_empty() && !is_ltmp(name) {
+                let label = (rank, name, obj.symbols[k]);
+                cstring_labels.entry(isec).or_default().push(label);
+            }
             continue;
         }
-        let rank = std::cmp::Reverse(label_rank(obj, k as u32, name));
+        // A literal's labels are as in the live part (see literal_labels).
+        let listed = match hdr.section_type() {
+            S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS => {
+                !name.is_empty() && !name.starts_with('L') && !is_ltmp(name)
+            }
+            _ => names_subsec(hdr, split, nlist.is_extern(), name),
+        };
+        if !gone.contains(ctx, isec) || !listed || (is_ltmp(name) && hdr.size == 0) {
+            continue;
+        }
         let alt = nlist.n_desc & N_ALT_ENTRY != 0;
         labels.push(DeadLabel { isec, off, rank, name, alt });
     }
     labels.sort_unstable_by_key(|l| (l.isec, l.alt, l.off, l.rank));
+    for labels in cstring_labels.values_mut() {
+        labels.sort_unstable();
+    }
     (labels, cstring_labels)
 }
+
+/// A label at a C string's start: its rank (the best first), name and
+/// symbol.
+type CstringLabel = (std::cmp::Reverse<LabelRank>, &'static str, SymbolId);
 
 /// The dead subsections of object `obj_idx` (see dead_entries), the
 /// `file`th of the map, keyed by where they were. A subsection is named
 /// by the best of the labels at its start, as ld-prime ranks them (see
-/// subsec_name_rank) - in an object without subsections, by the first
-/// in its symbol table -, which has the subsection's size; the others
-/// are aliases of none, but for linker-private ones (l...), which the
-/// list leaves out. ld-prime makes a subsection of a C string per label
-/// at its start, and all but one of them are always dead, merged into
-/// that one.
+/// subsec_name_rank), which has the subsection's size - but a literal
+/// by what it is if that label is linker-private, and a C string always
+/// (see literal_labels); the others are aliases of none, but for
+/// linker-private ones (l...), which the list leaves out. ld-prime
+/// makes a subsection of each label at a C string's start (see
+/// CstringAliases): the copies are always dead, merged into the
+/// string, and so is every alias of a gone string or one no live code
+/// refers to. (An arm64 assembler's ltmpN label of a string in an
+/// object without subsections makes a copy that stays when another
+/// label not linker-private names the string, which is then twice in
+/// ld-prime's output; mold doesn't copy it.)
 fn dead_entries_of<'a, E: Target>(
     ctx: &'a Context<E>,
     gone: &GoneSubsecs,
@@ -1952,7 +2062,18 @@ fn dead_entries_of<'a, E: Target>(
                 next - l.off
             }
         };
-        rows.push((l.isec, l.off, size, Cow::Borrowed(l.name.as_bytes())));
+        let isec = &ctx.isecs[l.isec];
+        let name = match literal_name(ctx, isec) {
+            Some(literal)
+                if !is_alias
+                    && (ctx.hdr_of(isec).section_type() == S_CSTRING_LITERALS
+                        || crate::input_files::is_private_label(l.name)) =>
+            {
+                literal
+            }
+            _ => Cow::Borrowed(l.name.as_bytes()),
+        };
+        rows.push((l.isec, l.off, size, name));
     }
 
     // The unnamed rows, from a gone subsection's start up to its first
@@ -1967,10 +2088,19 @@ fn dead_entries_of<'a, E: Target>(
                 }
             }
         }
-        if let Some(&n) = cstring_labels.get(&id) {
+        if let Some(labels) = cstring_labels.get(&id) {
             let name = literal_name(ctx, &ctx.isecs[id]).unwrap();
-            for _ in 1..n {
-                rows.push((id, 0, ctx.isecs[id].size as u64, name.clone()));
+            let aliases = &gone.cstring_aliases;
+            let gone = gone.contains(ctx, id);
+            let named = crate::input_files::is_private_label(labels[0].1);
+            for &(_, label, sym) in &labels[1..] {
+                if crate::input_files::is_private_label(label) {
+                    if gone || named || !label.starts_with("ltmp") {
+                        rows.push((id, 0, ctx.isecs[id].size as u64, name.clone()));
+                    }
+                } else if gone || !aliases.is_live(ctx, obj_idx, sym) {
+                    rows.push((id, 0, 0, Cow::Borrowed(label.as_bytes())));
+                }
             }
         }
     }
