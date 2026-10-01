@@ -681,7 +681,7 @@ impl<'a, E: Target> Builder<'a, E> {
             RelocTarget::Section(isec) => match self.isec_target_at(isec, rel.addend) {
                 Some((to, off)) => (to, off - rel.addend),
                 None => fatal!(
-                    "{}: -make_mergeable: a relocation refers to a section with no atom",
+                    "{}: -make_mergeable: a relocation refers to a section with no entry",
                     self.ctx.objs[obj].mf.name.display()
                 ),
             },

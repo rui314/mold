@@ -300,6 +300,41 @@ fn sign_extend(val: u64, bits: u32) -> i64 {
     ((val << (64 - bits)) as i64) >> (64 - bits)
 }
 
+/// The largest content type ld-prime 27037 knows.
+const MAX_CONTENT_TYPE: u8 = 81;
+
+/// Checks the largest kinds the record's header says it uses against
+/// those ld-prime knows, as it does, in its words: the entry kind, the
+/// content type, the generic fixup kind, then the target's, which must
+/// be of one target's group (0x80 arm64, 0x100 x86-64) if any.
+fn check_kinds(blob: &[u8]) -> Result<(), String> {
+    let unknown = |what: &str, n: u16, max: u16| {
+        Err(format!("atom file uses unknown {what} ({n}).  Max supported is {max}"))
+    };
+    if blob[12] > kind::WEAK_DEF_ALIAS {
+        return unknown("atom kind", blob[12].into(), kind::WEAK_DEF_ALIAS.into());
+    }
+    if blob[13] > MAX_CONTENT_TYPE {
+        return unknown("atom content type", blob[13].into(), MAX_CONTENT_TYPE.into());
+    }
+    let generic = read16(blob, 14);
+    if generic > fk::PTR64_TO_GOT {
+        return unknown("fixup kind", generic, fk::PTR64_TO_GOT);
+    }
+    let target = read16(blob, 16);
+    let max = match target & 0x380 {
+        _ if target == 0 => return Ok(()),
+        0x80 => fk::ARM64_ADRP_LDR_GOT_NO_OPT,
+        0x100 => fk::X86_64_RIP1_GOT,
+        0 => return Err("unexpected generic fixup group".into()),
+        _ => return Err("unknown fixup group".into()),
+    };
+    if target > max {
+        return unknown("fixup kind", target, max);
+    }
+    Ok(())
+}
+
 /// Where a dylib's LC_ATOM_INFO data is in its file.
 fn record_range(data: &[u8]) -> Option<(usize, usize)> {
     let hdr = MachHeader::read_from(data);
@@ -346,6 +381,7 @@ impl MergeableRecord {
                 blob[11]
             ));
         }
+        check_kinds(blob)?;
         if read32(blob, 0x60) as usize != HEADER_SIZE {
             return Err("atoms array must be located directly after the atom file structure".into());
         }
@@ -554,7 +590,7 @@ impl Reader<'_> {
             .enumerate()
             .map(|(i, c)| {
                 if read32(c, 0) as usize != i {
-                    return Err(format!("atom {i} has ordinal {}", read32(c, 0)));
+                    return Err(format!("entry {i} has ordinal {}", read32(c, 0)));
                 }
                 let nfix = read32(c, 4) as usize;
                 let first = read32(c, 8) as usize;
@@ -860,7 +896,7 @@ impl<E: Target> Synth<'_, E> {
         let entry = &self.rec.entries[i];
         if !matches!(entry.kind, REGULAR | WEAK_DEF | RESOLVER | ANON | ANON_COAL_BY_CONTENT) {
             if matches!(entry.kind, 13..=17) {
-                fatal!("{}: unsupported atom kind {} in LC_ATOM_INFO", path.display(), entry.kind);
+                fatal!("{}: unsupported entry kind {} in LC_ATOM_INFO", path.display(), entry.kind);
             }
             return;
         }
@@ -892,7 +928,7 @@ impl<E: Target> Synth<'_, E> {
         match standard_section(entry.content_type) {
             Some((seg, sect, flags)) => (str_to_name(seg), str_to_name(sect), flags),
             None => fatal!(
-                "{}: unsupported atom content type {} in LC_ATOM_INFO",
+                "{}: unsupported content type {} in LC_ATOM_INFO",
                 path.display(),
                 entry.content_type
             ),
@@ -1139,7 +1175,7 @@ impl<E: Target> Synth<'_, E> {
             }
             let Some(sym) = self.target_sym(f.target) else {
                 fatal!(
-                    "{}: fixup of atom {i} at 0x{:x} has a target with no symbol",
+                    "{}: fixup of entry {i} at 0x{:x} has a target with no symbol",
                     path.display(),
                     f.offset
                 );
