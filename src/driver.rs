@@ -86,6 +86,16 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
             passes::Autolinked::Objects => {}
         }
     }
+    if ctx.args.relocatable && passes::links_only_bitcode(&ctx) {
+        t.stop();
+        passes::write_merged_bitcode(&ctx);
+        crate::error::checkpoint();
+        crate::mapfile::write_dependency_info(&ctx);
+        crate::error::check_fatal_warnings();
+        crate::subprocess::notify_parent();
+        drop(t_all);
+        return Ok(0);
+    }
     if passes::do_lto(&mut ctx) {
         loop {
             passes::resolve_symbols(&mut ctx);

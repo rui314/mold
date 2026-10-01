@@ -1995,11 +1995,151 @@ fn mark_live_objects<E: Target>(ctx: &mut Context<E>) {
     }
 }
 
+/// Whether a -r link takes in bitcode and nothing else: ld-prime then
+/// writes the modules merged into one bitcode file rather than an
+/// object, so that the final link still optimizes them as a whole. A
+/// Mach-O object of any content makes it compile them instead.
+pub fn links_only_bitcode<E: Target>(ctx: &Context<E>) -> bool {
+    ctx.lto_modules.iter().any(|&(obj, _)| ctx.objs[obj].is_alive)
+        && ctx
+            .objs
+            .iter()
+            .enumerate()
+            .all(|(i, obj)| !obj.is_alive || obj.lto_module.is_some() || ctx.is_internal(i))
+}
+
+/// Writes a -r link of bitcode alone as one merged bitcode file (see
+/// links_only_bitcode). ld-prime warns, then fails, if libLTO can't.
+pub fn write_merged_bitcode<E: Target>(ctx: &Context<E>) {
+    let plugin = ctx.lto_plugin.unwrap();
+    // SAFETY: libLTO calls with handles created by the same library.
+    unsafe {
+        let cg = create_lto_codegen(ctx, &plugin);
+        if let Err(msg) = crate::lto::write_merged_modules(&plugin, cg, &ctx.args.output) {
+            crate::warn!("could not produce merged bitcode file");
+            fatal!("LTO codegen error: {msg}");
+        }
+    }
+}
+
+/// Creates libLTO's code generator, with the live bitcode modules in
+/// input order and the symbols that must survive LTO.
+///
+/// # Safety
+///
+/// The plugin must be the library the modules were created by.
+unsafe fn create_lto_codegen<E: Target>(
+    ctx: &Context<E>,
+    plugin: &crate::lto::Plugin,
+) -> *mut std::ffi::c_void {
+    // SAFETY: libLTO calls with handles created by the same library.
+    unsafe {
+        let cg = (plugin.codegen_create)();
+        if cg.is_null() {
+            fatal!("lto_codegen_create failed: {}", plugin.error_message());
+        }
+        (plugin.codegen_set_pic_model)(cg, crate::lto::LTO_CODEGEN_PIC_MODEL_DYNAMIC);
+        for &(obj, module) in &ctx.lto_modules {
+            if ctx.objs[obj].is_alive && (plugin.codegen_add_module)(cg, module as *mut _) {
+                fatal!("lto_codegen_add_module failed: {}", plugin.error_message());
+            }
+        }
+        let roots = if ctx.args.relocatable { relocatable_lto_roots(ctx) } else { lto_roots(ctx) };
+        for name in roots {
+            if let Ok(name) = std::ffi::CString::new(name) {
+                (plugin.codegen_add_must_preserve_symbol)(cg, name.as_ptr());
+            }
+        }
+        cg
+    }
+}
+
+/// The symbols of the bitcode modules that must survive the LTO
+/// internalizer in a final link: what the rest of the link can see.
+/// For a dylib that is every external symbol a bitcode module defines,
+/// as each is an export. An executable exports nothing that matters, so
+/// only symbols some non-LTO code references (plus the entry point, and
+/// everything under -export_dynamic, which exists exactly to let
+/// executables keep their globals for dlsym) must survive; the rest can
+/// be internalized and dead-stripped inside the module. A reference
+/// from another bitcode module does not count: libLTO resolves those
+/// itself, and ld-prime lets such a function go local (_times2, called
+/// only from a bitcode main, is not exported). A native common does
+/// count: when a bitcode definition wins, the common's code addresses
+/// that definition's storage. So do -alias bases, which the linker
+/// itself references.
+fn lto_roots<E: Target>(ctx: &Context<E>) -> Vec<&str> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let executable = ctx.args.output_type == MH_EXECUTE;
+    let native_refs: Vec<AtomicBool> =
+        (0..ctx.symbols.syms.len()).map(|_| AtomicBool::new(false)).collect();
+    ctx.objs.par_iter().filter(|obj| obj.is_alive && obj.lto_module.is_none()).for_each(|obj| {
+        let r = obj.global_range();
+        for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
+            if !nlist.is_stab() && nlist.n_type() == N_UNDF {
+                native_refs[sym_id as usize].store(true, Ordering::Relaxed);
+            }
+        }
+    });
+    let mut roots = Vec::new();
+    for (i, sym) in ctx.symbols.syms.iter().enumerate() {
+        if let Some(FileId::Obj(idx)) = sym.file()
+            && ctx.objs[idx as usize].is_alive
+            && ctx.objs[idx as usize].lto_module.is_some()
+            && sym.is_extern()
+        {
+            if executable
+                && !ctx.args.export_dynamic
+                && (!sym.is_used() || !native_refs[i].load(Ordering::Relaxed))
+                && sym.name() != ctx.args.entry
+                && !ctx.args.forced_undefined.iter().any(|n| n == sym.name())
+                && !ctx.args.aliases.iter().any(|(existing, _)| existing == sym.name())
+                && !ctx
+                    .args
+                    .exported_symbols
+                    .as_ref()
+                    .is_some_and(|exported| exported.find(sym.name().as_bytes()) != -1)
+            {
+                continue;
+            }
+            roots.push(sym.name());
+        }
+    }
+    roots.push(&ctx.args.entry);
+    roots
+}
+
+/// The symbols of the bitcode modules that must survive the LTO
+/// internalizer in a -r link: every one a module defines for other
+/// files to see, private externs (which the final link still resolves
+/// across objects) and weak definitions included - ld-prime keeps an
+/// unused linkonce_odr function too - unless an export list leaves it
+/// out, which internalizes it.
+fn relocatable_lto_roots<E: Target>(ctx: &Context<E>) -> Vec<&str> {
+    let exported = |name: &str| {
+        ctx.args.exported_symbols.as_ref().is_none_or(|e| e.find(name.as_bytes()) != -1)
+            && ctx.args.unexported_symbols.find(name.as_bytes()) == -1
+    };
+    let mut roots = Vec::new();
+    for &(obj, _) in &ctx.lto_modules {
+        let obj = &ctx.objs[obj];
+        if !obj.is_alive {
+            continue;
+        }
+        for (nlist, &id) in obj.nlists.iter().zip(&obj.symbols) {
+            let name = ctx.symbols[id].name();
+            if nlist.n_type() == N_ABS && exported(name) {
+                roots.push(name);
+            }
+        }
+    }
+    roots
+}
+
 /// Compiles live bitcode modules into one Mach-O object and
 /// replaces the placeholder objects' symbol claims with the real ones.
 pub fn do_lto<E: Target>(ctx: &mut Context<E>) -> bool {
-    use std::sync::atomic::{AtomicBool, Ordering};
-
     if !ctx.lto_modules.iter().any(|&(obj, _)| ctx.objs[obj].is_alive) {
         return false;
     }
@@ -2007,81 +2147,7 @@ pub fn do_lto<E: Target>(ctx: &mut Context<E>) -> bool {
 
     // SAFETY: libLTO calls with handles created by the same library.
     let data = unsafe {
-        let cg = (plugin.codegen_create)();
-        if cg.is_null() {
-            fatal!("lto_codegen_create failed: {}", plugin.error_message());
-        }
-        (plugin.codegen_set_pic_model)(cg, crate::lto::LTO_CODEGEN_PIC_MODEL_DYNAMIC);
-
-        for &(obj, module) in &ctx.lto_modules {
-            if !ctx.objs[obj].is_alive {
-                continue;
-            }
-            if (plugin.codegen_add_module)(cg, module as *mut _) {
-                fatal!("lto_codegen_add_module failed: {}", plugin.error_message());
-            }
-        }
-
-        // Everything the rest of the link can see must survive the LTO
-        // internalizer. For a dylib that is every external symbol a
-        // bitcode module defines - each is an export. An executable
-        // exports nothing that matters, so only symbols some non-LTO
-        // code references (plus the entry point, and everything under
-        // -export_dynamic, which exists exactly to let executables
-        // keep their globals for dlsym) must survive; the rest can be
-        // internalized and dead-stripped inside the module. A reference
-        // from another bitcode module does not count: libLTO resolves
-        // those itself, and ld-prime lets such a function go local
-        // (_times2, called only from a bitcode main, is not exported).
-        // A native common does count: when a bitcode definition wins,
-        // the common's code addresses that definition's storage. So do
-        // -alias bases, which the linker itself references.
-        let executable = ctx.args.output_type == MH_EXECUTE;
-        let native_refs: Vec<AtomicBool> =
-            (0..ctx.symbols.syms.len()).map(|_| AtomicBool::new(false)).collect();
-        ctx.objs.par_iter().filter(|obj| obj.is_alive && obj.lto_module.is_none()).for_each(
-            |obj| {
-                let r = obj.global_range();
-                for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
-                    if !nlist.is_stab() && nlist.n_type() == N_UNDF {
-                        native_refs[sym_id as usize].store(true, Ordering::Relaxed);
-                    }
-                }
-            },
-        );
-        let mut preserve: Vec<std::ffi::CString> = Vec::new();
-        for (i, sym) in ctx.symbols.syms.iter().enumerate() {
-            if let Some(FileId::Obj(idx)) = sym.file()
-                && ctx.objs[idx as usize].is_alive
-                && ctx.objs[idx as usize].lto_module.is_some()
-                && sym.is_extern()
-            {
-                if executable
-                    && !ctx.args.export_dynamic
-                    && (!sym.is_used() || !native_refs[i].load(Ordering::Relaxed))
-                    && sym.name() != ctx.args.entry
-                    && !ctx.args.forced_undefined.iter().any(|n| n == sym.name())
-                    && !ctx.args.aliases.iter().any(|(existing, _)| existing == sym.name())
-                    && !ctx
-                        .args
-                        .exported_symbols
-                        .as_ref()
-                        .is_some_and(|exported| exported.find(sym.name().as_bytes()) != -1)
-                {
-                    continue;
-                }
-                if let Ok(name) = std::ffi::CString::new(sym.name()) {
-                    preserve.push(name);
-                }
-            }
-        }
-        if let Ok(name) = std::ffi::CString::new(ctx.args.entry.as_str()) {
-            preserve.push(name);
-        }
-        for name in &preserve {
-            (plugin.codegen_add_must_preserve_symbol)(cg, name.as_ptr());
-        }
-
+        let cg = create_lto_codegen(ctx, &plugin);
         let opts = crate::lto::CodegenOptions {
             cpu: ctx.args.lto_cpu.as_deref(),
             save_temps: ctx.args.save_temps.then_some(ctx.args.output.as_path()),

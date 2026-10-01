@@ -186,6 +186,30 @@ pub unsafe fn compile(plugin: &Plugin, cg: *mut c_void, opts: &CodegenOptions) -
     }
 }
 
+/// Writes the modules added to the code generator, merged into one, to
+/// a bitcode file at `path` - what ld-prime makes of a -r link of
+/// bitcode alone, so that the final link still optimizes it as a
+/// whole. libLTO internalizes what it was not told to preserve, but
+/// optimizes nothing. On failure, returns libLTO's message.
+///
+/// # Safety
+///
+/// `cg` must be a live code generator of the plugin's library.
+pub unsafe fn write_merged_modules(
+    plugin: &Plugin,
+    cg: *mut c_void,
+    path: &Path,
+) -> Result<(), String> {
+    let path = CString::new(crate::util::path_bytes(path))
+        .map_err(|_| "output path contains a NUL byte".to_string())?;
+    // SAFETY: the generator is live per the caller, and the path is
+    // NUL-terminated.
+    if unsafe { (plugin.codegen_write_merged_modules)(cg, path.as_ptr()) } {
+        return Err(plugin.error_message());
+    }
+    Ok(())
+}
+
 /// A parsed bitcode module's symbol, in linker terms.
 pub struct LtoSymbol {
     pub name: String,
