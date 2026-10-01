@@ -48,3 +48,17 @@ flags $t/exe4 | grep -q ' PIE'
 $CC --ld-path=$mold -o $t/exe4 $t/a.o -mmacosx-version-min=$old -Wl,-w,-pie,-no_pie \
   2> $t/log5
 not grep -q overriding $t/log5
+
+# ld64 made an x86-64 executable PIE by default from macOS 10.6 on: one
+# for an older macOS is PIE only with -pie.
+if [ $ARCH = x86_64 ]; then
+  $CC --ld-path=$mold -o $t/exe6 $t/a.o -mmacosx-version-min=10.5 2> /dev/null
+  $t/exe6
+  flags $t/exe6 > $t/flags6
+  not grep -q ' PIE' $t/flags6
+  $CC --ld-path=$mold -o $t/exe7 $t/a.o -mmacosx-version-min=10.5 -Wl,-pie 2> /dev/null
+  $t/exe7
+  flags $t/exe7 | grep -q ' PIE'
+  $CC --ld-path=$mold -o $t/exe8 $t/a.o -mmacosx-version-min=10.6 2> /dev/null
+  flags $t/exe8 | grep -q ' PIE'
+fi

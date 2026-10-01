@@ -3916,9 +3916,10 @@ fn resolve_stack(target: &TargetTraits, args: &mut Args, size: Option<u64>, addr
 /// Whether an executable is position independent (MH_PIE). It is
 /// unless -no_pie says otherwise, which arm64 ignores (arm64 macOS runs
 /// PIE executables only) and which ld-prime deprecates from the OS
-/// versions that default to chained fixups. A -static image (a kernel)
-/// is PIE only with -pie or -kernel, or with -fixup_chains, whose
-/// chains exist to slide it.
+/// versions that default to chained fixups. An x86-64 one is PIE by
+/// default from macOS 10.6 on, as ld64 made it, and only with -pie for
+/// an older macOS. A -static image (a kernel) is PIE only with -pie or
+/// -kernel, or with -fixup_chains, whose chains exist to slide it.
 fn resolve_pie(
     target: &TargetTraits,
     args: &Args,
@@ -3936,8 +3937,19 @@ fn resolve_pie(
             target.name == "arm64"
         }
         Some(pie) => pie,
-        None => !args.static_link || args.kernel || fixup_chains == Some(true),
+        None => {
+            (!args.static_link && !is_before_x86_64_macos_10_6(target, args))
+                || args.kernel
+                || fixup_chains == Some(true)
+        }
     }
+}
+
+/// Whether the image is for x86-64 macOS before 10.6.
+fn is_before_x86_64_macos_10_6(target: &TargetTraits, args: &Args) -> bool {
+    target.name == "x86_64"
+        && args.platform == PLATFORM_MACOS
+        && args.platform_minos < encode_version(10, 6, 0)
 }
 
 /// Whether the image is laid out for chained fixups (see
