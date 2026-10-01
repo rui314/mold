@@ -725,12 +725,20 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
 }
 
 /// Refuses what ld-prime does for mergeable libraries that mold can't
-/// do yet. An image that re-exports a library with -no_merge_* gets
-/// ld-prime's hook for the library's classes, Objective-C or Swift,
-/// whenever it has some (Args::merged_libraries_hook), unless
-/// -no_merged_libraries_hook; mold has no such hook to add. (A -r
-/// output and an image that links no dylib ignore the library.)
+/// do yet: write a dylib's atoms (-make_mergeable), or add the hook for
+/// classes (Args::merged_libraries_hook). A debug build of a mergeable
+/// dylib gets the hook with -add_mergeable_debug_hook, if it has
+/// classes it doesn't export; an image that re-exports a library with
+/// -no_merge_* gets it whenever the library has classes, Objective-C
+/// or Swift, unless -no_merged_libraries_hook. (A -r output and an
+/// image that links no dylib ignore the library.)
 pub fn check_mergeable_libraries<E: Target>(ctx: &Context<E>) {
+    if ctx.args.make_mergeable {
+        fatal!("-make_mergeable is not supported");
+    }
+    if ctx.args.add_mergeable_debug_hook {
+        fatal!("-add_mergeable_debug_hook is not supported");
+    }
     if !ctx.args.merged_libraries_hook || ctx.args.relocatable || !ctx.args.links_dylibs() {
         return;
     }

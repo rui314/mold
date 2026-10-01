@@ -444,6 +444,14 @@ pub struct Args {
     /// framework's resources stay, rather than in this image. On
     /// unless -no_merged_libraries_hook; mold has no such hook.
     pub merged_libraries_hook: bool,
+    /// -make_mergeable: a dylib that a later link may merge (-merge_*),
+    /// for which ld-prime records its atoms in LC_ATOM_INFO, as Xcode
+    /// builds a MERGEABLE_LIBRARY. mold can't write them yet.
+    pub make_mergeable: bool,
+    /// -add_mergeable_debug_hook: a debug build of a mergeable dylib
+    /// gets the hook of merged libraries itself, for its classes that
+    /// it doesn't export, which no image re-exporting it can name.
+    pub add_mergeable_debug_hook: bool,
 }
 
 impl Default for Args {
@@ -570,6 +578,8 @@ impl Default for Args {
             pie: true,
             text_relocs: false,
             merged_libraries_hook: true,
+            make_mergeable: false,
+            add_mergeable_debug_hook: false,
         }
     }
 }
@@ -1368,6 +1378,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 args.inputs.push(InputArg::NoMergeFile(path(next_arg(&mut i, name))))
             }
             b"-no_merged_libraries_hook" => args.merged_libraries_hook = false,
+            b"-make_mergeable" => args.make_mergeable = true,
+            b"-add_mergeable_debug_hook" => args.add_mergeable_debug_hook = true,
             b"-merge_framework" => {
                 args.inputs.push(InputArg::MergeFramework(next_arg(&mut i, name).to_owned()))
             }
@@ -2131,10 +2143,18 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             crate::warn!("-lazy_library cannot be used on firmware, changing to regular link");
         }
     }
+    // Only a dylib is mergeable: ld-prime checks so here, and that only
+    // a dylib gets the debug hook right after the next check.
+    if args.make_mergeable && args.output_type != MH_DYLIB {
+        fatal!("-make_mergeable can only be used when creating a dynamic library");
+    }
     // What is dead is known only once the final link sees every
     // reference.
     if args.relocatable && args.dead_strip {
         fatal!("-r and -dead_strip cannot be used together");
+    }
+    if args.add_mergeable_debug_hook && args.output_type != MH_DYLIB {
+        fatal!("-add_mergeable_debug_hook can only be used with -dylib");
     }
     warn_platform_options(target, &args, read_only_relocs.is_some());
     args.segment_align = resolve_segment_align(target, &args, segalign);
@@ -2404,7 +2424,9 @@ fn check_output_kind(
 /// Rejects the options at odds with where the image goes: a flat
 /// namespace in one bound for the shared cache, whose builder binds
 /// each import to the dylib that exports it once and for all (dyld,
-/// which binds nothing, may have one).
+/// which binds nothing, may have one), or in a mergeable dylib, whose
+/// atoms a two-level image may take in; and the debug hook in a
+/// mergeable dylib, which only a debug build that merges nothing gets.
 fn check_dylib_use(target: &TargetTraits, args: &Args) {
     if args.flat_namespace && !args.is_dylinker() && shared_region_eligible(target, args) {
         fatal!(
@@ -2412,6 +2434,12 @@ fn check_dylib_use(target: &TargetTraits, args: &Args) {
              or opt out of the shared cache using the build setting 'LD_SHARED_CACHE_ELIGIBLE=NO' \
              (or linker flag '-not_for_dyld_shared_cache')"
         );
+    }
+    if args.make_mergeable && args.flat_namespace {
+        fatal!("-flat_namespace cannot be used with -make_mergeable");
+    }
+    if args.make_mergeable && args.add_mergeable_debug_hook {
+        fatal!("-add_mergeable_debug_hook cannot be used with -make_mergeable");
     }
 }
 
