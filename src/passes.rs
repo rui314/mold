@@ -1119,25 +1119,29 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
 }
 
 /// Warms the .tbd parse cache: parses the `stubs` on all cores, then
-/// the stubs they re-export likewise - two waves cover an SDK's
-/// umbrella trees -, so that the serial loop loading them finds every
+/// the stubs they re-export likewise, wave after wave down an SDK's
+/// umbrella trees, so that the serial loop loading them finds every
 /// parse done.
 fn prefetch_stubs<E: Target>(ctx: &Context<E>, stubs: &[&'static MappedFile]) {
-    let wave1 = tapi::prefetch(stubs, E::NAME, ctx.args.platform);
-    let mut deps: Vec<&'static MappedFile> = Vec::new();
-    for tbd in wave1.iter().flatten() {
-        for name in &tbd.reexports {
-            if tbd.document(name).is_some() {
-                continue;
-            }
-            if let Some(dep) = crate::input_files::find_reexport(ctx, name.as_bytes())
-                && get_file_type(dep) == FileType::Tapi
-            {
-                deps.push(dep);
+    let mut seen: hashbrown::HashSet<&Path> = stubs.iter().map(|mf| mf.name.as_path()).collect();
+    let mut wave = stubs.to_vec();
+    while !wave.is_empty() {
+        let tbds = tapi::prefetch(&wave, E::NAME, ctx.args.platform);
+        wave.clear();
+        for tbd in tbds.iter().flatten() {
+            for name in &tbd.reexports {
+                if tbd.document(name).is_some() {
+                    continue;
+                }
+                if let Some(dep) = crate::input_files::find_reexport(ctx, name.as_bytes())
+                    && get_file_type(dep) == FileType::Tapi
+                    && seen.insert(dep.name.as_path())
+                {
+                    wave.push(dep);
+                }
             }
         }
     }
-    tapi::prefetch(&deps, E::NAME, ctx.args.platform);
 }
 
 /// Parses the stubs of the libraries the auto-link options `opts` name
