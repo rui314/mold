@@ -1154,6 +1154,17 @@ pub fn merge_objc_categories<E: Target>(ctx: &mut Context<E>) {
 
         // Point the class and its metaclass at new ro records holding
         // the merged lists.
+        let filled = [
+            (own.imethods, merged.imethods),
+            (own.cmethods, merged.cmethods),
+            (own.protocols, merged.protocols),
+            (own.meta_protocols, merged.protocols),
+            (own.iprops, merged.iprops),
+            (own.cprops, merged.cprops),
+        ];
+        let filled = filled.iter().filter(|(own, merged)| own.is_none() && merged.is_some());
+        let obj = ctx.isecs[class.cls.0 as usize].file;
+        ctx.objc_filled_ro_fields.extend(filled.map(|_| obj));
         let ro = rewrite_ro(ctx, class.ro, merged.imethods, merged.protocols, merged.iprops);
         let meta_ro =
             rewrite_ro(ctx, class.meta_ro, merged.cmethods, merged.protocols, merged.cprops);
@@ -1405,7 +1416,13 @@ fn merge_into_first_category<E: Target>(
     // category_t: name, cls, instanceMethods, classMethods, protocols,
     // instanceProperties, _classProperties.
     let fields = [merged.imethods, merged.cmethods, merged.protocols, merged.iprops, merged.cprops];
-    for (off, list) in (16..).step_by(8).zip(fields) {
+    let own = &cat_lists[0];
+    let own = [own.imethods, own.cmethods, own.protocols, own.iprops, own.cprops];
+    let obj = ctx.isecs[first as usize].file;
+    for (off, (list, own)) in (16..).step_by(8).zip(fields.into_iter().zip(own)) {
+        if list.is_some() && own.is_none() {
+            ctx.objc_filled_ro_fields.push(obj);
+        }
         if let Some(ObjcRef::Isec(list, 0)) = list {
             set_pointer_field(ctx, first, off, list);
         }
@@ -1769,7 +1786,9 @@ fn add_property_list<E: Target>(ctx: &mut Context<E>, props: &[(ObjcRef, ObjcRef
     for &(name, attrs) in props {
         fields.extend([DataField::Ptr(name), DataField::Ptr(attrs)]);
     }
-    add_data_blob(ctx, "__objc_const", 0, fields)
+    let isec = add_data_blob(ctx, "__objc_const", 0, fields);
+    ctx.objc_property_lists.push(isec);
+    isec
 }
 
 /// Drops the lists the merged ones supersede - the class's own of each

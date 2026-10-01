@@ -45,3 +45,38 @@ grep $'\t__objc_nlcatlist$' $t/map > $t/nlcatlist || true
 
 # Foo (Cat)'s entries in __objc_catlist and __objc_nlcatlist are dead.
 [ "$(grep -c $'^<<dead>>\t0x00000008\t\\[  1\\] anon$' $t/map)" = 2 ]
+
+# Merging gives a class lists of kinds it had none of: instance and
+# class methods, a protocol list (the class's and the metaclass's) and
+# an instance property list. ld-prime lists a dead pointer-sized atom
+# of the class's file for each list pointer so set, after the file's
+# other dead atoms, and the merged property list, which no symbol
+# names, as an atom of its own.
+cat <<EOF | $CC -o $t/b.o -c -xobjective-c -
+#import <Foundation/Foundation.h>
+@protocol P - (int)a; @end
+@interface Foo : NSObject @end
+@implementation Foo @end
+int dead_fn(void) { return 7; }
+EOF
+cat <<EOF | $CC -o $t/c.o -c -xobjective-c -
+#import <Foundation/Foundation.h>
+@protocol P - (int)a; @end
+@interface Foo : NSObject @end
+@interface Foo (Cat) <P> @property (readonly) int b; - (int)a; + (int)c; @end
+@implementation Foo (Cat) - (int)a { return 1; } - (int)b { return 2; } + (int)c { return 3; } @end
+int main() { return [[Foo new] a] + [[Foo new] b] + [Foo c]; }
+EOF
+$CC --ld-path=$mold -o $t/exe2 $t/b.o $t/c.o -framework Foundation -Wl,-dead_strip \
+  -Wl,-map,$t/map2
+sed -n '/^# Dead Stripped Symbols:/,$p' $t/map2 | grep '\[  1\]' | cut -f3 > $t/dead2
+diff - $t/dead2 <<EOF
+[  1] _dead_fn
+[  1] anon
+[  1] anon
+[  1] anon
+[  1] anon
+[  1] anon
+EOF
+[ "$(grep -c $'^<<dead>>\t0x00000008\t\\[  1\\] anon$' $t/map2)" = 5 ]
+sed -n '/^# Symbols:/,/^$/p' $t/map2 | grep -q $'\t0x00000018\t\\[  0\\] anon$'

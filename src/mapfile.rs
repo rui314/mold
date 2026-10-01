@@ -1271,10 +1271,16 @@ fn stub_name_isecs<E: Target>(ctx: &Context<E>) -> hashbrown::HashSet<usize> {
 /// category list rebuilt without the categories merged into their
 /// classes lists the others, each its category's file's, as ld-prime
 /// keeps those entries; an __objc_nlclslist entry for a class that a
-/// category's +load made non-lazy is file 0's.
+/// category's +load made non-lazy is file 0's, as is a merged property
+/// list, which no symbol names.
 fn objc_list_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Vec<MapEntry<'a>> {
     use crate::objc::{DataField, ObjcRef};
-    let mut entries = Vec::new();
+    let mut entries: Vec<MapEntry> = (ctx.objc_property_lists.iter())
+        .map(|&isec| {
+            let (addr, size) = (ctx.isec_addr(isec as usize), ctx.isecs[isec as usize].size as u64);
+            MapEntry { addr, size, file: 0, name: name("anon") }
+        })
+        .collect();
     for blob in &ctx.data_blobs {
         let of_categories = matches!(blob.sect, "__objc_catlist" | "__objc_nlcatlist");
         if !of_categories && blob.sect != "__objc_nlclslist" {
@@ -1532,6 +1538,13 @@ fn dead_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Vec<Map
                 .map(move |(key, entry)| (file, key, entry))
         })
         .collect();
+    // A class category merging gave a list of a kind it had none of
+    // has, after its file's other dead atoms, one for each such list.
+    for (i, &obj) in ctx.objc_filled_ro_fields.iter().enumerate() {
+        let file = files.objs[obj as usize];
+        let entry = MapEntry { addr: 0, size: 8, file, name: name("anon") };
+        dead.push((file, (u64::MAX, u32::MAX, i as u32), entry));
+    }
     dead.sort_by_key(|&(file, key, _)| (file, key));
     dead.into_iter().map(|(_, _, entry)| entry).collect()
 }

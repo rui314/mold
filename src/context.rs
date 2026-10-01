@@ -225,6 +225,13 @@ pub struct Context<E: Target> {
     /// image re-exports whole exports already (see
     /// passes::warn_redundant_reexports).
     pub redundant_reexports: Vec<SymbolId>,
+    /// The property lists category merging writes, which ld-prime's
+    /// -map lists as anonymous atoms of its own.
+    pub objc_property_lists: Vec<u32>,
+    /// For each class_ro_t list pointer category merging set where the
+    /// class had no list of the kind, the object defining the class:
+    /// ld-prime's -map lists a dead pointer-sized atom of it for each.
+    pub objc_filled_ro_fields: Vec<u32>,
     /// section$start/end and segment$start/end symbols to resolve
     /// after layout: (symbol, is_start, segment, section).
     pub boundary_syms: Vec<(SymbolId, bool, String, Option<String>)>,
@@ -343,6 +350,8 @@ impl<E: Target> Context<E> {
             autolinked_archives: hashbrown::HashMap::new(),
             indirect_aliases: Vec::new(),
             redundant_reexports: Vec::new(),
+            objc_property_lists: Vec::new(),
+            objc_filled_ro_fields: Vec::new(),
             boundary_syms: Vec::new(),
             why_load: std::collections::HashMap::new(),
             force_loaded: std::collections::HashSet::new(),
