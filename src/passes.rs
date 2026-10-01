@@ -474,8 +474,8 @@ fn refuses_client<E: Target>(ctx: &Context<E>, mf: &'static MappedFile, rc: Read
 fn is_foreign<E: Target>(ctx: &Context<E>, mf: &MappedFile) -> bool {
     let Some(arch) = input_files::foreign_arch::<E>(mf) else { return false };
     if ctx.args.allow_sub_type_mismatches && input_files::is_subtype_mismatch::<E>(mf) {
-        let name = mf.name.display();
-        crate::warn!("linking {arch} file '{name}' into {} link", E::NAME);
+        let name = input_files::without_fat_arch(path_bytes(&mf.name));
+        crate::warn!("linking {arch} file '{}' into {} link", crate::util::display(&name), E::NAME);
         return false;
     }
     let why = format!("found architecture '{arch}', required architecture '{}'", E::NAME);
@@ -489,7 +489,9 @@ fn is_foreign<E: Target>(ctx: &Context<E>, mf: &MappedFile) -> bool {
 fn was_ignored<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> bool {
     match get_file_type(mf) {
         FileType::Tapi | FileType::Dylib => !ctx.dylibs.iter().any(|d| d.path == mf.name),
-        FileType::Fat => input_files::fat_slice::<E>(mf).is_none(),
+        FileType::Fat => {
+            input_files::fat_slice::<E>(mf, ctx.args.allow_sub_type_mismatches).is_none()
+        }
         _ => false,
     }
 }
@@ -627,10 +629,12 @@ fn collect_file<E: Target>(
                 }
             }
         }
-        FileType::Fat => match input_files::fat_slice::<E>(mf) {
-            Some(slice) => collect_file(ctx, slice, rc, out),
-            None => input_files::warn_fat_missing_arch(ctx, mf),
-        },
+        FileType::Fat => {
+            match input_files::fat_slice::<E>(mf, ctx.args.allow_sub_type_mismatches) {
+                Some(slice) => collect_file(ctx, slice, rc, out),
+                None => input_files::warn_fat_missing_arch(ctx, mf),
+            }
+        }
         FileType::LlvmBitcode => {
             input_files::parse_bitcode(ctx, mf, true);
         }
@@ -1208,7 +1212,7 @@ fn load_bundle_loader<E: Target>(
     out: &mut Vec<PendingObject>,
 ) {
     let exe = match get_file_type(mf) {
-        FileType::Fat => input_files::fat_slice::<E>(mf),
+        FileType::Fat => input_files::fat_slice::<E>(mf, ctx.args.allow_sub_type_mismatches),
         _ => Some(mf),
     };
     match exe.filter(|exe| crate::filetype::get_macho_filetype(exe.data()) == Some(MH_EXECUTE)) {
@@ -2606,8 +2610,12 @@ pub fn warn_subtype_mismatches<E: Target>(ctx: &Context<E>) {
             && !ctx.is_internal(i)
             && let Some(arch) = input_files::foreign_arch::<E>(obj.mf)
         {
-            let name = obj.mf.name.display();
-            crate::warn!("linking {arch} file '{name}' into {} link", E::NAME);
+            let name = input_files::without_fat_arch(path_bytes(&obj.mf.name));
+            crate::warn!(
+                "linking {arch} file '{}' into {} link",
+                crate::util::display(&name),
+                E::NAME
+            );
         }
     }
 }

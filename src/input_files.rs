@@ -3169,8 +3169,13 @@ fn fat_arch_names(mf: &MappedFile) -> Vec<&'static str> {
 }
 
 /// The slice of a fat file the link takes (see takes_arch), if any: the
-/// one for exactly its architecture first.
-pub fn fat_slice<E: Target>(mf: &'static MappedFile) -> Option<&'static MappedFile> {
+/// one for exactly its architecture first. With `subtypes`
+/// (-allow_sub_type_mismatches), one of another subtype of its CPU type
+/// will do too, as for a thin file (see is_subtype_mismatch).
+pub fn fat_slice<E: Target>(
+    mf: &'static MappedFile,
+    subtypes: bool,
+) -> Option<&'static MappedFile> {
     let slices: Vec<_> = fat_arches(mf).collect();
     let (_, _, off, size) = slices
         .iter()
@@ -3179,6 +3184,11 @@ pub fn fat_slice<E: Target>(mf: &'static MappedFile) -> Option<&'static MappedFi
             slices.iter().find(|&&(cputype, cpusubtype, off, _)| {
                 let filetype = MachHeader::read_from(&mf.data()[off..]).filetype;
                 takes_arch::<E>(filetype, cputype, cpusubtype)
+            })
+        })
+        .or_else(|| {
+            slices.iter().find(|&&(cputype, cpusubtype, _, _)| {
+                subtypes && cputype == E::CPUTYPE && arch_name(cputype, cpusubtype) != "arm64e"
             })
         })
         .copied()?;
@@ -3419,7 +3429,7 @@ fn load_reexports<E: Target>(
                 // XCTest) is read for the target's slice, if it has one.
                 let binary = match ty {
                     FileType::Dylib => dep,
-                    _ => match fat_slice::<E>(dep) {
+                    _ => match fat_slice::<E>(dep, ctx.args.allow_sub_type_mismatches) {
                         Some(slice) => slice,
                         None => {
                             warn_fat_missing_arch(ctx, dep);
@@ -4411,7 +4421,7 @@ pub fn exported_class<E: Target>(
 ) -> Option<&'static str> {
     use crate::filetype::{FileType, get_file_type};
     let mf = match get_file_type(mf) {
-        FileType::Fat => fat_slice::<E>(mf)?,
+        FileType::Fat => fat_slice::<E>(mf, ctx.args.allow_sub_type_mismatches)?,
         _ => mf,
     };
     let (ld, exports) = match get_file_type(mf) {

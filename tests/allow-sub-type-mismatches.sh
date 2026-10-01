@@ -41,3 +41,16 @@ echo 'int main() { return 0; }' | $CC -o $t/new.o -c -xc - -mmacosx-version-min=
 $CC --ld-path=$mold -o $t/exe $t/new.o $t/b.o -Wl,-allow_sub_type_mismatches 2> $t/log
 grep 'warning: ' $t/log | sed -n 3p | grep -q "$msg"
 grep 'warning: ' $t/log | sed -n 2p | grep -q 'was built for newer'
+
+# A fat file with no slice for the link's architecture gives up one of
+# another subtype the same way, named by the fat file's path.
+lipo $t/b.o -create -output $t/fat.o
+lipo $t/libb.a -create -output $t/libfat.a
+link $t/fat.o 2> $t/log
+grep -q "ignoring file '$t/fat.o': fat file missing arch 'x86_64', file has 'x86_64h'" $t/log
+link $t/fat.o -Wl,-allow_sub_type_mismatches 2> $t/log
+[ "$(grep -c "warning: linking x86_64h file '$t/fat.o' into x86_64 link" $t/log)" = 2 ]
+nm $t/exe | grep -q ' T _foo$'
+link $t/libfat.a -Wl,-allow_sub_type_mismatches,-u,_foo 2> $t/log
+[ "$(grep -c "warning: linking x86_64h file '$t/libfat.a(b.o)' into x86_64 link" $t/log)" = 2 ]
+nm $t/exe | grep -q ' T _foo$'
