@@ -822,7 +822,7 @@ fn tail_section<E: Target>(
 /// __OBJC_CLASS_RO_$_Foo where the input had it. Runs while the members
 /// are still in input order; the other synthesized records go in the
 /// section's tail.
-fn place_replacing_blobs<E: Target>(ctx: &mut Context<E>) {
+fn place_replacing_blobs<E: Target>(ctx: &mut Context<E>, text: SectionName) {
     let blobs: hashbrown::HashSet<u32> = ctx.data_blobs.iter().map(|b| b.isec).collect();
     let mut anchors: Vec<(u32, u32)> = (0..ctx.isecs.len())
         .filter(|&i| blobs.contains(&ctx.isecs[i].replacement))
@@ -833,13 +833,19 @@ fn place_replacing_blobs<E: Target>(ctx: &mut Context<E>) {
     // Last first: a blob inserted (with its high index) then only ever
     // sits after the members the next, lower anchor is searched among.
     for (replaced, blob) in anchors.into_iter().rev() {
-        let hdr = ctx.hdr_of(&ctx.isecs[replaced as usize]);
+        let hdr = *ctx.hdr_of(&ctx.isecs[replaced as usize]);
         let map = SectionMap::final_link(ctx);
         let out = output_section_for(&ctx.args, map, hdr.segname(), hdr.sectname(), hdr.flags);
-        let Some(pos) = out.and_then(|((seg, sect), _)| {
-            ctx.output_sections.iter().position(|o| o.hdr.segname == seg && o.hdr.sectname == sect)
-        }) else {
-            continue;
+        let Some((out, flags_name)) = out else { continue };
+        // The section is made here if every input member was replaced.
+        let pos = match (ctx.output_sections.iter())
+            .position(|o| o.hdr.segname == out.0 && o.hdr.sectname == out.1)
+        {
+            Some(pos) => pos,
+            None => {
+                let flags = first_member_flags(ctx, &hdr, text, out, flags_name);
+                add_output_section(ctx, out.0, out.1, flags).index()
+            }
         };
         let p2align = ctx.isecs[blob as usize].p2align as u32;
         let osec = &mut ctx.output_sections[pos];
@@ -906,7 +912,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     let moves = crate::symbol_moves::find_moves(ctx);
     assign_input_sections(ctx, text, &moves);
     trace_symbol_layout(ctx, &moves);
-    place_replacing_blobs(ctx);
+    place_replacing_blobs(ctx, text);
 
     // A final image always has a __text section, empty if no code
     // reached it (a dylib of only data; ld-prime writes one of size 0,
