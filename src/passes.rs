@@ -167,17 +167,21 @@ fn find_library<E: Target>(ctx: &Context<E>, name: &OsStr) -> Option<PathBuf> {
     let passes: &[&[&str]] = if !ctx.args.links_dylibs() {
         &[&["a"]]
     } else if ctx.args.search_dylibs_first {
-        &[&["tbd", "dylib"], &["a"]]
+        &[DYLIB_EXTS, &["a"]]
     } else {
-        &[&["tbd", "dylib", "a"]]
+        &[&["tbd", "dylib", "so", "a"]]
     };
     search_library(ctx, name, passes)
 }
 
+/// The extensions of a dylib in the library search path, in the order
+/// ld-prime tries them in a directory: a stub, a dylib, a .so.
+const DYLIB_EXTS: &[&str] = &["tbd", "dylib", "so"];
+
 /// Looks for a dylib only, as -upward-l and -reexport-l do: an archive
 /// can be neither an upward dependency nor a re-exported library.
 fn find_dylib<E: Target>(ctx: &Context<E>, name: &OsStr) -> Option<PathBuf> {
-    search_library(ctx, name, &[&["tbd", "dylib"]])
+    search_library(ctx, name, &[DYLIB_EXTS])
 }
 
 /// Looks for lib<name>.<ext> in the library search path, for each pass
