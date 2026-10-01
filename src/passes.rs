@@ -514,19 +514,7 @@ fn collect_file<E: Target>(
     // does a dylib ld-prime ignored, with its warning each time.
     let object = matches!(get_file_type(mf), FileType::Object | FileType::LlvmBitcode);
     if !ctx.visited_files.insert(mf.name.clone()) && !object && !was_ignored(ctx, mf) {
-        // -force_load of an archive named before loads its members all
-        // the same.
-        if rc.force_load && ctx.force_loaded.insert(mf.name.clone()) {
-            for p in out.iter_mut().filter(|p| p.mf.parent.is_some_and(|a| a.name == mf.name)) {
-                p.alive = true;
-            }
-        }
-        if let Some(idx) = ctx.dylibs.iter().position(|d| d.path == mf.name)
-            && !rc.autolinked
-        {
-            let priority = ctx.next_priority();
-            ctx.dylib_renamings.push((priority, idx));
-        }
+        name_again(ctx, mf, rc, out);
         return;
     }
     if !matches!(get_file_type(mf), FileType::Archive | FileType::Fat) {
@@ -536,12 +524,8 @@ fn collect_file<E: Target>(
         return;
     }
     match get_file_type(mf) {
+        FileType::Object if refuses_malformed(mf) => {}
         FileType::Object => {
-            if let Some(why) = input_files::malformed_object(mf.data()) {
-                let name = mf.name.display();
-                error!("{why} in '{name}' in '{name}'");
-                return;
-            }
             let priority = ctx.next_priority();
             out.push(PendingObject { mf, alive: true, hidden: rc.hidden, priority });
         }
@@ -627,11 +611,7 @@ fn collect_file<E: Target>(
             }
             for member in crate::archive_file::read_archive_members(mf) {
                 input_files::trace_file(ctx, path_bytes(&member.name));
-                if get_file_type(member) == FileType::Object
-                    && let Some(why) = input_files::malformed_object(member.data())
-                {
-                    let name = member.name.display();
-                    error!("{why} in '{name}' in '{name}'");
+                if get_file_type(member) == FileType::Object && refuses_malformed(member) {
                     continue;
                 }
                 let alive = rc.force_load
@@ -659,21 +639,56 @@ fn collect_file<E: Target>(
             input_files::parse_bitcode(ctx, mf, true);
         }
         FileType::Empty => {}
-        // ld-prime knows a 64-bit Mach-O file by its magic number, and
-        // refuses one a few bytes short of its header.
-        _ => {
-            let name = input_files::trace_name(path_bytes(&mf.name));
-            let data = mf.data();
-            if crate::filetype::get_macho_filetype(data).is_some() {
-                error!(
-                    "unsupported mach-o filetype (only MH_OBJECT and MH_DYLIB can be linked) in '{name}'"
-                );
-            } else if data.len() >= 28 && data[..4] == MH_MAGIC_64.to_le_bytes() {
-                error!("buffer too small in '{name}' in '{name}'");
-            } else {
-                error!("unknown file type in '{name}'");
-            }
+        _ => refuse_file(mf),
+    }
+}
+
+/// A file named again: a library (or a universal file) is loaded once,
+/// but -force_load of an archive named before loads its members all the
+/// same, and ld-prime checks a dylib's version for each input that names
+/// it (see check_input_versions).
+fn name_again<E: Target>(
+    ctx: &mut Context<E>,
+    mf: &'static MappedFile,
+    rc: ReaderContext,
+    out: &mut [PendingObject],
+) {
+    if rc.force_load && ctx.force_loaded.insert(mf.name.clone()) {
+        for p in out.iter_mut().filter(|p| p.mf.parent.is_some_and(|a| a.name == mf.name)) {
+            p.alive = true;
         }
+    }
+    if let Some(idx) = ctx.dylibs.iter().position(|d| d.path == mf.name)
+        && !rc.autolinked
+    {
+        let priority = ctx.next_priority();
+        ctx.dylib_renamings.push((priority, idx));
+    }
+}
+
+/// Refuses an object whose layout runs past the end of the file (see
+/// input_files::malformed_object). Returns whether it did.
+fn refuses_malformed(mf: &MappedFile) -> bool {
+    let Some(why) = input_files::malformed_object(mf.data()) else { return false };
+    let name = mf.name.display();
+    error!("{why} in '{name}' in '{name}'");
+    true
+}
+
+/// Refuses a file the link can't take, by what it is: ld-prime knows a
+/// 64-bit Mach-O file by its magic number, and refuses one a few bytes
+/// short of its header too.
+fn refuse_file(mf: &MappedFile) {
+    let name = input_files::trace_name(path_bytes(&mf.name));
+    let data = mf.data();
+    if crate::filetype::get_macho_filetype(data).is_some() {
+        error!(
+            "unsupported mach-o filetype (only MH_OBJECT and MH_DYLIB can be linked) in '{name}'"
+        );
+    } else if data.len() >= 28 && data[..4] == MH_MAGIC_64.to_le_bytes() {
+        error!("buffer too small in '{name}' in '{name}'");
+    } else {
+        error!("unknown file type in '{name}'");
     }
 }
 
@@ -759,10 +774,6 @@ fn load_pending<E: Target>(ctx: &mut Context<E>, pending: Vec<PendingObject>) {
         .collect();
     drop(t);
     warn_about_sections(&staged);
-    // ld-prime goes on to warn of an object's atoms if it read the
-    // object whole, then of its unwind info, then of the auto-link
-    // options of one the link loads from the start (see
-    // warn_linker_options): see the end.
     let checks: Vec<(bool, bool, input_files::UnwindCheck)> = staged
         .iter()
         .map(|obj| (obj.failed_at.is_none(), obj.alive, obj.check_unwind_sections()))
@@ -801,6 +812,21 @@ fn load_pending<E: Target>(ctx: &mut Context<E>, pending: Vec<PendingObject>) {
     let t = ctx.timer("integrate");
     input_files::integrate_objects(ctx, staged, ids, counts);
     drop(t);
+    warn_about_objects(ctx, first, checks);
+}
+
+/// What ld-prime says of each object it has read, once it has its
+/// atoms, those of `ctx.objs` from `first` on, by what `checks` says of
+/// each: whether it read the object whole and the link loads it from
+/// the start, and its unwind info. It warns of the atoms of one it read
+/// whole (see small_pointer_atoms), then of its unwind info, then of the
+/// auto-link options of one the link loads from the start (see
+/// warn_linker_options).
+fn warn_about_objects<E: Target>(
+    ctx: &Context<E>,
+    first: usize,
+    checks: Vec<(bool, bool, input_files::UnwindCheck)>,
+) {
     let small_atoms: Vec<Vec<u32>> = checks
         .par_iter()
         .enumerate()
