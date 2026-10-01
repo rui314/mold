@@ -235,6 +235,28 @@ pub fn write_trace_files<E: Target>(ctx: &Context<E>) {
     if let Some(path) = &args.trace_symbols_file {
         append_trace(path, &traces.symbols_json(ctx, uuid.as_deref()));
     }
+    if let Some(path) = args.trace_symbols_dir.as_deref().and_then(trace_symbols_dir_file::<E>) {
+        append_trace(&path, &traces.symbols_json(ctx, uuid.as_deref()));
+    }
+}
+
+/// The file of its own -trace_symbols_file's record goes to in `dir`,
+/// $LD_TRACE_SYMBOLS_DIR (see cmdline::trace_env), which ld-prime makes
+/// first as need be: <parent pid>.<pid>.<arch>.<microseconds since
+/// 1970>.json, a name no other link takes.
+fn trace_symbols_dir_file<E: Target>(dir: &Path) -> Option<PathBuf> {
+    if std::fs::create_dir_all(dir).is_err() {
+        // ld-prime reports errno, which mkpath_np leaves alone.
+        crate::error!("call to mkpath_np({}) failed due to: Undefined error: 0", dir.display());
+        return None;
+    }
+    // SAFETY: getppid has no preconditions.
+    let ppid = unsafe { libc::getppid() };
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH);
+    let usec = now.map_or(0, |d| d.as_micros());
+    let mut path = dir.as_os_str().to_os_string();
+    path.push(format!("/{ppid}.{}.{}.{usec}.json", std::process::id(), E::NAME));
+    Some(PathBuf::from(path))
 }
 
 fn append_trace(path: &Path, record: &str) {

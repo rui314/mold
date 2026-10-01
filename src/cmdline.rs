@@ -653,6 +653,10 @@ pub struct Args {
     pub trace_file: Option<PathBuf>,
     pub trace_file_shared_cache: Option<PathBuf>,
     pub trace_symbols_file: Option<PathBuf>,
+    /// $LD_TRACE_SYMBOLS_DIR: the directory -trace_symbols_file's record
+    /// goes to, in a file of its own, where no -trace_symbols_file names
+    /// one (see trace_env).
+    pub trace_symbols_dir: Option<PathBuf>,
     /// -trace_implicit_libraries: print the libraries auto-link options
     /// and re-exports bring in, or with -trace_implicit_library only
     /// those whose names hold one of these.
@@ -964,6 +968,7 @@ impl Default for Args {
             trace_file: None,
             trace_file_shared_cache: None,
             trace_symbols_file: None,
+            trace_symbols_dir: None,
             trace_implicit_libraries: false,
             trace_implicit_library: Vec::new(),
             arch_errors_fatal: false,
@@ -1113,6 +1118,21 @@ fn parse_source_version(arg: &str) -> Option<u64> {
         return None;
     }
     Some((a << 40) | (b << 30) | (c << 20) | (d << 10) | e)
+}
+
+/// The traces Apple's build system asks for in the environment, where
+/// no option names a file: with $LD_TRACE_DEPENDENTS set, whatever its
+/// value, -trace_file's record goes to $LD_TRACE_FILE, if that names a
+/// file; and with a -trace_file either way, -trace_symbols_file's goes
+/// to a file of its own in $LD_TRACE_SYMBOLS_DIR.
+fn trace_env(args: &mut Args) {
+    if args.trace_file.is_none() && std::env::var_os("LD_TRACE_DEPENDENTS").is_some() {
+        let file = std::env::var_os("LD_TRACE_FILE").filter(|file| !file.is_empty());
+        args.trace_file = file.map(PathBuf::from);
+    }
+    if args.trace_file.is_some() && args.trace_symbols_file.is_none() {
+        args.trace_symbols_dir = std::env::var_os("LD_TRACE_SYMBOLS_DIR").map(PathBuf::from);
+    }
 }
 
 /// The source version the build system gives in
@@ -3137,6 +3157,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         }
         parse_treatment(env, &val, false);
     }
+    trace_env(&mut args);
 
     args.output_type = match kind {
         OutputKind::Dylib => MH_DYLIB,
