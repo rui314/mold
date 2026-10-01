@@ -4,7 +4,7 @@
 
 use rayon::prelude::*;
 use std::os::unix::ffi::OsStrExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use crate::chunks::ChunkHeader;
@@ -118,6 +118,25 @@ impl SymtabSection {
 impl Default for SymtabSection {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// The -add_ast_path paths the symbol table lists after the local
+/// symbols, as N_AST entries (Swift modules for the debugger): none
+/// under -S, which drops the debugger's notes.
+pub fn ast_paths<E: Target>(ctx: &Context<E>) -> &[PathBuf] {
+    if ctx.args.strip_debug { &[] } else { &ctx.args.add_ast_paths }
+}
+
+/// Adds the N_AST entries of ast_paths, final image or -r output.
+pub fn push_ast_paths<E: Target>(
+    ctx: &Context<E>,
+    names: &mut Vec<&'static [u8]>,
+    entries: &mut Vec<(NList, Option<SymbolId>)>,
+) {
+    for path in ast_paths(ctx) {
+        names.push(leak_bytes(path_bytes(path).to_vec()));
+        entries.push((NList { n_strx: 0, n_type: N_AST, ..Default::default() }, None));
     }
 }
 
@@ -1136,7 +1155,7 @@ pub fn create_output_symtab<E: Target>(
     let nstabs: usize = planned.iter().map(|plan| plan.len()).sum();
     let nglobals = sorted_globals.len();
     let total = locals.len()
-        + ctx.args.add_ast_paths.len()
+        + ast_paths(ctx).len()
         + usize::from(nstabs != 0)
         + sorted_globals.len()
         + undefs.len();
@@ -1149,11 +1168,7 @@ pub fn create_output_symtab<E: Target>(
     let nplain = data.entries.len();
     drop(locals);
 
-    // Swift AST paths for the debugger (-add_ast_path), as N_AST stabs.
-    for path in &ctx.args.add_ast_paths {
-        names.push(leak_bytes(path_bytes(path).to_vec()));
-        data.entries.push((NList { n_strx: 0, n_type: N_AST, ..Default::default() }, None));
-    }
+    push_ast_paths(ctx, &mut names, &mut data.entries);
 
     // ld-prime opens the stabs with a closing N_SO of its own.
     if nstabs != 0 {

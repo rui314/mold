@@ -1585,9 +1585,10 @@ fn sym_addr<E: Target>(ctx: &Context<E>, id: SymbolId) -> u64 {
 /// Builds a -r output's symbol table as ld-prime lays it out: each
 /// object's local symbols in the order of its sections and of their
 /// addresses in each (a zerofill section comes by ordinal), and the
-/// `sectcreate` ones, then the stabs, opened by an N_SO of their own,
-/// then the defined externals and the undefined symbols, each by name.
-/// The strings are laid out as a final image's (see layout_strings).
+/// `sectcreate` ones, then the -add_ast_path entries, as in a final
+/// image, then the stabs, opened by an N_SO of their own, then the
+/// defined externals and the undefined symbols, each by name. The
+/// strings are laid out as a final image's (see layout_strings).
 fn build_symtab<E: Target>(
     ctx: &Context<E>,
     merged: &[OutputSectionId],
@@ -1625,12 +1626,14 @@ fn build_symtab<E: Target>(
     // their strings.
     let t = ctx.timer("r-symtab-strings");
     let mut table = SymtabSection::new();
-    let total = locals.len() + usize::from(nstabs != 0) + externals.len();
+    let nasts = crate::chunks::symtab::ast_paths(ctx).len();
+    let total = locals.len() + nasts + usize::from(nstabs != 0) + externals.len();
     let mut names: Vec<&'static [u8]> = Vec::with_capacity(total);
     table.entries.reserve_exact(total);
     par_push_entries(&mut names, &mut table.entries, &locals, |l| {
         (l.name.as_bytes(), l.nlist(), None)
     });
+    crate::chunks::symtab::push_ast_paths(ctx, &mut names, &mut table.entries);
     if nstabs != 0 {
         names.push(b"");
         table.entries.push((crate::chunks::symtab::STAB_END, None));
