@@ -4910,6 +4910,53 @@ fn add_moved_dylibs<E: Target>(
     moved_exports
 }
 
+/// Adds a dylib a merged mergeable dylib links (see
+/// passes::add_merged_dependencies), as one named on the command line
+/// after the others, which has the exports the merged atoms import.
+pub fn add_merged_dependency<E: Target>(ctx: &mut Context<E>, dep: crate::mergeable::Dependency) {
+    let before = ctx.dylibs.len();
+    let priority = ctx.next_priority();
+    let weak_exports: hashbrown::HashSet<&'static str> = dep.weak_exports.into_iter().collect();
+    let dylib = DylibFile {
+        path: dep.path,
+        install_name: dep.info.install_name,
+        current_version: dep.info.current_version,
+        compatibility_version: dep.info.compatibility_version,
+        minos: 0,
+        in_sdk: false,
+        dylib_idx: next_dylib_ordinal(ctx),
+        is_bundle_loader: false,
+        priority,
+        is_weak: false,
+        is_weak_asserted: false,
+        is_reexported: false,
+        binds_to_image: false,
+        is_needed: false,
+        is_upward: false,
+        is_lazy: false,
+        named_lazily: false,
+        delay_init: None,
+        named_at: None,
+        is_autolinked: false,
+        is_implicit: false,
+        load_order: u32::MAX,
+        exports: dep.exports.into_iter().collect(),
+        has_weak_defs: !weak_exports.is_empty(),
+        weak_exports,
+        tlv_exports: hashbrown::HashSet::new(),
+        merged_reexports: Vec::new(),
+        merged_files: Vec::new(),
+        moved_exports: hashbrown::HashMap::new(),
+        named_files: Vec::new(),
+        name_source: NameSource::Own,
+    };
+    let idx = add_dylib(ctx, dylib);
+    if idx >= before {
+        ctx.dylibs[idx].load_order = ctx.dylib_load_seq;
+        ctx.dylib_load_seq += 1;
+    }
+}
+
 /// Registers a dylib, deduplicating by install name: several libraries
 /// (libc, libm, ...) are stubs for the same /usr/lib/libSystem.B.dylib,
 /// and dyld refuses an image that lists one install name twice. The

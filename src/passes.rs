@@ -547,11 +547,7 @@ fn collect_file<E: Target>(
                 crate::warn!("ignoring unexpected dylib '{}'", resolved_file_name(mf));
             }
         }
-        // Merging is ld-prime's alone so far: it reads the dylib back
-        // into its atoms (LC_ATOM_INFO), in a format of its own.
-        FileType::Dylib if rc.merge => {
-            error!("merging a mergeable dylib is not supported in '{}'", mf.name.display());
-        }
+        FileType::Dylib if rc.merge => merge_dylib(ctx, mf, out),
         FileType::Tapi | FileType::Dylib if refuses_client(ctx, mf, rc) => {}
         FileType::Tapi | FileType::Dylib => {
             let first = ctx.dylibs.len();
@@ -685,6 +681,52 @@ fn refuse_file(mf: &MappedFile) {
         error!("buffer too small in '{name}' in '{name}'");
     } else {
         error!("unknown file type in '{name}'");
+    }
+}
+
+/// Merges a mergeable dylib into the image: its atoms (LC_ATOM_INFO),
+/// read back into the object file they stand for, link as that object
+/// would (see mergeable::synthesize_object), and the dylibs it links
+/// stand by their recorded identities (see add_merged_dependencies).
+/// ld-prime adds its hook for the classes of mergeable libraries to an
+/// image that merges one that defines any, which mold can't yet (see
+/// check_mergeable_libraries).
+fn merge_dylib<E: Target>(
+    ctx: &mut Context<E>,
+    mf: &'static MappedFile,
+    out: &mut Vec<PendingObject>,
+) {
+    let af = match crate::mergeable::AtomFile::read(mf) {
+        Ok(af) => af,
+        Err(e) => return error!("{e} in '{}'", mf.name.display()),
+    };
+    if ctx.args.merged_libraries_hook
+        && let Some(class) = af.defines_classes()
+    {
+        fatal!(
+            "the hook for the classes of mergeable libraries is not supported ('{}' defines {}); \
+             use -no_merged_libraries_hook",
+            mf.name.display(),
+            String::from_utf8_lossy(class)
+        );
+    }
+    let obj = crate::mergeable::synthesize_object::<E>(&af, &mf.name);
+    let synth = MappedFile::synthesized(mf.name.clone(), obj);
+    let priority = ctx.next_priority();
+    out.push(PendingObject { mf: synth, alive: true, hidden: false, priority });
+    let deps = af.dependencies(&mf.name);
+    ctx.merged_imports.extend(deps.iter().flat_map(|d| d.exports.iter().copied()));
+    ctx.merged_dependencies.extend(deps);
+}
+
+/// Loads the dylibs the merged mergeable dylibs link, after the command
+/// line's: ld-prime gives each a load command by the install name and
+/// versions the mergeable dylib recorded, without reading it, and binds
+/// the merged code's imports to it - unless the command line loaded the
+/// library already, whose naming then decides (a -weak-l makes it weak).
+fn add_merged_dependencies<E: Target>(ctx: &mut Context<E>) {
+    for dep in std::mem::take(&mut ctx.merged_dependencies) {
+        input_files::add_merged_dependency(ctx, dep);
     }
 }
 
@@ -962,6 +1004,7 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
         }
     }
     ctx.args.inputs = inputs;
+    add_merged_dependencies(ctx);
     collect_indirect_files(ctx, &mut queue);
     load_pending(ctx, queue);
 }

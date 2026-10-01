@@ -682,7 +682,7 @@ fn symbol_stabs<E: Target>(
 /// method lists it rewrote in the relative form. The metadata goes by
 /// the name clang gives it, in __DATA: a __DATA_CONST,__objc_protolist
 /// is noted like any other section.
-fn has_stabs(hdr: &MachSection) -> bool {
+pub(crate) fn has_stabs(hdr: &MachSection) -> bool {
     let literals = matches!(
         hdr.section_type(),
         S_CSTRING_LITERALS | S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS
@@ -1206,6 +1206,16 @@ fn live_refs<E: Target>(ctx: &Context<E>) -> Vec<AtomicBool> {
     // Context::unbound_imports).
     for &id in &ctx.unbound_imports {
         live_ref[id as usize].store(true, Ordering::Relaxed);
+    }
+    // A merged mergeable dylib's imports are atoms of their own, as
+    // live as its code unless -dead_strip finds nothing that refers to
+    // one (its stub helper's dyld_stub_binder, say).
+    if !ctx.args.dead_strip {
+        for name in &ctx.merged_imports {
+            if let Some(id) = ctx.symbols.get(name) {
+                live_ref[id as usize].store(true, Ordering::Relaxed);
+            }
+        }
     }
     // So does a tentative definition that -commons use_dylibs replaced
     // with a dylib's definition.

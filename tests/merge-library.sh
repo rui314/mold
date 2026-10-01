@@ -84,19 +84,15 @@ for opt in -merge_framework -merge_library -merge-l; do
   grep -q -- "$opt missing <path>" $t/log13
 done
 
-# A dylib ld-prime made mergeable is merged into the image; an image
-# that links no dylib ignores it as it would any dylib.
+# A dylib ld-prime made mergeable is merged into the image, which gets
+# no load command for it; an image that links no dylib ignores it as
+# it would any dylib.
 $CC -shared -o $t/lib/libbar.dylib $t/a.o -Wl,-install_name,@rpath/libbar.dylib \
   -Wl,-make_mergeable
 otool -l $t/lib/libbar.dylib | grep -q LC_ATOM_INFO
 $CC --ld-path=$mold -r -o $t/r.o $t/main.o -Wl,-merge_library,$t/lib/libbar.dylib 2> $t/log14
 grep -q "ignoring unexpected dylib" $t/log14
-if $mold -v 2>&1 | grep -q mold-macho; then
-  not $CC --ld-path=$mold -o $t/exe $t/main.o -Wl,-merge_library,$t/lib/libbar.dylib 2> $t/log15
-  grep -q "merging a mergeable dylib is not supported in '$t/lib/libbar.dylib'" $t/log15
-else
-  $CC --ld-path=$mold -o $t/exe $t/main.o -Wl,-merge_library,$t/lib/libbar.dylib
-  otool -L $t/exe > $t/libs
-  not grep -q libbar $t/libs
-  [ "$($t/exe)" = 3 ]
-fi
+$CC --ld-path=$mold -o $t/exe $t/main.o -Wl,-merge_library,$t/lib/libbar.dylib
+otool -L $t/exe > $t/libs
+not grep -q libbar $t/libs
+[ "$($t/exe)" = 3 ]

@@ -151,6 +151,13 @@ impl MappedFile {
         }))
     }
 
+    /// A file the linker made in memory, under the name of the input it
+    /// stands for (see mergeable::synthesize_object).
+    pub fn synthesized(name: PathBuf, data: Vec<u8>) -> &'static Self {
+        let data = Vec::leak(data);
+        Box::leak(Box::new(Self { name, data, parent: None, mtime: None, is_lto_output: false }))
+    }
+
     pub fn size(&self) -> usize {
         self.data.len()
     }

@@ -169,6 +169,14 @@ pub struct Context<E: Target> {
     /// The files -dylib_file names for re-exported libraries that are
     /// no libraries, to load as inputs (see collect_indirect_files).
     pub indirect_files: Vec<&'static crate::mapped_file::MappedFile>,
+    /// The dylibs the mergeable dylibs merged into the image link, by
+    /// their recorded identities, to add after the command line's (see
+    /// passes::add_merged_dependencies).
+    pub merged_dependencies: Vec<crate::mergeable::Dependency>,
+    /// The symbols the merged mergeable dylibs import, which ld-prime
+    /// lists whether or not anything refers to them (see
+    /// chunks::symtab's live_refs).
+    pub merged_imports: Vec<&'static str>,
     /// Unwind records from all objects' __compact_unwind sections.
     pub unwind_records: Vec<crate::input_files::UnwindRecord>,
     /// DWARF CIEs and FDEs from all objects' __eh_frame sections.
@@ -324,6 +332,8 @@ impl<E: Target> Context<E> {
             common_conflict: None,
             stripped_dylibs: Vec::new(),
             indirect_files: Vec::new(),
+            merged_dependencies: Vec::new(),
+            merged_imports: Vec::new(),
             unwind_records: Vec::new(),
             cies: Vec::new(),
             fdes: Vec::new(),
