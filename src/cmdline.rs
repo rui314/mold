@@ -186,6 +186,11 @@ pub struct Args {
     pub no_fixup_chains: bool,
     /// The libLTO to load for bitcode inputs (-lto_library).
     pub lto_library: Option<PathBuf>,
+    /// -mcpu: the CPU libLTO compiles the bitcode for.
+    pub lto_cpu: Option<String>,
+    /// -save-temps: keep LTO's merged bitcode and its object beside the
+    /// output.
+    pub save_temps: bool,
     /// -stack_size: the main thread's stack size, recorded in LC_MAIN,
     /// or reserved as the __UNIXSTACK segment of an executable that
     /// starts from LC_UNIXTHREAD.
@@ -507,6 +512,8 @@ impl Default for Args {
             fixup_chains: false,
             no_fixup_chains: false,
             lto_library: None,
+            lto_cpu: None,
+            save_temps: false,
             stack_size: 0,
             sectcreate: Vec::new(),
             add_empty_section: Vec::new(),
@@ -1214,10 +1221,15 @@ pub(crate) fn missing_argument(opt: &str) -> String {
         | "-ios_version_min"
         | "-maccatalyst_version_min"
         | "-objc_abi_version" => "missing <version>",
-        "-mllvm" | "-max_code_deduplicate_passes" => "missing <value>",
+        "-mllvm"
+        | "-max_code_deduplicate_passes"
+        | "-prune_interval_lto"
+        | "-prune_after_lto"
+        | "-max_relative_cache_size_lto" => "missing <value>",
+        "-mcpu" => "missing <cpu>",
         "-trace_implicit_library" => return "-trace_implicit_library_name missing <name>".into(),
         "-undefined" => "missing <dynamic_lookup>",
-        "-read_only_relocs" => "missing <option>",
+        "-read_only_relocs" | "-arch_variant_lto_cache_mismatch" => "missing <option>",
         "-target" => "missing <target-triple>",
         "-alias" => "missing <real-name> <alias-name>",
         "-dylib_file" => "missing <path:path>",
@@ -2069,6 +2081,38 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-reproducible" => {}
 
             b"-lto_library" => args.lto_library = Some(path(next_arg(&mut i, name))),
+            b"-mcpu" => args.lto_cpu = Some(text(name, next_arg(&mut i, name)).to_string()),
+            b"-save-temps" => args.save_temps = true,
+            // The ThinLTO cache, which mold, compiling all bitcode as one
+            // module, has no use for, and the variant architectures'
+            // reuse of one another's entries in it.
+            b"-cache_path_lto" | b"-cache_dir" => {
+                next_arg(&mut i, name);
+            }
+            b"-prune_interval_lto" | b"-prune_after_lto" | b"-max_relative_cache_size_lto" => {
+                let value = decimal_number(text(name, next_arg(&mut i, name)))
+                    .unwrap_or_else(|| fatal!("invalid argument for {name}"));
+                if name == "-max_relative_cache_size_lto" && value > 100 {
+                    fatal!("Expect a value between 0 and 100 for -max_relative_cache_size_lto");
+                }
+            }
+            b"-arch_variant_lto_cache_mismatch" => {
+                let treatment = next_arg(&mut i, name);
+                if !matches!(treatment.as_bytes(), b"warning" | b"error" | b"suppress") {
+                    fatal!(
+                        "-arch_variant_lto_cache_mismatch invalid option (warning | error | suppress)"
+                    );
+                }
+            }
+            // ld-prime has the bitcode's file names stand for the object
+            // LTO makes in order file entries of the form file:symbol,
+            // unless asked not to; mold matches the object's own name.
+            b"-use_lto_filenames_in_order_file_matching"
+            | b"-no_use_lto_filenames_in_order_file_matching" => {}
+            // ld-prime loads the routines LTO code may call (memset,
+            // __udivdi3 ...) from the libraries before LTO, by default
+            // in a -static or -preload image; mold loads none.
+            b"-lto_softload_runtime_symbols" | b"-no_lto_softload_runtime_symbols" => {}
 
             b"-dependency_info" => args.dependency_info = Some(path(next_arg(&mut i, name))),
 

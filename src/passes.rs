@@ -1914,12 +1914,11 @@ pub fn do_lto<E: Target>(ctx: &mut Context<E>) -> bool {
             (plugin.codegen_add_must_preserve_symbol)(cg, name.as_ptr());
         }
 
-        let mut size = 0usize;
-        let ptr = (plugin.codegen_compile)(cg, &raw mut size);
-        if ptr.is_null() {
-            fatal!("lto_codegen_compile failed: {}", plugin.error_message());
-        }
-        std::slice::from_raw_parts(ptr.cast::<u8>(), size).to_vec()
+        let opts = crate::lto::CodegenOptions {
+            cpu: ctx.args.lto_cpu.as_deref(),
+            save_temps: ctx.args.save_temps.then_some(ctx.args.output.as_path()),
+        };
+        crate::lto::compile(&plugin, cg, &opts)
     };
 
     // -object_path_lto keeps the machine-code object LTO produced.

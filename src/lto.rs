@@ -8,6 +8,7 @@
 //! other input.
 
 use std::ffi::{CStr, CString, c_char, c_void};
+use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
 use crate::fatal;
@@ -38,7 +39,11 @@ pub struct Plugin {
     pub codegen_add_module: unsafe extern "C" fn(*mut c_void, *mut c_void) -> bool,
     pub codegen_set_pic_model: unsafe extern "C" fn(*mut c_void, u32) -> bool,
     pub codegen_add_must_preserve_symbol: unsafe extern "C" fn(*mut c_void, *const c_char),
-    pub codegen_compile: unsafe extern "C" fn(*mut c_void, *mut usize) -> *const c_void,
+    pub codegen_set_cpu: unsafe extern "C" fn(*mut c_void, *const c_char),
+    pub codegen_set_should_embed_uselists: unsafe extern "C" fn(*mut c_void, bool),
+    pub codegen_write_merged_modules: unsafe extern "C" fn(*mut c_void, *const c_char) -> bool,
+    pub codegen_optimize: unsafe extern "C" fn(*mut c_void) -> bool,
+    pub codegen_compile_optimized: unsafe extern "C" fn(*mut c_void, *mut usize) -> *const c_void,
 }
 
 impl Plugin {
@@ -112,8 +117,72 @@ pub fn load_plugin(path: Option<&Path>) -> Plugin {
                 handle,
                 c"lto_codegen_add_must_preserve_symbol",
             ),
-            codegen_compile: dlsym(handle, c"lto_codegen_compile"),
+            codegen_set_cpu: dlsym(handle, c"lto_codegen_set_cpu"),
+            codegen_set_should_embed_uselists: dlsym(
+                handle,
+                c"lto_codegen_set_should_embed_uselists",
+            ),
+            codegen_write_merged_modules: dlsym(handle, c"lto_codegen_write_merged_modules"),
+            codegen_optimize: dlsym(handle, c"lto_codegen_optimize"),
+            codegen_compile_optimized: dlsym(handle, c"lto_codegen_compile_optimized"),
         }
+    }
+}
+
+/// What the command line asks of libLTO's code generator: the CPU to
+/// compile for (-mcpu), and the output, if the intermediate files are
+/// to be kept beside it (-save-temps).
+pub struct CodegenOptions<'a> {
+    pub cpu: Option<&'a str>,
+    pub save_temps: Option<&'a Path>,
+}
+
+/// Optimizes the modules added to the code generator and compiles them
+/// into one Mach-O object, as ld64 drives libLTO. -save-temps keeps the
+/// merged bitcode before and after optimization and the object beside
+/// the output, as <output>.lto.bc, .lto.opt.bc and .lto.o.
+///
+/// # Safety
+///
+/// `cg` must be a live code generator of the plugin's library.
+pub unsafe fn compile(plugin: &Plugin, cg: *mut c_void, opts: &CodegenOptions) -> Vec<u8> {
+    let temp_path = |suffix: &str| {
+        let mut path = opts.save_temps?.as_os_str().to_owned();
+        path.push(suffix);
+        Some(path)
+    };
+    // SAFETY: the generator is live per the caller, and the strings
+    // passed are NUL-terminated.
+    unsafe {
+        let save_bitcode = |suffix: &str| {
+            if let Some(path) = temp_path(suffix)
+                && let Ok(path) = CString::new(path.as_bytes())
+            {
+                (plugin.codegen_set_should_embed_uselists)(cg, true);
+                (plugin.codegen_write_merged_modules)(cg, path.as_ptr());
+            }
+        };
+        if let Some(cpu) = opts.cpu
+            && let Ok(cpu) = CString::new(cpu)
+        {
+            (plugin.codegen_set_cpu)(cg, cpu.as_ptr());
+        }
+        save_bitcode(".lto.bc");
+        if (plugin.codegen_optimize)(cg) {
+            fatal!("lto_codegen_optimize failed: {}", plugin.error_message());
+        }
+        save_bitcode(".lto.opt.bc");
+        let mut size = 0usize;
+        let ptr = (plugin.codegen_compile_optimized)(cg, &raw mut size);
+        if ptr.is_null() {
+            fatal!("lto_codegen_compile_optimized failed: {}", plugin.error_message());
+        }
+        let data = std::slice::from_raw_parts(ptr.cast::<u8>(), size).to_vec();
+        // ld64 keeps the object if it can, saying nothing otherwise.
+        if let Some(path) = temp_path(".lto.o") {
+            let _ = std::fs::write(path, &data);
+        }
+        data
     }
 }
 
