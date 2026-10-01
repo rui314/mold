@@ -1181,6 +1181,8 @@ pub(crate) fn missing_argument(opt: &str) -> String {
         | "-dylib_compatibility_version"
         | "-macos_version_min"
         | "-source_version"
+        | "-ios_version_min"
+        | "-maccatalyst_version_min"
         | "-objc_abi_version" => "missing <version>",
         "-mllvm" => "missing <value>",
         "-undefined" => "missing <dynamic_lookup>",
@@ -1961,6 +1963,26 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     minos,
                 );
                 args.platform_sdk = minos;
+            }
+            // ld-prime still takes iOS's and Mac Catalyst's, under their
+            // old names too, as it does -macosx_version_min. mold links
+            // for neither, as -platform_version ios says.
+            b"-ios_version_min"
+            | b"-iphoneos_version_min"
+            | b"-maccatalyst_version_min"
+            | b"-iosmac_version_min"
+            | b"-uikitformac_version_min" => {
+                let (opt, platform) = match name {
+                    "-ios_version_min" | "-iphoneos_version_min" => {
+                        ("-ios_version_min", PLATFORM_IOS)
+                    }
+                    _ => ("-maccatalyst_version_min", PLATFORM_MACCATALYST),
+                };
+                if name != opt {
+                    warnings.notice(format!("{name} has been renamed to {opt}"));
+                }
+                parse_version(opt, text(opt, next_arg(&mut i, opt)));
+                fatal!("unsupported platform: {}", platform_name(platform));
             }
 
             // This linker's output is always deterministic, so
