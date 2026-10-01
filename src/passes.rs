@@ -3982,6 +3982,24 @@ pub fn dead_strip_dylibs<E: Target>(ctx: &mut Context<E>) {
     check_libsystem_linked(ctx);
 }
 
+/// Has the imports from the libraries this image re-exports from
+/// locations that aren't public bind to the image itself, where there
+/// are two or more such libraries, as ld64 and ld-prime do (see
+/// DylibFile::binds_to_image). A public location is no such one under
+/// -no_implicit_dylibs, as for the libraries a dylib re-exports (see
+/// input_files::is_public_location).
+pub fn bind_private_reexports_to_image<E: Target>(ctx: &mut Context<E>) {
+    let no_implicit = ctx.args.no_implicit_dylibs;
+    let private = |d: &input_files::DylibFile| {
+        d.is_reexported && (no_implicit || !input_files::is_public_location(&d.install_name))
+    };
+    if ctx.dylibs.iter().filter(|d| private(d)).count() >= 2 {
+        for dylib in ctx.dylibs.iter_mut().filter(|d| private(d)) {
+            dylib.binds_to_image = true;
+        }
+    }
+}
+
 /// ld64 takes a dynamic image that would load no dylib at all for one
 /// linked without libSystem by mistake (a stray -nostdlib) and refuses
 /// it: an executable other than a -static one, or a dylib or bundle,
@@ -4621,6 +4639,7 @@ fn got_rank<E: Target>(ctx: &Context<E>, id: crate::symbol::SymbolId) -> i64 {
     match ctx.symbols[id].file() {
         Some(FileId::Dylib(u32::MAX)) => i64::MAX,
         Some(FileId::Dylib(d)) if ctx.dylibs[d as usize].is_bundle_loader => 0,
+        Some(FileId::Dylib(d)) if ctx.dylibs[d as usize].binds_to_image => 0,
         Some(FileId::Dylib(d)) => ctx.dylibs[d as usize].dylib_idx as i64,
         _ => -1,
     }

@@ -420,6 +420,13 @@ pub struct DylibFile {
     /// True if re-exported (LC_REEXPORT_DYLIB): this image's clients
     /// resolve the library's exports through this image.
     pub is_reexported: bool,
+    /// Re-exported from a location that isn't public, as two or more
+    /// libraries are (see passes::bind_private_reexports_to_image): its
+    /// imports bind to this image (BIND_SPECIAL_DYLIB_SELF, and library
+    /// ordinal 0 in their n_desc), through whose re-exports dyld finds
+    /// them, and their GOT slots go with the image's own. Its load
+    /// command keeps its place and ordinal.
+    pub binds_to_image: bool,
     /// -needed-l: keep the load command even under -dead_strip_dylibs.
     pub is_needed: bool,
     /// -upward-l: an upward dependency (LC_LOAD_UPWARD_DYLIB), one that
@@ -3112,7 +3119,7 @@ pub fn warn_fat_missing_arch<E: Target>(ctx: &Context<E>, mf: &MappedFile) {
 /// re-exports it (AppKit re-exports Foundation, public, and
 /// UIFoundation, private: ld-prime binds NSHomeDirectory to Foundation
 /// and NSAttachmentAttributeName to AppKit).
-fn is_public_location(install_name: &[u8]) -> bool {
+pub fn is_public_location(install_name: &[u8]) -> bool {
     if let Some(rest) = install_name.strip_prefix(b"/usr/lib/") {
         return !rest.contains(&b'/');
     }
@@ -3612,6 +3619,7 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
             is_weak: false,
             is_weak_asserted: false,
             is_reexported: false,
+            binds_to_image: false,
             is_needed: false,
             is_upward: false,
             is_lazy: false,
@@ -3822,6 +3830,7 @@ pub fn parse_bundle_loader<E: Target>(ctx: &mut Context<E>, mf: &'static MappedF
             is_weak: false,
             is_weak_asserted: false,
             is_reexported: false,
+            binds_to_image: false,
             is_needed: false,
             is_upward: false,
             is_lazy: false,
@@ -4395,6 +4404,7 @@ fn register_tbd<E: Target>(
             is_weak: false,
             is_weak_asserted: false,
             is_reexported: false,
+            binds_to_image: false,
             is_needed: false,
             is_upward: false,
             is_lazy: false,
@@ -4449,6 +4459,7 @@ fn add_moved_dylibs<E: Target>(
                     is_weak: false,
                     is_weak_asserted: false,
                     is_reexported: false,
+                    binds_to_image: false,
                     is_needed: false,
                     is_upward: false,
                     is_lazy: false,

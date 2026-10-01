@@ -393,11 +393,15 @@ impl<E: Target> Context<E> {
     }
 
     /// Returns the bind ordinal for a symbol imported from `dylib`:
-    /// the dylib's load-command ordinal under two-level namespace, or
-    /// the flat-lookup sentinel with -flat_namespace / dynamic lookup.
+    /// the dylib's load-command ordinal under two-level namespace (the
+    /// image's own for one of its private re-exports; see
+    /// DylibFile::binds_to_image), or the flat-lookup sentinel with
+    /// -flat_namespace / dynamic lookup.
     pub fn bind_ordinal(&self, dylib: u32) -> i32 {
         if self.args.flat_namespace || dylib == u32::MAX {
             crate::macho::BIND_SPECIAL_DYLIB_FLAT_LOOKUP
+        } else if self.dylibs[dylib as usize].binds_to_image {
+            crate::macho::BIND_SPECIAL_DYLIB_SELF
         } else {
             self.dylibs[dylib as usize].dylib_idx
         }
