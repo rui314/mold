@@ -355,8 +355,8 @@ pub fn print_map<E: Target>(ctx: &Context<E>) {
         }
     }
 
-    let mut entries = symbol_entries(ctx, &files);
-    entries.extend(unnamed_entries(ctx, &files, &entries));
+    let (mut entries, first_labels) = symbol_entries(ctx, &files);
+    entries.extend(unnamed_entries(ctx, &files, &first_labels));
     entries.extend(eh_frame_entries(ctx, &files, &entries));
     entries.extend(synthetic_entries(ctx, &files));
     entries.sort_by_key(|e| (e.addr, e.size));
@@ -403,20 +403,21 @@ pub fn print_map<E: Target>(ctx: &Context<E>) {
 /// unnamed atoms are. (An ltmpN label may be shadowed besides; see
 /// drop_shadowed_ltmps.)
 fn is_named<E: Target>(ctx: &Context<E>, sym: &crate::symbol::Symbol) -> bool {
-    let name = sym.name();
-    let isec = ctx.resolve_isec(sym.input_section().unwrap() as usize);
-    let hdr = ctx.hdr_of(&ctx.isecs[isec]);
+    let isec = &ctx.isecs[ctx.resolve_isec(sym.input_section().unwrap() as usize)];
+    let split = ctx.objs[isec.file as usize].subsections_via_symbols;
+    names_atom(ctx.hdr_of(isec), split, sym.is_extern(), sym.name())
+}
+
+/// is_named for a label of a section with header `hdr`, of an object
+/// with subsections or not (`split`).
+fn names_atom(hdr: &MachSection, split: bool, is_extern: bool, name: &str) -> bool {
     if name.is_empty()
         || hdr.section_type() == S_CSTRING_LITERALS
         || crate::input_files::is_ignored_literal_label(hdr.section_type(), name)
     {
         return false;
     }
-    if sym.is_extern() {
-        return true;
-    }
-    let split = ctx.objs[ctx.isecs[isec].file as usize].subsections_via_symbols;
-    !crate::input_files::is_record_list(hdr, split) && !name.starts_with('L')
+    is_extern || (!crate::input_files::is_record_list(hdr, split) && !name.starts_with('L'))
 }
 
 /// Drops from the map's named symbols each ltmpN label another of them
@@ -452,6 +453,36 @@ fn drop_shadowed_ltmps<E: Target, T>(
     syms.retain(|t| !is_ltmp(id(t)) || !shadowed.contains(&place(id(t))));
 }
 
+/// How a symbol ranks to name its atom among the symbols at its place,
+/// lowest first: as ld-prime ranks the labels at an atom's start (see
+/// atom_name_rank) - _zb names the atom of `_zb: _ab: lc:`, _loc5 that
+/// of a weak definition _wd it labels too -, but in an object without
+/// subsections, where the first in the symbol table names it (an ltmpN
+/// label before an exported function).
+fn naming_rank<E: Target>(
+    ctx: &Context<E>,
+    nlists: &hashbrown::HashMap<SymbolId, (u32, bool)>,
+    sym: SymbolId,
+) -> LabelRank {
+    match (nlists.get(&sym), ctx.symbols[sym].file()) {
+        (Some(&(k, _)), Some(FileId::Obj(obj))) => {
+            label_rank(&ctx.objs[obj as usize], k, ctx.symbols[sym].name())
+        }
+        _ => (0, "", std::cmp::Reverse(0)),
+    }
+}
+
+/// See naming_rank: the rank of nlist `k` of an object, named `name`.
+type LabelRank = (u8, &'static str, std::cmp::Reverse<u32>);
+
+fn label_rank(obj: &crate::input_files::ObjectFile, k: u32, name: &'static str) -> LabelRank {
+    use crate::input_files::atom_name_rank;
+    match obj.subsections_via_symbols {
+        true => (atom_name_rank(&obj.nlists[k as usize], name), name, std::cmp::Reverse(k)),
+        false => (0, "", std::cmp::Reverse(k)),
+    }
+}
+
 /// The nlist of each defined symbol in its object's symbol table: its
 /// index, and whether it is an alternate entry point (N_ALT_ENTRY).
 fn defining_nlists<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<SymbolId, (u32, bool)> {
@@ -469,46 +500,59 @@ fn defining_nlists<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<SymbolId, 
 /// Defined symbols with their addresses, sizes and owning objects. A
 /// symbol's size is the span to the next symbol in its subsection (or
 /// the subsection's end) - the same atom size ld64 reports; of several
-/// at one place, the first in the object's symbol table has the size
-/// and the others are aliases of none, as is an alternate entry point
-/// (Swift's type metadata inside its full metadata). ld-prime counts a
-/// thread-local variable's descriptor, which it rewrites, as its own,
-/// and a common symbol as the object's whose tentative definition won.
-/// It credits itself with an atom it rewrote (a method list in the
-/// relative form).
-fn symbol_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Vec<MapEntry<'a>> {
+/// at one place, the one naming the atom has the size (see
+/// naming_rank) and the others are aliases of none, as is an alternate
+/// entry point (Swift's type metadata inside its full metadata).
+/// ld-prime counts a thread-local variable's descriptor, which it
+/// rewrites, as its own, and a common symbol as the object's whose
+/// tentative definition won. It credits itself with an atom it rewrote
+/// (a method list in the relative form), and with the alias it makes
+/// of a function folded into an identical one (-deduplicate), which
+/// has no size; an ltmpN label of a weak definition another file's won
+/// names nothing. Also returns where in its subsection the first
+/// symbol is, by subsection.
+fn symbol_entries<'a, E: Target>(
+    ctx: &'a Context<E>,
+    files: &MapFiles,
+) -> (Vec<MapEntry<'a>>, hashbrown::HashMap<usize, u64>) {
+    use crate::chunks::symtab::is_coalesced_away;
     let nlists = defining_nlists(ctx);
     let mut syms: Vec<(SymbolId, usize)> = Vec::new();
     for i in 0..ctx.symbols.syms.len() as SymbolId {
         let sym = &ctx.symbols[i];
-        let (Some(FileId::Obj(obj)), Some(isec)) = (sym.file(), sym.input_section()) else {
+        let (Some(FileId::Obj(obj)), Some(own)) = (sym.file(), sym.input_section()) else {
             continue;
         };
-        let isec = ctx.resolve_isec(isec as usize);
-        if !ctx.isecs[isec].is_alive() {
+        let isec = ctx.resolve_isec(own as usize);
+        if !ctx.isecs[isec].is_alive() || !is_named(ctx, sym) {
+            continue;
+        }
+        let folded = is_coalesced_away(ctx, own as usize);
+        if folded && sym.name().starts_with("ltmp") {
             continue;
         }
         let file = match files.commons.get(&(isec as u32)) {
+            _ if folded => 0,
             _ if ctx.hdr_of(&ctx.isecs[isec]).section_type() == S_THREAD_LOCAL_VARIABLES => 0,
             Some(&owner) => files.objs[owner as usize],
             None if is_rewritten_method_list(ctx, isec) => 0,
             None => files.of_object(obj as usize, sym.name()),
         };
-        if is_named(ctx, sym) {
-            syms.push((i, file));
-        }
+        syms.push((i, file));
     }
     drop_shadowed_ltmps(ctx, &mut syms, |&(sym, _)| sym);
 
-    // Sizes: sort the atoms' first symbols by place and measure to the
-    // next one.
+    // Sizes: sort the symbols by place, the one naming the atom last
+    // of those at one, and measure to the next place.
     let key = |sym: SymbolId| {
         let isec = ctx.resolve_isec(ctx.symbols[sym].input_section().unwrap() as usize);
-        let first = std::cmp::Reverse(nlists.get(&sym).map_or(0, |&(k, _)| k));
-        (isec, ctx.symbols[sym].value, first)
+        (isec, ctx.symbols[sym].value, naming_rank(ctx, &nlists, sym))
     };
-    let is_alt_entry = |sym: SymbolId| nlists.get(&sym).is_some_and(|&(_, alt)| alt);
-    let mut order: Vec<usize> = (0..syms.len()).filter(|&i| !is_alt_entry(syms[i].0)).collect();
+    let is_alias = |sym: SymbolId| {
+        nlists.get(&sym).is_some_and(|&(_, alt)| alt)
+            || is_coalesced_away(ctx, ctx.symbols[sym].input_section().unwrap() as usize)
+    };
+    let mut order: Vec<usize> = (0..syms.len()).filter(|&i| !is_alias(syms[i].0)).collect();
     order.sort_by_key(|&i| key(syms[i].0));
     let mut sizes = vec![0u64; syms.len()];
     for (i, &idx) in order.iter().enumerate() {
@@ -520,7 +564,14 @@ fn symbol_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Vec<M
         sizes[idx] = end.saturating_sub(value);
     }
 
-    syms.iter()
+    let mut first_labels: hashbrown::HashMap<usize, u64> = hashbrown::HashMap::new();
+    for &(sym, _) in &syms {
+        let (isec, value, _) = key(sym);
+        let first = first_labels.entry(isec).or_insert(value);
+        *first = (*first).min(value);
+    }
+    let entries = syms
+        .iter()
         .zip(sizes)
         .map(|(&(sym, file), size)| MapEntry {
             addr: ctx.sym_addr(sym),
@@ -528,7 +579,8 @@ fn symbol_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Vec<M
             file,
             name: name(ctx.symbols[sym].name()),
         })
-        .collect()
+        .collect();
+    (entries, first_labels)
 }
 
 /// Whether a subsection is an Objective-C method list the linker
@@ -573,39 +625,52 @@ fn escape_literal(out: &mut Vec<u8>, data: &[u8]) {
     }
 }
 
+/// The rows of the start of subsection `id` no symbol names, its first
+/// `len` bytes, by offset in it: a literal by what it is, any other
+/// "anon" - one per record of a section of fixed-size records, of which
+/// ld-prime makes each an atom of its own (an __objc_classlist listing
+/// two classes is two).
+fn unnamed_rows<E: Target>(
+    ctx: &Context<E>,
+    id: usize,
+    len: u64,
+) -> impl Iterator<Item = (u64, u64, Cow<'static, [u8]>)> {
+    let isec = &ctx.isecs[id];
+    let literal = literal_name(ctx, isec);
+    let record = match literal {
+        Some(_) => None,
+        None => crate::input_files::record_size(ctx.hdr_of(isec)),
+    };
+    let step = record.unwrap_or(len).max(1);
+    (0..len).step_by(step as usize).map(move |off| {
+        let name = literal.clone().unwrap_or(Cow::Borrowed(b"anon"));
+        (off, step.min(len - off), name)
+    })
+}
+
 /// The atoms of the input files no symbol names, up to the first
-/// symbol in one: literals by what they are, any other "anon". The
+/// symbol in one (`first_labels` has where it is, by subsection). The
 /// selector names of Objective-C stubs are file 0's: ld-prime makes
 /// them itself, and an input's copy merges into its own.
 fn unnamed_entries<'a, E: Target>(
     ctx: &'a Context<E>,
     files: &MapFiles,
-    named: &[MapEntry],
+    first_labels: &hashbrown::HashMap<usize, u64>,
 ) -> Vec<MapEntry<'a>> {
-    let named: std::collections::BTreeSet<u64> = named.iter().map(|e| e.addr).collect();
-    let stub_names: hashbrown::HashSet<usize> = (ctx.objc_stubs.name_isec.iter())
-        .filter(|&&isec| isec != u32::MAX)
-        .map(|&isec| ctx.resolve_isec(isec as usize))
-        .collect();
+    let stub_names = stub_name_isecs(ctx);
     let mut entries = Vec::new();
     for osec in &ctx.output_sections {
         for &id in &osec.members {
+            let id = id as usize;
             let isec = &ctx.isecs[id];
-            let addr = ctx.isec_addr(id as usize);
-            let size = isec.size as u64;
-            if ctx.is_internal(isec.file as usize) || size == 0 {
+            if ctx.is_internal(isec.file as usize) {
                 continue;
             }
-            let file = if stub_names.contains(&(id as usize)) {
-                0
-            } else {
-                files.objs[isec.file as usize]
-            };
-            let name = literal_name(ctx, isec).unwrap_or(name("anon"));
-            let next = named.range(addr..addr + size).next().copied();
-            if next != Some(addr) {
-                let size = next.unwrap_or(addr + size) - addr;
-                entries.push(MapEntry { addr, size, file, name });
+            let file = if stub_names.contains(&id) { 0 } else { files.objs[isec.file as usize] };
+            let len = first_labels.get(&id).copied().unwrap_or(isec.size as u64);
+            let addr = ctx.isec_addr(id);
+            for (off, size, name) in unnamed_rows(ctx, id, len) {
+                entries.push(MapEntry { addr: addr + off, size, file, name });
             }
         }
     }
@@ -615,6 +680,46 @@ fn unnamed_entries<'a, E: Target>(
             let name = Cow::Owned(format!("literal string: {sel}").into_bytes());
             let size = sel.len() as u64 + 1;
             entries.push(MapEntry { addr: ctx.objc_methname_addr(i), size, file: 0, name });
+        }
+    }
+    entries.extend(objc_list_entries(ctx, files));
+    entries
+}
+
+/// The input C strings Objective-C stubs take their selector names
+/// from, which the map credits to file 0.
+fn stub_name_isecs<E: Target>(ctx: &Context<E>) -> hashbrown::HashSet<usize> {
+    (ctx.objc_stubs.name_isec.iter())
+        .filter(|&&isec| isec != u32::MAX)
+        .map(|&isec| ctx.resolve_isec(isec as usize))
+        .collect()
+}
+
+/// The entries of the Objective-C lists the linker writes itself: a
+/// category list rebuilt without the categories merged into their
+/// classes lists the others, each its category's file's, as ld-prime
+/// keeps those entries; an __objc_nlclslist entry for a class that a
+/// category's +load made non-lazy is file 0's.
+fn objc_list_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Vec<MapEntry<'a>> {
+    use crate::objc::{DataField, ObjcRef};
+    let mut entries = Vec::new();
+    for blob in &ctx.data_blobs {
+        let of_categories = matches!(blob.sect, "__objc_catlist" | "__objc_nlcatlist");
+        if !of_categories && blob.sect != "__objc_nlclslist" {
+            continue;
+        }
+        let addr = ctx.isec_addr(blob.isec as usize);
+        for (i, field) in blob.fields.iter().enumerate() {
+            let file = match field {
+                DataField::Ptr(ObjcRef::Isec(isec, _)) if of_categories => {
+                    let file = ctx.isecs[*isec as usize].file as usize;
+                    if ctx.is_internal(file) { 0 } else { files.objs[file] }
+                }
+                DataField::Ptr(ObjcRef::Sym(sym, _)) if of_categories => files.of_symbol(ctx, *sym),
+                _ => 0,
+            };
+            let addr = addr + i as u64 * 8;
+            entries.push(MapEntry { addr, size: 8, file, name: name("anon") });
         }
     }
     entries

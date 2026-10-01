@@ -2035,9 +2035,11 @@ pub(crate) fn common_owners<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u
             }
         }
     }
+    // A symbol a real definition took is no common symbol's.
     decls
         .into_iter()
         .filter_map(|(sym, (_, obj))| Some((ctx.symbols[sym].input_section()?, obj)))
+        .filter(|&(isec, _)| ctx.is_internal(ctx.isecs[isec as usize].file as usize))
         .collect()
 }
 

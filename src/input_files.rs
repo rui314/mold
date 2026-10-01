@@ -603,7 +603,7 @@ fn record_p2align(hdr: &MachSection, relocatable: bool) -> Option<u8> {
 /// compact unwind section of the regular type; its type does for the
 /// others: literals, pointers to initializers, terminators or GOT
 /// slots, and thread-local variable descriptors (three pointers).
-fn record_size(hdr: &MachSection) -> Option<u64> {
+pub(crate) fn record_size(hdr: &MachSection) -> Option<u64> {
     let regular = hdr.section_type() == S_REGULAR;
     match (hdr.segname(), hdr.sectname()) {
         (

@@ -522,7 +522,7 @@ fn noted_subsec<E: Target>(
 /// definition another file's won, or a function folded into an
 /// identical one. One the linker rewrote into a record of its own
 /// (a class's ro data after category merging) is still there.
-fn is_coalesced_away<E: Target>(ctx: &Context<E>, isec: usize) -> bool {
+pub(crate) fn is_coalesced_away<E: Target>(ctx: &Context<E>, isec: usize) -> bool {
     let replacement = ctx.isecs[isec].replacement;
     replacement != crate::input_sections::NO_REPLACEMENT
         && !ctx.is_internal(ctx.isecs[replacement as usize].file as usize)
