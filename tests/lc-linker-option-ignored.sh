@@ -33,6 +33,35 @@ grep -q "unexpected linker option from object file ignored: '-weak_framework Fou
 not grep -q -- -L/nonexistent $t/log
 nm -m $t/libx.dylib | grep -q 'non-external (was a private external) _baz'
 
+# ld-prime reads them twice: as it reads an object the link loads from
+# the start, then for every object it loads once it has checked the
+# inputs' versions (after their warnings), each time with warnings.
+cat <<EOF | $CC -o $t/e.o -c -x assembler - -mmacosx-version-min=99.0
+.globl _e
+_e: ret
+.linker_option "-eee"
+EOF
+cat <<EOF | $CC -o $t/f.o -c -x assembler -
+.globl _f
+_f: ret
+.linker_option "-fff"
+EOF
+rm -f $t/libf.a
+ar rcs $t/libf.a $t/f.o
+cat <<EOF | $CC -o $t/g.o -c -x assembler -
+.data
+.p2align 3
+.quad _f
+EOF
+$CC --ld-path=$mold -dynamiclib -o $t/liby.dylib $t/g.o $t/e.o $t/libf.a 2> $t/log6
+grep -o "warning: .*" $t/log6 | sed -e 's/ in .*//' -e 's/ (.*//' > $t/order6
+cat <<EOF | diff - $t/order6
+warning: unknown linker option from object file ignored: '-eee'
+warning: object file
+warning: unknown linker option from object file ignored: '-eee'
+warning: unknown linker option from object file ignored: '-fff'
+EOF
+
 # A -r link reports them too, and keeps the rest.
 $mold -r -arch $ARCH -o $t/r.o $t/a.o 2> $t/log2
 grep -q "unknown linker option from object file ignored: '-foo'" $t/log2

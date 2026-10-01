@@ -93,6 +93,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     let explained = passes::print_why_load(&ctx, &[]);
     let checked = passes::check_input_versions(&ctx, &Default::default());
     passes::warn_subtype_mismatches(&ctx);
+    passes::warn_linker_options(&mut ctx);
     passes::check_bitcode_duplicates(&ctx);
     if ctx.args.relocatable && passes::links_only_bitcode(&ctx) {
         t.stop();
@@ -118,6 +119,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
         }
         passes::print_why_load(&ctx, &explained);
         passes::check_input_versions(&ctx, &checked);
+        passes::warn_linker_options(&mut ctx);
     }
     t.stop();
     passes::check_common_conflicts(&mut ctx);

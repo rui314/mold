@@ -734,9 +734,13 @@ fn load_pending<E: Target>(ctx: &mut Context<E>, pending: Vec<PendingObject>) {
     drop(t);
     warn_about_sections(&staged);
     // ld-prime goes on to warn of an object's atoms if it read the
-    // object whole, then of its unwind info: see the end.
-    let checks: Vec<(bool, input_files::UnwindCheck)> =
-        staged.iter().map(|obj| (obj.failed_at.is_none(), obj.check_unwind_sections())).collect();
+    // object whole, then of its unwind info, then of the auto-link
+    // options of one the link loads from the start (see
+    // warn_linker_options): see the end.
+    let checks: Vec<(bool, bool, input_files::UnwindCheck)> = staged
+        .iter()
+        .map(|obj| (obj.failed_at.is_none(), obj.alive, obj.check_unwind_sections()))
+        .collect();
 
     // Intern every staged object's global names in one parallel batch
     // (mold's sharded symbol table), so the serial integration loop
@@ -774,16 +778,23 @@ fn load_pending<E: Target>(ctx: &mut Context<E>, pending: Vec<PendingObject>) {
     let small_atoms: Vec<Vec<u32>> = checks
         .par_iter()
         .enumerate()
-        .map(|(i, &(read, _))| match read {
+        .map(|(i, &(read, ..))| match read {
             true => chunks::chained_fixups::small_pointer_atoms(ctx, first + i),
             false => Vec::new(),
         })
         .collect();
-    for ((_, unwind), atoms) in checks.into_iter().zip(small_atoms) {
+    for (i, ((read, alive, unwind), atoms)) in checks.into_iter().zip(small_atoms).enumerate() {
         for id in atoms {
             chunks::chained_fixups::warn_small_pointer_atom(ctx, id);
         }
         unwind.report();
+        if read && alive && !ctx.args.ignore_auto_link {
+            let obj = &ctx.objs[first + i];
+            let file = || resolved_file_name(obj.mf);
+            for msg in read_linker_options(&obj.linker_options, file).1 {
+                crate::warn!("{msg}");
+            }
+        }
     }
 }
 
@@ -829,6 +840,16 @@ fn warn_duplicate_libraries<E: Target>(ctx: &Context<E>) {
 
 pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
     warn_duplicate_libraries(ctx);
+    // -add_linker_option's options are read first, as the command
+    // line's.
+    if !ctx.args.ignore_auto_link {
+        let words = std::slice::from_ref(&ctx.args.linker_options);
+        let (opts, warnings) = read_linker_options(words, || "command line".to_string());
+        for msg in warnings {
+            crate::warn!("{msg}");
+        }
+        ctx.cmdline_linker_options = Some(opts);
+    }
     let inputs = std::mem::take(&mut ctx.args.inputs);
     let paths = find_inputs(ctx, &inputs);
     let namings = library_namings(&ctx.args, &inputs, &paths);
@@ -1250,17 +1271,24 @@ pub enum Autolinked {
 /// re-exported or upward); search paths and loading modes (-L,
 /// -all_load, ...) silently. What is kept reads the same again. `file`
 /// names the object in the warnings ("command line" for
-/// -add_linker_option's, which ld-prime reads the same way).
-fn read_linker_options(opts: &[Vec<Vec<u8>>], file: impl Fn() -> String) -> Vec<Vec<Vec<u8>>> {
+/// -add_linker_option's, which ld-prime reads the same way). Returns
+/// what is kept, and the warnings.
+fn read_linker_options(
+    opts: &[Vec<Vec<u8>>],
+    file: impl Fn() -> String,
+) -> (Vec<Vec<Vec<u8>>>, Vec<String>) {
     use crate::util::display;
     let words: Vec<&[u8]> = opts.iter().flatten().map(Vec::as_slice).collect();
+    let warnings = std::cell::RefCell::new(Vec::new());
     let warn = |kind: &str, what: &str| {
         let file = file();
-        crate::warn!("{kind} linker option from object file ignored: '{what}' in {file}");
+        let msg = format!("{kind} linker option from object file ignored: '{what}' in {file}");
+        warnings.borrow_mut().push(msg);
     };
     let malformed = |opt: &str| {
         let (usage, file) = (crate::cmdline::missing_argument(opt), file());
-        crate::warn!("malformed linker option from object file ignored: '{usage}', in {file}");
+        let msg = format!("malformed linker option from object file ignored: '{usage}', in {file}");
+        warnings.borrow_mut().push(msg);
     };
     let mut libs: Vec<Vec<Vec<u8>>> = Vec::new();
     let mut unexpected: Vec<String> = Vec::new();
@@ -1325,7 +1353,20 @@ fn read_linker_options(opts: &[Vec<Vec<u8>>], file: impl Fn() -> String) -> Vec<
     for what in unexpected {
         warn("unexpected", &what);
     }
-    libs
+    (libs, warnings.into_inner())
+}
+
+/// ld-prime reads an object's auto-link options twice: as it reads an
+/// object the link loads from the start (one on the command line, or a
+/// member -force_load loads), where it warns of the ones it ignores
+/// (see load_pending), and again once it has resolved the symbols and
+/// checked the inputs, for every object the link loads, in input order.
+pub fn warn_linker_options<E: Target>(ctx: &mut Context<E>) {
+    let mut warnings = std::mem::take(&mut ctx.linker_option_warnings);
+    warnings.sort_by_key(|&(obj, _)| obj);
+    for (_, msg) in warnings {
+        crate::warn!("{msg}");
+    }
 }
 
 /// The file an auto-link option read by read_linker_options names, and
@@ -1402,20 +1443,16 @@ pub fn load_autolink_deps<E: Target>(ctx: &mut Context<E>) -> Autolinked {
     if ctx.args.ignore_auto_link {
         return Autolinked::Nothing;
     }
-    // -add_linker_option's options are read first, as the command
-    // line's, then those of objects new to the link, which reports the
-    // ones ld-prime ignores.
-    if ctx.cmdline_linker_options.is_none() {
-        let words = std::slice::from_ref(&ctx.args.linker_options);
-        let opts = read_linker_options(words, || "command line".to_string());
-        ctx.cmdline_linker_options = Some(opts);
-    }
-    for obj in &mut ctx.objs {
+    // Those of objects new to the link are read, with warnings for
+    // later (see warn_linker_options).
+    for (i, obj) in ctx.objs.iter_mut().enumerate() {
         if obj.is_alive && !obj.linker_options_read {
             let mf = obj.mf;
-            obj.linker_options =
+            let (opts, warnings) =
                 read_linker_options(&obj.linker_options, || resolved_file_name(mf));
+            obj.linker_options = opts;
             obj.linker_options_read = true;
+            ctx.linker_option_warnings.extend(warnings.into_iter().map(|msg| (i, msg)));
         }
     }
     // ld64 does not act on auto-link options in a -r link: the
