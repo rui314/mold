@@ -2112,6 +2112,9 @@ pub fn parse_bitcode<E: Target>(
             if ls.is_weak_def {
                 nlist.n_desc |= N_WEAK_DEF;
             }
+            if ls.is_weak_def && ls.can_be_hidden {
+                nlist.n_desc |= N_WEAK_REF;
+            }
         } else {
             nlist.n_type = N_UNDF | N_EXT;
         }

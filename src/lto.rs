@@ -23,6 +23,7 @@ pub const LTO_SYMBOL_DEFINITION_WEAK: u32 = 0x300;
 pub const LTO_SYMBOL_SCOPE_MASK: u32 = 0x3800;
 pub const LTO_SYMBOL_SCOPE_INTERNAL: u32 = 0x800;
 pub const LTO_SYMBOL_SCOPE_HIDDEN: u32 = 0x1000;
+pub const LTO_SYMBOL_SCOPE_DEFAULT_CAN_BE_HIDDEN: u32 = 0x2800;
 
 pub const LTO_CODEGEN_PIC_MODEL_DYNAMIC: u32 = 1;
 
@@ -630,6 +631,9 @@ pub struct LtoSymbol {
     pub is_weak_def: bool,
     pub is_extern: bool,
     pub is_private_extern: bool,
+    /// A weak definition no one can tell the copy of (linkonce_odr
+    /// with unnamed_addr), as .weak_def_can_be_hidden marks one.
+    pub can_be_hidden: bool,
 }
 
 /// Creates a module from a bitcode buffer.
@@ -699,6 +703,7 @@ pub fn parse_module(plugin: &Plugin, data: &[u8], name: &Path) -> (usize, Vec<Lt
                 is_weak_def: def == LTO_SYMBOL_DEFINITION_WEAK,
                 is_extern: scope != LTO_SYMBOL_SCOPE_INTERNAL && scope != 0,
                 is_private_extern: scope == LTO_SYMBOL_SCOPE_HIDDEN,
+                can_be_hidden: scope == LTO_SYMBOL_SCOPE_DEFAULT_CAN_BE_HIDDEN,
             });
         }
     }

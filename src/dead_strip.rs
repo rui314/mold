@@ -57,7 +57,7 @@ fn dead_strip<E: Target>(ctx: &mut Context<E>) {
     // walk run on all cores; -why_live's chains are not, and it walks
     // serially as ld-prime does.
     if ctx.args.why_live.is_empty() {
-        let roots = collect_root_set(ctx, redirects, |sym| symbol_root(ctx, sym).is_some());
+        let roots = collect_root_set(ctx, redirects, |_, sym| symbol_root(ctx, sym).is_some());
         mark(ctx, redirects, &roots);
     } else {
         WhyLive::new(ctx, redirects).walk();
@@ -141,7 +141,7 @@ fn should_keep<E: Target>(ctx: &Context<E>, isec: &InputSection) -> bool {
 fn collect_root_set<E: Target>(
     ctx: &Context<E>,
     redirects: &[usize],
-    is_root: impl Fn(&Symbol) -> bool + Sync,
+    is_root: impl Fn(SymbolId, &Symbol) -> bool + Sync,
 ) -> Vec<usize> {
     let mut roots = Vec::new();
     // Liveness is marked in place, on the section's atomic visited bit
@@ -180,8 +180,9 @@ fn collect_root_set<E: Target>(
         .symbols
         .syms
         .par_iter()
-        .filter(|sym| is_root(sym))
-        .filter_map(|sym| Some(sym.input_section()? as usize))
+        .enumerate()
+        .filter(|&(id, sym)| is_root(id as SymbolId, sym))
+        .filter_map(|(_, sym)| Some(sym.input_section()? as usize))
         .collect();
     for id in syms {
         enqueue(id);
@@ -206,11 +207,14 @@ fn collect_root_set<E: Target>(
 /// one. So native code that only bitcode, a root or another such
 /// function reaches counts, and code nothing does (a hidden helper no
 /// one calls) doesn't. The export lists have hidden nothing yet; the
-/// roots go by them (see exported_before_lto).
-pub fn native_refs_before_lto<E: Target>(ctx: &Context<E>) -> Vec<AtomicBool> {
+/// roots go by them, as `exported` says (see exported_before_lto).
+pub fn native_refs_before_lto<E: Target>(
+    ctx: &Context<E>,
+    exported: impl Fn(SymbolId) -> bool + Sync,
+) -> Vec<AtomicBool> {
     let redirects: Vec<usize> =
         (0..ctx.isecs.len()).into_par_iter().map(|i| ctx.resolve_isec(i)).collect();
-    let is_root = |sym: &Symbol| sym.no_dead_strip() || exported_before_lto(ctx, sym);
+    let is_root = |id: SymbolId, sym: &Symbol| sym.no_dead_strip() || exported(id);
     let mut roots = collect_root_set(ctx, &redirects, is_root);
     for module in &ctx.lto_modules {
         let obj = &ctx.objs[module.obj];
@@ -255,8 +259,10 @@ pub fn native_refs_before_lto<E: Target>(ctx: &Context<E>) -> Vec<AtomicBool> {
 /// before it and libLTO's preserve set see it: under an export list if
 /// the list names it, hidden or not; otherwise, unless
 /// -unexported_symbols_list names it, any external definition in -r,
-/// and a visible one in an image that exports any (see keeps_export).
-pub fn exported_before_lto<E: Target>(ctx: &Context<E>, sym: &Symbol) -> bool {
+/// and a visible one in an image that exports any (see keeps_export) -
+/// but not one every copy of which can be hidden, which the image
+/// auto-hides (see passes::auto_hide_weak_defs).
+pub fn exported_before_lto<E: Target>(ctx: &Context<E>, sym: &Symbol, hidable: bool) -> bool {
     if !sym.is_extern() || !matches!(sym.file(), Some(FileId::Obj(_))) {
         return false;
     }
@@ -267,7 +273,7 @@ pub fn exported_before_lto<E: Target>(ctx: &Context<E>, sym: &Symbol) -> bool {
     if ctx.args.unexported_symbols.find(name) != -1 {
         return false;
     }
-    ctx.args.relocatable || (!sym.is_private_extern() && keeps_export(ctx, sym.name()))
+    ctx.args.relocatable || (!sym.is_private_extern() && !hidable && keeps_export(ctx, sym.name()))
 }
 
 /// Whether dead stripping keeps an export named `name`: every one of a

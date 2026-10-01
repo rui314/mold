@@ -2312,12 +2312,17 @@ unsafe fn create_lto_codegen<E: Target>(
 fn lto_roots<E: Target>(ctx: &Context<E>) -> Vec<&str> {
     use std::sync::atomic::{AtomicU8, Ordering};
 
-    // Who refers to each symbol: live Mach-O code, a ThinLTO module or a
-    // module to merge; and whether a Mach-O object defines it.
-    let native_refs = crate::dead_strip::native_refs_before_lto(ctx);
+    // Who refers to each symbol: a ThinLTO module or a module to merge
+    // (a ThinLTO module whose copy of a weak definition another's
+    // replaced counts, as ThinLTO has its code call that one; a merged
+    // module keeps calling its own); whether a Mach-O object defines it;
+    // and whether it has a weak definition and one that can't be
+    // hidden.
     const THIN_REF: u8 = 1;
     const MERGED_REF: u8 = 2;
     const NATIVE_DEF: u8 = 4;
+    const WEAK: u8 = 8;
+    const NOT_HIDABLE: u8 = 16;
     let mut thin = vec![None; ctx.objs.len()];
     for module in &ctx.lto_modules {
         thin[module.obj] = Some(module.is_thin);
@@ -2326,17 +2331,35 @@ fn lto_roots<E: Target>(ctx: &Context<E>) -> Vec<&str> {
     ctx.objs.par_iter().enumerate().filter(|(_, obj)| obj.is_alive).for_each(|(i, obj)| {
         let r = obj.global_range();
         for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
-            let flag = match (nlist.n_type(), thin[i]) {
-                _ if nlist.is_stab() || !nlist.is_extern() => continue,
-                (N_UNDF, None) => continue,
+            if nlist.is_stab() || !nlist.is_extern() {
+                continue;
+            }
+            let defined = matches!(nlist.n_type(), N_SECT | N_ABS);
+            let mut flag = match (nlist.n_type(), thin[i]) {
                 (N_UNDF, Some(true)) => THIN_REF,
                 (N_UNDF, Some(false)) => MERGED_REF,
                 (N_SECT | N_ABS, None) => NATIVE_DEF,
-                _ => continue,
+                (N_ABS, Some(true))
+                    if ctx.symbols[sym_id].file() != Some(FileId::Obj(i as u32)) =>
+                {
+                    THIN_REF
+                }
+                _ => 0,
             };
+            if defined && nlist.n_desc & N_WEAK_DEF != 0 {
+                flag |= if nlist.n_desc & N_WEAK_REF != 0 { WEAK } else { WEAK | NOT_HIDABLE };
+            } else if defined {
+                flag |= NOT_HIDABLE;
+            }
             flags[sym_id as usize].fetch_or(flag, Ordering::Relaxed);
         }
     });
+    let exported = |id: SymbolId| {
+        let f = flags[id as usize].load(Ordering::Relaxed);
+        let hidable = f & (WEAK | NOT_HIDABLE) == WEAK;
+        crate::dead_strip::exported_before_lto(ctx, &ctx.symbols[id], hidable)
+    };
+    let native_refs = crate::dead_strip::native_refs_before_lto(ctx, exported);
 
     let mut roots = Vec::new();
     for (i, sym) in ctx.symbols.syms.iter().enumerate() {
@@ -2349,7 +2372,7 @@ fn lto_roots<E: Target>(ctx: &Context<E>) -> Vec<&str> {
         let name = sym.name();
         if native_refs[i].load(Ordering::Relaxed)
             || flags[i].load(Ordering::Relaxed) & outside != 0
-            || crate::dead_strip::exported_before_lto(ctx, sym)
+            || exported(i as SymbolId)
             || (ctx.args.has_entry_point() && name == ctx.args.entry)
             || ctx.args.forced_undefined.iter().any(|n| n == name)
             || ctx.args.aliases.iter().any(|(existing, _)| existing == name)
