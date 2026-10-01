@@ -38,8 +38,8 @@ pub struct TbdFile {
     pub allowable_clients: Vec<&'static str>,
     /// Install names of the libraries this one re-exports: documents
     /// inlined in the same file and libraries in files of their own
-    /// alike. (Every inlined document counts as re-exported, listed
-    /// or not.)
+    /// alike. An inlined document no document lists is not one: ld-prime
+    /// leaves its symbols undefined.
     pub reexports: Vec<&'static str>,
     /// The file's other documents - the re-exported libraries tapi
     /// inlined - each parsed on its own. The linker decides per
@@ -401,13 +401,9 @@ fn parse_json(
     let mut tbd = parse_library(main)?;
     tbd.platforms = select_target(arch, platform, &targets_of(main)).1;
     // The re-exported libraries inlined in "libraries" are documents
-    // of their own; every one counts as re-exported.
+    // of their own.
     for lib in root.get("libraries").map(Json::arr).unwrap_or(&[]) {
         if let Some(doc) = parse_library(lib) {
-            let name: &'static str = String::leak(doc.install_name.clone());
-            if !tbd.reexports.contains(&name) {
-                tbd.reexports.push(name);
-            }
             tbd.documents.push(doc);
         }
     }
@@ -728,14 +724,7 @@ pub fn parse(mf: &MappedFile, arch: &'static str, platform: u32) -> Option<TbdFi
         }
     }
 
-    // Every inlined document counts as re-exported, listed or not.
     let mut tbd = main.unwrap_or_default();
-    for doc in &documents {
-        let name: &'static str = String::leak(doc.install_name.clone());
-        if !tbd.reexports.contains(&name) {
-            tbd.reexports.push(name);
-        }
-    }
     tbd.documents = documents;
 
     if tbd.install_name.is_empty() {
@@ -1442,7 +1431,7 @@ exports:
         );
         let tbd = parse(mf, "arm64", PLATFORM_MACOS).unwrap();
         assert_eq!(tbd.exports, ["_arm"]);
-        assert_eq!(tbd.reexports, ["/inline"]);
+        assert!(tbd.reexports.is_empty());
         assert_eq!(tbd.document("/inline").unwrap().exports, ["_fallback"]);
     }
 
@@ -1485,7 +1474,7 @@ exports:
         assert_eq!(arm.exports, ["_both"]);
         assert_eq!(arm.weak_exports, ["_weak"]);
         assert_eq!(arm.tlv_exports, ["_tls"]);
-        assert_eq!(arm.reexports, ["/arm", "/inline"]);
+        assert_eq!(arm.reexports, ["/arm"]);
         assert_eq!(arm.document("/inline").unwrap().exports, ["_inline"]);
         let x86 = parse(mf, "x86_64", PLATFORM_MACOS).unwrap();
         assert_eq!(x86.exports, ["_both"]);
