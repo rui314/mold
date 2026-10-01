@@ -223,12 +223,12 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     crate::mapfile::write_dependency_info(&ctx);
     crate::mapfile::write_sdk_imports(&ctx);
 
-    // Write the output. The file is created up front and its ranges are
-    // written from background threads as copy_chunks finishes them;
-    // finish() waits for the last one.
+    // Write the output. The file is created up front, executable, and
+    // its ranges are written from background threads as copy_chunks
+    // finishes them; finish() waits for the last one.
     let t_copy = ctx.timer("copy");
     let mut buf = vec![0; ctx.output_size as usize];
-    let out = output_file::OutputFile::create(&ctx.args.output, buf.as_ptr(), buf.len());
+    let out = output_file::OutputFile::create(&ctx.args.output, 0o777, buf.as_ptr(), buf.len());
     passes::copy_chunks(&ctx, &mut buf, &out);
     crate::error::checkpoint();
     let t = ctx.timer("close_file");

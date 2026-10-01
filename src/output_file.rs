@@ -23,14 +23,16 @@
 //! block.
 
 use std::ffi::CString;
+use std::io;
 use std::ops::Range;
-use std::os::unix::fs::{FileExt, PermissionsExt};
+use std::os::unix::fs::{FileExt, FileTypeExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicPtr, Ordering};
 use std::sync::mpsc::{Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
+use crate::error::errno_text;
 use crate::fatal;
 
 /// The output path of the in-progress link, removed on a fatal error or
@@ -46,6 +48,49 @@ fn set_output_path(path: Option<&Path>) {
             .into_raw()
     });
     OUTPUT_PATH.store(ptr, Ordering::Release);
+}
+
+/// Whether `path` names a file the process may access as `mode` says
+/// (F_OK, W_OK): access(2), which goes by the real user, as ld-prime's
+/// checks do.
+fn accessible(path: &Path, mode: libc::c_int) -> bool {
+    let Ok(path) = CString::new(crate::util::path_bytes(path)) else {
+        return false;
+    };
+    // SAFETY: a NUL-terminated string that outlives the call.
+    unsafe { libc::access(path.as_ptr(), mode) == 0 }
+}
+
+/// Opens the output file as ld-prime does, returning it and whether it
+/// was created. An existing file must be writable ("can't write output
+/// file"). It is removed first, so that a fresh file takes `mode` (less
+/// the umask: 0777 for an image, 0644 for an object), unless it is a
+/// character device (/dev/null), which is written in place. So is a
+/// file that could not be removed, in an unwritable directory, which
+/// keeps its mode. A FIFO is replaced as any file is, and a dangling
+/// symbolic link fails the exclusive create.
+fn open(path: &Path, mode: u32) -> (std::fs::File, bool) {
+    if accessible(path, libc::F_OK) && !accessible(path, libc::W_OK) {
+        fatal!("can't write output file: {}", path.display());
+    }
+    if std::fs::metadata(path).is_ok_and(|m| !m.file_type().is_char_device()) {
+        let _ = std::fs::remove_file(path);
+    }
+    let in_place = accessible(path, libc::W_OK);
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true);
+    if !in_place {
+        options.create_new(true).mode(mode);
+    }
+    let file = options
+        .open(path)
+        .unwrap_or_else(|e| fatal!("open() failed, {} for '{}'", errno_text(&e), path.display()));
+    (file, !in_place)
+}
+
+/// ld-prime's words for a failed write of the output file.
+fn write_error(path: &Path, e: &io::Error) -> ! {
+    fatal!("write() failed, {} for '{}'", errno_text(e), path.display())
 }
 
 /// Removes a partially written output file.
@@ -111,26 +156,29 @@ pub struct OutputFile {
     buf: SharedBuf,
     len: usize,
     tx: Option<Sender<(usize, usize)>>,
-    threads: Vec<JoinHandle<Result<(), String>>>,
+    threads: Vec<JoinHandle<io::Result<()>>>,
     /// The partial pages at queued ranges' ends, written by finish().
     edges: Mutex<Vec<(usize, usize)>>,
 }
 
 impl OutputFile {
-    /// Creates the output file for the `len`-byte buffer at `buf` and
-    /// starts the writers. The buffer must outlive the OutputFile, and a
-    /// range must not be modified after it has been queued.
-    pub fn create(path: &Path, buf: *const u8, len: usize) -> Self {
-        // Remove an existing file first. Overwriting a running
-        // executable is an error on some systems, and on macOS the
-        // kernel caches code signature state per vnode, so a fresh file
-        // avoids stale-signature kills.
-        let _ = std::fs::remove_file(path);
-        set_output_path(Some(path));
-
-        let file = std::fs::File::create(path)
-            .unwrap_or_else(|e| fatal!("cannot write {}: {e}", path.display()));
-        let _ = file.set_len(len as u64);
+    /// Creates the output file for the `len`-byte buffer at `buf`, with
+    /// permissions `mode` less the umask (see open), and starts the
+    /// writers. The buffer must outlive the OutputFile, and a range must
+    /// not be modified after it has been queued.
+    pub fn create(path: &Path, mode: u32, buf: *const u8, len: usize) -> Self {
+        // An existing file is removed first (see open). Overwriting a
+        // running executable is an error on some systems, and on macOS
+        // the kernel caches code signature state per vnode, so a fresh
+        // file avoids stale-signature kills. Only a file this link
+        // created is removed again if it fails.
+        let (file, created) = open(path, mode);
+        if created {
+            set_output_path(Some(path));
+        }
+        if let Err(e) = file.set_len(len as u64) {
+            fatal!("ftruncate() failed, {} for '{}'", errno_text(&e), path.display());
+        }
         let file = Arc::new(file);
 
         let (tx, rx) = channel::<(usize, usize)>();
@@ -140,7 +188,7 @@ impl OutputFile {
             .map(|_| {
                 let file = Arc::clone(&file);
                 let rx = Arc::clone(&rx);
-                std::thread::spawn(move || -> Result<(), String> {
+                std::thread::spawn(move || -> io::Result<()> {
                     loop {
                         let job = rx.lock().unwrap().recv();
                         let Ok((off, n)) = job else {
@@ -149,8 +197,7 @@ impl OutputFile {
                         // A method call captures the whole SharedBuf
                         // (a field alone would capture the bare pointer,
                         // which is not Send).
-                        file.write_all_at(shared.block(off, n), off as u64)
-                            .map_err(|e| e.to_string())?;
+                        file.write_all_at(shared.block(off, n), off as u64)?;
                     }
                 })
             })
@@ -195,34 +242,29 @@ impl OutputFile {
         }
     }
 
-    /// Waits for every queued range to reach the file and makes it
-    /// executable.
+    /// Waits for every queued range to reach the file.
     pub fn finish(mut self) {
         drop(self.tx.take());
         for thread in self.threads.drain(..) {
             match thread.join() {
                 Ok(Ok(())) => {}
-                Ok(Err(e)) => fatal!("cannot write {}: {e}", self.path.display()),
+                Ok(Err(e)) => write_error(&self.path, &e),
                 Err(_) => fatal!("cannot write {}: writer thread panicked", self.path.display()),
             }
         }
         for &(off, n) in self.edges.get_mut().unwrap().iter() {
             if let Err(e) = self.file.write_all_at(self.buf.block(off, n), off as u64) {
-                fatal!("cannot write {}: {e}", self.path.display());
+                write_error(&self.path, &e);
             }
-        }
-        if let Err(e) = std::fs::set_permissions(&self.path, std::fs::Permissions::from_mode(0o755))
-        {
-            fatal!("cannot chmod {}: {e}", self.path.display());
         }
         set_output_path(None);
     }
 }
 
 /// Writes a complete buffer: for output that is built in full before
-/// anything can be written (-r).
+/// anything can be written (-r, an object, which is not executable).
 pub fn write(path: &Path, buf: &[u8]) {
-    let out = OutputFile::create(path, buf.as_ptr(), buf.len());
+    let out = OutputFile::create(path, 0o644, buf.as_ptr(), buf.len());
     out.queue(0, buf.len());
     out.finish();
 }
