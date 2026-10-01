@@ -1733,18 +1733,19 @@ fn parse_prot(val: &[u8], warnings: &mut OptionWarnings) -> u8 {
 /// a Mach-O header's name field, as ld-prime silently does for the new
 /// names of -rename_section and -rename_segment. (The names they
 /// rename from are matched as given, so a longer one matches nothing.)
-fn section_name(name: &str) -> Vec<u8> {
-    cut_name(name.as_bytes()).to_vec()
+fn section_name(name: &[u8]) -> Vec<u8> {
+    cut_name(name).to_vec()
 }
 
 /// A -sectcreate segment or section name, cut to 16 bytes with
 /// ld-prime's warning. (-add_empty_section's are cut silently: ld-prime
 /// fails an assertion on them.)
-fn sectcreate_name(kind: &str, name: &str, warnings: &mut OptionWarnings) -> Vec<u8> {
+fn sectcreate_name(kind: &str, name: &[u8], warnings: &mut OptionWarnings) -> Vec<u8> {
     let cut = section_name(name);
     if cut.len() < name.len() {
         warnings.warn(format_args!(
-            "-sectcreate {kind} name too long ('{name}'), will be truncated to '{}'",
+            "-sectcreate {kind} name too long ('{}'), will be truncated to '{}'",
+            raw(name),
             raw(&cut)
         ));
     }
@@ -2197,10 +2198,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     };
     // An operand of -rename_section or -rename_segment: ld-prime
     // reports a missing or empty one with the option's usage.
-    let rename_operand = |i: &mut usize, opt: &str, usage: &str| -> &str {
+    let rename_operand = |i: &mut usize, opt: &str, usage: &str| -> &[u8] {
         *i += 1;
         match cmdline.get(*i) {
-            Some(arg) if !arg.is_empty() => text(opt, arg),
+            Some(arg) if !arg.is_empty() => arg.as_bytes(),
             _ => fatal!("{opt} missing {usage}"),
         }
     };
@@ -2391,7 +2392,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 args.image_base = Some(parse_hex(name, text(name, next_arg(&mut i, name))));
             }
             b"-segaddr" => {
-                let seg = text(name, next_arg(&mut i, name)).as_bytes().to_vec();
+                let seg = bytes(next_arg(&mut i, name));
                 let addr = parse_hex(name, text(name, next_arg(&mut i, name)));
                 args.segaddrs.push((seg, addr));
             }
@@ -2405,7 +2406,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 if seg.is_empty() || max.is_empty() || init.is_empty() {
                     fatal!("-segprot missing <seg> <max-prot> <init-prot>");
                 }
-                let seg = text(name, OsStr::from_bytes(seg)).as_bytes().to_vec();
+                let seg = seg.to_vec();
                 // __LINKEDIT, which dyld reads, keeps its own.
                 if seg == b"__LINKEDIT" {
                     warnings.warn("-segprot cannot be used to modify __LINKEDIT protections");
@@ -2419,10 +2420,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 if !args.segment_order.is_empty() {
                     fatal!("-segment_order used more than once");
                 }
-                args.segment_order = text(name, next_arg(&mut i, name))
-                    .split(':')
+                args.segment_order = next_arg(&mut i, name)
+                    .as_bytes()
+                    .split(|&c| c == b':')
                     .filter(|s| !s.is_empty())
-                    .map(|s| s.as_bytes().to_vec())
+                    .map(<[u8]>::to_vec)
                     .collect();
             }
             b"-seg_page_size" => {
@@ -2437,7 +2439,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 if size > u32::MAX as u64 {
                     fatal!("-seg_page_size {size}: size too big");
                 }
-                seg_page_sizes.push((text(name, seg).as_bytes().to_vec(), size));
+                seg_page_sizes.push((bytes(seg), size));
             }
             b"-segalign" => {
                 let align = parse_hex(name, text(name, next_arg(&mut i, name)));
@@ -2456,11 +2458,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     fatal!("-section_order needs <segname> <section-list>");
                 }
                 i += 2;
-                let seg = text(name, seg).as_bytes().to_vec();
-                let list: Vec<Vec<u8>> = text(name, list)
-                    .split(':')
+                let seg = bytes(seg);
+                let list: Vec<Vec<u8>> = (list.as_bytes().split(|&c| c == b':'))
                     .filter(|s| !s.is_empty())
-                    .map(|s| s.as_bytes().to_vec())
+                    .map(<[u8]>::to_vec)
                     .collect();
                 if list.is_empty() {
                     fatal!("-section_order should specifify at least one section");
@@ -2472,20 +2473,20 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-rename_section" => {
                 let usage = "<from-segment> <from-section> <to-segment> <to-section>";
-                let old_seg = rename_operand(&mut i, name, usage).as_bytes().to_vec();
-                let old_sect = rename_operand(&mut i, name, usage).as_bytes().to_vec();
+                let old_seg = rename_operand(&mut i, name, usage).to_vec();
+                let old_sect = rename_operand(&mut i, name, usage).to_vec();
                 let new_seg = section_name(rename_operand(&mut i, name, usage));
                 let new_sect = section_name(rename_operand(&mut i, name, usage));
                 args.rename_sections.push((old_seg, old_sect, new_seg, new_sect));
             }
             b"-rename_segment" => {
                 let usage = "<from-segment> <to-segment>";
-                let old = rename_operand(&mut i, name, usage).as_bytes().to_vec();
+                let old = rename_operand(&mut i, name, usage).to_vec();
                 let new = section_name(rename_operand(&mut i, name, usage));
                 args.rename_segments.push((old, new));
             }
             b"-move_to_rw_segment" | b"-move_to_ro_segment" => {
-                let segment = text(name, move_operand(&mut i, name)).as_bytes();
+                let segment = move_operand(&mut i, name).as_bytes();
                 let list = symbol_move(name, segment, &path(move_operand(&mut i, name)));
                 match name {
                     "-move_to_rw_segment" => args.move_to_rw.push(list),
@@ -2510,9 +2511,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 );
             }
             b"-sectcreate" => {
-                let seg = text(name, next_arg(&mut i, name));
+                let seg = next_arg(&mut i, name).as_bytes();
                 let seg = sectcreate_name("segment", seg, &mut warnings);
-                let sect = text(name, next_arg(&mut i, name));
+                let sect = next_arg(&mut i, name).as_bytes();
                 let sect = sectcreate_name("section", sect, &mut warnings);
                 let file = path(next_arg(&mut i, name));
                 args.sectcreate.push(SectCreate {
@@ -2523,8 +2524,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 });
             }
             b"-add_empty_section" => {
-                let seg = section_name(text(name, next_arg(&mut i, name)));
-                let sect = section_name(text(name, next_arg(&mut i, name)));
+                let seg = section_name(next_arg(&mut i, name).as_bytes());
+                let sect = section_name(next_arg(&mut i, name).as_bytes());
                 args.sectcreate.push(SectCreate {
                     segname: seg,
                     sectname: sect,
@@ -2763,8 +2764,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // alignment (1 for 0), and the first -sectalign given for a
             // section.
             b"-sectalign" => {
-                let seg = text(name, next_arg(&mut i, name)).as_bytes().to_vec();
-                let sect = text(name, next_arg(&mut i, name)).as_bytes().to_vec();
+                let seg = bytes(next_arg(&mut i, name));
+                let sect = bytes(next_arg(&mut i, name));
                 let align = parse_hex(name, text(name, next_arg(&mut i, name)));
                 if align > u32::MAX as u64 {
                     fatal!("-sectalign {align}: alignment too big");

@@ -79,10 +79,10 @@ pub fn bytes_to_name(s: &[u8]) -> [u8; 16] {
 }
 
 /// A section or segment name an option gives, cut to fit the 16 bytes
-/// of a header's name field.
+/// of a header's name field - inside a UTF-8 character too, as
+/// ld-prime cuts it.
 pub fn cut_name(name: &[u8]) -> &[u8] {
-    let text = std::str::from_utf8(name).unwrap();
-    &name[..text.floor_char_boundary(16)]
+    &name[..name.len().min(16)]
 }
 
 #[derive(Clone, Copy, Default, Debug)]
