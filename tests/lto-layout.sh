@@ -20,3 +20,19 @@ $CC --ld-path=$mold -o $t/exe $t/m.o $t/b1.o $t/n1.o $t/b2.o $t/n2.o
 $t/exe
 nm -n $t/exe | awk '$3 ~ /^_(main|[bn][12]|st)$/ {print $3}' > $t/order
 printf '_main\n_b1\n_n1\n_b2\n_n2\n_st\n_st\n' | diff - $t/order
+
+# The output sections come in the order of their first atoms so laid
+# out: a ThinLTO module's exception tables have no names and stay its
+# object's, after a class's type name credited to the bitcode file.
+cat <<EOF | $CXX -O2 -flto=thin -c -xc++ - -o $t/c.o
+#include <stdexcept>
+struct Base { virtual ~Base(); };
+Base::~Base() {}
+int f(int x) {
+  try { if (x) throw std::runtime_error("x"); } catch (...) { return 1; }
+  return 0;
+}
+EOF
+$CXX --ld-path=$mold -shared -o $t/c.dylib $t/c.o
+otool -l $t/c.dylib | grep '^  sectname' > $t/sects
+grep -A1 ' __const$' $t/sects | grep -q __gcc_except_tab

@@ -910,7 +910,8 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     ctx.chunks.push(ChunkId::MachHeader);
     let text = text_section_name(ctx);
     let moves = crate::symbol_moves::find_moves(ctx);
-    assign_input_sections(ctx, text, &moves);
+    let lto_ranks = lto_layout_ranks(ctx);
+    assign_input_sections(ctx, text, &moves, lto_ranks.as_deref());
     trace_symbol_layout(ctx, &moves);
     place_replacing_blobs(ctx, text);
 
@@ -951,7 +952,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     rename_synthetic_sections(ctx);
     add_boundary_sections(ctx);
 
-    sort_chunks(ctx);
+    sort_chunks(ctx, lto_ranks.as_deref());
     create_segments(ctx);
     add_boundary_segments(ctx);
     add_stack_segment(ctx);
@@ -972,16 +973,17 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
 }
 
 /// Appends each live input section to its output section (see
-/// output_section_for) - a subsection a symbol move takes to another
-/// segment to the section that names (see SectionMap::moved_name) -
-/// creating the output sections in the order their first members come,
-/// and drops the sections the link consumes. A final image's sections
-/// that renames made of zero-fill and file-backed members alike are
-/// then settled.
+/// output_section_for) in input order - a subsection a symbol move
+/// takes to another segment to the section that names (see
+/// SectionMap::moved_name) - creating the output sections in the order
+/// their first members come, and drops the sections the link consumes.
+/// A final image's sections that renames made of zero-fill and
+/// file-backed members alike are then settled.
 fn assign_input_sections<E: Target>(
     ctx: &mut Context<E>,
     text: SectionName,
     moves: &hashbrown::HashMap<u32, Move>,
+    lto_ranks: Option<&[u32]>,
 ) {
     let map = SectionMap::new(ctx);
     // Each input section name's output section, keyed by the raw
@@ -1007,7 +1009,15 @@ fn assign_input_sections<E: Target>(
     // Whether each output section has zero-fill (bit 0) and
     // file-backed (bit 1) input sections; renames can mix them.
     let mut fill_kinds: Vec<u8> = Vec::new();
-    for i in 0..ctx.isecs.len() {
+    // Input order puts what LTO compiled where its bitcode files were
+    // (see lto_layout_ranks), the order the sections appear in too.
+    let lto_order = lto_ranks.map(|ranks| {
+        let mut ids: Vec<usize> = (0..ctx.isecs.len()).collect();
+        ids.sort_by_key(|&i| ranks[i]);
+        ids
+    });
+    for k in 0..ctx.isecs.len() {
+        let i = lto_order.as_ref().map_or(k, |ids| ids[k]);
         if !ctx.isecs[i].is_alive()
             || ctx.isecs[i].replacement != crate::input_sections::NO_REPLACEMENT
             || ctx.isecs[i].is_placed()
@@ -1379,16 +1389,9 @@ fn finish_section_alignments<E: Target>(ctx: &mut Context<E>, text: SectionName)
 }
 
 /// Orders each output section's members: the atoms -order_file names
-/// first, cold code last, and the rest in input order - what LTO
-/// compiled where its bitcode files were (see lto_layout_ranks).
-/// Thread-local zero fill goes by size instead.
+/// first, cold code last, and the rest in input order (see
+/// assign_input_sections). Thread-local zero fill goes by size instead.
 fn sort_section_members<E: Target>(ctx: &mut Context<E>) {
-    if let Some(ranks) = lto_layout_ranks(ctx) {
-        for osec in &mut ctx.output_sections {
-            osec.members.sort_by_key(|&id| ranks[id as usize]);
-        }
-    }
-
     // ld-prime lays out a final image's __thread_bss by atom size,
     // smallest first and in input order among equals, whatever
     // -order_file says. An atom's size runs to the next one in its
@@ -1758,8 +1761,8 @@ fn warn_eh_frame_too_large<E: Target>(ctx: &Context<E>) {
 /// section_first_seen), as ld-prime lays them out. Segment ranks honor
 /// -segment_order, then the standard order; segments stay together,
 /// and __LINKEDIT is always last.
-fn sort_chunks<E: Target>(ctx: &mut Context<E>) {
-    let section_first_seen = section_first_seen(ctx);
+fn sort_chunks<E: Target>(ctx: &mut Context<E>, lto_ranks: Option<&[u32]>) {
+    let section_first_seen = section_first_seen(ctx, lto_ranks);
     let mut order = ctx.chunks.clone();
     let mut first_seen: hashbrown::HashMap<&'static str, usize> = hashbrown::HashMap::new();
     for &id in &order {
@@ -1833,10 +1836,12 @@ fn sort_chunks<E: Target>(ctx: &mut Context<E>) {
 /// When ld-prime first sees each output section, by output section: at
 /// the object and section ordinal of its first input section - for
 /// __common, or at the first object with a common symbol if that is
-/// earlier (a C++ zero-initialized global is in an input __common).
+/// earlier (a C++ zero-initialized global is in an input __common). An
+/// object goes by its place in input order, where what LTO compiled
+/// goes by the place `lto_ranks` gives it (see lto_layout_ranks).
 /// mold's own subsections don't count, nor the input selector names
 /// the objc_msgSend$ stubs absorb (see is_stub_selector_name).
-fn section_first_seen<E: Target>(ctx: &Context<E>) -> Vec<u64> {
+fn section_first_seen<E: Target>(ctx: &Context<E>, lto_ranks: Option<&[u32]>) -> Vec<u64> {
     let mut first_seen: Vec<u64> = vec![u64::MAX; ctx.output_sections.len()];
     let stub_sels: hashbrown::HashSet<&[u8]> =
         ctx.objc_stubs.symbols.iter().map(|(_, sel)| sel.as_bytes()).collect();
@@ -1855,14 +1860,16 @@ fn section_first_seen<E: Target>(ctx: &Context<E>) -> Vec<u64> {
         let Some(ChunkId::Output(id)) = ctx.isecs[kept].output_section() else {
             continue;
         };
-        let key = ((isec.file as u64) << 32) | isec.shndx as u64;
+        let place = lto_ranks.map_or(isec.file, |ranks| ranks[i]);
+        let key = ((place as u64) << 32) | isec.shndx as u64;
         let slot = &mut first_seen[id.index()];
         *slot = (*slot).min(key);
     }
     if let Some(obj) = ctx.common_first_obj {
+        let place = if lto_ranks.is_some() { ctx.objs[obj as usize].priority } else { obj };
         for (i, osec) in ctx.output_sections.iter().enumerate() {
             if osec.hdr.segname == "__DATA" && osec.hdr.sectname == "__common" {
-                first_seen[i] = first_seen[i].min(((obj as u64) << 32) | u32::MAX as u64);
+                first_seen[i] = first_seen[i].min(((place as u64) << 32) | u32::MAX as u64);
             }
         }
     }
