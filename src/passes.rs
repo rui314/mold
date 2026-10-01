@@ -3140,6 +3140,9 @@ pub struct CheckedInputs {
     dylibs: usize,
     foreign_dylibs: usize,
     renamings: usize,
+    /// The objects' Objective-C image info flags merged so far (see
+    /// check_objc_flags).
+    objc: Option<u32>,
 }
 
 /// The warning for a dylib with install name `install_name` built for
@@ -3172,15 +3175,19 @@ fn newer_dylib_warning<E: Target>(
 /// course. A merged mergeable dylib is a dylib to these checks (see
 /// warn_merged_library_versions). It checks bitcode files by their
 /// target triples before LTO, and the object LTO makes (with what it
-/// pulls in) after: the driver calls this twice.
+/// pulls in) after: the driver calls this twice. Along with each
+/// object's deployment target, it checks its Objective-C image info
+/// against the objects' before (see check_objc_flags), for any
+/// platform.
 pub fn check_input_versions<E: Target>(ctx: &Context<E>, checked: &CheckedInputs) -> CheckedInputs {
     let now = CheckedInputs {
         objs: ctx.objs.iter().map(|obj| obj.is_alive).collect(),
         dylibs: ctx.dylibs.len(),
         foreign_dylibs: ctx.foreign_platform_dylibs.len(),
         renamings: ctx.dylib_renamings.len(),
+        objc: None,
     };
-    let (platform, minos) = (ctx.args.platform, ctx.args.platform_minos);
+    let platform = ctx.args.platform;
     let newer = |d: &input_files::DylibFile| {
         (!d.is_implicit && !d.in_sdk)
             .then(|| newer_dylib_warning(ctx, &d.install_name, d.minos))
@@ -3208,12 +3215,6 @@ pub fn check_input_versions<E: Target>(ctx: &Context<E>, checked: &CheckedInputs
         }
         crate::warn!("{msg}");
     };
-    // A -r or -preload output for no platform takes any object.
-    if platform == 0 {
-        dylibs.for_each(report_dylib);
-        return now;
-    }
-
     // In input order: a bitcode file's placeholder object joins the
     // link ahead of the Mach-O objects, which are staged in parallel.
     // The hook for the classes of mergeable libraries is the linker's,
@@ -3223,66 +3224,159 @@ pub fn check_input_versions<E: Target>(ctx: &Context<E>, checked: &CheckedInputs
     };
     let mut objs: Vec<usize> = (0..ctx.objs.len()).filter(|&i| is_new(i)).collect();
     objs.sort_by_key(|&i| ctx.objs[i].priority);
+    let mut objc = checked.objc;
     for i in objs {
         let obj = &ctx.objs[i];
         while let Some(dylib) = dylibs.next_if(|&(priority, ..)| priority < obj.priority) {
             report_dylib(dylib);
         }
-        // An object may declare more than one platform; use the
-        // deployment target for the platform being linked. ld-prime
-        // takes one with no version command (an old one, or one
-        // assembled for no OS) for macOS, with a warning in a macOS
-        // link. The object the linker synthesizes has none either.
-        let Some(first) = obj.platform_versions.first() else {
-            if platform == crate::macho::PLATFORM_MACOS && !ctx.is_internal(i) {
-                crate::warn!(
-                    "no platform load command found in '{}', assuming: macOS",
-                    resolved_file_name(obj.mf)
-                );
-            }
-            continue;
-        };
-        let Some(version) = obj.platform_versions.iter().find(|v| v.platform == platform) else {
-            // Firmware takes code built for any platform.
-            if platform == crate::macho::PLATFORM_FIRMWARE {
-                continue;
-            }
-            fatal!(
-                "building for '{}', but linking in object file ({}) built for '{}'",
-                platform_name(platform),
-                resolved_file_name(obj.mf),
-                platform_name(first.platform)
-            );
-        };
-
-        let merged = ctx.merged_libraries.iter().find(|lib| std::ptr::eq(lib.obj, obj.mf));
-        if let Some(lib) = merged {
-            if let Some(msg) = newer_dylib_warning(ctx, &lib.install_name, lib.minos) {
-                crate::warn!("{msg}");
-            }
-            continue;
+        // A -r or -preload output for no platform takes any object.
+        if platform != 0 {
+            check_object_version(ctx, i);
         }
-
-        // The SDK version used to compile an input does not constrain
-        // its use. -deployment_target_mismatches error makes the first
-        // object for a newer OS fail the link, and suppress keeps quiet.
-        if minos != 0 && version.minos > minos {
-            let msg = format!(
-                "object file ({}) was built for newer '{}' version ({}) than being linked ({})",
-                resolved_file_name(obj.mf),
-                platform_name(version.platform),
-                format_version(version.minos),
-                format_version(minos)
-            );
-            match ctx.args.deployment_target_mismatches {
-                Treatment::Warning => crate::warn!("{msg}"),
-                Treatment::Error => fatal!("{msg}"),
-                Treatment::Suppress => {}
-            }
+        if let Some(flags) = obj.objc_image_info {
+            objc = Some(check_objc_flags(ctx, objc, flags, obj.mf));
         }
     }
     dylibs.for_each(report_dylib);
-    now
+    CheckedInputs { objc, ..now }
+}
+
+/// Checks the deployment target of object `i` (see
+/// check_input_versions).
+fn check_object_version<E: Target>(ctx: &Context<E>, i: usize) {
+    let obj = &ctx.objs[i];
+    let (platform, minos) = (ctx.args.platform, ctx.args.platform_minos);
+    // An object may declare more than one platform; use the deployment
+    // target for the platform being linked. ld-prime takes one with no
+    // version command (an old one, or one assembled for no OS) for
+    // macOS, with a warning in a macOS link. The object the linker
+    // synthesizes has none either.
+    let Some(first) = obj.platform_versions.first() else {
+        if platform == crate::macho::PLATFORM_MACOS && !ctx.is_internal(i) {
+            crate::warn!(
+                "no platform load command found in '{}', assuming: macOS",
+                resolved_file_name(obj.mf)
+            );
+        }
+        return;
+    };
+    let Some(version) = obj.platform_versions.iter().find(|v| v.platform == platform) else {
+        // Firmware takes code built for any platform.
+        if platform == crate::macho::PLATFORM_FIRMWARE {
+            return;
+        }
+        fatal!(
+            "building for '{}', but linking in object file ({}) built for '{}'",
+            platform_name(platform),
+            resolved_file_name(obj.mf),
+            platform_name(first.platform)
+        );
+    };
+
+    let merged = ctx.merged_libraries.iter().find(|lib| std::ptr::eq(lib.obj, obj.mf));
+    if let Some(lib) = merged {
+        if let Some(msg) = newer_dylib_warning(ctx, &lib.install_name, lib.minos) {
+            crate::warn!("{msg}");
+        }
+        return;
+    }
+
+    // The SDK version used to compile an input does not constrain its
+    // use. -deployment_target_mismatches error makes the first object
+    // for a newer OS fail the link, and suppress keeps quiet.
+    if minos != 0 && version.minos > minos {
+        let msg = format!(
+            "object file ({}) was built for newer '{}' version ({}) than being linked ({})",
+            resolved_file_name(obj.mf),
+            platform_name(version.platform),
+            format_version(version.minos),
+            format_version(minos)
+        );
+        match ctx.args.deployment_target_mismatches {
+            Treatment::Warning => crate::warn!("{msg}"),
+            Treatment::Error => fatal!("{msg}"),
+            Treatment::Suppress => {}
+        }
+    }
+}
+
+/// __objc_imageinfo's flag of an image whose categories may have class
+/// properties: every object's record has it, or the image's has not.
+const OBJC_HAS_CATEGORY_CLASS_PROPERTIES: u32 = 0x40;
+
+/// Merges the Objective-C image info `flags` of an object into those
+/// of the objects checked before it, `merged`, with ld-prime's
+/// diagnostics, which it gives as it checks each object, after its
+/// deployment target. The first Swift ABI version stays: another one
+/// fails the link (or with $LD_WARN_ON_SWIFT_ABI_VERSION_MISMATCHES
+/// draws a warning). And an object that has category class properties
+/// where those before don't, or lacks them where those before have
+/// them, draws a warning - each one that differs from the merged flags,
+/// which lose the bit at the first.
+fn check_objc_flags<E: Target>(
+    ctx: &Context<E>,
+    merged: Option<u32>,
+    flags: u32,
+    mf: &MappedFile,
+) -> u32 {
+    let Some(merged) = merged else { return flags };
+    let (first, abi) = ((merged >> 8) & 0xff, (flags >> 8) & 0xff);
+    if first != 0 && abi != 0 && abi != first {
+        let (first, file) = (swift_abi_name(first), resolved_file_name(mf));
+        if ctx.args.warn_swift_abi_mismatches {
+            crate::warn!(
+                "{file} compiled with a different Swift ABI version ({}), than previous files \
+                 ({first})",
+                swift_abi_name(abi)
+            );
+        } else {
+            fatal!(
+                "not all .o files built with the same Swift ABI version. Started with ({first}), \
+                 now found ({}) in {file}",
+                swift_abi_name(abi)
+            );
+        }
+    }
+    let cat = flags & OBJC_HAS_CATEGORY_CLASS_PROPERTIES;
+    if cat != merged & OBJC_HAS_CATEGORY_CLASS_PROPERTIES {
+        crate::warn!(
+            "mixed ObjC ABI, {} compiled {} category class properties",
+            resolved_file_name(mf),
+            if cat != 0 { "with" } else { "without" }
+        );
+    }
+    merge_objc_flags(merged, flags)
+}
+
+/// The Objective-C image info flags of objects whose flags so far are
+/// `merged`, and of an object with `flags`, as ld-prime merges them:
+/// the first Swift ABI version given stays, the Swift language version
+/// is the oldest given, and the image's categories may have class
+/// properties if every object's may.
+pub(crate) fn merge_objc_flags(merged: u32, flags: u32) -> u32 {
+    let abi = if merged & 0xff00 != 0 { merged & 0xff00 } else { flags & 0xff00 };
+    let lang = match (merged >> 16, flags >> 16) {
+        (0, lang) | (lang, 0) => lang,
+        (a, b) => a.min(b),
+    };
+    (lang << 16) | abi | (merged & flags & OBJC_HAS_CATEGORY_CLASS_PROPERTIES)
+}
+
+/// A Swift ABI version, the byte of __objc_imageinfo's flags that holds
+/// it, as ld-prime names it.
+fn swift_abi_name(v: u32) -> String {
+    let name = match v {
+        1 => "1.0",
+        2 => "1.1",
+        3 => "2.0",
+        4 => "3.0",
+        5 => "4.0",
+        6 => "4.1/4.2",
+        7 => "5 or later",
+        _ => return format!("unknown ABI version 0x{v:02X}"),
+    };
+    name.to_string()
 }
 
 /// ld-prime checks a merged mergeable dylib's OS version again as it
