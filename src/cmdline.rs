@@ -428,6 +428,9 @@ pub struct Args {
     /// -allow_dead_duplicates: a symbol defined more than once is fine
     /// if -dead_strip removes all its definitions but the one kept.
     pub allow_dead_duplicates: bool,
+    /// -poison_symbol / -poison_symbols_list: symbols the output may
+    /// not refer to.
+    pub poisoned: Glob,
     /// -w: suppress warnings.
     pub suppress_warnings: bool,
     pub fatal_warnings: bool,
@@ -726,6 +729,7 @@ impl Default for Args {
             force_not_weak: Glob::new(),
             keep_duplicates: Glob::new(),
             allow_dead_duplicates: false,
+            poisoned: Glob::new(),
             suppress_warnings: false,
             fatal_warnings: false,
             demangle: false,
@@ -1549,7 +1553,8 @@ pub(crate) fn missing_argument(opt: &str) -> String {
         | "-allowable_client"
         | "-client_name"
         | "-why_live"
-        | "-keep_duplicate" => "missing <name>",
+        | "-keep_duplicate"
+        | "-poison_symbol" => "missing <name>",
         "-headerpad" | "-pagezero_size" | "-stack_size" | "-segalign" => "missing <size>",
         "-image_base" | "-seg1addr" => "missing <address>",
         "-current_version"
@@ -1651,6 +1656,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut force_not_weak = GlobBuilder::default();
     let mut force_weakness_listed = false;
     let mut keep_duplicates = GlobBuilder::default();
+    let mut poisoned = GlobBuilder::default();
     let mut export_choice: Option<ExportChoice> = None;
     // The warnings about the obsolete options given, which ld-prime
     // ignores with a warning once it has read them all.
@@ -2414,6 +2420,14 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 }
             }
             b"-allow_dead_duplicates" => args.allow_dead_duplicates = true,
+            b"-poison_symbol" => {
+                poisoned.add(next_arg(&mut i, name).as_bytes(), 0);
+            }
+            b"-poison_symbols_list" => {
+                for pat in read_symbol_list(name, &path(next_arg(&mut i, name))) {
+                    poisoned.add(pat.as_bytes(), 0);
+                }
+            }
             // For duplicate symbols ld-prime would only warn of, which
             // it has no more: it takes the treatment and does nothing.
             b"-duplicate_symbols" => {
@@ -2693,6 +2707,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     args.force_weak = force_weak.build();
     args.force_not_weak = force_not_weak.build();
     args.keep_duplicates = keep_duplicates.build();
+    args.poisoned = poisoned.build();
 
     // -fatal_warnings applies to every warning, wherever it appears on
     // the command line. So does -w to those from the option checks

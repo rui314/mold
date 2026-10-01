@@ -2905,6 +2905,51 @@ pub fn check_duplicate_symbols<E: Target>(ctx: &Context<E>) {
     }
 }
 
+/// -poison_symbol and -poison_symbols_list fail the link on any live
+/// reference to a symbol they name, defined in the link or not, once
+/// ld-prime has found no duplicate symbol: it lists each such symbol,
+/// and under it each reference (twice for two in one function), as the
+/// function it is in and the leaf name of that function's file. It
+/// lists the symbols in no stable order; mold sorts them by name.
+pub fn check_poisoned_symbols<E: Target>(ctx: &Context<E>) {
+    let poisoned = &ctx.args.poisoned;
+    if poisoned.is_empty() {
+        return;
+    }
+    let mut refs: Vec<(SymbolId, usize)> = ctx
+        .objs
+        .par_iter()
+        .filter(|obj| obj.is_alive)
+        .flat_map_iter(|obj| obj.subsecs.iter().map(|&id| id as usize))
+        .filter(|&isec| ctx.isecs[isec].is_alive())
+        .flat_map_iter(|isec| {
+            let file = ctx.isecs[isec].file as usize;
+            input_files::isec_relocs_of(&ctx.objs, &ctx.isecs[isec])
+                .iter()
+                .filter_map(move |rel| ctx.reloc_target_sym(file, rel))
+                .filter(|&id| poisoned.find(ctx.symbols[id].name().as_bytes()) != -1)
+                .map(move |id| (id, isec))
+        })
+        .collect();
+    if refs.is_empty() {
+        return;
+    }
+    // (A stable sort keeps each symbol's references in object order.)
+    refs.sort_by_key(|&(id, _)| ctx.symbols[id].name());
+    let mut msg = "Use of poisoned symbols:\n".to_string();
+    for group in refs.chunk_by(|a, b| a.0 == b.0) {
+        msg += &format!("  {}, referenced from:\n", ctx.symbols[group[0].0]);
+        for &(_, isec) in group {
+            let file = resolved_file_name(ctx.objs[ctx.isecs[isec].file as usize].mf);
+            let leaf = file.rsplit('/').next().unwrap_or(&file);
+            let atom = ctx.atom_name(isec);
+            let atom = crate::util::demangle::display_name(&atom);
+            msg += &format!("      {atom} in {leaf}\n");
+        }
+    }
+    error!("{msg}");
+}
+
 /// The tentative definitions (common symbols) left after resolution
 /// that a dylib of the link defines too, by name: the object whose
 /// definition won (the first of the largest) and the files of the

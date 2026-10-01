@@ -116,6 +116,8 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     if ctx.args.relocatable {
         passes::check_duplicate_symbols(&ctx);
         crate::error::checkpoint();
+        passes::check_poisoned_symbols(&ctx);
+        crate::error::checkpoint();
         passes::hide_all_exports(&mut ctx);
         passes::handle_exported_symbols_list(&mut ctx);
         passes::handle_unexported_symbols_list(&mut ctx);
@@ -175,6 +177,8 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     passes::check_weak_imports(&ctx);
     crate::error::checkpoint();
     passes::check_duplicate_symbols(&ctx);
+    crate::error::checkpoint();
+    passes::check_poisoned_symbols(&ctx);
     crate::error::checkpoint();
     passes::report_common_conflict(&ctx);
     crate::error::checkpoint();
