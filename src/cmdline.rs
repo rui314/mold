@@ -2583,32 +2583,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         let name = opt.to_string_lossy();
         let name: &str = &name;
         match opt.as_bytes() {
+            // The output, its kind, and what it says of itself.
             b"-o" => args.output = cur.next_path(name),
-            b"-arch" => {
-                let arch = cur.next_text(name);
-                args.arch =
-                    Some(target_arch(arch).unwrap_or_else(|| fatal!("unknown -arch name: {arch}")));
-            }
-            b"-target" => st.target_triple = Some(cur.next_text(name)),
-            b"-e" => {
-                args.entry = cur.next_text(name).to_string();
-                st.explicit_entry = true;
-            }
-            b"-platform_version" => read_platform_version(&mut cur, &mut args, &mut st, name),
-            b"-syslibroot" => args.syslibroot.push(cur.next_path(name)),
-            b"-L" => args.library_paths.push(cur.next_path(name)),
-            raw if let Some((kind, naming)) = library_option(raw) => {
-                args.inputs.push(InputArg::Library(kind, naming(cur.next_arg(name))));
-            }
-            b"-no_merged_libraries_hook" => args.merged_libraries_hook = false,
-            b"-make_mergeable" => args.make_mergeable = true,
-            b"-add_mergeable_debug_hook" => args.add_mergeable_debug_hook = true,
-            b"-filelist" => {
-                let (list, files) = read_filelist(cur.next_arg(name));
-                args.inputs.extend(files.into_iter().map(InputArg::Listed));
-                args.filelists.push(list);
-            }
-            b"-F" => args.framework_paths.push(cur.next_path(name)),
             b"-execute" => {
                 if st.kind != OutputKind::StaticExecutable {
                     st.kind = OutputKind::DynamicExecutable;
@@ -2616,11 +2592,44 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-dylib" => st.kind = OutputKind::Dylib,
             b"-bundle" => st.kind = OutputKind::Bundle,
+            b"-r" => st.kind = OutputKind::Object,
+            b"-static" => {
+                if !matches!(st.kind, OutputKind::Object | OutputKind::Kext) {
+                    st.kind = OutputKind::StaticExecutable;
+                }
+            }
+            b"-preload" => st.kind = OutputKind::Preload,
             b"-kext" => st.kind = OutputKind::Kext,
             b"-dylinker" => st.kind = OutputKind::Dylinker,
+            b"-kernel" => args.kernel = true,
+            b"-dynamic" => args.dynamic = true,
+            b"-e" => {
+                args.entry = cur.next_text(name).to_string();
+                st.explicit_entry = true;
+            }
+            b"-init" => args.init = Some(cur.next_text(name).to_string()),
             b"-bundle_loader" => read_bundle_loader(&mut cur, &mut args, &mut st.warnings, name),
             b"-final_output" => args.final_output = Some(cur.next_bytes(name)),
-            b"-keep_private_externs" => args.keep_private_externs = true,
+            // (dyld's own LC_ID_DYLINKER names /usr/lib/dyld, whatever
+            // -dylinker_install_name says.)
+            b"-install_name" | b"-dylib_install_name" | b"-dylinker_install_name" => {
+                args.install_name = Some(cur.next_bytes(name))
+            }
+            // The -dylib_ spellings are the older names ld64 still
+            // accepts; Xcode passes -dylib_compatibility_version.
+            b"-current_version" | b"-dylib_current_version" => {
+                let version = text(name, cur.arg_or_empty(name));
+                args.current_version = parse_dylib_version(name, version, &mut st.warnings);
+            }
+            b"-compatibility_version" | b"-dylib_compatibility_version" => {
+                let version = text(name, cur.arg_or_empty(name));
+                args.compatibility_version = parse_dylib_version(name, version, &mut st.warnings);
+            }
+            b"-umbrella" => args.umbrella = Some(cur.next_bytes(name)),
+            b"-sub_library" => args.sub_libraries.push(cur.next_bytes(name)),
+            b"-sub_umbrella" => args.sub_umbrellas.push(cur.next_bytes(name)),
+            b"-allowable_client" => args.allowable_clients.push(cur.next_bytes(name)),
+            b"-client_name" => args.client_name = Some(cur.next_bytes(name)),
             // ld-prime only warns about a missing path, or an empty
             // one or an option's name, which it takes all the same.
             b"-rpath" => match cur.advance() {
@@ -2629,76 +2638,273 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 }
                 _ => st.warnings.warn("-rpath missing <path>"),
             },
-            // (dyld's own LC_ID_DYLINKER names /usr/lib/dyld, whatever
-            // -dylinker_install_name says.)
-            b"-install_name" | b"-dylib_install_name" | b"-dylinker_install_name" => {
-                args.install_name = Some(cur.next_bytes(name))
+            b"-dyld_env" => {
+                let arg = cur.next_arg(name).as_bytes();
+                if !arg.starts_with(b"DYLD_") || !arg.contains(&b'=') {
+                    fatal!(
+                        "malformed '-dyld_env {}', arg should be of form 'DYLD_xxx=something'",
+                        display(arg)
+                    );
+                }
+                args.dyld_envs.push(arg.to_vec());
             }
-            b"-map" => args.map = Some(cur.next_path(name)),
+            b"-make_mergeable" => args.make_mergeable = true,
+            b"-add_mergeable_debug_hook" => args.add_mergeable_debug_hook = true,
+            b"-no_merged_libraries_hook" => args.merged_libraries_hook = false,
+
+            // The target: the architecture, the platform and its versions.
+            b"-arch" => {
+                let arch = cur.next_text(name);
+                args.arch =
+                    Some(target_arch(arch).unwrap_or_else(|| fatal!("unknown -arch name: {arch}")));
+            }
+            b"-target" => st.target_triple = Some(cur.next_text(name)),
+            b"-platform_version" => read_platform_version(&mut cur, &mut args, &mut st, name),
+            b"-macos_version_min" | b"-macosx_version_min" => {
+                read_macos_version_min(&mut cur, &mut args, &mut st, name)
+            }
+            b"-ios_version_min"
+            | b"-iphoneos_version_min"
+            | b"-maccatalyst_version_min"
+            | b"-iosmac_version_min"
+            | b"-uikitformac_version_min" => read_other_version_min(&mut cur, &mut st, name),
+            // An architecture's variant (of arm64e's pointer
+            // authentication ABI), which no -arch mold links for has.
+            b"-arch_variant" => {
+                let variant = cur.next_arg(name).as_bytes();
+                if arch_cpu_family(variant).is_none() {
+                    fatal!("unknown -arch name: {}", display(variant));
+                }
+                st.arch_variant = true;
+            }
+            b"-arch_errors_fatal" => args.arch_errors_fatal = true,
+            b"-allow_sub_type_mismatches" => args.allow_sub_type_mismatches = true,
+            b"-no_allow_dylib_sub_type_mismatches" => {
+                st.dylib_subtype_list = Some(cur.next_arg(name).as_bytes());
+            }
+            b"-deployment_target_mismatches" => {
+                args.deployment_target_mismatches = parse_treatment(name, cur.next_arg(name), true);
+            }
+            // ld-prime ignores this with a warning for another target
+            // than arm64, and changes nothing seen in an arm64 image.
+            b"-x86_64_layout_emulation" => st.x86_64_layout_emulation = true,
+
+            // The inputs, and the libraries and frameworks they link with.
+            b"-filelist" => {
+                let (list, files) = read_filelist(cur.next_arg(name));
+                args.inputs.extend(files.into_iter().map(InputArg::Listed));
+                args.filelists.push(list);
+            }
+            raw if let Some((kind, naming)) = library_option(raw) => {
+                args.inputs.push(InputArg::Library(kind, naming(cur.next_arg(name))));
+            }
+            b"-L" => args.library_paths.push(cur.next_path(name)),
+            b"-F" => args.framework_paths.push(cur.next_path(name)),
+            b"-syslibroot" => args.syslibroot.push(cur.next_path(name)),
+            b"-Z" => args.no_standard_dirs = true,
+            // The default library search behavior already matches
+            // -search_paths_first: each path is tried for both a dylib
+            // and an archive before moving to the next.
+            b"-search_paths_first" => args.search_dylibs_first = false,
+            b"-search_dylibs_first" => args.search_dylibs_first = true,
+            b"-search_in_sparse_frameworks" => args.search_in_sparse_frameworks = true,
+            b"-image_suffix" => args.image_suffixes.push(cur.next_arg(name).to_owned()),
+            b"-all_load" => args.all_load = true,
+            b"-noall_load" => args.all_load = false,
+            b"-ObjC" => args.load_objc = true,
+            b"-force_load_swift_libs" => args.force_load_swift_libs = true,
+            b"-ignore_auto_link" => args.ignore_auto_link = true,
+            b"-add_linker_option" => {
+                let opt = cur.next_arg(name).as_bytes();
+                add_linker_option(&mut args.linker_options, opt, &mut st.warnings);
+            }
+            b"-no_implicit_dylibs" => args.no_implicit_dylibs = true,
+            b"-dylib_file" => {
+                add_dylib_file(&mut args, &mut st.warnings, cur.next_arg(name).as_bytes());
+            }
+            b"-dead_strip_dylibs" => args.dead_strip_dylibs = true,
+            b"-warn_unused_dylibs" => st.warn_unused_dylibs = Some(true),
+            b"-no_warn_unused_dylibs" => st.warn_unused_dylibs = Some(false),
+            b"-warn_duplicate_libraries" => args.warn_duplicate_libraries = true,
+            b"-no_warn_duplicate_libraries" => args.warn_duplicate_libraries = false,
             b"-sdk_imports" => args.sdk_imports = Some(cur.next_path(name)),
             // ld-prime reads the list as it reads the option.
             b"-sdk_imports_api_list" => {
                 let list = crate::api_list::read(&cur.next_path(name));
                 args.sdk_imports_api_list = Some(list);
             }
-            b"-fixup_chains" | b"-no_fixup_chains" => {
-                st.fixup_chains = Some(name == "-fixup_chains");
-                st.chain_starts = None;
-            }
-            // The last of these and -fixup_chains or -no_fixup_chains
-            // counts, but ld-prime refuses to switch from one kind of
-            // chain starts to the other.
-            b"-fixup_chains_section" | b"-fixup_chains_section_vm" => {
-                let kind = if name == "-fixup_chains_section" { 1 } else { 2 };
-                if st.chain_starts.is_some_and(|k| k != kind) {
-                    fatal!(
-                        "{name} can't be used together with other -fixup_chains_section* options"
-                    );
+
+            // Symbols: which must be defined, which are exported, kept or
+            // stripped, and how they bind.
+            b"-u" => args.forced_undefined.push(cur.next_text(name).to_string()),
+            b"-U" => args.allowed_undefined.push(cur.next_text(name).to_string()),
+            // ld-prime knows one treatment besides the default error:
+            // dynamic_lookup, which suppress selects too. It deprecates
+            // every other one (error, warning or anything else) and
+            // ignores it, so none undoes an earlier dynamic_lookup.
+            b"-undefined" => {
+                let treatment = cur.next_text(name);
+                if matches!(treatment, "dynamic_lookup" | "suppress") {
+                    args.undefined_dynamic_lookup = true;
                 }
-                st.fixup_chains = Some(true);
-                st.chain_starts = Some(kind);
-            }
-            // A 32-bit image's rebases in a section, which no image of
-            // the 64-bit targets mold has can have.
-            b"-rebase_section" => st.rebase_section = true,
-            b"-threaded_starts_section" => st.threaded_starts = true,
-            b"-adhoc_codesign" => st.adhoc_codesign = Some(true),
-            b"-no_adhoc_codesign" => st.adhoc_codesign = Some(false),
-            b"-dynamic" => args.dynamic = true,
-            b"-static" => {
-                if !matches!(st.kind, OutputKind::Object | OutputKind::Kext) {
-                    st.kind = OutputKind::StaticExecutable;
+                if treatment != "dynamic_lookup" {
+                    st.warnings.warn(format!("-undefined {treatment} is deprecated"));
                 }
             }
-            b"-preload" => st.kind = OutputKind::Preload,
-            b"-kernel" => args.kernel = true,
-            b"-version_load_command" => args.version_load_command = true,
-            // The last one wins; ld-prime warns as it reads one that
-            // turns the other around.
-            b"-pie" | b"-no_pie" => {
-                let on = name == "-pie";
-                if st.pie == Some(!on) {
-                    let other = if on { "-no_pie" } else { "-pie" };
-                    st.warnings.warn(format!("{name} overriding previous {other}"));
-                }
-                st.pie = Some(on);
+            b"-exported_symbol" => {
+                check_export_choice(&mut st.export_choice, ExportChoice::Exported, name);
+                let pat = cur.next_text(name);
+                add_initial_undefines(&mut args.forced_undefined, [pat]);
+                add_patterns(st.lists.exported_symbols.get_or_insert_default(), [pat], 0);
             }
-            // Given with -dead_strip, this once kept initializers and
-            // terminators nothing referenced. -dead_strip always keeps
-            // them now, and ld64 takes this for -dead_strip alone.
-            b"-no_dead_strip_inits_and_terms" => {
-                args.dead_strip = true;
+            b"-exported_symbols_list" => {
+                check_export_choice(&mut st.export_choice, ExportChoice::Exported, name);
+                let names = cur.next_symbol_list(name);
+                add_initial_undefines(&mut args.forced_undefined, &names);
+                add_patterns(st.lists.exported_symbols.get_or_insert_default(), &names, 0);
+            }
+            b"-unexported_symbol" => {
+                check_export_choice(&mut st.export_choice, ExportChoice::Unexported, name);
+                add_patterns(&mut st.lists.unexported_symbols, [cur.next_text(name)], 0)
+            }
+            b"-unexported_symbols_list" => {
+                check_export_choice(&mut st.export_choice, ExportChoice::Unexported, name);
+                add_patterns(&mut st.lists.unexported_symbols, cur.next_symbol_list(name), 0);
+            }
+            b"-no_exported_symbols" => {
+                check_export_choice(&mut st.export_choice, ExportChoice::None, name);
+                args.no_exported_symbols = true;
+            }
+            b"-reexported_symbols_list" => {
+                st.reexports_listed = true;
+                let names = cur.next_symbol_list(name);
+                // Exact names force a reference even if no object
+                // mentions them, so one nothing defines is reported as
+                // wanted by ld-prime's "<initial-undefines>", as a -u
+                // name is. Patterns only match existing symbols.
+                add_initial_undefines(&mut args.forced_undefined, &names);
+                add_patterns(&mut st.lists.reexported_symbols, &names, 0);
+            }
+            b"-export_dynamic" => args.export_dynamic = true,
+            b"-keep_private_externs" => args.keep_private_externs = true,
+            b"-alias" => {
+                let existing = cur.next_text(name).to_string();
+                let new = cur.next_text(name).to_string();
+                args.aliases.push((existing, new));
+            }
+            b"-alias_list" => {
+                read_alias_list(&cur.next_path(name), &mut args.aliases, &mut st.warnings);
+            }
+            b"-x" => args.strip_locals = true,
+            b"-S" => args.strip_debug = true,
+            b"-non_global_symbols_strip_list" => {
+                add_patterns(&mut st.lists.local_strip_list, cur.next_symbol_list(name), 0);
+            }
+            b"-non_global_symbols_no_strip_list" => {
+                let names = cur.next_symbol_list(name);
+                add_patterns(st.lists.local_keep_list.get_or_insert_default(), &names, 0);
+            }
+            b"-flat_namespace" => args.flat_namespace = true,
+            b"-twolevel_namespace" => args.flat_namespace = false,
+            // ld64 made an executable bind its dylibs' imports flat too
+            // (MH_FORCE_FLAT); ld-prime takes it for -flat_namespace.
+            b"-force_flat_namespace" => {
                 st.warnings.warn(
-                    "option '-no_dead_strip_inits_and_terms' is obsolete, use '-dead_strip' instead",
+                    "-force_flat_namespace is no longer supported, using -flat_namespace instead",
                 );
+                args.flat_namespace = true;
             }
-            b"-headerpad" => {
-                let size = parse_hex(name, cur.next_text(name));
-                if size > u32::MAX as u64 {
-                    fatal!("-headerpad size too large");
+            b"-interposable" => st.lists.interposable_all = true,
+            b"-interposable_list" => {
+                let names = cur.next_symbol_list(name);
+                add_patterns(st.lists.interposable_list.get_or_insert_default(), &names, 0);
+            }
+            b"-warn_weak_exports" => args.warn_weak_exports = true,
+            b"-no_weak_exports" => args.no_weak_exports = true,
+            b"-no_weak_imports" => args.no_weak_imports = true,
+            b"-weak_reference_mismatches" => {
+                args.weak_reference_mismatches = match cur.next_arg(name).as_bytes() {
+                    b"non-weak" => WeakRefMismatches::NonWeak,
+                    b"weak" => WeakRefMismatches::Weak,
+                    b"error" => WeakRefMismatches::Error,
+                    _ => fatal!(
+                        "invalid option to -weak_reference_mismatches [ error | weak | non-weak ]"
+                    ),
                 }
-                st.headerpad = Some(size);
             }
+            b"-force_symbols_weak_list" | b"-force_symbols_not_weak_list" => {
+                let names = cur.next_symbol_list(name);
+                let glob = match name {
+                    "-force_symbols_weak_list" => &mut st.lists.force_weak,
+                    _ => &mut st.lists.force_not_weak,
+                };
+                add_patterns(glob, &names, 0);
+                st.force_weakness_listed = true;
+            }
+            // ld-prime's usage leaves use_dylibs out, and takes a
+            // missing treatment for an invalid one.
+            b"-commons" => {
+                args.commons = match cur.advance().map(|arg| arg.as_bytes()) {
+                    Some(b"ignore_dylibs") => CommonsMode::IgnoreDylibs,
+                    Some(b"use_dylibs") => CommonsMode::UseDylibs,
+                    Some(b"error") => CommonsMode::Error,
+                    _ => fatal!("invalid option to -commons [ ignore_dylibs | error ]"),
+                }
+            }
+            b"-warn_commons" => args.warn_commons = true,
+            b"-max_default_common_align" => {
+                let align = parse_common_align(cur.next_text(name), &mut st.warnings);
+                st.max_default_common_align = Some(align);
+            }
+            b"-keep_duplicate" => {
+                add_patterns(&mut st.lists.keep_duplicates, [cur.next_text(name)], 0);
+            }
+            b"-keep_duplicates_list" => {
+                add_patterns(&mut st.lists.keep_duplicates, cur.next_symbol_list(name), 0);
+            }
+            b"-allow_dead_duplicates" => args.allow_dead_duplicates = true,
+            // For duplicate symbols ld-prime would only warn of, which
+            // it has no more: it takes the treatment and does nothing.
+            b"-duplicate_symbols" => {
+                parse_treatment(name, cur.next_arg(name), false);
+            }
+            b"-poison_symbol" => {
+                st.lists.poisoned.add(cur.next_arg(name).as_bytes(), 0);
+            }
+            b"-poison_symbols_list" => {
+                for pat in cur.next_symbol_list(name) {
+                    st.lists.poisoned.add(pat.as_bytes(), 0);
+                }
+            }
+
+            // Dead stripping, folding and ordering of the contents, and the
+            // rewriting of the code (optimization hints, branch islands).
+            b"-dead_strip" => args.dead_strip = true,
+            b"-deduplicate" => args.deduplicate = true,
+            b"-no_deduplicate" => args.deduplicate = false,
+            b"-verbose_deduplicate" => args.verbose_deduplicate = true,
+            // ld-prime folds identical functions in passes, each folding
+            // the callers of those the one before folded, up to this
+            // many (none limits it); mold folds them in one go.
+            b"-max_code_deduplicate_passes" => {
+                if decimal_number(cur.next_text(name)).is_none() {
+                    fatal!("invalid argument for -max_code_deduplicate_passes");
+                }
+            }
+            b"-order_file" => args.order_files.push(cur.next_path(name)),
+            // ld64's order file for one section, -sectorder <segment>
+            // <section> <path>, ld-prime takes for an -order_file
+            // whatever the section names, empty ones too.
+            b"-sectorder" => {
+                let file = match (cur.advance(), cur.advance(), cur.advance()) {
+                    (Some(_), Some(_), Some(file)) if !file.is_empty() => file,
+                    _ => fatal!("-sectorder missing <segment> <section> <file-path>"),
+                };
+                args.order_files.push(PathBuf::from(file));
+            }
+            b"-order_file_statistics" => args.order_file_statistics = true,
+            b"-ignore_optimization_hints" => args.ignore_optimization_hints = true,
+            b"-no_branch_islands" => args.no_branch_islands = true,
             // ld-prime spaces its branch island clusters by this size;
             // mold places range-extension thunks by each branch's reach
             // instead (see thunks.rs), so the size is checked and unused.
@@ -2707,6 +2913,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     fatal!("{name} must specify a hexadecimal size");
                 }
             }
+
+            // The segments and sections: their addresses, protections, order
+            // and contents.
             b"-pagezero_size" => {
                 args.pagezero_size = parse_hex(name, cur.next_text(name));
                 args.explicit_pagezero = true;
@@ -2719,9 +2928,6 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 let addr = parse_hex(name, cur.next_text(name));
                 args.segaddrs.push((seg, addr));
             }
-            b"-segprot" => read_segprot(&mut cur, &mut st),
-            b"-segment_order" => read_segment_order(&mut cur, &mut args, name),
-            b"-seg_page_size" => read_seg_page_size(&mut cur, &mut st, name),
             b"-segalign" => {
                 let align = parse_hex(name, cur.next_text(name));
                 if align > u32::MAX as u64 {
@@ -2729,9 +2935,13 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 }
                 st.segalign = Some(align);
             }
-            b"-no_zero_fill_sections" => args.no_zero_fill_sections = true,
-            b"-no_warn_reduced_section_align" => args.warn_reduced_section_align = false,
+            b"-seg_page_size" => read_seg_page_size(&mut cur, &mut st, name),
+            b"-segprot" => read_segprot(&mut cur, &mut st),
+            b"-segment_order" => read_segment_order(&mut cur, &mut args, name),
             b"-section_order" => read_section_order(&mut cur, &mut args),
+            b"-sectalign" => read_sectalign(&mut cur, &mut args, &mut st.warnings, name),
+            b"-sectcreate" => read_sectcreate(&mut cur, &mut args, &mut st.warnings, name),
+            b"-add_empty_section" => read_add_empty_section(&mut cur, &mut args, name),
             b"-rename_section" => {
                 let usage = "<from-segment> <from-section> <to-segment> <to-section>";
                 let old_seg = cur.rename_operand(name, usage).to_vec();
@@ -2759,6 +2969,25 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 let list = symbol_move("", b"__DATA_DIRTY", &cur.next_path(name));
                 args.dirty_data.push(list);
             }
+            b"-data_const" => st.data_const = Some(true),
+            b"-no_data_const" => st.data_const = Some(false),
+            b"-text_exec" => args.text_exec = true,
+            b"-no_zero_fill_sections" => args.no_zero_fill_sections = true,
+            b"-merge_zero_fill_sections" => args.merge_zero_fill_sections = true,
+            b"-no_warn_reduced_section_align" => args.warn_reduced_section_align = false,
+            b"-remove_swift_reflection_metadata_sections" => {
+                args.remove_swift_reflection_metadata_sections = true
+            }
+            b"-headerpad" => {
+                let size = parse_hex(name, cur.next_text(name));
+                if size > u32::MAX as u64 {
+                    fatal!("-headerpad size too large");
+                }
+                st.headerpad = Some(size);
+            }
+            // Reserve enough header padding that install_name_tool can
+            // grow install names in place.
+            b"-headerpad_max_install_names" => args.headerpad_max_install_names = true,
             b"-stack_size" => {
                 let size = hex_number(cur.next_text(name));
                 st.stack_size = Some(
@@ -2771,21 +3000,43 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     addr.unwrap_or_else(|| fatal!("-stack_addr must specify an integer address")),
                 );
             }
-            b"-sectcreate" => read_sectcreate(&mut cur, &mut args, &mut st.warnings, name),
-            b"-add_empty_section" => read_add_empty_section(&mut cur, &mut args, name),
-            b"-x" => args.strip_locals = true,
-            b"-Z" => args.no_standard_dirs = true,
-            b"-r" => st.kind = OutputKind::Object,
-            b"-flat_namespace" => args.flat_namespace = true,
-            b"-twolevel_namespace" => args.flat_namespace = false,
-            // ld64 made an executable bind its dylibs' imports flat too
-            // (MH_FORCE_FLAT); ld-prime takes it for -flat_namespace.
-            b"-force_flat_namespace" => {
-                st.warnings.warn(
-                    "-force_flat_namespace is no longer supported, using -flat_namespace instead",
-                );
-                args.flat_namespace = true;
+            b"-encryptable" => args.encryptable = true,
+            b"-no_encryption" => args.encryptable = false,
+
+            // How dyld or another loader fixes the image up and starts it, and
+            // what the image tells dyld about itself.
+            b"-bind_at_load" => args.bind_at_load = true,
+            // The last one wins; ld-prime warns as it reads one that
+            // turns the other around.
+            b"-pie" | b"-no_pie" => {
+                let on = name == "-pie";
+                if st.pie == Some(!on) {
+                    let other = if on { "-no_pie" } else { "-pie" };
+                    st.warnings.warn(format!("{name} overriding previous {other}"));
+                }
+                st.pie = Some(on);
             }
+            b"-fixup_chains" | b"-no_fixup_chains" => {
+                st.fixup_chains = Some(name == "-fixup_chains");
+                st.chain_starts = None;
+            }
+            // The last of these and -fixup_chains or -no_fixup_chains
+            // counts, but ld-prime refuses to switch from one kind of
+            // chain starts to the other.
+            b"-fixup_chains_section" | b"-fixup_chains_section_vm" => {
+                let kind = if name == "-fixup_chains_section" { 1 } else { 2 };
+                if st.chain_starts.is_some_and(|k| k != kind) {
+                    fatal!(
+                        "{name} can't be used together with other -fixup_chains_section* options"
+                    );
+                }
+                st.fixup_chains = Some(true);
+                st.chain_starts = Some(kind);
+            }
+            // A 32-bit image's rebases in a section, which no image of
+            // the 64-bit targets mold has can have.
+            b"-rebase_section" => st.rebase_section = true,
+            b"-threaded_starts_section" => st.threaded_starts = true,
             // How relocations in read-only segments are treated:
             // warning and suppress allow them (ld-prime prints no
             // warning either way), error refuses them. See
@@ -2794,20 +3045,143 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 let treatment = parse_treatment(name, cur.next_arg(name), true);
                 st.read_only_relocs = Some(treatment != Treatment::Error);
             }
-            // ld-prime knows one treatment besides the default error:
-            // dynamic_lookup, which suppress selects too. It deprecates
-            // every other one (error, warning or anything else) and
-            // ignores it, so none undoes an earlier dynamic_lookup.
-            b"-undefined" => {
-                let treatment = cur.next_text(name);
-                if matches!(treatment, "dynamic_lookup" | "suppress") {
-                    args.undefined_dynamic_lookup = true;
-                }
-                if treatment != "dynamic_lookup" {
-                    st.warnings.warn(format!("-undefined {treatment} is deprecated"));
+            b"-unaligned_pointers" => {
+                st.unaligned_pointers = Some(parse_treatment(name, cur.next_arg(name), true));
+            }
+            b"-init_offsets" => args.init_offsets = true,
+            b"-no_inits" => args.no_inits = true,
+            b"-no_warn_inits" => args.no_warn_inits = true,
+            b"-kexts_use_stubs" => args.kexts_use_stubs = true,
+            b"-not_for_dyld_shared_cache" => args.not_for_dyld_shared_cache = true,
+            b"-no_shared_cache_eligible" => {
+                args.not_for_dyld_shared_cache = true;
+                args.shared_cache_marker = true;
+            }
+            b"-debug_variant" => args.debug_variant = true,
+            b"-add_split_seg_info" => args.add_split_seg_info = true,
+            b"-application_extension" => args.application_extension = true,
+            b"-no_application_extension" => args.application_extension = false,
+            b"-no_dynamic_access" => args.no_dynamic_access = true,
+            b"-simulator_support" => args.simulator_support = true,
+
+            // The load commands and LINKEDIT data the image carries besides.
+            b"-version_load_command" => args.version_load_command = true,
+            b"-function_starts" => st.function_starts = Some(true),
+            b"-no_function_starts" => st.function_starts = Some(false),
+            b"-data_in_code_info" => st.data_in_code_info = Some(true),
+            b"-no_data_in_code_info" => st.data_in_code_info = Some(false),
+            b"-add_source_version" => st.source_version = Some(true),
+            b"-no_source_version" => st.source_version = Some(false),
+            b"-source_version" => {
+                let arg = cur.next_text(name);
+                st.source_version_number = Some(parse_source_version(arg).unwrap_or_else(|| {
+                    fatal!("-source_version: malformed 64-bit a.b.c.d.e version number: {arg}")
+                }));
+                st.source_version = Some(true);
+            }
+            // The last of the two counts.
+            b"-no_uuid" => args.uuid = false,
+            b"-random_uuid" => {
+                args.uuid = true;
+                args.random_uuid = true;
+            }
+            b"-adhoc_codesign" => st.adhoc_codesign = Some(true),
+            b"-no_adhoc_codesign" => st.adhoc_codesign = Some(false),
+            b"-no_compact_unwind" => args.no_compact_unwind = true,
+            b"-no_dwarf_unwind" => args.no_dwarf_unwind = true,
+            b"-no_warn_eh_frame_too_large" => args.warn_eh_frame_too_large = false,
+            // ld-prime takes this one without its argument.
+            b"-oso_prefix" => {
+                if let Some(arg) = cur.advance() {
+                    args.oso_prefix = Some(arg.as_bytes().to_vec());
                 }
             }
-            b"-U" => args.allowed_undefined.push(cur.next_text(name).to_string()),
+            // This linker's output is always deterministic, but ld-prime
+            // writes no modification times in the stabs then either.
+            b"-reproducible" => args.zero_ar_date = true,
+            b"-add_ast_path" => args.add_ast_paths.push(cur.next_path(name)),
+            // ld64 took the D script of the image's probes from this;
+            // ld-prime neither opens the file nor needs one, in a -r
+            // link either.
+            b"-dtrace" => {
+                cur.next_arg(name);
+            }
+            // The DOF that describes the image's USDT probe sites
+            // (__TEXT,__dof_<provider>), which ld-prime makes unless
+            // told not to - and then fails to link the sites, branches
+            // to address 0.
+            b"-no_dtrace_dof" => args.dtrace_dof = false,
+
+            // Objective-C.
+            b"-objc_relative_method_lists" => st.objc_relative_method_lists = Some(true),
+            b"-no_objc_relative_method_lists" => st.objc_relative_method_lists = Some(false),
+            b"-no_objc_category_merging" => args.objc_category_merging = false,
+            b"-objc_stubs_fast" => st.objc_stubs_small = Some(false),
+            b"-objc_stubs_small" => st.objc_stubs_small = Some(true),
+            b"-const_selrefs" => st.const_selrefs = Some(true),
+            b"-no_const_selrefs" => st.const_selrefs = Some(false),
+            // ld64 could still link the fragile (version 1) Objective-C
+            // ABI of 32-bit macOS; ld-prime knows the modern one alone.
+            b"-objc_abi_version" => {
+                let version = cur.next_arg(name).as_bytes();
+                if version != b"2" {
+                    fatal!("-objc_abi_version '{}' not supported (expected 2)", display(version));
+                }
+            }
+            // Whether objects may disagree on signing class_ro_t
+            // pointers, which only arm64e signs: nothing to check here.
+            b"-objc_class_ro_signing_mismatch" => {
+                parse_treatment(name, cur.next_arg(name), false);
+            }
+
+            // Link-time optimization.
+            b"-lto_library" => st.lto_libraries.push(cur.next_path(name)),
+            b"-mcpu" => args.lto_cpu = Some(cur.next_text(name).to_string()),
+            b"-mllvm" => args.mllvm.push(cur.next_bytes(name)),
+            b"-save-temps" => args.save_temps = true,
+            b"-flto-codegen-only" => args.lto_codegen_only = true,
+            b"-object_path_lto" => args.object_path_lto = Some(cur.next_path(name)),
+            // The ThinLTO cache. ld-prime reads the numbers as strtoul
+            // does and hands libLTO their low 32 bits, as an int or an
+            // unsigned (so -1 never prunes), checking the percentage
+            // only then.
+            b"-cache_path_lto" => args.lto_cache_dir = Some(cur.next_path(name)),
+            b"-prune_interval_lto" => {
+                args.lto_cache_prune_interval = Some(lto_cache_number(name, cur.next_arg(name)));
+            }
+            b"-prune_after_lto" => {
+                args.lto_cache_expiration = lto_cache_number(name, cur.next_arg(name)) as u32;
+            }
+            b"-max_relative_cache_size_lto" => {
+                let value = lto_cache_number(name, cur.next_arg(name)) as u32;
+                if value > 100 {
+                    fatal!("Expect a value between 0 and 100 for -max_relative_cache_size_lto");
+                }
+                args.lto_cache_max_size = value;
+            }
+            // The variant architectures' reuse of one another's LTO
+            // results, which have no cache here.
+            b"-cache_dir" => {
+                cur.next_arg(name);
+            }
+            b"-arch_variant_lto_cache_mismatch" => {
+                let treatment = cur.next_arg(name);
+                if !matches!(treatment.as_bytes(), b"warning" | b"error" | b"suppress") {
+                    fatal!(
+                        "-arch_variant_lto_cache_mismatch invalid option (warning | error | suppress)"
+                    );
+                }
+            }
+            b"-use_lto_filenames_in_order_file_matching" => {
+                args.lto_filenames_in_order_file = true;
+            }
+            b"-no_use_lto_filenames_in_order_file_matching" => {
+                args.lto_filenames_in_order_file = false;
+            }
+            b"-lto_softload_runtime_symbols" => st.lto_softload = Some(true),
+            b"-no_lto_softload_runtime_symbols" => st.lto_softload = Some(false),
+
+            // Diagnostics, reports and traces.
             b"-w" => {
                 args.suppress_warnings = true;
                 st.warnings.quiet = true;
@@ -2817,68 +3191,6 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-help" => {
                 println!("Usage: ld64.mold [options] file...");
                 crate::error::exit_after_cleanup(0);
-            }
-
-            b"-dead_strip" => args.dead_strip = true,
-            b"-dead_strip_dylibs" => args.dead_strip_dylibs = true,
-            b"-warn_unused_dylibs" => st.warn_unused_dylibs = Some(true),
-            b"-no_warn_unused_dylibs" => st.warn_unused_dylibs = Some(false),
-            b"-not_for_dyld_shared_cache" => args.not_for_dyld_shared_cache = true,
-            b"-debug_variant" => args.debug_variant = true,
-            b"-no_inits" => args.no_inits = true,
-            b"-no_warn_inits" => args.no_warn_inits = true,
-            b"-no_compact_unwind" => args.no_compact_unwind = true,
-            b"-bind_at_load" => args.bind_at_load = true,
-            b"-application_extension" => args.application_extension = true,
-            b"-no_application_extension" => args.application_extension = false,
-            b"-simulator_support" => args.simulator_support = true,
-            b"-add_ast_path" => args.add_ast_paths.push(cur.next_path(name)),
-            b"-S" => args.strip_debug = true,
-            b"-all_load" => args.all_load = true,
-            b"-u" => args.forced_undefined.push(cur.next_text(name).to_string()),
-            b"-exported_symbol" => {
-                check_export_choice(&mut st.export_choice, ExportChoice::Exported, name);
-                let pat = cur.next_text(name);
-                add_initial_undefines(&mut args.forced_undefined, [pat]);
-                add_patterns(st.lists.exported_symbols.get_or_insert_default(), [pat], 0);
-            }
-            b"-no_exported_symbols" => {
-                check_export_choice(&mut st.export_choice, ExportChoice::None, name);
-                args.no_exported_symbols = true;
-            }
-            b"-exported_symbols_list" => {
-                check_export_choice(&mut st.export_choice, ExportChoice::Exported, name);
-                let names = cur.next_symbol_list(name);
-                add_initial_undefines(&mut args.forced_undefined, &names);
-                add_patterns(st.lists.exported_symbols.get_or_insert_default(), &names, 0);
-            }
-            b"-unexported_symbol" => {
-                check_export_choice(&mut st.export_choice, ExportChoice::Unexported, name);
-                add_patterns(&mut st.lists.unexported_symbols, [cur.next_text(name)], 0)
-            }
-            b"-unexported_symbols_list" => {
-                check_export_choice(&mut st.export_choice, ExportChoice::Unexported, name);
-                add_patterns(&mut st.lists.unexported_symbols, cur.next_symbol_list(name), 0);
-            }
-            b"-reexported_symbols_list" => {
-                st.reexports_listed = true;
-                let names = cur.next_symbol_list(name);
-                // Exact names force a reference even if no object
-                // mentions them, so one nothing defines is reported as
-                // wanted by ld-prime's "<initial-undefines>", as a -u
-                // name is. Patterns only match existing symbols.
-                add_initial_undefines(&mut args.forced_undefined, &names);
-                add_patterns(&mut st.lists.reexported_symbols, &names, 0);
-            }
-            // The -dylib_ spellings are the older names ld64 still
-            // accepts; Xcode passes -dylib_compatibility_version.
-            b"-current_version" | b"-dylib_current_version" => {
-                let version = text(name, cur.arg_or_empty(name));
-                args.current_version = parse_dylib_version(name, version, &mut st.warnings);
-            }
-            b"-compatibility_version" | b"-dylib_compatibility_version" => {
-                let version = text(name, cur.arg_or_empty(name));
-                args.compatibility_version = parse_dylib_version(name, version, &mut st.warnings);
             }
             b"-v" => args.verbose = true,
             // Xcode's build system runs `ld -version_details` before the
@@ -2891,52 +3203,26 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // so that Xcode drives us exactly as it drives ld-prime.
             // With something to link, ld-prime goes on to link it.
             b"-version_details" => args.version_details = true,
-            b"-noall_load" => args.all_load = false,
-            b"-ObjC" => args.load_objc = true,
-
-            // The default library search behavior already matches
-            // -search_paths_first: each path is tried for both a dylib
-            // and an archive before moving to the next.
-            b"-search_paths_first" => args.search_dylibs_first = false,
-            b"-search_dylibs_first" => args.search_dylibs_first = true,
-            b"-search_in_sparse_frameworks" => args.search_in_sparse_frameworks = true,
-            b"-umbrella" => args.umbrella = Some(cur.next_bytes(name)),
-            b"-dylib_file" => {
-                add_dylib_file(&mut args, &mut st.warnings, cur.next_arg(name).as_bytes());
-            }
-            // ld-prime takes this one without its argument.
-            b"-oso_prefix" => {
-                if let Some(arg) = cur.advance() {
-                    args.oso_prefix = Some(arg.as_bytes().to_vec());
-                }
-            }
-            // ld64 set MH_DEAD_STRIPPABLE_DYLIB for this, asking the
-            // linker of a client to drop the dylib's load command if it
-            // bound nothing from it. ld-prime neither sets nor honors
-            // the flag.
-            b"-mark_dead_strippable_dylib" => st.obsolete.push(format!("{name} is obsolete")),
-            b"-export_dynamic" => args.export_dynamic = true,
-            b"-order_file" => args.order_files.push(cur.next_path(name)),
-            b"-order_file_statistics" => args.order_file_statistics = true,
+            b"-map" => args.map = Some(cur.next_path(name)),
+            b"-dependency_info" => args.dependency_info = Some(cur.next_path(name)),
             b"--print-dependencies" => args.print_dependencies = true,
+            b"-print_statistics" => args.perf = true,
             b"-why_load" | b"-whyload" => args.why_load = true,
             b"-why_live" => add_patterns(&mut st.lists.why_live, [cur.next_text(name)], 0),
-            b"-allowable_client" => args.allowable_clients.push(cur.next_bytes(name)),
-            b"-client_name" => args.client_name = Some(cur.next_bytes(name)),
             b"-t" => args.trace = true,
             b"-trace_symbol_layout" => args.trace_symbol_layout = true,
             b"-trace_symbol_layout_file" => {
                 args.trace_symbol_layout_file = Some(cur.next_path(name))
             }
             b"-trace_implicit_libraries" => args.trace_implicit_libraries = true,
+            b"-trace_implicit_library" => {
+                args.trace_implicit_library.push(cur.next_bytes(name));
+            }
             b"-trace_file" => args.trace_file = Some(cur.next_path(name)),
             b"-trace_file_shared_cache" => {
                 args.trace_file_shared_cache = Some(cur.next_path(name));
             }
             b"-trace_symbols_file" => args.trace_symbols_file = Some(cur.next_path(name)),
-            b"-trace_implicit_library" => {
-                args.trace_implicit_library.push(cur.next_bytes(name));
-            }
             // ld-prime's reports on its own workings that mold does not
             // give: the branch islands it inserts, a snapshot of the link to
             // replay it from (in /tmp unless -snapshot_dir says; a
@@ -2949,44 +3235,23 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-snapshot_dir" | b"-dot" | b"-reference_output" => {
                 cur.next_arg(name);
             }
-            b"-no_warn_eh_frame_too_large" => args.warn_eh_frame_too_large = false,
-            // ld-prime ignores this with a warning for another target
-            // than arm64, and changes nothing seen in an arm64 image.
-            b"-x86_64_layout_emulation" => st.x86_64_layout_emulation = true,
-            b"-arch_errors_fatal" => args.arch_errors_fatal = true,
-            b"-allow_sub_type_mismatches" => args.allow_sub_type_mismatches = true,
-            b"-no_allow_dylib_sub_type_mismatches" => {
-                st.dylib_subtype_list = Some(cur.next_arg(name).as_bytes());
+
+            // Obsolete options, which ld-prime ignores, most with a warning.
+
+            // Given with -dead_strip, this once kept initializers and
+            // terminators nothing referenced. -dead_strip always keeps
+            // them now, and ld64 takes this for -dead_strip alone.
+            b"-no_dead_strip_inits_and_terms" => {
+                args.dead_strip = true;
+                st.warnings.warn(
+                    "option '-no_dead_strip_inits_and_terms' is obsolete, use '-dead_strip' instead",
+                );
             }
-            // An architecture's variant (of arm64e's pointer
-            // authentication ABI), which no -arch mold links for has.
-            b"-arch_variant" => {
-                let variant = cur.next_arg(name).as_bytes();
-                if arch_cpu_family(variant).is_none() {
-                    fatal!("unknown -arch name: {}", display(variant));
-                }
-                st.arch_variant = true;
-            }
-            b"-ignore_optimization_hints" => args.ignore_optimization_hints = true,
-            b"-print_statistics" => args.perf = true,
-            b"-warn_duplicate_libraries" => args.warn_duplicate_libraries = true,
-            b"-no_warn_duplicate_libraries" => args.warn_duplicate_libraries = false,
-            b"-non_global_symbols_strip_list" => {
-                add_patterns(&mut st.lists.local_strip_list, cur.next_symbol_list(name), 0);
-            }
-            b"-non_global_symbols_no_strip_list" => {
-                let names = cur.next_symbol_list(name);
-                add_patterns(st.lists.local_keep_list.get_or_insert_default(), &names, 0);
-            }
-            b"-sectalign" => read_sectalign(&mut cur, &mut args, &mut st.warnings, name),
-            b"-alias" => {
-                let existing = cur.next_text(name).to_string();
-                let new = cur.next_text(name).to_string();
-                args.aliases.push((existing, new));
-            }
-            b"-alias_list" => {
-                read_alias_list(&cur.next_path(name), &mut args.aliases, &mut st.warnings);
-            }
+            // ld64 set MH_DEAD_STRIPPABLE_DYLIB for this, asking the
+            // linker of a client to drop the dylib's load command if it
+            // bound nothing from it. ld-prime neither sets nor honors
+            // the flag.
+            b"-mark_dead_strippable_dylib" => st.obsolete.push(format!("{name} is obsolete")),
             // ld64 took what @executable_path stands for in a dylib's
             // re-exports from this. ld-prime expands none, and ignores
             // the option with a warning.
@@ -3040,271 +3305,26 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-ld_prime" => st.obsolete.push("-ld_prime is deprecated, use -ld_new instead".into()),
             b"-ld_new" => {}
-            // ld64 could still link the fragile (version 1) Objective-C
-            // ABI of 32-bit macOS; ld-prime knows the modern one alone.
-            b"-objc_abi_version" => {
-                let version = cur.next_arg(name).as_bytes();
-                if version != b"2" {
-                    fatal!("-objc_abi_version '{}' not supported (expected 2)", display(version));
-                }
-            }
-
-            // Reserve enough header padding that install_name_tool can
-            // grow install names in place.
-            b"-headerpad_max_install_names" => args.headerpad_max_install_names = true,
-
-            b"-deduplicate" => args.deduplicate = true,
-            b"-text_exec" => args.text_exec = true,
-            b"-kexts_use_stubs" => args.kexts_use_stubs = true,
-            b"-no_branch_islands" => args.no_branch_islands = true,
-            b"-no_deduplicate" => args.deduplicate = false,
-            b"-verbose_deduplicate" => args.verbose_deduplicate = true,
-            // ld-prime folds identical functions in passes, each folding
-            // the callers of those the one before folded, up to this
-            // many (none limits it); mold folds them in one go.
-            b"-max_code_deduplicate_passes" => {
-                if decimal_number(cur.next_text(name)).is_none() {
-                    fatal!("invalid argument for -max_code_deduplicate_passes");
-                }
-            }
-            b"-function_starts" => st.function_starts = Some(true),
-            b"-add_source_version" => st.source_version = Some(true),
-            b"-no_source_version" => st.source_version = Some(false),
-            b"-source_version" => {
-                let arg = cur.next_text(name);
-                st.source_version_number = Some(parse_source_version(arg).unwrap_or_else(|| {
-                    fatal!("-source_version: malformed 64-bit a.b.c.d.e version number: {arg}")
-                }));
-                st.source_version = Some(true);
-            }
             // ld64 kept the FDEs of functions with compact unwind
             // records for a target before macOS 10.9 (iOS 7), or as
             // these said. ld-prime goes by the target alone.
             b"-keep_dwarf_unwind" | b"-no_keep_dwarf_unwind" => {
                 st.obsolete.push(format!("{name} is obsolete"))
             }
-            b"-init_offsets" => args.init_offsets = true,
-            b"-init" => args.init = Some(cur.next_text(name).to_string()),
-            b"-data_const" => st.data_const = Some(true),
-            b"-no_data_const" => st.data_const = Some(false),
-            b"-no_implicit_dylibs" => args.no_implicit_dylibs = true,
-            b"-objc_relative_method_lists" => st.objc_relative_method_lists = Some(true),
-            b"-no_objc_relative_method_lists" => st.objc_relative_method_lists = Some(false),
-            b"-no_objc_category_merging" => args.objc_category_merging = false,
-            b"-no_function_starts" => st.function_starts = Some(false),
-            b"-data_in_code_info" => st.data_in_code_info = Some(true),
-            b"-add_split_seg_info" => args.add_split_seg_info = true,
-            b"-no_data_in_code_info" => st.data_in_code_info = Some(false),
-
-            // The last of the two counts.
-            b"-no_uuid" => args.uuid = false,
-            b"-random_uuid" => {
-                args.uuid = true;
-                args.random_uuid = true;
-            }
-            b"-no_dynamic_access" => args.no_dynamic_access = true,
-            b"-no_shared_cache_eligible" => {
-                args.not_for_dyld_shared_cache = true;
-                args.shared_cache_marker = true;
-            }
-            b"-warn_weak_exports" => args.warn_weak_exports = true,
-            b"-no_weak_exports" => args.no_weak_exports = true,
-            b"-no_weak_imports" => args.no_weak_imports = true,
-            b"-weak_reference_mismatches" => {
-                args.weak_reference_mismatches = match cur.next_arg(name).as_bytes() {
-                    b"non-weak" => WeakRefMismatches::NonWeak,
-                    b"weak" => WeakRefMismatches::Weak,
-                    b"error" => WeakRefMismatches::Error,
-                    _ => fatal!(
-                        "invalid option to -weak_reference_mismatches [ error | weak | non-weak ]"
-                    ),
-                }
-            }
-            // ld-prime's usage leaves use_dylibs out, and takes a
-            // missing treatment for an invalid one.
-            b"-commons" => {
-                args.commons = match cur.advance().map(|arg| arg.as_bytes()) {
-                    Some(b"ignore_dylibs") => CommonsMode::IgnoreDylibs,
-                    Some(b"use_dylibs") => CommonsMode::UseDylibs,
-                    Some(b"error") => CommonsMode::Error,
-                    _ => fatal!("invalid option to -commons [ ignore_dylibs | error ]"),
-                }
-            }
-            b"-warn_commons" => args.warn_commons = true,
-            b"-max_default_common_align" => {
-                let align = parse_common_align(cur.next_text(name), &mut st.warnings);
-                st.max_default_common_align = Some(align);
-            }
-            b"-force_symbols_weak_list" | b"-force_symbols_not_weak_list" => {
-                let names = cur.next_symbol_list(name);
-                let glob = match name {
-                    "-force_symbols_weak_list" => &mut st.lists.force_weak,
-                    _ => &mut st.lists.force_not_weak,
-                };
-                add_patterns(glob, &names, 0);
-                st.force_weakness_listed = true;
-            }
-            b"-keep_duplicate" => {
-                add_patterns(&mut st.lists.keep_duplicates, [cur.next_text(name)], 0);
-            }
-            b"-keep_duplicates_list" => {
-                add_patterns(&mut st.lists.keep_duplicates, cur.next_symbol_list(name), 0);
-            }
-            b"-allow_dead_duplicates" => args.allow_dead_duplicates = true,
-            b"-deployment_target_mismatches" => {
-                args.deployment_target_mismatches = parse_treatment(name, cur.next_arg(name), true);
-            }
-            b"-sub_library" => args.sub_libraries.push(cur.next_bytes(name)),
-            b"-sub_umbrella" => args.sub_umbrellas.push(cur.next_bytes(name)),
-            b"-image_suffix" => args.image_suffixes.push(cur.next_arg(name).to_owned()),
-            b"-encryptable" => args.encryptable = true,
-            b"-no_encryption" => args.encryptable = false,
-            b"-interposable" => st.lists.interposable_all = true,
-            b"-interposable_list" => {
-                let names = cur.next_symbol_list(name);
-                add_patterns(st.lists.interposable_list.get_or_insert_default(), &names, 0);
-            }
-            b"-unaligned_pointers" => {
-                st.unaligned_pointers = Some(parse_treatment(name, cur.next_arg(name), true));
-            }
-            // Whether objects may disagree on signing class_ro_t
-            // pointers, which only arm64e signs: nothing to check here.
-            b"-objc_class_ro_signing_mismatch" => {
-                parse_treatment(name, cur.next_arg(name), false);
-            }
-            b"-poison_symbol" => {
-                st.lists.poisoned.add(cur.next_arg(name).as_bytes(), 0);
-            }
-            b"-poison_symbols_list" => {
-                for pat in cur.next_symbol_list(name) {
-                    st.lists.poisoned.add(pat.as_bytes(), 0);
-                }
-            }
-            // For duplicate symbols ld-prime would only warn of, which
-            // it has no more: it takes the treatment and does nothing.
-            b"-duplicate_symbols" => {
-                parse_treatment(name, cur.next_arg(name), false);
-            }
-
-            b"-dyld_env" => {
-                let arg = cur.next_arg(name).as_bytes();
-                if !arg.starts_with(b"DYLD_") || !arg.contains(&b'=') {
-                    fatal!(
-                        "malformed '-dyld_env {}', arg should be of form 'DYLD_xxx=something'",
-                        display(arg)
-                    );
-                }
-                args.dyld_envs.push(arg.to_vec());
-            }
-
-            b"-macos_version_min" | b"-macosx_version_min" => {
-                read_macos_version_min(&mut cur, &mut args, &mut st, name)
-            }
-            b"-ios_version_min"
-            | b"-iphoneos_version_min"
-            | b"-maccatalyst_version_min"
-            | b"-iosmac_version_min"
-            | b"-uikitformac_version_min" => read_other_version_min(&mut cur, &mut st, name),
-
-            // This linker's output is always deterministic, but ld-prime
-            // writes no modification times in the stabs then either.
-            b"-reproducible" => args.zero_ar_date = true,
-
-            b"-lto_library" => st.lto_libraries.push(cur.next_path(name)),
-            b"-mcpu" => args.lto_cpu = Some(cur.next_text(name).to_string()),
-            b"-mllvm" => args.mllvm.push(cur.next_bytes(name)),
-            b"-save-temps" => args.save_temps = true,
-            b"-flto-codegen-only" => args.lto_codegen_only = true,
-            // The ThinLTO cache. ld-prime reads the numbers as strtoul
-            // does and hands libLTO their low 32 bits, as an int or an
-            // unsigned (so -1 never prunes), checking the percentage
-            // only then.
-            b"-cache_path_lto" => args.lto_cache_dir = Some(cur.next_path(name)),
-            b"-prune_interval_lto" => {
-                args.lto_cache_prune_interval = Some(lto_cache_number(name, cur.next_arg(name)));
-            }
-            b"-prune_after_lto" => {
-                args.lto_cache_expiration = lto_cache_number(name, cur.next_arg(name)) as u32;
-            }
-            b"-max_relative_cache_size_lto" => {
-                let value = lto_cache_number(name, cur.next_arg(name)) as u32;
-                if value > 100 {
-                    fatal!("Expect a value between 0 and 100 for -max_relative_cache_size_lto");
-                }
-                args.lto_cache_max_size = value;
-            }
-            // The variant architectures' reuse of one another's LTO
-            // results, which have no cache here.
-            b"-cache_dir" => {
-                cur.next_arg(name);
-            }
-            b"-arch_variant_lto_cache_mismatch" => {
-                let treatment = cur.next_arg(name);
-                if !matches!(treatment.as_bytes(), b"warning" | b"error" | b"suppress") {
-                    fatal!(
-                        "-arch_variant_lto_cache_mismatch invalid option (warning | error | suppress)"
-                    );
-                }
-            }
-            b"-use_lto_filenames_in_order_file_matching" => {
-                args.lto_filenames_in_order_file = true;
-            }
-            b"-no_use_lto_filenames_in_order_file_matching" => {
-                args.lto_filenames_in_order_file = false;
-            }
-            b"-lto_softload_runtime_symbols" => st.lto_softload = Some(true),
-            b"-no_lto_softload_runtime_symbols" => st.lto_softload = Some(false),
-
-            b"-dependency_info" => args.dependency_info = Some(cur.next_path(name)),
-
-            b"-object_path_lto" => args.object_path_lto = Some(cur.next_path(name)),
-
-            b"-objc_stubs_fast" => st.objc_stubs_small = Some(false),
-            b"-objc_stubs_small" => st.objc_stubs_small = Some(true),
-            b"-const_selrefs" => st.const_selrefs = Some(true),
-            b"-no_const_selrefs" => st.const_selrefs = Some(false),
             // ld64's switches for passes ld-prime doesn't run: the
             // labels a -r output gave the FDEs in __eh_frame, the
             // ordering of initializer functions within __text, and
             // x86-64's pass for zero-fill sections out of reach of
             // 32-bit displacements. ld-prime takes them silently.
             b"-no_eh_labels" | b"-no_order_inits" | b"-no_huge" => {}
-            b"-no_dwarf_unwind" => args.no_dwarf_unwind = true,
-            b"-merge_zero_fill_sections" => args.merge_zero_fill_sections = true,
-            b"-remove_swift_reflection_metadata_sections" => {
-                args.remove_swift_reflection_metadata_sections = true
-            }
-            // ld64's order file for one section, -sectorder <segment>
-            // <section> <path>, ld-prime takes for an -order_file
-            // whatever the section names, empty ones too.
-            b"-sectorder" => {
-                let file = match (cur.advance(), cur.advance(), cur.advance()) {
-                    (Some(_), Some(_), Some(file)) if !file.is_empty() => file,
-                    _ => fatal!("-sectorder missing <segment> <section> <file-path>"),
-                };
-                args.order_files.push(PathBuf::from(file));
-            }
-            b"-ignore_auto_link" => args.ignore_auto_link = true,
-            b"-force_load_swift_libs" => args.force_load_swift_libs = true,
-            b"-add_linker_option" => {
-                let opt = cur.next_arg(name).as_bytes();
-                add_linker_option(&mut args.linker_options, opt, &mut st.warnings);
-            }
-            // ld64 took the D script of the image's probes from this;
-            // ld-prime neither opens the file nor needs one, in a -r
-            // link either.
-            b"-dtrace" => {
-                cur.next_arg(name);
-            }
-            // The DOF that describes the image's USDT probe sites
-            // (__TEXT,__dof_<provider>), which ld-prime makes unless
-            // told not to - and then fails to link the sites, branches
-            // to address 0.
-            b"-no_dtrace_dof" => args.dtrace_dof = false,
+
+            // The arguments no other arm takes: empty ones, options with their
+            // argument joined to their name, the options ld-prime doesn't know,
+            // and the files to link.
+
             // ld-prime skips an empty argument, which names no file: a
             // build system's empty variable, or '' in a response file.
             b"" => {}
-
             raw if raw.starts_with(b"-") => {
                 read_joined_option(&mut cur, &mut args, &mut st, raw, name)
             }
