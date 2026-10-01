@@ -1345,9 +1345,9 @@ fn merge_objc_image_info<E: Target>(ctx: &mut Context<E>) {
     ctx.chunks.push(ChunkId::ObjcImageInfo);
 }
 
-/// Lays out __eh_frame, the surviving DWARF unwind records: live CIEs
-/// first, then FDEs. Their offsets are needed before layout, because
-/// the __unwind_info encoding embeds each FDE's offset.
+/// Lays out __eh_frame, the surviving DWARF unwind records, in input
+/// order. Their offsets are needed before layout, because the
+/// __unwind_info encoding embeds each FDE's offset.
 fn lay_out_eh_frame<E: Target>(ctx: &mut Context<E>) {
     // FDEs of folded copies duplicate their leader's; drop them, and
     // remap the unwind records' FDE indices around the removals as
@@ -1383,14 +1383,26 @@ fn lay_out_eh_frame<E: Target>(ctx: &mut Context<E>) {
     for fde in &ctx.fdes {
         ctx.cies[fde.cie as usize].is_alive = true;
     }
+
+    // ld-prime lays the records out as the inputs have them: object by
+    // object, the CIEs and FDEs of each in the order of its __eh_frame
+    // (which both lists keep).
+    debug_assert!(ctx.cies.is_sorted_by_key(|cie| (cie.obj, cie.input_addr)));
+    debug_assert!(ctx.fdes.is_sorted_by_key(|fde| (fde.obj, fde.input_addr)));
     let mut off = 0;
-    for cie in &mut ctx.cies {
-        if cie.is_alive {
-            cie.output_offset = off;
-            off += cie.data.len() as u32;
+    let mut fdes = ctx.fdes.iter_mut().peekable();
+    for cie in ctx.cies.iter_mut().filter(|cie| cie.is_alive) {
+        let before_cie = |fde: &&mut crate::input_files::Fde| {
+            (fde.obj, fde.input_addr) < (cie.obj, cie.input_addr)
+        };
+        while let Some(fde) = fdes.next_if(before_cie) {
+            fde.output_offset = off;
+            off += fde.data.len() as u32;
         }
+        cie.output_offset = off;
+        off += cie.data.len() as u32;
     }
-    for fde in &mut ctx.fdes {
+    for fde in fdes {
         fde.output_offset = off;
         off += fde.data.len() as u32;
     }
