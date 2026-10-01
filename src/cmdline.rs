@@ -214,6 +214,8 @@ pub struct Args {
     /// Fold identical functions (on by default; -no_deduplicate turns
     /// it off and a later -deduplicate back on).
     pub deduplicate: bool,
+    /// -verbose_deduplicate: report what folding saved.
+    pub verbose_deduplicate: bool,
     /// Emit LC_FUNCTION_STARTS (on by default but in a -static image).
     pub function_starts: bool,
     /// Emit LC_DATA_IN_CODE (on by default but in a -static image).
@@ -515,6 +517,7 @@ impl Default for Args {
             version_details: false,
             strip_locals: false,
             deduplicate: true,
+            verbose_deduplicate: false,
             function_starts: true,
             data_in_code_info: true,
             version_load_command: false,
@@ -1935,6 +1938,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-text_exec" => args.text_exec = true,
             b"-no_branch_islands" => args.no_branch_islands = true,
             b"-no_deduplicate" => args.deduplicate = false,
+            b"-verbose_deduplicate" => args.verbose_deduplicate = true,
             b"-function_starts" => function_starts = Some(true),
             b"-add_source_version" => source_version = Some(true),
             b"-no_source_version" => source_version = Some(false),

@@ -28,7 +28,7 @@ use rayon::prelude::*;
 use crate::chunks::unwind_info::{function_lsda, function_personality};
 use crate::context::Context;
 use crate::input_files::FileId;
-use crate::input_sections::{Reloc, RelocTarget};
+use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
 use crate::target::Target;
 
@@ -302,17 +302,43 @@ fn auto_hidden_sections<E: Target>(ctx: &Context<E>) -> Vec<bool> {
     auto_hidden.into_iter().map(AtomicBool::into_inner).collect()
 }
 
-/// Candidates: the live, non-empty subsections of __TEXT,__text (ld64
-/// folds no other section) whose addresses no one can compare.
-fn is_candidate<E: Target>(ctx: &Context<E>, auto_hidden: &[bool], id: usize) -> bool {
-    let isec = &ctx.isecs[id];
+/// Whether a subsection is a function of __TEXT,__text (ld64 folds no
+/// other section) in the output.
+fn is_text_function<E: Target>(ctx: &Context<E>, isec: &InputSection) -> bool {
     let hdr = ctx.hdr_of(isec);
     isec.is_alive()
         && isec.replacement == crate::input_sections::NO_REPLACEMENT
-        && isec.size != 0
         && hdr.segname_is("__TEXT")
         && hdr.sectname_is("__text")
-        && (auto_hidden[id] || !isec.is_address_taken())
+}
+
+/// Candidates: the non-empty functions whose addresses no one can
+/// compare.
+fn is_candidate<E: Target>(ctx: &Context<E>, auto_hidden: &[bool], id: usize) -> bool {
+    let isec = &ctx.isecs[id];
+    is_text_function(ctx, isec) && isec.size != 0 && (auto_hidden[id] || !isec.is_address_taken())
+}
+
+/// -verbose_deduplicate: ld-prime's summary of the functions folded
+/// away, out of every function of __TEXT,__text, given when it folds
+/// any. `total` is the functions' number and size before folding.
+fn report_folds<E: Target>(
+    ctx: &Context<E>,
+    candidates: &[usize],
+    leaders: &[u32],
+    total: (usize, u64),
+) {
+    let folded = || (0..leaders.len()).filter(|&i| leaders[i] as usize != i);
+    let count = folded().count();
+    if count == 0 {
+        return;
+    }
+    let size: u64 = folded().map(|i| ctx.isecs[candidates[i]].size as u64).sum();
+    let percent = size as f64 * 100.0 / total.1 as f64;
+    crate::error::notice(format_args!(
+        "code deduplicated functions {count} (size: {size}) out of total {} (size: {}) ({percent:.2}% size reduction)",
+        total.0, total.1
+    ));
 }
 
 /// What relocation `rel` of object `obj` points at, and its addend. A
@@ -548,6 +574,10 @@ pub fn icf_sections<E: Target>(ctx: &mut Context<E>) {
     for (i, &id) in candidates.iter().enumerate() {
         cand_index[id] = i;
     }
+    let functions = ctx.args.verbose_deduplicate.then(|| {
+        let functions = ctx.isecs.iter().filter(|isec| is_text_function(ctx, isec));
+        functions.fold((0, 0), |(n, size), isec| (n + 1, size + isec.size as u64))
+    });
     t.stop();
 
     let mut t = ctx.timer("icf-rounds");
@@ -587,6 +617,9 @@ pub fn icf_sections<E: Target>(ctx: &mut Context<E>) {
 
     #[cfg(debug_assertions)]
     verify_leaders(ctx, &cand_index, &candidates, &leaders);
+    if let Some(total) = functions {
+        report_folds(ctx, &candidates, &leaders, total);
+    }
 
     // Fold members onto leaders and give each leader the strongest
     // alignment among its members (mold's update_alignment): the leader
