@@ -40,3 +40,18 @@ not link exe7 13.0 27.0 -source_version 1.1024 2> $t/log7
 not link exe7 13.0 27.0 -source_version 1.2. 2>> $t/log7
 not $mold -arch $ARCH -o $t/exe7 $t/a.o -source_version 1.x 2>> $t/log7
 grep -q -- '-source_version: malformed 64-bit a.b.c.d.e version number: 1.x$' $t/log7
+
+# The build system's version, $RC_ProjectSourceVersion, stands in for
+# -source_version, read unless -no_source_version says there is none;
+# a malformed one is 0, with a warning.
+RC_ProjectSourceVersion=7.8.9 link exe8 13.0 27.0
+otool -l $t/exe8 | grep -A2 'cmd LC_SOURCE_VERSION' | grep 'version 7.8.9$'
+RC_ProjectSourceVersion=7.8.9 link exe9 13.0 27.0 -source_version 1
+otool -l $t/exe9 | grep -A2 'cmd LC_SOURCE_VERSION' | grep 'version 1.0$'
+RC_ProjectSourceVersion=abc $mold -arch $ARCH -syslibroot $sdk -o $t/exe10 $t/a.o \
+  -lSystem -platform_version macos 13.0 27.0 2> $t/log10
+grep -q 'warning: \$RC_ProjectSourceVersion: malformed 64-bit a.b.c.d.e version number: abc' $t/log10
+otool -l $t/exe10 | grep -A2 'cmd LC_SOURCE_VERSION' | grep 'version 0.0$'
+RC_ProjectSourceVersion=abc $mold -arch $ARCH -syslibroot $sdk -o $t/exe11 $t/a.o \
+  -lSystem -platform_version macos 13.0 27.0 -no_source_version 2> $t/log11
+not grep -q RC_ProjectSourceVersion $t/log11

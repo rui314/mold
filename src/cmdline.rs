@@ -833,10 +833,8 @@ fn parse_dylib_version(opt: &str, arg: &str, warnings: &mut OptionWarnings) -> u
 /// numbers of decimal digits apart by dots, an empty one 0 and each
 /// taken modulo 2^32, and ignores what follows the fifth; a dot ending
 /// the string before it, another character or a number too large for
-/// its bits make the string malformed.
-fn parse_source_version(arg: &str) -> u64 {
-    let malformed =
-        || -> ! { fatal!("-source_version: malformed 64-bit a.b.c.d.e version number: {arg}") };
+/// its bits make the string malformed (None).
+fn parse_source_version(arg: &str) -> Option<u64> {
     let mut nums = [0u32; 5];
     let mut s = arg.as_bytes();
     for (i, num) in nums.iter_mut().enumerate() {
@@ -850,14 +848,28 @@ fn parse_source_version(arg: &str) -> u64 {
         }
         match s {
             [b'.', rest @ ..] if !rest.is_empty() => s = rest,
-            _ => malformed(),
+            _ => return None,
         }
     }
     let [a, b, c, d, e] = nums.map(u64::from);
     if a > 0xff_ffff || [b, c, d, e].iter().any(|&n| n > 0x3ff) {
-        malformed();
+        return None;
     }
-    (a << 40) | (b << 30) | (c << 20) | (d << 10) | e
+    Some((a << 40) | (b << 30) | (c << 20) | (d << 10) | e)
+}
+
+/// The source version the build system gives in
+/// $RC_ProjectSourceVersion, which ld-prime takes when -source_version
+/// gives none, and takes for 0 with a warning when malformed.
+fn env_source_version() -> u64 {
+    let Some(env) = std::env::var_os("RC_ProjectSourceVersion") else {
+        return 0;
+    };
+    let env = env.to_string_lossy();
+    parse_source_version(&env).unwrap_or_else(|| {
+        crate::warn!("$RC_ProjectSourceVersion: malformed 64-bit a.b.c.d.e version number: {env}");
+        0
+    })
 }
 
 /// ld64 takes the platform by name, in any case, or by its PLATFORM_*
@@ -1553,7 +1565,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut function_starts: Option<bool> = None;
     let mut data_in_code_info: Option<bool> = None;
     let mut source_version: Option<bool> = None;
-    let mut source_version_number = 0;
+    let mut source_version_number: Option<u64> = None;
     let mut adhoc_codesign: Option<bool> = None;
     let mut fixup_chains: Option<bool> = None;
     let mut objc_relative_method_lists: Option<bool> = None;
@@ -2244,7 +2256,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-add_source_version" => source_version = Some(true),
             b"-no_source_version" => source_version = Some(false),
             b"-source_version" => {
-                source_version_number = parse_source_version(text(name, next_arg(&mut i, name)));
+                let arg = text(name, next_arg(&mut i, name));
+                source_version_number = Some(parse_source_version(arg).unwrap_or_else(|| {
+                    fatal!("-source_version: malformed 64-bit a.b.c.d.e version number: {arg}")
+                }));
                 source_version = Some(true);
             }
             // ld64 kept the FDEs of functions with compact unwind
@@ -2510,7 +2525,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         .unwrap_or(
             args.platform != PLATFORM_MACOS || args.platform_minos >= encode_version(10, 8, 0),
         )
-        .then_some(source_version_number);
+        .then_some(source_version_number.unwrap_or(0));
 
     // ld-prime signs arm64 macOS images by default and leaves x86_64
     // ones unsigned (Intel Macs and Rosetta run unsigned code), and a
@@ -2577,6 +2592,15 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     crate::error::set_fatal_warnings(args.fatal_warnings);
     warnings.print();
     crate::error::set_suppress_warnings(args.suppress_warnings);
+    // The build system's source version stands in for -source_version
+    // unless -no_source_version says there is none (ld-prime reads it
+    // even where there is none anyway).
+    if source_version != Some(false) && source_version_number.is_none() {
+        let version = env_source_version();
+        if let Some(v) = &mut args.source_version {
+            *v = version;
+        }
+    }
     if let Some((old, new)) = incompatible_platforms {
         fatal!("incompatible platforms: {} - {}", platform_name(old), platform_name(new));
     }
