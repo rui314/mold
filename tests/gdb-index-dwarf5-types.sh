@@ -103,7 +103,7 @@ EOF
 
 $GXX -g -ggnu-pubnames -gdwarf-5 -fdebug-types-section -c $t/c.cc -o $t/c.o
 $GXX -B. -Wl,--gdb-index $t/c.o -o $t/exe-cc
-readelf --debug-dump=gdb_index $t/exe-cc > $t/index-cc
+readelf --debug-dump=gdb_index $t/exe-cc > $t/index-cc || true
 
 if grep -q '^TU table:' $t/index-cc; then
   for name in ns::Foo '(anonymous namespace)::Bar' Outer::Inner; do

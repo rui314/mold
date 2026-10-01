@@ -17,7 +17,7 @@
   done
 } | $CC -c -xassembler -o $t/a.o -
 
-$CC -B. -shared -o $t/b.so $t/a.o
+$CC -B. -shared -nostdlib -o $t/b.so $t/a.o
 $OBJCOPY -O binary --only-section=.eh_frame_hdr $t/b.so $t/hdr
 
 # Skip the 12-byte header and check that the (function, FDE) pairs are sorted.
