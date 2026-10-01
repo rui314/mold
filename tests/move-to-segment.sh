@@ -132,6 +132,39 @@ $CC --ld-path=$mold -o $t/exe10 $t/e.o $t/f.o -Wl,-move_to_ro_segment,__BAR,$t/o
 sed -n "s/.*cannot move symbol '\([^']*\)'.*/\1/p" $t/log10 | tr '\n' ' ' > $t/order10
 [ "$(cat $t/order10)" = '_f1 _c1 _absf _e1 _tv1 ' ]
 
+# An -alias name stands for its base's atom, which ld-prime makes in its
+# command-line-aliases-file (after the objects' atoms): a list naming
+# either name moves the atom, and the base's own list wins.
+cat <<EOF | $CC -o $t/g.o -c -xc -
+int real1 = 1, real2 = 2, real3 = 3;
+int rfunc(void) { return real1 + real2 + real3; }
+int main() { return rfunc() != 6; }
+EOF
+printf '_al1\n' > $t/al-dirty.txt
+printf '_al2\n' > $t/al-rw.txt
+printf '_real2\n' > $t/al-rw2.txt
+printf '_real3\n_alf\n' > $t/al-ro.txt
+$CC --ld-path=$mold -o $t/exe11 $t/g.o -Wl,-alias,_real1,_al1 -Wl,-alias,_real2,_al2 \
+  -Wl,-alias,_real3,_al3 -Wl,-alias,_rfunc,_alf -Wl,-dirty_data_list,$t/al-dirty.txt \
+  -Wl,-move_to_rw_segment,__FOO,$t/al-rw.txt -Wl,-move_to_rw_segment,__BAZ,$t/al-rw2.txt \
+  -Wl,-move_to_ro_segment,__BAR,$t/al-ro.txt -Wl,-trace_symbol_layout > $t/trace11 2> $t/log11
+sed -n "s/.*cannot move symbol '\([^']*\)' (\([^)]*\)).*/\1 \2/p" $t/log11 > $t/warn11
+grep -q '^_real3 .*/g.o$' $t/warn11
+grep -q '^_al3 command-line-aliases-file$' $t/warn11
+[ "$(wc -l < $t/warn11)" -eq 2 ]
+nm -m $t/exe11 > $t/nm11
+grep -q '(__DATA_DIRTY,__data) external _real1$' $t/nm11
+grep -q '(__BAZ,__data) external _real2$' $t/nm11
+grep -q '(__BAR,__text) external _rfunc$' $t/nm11
+# -trace_symbol_layout reports the aliases after the objects' symbols.
+tail -4 $t/trace11 > $t/trace11b
+cat <<EOF | diff - $t/trace11b
+symbol '_al1', -dirty_data_list mapped it to __DATA_DIRTY/__data
+symbol '_al2', -move_to_rw_segment mapped it to __BAZ/__data
+symbol '_al3', use default mapping to __DATA/__data
+symbol '_alf', -move_to_ro_segment mapped it to __BAR/__text
+EOF
+
 # The Objective-C records the linker rewrites move as the input's would:
 # the class data category merging rebuilt, and the method lists in the
 # relative form, which ld-prime makes in its own objc-file and counts

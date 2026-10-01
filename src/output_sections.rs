@@ -1198,9 +1198,14 @@ fn trace_symbol_layout<E: Target>(ctx: &Context<E>, moves: &hashbrown::HashMap<u
     for &(sym, _) in &ctx.objc_stubs.symbols {
         write(ctx.symbols[sym].name(), steps.clone(), to);
     }
-    // A method list, which a symbol move may take too.
-    for id in method_lists {
-        let isec = ctx.resolve_isec(ctx.symbols[id].input_section().unwrap() as usize);
+    // An -alias name maps as its base's atom (see symbol_moves), as
+    // does a method list, which a symbol move may take too.
+    let aliases = crate::symbol_moves::object_aliases(ctx);
+    let aliases =
+        aliases.filter_map(|(base, alias)| Some((alias, ctx.symbols[base].input_section()?)));
+    let lists = method_lists.into_iter().map(|id| (id, ctx.symbols[id].input_section().unwrap()));
+    for (id, isec) in aliases.chain(lists) {
+        let isec = ctx.resolve_isec(isec as usize);
         let (steps, to) = atom_mapping(ctx, map, isec, moves.get(&(isec as u32)).copied());
         write(ctx.symbols[id].name(), steps, to);
     }

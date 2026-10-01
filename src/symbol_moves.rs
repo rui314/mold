@@ -83,13 +83,25 @@ struct Atom<'a> {
 /// by file, an object's atoms of its sections, then of its common
 /// symbols (mold makes their subsections after every input's), then of
 /// its absolute symbols; after the objects, the files ld-prime makes
-/// itself, each with its atoms in the order made - the Objective-C
-/// one's relative method lists, then the thread-local variables'
-/// descriptors. (A file and a subsection.)
+/// itself, each with its atoms in the order made - the -alias names of
+/// the command line's (in the options' order), the Objective-C one's
+/// relative method lists, then the thread-local variables' descriptors.
+/// (A file and a subsection, or an -alias.)
 type Place = (u32, u64);
 
+const ALIASES_FILE: u32 = u32::MAX - 2;
 const OBJC_FILE: u32 = u32::MAX - 1;
 const TLV_FILE: u32 = u32::MAX;
+
+/// The file of a symbol that names an atom (see for_each_atom_symbol):
+/// an input object, or for an -alias name ld-prime's
+/// command-line-aliases-file, where the name stands for the atom of
+/// its base, which it gives as well.
+#[derive(Clone, Copy)]
+enum SymbolFile {
+    Obj(usize),
+    Aliases(SymbolId),
+}
 
 /// What an atom of an input section holds, and ld-prime's name for it.
 fn content_of(seg: &str, sect: &str, flags: u32) -> (Content, &'static str) {
@@ -161,14 +173,15 @@ pub(crate) fn find_moves<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32,
     };
     let (rw_segs, ro_segs) = (segments(&args.move_to_rw), segments(&args.move_to_ro));
     let (mut rw_warnings, mut ro_warnings) = (Vec::new(), Vec::new());
-    let warning = |obj: usize, id: SymbolId, atom: &Atom, list: &SymbolMove| {
+    let warning = |file: SymbolFile, id: SymbolId, atom: &Atom, list: &SymbolMove| {
         let place = (atom.place, ctx.symbols[id].value);
-        // ld-prime makes the thread-local variables' descriptors and
-        // the relative method lists itself.
-        let file = match atom.kind {
-            "thread-vars" => "tlv-file".to_string(),
-            "objc-method-list" => "objc-file".to_string(),
-            _ => resolved_file_name(ctx.objs[obj].mf),
+        // ld-prime makes the thread-local variables' descriptors, the
+        // relative method lists and the -alias names itself.
+        let file = match (atom.kind, file) {
+            ("thread-vars", _) => "tlv-file".to_string(),
+            ("objc-method-list", _) => "objc-file".to_string(),
+            (_, SymbolFile::Aliases(_)) => "command-line-aliases-file".to_string(),
+            (_, SymbolFile::Obj(obj)) => resolved_file_name(ctx.objs[obj].mf),
         };
         let what = if atom.content == Content::Code { "code" } else { "not code" };
         let msg = format!(
@@ -180,18 +193,25 @@ pub(crate) fn find_moves<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32,
         (place, msg)
     };
 
-    for_each_atom_symbol(ctx, |obj, id, atom| {
+    for_each_atom_symbol(ctx, |file, id, atom| {
         // A list entry file:name names the symbol of an object of that
-        // leaf name.
-        let name = ctx.symbols[id].name().as_bytes();
-        let leaf = ctx.objs[obj].mf.name.file_name().map_or(&[][..], |f| f.as_bytes());
-        let qualified = [leaf, b":", name].concat();
+        // leaf name. An -alias name stands for its base's atom, which a
+        // list names by either name.
+        let (leaf, base) = match file {
+            SymbolFile::Obj(obj) => {
+                (ctx.objs[obj].mf.name.file_name().map_or(&[][..], |f| f.as_bytes()), None)
+            }
+            SymbolFile::Aliases(base) => (&b"command-line-aliases-file"[..], Some(base)),
+        };
+        let base_name = base.map(|base| ctx.symbols[base].name().as_bytes());
+        let names = [Some(ctx.symbols[id].name().as_bytes()), base_name];
         let find = |lists: &[SymbolMove]| {
             lists.iter().enumerate().find_map(|(i, list)| {
-                let found = match list.symbols.find(name) {
-                    -1 => list.symbols.find(&qualified),
+                let found = names.iter().flatten().map(|&name| match list.symbols.find(name) {
+                    -1 => list.symbols.find(&[leaf, b":", name].concat()),
                     found => found,
-                };
+                });
+                let found = found.max().unwrap();
                 (found >= 0).then_some((i, found == 1))
             })
         };
@@ -203,7 +223,7 @@ pub(crate) fn find_moves<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32,
             if atom.content != Content::Code {
                 chosen = Some(Move { option: MoveOption::Rw, segment: rw_segs[i] });
             } else if named {
-                rw_warnings.push(warning(obj, id, &atom, &args.move_to_rw[i]));
+                rw_warnings.push(warning(file, id, &atom, &args.move_to_rw[i]));
             }
         }
         if let Some((i, named)) = find(&args.move_to_ro)
@@ -212,7 +232,7 @@ pub(crate) fn find_moves<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32,
             if atom.content != Content::Data {
                 chosen = chosen.or(Some(Move { option: MoveOption::Ro, segment: ro_segs[i] }));
             } else if named {
-                ro_warnings.push(warning(obj, id, &atom, &args.move_to_ro[i]));
+                ro_warnings.push(warning(file, id, &atom, &args.move_to_ro[i]));
             }
         }
         if chosen.is_none()
@@ -235,10 +255,11 @@ pub(crate) fn find_moves<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32,
 }
 
 /// Calls `f` with each symbol that names a live atom to ld-prime, with
-/// its object (see atom_named).
+/// its file (see atom_named): the objects' symbols, then the -alias
+/// names of a definition in one, each with its base's atom.
 fn for_each_atom_symbol<'a, E: Target>(
     ctx: &'a Context<E>,
-    mut f: impl FnMut(usize, SymbolId, Atom<'a>),
+    mut f: impl FnMut(SymbolFile, SymbolId, Atom<'a>),
 ) {
     let commons = common_owners(ctx);
     let rewritten = rewritten_records(ctx);
@@ -248,10 +269,42 @@ fn for_each_atom_symbol<'a, E: Target>(
         }
         for (nlist, &id) in obj.nlists.iter().zip(&obj.symbols) {
             if let Some(atom) = atom_named(ctx, &commons, &rewritten, i, nlist, id) {
-                f(i, id, atom);
+                f(SymbolFile::Obj(i), id, atom);
             }
         }
     }
+
+    for (k, (base, alias)) in object_aliases(ctx).enumerate() {
+        let obj = match ctx.symbols[base].file() {
+            Some(FileId::Obj(obj)) => obj as usize,
+            _ => continue,
+        };
+        let Some(i) = ctx.objs[obj].symbols.iter().position(|&id| id == base) else {
+            continue;
+        };
+        let nlist = &ctx.objs[obj].nlists[i];
+        if let Some(atom) = atom_named(ctx, &commons, &rewritten, obj, nlist, base) {
+            let atom = Atom { place: (ALIASES_FILE, k as u64), ..atom };
+            f(SymbolFile::Aliases(base), alias, atom);
+        }
+    }
+}
+
+/// The -alias names of definitions in objects, in the options' order,
+/// each with its base: the names ld-prime makes atoms of in its
+/// command-line-aliases-file, which stand for their bases' (see
+/// passes::add_synthetic_symbols; a dylib's base leaves an indirect
+/// symbol, and a name an input defines stays the input's).
+pub(crate) fn object_aliases<E: Target>(
+    ctx: &Context<E>,
+) -> impl Iterator<Item = (SymbolId, SymbolId)> + '_ {
+    ctx.args.aliases.iter().filter_map(|(base, alias)| {
+        let (base, alias) = (ctx.symbols.get(base)?, ctx.symbols.get(alias)?);
+        let (b, a) = (&ctx.symbols[base], &ctx.symbols[alias]);
+        let defined = matches!(b.file(), Some(FileId::Obj(_)))
+            && (a.file(), a.input_section(), a.value) == (b.file(), b.input_section(), b.value);
+        defined.then_some((base, alias))
+    })
 }
 
 /// The records the linker rewrote in place of input subsections, which
