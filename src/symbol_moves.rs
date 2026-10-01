@@ -31,6 +31,16 @@ pub enum MoveOption {
     Dirty,
 }
 
+impl MoveOption {
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            MoveOption::Rw => "-move_to_rw_segment",
+            MoveOption::Ro => "-move_to_ro_segment",
+            MoveOption::Dirty => "-dirty_data_list",
+        }
+    }
+}
+
 /// Where a symbol move sends a subsection.
 #[derive(Clone, Copy)]
 pub struct Move {
@@ -208,6 +218,24 @@ pub(crate) fn find_moves<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32,
         crate::warn!("{msg}");
     }
     moves
+}
+
+/// The symbols naming the atoms `moves` moves (see find_moves), with
+/// their subsections, in the order ld-prime comes to them.
+pub(crate) fn moved_symbols<E: Target>(
+    ctx: &Context<E>,
+    moves: &hashbrown::HashMap<u32, Move>,
+) -> Vec<(u32, SymbolId)> {
+    let mut syms = Vec::new();
+    for_each_atom_symbol(ctx, |_, id, atom| {
+        if let Some(isec) = atom.isec
+            && moves.contains_key(&isec)
+        {
+            syms.push(((atom.place, ctx.symbols[id].value), isec, id));
+        }
+    });
+    syms.sort_by_key(|&(place, _, _)| place);
+    syms.into_iter().map(|(_, isec, id)| (isec, id)).collect()
 }
 
 /// Calls `f` with each symbol that names a live atom to ld-prime, with

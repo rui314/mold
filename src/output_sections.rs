@@ -267,12 +267,17 @@ fn merged_name(name: (&str, &str)) -> Option<SectionName> {
 /// section of a legacy name no -rename_section names takes its modern
 /// name in its place (see modern_name).
 pub(crate) fn renamed(args: &crate::cmdline::Args, name: SectionName) -> SectionName {
+    let (seg, sect) = section_renamed(args, name);
+    (renamed_segment(args, seg), sect)
+}
+
+/// The name -rename_section gives a section (see renamed).
+fn section_renamed(args: &crate::cmdline::Args, name: SectionName) -> SectionName {
     let (seg, sect) = name;
-    let (seg, sect) = match args.rename_sections.iter().find(|(s, t, _, _)| s == seg && t == sect) {
+    match args.rename_sections.iter().find(|(s, t, _, _)| s == seg && t == sect) {
         Some((_, _, s, t)) => (static_name(s), static_name(t)),
         None => modern_name(name),
-    };
-    (renamed_segment(args, seg), sect)
+    }
 }
 
 /// The name ld-prime gives a section of a name old compilers used for
@@ -371,17 +376,16 @@ impl SectionMap {
         if seg == "__DATA" && self.data_const && is_const { ("__DATA_CONST", sect) } else { name }
     }
 
-    /// The name of the output section a symbol move (see symbol_moves)
-    /// puts a subsection of the input section `seg`,`sect` with `flags`
-    /// in, and the name its flags follow: -move_to_rw_segment and
-    /// -move_to_ro_segment move it, before ld-prime's own moves (which
-    /// then don't apply), to the section of its name in their segment;
-    /// -dirty_data_list after those, out of __DATA alone (None for a
-    /// section elsewhere), to __DATA_DIRTY. -rename_section and
-    /// -rename_segment then rename the new name.
+    /// The name a symbol move (see symbol_moves) gives a subsection of
+    /// the input section `seg`,`sect` with `flags`, before
+    /// -rename_section and -rename_segment rename it, and the name its
+    /// flags follow: -move_to_rw_segment and -move_to_ro_segment move
+    /// it, before ld-prime's own moves (which then don't apply), to the
+    /// section of its name in their segment; -dirty_data_list after
+    /// those, out of __DATA alone (None for a section elsewhere), to
+    /// __DATA_DIRTY.
     fn moved_name(
         self,
-        args: &crate::cmdline::Args,
         m: Move,
         seg: &str,
         sect: &str,
@@ -395,7 +399,7 @@ impl SectionMap {
         if m.option == MoveOption::Dirty && from.0 != "__DATA" {
             return None;
         }
-        Some((renamed(args, (m.segment, from.1)), from))
+        Some(((m.segment, from.1), from))
     }
 
     /// The name of a section with the type in `flags` under
@@ -851,7 +855,9 @@ fn place_tail_blobs<E: Target>(ctx: &mut Context<E>) {
 pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     ctx.chunks.push(ChunkId::MachHeader);
     let text = text_section_name(ctx);
-    assign_input_sections(ctx, text);
+    let moves = crate::symbol_moves::find_moves(ctx);
+    assign_input_sections(ctx, text, &moves);
+    trace_symbol_moves(ctx, &moves);
     place_replacing_blobs(ctx);
 
     // A final image always has a __text section, empty if no code
@@ -918,9 +924,12 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
 /// and drops the sections the link consumes. A final image's sections
 /// that renames made of zero-fill and file-backed members alike are
 /// then settled.
-fn assign_input_sections<E: Target>(ctx: &mut Context<E>, text: SectionName) {
+fn assign_input_sections<E: Target>(
+    ctx: &mut Context<E>,
+    text: SectionName,
+    moves: &hashbrown::HashMap<u32, Move>,
+) {
     let map = SectionMap::new(ctx);
-    let moves = crate::symbol_moves::find_moves(ctx);
     // Each input section name's output section, keyed by the raw
     // 16-byte names, so that the hot loop does no allocation and no
     // linear scans - and by its flags too, which say whether -text_exec
@@ -966,7 +975,8 @@ fn assign_input_sections<E: Target>(ctx: &mut Context<E>, text: SectionName) {
                 None => {
                     let (seg, sect) = (hdr.segname(), hdr.sectname());
                     let moved = mv.and_then(|m| {
-                        Some((m.option, map.moved_name(&ctx.args, m, seg, sect, hdr.flags)?))
+                        let (moved, from) = map.moved_name(m, seg, sect, hdr.flags)?;
+                        Some((m.option, (renamed(&ctx.args, moved), from)))
                     });
                     let out = match moved {
                         Some((_, names)) => Some(names),
@@ -1014,6 +1024,55 @@ fn assign_input_sections<E: Target>(ctx: &mut Context<E>, text: SectionName) {
     }
     if !ctx.args.relocatable {
         resolve_zerofill_conflicts(ctx, &fill_kinds);
+    }
+}
+
+/// Reports where the symbol moves put each symbol of the atoms they
+/// moved, as ld-prime's -trace_symbol_layout does on stdout, or
+/// -trace_symbol_layout_file into a file: a line for the move, and one
+/// for each of -rename_section and -rename_segment that then renames
+/// the section. (ld-prime reports every other symbol too, with how it
+/// got its section; mold doesn't.)
+fn trace_symbol_moves<E: Target>(ctx: &Context<E>, moves: &hashbrown::HashMap<u32, Move>) {
+    let mut out: Box<dyn std::io::Write> = match &ctx.args.trace_symbol_layout_file {
+        Some(path) => match std::fs::File::create(path) {
+            Ok(file) => Box::new(std::io::BufWriter::new(file)),
+            Err(e) => {
+                // ld-prime ends the warning with a blank line.
+                crate::warn!(
+                    "could not open -trace_symbol_layout_file {} for writing ({})\n",
+                    path.display(),
+                    e.raw_os_error().unwrap_or(0)
+                );
+                return;
+            }
+        },
+        None if ctx.args.trace_symbol_layout => Box::new(std::io::stdout().lock()),
+        None => return,
+    };
+    // The names each step gives a section, by input section name (see
+    // assign_input_sections).
+    let map = SectionMap::new(ctx);
+    let mut steps_by_name = hashbrown::HashMap::new();
+    let steps_for = |m: Move, hdr: &MachSection| {
+        let (moved, _) = map.moved_name(m, hdr.segname(), hdr.sectname(), hdr.flags)?;
+        let (seg, sect) = section_renamed(&ctx.args, moved);
+        Some([moved, (seg, sect), (renamed_segment(&ctx.args, seg), sect)])
+    };
+    for (isec, id) in crate::symbol_moves::moved_symbols(ctx, moves) {
+        let m = moves[&isec];
+        let hdr = ctx.hdr_of(&ctx.isecs[isec as usize]);
+        let key = (hdr.segname, hdr.sectname, hdr.flags, m.option, m.segment);
+        let Some(names) = *steps_by_name.entry(key).or_insert_with(|| steps_for(m, hdr)) else {
+            continue;
+        };
+        let steps = [m.option.name(), "-rename_section", "-rename_segment"];
+        for (i, (how, (seg, sect))) in steps.into_iter().zip(names).enumerate() {
+            if i == 0 || names[i - 1] != (seg, sect) {
+                let name = ctx.symbols[id].name();
+                let _ = writeln!(out, "symbol '{name}', {how} mapped it to {seg}/{sect}");
+            }
+        }
     }
 }
 
