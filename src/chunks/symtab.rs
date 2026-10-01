@@ -299,8 +299,9 @@ pub fn to_output_esym<E: Target>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -
             }
             OriginValue::InputSection(section) => {
                 let isec = ctx.input_section(section);
-                if sym.ty() == STT_TLS {
-                    // TLS symbol
+                if sym.ty() == STT_TLS && isec.sh_flags & SHF_TLS as u64 != 0 {
+                    // TLS symbol. Clang gives the STT_TLS type to TLSDESC labels
+                    // in .text, so we check the section too.
                     shndx = Some(st_shndx_of(sym, isec));
                     esym.set_st_value(sym.addr(ctx) - ctx.tls_begin);
                 } else if sym.is_pde_ifunc(ctx) && sym.has_plt(&ctx.symbols) {
