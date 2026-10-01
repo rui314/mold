@@ -2101,7 +2101,8 @@ struct References {
 /// Which symbols the files considered this round actually reference.
 /// References from dead archive members must not count: they would
 /// otherwise demand definitions nothing live needs. What the command
-/// line names (-u, -e, -alias) counts as referenced.
+/// line names (-u, -alias, and -e or the default _main of an image that
+/// has an entry point) counts as referenced.
 fn collect_references<E: Target>(ctx: &Context<E>, only_alive: bool) -> References {
     use std::sync::atomic::{AtomicBool, Ordering};
     let n = ctx.symbols.syms.len();
@@ -2128,7 +2129,7 @@ fn collect_references<E: Target>(ctx: &Context<E>, only_alive: bool) -> Referenc
         .args
         .forced_undefined
         .iter()
-        .chain(std::iter::once(&ctx.args.entry))
+        .chain(ctx.args.has_entry_point().then_some(&ctx.args.entry))
         .chain(ctx.args.aliases.iter().map(|(existing, _)| existing));
     for name in named {
         if let Some(id) = ctx.symbols.get(name) {
@@ -2410,8 +2411,11 @@ fn mark_live_objects<E: Target>(ctx: &mut Context<E>) {
     // after one stays so, with the -why_load reason it was loaded for.
     let mut queue: Vec<usize> = (0..ctx.objs.len()).filter(|&i| ctx.objs[i].is_alive).collect();
 
-    // The entry point and -u symbols are roots too.
-    let mut root_syms: Vec<&str> = vec![ctx.args.entry.as_str()];
+    // The entry point and -u symbols are roots too. A dylib or bundle
+    // has no entry point: an archive member that defines _main stays
+    // out of one (Lua's lua.o out of Hammerspoon's LuaSkin).
+    let mut root_syms: Vec<&str> =
+        ctx.args.has_entry_point().then_some(ctx.args.entry.as_str()).into_iter().collect();
     root_syms.extend(ctx.args.forced_undefined.iter().map(String::as_str));
     for name in root_syms {
         if let Some(id) = ctx.symbols.get(name)
