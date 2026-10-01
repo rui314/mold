@@ -195,6 +195,27 @@ pub enum WeakRefMismatches {
     Error,
 }
 
+/// How an option says to treat what it is about (text relocations,
+/// unaligned pointers, ...).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Treatment {
+    Warning,
+    Error,
+    Suppress,
+}
+
+/// Reads a treatment as ld-prime reads them all: warning (or warn),
+/// error, and where the option takes it, suppress.
+fn parse_treatment(opt: &str, arg: &OsStr, suppress: bool) -> Treatment {
+    match arg.as_bytes() {
+        b"warning" | b"warn" => Treatment::Warning,
+        b"error" => Treatment::Error,
+        b"suppress" if suppress => Treatment::Suppress,
+        _ if suppress => fatal!("{opt} invalid option (warning | error | suppress)"),
+        _ => fatal!("{opt} invalid option (warning | error)"),
+    }
+}
+
 /// -commons: what becomes of a tentative definition (a common symbol)
 /// some dylib of the link defines: it wins (ignore_dylibs, the
 /// default), the dylib's does (use_dylibs), or the link fails.
@@ -1940,11 +1961,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // warning either way), error refuses them. See
             // resolve_text_relocs.
             b"-read_only_relocs" => {
-                let treatment = next_arg(&mut i, name);
-                if !matches!(treatment.as_bytes(), b"warning" | b"error" | b"suppress") {
-                    fatal!("-read_only_relocs invalid option (warning | error | suppress)");
-                }
-                read_only_relocs = Some(treatment.as_bytes() != b"error");
+                let treatment = parse_treatment(name, next_arg(&mut i, name), true);
+                read_only_relocs = Some(treatment != Treatment::Error);
             }
             // ld-prime knows one treatment besides the default error:
             // dynamic_lookup, which suppress selects too. It deprecates

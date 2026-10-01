@@ -107,3 +107,5 @@ $CC --ld-path=$mold $t/main.o -o $t/exe15 -Wl,-read_only_relocs,suppress 2> $t/l
 grep -q -- '-read_only_relocs relocs cannot be used in this configuration' $t/log15
 not $mold -arch $ARCH $fw -e _start $t/a.o -o $t/exe16 -read_only_relocs bogus 2> $t/log16
 grep -q -- '-read_only_relocs invalid option (warning | error | suppress)' $t/log16
+# (warn is warning.)
+$mold -arch $ARCH $fw -e _start $t/a.o -o $t/exe17 -read_only_relocs warn
