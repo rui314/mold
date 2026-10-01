@@ -3274,7 +3274,47 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         }
     }
 
-    args.lto_library = resolve_lto_library(st.lto_libraries);
+    finish_options(&mut args, &mut st);
+    set_output_kind(&mut args, st.kind);
+    if let Some(triple) = st.target_triple {
+        apply_target_triple(&mut args, triple);
+    }
+    if args.inputs.is_empty() {
+        exit_without_inputs(&args);
+    }
+    // A parse for another target than this one is redone by the driver,
+    // so what depends on the target is left to that parse.
+    if !resolve_target(target, &mut args) {
+        crate::error::drop_held();
+        return args;
+    }
+
+    check_segment_order(&args);
+    resolve_defaults(target, &mut args, &st);
+    std::mem::take(&mut st.lists).build(&mut args);
+    args.merged_files = notes_merged_files(&args);
+
+    // -fatal_warnings applies to every warning, wherever it appears on
+    // the command line. So does -w to those from the option checks
+    // below, but not to those given as options were read.
+    crate::error::set_fatal_warnings(args.fatal_warnings);
+    st.warnings.print();
+    crate::error::set_suppress_warnings(args.suppress_warnings);
+    check_arch_options(target, &mut args, &st);
+    resolve_env_source_version(&mut args, &st);
+    if let Some((old, new)) = st.incompatible_platforms {
+        fatal!("incompatible platforms: {} - {}", platform_name(old), platform_name(new));
+    }
+    check_options(target, &mut args, &mut st);
+    check_last(target, &mut args, &st);
+    args
+}
+
+/// What ld-prime does once it has read the last option, before it looks
+/// at the inputs: it vets -lto_library, reports the options it doesn't
+/// know, and reads the environment variables that stand in for options.
+fn finish_options(args: &mut Args, st: &mut ParseState) {
+    args.lto_library = resolve_lto_library(std::mem::take(&mut st.lto_libraries));
     // ld-prime reports the options it doesn't know together, once it
     // has read the others (and given their warnings).
     if !st.unknown.is_empty() {
@@ -3289,55 +3329,63 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         }
         parse_treatment(env, &val, false);
     }
-    trace_env(&mut args);
+    trace_env(args);
+}
 
-    args.output_type = match st.kind {
+/// Sets the Mach-O file type of the output and the kind of image it is.
+fn set_output_kind(args: &mut Args, kind: OutputKind) {
+    args.output_type = match kind {
         OutputKind::Dylib => MH_DYLIB,
         OutputKind::Bundle => MH_BUNDLE,
         OutputKind::Kext => MH_KEXT_BUNDLE,
         OutputKind::Dylinker => MH_DYLINKER,
         _ => MH_EXECUTE,
     };
-    args.relocatable = st.kind == OutputKind::Object;
-    args.static_link = matches!(st.kind, OutputKind::StaticExecutable | OutputKind::Preload);
-    args.preload = st.kind == OutputKind::Preload;
+    args.relocatable = kind == OutputKind::Object;
+    args.static_link = matches!(kind, OutputKind::StaticExecutable | OutputKind::Preload);
+    args.preload = kind == OutputKind::Preload;
+}
 
-    if let Some(triple) = st.target_triple {
-        apply_target_triple(&mut args, triple);
+/// `ld -v` with nothing to link just reports the version; build
+/// systems and configure scripts probe the linker that way. mold
+/// does the same for -v/--version with no inputs. So does
+/// -version_details, unless -v comes with it.
+fn exit_without_inputs(args: &Args) -> ! {
+    if args.verbose {
+        print_version();
+        std::process::exit(0);
     }
-
-    // `ld -v` with nothing to link just reports the version; build
-    // systems and configure scripts probe the linker that way. mold
-    // does the same for -v/--version with no inputs. So does
-    // -version_details, unless -v comes with it.
-    if args.inputs.is_empty() {
-        if args.verbose {
-            print_version();
-            std::process::exit(0);
-        }
-        if args.version_details {
-            print_version_details();
-            std::process::exit(0);
-        }
-        fatal!("no object files specified");
+    if args.version_details {
+        print_version_details();
+        std::process::exit(0);
     }
+    fatal!("no object files specified");
+}
 
-    // Without -arch, the first object file names the target. A parse
-    // for another target than this one is redone by the driver, so
-    // what depends on the target is left to that parse.
+/// Settles what the image is linked for, and returns whether that is
+/// `target`. Without -arch, the first object file names the
+/// architecture (see detect_target); without -platform_version (or the
+/// like), the parse for the target looks for the platform in the
+/// objects too (see infer_platform).
+fn resolve_target(target: &TargetTraits, args: &mut Args) -> bool {
     if args.arch.is_none() {
-        args.arch = Some(detect_target(&args));
+        args.arch = Some(detect_target(args));
     }
     if args.arch != Some(target.name) {
-        crate::error::drop_held();
-        return args;
+        return false;
     }
     if args.platform == 0 {
-        infer_platform(&mut args);
+        infer_platform(args);
     }
+    true
+}
 
-    check_segment_order(&args);
-
+/// Resolves the options whose defaults depend on the target and the
+/// kind of output, as ld-prime does once it knows them: the code
+/// tables, the source version, the signature, the Objective-C
+/// optimizations, the alignment of common symbols, the header padding,
+/// and how the image starts.
+fn resolve_defaults(target: &TargetTraits, args: &mut Args, st: &ParseState) {
     // A -static image (a kernel) carries the code tables only when
     // asked to, as ld-prime writes it.
     args.function_starts = st.function_starts.unwrap_or(!args.without_dyld());
@@ -3410,39 +3458,47 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     if args.unixthread && !st.explicit_entry {
         args.entry = "start".to_string();
     }
+}
 
-    args.exported_symbols = st.lists.exported_symbols.map(GlobBuilder::build);
-    args.unexported_symbols = st.lists.unexported_symbols.build();
-    args.reexported_symbols = st.lists.reexported_symbols.build();
-    args.why_live = st.lists.why_live.build();
-    args.local_strip_list = st.lists.local_strip_list.build();
-    args.local_keep_list = st.lists.local_keep_list.map(GlobBuilder::build);
-    args.force_weak = st.lists.force_weak.build();
-    args.force_not_weak = st.lists.force_not_weak.build();
-    args.keep_duplicates = st.lists.keep_duplicates.build();
-    args.poisoned = st.lists.poisoned.build();
-    if st.lists.interposable_all && st.lists.interposable_list.is_none() {
-        st.lists.interposable_list.get_or_insert_default().add(b"*", 0);
+impl SymbolLists {
+    /// Compiles the lists into Args's matchers.
+    fn build(mut self, args: &mut Args) {
+        args.exported_symbols = self.exported_symbols.map(GlobBuilder::build);
+        args.unexported_symbols = self.unexported_symbols.build();
+        args.reexported_symbols = self.reexported_symbols.build();
+        args.why_live = self.why_live.build();
+        args.local_strip_list = self.local_strip_list.build();
+        args.local_keep_list = self.local_keep_list.map(GlobBuilder::build);
+        args.force_weak = self.force_weak.build();
+        args.force_not_weak = self.force_not_weak.build();
+        args.keep_duplicates = self.keep_duplicates.build();
+        args.poisoned = self.poisoned.build();
+        if self.interposable_all && self.interposable_list.is_none() {
+            self.interposable_list.get_or_insert_default().add(b"*", 0);
+        }
+        args.interposable = self.interposable_list.map(GlobBuilder::build);
     }
-    args.interposable = st.lists.interposable_list.map(GlobBuilder::build);
+}
+
+/// Whether the link notes the files of the private libraries a dylib
+/// re-exports and merges: see Args::merged_files.
+fn notes_merged_files(args: &Args) -> bool {
     let lists_reexports = args.exported_symbols.is_some() || !args.reexported_symbols.is_empty();
     let reexports_library = !args.sub_libraries.is_empty()
         || !args.sub_umbrellas.is_empty()
         || args.inputs.iter().any(|input| {
             matches!(input, InputArg::Library(LibraryKind::Reexport | LibraryKind::NoMerge, _))
         });
-    args.merged_files = args.map.is_some()
+    args.map.is_some()
         || !args.why_live.is_empty()
         || args.warn_commons
         || args.commons == CommonsMode::Error
-        || (lists_reexports && reexports_library);
+        || (lists_reexports && reexports_library)
+}
 
-    // -fatal_warnings applies to every warning, wherever it appears on
-    // the command line. So does -w to those from the option checks
-    // below, but not to those given as options were read.
-    crate::error::set_fatal_warnings(args.fatal_warnings);
-    st.warnings.print();
-    crate::error::set_suppress_warnings(args.suppress_warnings);
+/// The architecture options ld-prime checks against the target, and the
+/// environment variables it reads for them.
+fn check_arch_options(target: &TargetTraits, args: &mut Args, st: &ParseState) {
     if st.arch_variant {
         fatal!("-arch_variant is not supported with -arch {}", target.name);
     }
@@ -3451,21 +3507,25 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         args.dylib_subtypes_must_match = names_cpu_family(list, target.name);
     }
     args.dylib_arch_fallback = dylib_arch_fallback(target.name);
-    // The build system's source version stands in for -source_version
-    // unless -no_source_version says there is none (ld-prime reads it
-    // even where there is none anyway).
+}
+
+/// The build system's source version stands in for -source_version
+/// unless -no_source_version says there is none (ld-prime reads it
+/// even where there is none anyway).
+fn resolve_env_source_version(args: &mut Args, st: &ParseState) {
     if st.source_version != Some(false) && st.source_version_number.is_none() {
         let version = env_source_version();
         if let Some(v) = &mut args.source_version {
             *v = version;
         }
     }
-    if let Some((old, new)) = st.incompatible_platforms {
-        fatal!("incompatible platforms: {} - {}", platform_name(old), platform_name(new));
-    }
+}
 
-    // ld-prime checks the options it has read in this order, each
-    // diagnostic in its place: a fatal error stops the checks after it.
+/// ld-prime checks the options it has read in this order, each
+/// diagnostic in its place: a fatal error stops the checks after it.
+/// It resolves the defaults of some options on the way, from what the
+/// checks before them settled.
+fn check_options(target: &TargetTraits, args: &mut Args, st: &mut ParseState) {
     args.segaddrs = resolve_segaddrs(std::mem::take(&mut args.segaddrs));
     if args.kernel && st.kind != OutputKind::StaticExecutable {
         fatal!("-kernel must be used with -static");
@@ -3476,8 +3536,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     {
         fatal!("-bundle_loader can only be used with -bundle");
     }
-    resolve_lazy_load(&mut args);
-    resolve_delay_init(&mut args);
+    resolve_lazy_load(args);
+    resolve_delay_init(args);
     // ld64 chained a static arm64e image's rebases through its pointers
     // from a __TEXT,__thread_starts list; ld-prime has chained fixups.
     if st.threaded_starts {
@@ -3488,37 +3548,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         }
         fatal!("-threaded_starts_section is no longer supported");
     }
-    check_output_kind(&mut args, st.pie);
-
-    // kmutil links a kext by its relocations and slides a -kernel
-    // image by its local ones: ld-prime takes neither -fixup_chains nor
-    // -no_fixup_chains for them.
-    if args.is_kext() || args.kernel {
-        st.fixup_chains = None;
-    }
-    args.pie = resolve_pie(target, &args, st.pie, st.fixup_chains);
-    args.fixup_chains = resolve_fixup_chains(target, &args, st.fixup_chains);
-    args.no_fixup_chains = st.fixup_chains == Some(false);
-    args.fixup_chains_section = st.chain_starts.is_some() && args.static_link && args.fixup_chains;
-    args.chain_starts_kind = st.chain_starts.unwrap_or(0);
-    // ld64 binds lazily below the chained-fixups deployment targets
-    // unless -bind_at_load.
-    args.lazy_binding =
-        !args.relocatable && !args.without_dyld() && !args.fixup_chains && !args.bind_at_load;
-    args.legacy_linkedit = resolve_legacy_linkedit(target, &args);
-    // ld-prime emits initializers as offsets implicitly with chained
-    // fixups: the point of chains is a fixup-free __DATA_CONST, and
-    // absolute initializer pointers would drag rebases back in. It
-    // follows -fixup_chains or the deployment target even when
-    // -undefined dynamic_lookup sends the fixups themselves back to
-    // classic dyld info; only -no_fixup_chains keeps __mod_init_func.
-    // Not so for an image whose initializers dyld never runs, a
-    // -static one or a kext (XNU runs the kernel's __mod_init_func
-    // itself, and a kext's): it converts only with -init_offsets.
-    args.init_offsets |= !args.without_dyld()
-        && st.fixup_chains.unwrap_or_else(|| chained_fixups_by_default(target, &args));
-    args.text_relocs = resolve_text_relocs(target, &args, st.read_only_relocs);
-    check_fixup_sections(&args, st.fixup_chains, st.chain_starts.is_some(), st.rebase_section);
+    check_output_kind(args, st.pie);
+    resolve_fixups(target, args, st);
     // Only a dylib is mergeable: ld-prime checks so here, and that only
     // a dylib gets the debug hook right after the next check.
     if args.make_mergeable && args.output_type != MH_DYLIB {
@@ -3543,14 +3574,14 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             "ignoring -x86_64_layout_emulation option, it can only be used with -arch arm64"
         );
     }
-    check_dylib_use(target, &args);
+    check_dylib_use(target, args);
     args.objc_stubs_small = st.objc_stubs_small == Some(true);
-    resolve_shared_region(target, &mut args);
-    resolve_dirty_data(&mut args);
-    resolve_sdk_order_file(&mut args);
+    resolve_shared_region(target, args);
+    resolve_dirty_data(args);
+    resolve_sdk_order_file(args);
 
-    args.segment_align = resolve_segment_align(target, &args, st.segalign);
-    resolve_encryptable(&mut args);
+    args.segment_align = resolve_segment_align(target, args, st.segalign);
+    resolve_encryptable(args);
     // An encryptable image's __oslogstring, which goes unencrypted,
     // starts a page of its own unless -sectalign says otherwise.
     let oslog =
@@ -3559,24 +3590,65 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         let p2align = args.segment_align.max(1).ilog2() as u8;
         args.sectalign.push((b"__TEXT".to_vec(), b"__oslogstring".to_vec(), p2align));
     }
-    args.segprots = resolve_segprots(target, st.segprots);
-    args.seg_page_sizes = resolve_seg_page_sizes(&args, st.seg_page_sizes);
-    resolve_pagezero_size(&mut args);
-    resolve_stack(target, &mut args, st.stack_size, st.stack_addr);
-    check_relocatable(&args, st.data_const);
+    args.segprots = resolve_segprots(target, std::mem::take(&mut st.segprots));
+    args.seg_page_sizes = resolve_seg_page_sizes(args, std::mem::take(&mut st.seg_page_sizes));
+    resolve_pagezero_size(args);
+    resolve_stack(target, args, st.stack_size, st.stack_addr);
+    check_relocatable(args, st.data_const);
     args.const_selrefs = st.const_selrefs.unwrap_or(args.shared_region);
     args.lto_softload = st.lto_softload.unwrap_or(args.static_link || args.preload);
     args.warn_unused_dylibs =
         st.warn_unused_dylibs.unwrap_or(args.shared_region && args.output_type == MH_DYLIB);
-    args.data_const = st.data_const.unwrap_or_else(|| default_data_const(&args, st.pie));
-    resolve_kext(target, &mut args);
-    check_segaddrs(&args);
-    complete_segment_order(&mut args);
-    check_section_order(&args);
-    resolve_image_base(&mut args);
-    args.unaligned_pointers = resolve_unaligned_pointers(target, &args, st.unaligned_pointers);
+    args.data_const = st.data_const.unwrap_or_else(|| default_data_const(args, st.pie));
+    resolve_kext(target, args);
+    check_segaddrs(args);
+    complete_segment_order(args);
+    check_section_order(args);
+    resolve_image_base(args);
+    args.unaligned_pointers = resolve_unaligned_pointers(target, args, st.unaligned_pointers);
     args.objc_stubs_small &= target.name == "arm64";
+}
 
+/// Resolves how the image's pointers are fixed up as it loads: by
+/// chained fixups, dyld's opcodes or the legacy LINKEDIT's relocations
+/// (or not at all, in an image no dyld loads), bound lazily or not; and
+/// whether it is position independent, emits its initializers as
+/// offsets, or may fix up read-only segments.
+fn resolve_fixups(target: &TargetTraits, args: &mut Args, st: &mut ParseState) {
+    // kmutil links a kext by its relocations and slides a -kernel
+    // image by its local ones: ld-prime takes neither -fixup_chains nor
+    // -no_fixup_chains for them.
+    if args.is_kext() || args.kernel {
+        st.fixup_chains = None;
+    }
+    args.pie = resolve_pie(target, args, st.pie, st.fixup_chains);
+    args.fixup_chains = resolve_fixup_chains(target, args, st.fixup_chains);
+    args.no_fixup_chains = st.fixup_chains == Some(false);
+    args.fixup_chains_section = st.chain_starts.is_some() && args.static_link && args.fixup_chains;
+    args.chain_starts_kind = st.chain_starts.unwrap_or(0);
+    // ld64 binds lazily below the chained-fixups deployment targets
+    // unless -bind_at_load.
+    args.lazy_binding =
+        !args.relocatable && !args.without_dyld() && !args.fixup_chains && !args.bind_at_load;
+    args.legacy_linkedit = resolve_legacy_linkedit(target, args);
+    // ld-prime emits initializers as offsets implicitly with chained
+    // fixups: the point of chains is a fixup-free __DATA_CONST, and
+    // absolute initializer pointers would drag rebases back in. It
+    // follows -fixup_chains or the deployment target even when
+    // -undefined dynamic_lookup sends the fixups themselves back to
+    // classic dyld info; only -no_fixup_chains keeps __mod_init_func.
+    // Not so for an image whose initializers dyld never runs, a
+    // -static one or a kext (XNU runs the kernel's __mod_init_func
+    // itself, and a kext's): it converts only with -init_offsets.
+    args.init_offsets |= !args.without_dyld()
+        && st.fixup_chains.unwrap_or_else(|| chained_fixups_by_default(target, args));
+    args.text_relocs = resolve_text_relocs(target, args, st.read_only_relocs);
+    check_fixup_sections(args, st.fixup_chains, st.chain_starts.is_some(), st.rebase_section);
+}
+
+/// The checks and warnings ld-prime gives last, once it has resolved
+/// the image's layout.
+fn check_last(target: &TargetTraits, args: &mut Args, st: &ParseState) {
     // An image dyld loads keeps 32 bytes for the command of a code
     // signature added later (see chunks::header_pad).
     if let Some(size) = st.headerpad
@@ -3588,8 +3660,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             "-headerpad {size:#x} is too small, at least 32 bytes are required to reserve space for code signature"
         );
     }
-    warn_platform_options(target, &args, st.read_only_relocs.is_some());
-    check_dynamic_lookup(&args);
+    warn_platform_options(target, args, st.read_only_relocs.is_some());
+    check_dynamic_lookup(args);
     // So is the -init function an initial undefine, as -u would make
     // it (a -r output keeps it undefined).
     args.forced_undefined.extend(args.init.clone());
@@ -3604,14 +3676,13 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     if st.force_weakness_listed && !usr_lib {
         crate::warn!("-force_symbols_[not_]weak_list is deprecated");
     }
-    for msg in st.obsolete {
+    for msg in &st.obsolete {
         crate::warn!("{msg}");
     }
     // ld-prime leaves this one out under -w, -fatal_warnings or not.
     if !args.has_entry_point() && st.explicit_entry && !args.suppress_warnings {
         crate::warn!("ignoring -e, not used for output type");
     }
-    args
 }
 
 /// Whether an install name lies where the dyld shared cache takes
