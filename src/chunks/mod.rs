@@ -529,16 +529,27 @@ pub fn has_version_cmd(args: &crate::cmdline::Args) -> bool {
         && (args.version_load_command || (!without_dyld && args.platform != PLATFORM_FIRMWARE))
 }
 
+/// Whether ld-prime records an x86-64 macOS deployment target in the
+/// legacy LC_VERSION_MIN_MACOSX {version, sdk}: one older than 10.14,
+/// which brought LC_BUILD_VERSION, and also - whatever the SDK - one
+/// from 10.14.4 or 10.15.4 up to the next minor version (10.14.3 and
+/// 10.15.3 get LC_BUILD_VERSION, as 10.16 does).
+fn uses_version_min(minos: u32) -> bool {
+    minos < encode_version(10, 14, 0)
+        || (encode_version(10, 14, 4)..encode_version(10, 15, 0)).contains(&minos)
+        || (encode_version(10, 15, 4)..encode_version(10, 16, 0)).contains(&minos)
+}
+
 /// The load command naming the deployment target, for a final image
-/// and for -r alike. LC_BUILD_VERSION came with macOS 10.14; for an
-/// x86-64 target older than that, ld-prime writes the legacy
-/// LC_VERSION_MIN_MACOSX {version, sdk} that its loader reads (arm64
-/// macOS gets LC_BUILD_VERSION at any version).
+/// and for -r alike: LC_BUILD_VERSION, or on x86-64 for some macOS
+/// versions (see uses_version_min) LC_VERSION_MIN_MACOSX, which the
+/// loaders of the older ones read (arm64 macOS gets LC_BUILD_VERSION at
+/// any version).
 pub fn create_version_cmd<E: Target>(platform: u32, minos: u32, sdk: u32) -> Vec<u8> {
     if E::CPUTYPE != CPU_TYPE_ARM64
         && platform == PLATFORM_MACOS
         && minos != 0
-        && minos < encode_version(10, 14, 0)
+        && uses_version_min(minos)
     {
         return to_vec(&VersionMinCommand {
             cmd: LC_VERSION_MIN_MACOSX,
