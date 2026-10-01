@@ -4121,6 +4121,69 @@ fn moved_dylib_twins<E: Target>(ctx: &Context<E>, used: &[bool]) -> Vec<Option<u
         .collect()
 }
 
+/// Where a dylib's load command goes among the others (see
+/// assign_dylib_ordinals): the libraries named on the command line in
+/// naming order, those named lazily (loaded as usual below macOS 27)
+/// last among them, then those loaded implicitly or by auto-link
+/// options together, by install name.
+fn dylib_order_key(dylib: &input_files::DylibFile) -> ((u8, u32), &[u8]) {
+    let named_at = if dylib.is_autolinked || dylib.load_order == u32::MAX {
+        (2, u32::MAX)
+    } else {
+        (u8::from(dylib.named_lazily), dylib.load_order)
+    };
+    (named_at, &dylib.install_name)
+}
+
+/// For each dylib standing for an older library exports moved to (see
+/// add_moved_dylibs), where its load command goes among those of the
+/// others like it: by the library they moved from (see
+/// dylib_order_key), then by the first export that moved; None for
+/// the others.
+fn moved_dylib_keys<E: Target>(ctx: &Context<E>) -> Vec<Option<MovedDylibKey>> {
+    let mut keys: Vec<Option<MovedDylibKey>> = vec![None; ctx.dylibs.len()];
+    for source in &ctx.dylibs {
+        let (named_at, install_name) = dylib_order_key(source);
+        for (&name, &target) in &source.moved_exports {
+            let key = (named_at, install_name.to_vec(), name);
+            if keys[target].as_ref().is_none_or(|k| key < *k) {
+                keys[target] = Some(key);
+            }
+        }
+    }
+    keys
+}
+
+type MovedDylibKey = ((u8, u32), Vec<u8>, &'static str);
+
+/// Gives the dylibs their ordinals (and so their load commands) in
+/// ld-prime's order (see dylib_order_key), and returns them in that
+/// order. Last come those standing for older libraries exports moved
+/// to ($ld$previous), ordered by `moved_keys`: libswiftFoundation
+/// follows the Swift overlays a Swift program auto-links when
+/// Foundation's exports move there for macOS 11. A lazy dylib has
+/// none: its imports' n_desc names the image itself (ordinal 0), as
+/// ld-prime writes it.
+fn assign_dylib_ordinals<E: Target>(
+    ctx: &mut Context<E>,
+    moved_keys: &[Option<MovedDylibKey>],
+) -> Vec<usize> {
+    for dylib in ctx.dylibs.iter_mut().filter(|d| d.is_lazy) {
+        dylib.dylib_idx = 0;
+    }
+    let mut order: Vec<usize> = (0..ctx.dylibs.len())
+        .filter(|&i| !ctx.dylibs[i].is_bundle_loader && !ctx.dylibs[i].is_lazy)
+        .collect();
+    order.sort_by(|&a, &b| {
+        let key = |i: usize| (&moved_keys[i], dylib_order_key(&ctx.dylibs[i]));
+        key(a).cmp(&key(b))
+    });
+    for (ordinal, &i) in order.iter().enumerate() {
+        ctx.dylibs[i].dylib_idx = ordinal as i32 + 1;
+    }
+    order
+}
+
 /// Drops load commands for dylibs no symbol binds to
 /// (-dead_strip_dylibs). Bind records name dylibs by their 1-based
 /// load-command ordinal, so surviving dylibs are renumbered and symbol
@@ -4179,11 +4242,14 @@ pub fn dead_strip_dylibs<E: Target>(ctx: &mut Context<E>) {
     weaken_moved_imports(ctx);
 
     let mut remap = vec![usize::MAX; ctx.dylibs.len()];
+    let mut moved_keys = Vec::new();
+    let old_moved_keys = moved_dylib_keys(ctx);
     let old = std::mem::take(&mut ctx.dylibs);
-    for (i, dylib) in old.into_iter().enumerate() {
+    for ((i, dylib), moved_key) in old.into_iter().enumerate().zip(old_moved_keys) {
         if used[i] {
             remap[i] = ctx.dylibs.len();
             ctx.dylibs.push(dylib);
+            moved_keys.push(moved_key);
         } else if !dylib.is_implicit && !dylib.is_autolinked {
             let (priority, path) = dylib.named_at.unwrap_or((dylib.priority, dylib.path));
             ctx.stripped_dylibs.push((priority, path));
@@ -4208,32 +4274,7 @@ pub fn dead_strip_dylibs<E: Target>(ctx: &mut Context<E>) {
         }
     }
 
-    // Ordinals (and so the load commands) in ld-prime's order: the
-    // libraries named on the command line in naming order, those named
-    // lazily (loaded as usual below macOS 27) last among them, then
-    // those loaded implicitly or by auto-link options together, by
-    // install name. A lazy dylib has none: its imports' n_desc names the
-    // image itself (ordinal 0), as ld-prime writes it.
-    for dylib in ctx.dylibs.iter_mut().filter(|d| d.is_lazy) {
-        dylib.dylib_idx = 0;
-    }
-    let mut order: Vec<usize> = (0..ctx.dylibs.len())
-        .filter(|&i| !ctx.dylibs[i].is_bundle_loader && !ctx.dylibs[i].is_lazy)
-        .collect();
-    let named_at = |d: &input_files::DylibFile| {
-        if d.is_autolinked || d.load_order == u32::MAX {
-            (2, u32::MAX)
-        } else {
-            (u8::from(d.named_lazily), d.load_order)
-        }
-    };
-    order.sort_by(|&a, &b| {
-        let (da, db) = (&ctx.dylibs[a], &ctx.dylibs[b]);
-        named_at(da).cmp(&named_at(db)).then_with(|| da.install_name.cmp(&db.install_name))
-    });
-    for (ordinal, &i) in order.iter().enumerate() {
-        ctx.dylibs[i].dylib_idx = ordinal as i32 + 1;
-    }
+    let order = assign_dylib_ordinals(ctx, &moved_keys);
     // Only a dylib can have an upward dependency, one that depends on
     // it in turn: ld-prime loads the library as usual for anything else,
     // with a warning.
