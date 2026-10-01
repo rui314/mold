@@ -2142,7 +2142,13 @@ pub fn parse_bitcode<E: Target>(
         dice: Vec::new(),
         loh: Vec::new(),
     });
-    ctx.lto_modules.push(crate::lto::BitcodeModule { obj: obj_idx, handle: module, defined });
+    let is_thin = crate::lto::module_is_thin(&plugin, module);
+    ctx.lto_modules.push(crate::lto::BitcodeModule {
+        obj: obj_idx,
+        handle: module,
+        defined,
+        is_thin,
+    });
     obj_idx
 }
 

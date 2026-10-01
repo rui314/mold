@@ -136,7 +136,7 @@ fn dependency_inputs<E: Target>(ctx: &Context<E>) -> Vec<(u8, Vec<u8>)> {
         .objs
         .iter()
         .enumerate()
-        .filter(|&(i, o)| o.is_alive && !ctx.is_internal(i) && ctx.lto_obj != Some(i))
+        .filter(|&(i, o)| o.is_alive && !ctx.is_internal(i) && !ctx.is_lto_obj(i))
         .map(|(_, o)| o.mf.parent.map_or(o.mf.name.as_path(), |p| p.name.as_path()))
         .collect();
     named.extend(ctx.visited_files.iter().map(PathBuf::as_path));
@@ -542,9 +542,9 @@ struct MapFiles<'a> {
     /// The object whose tentative definition each common symbol's
     /// subsection stands for, by subsection.
     commons: hashbrown::HashMap<u32, u32>,
-    /// The object LTO compiled, and the bitcode file each of its
+    /// The objects LTO compiled, and the bitcode file each of their
     /// symbols comes from, by name.
-    lto_obj: Option<usize>,
+    lto_objs: std::ops::Range<usize>,
     lto_origins: hashbrown::HashMap<&'static str, Option<usize>>,
 }
 
@@ -565,7 +565,7 @@ impl<'a> MapFiles<'a> {
         let mut named: Vec<(u32, File)> = Vec::new();
         let mut autolinked: Vec<((u32, u32), File)> = Vec::new();
         for (i, obj) in ctx.objs.iter().enumerate() {
-            if !obj.is_alive || ctx.is_internal(i) || ctx.lto_obj == Some(i) {
+            if !obj.is_alive || ctx.is_internal(i) || ctx.is_lto_obj(i) {
                 continue;
             }
             match obj.mf.parent.and_then(|ar| ctx.autolinked_archives.get(&ar.name)) {
@@ -622,14 +622,14 @@ impl<'a> MapFiles<'a> {
             dylibs: vec![0; ctx.dylibs.len()],
             merged: hashbrown::HashMap::new(),
             commons: crate::output_sections::common_owners(ctx),
-            lto_obj: ctx.lto_obj,
+            lto_objs: ctx.lto_objs.clone(),
             lto_origins: crate::lto::origins(&ctx.lto_inputs),
         };
         let mut merged_numbers: hashbrown::HashMap<&[u8], usize> = hashbrown::HashMap::new();
         let named = named.into_iter().map(|(_, file)| file);
         let implicit = implicit.into_iter().map(|(_, file)| file);
         let autolinked = autolinked.into_iter().map(|(_, file)| file);
-        let lto = ctx.lto_obj.map(File::Obj);
+        let lto = ctx.lto_objs.clone().map(File::Obj);
         for file in named.chain(implicit).chain(autolinked).chain(lto) {
             let number = files.paths.len() + 1;
             match file {
@@ -685,7 +685,7 @@ impl<'a> MapFiles<'a> {
     /// object's own, or for the object LTO compiled, the bitcode file's.
     fn of_object(&self, obj: usize, name: &str) -> usize {
         match self.lto_origins.get(name) {
-            Some(&Some(origin)) if self.lto_obj == Some(obj) => self.objs[origin],
+            Some(&Some(origin)) if self.lto_objs.contains(&obj) => self.objs[origin],
             _ => self.objs[obj],
         }
     }

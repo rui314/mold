@@ -2446,9 +2446,10 @@ fn order_file_ranks<E: Target>(ctx: &Context<E>) -> Option<Vec<u64>> {
         lines.push((file, i as u64));
     }
 
-    let origins = match ctx.lto_obj {
-        Some(_) if ctx.args.lto_filenames_in_order_file => crate::lto::origins(&ctx.lto_inputs),
-        _ => hashbrown::HashMap::new(),
+    let origins = if !ctx.lto_objs.is_empty() && ctx.args.lto_filenames_in_order_file {
+        crate::lto::origins(&ctx.lto_inputs)
+    } else {
+        hashbrown::HashMap::new()
     };
     let mut ranks = vec![u64::MAX; ctx.isecs.len()];
     // The atoms each line names, as (symbol, object) by line.
@@ -2465,7 +2466,7 @@ fn order_file_ranks<E: Target>(ctx: &Context<E>) -> Option<Vec<u64>> {
         if !crate::mapfile::names_its_atom(ctx, id) {
             continue;
         }
-        if ctx.lto_obj == Some(obj)
+        if ctx.is_lto_obj(obj)
             && let Some(&Some(origin)) = origins.get(sym.name())
         {
             obj = origin;

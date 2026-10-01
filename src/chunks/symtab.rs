@@ -560,6 +560,8 @@ fn object_stabs_opening<E: Target>(ctx: &Context<E>, obj: &ObjectFile, cwd: &Pat
     let path = match obj.mf.parent {
         Some(parent) if parent.name.is_absolute() => obj.mf.name.clone(),
         Some(_) | None if obj.mf.name.is_absolute() => obj.mf.name.clone(),
+        // An object ThinLTO compiled in memory has no name, here either.
+        None if obj.mf.name.as_os_str().is_empty() => std::path::PathBuf::new(),
         _ => cwd.join(&obj.mf.name),
     };
     let path = crate::input_files::without_fat_arch(path_bytes(&path));

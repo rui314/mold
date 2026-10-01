@@ -124,8 +124,9 @@ pub struct Context<E: Target> {
     pub lto_plugin: Option<crate::lto::Plugin>,
     /// Bitcode modules registered for LTO.
     pub lto_modules: Vec<crate::lto::BitcodeModule>,
-    /// The object LTO compiled the live bitcode modules to.
-    pub lto_obj: Option<usize>,
+    /// The objects LTO compiled the live bitcode modules to: one per
+    /// ThinLTO module, in input order, then the merged modules' one.
+    pub lto_objs: std::ops::Range<usize>,
     /// The bitcode files LTO compiled, in input order.
     pub lto_inputs: Vec<crate::lto::LtoInput>,
     /// Auto-link options already acted on.
@@ -292,7 +293,7 @@ impl<E: Target> Context<E> {
             dylib_renamings: Vec::new(),
             lto_plugin: None,
             lto_modules: Vec::new(),
-            lto_obj: None,
+            lto_objs: 0..0,
             lto_inputs: Vec::new(),
             visited_files: std::collections::HashSet::new(),
             reexport_files: Vec::new(),
@@ -491,6 +492,11 @@ impl<E: Target> Context<E> {
     /// sections and symbols.
     pub fn is_internal(&self, idx: usize) -> bool {
         self.internal_obj == Some(idx)
+    }
+
+    /// Whether an object is one LTO compiled.
+    pub fn is_lto_obj(&self, idx: usize) -> bool {
+        self.lto_objs.contains(&idx)
     }
 
     /// Whether a lone CIE - one no FDE of its object points at - goes

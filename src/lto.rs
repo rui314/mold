@@ -3,9 +3,11 @@
 //! With -flto, clang emits object files that are LLVM bitcode rather
 //! than Mach-O. The linker is expected to load LLVM's libLTO
 //! (clang passes its path as -lto_library), register every bitcode
-//! module, tell the library which symbols must survive, and compile
-//! them all into one Mach-O object that then joins the link like any
-//! other input.
+//! module, tell the library which symbols must survive, and have it
+//! compile them to Mach-O objects that then join the link like any
+//! other input: the modules clang built for ThinLTO (-flto=thin) one
+//! object each, through libLTO's thinlto_* API, and the rest merged
+//! into one module and one object.
 
 use std::ffi::{CStr, CString, c_char, c_int, c_void};
 use std::os::unix::ffi::OsStrExt;
@@ -45,19 +47,56 @@ pub struct Plugin {
     pub codegen_write_merged_modules: unsafe extern "C" fn(*mut c_void, *const c_char) -> bool,
     pub codegen_optimize: unsafe extern "C" fn(*mut c_void) -> bool,
     pub codegen_compile_optimized: unsafe extern "C" fn(*mut c_void, *mut usize) -> *const c_void,
+    pub get_version: unsafe extern "C" fn() -> *const c_char,
+    pub module_is_thinlto: unsafe extern "C" fn(*mut c_void) -> bool,
+    pub thinlto_debug_options: unsafe extern "C" fn(*const *const c_char, c_int),
+    pub thinlto_create_codegen: unsafe extern "C" fn() -> *mut c_void,
+    pub thinlto_codegen_set_pic_model: unsafe extern "C" fn(*mut c_void, u32) -> bool,
+    pub thinlto_codegen_set_cpu: unsafe extern "C" fn(*mut c_void, *const c_char),
+    pub thinlto_codegen_add_must_preserve_symbol:
+        unsafe extern "C" fn(*mut c_void, *const c_char, c_int),
+    pub thinlto_codegen_add_cross_referenced_symbol:
+        unsafe extern "C" fn(*mut c_void, *const c_char, c_int),
+    pub thinlto_codegen_add_module:
+        unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char, c_int),
+    pub thinlto_set_generated_objects_dir: unsafe extern "C" fn(*mut c_void, *const c_char),
+    pub thinlto_codegen_process: unsafe extern "C" fn(*mut c_void),
+    pub thinlto_module_get_num_objects: unsafe extern "C" fn(*mut c_void) -> u32,
+    pub thinlto_module_get_object: unsafe extern "C" fn(*mut c_void, u32) -> ObjectBuffer,
+    pub thinlto_module_get_num_object_files: unsafe extern "C" fn(*mut c_void) -> u32,
+    pub thinlto_module_get_object_file: unsafe extern "C" fn(*mut c_void, u32) -> *const c_char,
+}
+
+/// libLTO's LTOObjectBuffer: an object ThinLTO compiled in memory.
+#[repr(C)]
+pub struct ObjectBuffer {
+    pub buffer: *const c_char,
+    pub size: usize,
 }
 
 impl Plugin {
     pub fn error_message(&self) -> String {
         // SAFETY: libLTO returns a NUL-terminated string or null.
-        unsafe {
-            let msg = (self.get_error_message)();
-            if msg.is_null() {
-                "unknown error".to_string()
-            } else {
-                CStr::from_ptr(msg).to_string_lossy().into_owned()
-            }
-        }
+        unsafe { c_string(self.get_error_message).unwrap_or_else(|| "unknown error".to_string()) }
+    }
+
+    /// The library's version, as ld-prime quotes it when LTO fails.
+    pub fn version(&self) -> String {
+        // SAFETY: as for error_message.
+        unsafe { c_string(self.get_version).unwrap_or_default() }
+    }
+}
+
+/// The string a libLTO function returns, if any.
+///
+/// # Safety
+///
+/// `f` must return a NUL-terminated string or null.
+unsafe fn c_string(f: unsafe extern "C" fn() -> *const c_char) -> Option<String> {
+    // SAFETY: per the caller's contract.
+    unsafe {
+        let s = f();
+        (!s.is_null()).then(|| CStr::from_ptr(s).to_string_lossy().into_owned())
     }
 }
 
@@ -141,6 +180,30 @@ pub fn load_plugin(path: Option<&Path>) -> Plugin {
             codegen_write_merged_modules: dlsym(handle, c"lto_codegen_write_merged_modules"),
             codegen_optimize: dlsym(handle, c"lto_codegen_optimize"),
             codegen_compile_optimized: dlsym(handle, c"lto_codegen_compile_optimized"),
+            get_version: dlsym(handle, c"lto_get_version"),
+            module_is_thinlto: dlsym(handle, c"lto_module_is_thinlto"),
+            thinlto_debug_options: dlsym(handle, c"thinlto_debug_options"),
+            thinlto_create_codegen: dlsym(handle, c"thinlto_create_codegen"),
+            thinlto_codegen_set_pic_model: dlsym(handle, c"thinlto_codegen_set_pic_model"),
+            thinlto_codegen_set_cpu: dlsym(handle, c"thinlto_codegen_set_cpu"),
+            thinlto_codegen_add_must_preserve_symbol: dlsym(
+                handle,
+                c"thinlto_codegen_add_must_preserve_symbol",
+            ),
+            thinlto_codegen_add_cross_referenced_symbol: dlsym(
+                handle,
+                c"thinlto_codegen_add_cross_referenced_symbol",
+            ),
+            thinlto_codegen_add_module: dlsym(handle, c"thinlto_codegen_add_module"),
+            thinlto_set_generated_objects_dir: dlsym(handle, c"thinlto_set_generated_objects_dir"),
+            thinlto_codegen_process: dlsym(handle, c"thinlto_codegen_process"),
+            thinlto_module_get_num_objects: dlsym(handle, c"thinlto_module_get_num_objects"),
+            thinlto_module_get_object: dlsym(handle, c"thinlto_module_get_object"),
+            thinlto_module_get_num_object_files: dlsym(
+                handle,
+                c"thinlto_module_get_num_object_files",
+            ),
+            thinlto_module_get_object_file: dlsym(handle, c"thinlto_module_get_object_file"),
         }
     }
 }
@@ -245,6 +308,156 @@ pub unsafe fn write_merged_modules(
     Ok(())
 }
 
+/// A bitcode module for ThinLTO: the name that identifies it to libLTO,
+/// unique in the link, and its bitcode.
+pub struct ThinModule<'a> {
+    pub id: CString,
+    pub data: &'a [u8],
+}
+
+/// What the command line asks of ThinLTO.
+pub struct ThinOptions<'a> {
+    /// -mllvm: LLVM options, which ThinLTO takes globally.
+    pub debug_options: &'a [Vec<u8>],
+    /// -mcpu: the CPU to compile for.
+    pub cpu: Option<&'a str>,
+    /// -object_path_lto: the directory libLTO writes the objects to,
+    /// for the debugger.
+    pub objects_dir: Option<&'a Path>,
+}
+
+/// An object ThinLTO compiled a module to: in memory, or written to a
+/// file in the -object_path_lto directory, which libLTO names.
+pub struct ThinObject {
+    pub path: Option<std::path::PathBuf>,
+    pub data: Vec<u8>,
+}
+
+/// Compiles bitcode modules with ThinLTO, which optimizes each on its
+/// own with what a summary of all of them says (importing functions
+/// across modules to inline), into an object per module, as ld-prime
+/// drives libLTO. `preserve` are the symbols the rest of the link
+/// needs; `cross` those the modules reference (libLTO keeps both).
+///
+/// # Safety
+///
+/// The plugin must be a loaded libLTO.
+pub unsafe fn compile_thin(
+    plugin: &Plugin,
+    modules: &[ThinModule],
+    preserve: &[&str],
+    cross: &[&str],
+    opts: &ThinOptions,
+) -> Vec<ThinObject> {
+    let c = |s: &[u8]| CString::new(s).unwrap_or_default();
+    // SAFETY: libLTO calls on a code generator created here, with
+    // NUL-terminated strings and buffers that outlive the calls.
+    unsafe {
+        // LLVM's options are global; ThinLTO parses them up front.
+        if !opts.debug_options.is_empty() {
+            let options: Vec<CString> = opts.debug_options.iter().map(|o| c(o)).collect();
+            let ptrs: Vec<*const c_char> = options.iter().map(|o| o.as_ptr()).collect();
+            (plugin.thinlto_debug_options)(ptrs.as_ptr(), ptrs.len() as c_int);
+        }
+        let cg = (plugin.thinlto_create_codegen)();
+        if cg.is_null() {
+            fatal!("thinlto_create_codegen failed: {}", plugin.error_message());
+        }
+        if let Some(cpu) = opts.cpu {
+            (plugin.thinlto_codegen_set_cpu)(cg, c(cpu.as_bytes()).as_ptr());
+        }
+        if (plugin.thinlto_codegen_set_pic_model)(cg, LTO_CODEGEN_PIC_MODEL_DYNAMIC) {
+            fatal!("could not set codegen model: {}", plugin.error_message());
+        }
+        for name in preserve {
+            (plugin.thinlto_codegen_add_must_preserve_symbol)(
+                cg,
+                name.as_ptr().cast(),
+                name.len() as c_int,
+            );
+        }
+        for name in cross {
+            (plugin.thinlto_codegen_add_cross_referenced_symbol)(
+                cg,
+                name.as_ptr().cast(),
+                name.len() as c_int,
+            );
+        }
+        for module in modules {
+            (plugin.thinlto_codegen_add_module)(
+                cg,
+                module.id.as_ptr(),
+                module.data.as_ptr().cast(),
+                module.data.len() as c_int,
+            );
+        }
+        let objects_dir = opts.objects_dir.map(|dir| c(crate::util::path_bytes(dir)));
+        if let Some(dir) = &objects_dir {
+            (plugin.thinlto_set_generated_objects_dir)(cg, dir.as_ptr());
+        }
+        (plugin.thinlto_codegen_process)(cg);
+
+        let objects = match objects_dir {
+            Some(_) => thin_object_files(plugin, cg),
+            None => thin_object_buffers(plugin, cg),
+        };
+        if objects.is_empty() {
+            fatal!(
+                "could not do ThinLTO codegen (thinlto_codegen_process didn't produce any \
+                 object): '{}', using libLTO version '{}'",
+                plugin.error_message(),
+                plugin.version()
+            );
+        }
+        objects
+    }
+}
+
+/// The objects ThinLTO compiled in memory. ld-prime skips an empty one.
+///
+/// # Safety
+///
+/// `cg` must be a ThinLTO code generator that has run.
+unsafe fn thin_object_buffers(plugin: &Plugin, cg: *mut c_void) -> Vec<ThinObject> {
+    let mut objects = Vec::new();
+    // SAFETY: the indices are in range, and each buffer lives as long
+    // as the generator.
+    unsafe {
+        for i in 0..(plugin.thinlto_module_get_num_objects)(cg) {
+            let buf = (plugin.thinlto_module_get_object)(cg, i);
+            if buf.size == 0 {
+                crate::warn!("Ignoring empty buffer generated by ThinLTO");
+                continue;
+            }
+            let data = std::slice::from_raw_parts(buf.buffer.cast::<u8>(), buf.size).to_vec();
+            objects.push(ThinObject { path: None, data });
+        }
+    }
+    objects
+}
+
+/// The objects ThinLTO wrote to the -object_path_lto directory, by the
+/// paths libLTO gave them: <dir>/<index>.<arch>.thinlto.o.
+///
+/// # Safety
+///
+/// `cg` must be a ThinLTO code generator that has run with a directory
+/// for its objects.
+unsafe fn thin_object_files(plugin: &Plugin, cg: *mut c_void) -> Vec<ThinObject> {
+    let mut objects = Vec::new();
+    // SAFETY: the indices are in range, and each path is NUL-terminated.
+    unsafe {
+        for i in 0..(plugin.thinlto_module_get_num_object_files)(cg) {
+            let path = CStr::from_ptr((plugin.thinlto_module_get_object_file)(cg, i));
+            let path = std::path::PathBuf::from(crate::util::os_str(path.to_bytes()));
+            let data = std::fs::read(&path)
+                .unwrap_or_else(|e| fatal!("cannot read ThinLTO object {}: {}", path.display(), e));
+            objects.push(ThinObject { path: Some(path), data });
+        }
+    }
+    objects
+}
+
 /// A bitcode file registered for LTO.
 pub struct BitcodeModule {
     /// The placeholder object that claims the module's symbols until
@@ -255,6 +468,8 @@ pub struct BitcodeModule {
     /// The names the module defines, internal ones included (which the
     /// placeholder doesn't claim).
     pub defined: Vec<&'static str>,
+    /// Whether clang built the module for ThinLTO (-flto=thin).
+    pub is_thin: bool,
 }
 
 /// A bitcode file LTO compiled, as the passes after LTO still see it
@@ -334,6 +549,12 @@ pub fn module_triple(plugin: &Plugin, module: usize) -> String {
         let triple = CStr::from_ptr((plugin.module_get_target_triple)(module as *mut c_void));
         triple.to_string_lossy().into_owned()
     }
+}
+
+/// Whether clang built a module parse_module created for ThinLTO.
+pub fn module_is_thin(plugin: &Plugin, module: usize) -> bool {
+    // SAFETY: the module handle is valid.
+    unsafe { (plugin.module_is_thinlto)(module as *mut c_void) }
 }
 
 /// Creates a module from a bitcode buffer and lists its symbols.
