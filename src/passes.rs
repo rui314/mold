@@ -1689,6 +1689,7 @@ pub fn load_autolink_deps<E: Target>(ctx: &mut Context<E>) -> Autolinked {
     pending.sort();
     pending.dedup();
     let dylibs_before = ctx.dylibs.len();
+    ctx.autolink_priority = ctx.autolink_priority.min(ctx.priority_counter + 1);
 
     // An auto-link option is a hint, and ld-prime says nothing when it
     // finds no library or framework for one unless symbols are left
@@ -1809,17 +1810,80 @@ fn import_from_dylib(
 pub fn claim_new_dylibs<E: Target>(ctx: &mut Context<E>, first: usize) {
     let dylibs = &ctx.dylibs;
     let providers = merged_providers(dylibs);
+    let order = dylib_search_order(&dylib_ranks(dylibs), first);
     ctx.symbols.syms.par_iter_mut().for_each(|sym| {
         if !sym.is_used() || sym.is_defined() {
             return;
         }
-        for (dylib_idx, dylib) in dylibs.iter().enumerate().skip(first) {
-            if dylib.exports.contains(sym.name()) {
-                import_from_dylib(sym, dylibs, &providers, dylib_idx);
-                break;
-            }
+        if let Some(&dylib_idx) = order.iter().find(|&&i| dylibs[i].exports.contains(sym.name())) {
+            import_from_dylib(sym, dylibs, &providers, dylib_idx);
         }
     });
+}
+
+/// The rank with which each dylib's exports claim a symbol, comparable
+/// with a lazy archive member's (see definition_rank), lower first; a
+/// dylib that stands for a library exports moved to has none. ld-prime
+/// looks a symbol up in the libraries the command line names, in their
+/// order among the other inputs, and only then, after every archive,
+/// in the public libraries they re-export: nearest first, a private
+/// library in between counting as a step, and among the equally near
+/// by the install name of the library that re-exports them, then by
+/// their own (a breadth-first walk of each level sorted by name). Then
+/// come the libraries auto-link options name, and the ones they
+/// re-export likewise. So a symbol of both Foundation and CFNetwork
+/// that `-framework Carbon -framework Foundation` finds binds to
+/// Foundation, though Carbon re-exports CoreServices, which re-exports
+/// CFNetwork.
+pub fn dylib_ranks(dylibs: &[input_files::DylibFile]) -> Vec<u64> {
+    let phase = |phase: u64| (2 << 40) | (phase << 32);
+    let mut ranks = vec![u64::MAX; dylibs.len()];
+    for (i, d) in dylibs.iter().enumerate().filter(|(_, d)| !d.is_implicit) {
+        // A library first loaded as a re-export takes the place of its
+        // naming.
+        let priority = d.named_at.as_ref().map_or(d.priority, |(p, _)| *p) as u64;
+        ranks[i] = phase(if d.is_autolinked { 2 } else { 0 }) | priority;
+    }
+    for autolinked in [false, true] {
+        // How near each re-exported library is, and the library that
+        // re-exports it there.
+        let mut key: Vec<Option<(u32, &[u8])>> = vec![None; dylibs.len()];
+        let mut queue: Vec<(usize, u32)> = (0..dylibs.len())
+            .filter(|&i| !dylibs[i].is_implicit && dylibs[i].is_autolinked == autolinked)
+            .map(|i| (i, 0))
+            .collect();
+        while let Some((i, depth)) = queue.pop() {
+            for edge in &dylibs[i].reexported {
+                let (to, k) = (edge.dylib, (depth + edge.hops, edge.via.as_slice()));
+                if dylibs[to].is_implicit
+                    && ranks[to] == u64::MAX
+                    && key[to].is_none_or(|old| k < old)
+                {
+                    key[to] = Some(k);
+                    queue.push((to, k.0));
+                }
+            }
+        }
+        let mut reached: Vec<usize> = (0..dylibs.len()).filter(|&i| key[i].is_some()).collect();
+        reached.sort_by_key(|&i| (key[i], &dylibs[i].install_name));
+        for (n, i) in reached.into_iter().enumerate() {
+            ranks[i] = phase(if autolinked { 3 } else { 1 }) | n as u64;
+        }
+    }
+    // One that no named library reaches, if any, comes last.
+    for (i, d) in dylibs.iter().enumerate() {
+        if ranks[i] == u64::MAX && d.name_source != input_files::NameSource::Moved {
+            ranks[i] = phase(4) | d.priority as u64;
+        }
+    }
+    ranks
+}
+
+/// The dylibs from `first` on that have a rank, in rank order.
+fn dylib_search_order(ranks: &[u64], first: usize) -> Vec<usize> {
+    let mut order: Vec<usize> = (first..ranks.len()).filter(|&i| ranks[i] != u64::MAX).collect();
+    order.sort_by_key(|&i| ranks[i]);
+    order
 }
 
 /// Adds the object that owns what the linker synthesizes: the
@@ -2083,10 +2147,14 @@ fn collect_references<E: Target>(ctx: &Context<E>, only_alive: bool) -> Referenc
 /// priority, lower is better. A live weak definition's rank carries
 /// the order in which ld-prime, like ld64, prefers the copies of one
 /// (see weak_definition_rank); the first copy wins only among equals.
+/// A lazy archive member from an archive that an auto-link option named,
+/// one of `autolink_priority` or later, comes after the libraries the
+/// command line's dylibs re-export (see dylib_ranks).
 fn definition_rank(
     isecs: &[InputSection],
     obj: &crate::input_files::ObjectFile,
     nlist: &NList,
+    autolink_priority: u32,
 ) -> Option<u64> {
     if nlist.is_stab() || !nlist.is_extern() {
         return None;
@@ -2107,7 +2175,8 @@ fn definition_rank(
     {
         weak_term = weak_definition_rank(&isecs[isec], nlist, obj.hidden);
     }
-    Some((class << 40) | (weak_term << 32) | obj.priority as u64)
+    let phase = if class == 2 && obj.priority >= autolink_priority { 2 } else { 0 };
+    Some((class << 40) | ((weak_term | phase) << 32) | obj.priority as u64)
 }
 
 /// How ld-prime, like ld64, orders the copies of a weak definition,
@@ -2140,7 +2209,7 @@ fn race_definitions<E: Target>(
     ctx.objs.par_iter().filter(|obj| !only_alive || obj.is_alive).for_each(|obj| {
         let r = obj.global_range();
         for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
-            if let Some(rank) = definition_rank(&ctx.isecs, obj, nlist) {
+            if let Some(rank) = definition_rank(&ctx.isecs, obj, nlist, ctx.autolink_priority) {
                 best[sym_id as usize].fetch_min(rank, Ordering::Relaxed);
             }
         }
@@ -2162,12 +2231,13 @@ fn claim_definitions<E: Target>(
     let syms_ptr = SymsPtr(ctx.symbols.syms.as_mut_ptr());
     let syms_ptr = &syms_ptr;
     let isecs = &ctx.isecs;
+    let autolink_priority = ctx.autolink_priority;
 
     ctx.objs.par_iter().enumerate().filter(|(_, obj)| !only_alive || obj.is_alive).for_each(
         |(obj_idx, obj)| {
             let r = obj.global_range();
             for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
-                let Some(rank) = definition_rank(isecs, obj, nlist) else {
+                let Some(rank) = definition_rank(isecs, obj, nlist, autolink_priority) else {
                     continue;
                 };
                 let won = best[sym_id as usize].load(Ordering::Relaxed);
@@ -2265,7 +2335,7 @@ fn merge_common_symbols<E: Target>(ctx: &mut Context<E>, best: &[std::sync::atom
 
 /// Dylib exports claim the referenced symbols that no object defines,
 /// or that only a lazy archive member does; an earlier dylib beats a
-/// later archive member and vice versa.
+/// later archive member and vice versa (see dylib_ranks).
 fn claim_dylib_exports<E: Target>(
     ctx: &mut Context<E>,
     used: &[std::sync::atomic::AtomicBool],
@@ -2274,6 +2344,8 @@ fn claim_dylib_exports<E: Target>(
     use std::sync::atomic::Ordering;
     let dylibs = &ctx.dylibs;
     let providers = merged_providers(dylibs);
+    let ranks = dylib_ranks(dylibs);
+    let order = dylib_search_order(&ranks, 0);
     // A tentative definition (a common symbol) beats a dylib's but
     // under -commons use_dylibs.
     let use_dylibs = ctx.args.commons == crate::cmdline::CommonsMode::UseDylibs;
@@ -2290,9 +2362,12 @@ fn claim_dylib_exports<E: Target>(
         if crate::dtrace::is_dtrace_symbol(sym.name()) {
             return;
         }
-        for (dylib_idx, dylib) in dylibs.iter().enumerate() {
-            let rank = (2u64 << 40) | dylib.priority as u64;
-            if rank < won && dylib.exports.contains(sym.name()) {
+        for &dylib_idx in &order {
+            if ranks[dylib_idx] >= won {
+                break;
+            }
+            let dylib = &dylibs[dylib_idx];
+            if dylib.exports.contains(sym.name()) {
                 if sym.is_common() {
                     sym.set_is_common(false);
                     sym.value = 0;

@@ -109,6 +109,11 @@ pub struct Context<E: Target> {
     /// -add_empty_section option stands for, from its place among the
     /// inputs (see cmdline::SectCreate).
     pub sectcreate_priority: Vec<u32>,
+    /// The first priority of the files auto-link options brought in,
+    /// which come after the libraries the command line names and the
+    /// ones they re-export (see passes::dylib_ranks); u32::MAX before
+    /// auto-linking.
+    pub autolink_priority: u32,
     /// The dylibs built for another platform than the link's, by the
     /// priority of the input they came with and with ld-prime's message,
     /// which it gives as it checks the inputs' versions (see
@@ -331,6 +336,7 @@ impl<E: Target> Context<E> {
             sym_aux: Vec::new(),
             priority_counter: 0,
             sectcreate_priority: Vec::new(),
+            autolink_priority: u32::MAX,
             foreign_platform_dylibs: Vec::new(),
             dylib_renamings: Vec::new(),
             lto_plugin: None,
