@@ -339,13 +339,10 @@ fn refuses_client<E: Target>(ctx: &Context<E>, mf: &'static MappedFile, rc: Read
 /// Whether an object or dylib is for an architecture the link doesn't
 /// take (see input_files::takes_arch), which ld-prime ignores with a
 /// warning - an archive member too, whether the link needs it or not.
-fn is_foreign<E: Target>(mf: &MappedFile) -> bool {
+fn is_foreign<E: Target>(ctx: &Context<E>, mf: &MappedFile) -> bool {
     let Some(arch) = input_files::foreign_arch::<E>(mf) else { return false };
-    crate::warn!(
-        "ignoring file '{}': found architecture '{arch}', required architecture '{}'",
-        mf.name.display(),
-        E::NAME
-    );
+    let why = format!("found architecture '{arch}', required architecture '{}'", E::NAME);
+    input_files::ignore_foreign_file(ctx, mf, &why);
     true
 }
 
@@ -383,7 +380,7 @@ fn collect_file<E: Target>(
     if !matches!(get_file_type(mf), FileType::Archive | FileType::Fat) {
         input_files::trace_file(ctx, path_bytes(&mf.name));
     }
-    if matches!(get_file_type(mf), FileType::Object | FileType::Dylib) && is_foreign::<E>(mf) {
+    if matches!(get_file_type(mf), FileType::Object | FileType::Dylib) && is_foreign(ctx, mf) {
         return;
     }
     match get_file_type(mf) {
@@ -471,7 +468,7 @@ fn collect_file<E: Target>(
                     FileType::LlvmBitcode => {
                         input_files::parse_bitcode(ctx, member, alive);
                     }
-                    FileType::Object if is_foreign::<E>(member) => {}
+                    FileType::Object if is_foreign(ctx, member) => {}
                     _ => {
                         let priority = ctx.next_priority();
                         out.push(PendingObject { mf: member, alive, hidden: rc.hidden, priority });
@@ -481,7 +478,7 @@ fn collect_file<E: Target>(
         }
         FileType::Fat => match input_files::fat_slice::<E>(mf) {
             Some(slice) => collect_file(ctx, slice, rc, out),
-            None => input_files::warn_fat_missing_arch::<E>(mf),
+            None => input_files::warn_fat_missing_arch(ctx, mf),
         },
         FileType::LlvmBitcode => {
             input_files::parse_bitcode(ctx, mf, true);

@@ -362,6 +362,9 @@ pub struct Args {
     pub client_name: Option<Vec<u8>>,
     /// -t: print each file that takes part in the link.
     pub trace: bool,
+    /// -arch_errors_fatal: an input file without the link's
+    /// architecture is an error rather than ignored with a warning.
+    pub arch_errors_fatal: bool,
     /// -ignore_optimization_hints: skip LC_LINKER_OPTIMIZATION_HINT
     /// processing.
     pub ignore_optimization_hints: bool,
@@ -559,6 +562,7 @@ impl Default for Args {
             allowable_clients: Vec::new(),
             client_name: None,
             trace: false,
+            arch_errors_fatal: false,
             ignore_optimization_hints: false,
             perf: false,
             warn_duplicate_libraries: true,
@@ -1784,6 +1788,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-allowable_client" => args.allowable_clients.push(bytes(next_arg(&mut i, name))),
             b"-client_name" => args.client_name = Some(bytes(next_arg(&mut i, name))),
             b"-t" => args.trace = true,
+            b"-arch_errors_fatal" => args.arch_errors_fatal = true,
             b"-ignore_optimization_hints" => args.ignore_optimization_hints = true,
             b"-print_statistics" => args.perf = true,
             b"-warn_duplicate_libraries" => args.warn_duplicate_libraries = true,

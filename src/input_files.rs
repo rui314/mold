@@ -3036,15 +3036,21 @@ pub fn fat_slice<E: Target>(mf: &'static MappedFile) -> Option<&'static MappedFi
     Some(mf.slice(name.into(), off, size))
 }
 
-/// ld-prime's warning as it ignores a fat file without a slice the link
-/// takes.
-pub fn warn_fat_missing_arch<E: Target>(mf: &MappedFile) {
-    crate::warn!(
-        "ignoring file '{}': fat file missing arch '{}', file has '{}'",
-        mf.name.display(),
-        E::NAME,
-        fat_arch_names(mf).join(",")
-    );
+/// Ignores an input file without the link's architecture, as ld-prime
+/// does: with a warning, or with an error under -arch_errors_fatal.
+pub fn ignore_foreign_file<E: Target>(ctx: &Context<E>, mf: &MappedFile, why: &str) {
+    if ctx.args.arch_errors_fatal {
+        crate::error!("{why} in '{}'", mf.name.display());
+    } else {
+        crate::warn!("ignoring file '{}': {why}", mf.name.display());
+    }
+}
+
+/// Ignores a fat file without a slice the link takes.
+pub fn warn_fat_missing_arch<E: Target>(ctx: &Context<E>, mf: &MappedFile) {
+    let arches = fat_arch_names(mf).join(",");
+    let why = format!("fat file missing arch '{}', file has '{arches}'", E::NAME);
+    ignore_foreign_file(ctx, mf, &why);
 }
 
 /// Parses a Mach-O dylib binary: its identity from LC_ID_DYLIB and its
@@ -3251,7 +3257,7 @@ fn load_reexports<E: Target>(
                     _ => match fat_slice::<E>(dep) {
                         Some(slice) => slice,
                         None => {
-                            warn_fat_missing_arch::<E>(dep);
+                            warn_fat_missing_arch(ctx, dep);
                             continue;
                         }
                     },
@@ -4199,12 +4205,9 @@ fn read_tbd<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> Option<tapi
 pub fn load_tbd<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> Option<tapi::TbdFile> {
     let tbd = read_tbd(ctx, mf);
     if tbd.is_none() {
-        crate::warn!(
-            "ignoring file '{}': tapi error: missing required architecture {} in file {}",
-            mf.name.display(),
-            E::NAME,
-            crate::passes::resolved_file_name(mf)
-        );
+        let path = crate::passes::resolved_file_name(mf);
+        let why = format!("tapi error: missing required architecture {} in file {path}", E::NAME);
+        ignore_foreign_file(ctx, mf, &why);
     }
     tbd
 }
