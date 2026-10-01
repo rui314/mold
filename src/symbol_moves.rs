@@ -1,15 +1,15 @@
 //! -move_to_rw_segment, -move_to_ro_segment and -dirty_data_list: lists
-//! of symbols whose atoms move to another segment - data written at run
-//! time (rw) or code and constants (ro), to put them on pages of their
-//! own, and the data a shared-cache dylib dirties, to __DATA_DIRTY.
-//! Each option takes the first of its lists that names one of an atom's
-//! symbols, or matches it with a pattern, and moves the atom to the
-//! section of its name in the list's segment (see
+//! of symbols whose subsections move to another segment - data written
+//! at run time (rw) or code and constants (ro), to put them on pages of
+//! their own, and the data a shared-cache dylib dirties, to
+//! __DATA_DIRTY. Each option takes the first of its lists that names one
+//! of a subsection's symbols, or matches it with a pattern, and moves
+//! the subsection to the section of its name in the list's segment (see
 //! output_sections::assign_input_sections). A new segment follows the
 //! linker's own, read-write as any other ld-prime doesn't know - but one
 //! made for moved code, which mold makes executable (see
 //! chunks::segment_prots). Fixups, symbols and -order_file treat a moved
-//! atom as any other.
+//! subsection as any other.
 
 use std::os::unix::ffi::OsStrExt;
 
@@ -23,7 +23,7 @@ use crate::passes::resolved_file_name;
 use crate::symbol::SymbolId;
 use crate::target::Target;
 
-/// The option that moves an atom.
+/// The option that moves a subsection.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum MoveOption {
     Rw,
@@ -49,8 +49,8 @@ pub struct Move {
     pub segment: &'static str,
 }
 
-/// What an atom holds, as ld-prime tells which option may move it: code,
-/// with the constants the compiler makes along with it in __TEXT
+/// What a subsection holds, as ld-prime tells which option may move it:
+/// code, with the constants the compiler makes along with it in __TEXT
 /// (strings, literals and exception tables), that -move_to_rw_segment
 /// does not move, data written at run time (by the program, or the
 /// Objective-C runtime) that -move_to_ro_segment does not, and anything
@@ -62,48 +62,50 @@ enum Content {
     Other,
 }
 
-/// The atom a symbol names: the subsection to move, the segment it is
-/// in, what it holds and what ld-prime calls that in its warnings.
-struct Atom<'a> {
-    /// The subsection the link kept of the atom (see
-    /// Context::resolve_isec) - a record the linker rewrote in place of
-    /// the input's too (see rewritten_records); none for an absolute
-    /// symbol, or for another subsection the linker places itself (an
-    /// input class reference folded into the GOT).
+/// The subsection a symbol names to ld-prime (an absolute symbol is one
+/// of its own there): the subsection to move, the segment it is in,
+/// what it holds and what ld-prime calls that in its warnings.
+struct Subsec<'a> {
+    /// The subsection the link kept (see Context::resolve_isec) - a
+    /// record the linker rewrote in place of the input's too (see
+    /// rewritten_records); none for an absolute symbol, or for a
+    /// subsection the linker places itself (an input class reference
+    /// folded into the GOT).
     isec: Option<u32>,
-    /// Where ld-prime comes to the atom (see Place).
+    /// Where ld-prime comes to the subsection (see Place).
     place: Place,
     segment: &'a str,
     content: Content,
     kind: &'static str,
 }
 
-/// Where ld-prime comes to an atom in its walk over the files' atoms,
-/// which orders its warnings and its -trace_symbol_layout lines: file
-/// by file, an object's atoms of its sections, then of its common
-/// symbols (mold makes their subsections after every input's), then of
-/// its absolute symbols; after the objects, the files ld-prime makes
-/// itself, each with its atoms in the order made - the -alias names of
-/// the command line's (in the options' order), the Objective-C one's
-/// relative method lists, then the thread-local variables' descriptors.
-/// (A file and a subsection, or an -alias.)
+/// Where ld-prime comes to a subsection in its walk over the files'
+/// subsections, which orders its warnings and its -trace_symbol_layout
+/// lines: file by file, an object's subsections of its sections, then
+/// of its common symbols (mold makes their subsections after every
+/// input's), then of its absolute symbols; after the objects, the files
+/// ld-prime makes itself, each with its subsections in the order made -
+/// the -alias names of the command line's (in the options' order), the
+/// Objective-C one's relative method lists, then the thread-local
+/// variables' descriptors. (A file and a subsection, or an -alias.)
 type Place = (u32, u64);
 
 const ALIASES_FILE: u32 = u32::MAX - 2;
 const OBJC_FILE: u32 = u32::MAX - 1;
 const TLV_FILE: u32 = u32::MAX;
 
-/// The file of a symbol that names an atom (see for_each_atom_symbol):
-/// an input object, or for an -alias name ld-prime's
-/// command-line-aliases-file, where the name stands for the atom of
-/// its base, which it gives as well.
+/// The file of a symbol that names a subsection (see
+/// for_each_subsec_symbol): an input object, or for an -alias name
+/// ld-prime's command-line-aliases-file, where the name stands for the
+/// subsection of its base, which it gives as well.
 #[derive(Clone, Copy)]
 enum SymbolFile {
     Obj(usize),
     Aliases(SymbolId),
 }
 
-/// What an atom of an input section holds, and ld-prime's name for it.
+/// What a subsection of an input section holds, and ld-prime's name for
+/// it.
 fn content_of(seg: &str, sect: &str, flags: u32) -> (Content, &'static str) {
     use Content::*;
     let flags = canonical_section_flags(seg, sect, flags);
@@ -151,12 +153,12 @@ fn content_of(seg: &str, sect: &str, flags: u32) -> (Content, &'static str) {
 /// subsection, and warns about each symbol a list names (not one a
 /// pattern matches) that its option cannot move, as ld-prime does: of
 /// -move_to_ro_segment's first, then of -move_to_rw_segment's, each in
-/// the order of the atoms (see Place). The two
-/// options look at an atom apart, each with the first of its lists
-/// that names it: one whose segment is the atom's own leaves it in
-/// place silently, -move_to_rw_segment's wins over the other's, and
-/// -dirty_data_list's applies only if neither moves the atom, nor to
-/// the thread-local template (and only in __DATA, see
+/// the order of the subsections (see Place). The two options look at a
+/// subsection apart, each with the first of its lists that names it:
+/// one whose segment is the subsection's own leaves it in place
+/// silently, -move_to_rw_segment's wins over the other's, and
+/// -dirty_data_list's applies only if neither moves the subsection, nor
+/// to the thread-local template (and only in __DATA, see
 /// output_sections::SectionMap::moved_name). A -r link moves nothing
 /// (cmdline::check_relocatable).
 pub(crate) fn find_moves<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32, Move> {
@@ -173,30 +175,30 @@ pub(crate) fn find_moves<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32,
     };
     let (rw_segs, ro_segs) = (segments(&args.move_to_rw), segments(&args.move_to_ro));
     let (mut rw_warnings, mut ro_warnings) = (Vec::new(), Vec::new());
-    let warning = |file: SymbolFile, id: SymbolId, atom: &Atom, list: &SymbolMove| {
-        let place = (atom.place, ctx.symbols[id].value);
+    let warning = |file: SymbolFile, id: SymbolId, subsec: &Subsec, list: &SymbolMove| {
+        let place = (subsec.place, ctx.symbols[id].value);
         // ld-prime makes the thread-local variables' descriptors, the
         // relative method lists and the -alias names itself.
-        let file = match (atom.kind, file) {
+        let file = match (subsec.kind, file) {
             ("thread-vars", _) => "tlv-file".to_string(),
             ("objc-method-list", _) => "objc-file".to_string(),
             (_, SymbolFile::Aliases(_)) => "command-line-aliases-file".to_string(),
             (_, SymbolFile::Obj(obj)) => resolved_file_name(ctx.objs[obj].mf),
         };
-        let what = if atom.content == Content::Code { "code" } else { "not code" };
+        let what = if subsec.content == Content::Code { "code" } else { "not code" };
         let msg = format!(
             "cannot move symbol '{}' ({file}) to segment '{}' because symbol is {what} (is {})",
             ctx.symbols[id].name(),
             list.segment,
-            atom.kind
+            subsec.kind
         );
         (place, msg)
     };
 
-    for_each_atom_symbol(ctx, |file, id, atom| {
+    for_each_subsec_symbol(ctx, |file, id, subsec| {
         // A list entry file:name names the symbol of an object of that
-        // leaf name. An -alias name stands for its base's atom, which a
-        // list names by either name.
+        // leaf name. An -alias name stands for its base's subsection,
+        // which a list names by either name.
         let (leaf, base) = match file {
             SymbolFile::Obj(obj) => {
                 (ctx.objs[obj].mf.name.file_name().map_or(&[][..], |f| f.as_bytes()), None)
@@ -218,30 +220,30 @@ pub(crate) fn find_moves<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32,
 
         let mut chosen = None;
         if let Some((i, named)) = find(&args.move_to_rw)
-            && rw_segs[i] != atom.segment
+            && rw_segs[i] != subsec.segment
         {
-            if atom.content != Content::Code {
+            if subsec.content != Content::Code {
                 chosen = Some(Move { option: MoveOption::Rw, segment: rw_segs[i] });
             } else if named {
-                rw_warnings.push(warning(file, id, &atom, &args.move_to_rw[i]));
+                rw_warnings.push(warning(file, id, &subsec, &args.move_to_rw[i]));
             }
         }
         if let Some((i, named)) = find(&args.move_to_ro)
-            && ro_segs[i] != atom.segment
+            && ro_segs[i] != subsec.segment
         {
-            if atom.content != Content::Data {
+            if subsec.content != Content::Data {
                 chosen = chosen.or(Some(Move { option: MoveOption::Ro, segment: ro_segs[i] }));
             } else if named {
-                ro_warnings.push(warning(file, id, &atom, &args.move_to_ro[i]));
+                ro_warnings.push(warning(file, id, &subsec, &args.move_to_ro[i]));
             }
         }
         if chosen.is_none()
             && find(&args.dirty_data).is_some()
-            && !matches!(atom.kind, "thread-data" | "thread-bss")
+            && !matches!(subsec.kind, "thread-data" | "thread-bss")
         {
             chosen = Some(Move { option: MoveOption::Dirty, segment: "__DATA_DIRTY" });
         }
-        if let (Some(m), Some(isec)) = (chosen, atom.isec) {
+        if let (Some(m), Some(isec)) = (chosen, subsec.isec) {
             moves.entry(isec).or_insert(m);
         }
     });
@@ -254,12 +256,13 @@ pub(crate) fn find_moves<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32,
     moves
 }
 
-/// Calls `f` with each symbol that names a live atom to ld-prime, with
-/// its file (see atom_named): the objects' symbols, then the -alias
-/// names of a definition in one, each with its base's atom.
-fn for_each_atom_symbol<'a, E: Target>(
+/// Calls `f` with each symbol that names a live subsection to ld-prime,
+/// with its file (see subsec_named): the objects' symbols, then the
+/// -alias names of a definition in one, each with its base's
+/// subsection.
+fn for_each_subsec_symbol<'a, E: Target>(
     ctx: &'a Context<E>,
-    mut f: impl FnMut(SymbolFile, SymbolId, Atom<'a>),
+    mut f: impl FnMut(SymbolFile, SymbolId, Subsec<'a>),
 ) {
     let commons = common_owners(ctx);
     let rewritten = rewritten_records(ctx);
@@ -268,8 +271,8 @@ fn for_each_atom_symbol<'a, E: Target>(
             continue;
         }
         for (nlist, &id) in obj.nlists.iter().zip(&obj.symbols) {
-            if let Some(atom) = atom_named(ctx, &commons, &rewritten, i, nlist, id) {
-                f(SymbolFile::Obj(i), id, atom);
+            if let Some(subsec) = subsec_named(ctx, &commons, &rewritten, i, nlist, id) {
+                f(SymbolFile::Obj(i), id, subsec);
             }
         }
     }
@@ -283,16 +286,16 @@ fn for_each_atom_symbol<'a, E: Target>(
             continue;
         };
         let nlist = &ctx.objs[obj].nlists[i];
-        if let Some(atom) = atom_named(ctx, &commons, &rewritten, obj, nlist, base) {
-            let atom = Atom { place: (ALIASES_FILE, k as u64), ..atom };
-            f(SymbolFile::Aliases(base), alias, atom);
+        if let Some(subsec) = subsec_named(ctx, &commons, &rewritten, obj, nlist, base) {
+            let subsec = Subsec { place: (ALIASES_FILE, k as u64), ..subsec };
+            f(SymbolFile::Aliases(base), alias, subsec);
         }
     }
 }
 
 /// The -alias names of definitions in objects, in the options' order,
-/// each with its base: the names ld-prime makes atoms of in its
-/// command-line-aliases-file, which stand for their bases' (see
+/// each with its base: ld-prime makes each name a subsection of its
+/// command-line-aliases-file, which stands for its base's (see
 /// passes::add_synthetic_symbols; a dylib's base leaves an indirect
 /// symbol, and a name an input defines stays the input's).
 pub(crate) fn object_aliases<E: Target>(
@@ -318,27 +321,27 @@ fn rewritten_records<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32, boo
     blobs.chain(lists).collect()
 }
 
-/// The atom ld-prime names by the symbol `id` of object `obj`, whose
-/// entry is `nlist`: a definition the link kept, external or local but
-/// no assembler label (see symtab::keep_local_symbol_in), in a section
-/// or absolute; or a common symbol, if the object's tentative definition
-/// is the one its subsection stands for (see common_owners). A method
-/// list ld-prime rewrote in the relative form (see rewritten_records)
-/// is code to it, which its own objc-file holds.
-fn atom_named<'a, E: Target>(
+/// The subsection ld-prime names by the symbol `id` of object `obj`,
+/// whose entry is `nlist`: a definition the link kept, external or
+/// local but no assembler label (see symtab::keep_local_symbol_in), in
+/// a section or absolute; or a common symbol, if the object's tentative
+/// definition is the one its subsection stands for (see common_owners).
+/// A method list ld-prime rewrote in the relative form (see
+/// rewritten_records) is code to it, which its own objc-file holds.
+fn subsec_named<'a, E: Target>(
     ctx: &'a Context<E>,
     commons: &hashbrown::HashMap<u32, u32>,
     rewritten: &hashbrown::HashMap<u32, bool>,
     obj: usize,
     nlist: &NList,
     id: SymbolId,
-) -> Option<Atom<'a>> {
+) -> Option<Subsec<'a>> {
     let sym = &ctx.symbols[id];
     if nlist.is_common() {
         let isec = sym.input_section().filter(|isec| commons.get(isec) == Some(&(obj as u32)))?;
         let (content, kind) = (Content::Data, "common");
         let place = (obj as u32, isec as u64);
-        return Some(Atom { isec: Some(isec), place, segment: "__DATA", content, kind });
+        return Some(Subsec { isec: Some(isec), place, segment: "__DATA", content, kind });
     }
     if nlist.is_stab()
         || !matches!(nlist.n_type(), N_SECT | N_ABS)
@@ -354,7 +357,7 @@ fn atom_named<'a, E: Target>(
     let Some(isec) = isec else {
         let (content, kind) = (Content::Data, "data");
         let place = (obj as u32, u64::MAX);
-        return Some(Atom { isec: None, place, segment: "", content, kind });
+        return Some(Subsec { isec: None, place, segment: "", content, kind });
     };
     let kept = ctx.resolve_isec(isec as usize);
     if !ctx.isecs[kept].is_alive() {
@@ -372,7 +375,7 @@ fn atom_named<'a, E: Target>(
         "thread-vars" => TLV_FILE,
         _ => obj as u32,
     };
-    Some(Atom {
+    Some(Subsec {
         isec: movable.then_some(kept as u32),
         place: (file, isec as u64),
         segment: hdr.segname(),
