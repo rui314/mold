@@ -395,7 +395,7 @@ fn plan_object_stabs<E: Target>(
         return StabPlan::default();
     }
     if obj.nlists.iter().any(|n| n.n_type == N_OSO) {
-        return copy_object_stabs(ctx, obj_idx);
+        return copy_object_stabs(ctx, obj_idx, commons);
     }
     if !obj.has_debug_info {
         return StabPlan::default();
@@ -450,7 +450,11 @@ fn plan_object_stabs<E: Target>(
 /// does (see copy_global_stab). A unit left with no notes - all of
 /// whose code is dead, or that never had any - goes, N_SO and N_OSO
 /// entries and all.
-fn copy_object_stabs<E: Target>(ctx: &Context<E>, obj_idx: usize) -> StabPlan {
+fn copy_object_stabs<E: Target>(
+    ctx: &Context<E>,
+    obj_idx: usize,
+    commons: &hashbrown::HashMap<SymbolId, usize>,
+) -> StabPlan {
     let obj = &ctx.objs[obj_idx];
     let mut out = Vec::new();
     // Entries whose n_value is an address in the object (n_sect
@@ -503,7 +507,7 @@ fn copy_object_stabs<E: Target>(ctx: &Context<E>, obj_idx: usize) -> StabPlan {
         // the unit's end.
         ent.n_strx = if name.is_empty() { 1 } else { 0 };
         if nlist.n_type == N_GSYM {
-            let stab = copy_global_stab(ctx, obj_idx, name, ent, &locals);
+            let stab = copy_global_stab(ctx, obj_idx, name, ent, &locals, commons);
             noted |= stab.is_some();
             out.extend(stab);
             continue;
@@ -537,7 +541,10 @@ fn copy_object_stabs<E: Target>(ctx: &Context<E>, obj_idx: usize) -> StabPlan {
 
 /// An N_GSYM copied from an earlier -r output, which ld-prime takes by
 /// the symbol it names: kept, with no address, if the object still
-/// defines the symbol, and dropped if another file's definition won.
+/// defines the symbol, and dropped if another file's definition won. A
+/// tentative definition, which the -r link passed on, is noted in the
+/// one object that notes it in a unit with DWARF (see
+/// common_stab_owners), not in each that declares it.
 /// A symbol that is one of the object's locals - a private external
 /// the -r link demoted - gets an N_STSYM of its address instead, as it
 /// would have had in a unit with DWARF, unless its section is one whose
@@ -549,6 +556,7 @@ fn copy_global_stab<E: Target>(
     name: &'static str,
     ent: NList,
     locals: &hashbrown::HashMap<&str, (SymbolId, &NList)>,
+    commons: &hashbrown::HashMap<SymbolId, usize>,
 ) -> Option<Stab> {
     let obj = &ctx.objs[obj_idx];
     if let Some(&(id, nlist)) = locals.get(name) {
@@ -566,7 +574,10 @@ fn copy_global_stab<E: Target>(
     }
     let id = ctx.symbols.get(name)?;
     match ctx.symbols[id].file() {
-        Some(FileId::Obj(o)) if o as usize == obj_idx || ctx.is_internal(o as usize) => {
+        Some(FileId::Obj(o))
+            if o as usize == obj_idx
+                || (ctx.is_internal(o as usize) && commons.get(&id) == Some(&obj_idx)) =>
+        {
             let ent = NList { n_sect: 0, n_value: 0, ..ent };
             Some(Stab { name: name.as_bytes(), ent, value_of: None, name_of: Some(id) })
         }
@@ -760,7 +771,8 @@ pub(crate) fn has_stabs(hdr: &MachSection) -> bool {
 }
 
 /// The object whose stabs note each tentative definition that no real
-/// one overrode: the first live object that declares it.
+/// one overrode: the first live object with notes - DWARF, or stabs of
+/// an earlier -r link's - that declares it.
 fn common_stab_owners<E: Target>(
     ctx: &Context<E>,
 ) -> hashbrown::HashMap<crate::symbol::SymbolId, usize> {
@@ -768,7 +780,9 @@ fn common_stab_owners<E: Target>(
         .objs
         .par_iter()
         .map(|obj| {
-            if !obj.is_alive || !obj.has_debug_info {
+            if !obj.is_alive
+                || !(obj.has_debug_info || obj.nlists.iter().any(|n| n.n_type == N_OSO))
+            {
                 return Vec::new();
             }
             let r = obj.global_range();
