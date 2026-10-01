@@ -507,9 +507,14 @@ pub fn parse(mf: &MappedFile, arch: &'static str, platform: u32) -> Option<TbdFi
             ..TbdFile::default()
         };
         let mut active = doc_active;
+        // The top-level key whose value the field is in: the symbols an
+        // "undefineds" section lists are the library's imports, which
+        // the link has no use for.
+        let mut section = "";
         for (i, field) in fields.iter().enumerate() {
             if field.indent == 0 && !field.item {
                 active = doc_active;
+                section = field.key;
             }
             if field.item {
                 let end = fields[i + 1..]
@@ -521,7 +526,7 @@ pub fn parse(mf: &MappedFile, arch: &'static str, platform: u32) -> Option<TbdFi
             if field.key == "install-name" {
                 tbd.install_name = unquote(field.value).to_string();
             }
-            if !active {
+            if !active || section == "undefineds" {
                 continue;
             }
             match field.key {
@@ -534,7 +539,10 @@ pub fn parse(mf: &MappedFile, arch: &'static str, platform: u32) -> Option<TbdFi
                 "parent-umbrella" | "umbrella" if !field.value.is_empty() => {
                     tbd.parent_umbrella = Some(unquote(field.value));
                 }
-                "allowable-clients" | "clients" => tbd.allowable_clients.extend(field.items()),
+                // Version 1 spells it allowed-clients.
+                "allowable-clients" | "allowed-clients" | "clients" => {
+                    tbd.allowable_clients.extend(field.items())
+                }
                 "symbols" => tbd.exports.extend(field.items()),
                 "weak-symbols" | "weak-def-symbols" => tbd.weak_exports.extend(field.items()),
                 "thread-local-symbols" => tbd.tlv_exports.extend(field.items()),
@@ -592,7 +600,12 @@ pub fn parse(mf: &MappedFile, arch: &'static str, platform: u32) -> Option<TbdFi
 struct YamlField {
     indent: usize,
     item: bool,
+    /// The key, unquoted.
     key: &'static str,
+    /// The value: a scalar, a flow sequence ("[ a, b ]", perhaps over
+    /// several lines), the lines of a block sequence of scalars ("- a"
+    /// and on) or empty, for a nested mapping or a block sequence of
+    /// them in the fields that follow.
     value: &'static str,
 }
 
@@ -601,10 +614,30 @@ impl YamlField {
         self.raw_items().map(unquote).filter(|s| !s.is_empty())
     }
 
-    /// The items of a flow list as written, with any blanks after one.
+    /// The items of a sequence as written, with any blanks after one.
     fn raw_items(&self) -> impl Iterator<Item = &'static str> {
-        self.value.trim_start_matches('[').trim_end_matches(']').split(',').map(str::trim_start)
+        let block = self.value.starts_with('-');
+        let (body, sep) = match block {
+            true => (self.value, '\n'),
+            false => (self.value.trim_start_matches('[').trim_end_matches(']'), ','),
+        };
+        body.split(sep).map(move |item| match block {
+            true => item.trim_start().trim_start_matches('-').trim_start(),
+            false => item.trim_start(),
+        })
     }
+}
+
+/// The scalar a block sequence's line ("- a") gives, if it gives one
+/// rather than starting a mapping ("- key: value"); a quoted one may
+/// have a colon in it ("- 'arm64: <uuid>'").
+fn block_scalar(line: &str) -> Option<&str> {
+    let item = line.strip_prefix('-')?;
+    if !item.is_empty() && !item.starts_with(' ') {
+        return None;
+    }
+    let item = item.trim();
+    (item.starts_with(['\'', '"']) || !item.contains(':')).then_some(item)
 }
 
 /// Stops the link on a malformed .tbd, `what` is wrong at `item` (a
@@ -690,16 +723,31 @@ fn yaml_matches<'a>(fields: impl Iterator<Item = &'a YamlField>, want: Target) -
 
 fn yaml_documents(text: &'static str) -> Vec<Vec<YamlField>> {
     let bytes = text.as_bytes();
-    let mut docs = vec![Vec::new()];
+    let mut docs: Vec<Vec<YamlField>> = vec![Vec::new()];
     let mut pos = 0;
     while pos < bytes.len() {
         let eol = memchr_from(bytes, b'\n', pos).unwrap_or(bytes.len());
         let raw = &text[pos..eol];
         let line = raw.trim_start();
         let mut next = eol + 1;
-        if line.starts_with("---") {
-            if !docs.last().unwrap().is_empty() {
-                docs.push(Vec::new());
+        if line.starts_with("---") && !docs.last().unwrap().is_empty() {
+            docs.push(Vec::new());
+        }
+        let fields = docs.last_mut().unwrap();
+        if line.starts_with("---") || line.starts_with('#') {
+        } else if let Some(item) = block_scalar(line) {
+            // A block sequence's scalars are its key's value, from the
+            // first one to the last.
+            if let Some(last) = fields.last_mut()
+                && (last.value.is_empty() || last.value.starts_with('-'))
+                && !item.is_empty()
+            {
+                let start = match last.value.is_empty() {
+                    true => line.as_ptr() as usize - text.as_ptr() as usize,
+                    false => last.value.as_ptr() as usize - text.as_ptr() as usize,
+                };
+                let end = item.as_ptr() as usize - text.as_ptr() as usize + item.len();
+                last.value = &text[start..end];
             }
         } else if let Some((key, value)) = line.strip_prefix("- ").unwrap_or(line).split_once(':') {
             let mut value = value.trim();
@@ -713,10 +761,10 @@ fn yaml_documents(text: &'static str) -> Vec<Vec<YamlField>> {
                 let end = value.as_ptr() as usize - text.as_ptr() as usize + value.len();
                 next = memchr_from(bytes, b'\n', end).map_or(bytes.len(), |i| i + 1);
             }
-            docs.last_mut().unwrap().push(YamlField {
+            fields.push(YamlField {
                 indent: raw.len() - line.len(),
                 item: line.starts_with("- "),
-                key,
+                key: unquote(key),
                 value,
             });
         }
