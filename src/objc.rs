@@ -724,11 +724,13 @@ pub fn fold_objc_classrefs<E: Target>(ctx: &mut Context<E>) {
 }
 
 /// Whether the link folds class references into __got: a final link
-/// for macOS 15 or later (see fold_objc_classrefs). From macOS 14.4 on
-/// they are read-only after fixups all the same (see
+/// for macOS 15 or later (see fold_objc_classrefs), of an image dyld
+/// loads (ld-prime optimizes the Objective-C of no other). From macOS
+/// 14.4 on they are read-only after fixups all the same (see
 /// objc_refs_are_const).
 fn folds_objc_classrefs<E: Target>(ctx: &Context<E>) -> bool {
     !ctx.args.relocatable
+        && !ctx.args.without_dyld()
         && ctx.args.platform == PLATFORM_MACOS
         && ctx.args.platform_minos >= encode_version(15, 0, 0)
 }

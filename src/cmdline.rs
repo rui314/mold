@@ -3323,12 +3323,17 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     // ld-prime converts Objective-C method lists from macOS 11 on, in
     // every arm64 image, and on x86-64 in dylibs and bundles only: an
     // x86-64 executable keeps the compiler's absolute lists at any
-    // deployment target.
-    args.objc_relative_method_lists = objc_relative_method_lists.unwrap_or(
-        (target.name == "arm64" || args.output_type != MH_EXECUTE)
-            && args.platform == PLATFORM_MACOS
-            && args.platform_minos >= encode_version(11, 0, 0),
-    );
+    // deployment target. It optimizes the Objective-C of no image dyld
+    // doesn't load (a -static or -preload one, a kext): it converts no
+    // method list there, whatever the option says, and merges no
+    // category (nor folds a class reference, see fold_objc_classrefs).
+    args.objc_relative_method_lists = !args.without_dyld()
+        && objc_relative_method_lists.unwrap_or(
+            (target.name == "arm64" || args.output_type != MH_EXECUTE)
+                && args.platform == PLATFORM_MACOS
+                && args.platform_minos >= encode_version(11, 0, 0),
+        );
+    args.objc_category_merging &= !args.without_dyld();
 
     // A -preload image has no __LINKEDIT segment: ld-prime keeps nothing
     // outside its segments but the symbol table (and the local
