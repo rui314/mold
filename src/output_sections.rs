@@ -1792,7 +1792,7 @@ fn add_linkedit_chunks<E: Target>(ctx: &mut Context<E>) {
         ctx.chunks.push(ChunkId::ExportTrie);
     } else if ctx.use_chained_fixups() {
         ctx.chunks.push(ChunkId::ChainedFixups);
-    } else if ctx.args.fixup_chains == Some(false) {
+    } else if ctx.args.no_fixup_chains {
         ctx.chunks.push(ChunkId::RebaseInfo);
         ctx.chunks.push(ChunkId::WeakBindInfo);
     } else if ctx.args.pie || ctx.args.is_kext() {

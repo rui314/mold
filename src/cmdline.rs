@@ -149,9 +149,17 @@ pub struct Args {
     pub dependency_info: Option<PathBuf>,
     /// -sdk_imports: Xcode's JSON report of imported APIs.
     pub sdk_imports: Option<PathBuf>,
-    /// Emit chained fixups instead of classic dyld info. None means
-    /// "decide from the deployment target".
-    pub fixup_chains: Option<bool>,
+    /// Whether the image is laid out for chained fixups rather than
+    /// classic dyld info (its imports bound by no lazy pointer):
+    /// -fixup_chains / -no_fixup_chains, resolved for the deployment
+    /// target at the end of parsing (see resolve_fixup_chains). An
+    /// x86-64 image still falls back to classic dyld info at an
+    /// unaligned pointer (see Context::use_chained_fixups).
+    pub fixup_chains: bool,
+    /// -no_fixup_chains: besides turning chained fixups off, it gives an
+    /// image no dyld loads (which has no fixups unless asked for them)
+    /// classic rebase and weak-bind opcodes.
+    pub no_fixup_chains: bool,
     /// The libLTO to load for bitcode inputs (-lto_library).
     pub lto_library: Option<PathBuf>,
     /// -stack_size: the main thread's stack size, recorded in LC_MAIN,
@@ -188,8 +196,9 @@ pub struct Args {
     /// dyld shared cache or kernel collection builder slide the
     /// segments apart. ld64 and ld-prime have no negative form.
     pub add_split_seg_info: bool,
-    /// -init_offsets: emit initializers as 32-bit image offsets
-    /// (__init_offsets) instead of absolute pointers (__mod_init_func).
+    /// Whether initializers are 32-bit image offsets (__init_offsets)
+    /// rather than absolute pointers (__mod_init_func): -init_offsets,
+    /// or implied by chained fixups (see parse_args).
     pub init_offsets: bool,
     /// -init: the function the image runs before its other
     /// initializers (the last one given).
@@ -424,7 +433,8 @@ impl Default for Args {
             map: None,
             dependency_info: None,
             sdk_imports: None,
-            fixup_chains: None,
+            fixup_chains: false,
+            no_fixup_chains: false,
             lto_library: None,
             stack_size: 0,
             sectcreate: Vec::new(),
@@ -1111,6 +1121,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut function_starts: Option<bool> = None;
     let mut data_in_code_info: Option<bool> = None;
     let mut adhoc_codesign: Option<bool> = None;
+    let mut fixup_chains: Option<bool> = None;
     let mut data_const: Option<bool> = None;
     let mut segprots: Vec<(String, u8, u8)> = Vec::new();
     let mut seg_page_sizes: Vec<(String, u64)> = Vec::new();
@@ -1305,8 +1316,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-map" => args.map = Some(path(next_arg(&mut i, name))),
             b"-sdk_imports" => args.sdk_imports = Some(path(next_arg(&mut i, name))),
-            b"-fixup_chains" => args.fixup_chains = Some(true),
-            b"-no_fixup_chains" => args.fixup_chains = Some(false),
+            b"-fixup_chains" => fixup_chains = Some(true),
+            b"-no_fixup_chains" => fixup_chains = Some(false),
             b"-adhoc_codesign" => adhoc_codesign = Some(true),
             b"-no_adhoc_codesign" => adhoc_codesign = Some(false),
             b"-dynamic" => args.dynamic = true,
@@ -2004,9 +2015,22 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     // image by its local ones: ld-prime takes neither -fixup_chains nor
     // -no_fixup_chains for them.
     if args.is_kext() || args.kernel {
-        args.fixup_chains = None;
+        fixup_chains = None;
     }
-    args.pie = resolve_pie(target, &args, pie);
+    args.pie = resolve_pie(target, &args, pie, fixup_chains);
+    args.fixup_chains = resolve_fixup_chains(target, &args, fixup_chains);
+    args.no_fixup_chains = fixup_chains == Some(false);
+    // ld-prime emits initializers as offsets implicitly with chained
+    // fixups: the point of chains is a fixup-free __DATA_CONST, and
+    // absolute initializer pointers would drag rebases back in. It
+    // follows -fixup_chains or the deployment target even when
+    // -undefined dynamic_lookup sends the fixups themselves back to
+    // classic dyld info; only -no_fixup_chains keeps __mod_init_func.
+    // Not so for a -static image, whose initializers dyld never runs
+    // (XNU runs the kernel's __mod_init_func itself): it converts only
+    // with -init_offsets.
+    args.init_offsets |= !args.static_link
+        && fixup_chains.unwrap_or_else(|| chained_fixups_by_default(target, &args));
     args.text_relocs = resolve_text_relocs(target, &args, read_only_relocs);
     args.segaddrs = resolve_segaddrs(std::mem::take(&mut args.segaddrs));
     resolve_stack(target, &mut args, stack_size, stack_addr);
@@ -2261,7 +2285,12 @@ fn resolve_stack(target: &TargetTraits, args: &mut Args, size: Option<u64>, addr
 /// versions that default to chained fixups. A -static image (a kernel)
 /// is PIE only with -pie or -kernel, or with -fixup_chains, whose
 /// chains exist to slide it.
-fn resolve_pie(target: &TargetTraits, args: &Args, pie: Option<bool>) -> bool {
+fn resolve_pie(
+    target: &TargetTraits,
+    args: &Args,
+    pie: Option<bool>,
+    fixup_chains: Option<bool>,
+) -> bool {
     match pie {
         Some(false) if args.output_type == MH_EXECUTE && !args.static_link && !args.relocatable => {
             if is_new_os(target.name, MH_EXECUTE, args.platform, args.platform_minos) {
@@ -2273,8 +2302,38 @@ fn resolve_pie(target: &TargetTraits, args: &Args, pie: Option<bool>) -> bool {
             target.name == "arm64"
         }
         Some(pie) => pie,
-        None => !args.static_link || args.kernel || args.fixup_chains == Some(true),
+        None => !args.static_link || args.kernel || fixup_chains == Some(true),
     }
+}
+
+/// Whether the image is laid out for chained fixups (see
+/// Args::fixup_chains).
+fn resolve_fixup_chains(target: &TargetTraits, args: &Args, fixup_chains: Option<bool>) -> bool {
+    // A static executable has no dyld: it has no chains unless
+    // -fixup_chains asks for them, which its own loader then walks
+    // (a -kernel image cannot). A kext has none either: kmutil
+    // links it into the kernel by its relocations.
+    if args.is_kext() {
+        return false;
+    }
+    if args.static_link {
+        return fixup_chains == Some(true);
+    }
+    // ld-prime's defaults: chained fixups from macOS 12 on arm64 and
+    // from macOS 13 on x86_64 (below that, classic dyld info with
+    // lazy binding), and never under -undefined dynamic_lookup or
+    // suppress - only an explicit -fixup_chains overrides that.
+    fixup_chains.unwrap_or_else(|| {
+        !args.undefined_dynamic_lookup && chained_fixups_by_default(target, args)
+    })
+}
+
+/// Whether the image defaults to chained fixups: its deployment target
+/// is new enough, and it is not a non-PIE executable, which ld-prime
+/// gives classic dyld info whatever the target.
+fn chained_fixups_by_default(target: &TargetTraits, args: &Args) -> bool {
+    (args.pie || args.output_type != MH_EXECUTE)
+        && is_new_os(target.name, args.output_type, args.platform, args.platform_minos)
 }
 
 /// Whether ld-prime gives the image __DATA_CONST, the segment dyld makes

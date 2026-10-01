@@ -400,46 +400,11 @@ impl<E: Target> Context<E> {
     }
 
     /// Returns true if the output uses chained fixups rather than
-    /// classic dyld rebase/bind opcodes.
+    /// classic dyld rebase/bind opcodes: it is laid out for them, and
+    /// no unaligned pointer turned an x86-64 image's to classic dyld
+    /// info.
     pub fn use_chained_fixups(&self) -> bool {
-        self.lays_out_chained_fixups() && !self.chained_fixups.disabled
-    }
-
-    /// Returns true if the output is laid out for chained fixups (its
-    /// imports bound by no lazy pointer), as it stays when an unaligned
-    /// pointer turns an x86-64 image's to classic dyld info.
-    fn lays_out_chained_fixups(&self) -> bool {
-        // A static executable has no dyld: it has no chains unless
-        // -fixup_chains asks for them, which its own loader then walks
-        // (a -kernel image cannot). A kext has none either: kmutil
-        // links it into the kernel by its relocations.
-        if self.args.is_kext() {
-            return false;
-        }
-        if self.args.static_link {
-            return self.args.fixup_chains == Some(true);
-        }
-        // ld-prime's defaults: chained fixups from macOS 12 on arm64 and
-        // from macOS 13 on x86_64 (below that, classic dyld info with
-        // lazy binding), and never under -undefined dynamic_lookup or
-        // suppress - only an explicit -fixup_chains overrides that.
-        self.args.fixup_chains.unwrap_or_else(|| {
-            !self.args.undefined_dynamic_lookup && self.chained_fixups_by_default()
-        })
-    }
-
-    /// Returns true if the output defaults to chained fixups: its
-    /// deployment target is new enough, and it is not a non-PIE
-    /// executable, which ld-prime gives classic dyld info whatever the
-    /// target.
-    pub fn chained_fixups_by_default(&self) -> bool {
-        (self.args.pie || self.args.output_type != crate::macho::MH_EXECUTE)
-            && crate::macho::is_new_os(
-                E::NAME,
-                self.args.output_type,
-                self.args.platform,
-                self.args.platform_minos,
-            )
+        self.args.fixup_chains && !self.chained_fixups.disabled
     }
 
     /// Whether the file is the internal object holding synthesized
@@ -603,7 +568,7 @@ impl<E: Target> Context<E> {
     pub fn lazy_binding(&self) -> bool {
         !self.args.relocatable
             && !self.args.without_dyld()
-            && !self.lays_out_chained_fixups()
+            && !self.args.fixup_chains
             && !self.args.bind_at_load
     }
 

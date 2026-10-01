@@ -464,11 +464,11 @@ pub fn check_classic_pointers<E: Target>(ctx: &Context<E>) {
 }
 
 /// Whether ld-prime checks the alignment of the pointers dyld fixes up:
-/// in an image dyld loads, for a deployment target it gives chained
-/// fixups by default (with classic dyld info too) or with -fixup_chains.
+/// in an image dyld loads, with chained fixups, or with classic dyld
+/// info for a deployment target that gives chained fixups by default.
 fn checks_pointer_alignment<E: Target>(ctx: &Context<E>) -> bool {
     !ctx.args.without_dyld()
-        && (ctx.args.fixup_chains == Some(true)
+        && (ctx.args.fixup_chains
             || crate::macho::is_new_os(
                 E::NAME,
                 ctx.args.output_type,

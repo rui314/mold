@@ -1887,23 +1887,14 @@ pub fn convert_common_symbols<E: Target>(ctx: &mut Context<E>) {
     }
 }
 
-/// With -init_offsets, replaces __mod_init_func's absolute pointers
+/// With -init_offsets (which chained fixups imply, see
+/// Args::init_offsets), replaces __mod_init_func's absolute pointers
 /// (which each need a rebase) with 32-bit image-relative offsets in a
 /// __TEXT,__init_offsets section (type S_INIT_FUNC_OFFSETS), which
 /// dyld runs the same way but never has to fix up.
 pub fn convert_init_offsets<E: Target>(ctx: &mut Context<E>) {
-    // ld-prime turns this on implicitly with chained fixups: the point
-    // of chains is a fixup-free __DATA_CONST, and absolute initializer
-    // pointers would drag rebases back in. It follows -fixup_chains or
-    // the deployment target even when -undefined dynamic_lookup sends
-    // the fixups themselves back to classic dyld info; only
-    // -no_fixup_chains keeps __mod_init_func. Not so for a -static
-    // image, whose initializers dyld never runs (XNU runs the kernel's
-    // __mod_init_func itself): it converts only with -init_offsets.
-    let implied = !ctx.args.static_link
-        && ctx.args.fixup_chains.unwrap_or_else(|| ctx.chained_fixups_by_default());
     let init = init_function(ctx);
-    if !ctx.args.init_offsets && !implied {
+    if !ctx.args.init_offsets {
         // ld-prime runs an -init function only from __init_offsets and
         // drops it here. ld64 named it in LC_ROUTINES_64, which dyld
         // runs before the image's other initializers; so do we, for an
