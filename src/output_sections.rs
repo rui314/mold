@@ -190,9 +190,11 @@ pub(crate) fn objc_refs_are_const<E: Target>(ctx: &Context<E>) -> bool {
 /// dyld reads an image's interposing tuples (__DATA,__interpose) but
 /// never writes them, so from macOS 15 on ld-prime makes them read-only
 /// after fixups in any image dyld loads: they go to __DATA_CONST, even
-/// with -no_data_const.
+/// with -no_data_const. (A -r output, no image, keeps a -sectcreate
+/// __DATA,__interpose in __DATA.)
 fn interpose_is_const<E: Target>(ctx: &Context<E>) -> bool {
-    ctx.args.platform == crate::macho::PLATFORM_MACOS
+    !ctx.args.relocatable
+        && ctx.args.platform == crate::macho::PLATFORM_MACOS
         && ctx.args.platform_minos >= crate::macho::encode_version(15, 0, 0)
         && !ctx.args.without_dyld()
 }
@@ -1688,10 +1690,6 @@ fn lay_out_objc_method_lists<E: Target>(
 /// file order.
 /// Runs while the output sections' members are in input order.
 fn place_sectcreate_inputs<E: Target>(ctx: &mut Context<E>) {
-    // A -r output leaves them out.
-    if ctx.args.relocatable {
-        return;
-    }
     let map = SectionMap::final_link(ctx);
     let names: Vec<SectionName> = (ctx.args.sectcreate.iter())
         .map(|sc| map.renamed(&ctx.args, (static_name(&sc.segname), static_name(&sc.sectname))))

@@ -20,6 +20,8 @@ use std::cmp::Reverse;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, Ordering};
 
+use crate::chunks::output_section::OutputSection;
+use crate::chunks::sectcreate::{self, InputPlace};
 use crate::chunks::symtab::{SymtabSection, local_symbol_name, par_push_entries};
 use crate::chunks::{ChunkHeader, ChunkId, OutputSectionId};
 use crate::context::Context;
@@ -402,8 +404,9 @@ pub fn link<E: Target>(ctx: &mut Context<E>) -> u64 {
             .flatten()
             .collect();
 
-    // Every section in ld64's order, laid out from address zero, and
-    // placed in the file after the load commands.
+    // Every section in ld64's order - the -sectcreate options' own
+    // ones too - laid out from address zero, and placed in the file
+    // after the load commands.
     let sects = sort_sections(ctx, &synthetic);
     let vmsize = assign_addresses(ctx, &mut synthetic, &sects);
     let cmds = LoadCommands::new(ctx, sects.len());
@@ -419,11 +422,11 @@ pub fn link<E: Target>(ctx: &mut Context<E>) -> u64 {
         .iter()
         .filter_map(|s| match *s {
             Sect::Merged(i) => Some(i),
-            Sect::Synthetic(_) => None,
+            _ => None,
         })
         .collect();
     let t = ctx.timer("r-symtab");
-    let symtab = build_symtab(ctx, &merged);
+    let symtab = build_symtab(ctx, &merged, sectcreate_locals(ctx));
     drop(t);
     let t = ctx.timer("r-relocs");
     let targets = RelocTargets::new(ctx, &symtab);
@@ -455,6 +458,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) -> u64 {
             Sect::Synthetic(i) => {
                 synthetic[i].reloff = place(synthetic[i].relocs.len() * size_of::<MachRel>());
             }
+            Sect::Created(_) => {}
         }
     }
     // ld-prime rounds the segment's size up to 8 bytes and counts the
@@ -480,6 +484,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) -> u64 {
                 let sec = &synthetic[i];
                 section_header(&sec.hdr, &sec.relocs, sec.reloff)
             }
+            Sect::Created(i) => section_header(&ctx.sectcreate_sections[i].hdr, &[], 0),
         })
         .collect();
 
@@ -491,6 +496,10 @@ pub fn link<E: Target>(ctx: &mut Context<E>) -> u64 {
         let fileoff = sec.hdr.fileoff as usize;
         buf[fileoff..fileoff + sec.data.len()].copy_from_slice(&sec.data);
         write_array(&mut buf, sec.reloff as usize, &sec.relocs);
+    }
+    for sec in &ctx.sectcreate_sections {
+        let fileoff = sec.hdr.fileoff as usize;
+        buf[fileoff..fileoff + sec.contents.len()].copy_from_slice(sec.contents);
     }
     for &osec in &merged {
         write_array(&mut buf, reloff[osec.index()] as usize, &relocs[osec.index()]);
@@ -523,6 +532,29 @@ pub fn link<E: Target>(ctx: &mut Context<E>) -> u64 {
     off
 }
 
+/// The local symbols that name the -sectcreate input sections, which
+/// ld-prime lists after the objects' locals in command-line order:
+/// "l<sect-create>" and the section's name as the option spelled it,
+/// whichever section each went to, marked no-dead-strip.
+fn sectcreate_locals<E: Target>(ctx: &Context<E>) -> Vec<Local> {
+    (ctx.sectcreate_inputs.iter().zip(&ctx.args.sectcreate).enumerate())
+        .map(|(i, (input, sc))| {
+            let (addr, n_sect) = input.place(ctx);
+            Local {
+                name: format!("l<sect-create>{},{}", sc.segname, sc.sectname).leak(),
+                n_type: N_SECT,
+                n_desc: N_NO_DEAD_STRIP,
+                n_sect,
+                addr,
+                rename: Rename::None,
+                sym: None,
+                at: (u32::MAX, 0, i as u64),
+                rank: Rank::Local,
+            }
+        })
+        .collect()
+}
+
 /// The atoms of the sections the output makes itself, by address, as
 /// the map lists them.
 fn synthetic_atoms(synthetic: &[SyntheticSection]) -> Vec<(u64, RelocatableAtom)> {
@@ -550,12 +582,14 @@ fn synthetic_atoms(synthetic: &[SyntheticSection]) -> Vec<(u64, RelocatableAtom)
     atoms
 }
 
-/// A section of the -r output: merged from input subsections, or
-/// synthetic.
+/// A section of the -r output: merged from input subsections,
+/// synthetic, or one the -sectcreate options made of a name no input
+/// section has (an index into Context::sectcreate_sections).
 #[derive(Clone, Copy)]
 enum Sect {
     Merged(OutputSectionId),
     Synthetic(usize),
+    Created(usize),
 }
 
 fn sect_hdr<'a, E: Target>(
@@ -566,6 +600,7 @@ fn sect_hdr<'a, E: Target>(
     match s {
         Sect::Merged(i) => &ctx.output_section(i).hdr,
         Sect::Synthetic(i) => &synthetic[i].hdr,
+        Sect::Created(i) => &ctx.sectcreate_sections[i].hdr,
     }
 }
 
@@ -577,17 +612,24 @@ fn sect_hdr_mut<'a, E: Target>(
     match s {
         Sect::Merged(i) => &mut ctx.output_section_mut(i).hdr,
         Sect::Synthetic(i) => &mut synthetic[i].hdr,
+        Sect::Created(i) => &mut ctx.sectcreate_sections[i].hdr,
     }
 }
 
-/// Every output section, merged or synthetic, in ld64's order: ranked
-/// (see section_rank), and first-seen within a rank (a synthetic
-/// section after the merged ones).
+/// Every output section in ld64's order: ranked (see section_rank),
+/// and first-seen within a rank - a merged section as created, in
+/// input order; one the -sectcreate options make with the file of its
+/// first contents (see SectCreateInput), before the first merged
+/// section of a later file; the synthetic ones after all. A section of
+/// the options ranks as an unknown one of its segment, and the
+/// segments only the options name come after the inputs' in
+/// command-line order.
 fn sort_sections<E: Target>(ctx: &Context<E>, synthetic: &[SyntheticSection]) -> Vec<Sect> {
-    let mut sects: Vec<Sect> = (0..ctx.output_sections.len())
-        .map(|i| Sect::Merged(OutputSectionId::new(i as u32)))
-        .chain((0..synthetic.len()).map(Sect::Synthetic))
-        .collect();
+    let n = ctx.output_sections.len();
+    let merged = (0..n).map(|i| Sect::Merged(OutputSectionId::new(i as u32)));
+    let own = (0..ctx.sectcreate_sections.len()).map(Sect::Created);
+    let mut sects: Vec<Sect> =
+        merged.chain(own).chain((0..synthetic.len()).map(Sect::Synthetic)).collect();
     let mut segs_seen: Vec<&str> = Vec::new();
     for &s in &sects {
         let seg = sect_hdr(ctx, synthetic, s).segname;
@@ -595,10 +637,40 @@ fn sort_sections<E: Target>(ctx: &Context<E>, synthetic: &[SyntheticSection]) ->
             segs_seen.push(seg);
         }
     }
+
+    // The first file of each section the -sectcreate options make, and
+    // of each merged section if there are any of the former.
+    let mut first_inputs = vec![u32::MAX; ctx.sectcreate_sections.len()];
+    for (i, input) in ctx.sectcreate_inputs.iter().enumerate() {
+        if let InputPlace::Section { section, .. } = input.place {
+            let first = &mut first_inputs[section as usize];
+            *first = (*first).min(sectcreate::file_priority(ctx, i));
+        }
+    }
+    let first_files: Vec<u32> = if first_inputs.is_empty() {
+        Vec::new()
+    } else {
+        let input = |id: &&u32| !ctx.is_internal(ctx.isecs[**id].file as usize);
+        let file_priority = |id: &u32| ctx.objs[ctx.isecs[*id].file as usize].priority;
+        let first = |o: &OutputSection| o.members.iter().filter(input).map(file_priority).min();
+        ctx.output_sections.iter().map(|o| first(o).unwrap_or(u32::MAX)).collect()
+    };
+    let seen = |s: Sect| match s {
+        Sect::Merged(i) => (2 * i.index() + 1, 0),
+        Sect::Created(i) => {
+            let p = first_inputs[i];
+            (2 * first_files.iter().position(|&first| first > p).unwrap_or(n), p)
+        }
+        Sect::Synthetic(_) => (2 * n + 1, 0),
+    };
+
     sects.sort_by_key(|&s| {
         let hdr = sect_hdr(ctx, synthetic, s);
-        let (seg_rank, sect_rank) = section_rank(hdr.segname, &hdr.sectname, hdr.flags);
-        (seg_rank, segs_seen.iter().position(|&x| x == hdr.segname), sect_rank)
+        let (seg_rank, sect_rank) = match s {
+            Sect::Created(_) => section_rank(hdr.segname, "", 0),
+            _ => section_rank(hdr.segname, &hdr.sectname, hdr.flags),
+        };
+        (seg_rank, segs_seen.iter().position(|&x| x == hdr.segname), sect_rank, seen(s))
     });
     sects
 }
@@ -1512,11 +1584,15 @@ fn sym_addr<E: Target>(ctx: &Context<E>, id: SymbolId) -> u64 {
 
 /// Builds a -r output's symbol table as ld-prime lays it out: each
 /// object's local symbols in the order of its sections and of their
-/// addresses in each (a zerofill section comes by ordinal), then
-/// the stabs, opened by an N_SO of their own, then the defined
-/// externals and the undefined symbols, each by name. The strings are
-/// laid out as a final image's (see layout_strings).
-fn build_symtab<E: Target>(ctx: &Context<E>, merged: &[OutputSectionId]) -> RSymtab {
+/// addresses in each (a zerofill section comes by ordinal), and the
+/// `sectcreate` ones, then the stabs, opened by an N_SO of their own,
+/// then the defined externals and the undefined symbols, each by name.
+/// The strings are laid out as a final image's (see layout_strings).
+fn build_symtab<E: Target>(
+    ctx: &Context<E>,
+    merged: &[OutputSectionId],
+    sectcreate: Vec<Local>,
+) -> RSymtab {
     let t = ctx.timer("r-symtab-locals");
     let referenced = referenced_syms(ctx);
     let mut locals = Locals::new(ctx, merged);
@@ -1527,6 +1603,7 @@ fn build_symtab<E: Target>(ctx: &Context<E>, merged: &[OutputSectionId]) -> RSym
     if !ctx.args.keep_private_externs {
         locals.add_private_externs();
     }
+    locals.locals.extend(sectcreate);
     let (locals, atoms, atom_labels) = locals.finish();
     drop(t);
 
