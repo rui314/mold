@@ -38,3 +38,17 @@ done
 not $CC --ld-path=$mold -shared -o $t/q.dylib $t/q.o -Wl,-syslibroot,$t/root \
   -Wl,/opt/lib/libqux.dylib 2> $t/log
 grep -q 'file cannot be open()ed' $t/log
+
+# Outside the syslibroot the path is the file itself, whether or not a
+# stub sits next to it.
+mkdir -p $t/lib1 $t/lib2
+echo 'void qux(void) {}' | $CC -shared -o $t/lib1/libqux.dylib -xc - \
+  -Wl,-install_name,@rpath/libqux1.dylib
+cp $t/root/opt/lib/libqux.tbd $t/lib1/libqux.tbd
+cp $t/root/opt/lib/libqux.tbd $t/lib2/libqux.tbd
+for opt in -weak_library -needed_library -reexport_library -upward_library -lazy_library; do
+  $CC --ld-path=$mold -shared -o $t/q.dylib $t/q.o -Wl,$opt,$t/lib1/libqux.dylib 2> /dev/null
+  otool -L $t/q.dylib | grep -q @rpath/libqux1.dylib
+  not $CC --ld-path=$mold -shared -o $t/q.dylib $t/q.o -Wl,$opt,$t/lib2/libqux.dylib 2> $t/log
+  grep -q "library '$t/lib2/libqux.dylib' not found" $t/log
+done

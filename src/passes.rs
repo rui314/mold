@@ -753,22 +753,18 @@ fn find_inputs<E: Target>(ctx: &Context<E>, inputs: &[InputArg]) -> Vec<Option<P
 
 /// The file an option that takes a library's path names: an absolute
 /// path under each -syslibroot first, as ld64's findFile looks it up,
-/// then as it is, each time a stub in place of the library where there
-/// is one - `-weak_library /usr/lib/libz.dylib` links the SDK's
-/// usr/lib/libz.tbd. An object is taken as it is.
+/// a stub in place of the library where there is one there -
+/// `-weak_library /usr/lib/libz.dylib` links the SDK's
+/// usr/lib/libz.tbd - then the path as it is, itself only. An object
+/// is taken as it is.
 fn find_file<E: Target>(ctx: &Context<E>, path: &Path) -> Option<PathBuf> {
-    let ext = path.extension();
-    let object = ext == Some(OsStr::new("o"));
-    let archive = ext == Some(OsStr::new("a"));
+    let object = path.extension() == Some(OsStr::new("o"));
     let mut candidates: Vec<PathBuf> = Vec::new();
     if path.is_absolute() && !object {
         for root in &ctx.args.syslibroot {
             let path = under_root(root, path);
             candidates.extend([path.with_extension("tbd"), path]);
         }
-    }
-    if !object && !archive {
-        candidates.push(path.with_extension("tbd"));
     }
     candidates.push(path.to_path_buf());
     candidates.into_iter().find(|path| path.exists())
