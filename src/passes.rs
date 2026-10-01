@@ -2683,6 +2683,49 @@ pub fn handle_unexported_symbols_list<E: Target>(ctx: &mut Context<E>) {
     });
 }
 
+/// -force_symbols_weak_list and -force_symbols_not_weak_list make the
+/// exported definitions they name weak or not (the weak list winning),
+/// which dyld then coalesces, or not, at load time: the image calls
+/// and points to a forced-weak one as to any weak definition. A hidden
+/// one stays as it is, with a warning, by name, if it would change.
+pub fn force_symbol_weakness<E: Target>(ctx: &mut Context<E>) {
+    let (weak, not_weak) = (&ctx.args.force_weak, &ctx.args.force_not_weak);
+    if weak.is_empty() && not_weak.is_empty() {
+        return;
+    }
+    let mut hidden: Vec<(&str, bool)> = ctx
+        .symbols
+        .syms
+        .par_iter_mut()
+        .filter_map(|sym| {
+            if !matches!(sym.file(), Some(FileId::Obj(_))) || sym.input_section().is_none() {
+                return None;
+            }
+            let name = sym.name();
+            let force = if weak.find(name.as_bytes()) != -1 {
+                true
+            } else if not_weak.find(name.as_bytes()) != -1 {
+                false
+            } else {
+                return None;
+            };
+            if sym.is_weak_def() == force {
+                return None;
+            }
+            if sym.is_extern() && !sym.is_private_extern() {
+                sym.set_is_weak_def(force);
+                return None;
+            }
+            Some((name, force))
+        })
+        .collect();
+    hidden.par_sort_unstable();
+    for (name, weak) in hidden {
+        let kind = if weak { "weak" } else { "not-weak" };
+        crate::warn!("cannot force to be {kind}, non-external symbol {name}");
+    }
+}
+
 /// Discards the losing copies of coalesced weak definitions. Symbol
 /// resolution picks one definition per weak symbol, but the losing
 /// objects' subsections still hold the duplicate bodies - a C++-heavy

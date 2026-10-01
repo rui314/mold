@@ -157,6 +157,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     timed!("hide_all_exports", passes::hide_all_exports(&mut ctx));
     timed!("handle_exported_symbols_list", passes::handle_exported_symbols_list(&mut ctx));
     timed!("handle_unexported_symbols_list", passes::handle_unexported_symbols_list(&mut ctx));
+    passes::force_symbol_weakness(&mut ctx);
     timed!("create_symbol_reexports", passes::create_symbol_reexports(&mut ctx));
     timed!("coalesce_weak_defs", passes::coalesce_weak_defs(&mut ctx));
     passes::print_dependencies(&ctx);

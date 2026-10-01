@@ -396,6 +396,11 @@ pub struct Args {
     /// rounded up to a power of two). 2^15 unless given, 2^8 in a
     /// -preload image.
     pub max_default_common_align: u8,
+    /// -force_symbols_weak_list / -force_symbols_not_weak_list: the
+    /// exported definitions a final image makes weak, or not weak,
+    /// whatever their objects say (the weak list winning).
+    pub force_weak: Glob,
+    pub force_not_weak: Glob,
     /// -w: suppress warnings.
     pub suppress_warnings: bool,
     pub fatal_warnings: bool,
@@ -690,6 +695,8 @@ impl Default for Args {
             commons: CommonsMode::IgnoreDylibs,
             warn_commons: false,
             max_default_common_align: 15,
+            force_weak: Glob::new(),
+            force_not_weak: Glob::new(),
             suppress_warnings: false,
             fatal_warnings: false,
             demangle: false,
@@ -1535,6 +1542,10 @@ pub(crate) fn missing_argument(opt: &str) -> String {
         "-dyld_env" => "missing <arg>",
         "-weak_reference_mismatches" => "missing [ error | weak | non-weak ]",
         "-max_default_common_align" => "missing <align-value>",
+        // (ld-prime names the other list.)
+        "-force_symbols_not_weak_list" => {
+            return "-force_symbols_weak_list missing <path>".to_string();
+        }
         "-read_only_relocs" | "-arch_variant_lto_cache_mismatch" => "missing <option>",
         "-target" => "missing <target-triple>",
         "-alias" => "missing <real-name> <alias-name>",
@@ -1604,6 +1615,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut why_live = GlobBuilder::default();
     let mut local_strip_list = GlobBuilder::default();
     let mut local_keep_list: Option<GlobBuilder> = None;
+    let mut force_weak = GlobBuilder::default();
+    let mut force_not_weak = GlobBuilder::default();
+    let mut force_weakness_listed = false;
     let mut export_choice: Option<ExportChoice> = None;
     // The warnings about the obsolete options given, which ld-prime
     // ignores with a warning once it has read them all.
@@ -2350,6 +2364,15 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 }
                 max_default_common_align = Some(align.max(1).ilog2() as u8);
             }
+            b"-force_symbols_weak_list" | b"-force_symbols_not_weak_list" => {
+                let names = read_symbol_list(name, &path(next_arg(&mut i, name)));
+                let glob = match name {
+                    "-force_symbols_weak_list" => &mut force_weak,
+                    _ => &mut force_not_weak,
+                };
+                add_patterns(glob, name, names.iter().map(String::as_str));
+                force_weakness_listed = true;
+            }
 
             b"-dyld_env" => {
                 let arg = next_arg(&mut i, name).as_bytes();
@@ -2621,6 +2644,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     args.why_live = why_live.build();
     args.local_strip_list = local_strip_list.build();
     args.local_keep_list = local_keep_list.map(GlobBuilder::build);
+    args.force_weak = force_weak.build();
+    args.force_not_weak = force_not_weak.build();
 
     // -fatal_warnings applies to every warning, wherever it appears on
     // the command line. So does -w to those from the option checks
@@ -2628,6 +2653,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     crate::error::set_fatal_warnings(args.fatal_warnings);
     warnings.print();
     crate::error::set_suppress_warnings(args.suppress_warnings);
+    if force_weakness_listed {
+        crate::warn!("-force_symbols_[not_]weak_list is deprecated");
+    }
     // The build system's source version stands in for -source_version
     // unless -no_source_version says there is none (ld-prime reads it
     // even where there is none anyway).
