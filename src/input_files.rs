@@ -69,6 +69,38 @@ impl PlatformVersion {
         let vm = VersionMinCommand::read_from(data);
         Self { platform, minos: vm.version, sdk: vm.sdk }
     }
+
+    /// The deployment target a bitcode file's target triple names, such
+    /// as arm64-apple-macosx13.0.0 or arm64-apple-ios17.0.0-simulator,
+    /// if it names an Apple platform. The SDK is not part of it.
+    pub fn of_triple(triple: &str) -> Option<Self> {
+        let os = triple.splitn(3, '-').nth(2)?;
+        let (os, env) = os.split_once('-').unwrap_or((os, ""));
+        let (name, version) =
+            os.split_at(os.find(|c: char| c.is_ascii_digit()).unwrap_or(os.len()));
+        let simulator = env == "simulator";
+        let platform = match name {
+            "macos" | "macosx" if env == "macabi" => PLATFORM_MACCATALYST,
+            "ios" if env == "macabi" => PLATFORM_MACCATALYST,
+            "macos" | "macosx" => PLATFORM_MACOS,
+            "ios" if simulator => PLATFORM_IOSSIMULATOR,
+            "ios" => PLATFORM_IOS,
+            "tvos" if simulator => PLATFORM_TVOSSIMULATOR,
+            "tvos" => PLATFORM_TVOS,
+            "watchos" if simulator => PLATFORM_WATCHOSSIMULATOR,
+            "watchos" => PLATFORM_WATCHOS,
+            "xros" | "visionos" if simulator => PLATFORM_VISIONOSSIMULATOR,
+            "xros" | "visionos" => PLATFORM_VISIONOS,
+            "driverkit" => PLATFORM_DRIVERKIT,
+            "bridgeos" => PLATFORM_BRIDGEOS,
+            "firmware" => PLATFORM_FIRMWARE,
+            _ => return None,
+        };
+        let mut nums = version.split('.').map(|n| n.parse::<u32>().unwrap_or(0));
+        let mut num = || nums.next().unwrap_or(0);
+        let minos = encode_version(num(), num(), num());
+        Some(Self { platform, minos, sdk: 0 })
+    }
 }
 
 /// Whether a load command names a deployment target: LC_BUILD_VERSION,
@@ -2003,6 +2035,10 @@ pub fn parse_bitcode<E: Target>(
 ) -> usize {
     let plugin = ensure_lto_plugin(ctx);
     let (module, lsyms) = crate::lto::parse_module(&plugin, mf.data(), &mf.name);
+    // ld-prime checks the target triple's OS and version as it checks
+    // a Mach-O object's platform load command.
+    let triple = crate::lto::module_triple(&plugin, module);
+    let platform_versions = PlatformVersion::of_triple(&triple).into_iter().collect();
 
     let obj_idx = ctx.objs.len();
     let mut syms = Vec::new();
@@ -2036,7 +2072,7 @@ pub fn parse_bitcode<E: Target>(
         priority,
         linker_options: Vec::new(),
         linker_options_read: false,
-        platform_versions: Vec::new(),
+        platform_versions,
         hidden: false,
         subsections_via_symbols: true,
         sect_hdrs: std::borrow::Cow::Borrowed(&[]),

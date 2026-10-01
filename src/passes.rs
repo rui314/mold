@@ -2168,6 +2168,9 @@ pub fn do_lto<E: Target>(ctx: &mut Context<E>) -> bool {
     if !ctx.lto_modules.iter().any(|&(obj, _)| ctx.objs[obj].is_alive) {
         return false;
     }
+    // ld-prime compiles nothing for a link that already failed, say on
+    // a bitcode file built for another platform.
+    crate::error::checkpoint();
     let plugin = ctx.lto_plugin.unwrap();
 
     // SAFETY: libLTO calls with handles created by the same library.
@@ -2467,19 +2470,32 @@ pub fn warn_subtype_mismatches<E: Target>(ctx: &Context<E>) {
     }
 }
 
-/// Validates only objects selected by resolution, including the LTO
-/// output. Unused archive members must not cause errors or warnings.
+/// The inputs check_input_versions has looked at: the objects live
+/// then, and the dylibs loaded by then.
+#[derive(Default)]
+pub struct CheckedInputs {
+    objs: Vec<bool>,
+    dylibs: usize,
+}
+
+/// Validates only objects selected by resolution, not those `checked`
+/// covers. Unused archive members must not cause errors or warnings.
 /// ld-prime checks the dylibs the link names along with them, in input
 /// order, used or not; not those they re-export, nor those of the SDK,
-/// built for newer OS versions as a matter of course.
-pub fn check_input_versions<E: Target>(ctx: &Context<E>) {
+/// built for newer OS versions as a matter of course. It checks bitcode
+/// files by their target triples before LTO, and the object LTO makes
+/// (with what it pulls in) after: the driver calls this twice.
+pub fn check_input_versions<E: Target>(ctx: &Context<E>, checked: &CheckedInputs) -> CheckedInputs {
+    let now = CheckedInputs {
+        objs: ctx.objs.iter().map(|obj| obj.is_alive).collect(),
+        dylibs: ctx.dylibs.len(),
+    };
     // A -r or -preload output for no platform takes any object.
     let (platform, minos) = (ctx.args.platform, ctx.args.platform_minos);
     if platform == 0 {
-        return;
+        return now;
     }
-    let mut dylibs: Vec<(u32, &input_files::DylibFile)> = ctx
-        .dylibs
+    let mut dylibs: Vec<(u32, &input_files::DylibFile)> = ctx.dylibs[checked.dylibs..]
         .iter()
         .filter(|d| !d.is_implicit && !d.in_sdk && minos != 0 && d.minos > minos)
         .map(|d| (d.named_at.as_ref().map_or(d.priority, |(priority, _)| *priority), d))
@@ -2496,7 +2512,13 @@ pub fn check_input_versions<E: Target>(ctx: &Context<E>) {
         );
     };
 
-    for (i, obj) in ctx.objs.iter().enumerate().filter(|(_, obj)| obj.is_alive) {
+    // In input order: a bitcode file's placeholder object joins the
+    // link ahead of the Mach-O objects, which are staged in parallel.
+    let is_new = |i: usize| ctx.objs[i].is_alive && !checked.objs.get(i).is_some_and(|&c| c);
+    let mut objs: Vec<usize> = (0..ctx.objs.len()).filter(|&i| is_new(i)).collect();
+    objs.sort_by_key(|&i| ctx.objs[i].priority);
+    for i in objs {
+        let obj = &ctx.objs[i];
         while let Some((_, dylib)) = dylibs.next_if(|&(priority, _)| priority < obj.priority) {
             warn_dylib(dylib);
         }
@@ -2549,6 +2571,7 @@ pub fn check_input_versions<E: Target>(ctx: &Context<E>) {
     for (_, dylib) in dylibs {
         warn_dylib(dylib);
     }
+    now
 }
 
 /// Whether -remove_swift_reflection_metadata_sections drops an input

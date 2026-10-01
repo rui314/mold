@@ -241,13 +241,19 @@ fn create_module(plugin: &Plugin, data: &[u8], name: &Path) -> *mut c_void {
 /// arm64-apple-macosx13.0.0.
 pub fn target_triple(plugin: &Plugin, data: &[u8], name: &Path) -> String {
     let module = create_module(plugin, data, name);
-    // SAFETY: the module handle is valid until disposed of, and the
-    // triple is a NUL-terminated string it owns.
+    let triple = module_triple(plugin, module as usize);
+    // SAFETY: the module handle is valid and no longer used.
+    unsafe { (plugin.module_dispose)(module) };
+    triple
+}
+
+/// The target triple of a module parse_module created.
+pub fn module_triple(plugin: &Plugin, module: usize) -> String {
+    // SAFETY: the module handle is valid, and the triple is a
+    // NUL-terminated string it owns.
     unsafe {
-        let triple = CStr::from_ptr((plugin.module_get_target_triple)(module));
-        let triple = triple.to_string_lossy().into_owned();
-        (plugin.module_dispose)(module);
-        triple
+        let triple = CStr::from_ptr((plugin.module_get_target_triple)(module as *mut c_void));
+        triple.to_string_lossy().into_owned()
     }
 }
 

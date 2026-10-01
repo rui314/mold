@@ -86,6 +86,8 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
             passes::Autolinked::Objects => {}
         }
     }
+    passes::warn_subtype_mismatches(&ctx);
+    let checked = passes::check_input_versions(&ctx, &Default::default());
     if ctx.args.relocatable && passes::links_only_bitcode(&ctx) {
         t.stop();
         passes::write_merged_bitcode(&ctx);
@@ -108,10 +110,9 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
                 passes::Autolinked::Objects => {}
             }
         }
+        passes::check_input_versions(&ctx, &checked);
     }
     t.stop();
-    passes::warn_subtype_mismatches(&ctx);
-    passes::check_input_versions(&ctx);
     passes::check_common_conflicts(&mut ctx);
     let t = ctx.timer("remove_unreachable_files");
     passes::remove_unreachable_files(&mut ctx);
