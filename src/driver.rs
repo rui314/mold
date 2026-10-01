@@ -73,6 +73,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     drop(t);
     passes::create_internal_file(&mut ctx);
     crate::error::checkpoint();
+    passes::check_mergeable_libraries(&ctx);
     let mut t = ctx.timer("resolve_symbols");
     loop {
         passes::resolve_symbols(&mut ctx);

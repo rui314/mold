@@ -610,12 +610,14 @@ fn warn_duplicate_libraries<E: Target>(ctx: &Context<E>) {
             InputArg::HiddenLib(name) => ("-hidden-l", name.as_os_str()),
             InputArg::UpwardLib(name) => ("-upward-l", name.as_os_str()),
             InputArg::LazyLib(name) => ("-lazy-l", name.as_os_str()),
+            InputArg::NoMergeLib(name) => ("-no_merge-l", name.as_os_str()),
             InputArg::ForceLoad(path) => ("-force_load ", path.as_os_str()),
             InputArg::WeakFile(path) => ("-weak_library ", path.as_os_str()),
             InputArg::ReexportFile(path) => ("-reexport_library ", path.as_os_str()),
             InputArg::NeededFile(path) => ("-needed_library ", path.as_os_str()),
             InputArg::UpwardFile(path) => ("-upward_library ", path.as_os_str()),
             InputArg::LazyFile(path) => ("-lazy_library ", path.as_os_str()),
+            InputArg::NoMergeFile(path) => ("-no_merge_library ", path.as_os_str()),
             // Objects, which are many, go without a string.
             InputArg::File(path) => {
                 if !seen_files.insert(path)
@@ -691,6 +693,30 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
     load_pending(ctx, queue);
 }
 
+/// Refuses what ld-prime does for mergeable libraries that mold can't
+/// do yet. An image that re-exports a library with -no_merge_* gets
+/// ld-prime's hook for the library's classes, Objective-C or Swift,
+/// whenever it has some (Args::merged_libraries_hook), unless
+/// -no_merged_libraries_hook; mold has no such hook to add. (A -r
+/// output and an image that links no dylib ignore the library.)
+pub fn check_mergeable_libraries<E: Target>(ctx: &Context<E>) {
+    if !ctx.args.merged_libraries_hook || ctx.args.relocatable || !ctx.args.links_dylibs() {
+        return;
+    }
+    let no_merge = ctx.args.inputs.iter().find_map(|arg| match arg {
+        InputArg::NoMergeLib(name) => Some(format!("-no_merge-l{}", name.display())),
+        InputArg::NoMergeFramework(name) => Some(format!("-no_merge_framework {}", name.display())),
+        InputArg::NoMergeFile(path) => Some(format!("-no_merge_library {}", path.display())),
+        _ => None,
+    });
+    if let Some(opt) = no_merge {
+        fatal!(
+            "{opt}: the hook for the classes of mergeable libraries is not supported; \
+             use -no_merged_libraries_hook"
+        );
+    }
+}
+
 /// Loads the files that -dylib_file names for re-exported libraries
 /// but that are no libraries (see load_reexports) as any input, after
 /// the command line's: ld-prime links an object named so into the
@@ -736,17 +762,21 @@ fn find_inputs<E: Target>(ctx: &Context<E>, inputs: &[InputArg]) -> Vec<Option<P
         | InputArg::ReexportFile(path)
         | InputArg::NeededFile(path)
         | InputArg::UpwardFile(path)
-        | InputArg::LazyFile(path) => find_file(ctx, path),
+        | InputArg::LazyFile(path)
+        | InputArg::NoMergeFile(path) => find_file(ctx, path),
         InputArg::Lib(name, _)
         | InputArg::HiddenLib(name)
         | InputArg::NeededLib(name)
         | InputArg::LazyLib(name) => find_library(ctx, name),
-        InputArg::UpwardLib(name) | InputArg::ReexportLib(name) => find_dylib(ctx, name),
+        InputArg::UpwardLib(name) | InputArg::ReexportLib(name) | InputArg::NoMergeLib(name) => {
+            find_dylib(ctx, name)
+        }
         InputArg::Framework(name, _)
         | InputArg::ReexportFramework(name)
         | InputArg::NeededFramework(name)
         | InputArg::UpwardFramework(name)
-        | InputArg::LazyFramework(name) => find_framework(ctx, name),
+        | InputArg::LazyFramework(name)
+        | InputArg::NoMergeFramework(name) => find_framework(ctx, name),
     };
     inputs.iter().map(find).collect()
 }
@@ -811,14 +841,24 @@ fn library_option(arg: &InputArg) -> Option<(ReaderContext, bool, &OsStr)> {
         | ReexportFramework(name)
         | NeededFramework(name)
         | UpwardFramework(name)
-        | LazyFramework(name) => name.as_os_str(),
+        | LazyFramework(name)
+        | NoMergeLib(name)
+        | NoMergeFramework(name) => name.as_os_str(),
         WeakFile(path) | ReexportFile(path) | NeededFile(path) | UpwardFile(path)
-        | LazyFile(path) => path.as_os_str(),
+        | LazyFile(path) | NoMergeFile(path) => path.as_os_str(),
         File(_) | ForceLoad(_) | BundleLoader(_) => return None,
     };
     let rc = ReaderContext {
         weak: matches!(arg, Lib(_, true) | Framework(_, true) | WeakFile(_)),
-        reexport: matches!(arg, ReexportLib(_) | ReexportFramework(_) | ReexportFile(_)),
+        reexport: matches!(
+            arg,
+            ReexportLib(_)
+                | ReexportFramework(_)
+                | ReexportFile(_)
+                | NoMergeLib(_)
+                | NoMergeFramework(_)
+                | NoMergeFile(_)
+        ),
         hidden: matches!(arg, HiddenLib(_)),
         needed: matches!(arg, NeededLib(_) | NeededFramework(_) | NeededFile(_)),
         upward: matches!(arg, UpwardLib(_) | UpwardFramework(_) | UpwardFile(_)),
@@ -832,6 +872,7 @@ fn library_option(arg: &InputArg) -> Option<(ReaderContext, bool, &OsStr)> {
             | NeededFramework(_)
             | UpwardFramework(_)
             | LazyFramework(_)
+            | NoMergeFramework(_)
     );
     Some((rc, framework, name))
 }

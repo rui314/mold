@@ -78,6 +78,15 @@ pub enum InputArg {
     LazyLib(OsString),
     LazyFramework(OsString),
     LazyFile(PathBuf),
+    /// -no_merge-lfoo / -no_merge_framework Foo / -no_merge_library
+    /// path: a mergeable library this image re-exports, as Xcode's
+    /// debug builds link what its release builds merge (-merge_*).
+    /// They are -reexport-l, -reexport_framework and -reexport_library
+    /// but for the hook ld-prime adds for such libraries (see
+    /// Args::merged_libraries_hook), and as ld-prime spells them.
+    NoMergeLib(OsString),
+    NoMergeFramework(OsString),
+    NoMergeFile(PathBuf),
     /// `-bundle_loader path`: the executable a bundle's undefined
     /// symbols may resolve to, bound at run time as the main executable.
     /// A file of another kind is an input like any other.
@@ -418,6 +427,14 @@ pub struct Args {
     /// write permission (a text relocation): resolved from the kind of
     /// output and -read_only_relocs at the end of parsing.
     pub text_relocs: bool,
+    /// Whether ld-prime adds its hook to the image for the classes of
+    /// the mergeable libraries it merges or re-exports (-merge_*,
+    /// -no_merge_*): code (its own bundleForClassHook.o) that has
+    /// objc_setHook_getImageName place each such class in its
+    /// framework's directory within the app bundle, where the
+    /// framework's resources stay, rather than in this image. On
+    /// unless -no_merged_libraries_hook; mold has no such hook.
+    pub merged_libraries_hook: bool,
 }
 
 impl Default for Args {
@@ -543,6 +560,7 @@ impl Default for Args {
             no_branch_islands: false,
             pie: true,
             text_relocs: false,
+            merged_libraries_hook: true,
         }
     }
 }
@@ -1334,6 +1352,13 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-sub_library" => {
                 args.inputs.push(InputArg::ReexportLib(next_arg(&mut i, name).to_owned()))
             }
+            b"-no_merge_framework" => {
+                args.inputs.push(InputArg::NoMergeFramework(next_arg(&mut i, name).to_owned()))
+            }
+            b"-no_merge_library" => {
+                args.inputs.push(InputArg::NoMergeFile(path(next_arg(&mut i, name))))
+            }
+            b"-no_merged_libraries_hook" => args.merged_libraries_hook = false,
             b"-filelist" => {
                 args.inputs
                     .extend(read_filelist(next_arg(&mut i, name)).into_iter().map(InputArg::File));
@@ -1863,9 +1888,15 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             raw => {
                 // The library options with the name joined to them
                 // want one.
-                for prefix in
-                    ["-reexport-l", "-hidden-l", "-needed-l", "-upward-l", "-lazy-l", "-weak-l"]
-                {
+                for prefix in [
+                    "-reexport-l",
+                    "-hidden-l",
+                    "-needed-l",
+                    "-upward-l",
+                    "-lazy-l",
+                    "-weak-l",
+                    "-no_merge-l",
+                ] {
                     if raw == prefix.as_bytes() {
                         fatal!("{}", missing_argument(prefix));
                     }
@@ -1873,6 +1904,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 let os_name = |rest: &[u8]| os_str(rest).to_owned();
                 if let Some(lib) = raw.strip_prefix(b"-reexport-l") {
                     args.inputs.push(InputArg::ReexportLib(os_name(lib)));
+                } else if let Some(lib) = raw.strip_prefix(b"-no_merge-l") {
+                    args.inputs.push(InputArg::NoMergeLib(os_name(lib)));
                 } else if let Some(lib) = raw.strip_prefix(b"-hidden-l") {
                     args.inputs.push(InputArg::HiddenLib(os_name(lib)));
                 } else if let Some(lib) = raw.strip_prefix(b"-needed-l") {
