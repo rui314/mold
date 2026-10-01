@@ -1697,7 +1697,9 @@ fn add_sectcreate_sections<E: Target>(ctx: &mut Context<E>) {
 /// Merges the objects' __objc_imageinfo records into the image's: the
 /// Swift version must agree, the Swift language version is the newest,
 /// and the category-class-properties bit holds only if every
-/// Objective-C object has it.
+/// Objective-C object has it. An image no dyld loads (-static,
+/// -preload, a kext), whose Objective-C no runtime sets up, gets none
+/// from ld-prime.
 fn merge_objc_image_info<E: Target>(ctx: &mut Context<E>) {
     let infos: Vec<u32> =
         ctx.objs.iter().filter(|o| o.is_alive).filter_map(|o| o.objc_image_info).collect();
@@ -1712,6 +1714,9 @@ fn merge_objc_image_info<E: Target>(ctx: &mut Context<E>) {
         } else if v != 0 && v != swift_version {
             error!("incompatible __objc_imageinfo swift versions");
         }
+    }
+    if ctx.args.without_dyld() {
+        return;
     }
     let lang = infos.iter().map(|f| f >> 16).max().unwrap();
     let cat = infos.iter().all(|f| f & 0x40 != 0);

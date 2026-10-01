@@ -122,3 +122,16 @@ $mold -arch $ARCH -static -e __start $t/a.o $t/b.o $t/d.o -o $t/exe6
 [ "$(segs $t/exe6)" = '__PAGEZERO __TEXT __DATA __LINKEDIT ' ]
 $mold -arch $ARCH -static -e __start -data_const $t/a.o $t/b.o $t/d.o -o $t/exe7
 [ "$(segs $t/exe7)" = '__PAGEZERO __TEXT __DATA __DATA_CONST __LINKEDIT ' ]
+
+# No Objective-C runtime sets up an image no dyld loads: ld-prime gives
+# it no __objc_imageinfo, as it does a kext.
+cat <<EOF | $CC -o $t/e.o -c -xassembler -
+.section __DATA,__objc_imageinfo,regular,no_dead_strip
+.long 0, 64
+EOF
+$mold -arch $ARCH -static -e __start $t/a.o $t/b.o $t/e.o -o $t/exe8
+otool -l $t/exe8 > $t/lc8
+not grep -q __objc_imageinfo $t/lc8
+$mold -arch $ARCH -preload -e __start $t/a.o $t/b.o $t/e.o -o $t/exe9
+otool -l $t/exe9 > $t/lc9
+not grep -q __objc_imageinfo $t/lc9
