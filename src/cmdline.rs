@@ -2509,7 +2509,7 @@ fn resolve_segprots(
 /// with a warning as ld-prime does (the last one given wins), else the
 /// page size (4 KiB for a -preload image). ld-prime takes 0 as it is:
 /// pages of no size, and so segments of none, which fails a final link
-/// (see passes::check_section_file_ends).
+/// (see passes::check_segments).
 fn resolve_segment_align(target: &TargetTraits, args: &Args, segalign: Option<u64>) -> u64 {
     match segalign {
         None if args.preload => 0x1000,

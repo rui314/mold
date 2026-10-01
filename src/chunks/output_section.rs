@@ -55,6 +55,10 @@ pub struct OutputSection {
     /// Whether synthesized records (data blobs) stand among the members
     /// in place of the input records they replace.
     pub has_blobs: bool,
+    /// Whether thread-local data (input sections so typed) went here,
+    /// which a rename may have put in a section of another type (see
+    /// passes::check_tlv_template).
+    pub has_tlv_data: bool,
 }
 
 impl OutputSection {
@@ -66,6 +70,7 @@ impl OutputSection {
             tail: Tail::None,
             tail_off: 0,
             has_blobs: false,
+            has_tlv_data: false,
         }
     }
 }

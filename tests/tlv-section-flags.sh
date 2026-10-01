@@ -70,6 +70,39 @@ grep -q 'Missing TLV section flags in __FOO,__thread_data' $t/log
 not $CC --ld-path=$mold -o $t/exe2 $t/c.o $t/a.o 2> $t/log
 grep -q 'Missing TLV section flags in __TEXT,__thread_bss' $t/log
 
+# ld-prime checks the segments and then their sections in one walk in
+# load command order, and stops at the first error: of two sections
+# without the flags, the first in the layout, not in the input, and
+# not a segment out of order after it. It prints the layout once.
+cat <<EOF | $CC -o $t/e.o -c -xassembler -
+.section __CCC,__thread_data
+.quad 0
+EOF
+
+not $CC --ld-path=$mold -o $t/exe2 $t/e.o $t/bss.o $t/a.o 2> $t/log
+grep -q 'Missing TLV section flags in __DATA,__thread_bss' $t/log
+not grep -q '__CCC,__thread_data' $t/log
+[ "$(grep -c '^final section layout:$' $t/log)" = 1 ]
+
+cat <<EOF | $CC -o $t/f.o -c -xassembler -
+.section __AAA,__a
+.quad 0
+.space 0x7000
+.section __BBB,__b
+.quad 0
+EOF
+
+not $CC --ld-path=$mold -o $t/exe2 $t/bss.o $t/a.o $t/f.o -Wl,-segaddr,__AAA,0x200000000 \
+  2> $t/log
+grep -q 'Missing TLV section flags in __DATA,__thread_bss' $t/log
+not grep -q 'out of order' $t/log
+[ "$(grep -c '^final section layout:$' $t/log)" = 1 ]
+
+# A section past its segment's end in the file, before it in the walk.
+not $CC --ld-path=$mold -o $t/exe2 $t/data.o $t/a.o -Wl,-segalign,0x80000000 2> $t/log
+grep -q 'file end (2147483656) goes past the segment end (0) $' $t/log
+not grep -q 'Missing TLV' $t/log
+
 $mold -arch $ARCH -r -o $t/r.o $t/data.o $t/a.o
 
 # Thread-local data a rename puts in a section its first member types
@@ -92,6 +125,12 @@ not grep -q '^    __LINKEDIT .*fileSize=0x00000000$' $t/log
 not $CC --ld-path=$mold -o $t/exe3 $t/d.o $t/a.o \
   -Wl,-rename_section,__DATA,__thread_bss,__DATA,__bar 2> $t/log
 grep -q 'thread-locals too large' $t/log
+
+# ld-prime finds it after the errors of its walk over the segments.
+not $CC --ld-path=$mold -o $t/exe3 $t/d.o $t/a.o $t/f.o \
+  -Wl,-rename_section,__DATA,__thread_data,__DATA,__bar -Wl,-segaddr,__AAA,0x200000000 2> $t/log
+grep -q 'segment __BBB address is out of order' $t/log
+not grep -q 'thread-locals' $t/log
 
 $CC --ld-path=$mold -o $t/exe3 $t/a.o $t/d.o \
   -Wl,-rename_section,__DATA,__thread_data,__DATA,__bar

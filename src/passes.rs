@@ -4129,17 +4129,17 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
 
     // An error ld-prime finds before it lays out __LINKEDIT ends the
     // link there: it prints the layout with __LINKEDIT unsized (see
-    // unsized_linkedit_addr) - twice for one in the segments' layout.
-    let misplaced = check_section_file_ends(ctx) || check_segments_in_order(ctx);
-    if crate::error::has_early_layout_error() {
+    // unsized_linkedit_addr), once or twice (see check_segments).
+    let dumps = check_segments(ctx);
+    if dumps > 0 {
         ctx.segments[linkedit].cmd.vmaddr = unsized_linkedit_addr(ctx);
         ctx.segments[linkedit].cmd.fileoff = fileoff;
-        print_final_layout(ctx);
-        if misplaced {
+        for _ in 0..dumps {
             print_final_layout(ctx);
         }
         crate::error::checkpoint();
     }
+    check_tlv_template(ctx);
 
     // The fixup builders leave a text relocation's alignment alone.
     ctx.text_reloc_ranges = text_reloc_ranges(ctx);
@@ -4153,9 +4153,7 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
         .chunks
         .iter()
         .map(|&id| ctx.chunk_header(id))
-        .filter(|hdr| {
-            matches!(hdr.flags & SECTION_TYPE, S_THREAD_LOCAL_REGULAR | S_THREAD_LOCAL_ZEROFILL)
-        })
+        .filter(|hdr| hdr.is_thread_local())
         .map(|hdr| hdr.addr)
         .min()
         .unwrap_or(0);
@@ -4624,54 +4622,75 @@ fn check_segment_overlaps<E: Target>(ctx: &Context<E>) {
     }
 }
 
-/// ld-prime keeps a section's file offset in 32 bits, and so its
-/// segment's end, and refuses a section that ends past that: in a
-/// segment that ends at 4 GiB, which a -segalign of 2 GiB gives one,
-/// and in any with a -segalign of 0, which leaves every segment empty.
-/// It is an error in the layout it finds before __LINKEDIT (see
-/// error::early_layout_error), of the first such section. Returns
-/// whether it found one.
-fn check_section_file_ends<E: Target>(ctx: &Context<E>) -> bool {
-    for seg in &ctx.segments[..ctx.segments.len() - 1] {
+/// Checks the segments and their sections before __LINKEDIT is laid
+/// out, as ld-prime does: in one walk in load command order, each
+/// segment and then each of its sections, reporting the first error,
+/// an error in the layout (see error::layout_error). In an image dyld
+/// slides, a segment must not be below the one before it, nor a pinned
+/// __LINKEDIT below the last. ld-prime keeps a section's file offset in
+/// 32 bits, and so its segment's end, and refuses a section that ends
+/// past that: in a segment that ends at 4 GiB, which a -segalign of
+/// 2 GiB gives one, and in any with a -segalign of 0, which leaves
+/// every segment empty. And it takes a section named __thread_data or
+/// __thread_bss, in any segment, for part of the template dyld copies
+/// for each thread, which the variables' offsets count from, and
+/// refuses one its first member doesn't type as thread-local data.
+/// Returns how many times ld-prime prints the layout for the error:
+/// twice for a segment or a section out of place, once for a section's
+/// type, and none if there is no error.
+fn check_segments<E: Target>(ctx: &Context<E>) -> usize {
+    let slides = dyld_slides(ctx);
+    let (linkedit, segs) = ctx.segments.split_last().unwrap();
+    for (i, seg) in segs.iter().enumerate() {
+        if slides && i > 0 && seg.cmd.vmaddr < segs[i - 1].cmd.vmaddr {
+            crate::layout_error!("segment {} address is out of order", seg.name);
+            return 2;
+        }
         let seg_end = (seg.cmd.fileoff + seg.cmd.filesize) as u32;
-        for &id in &seg.chunks {
-            let hdr = ctx.chunk_header(id);
-            if hdr.is_sect && !hdr.is_zerofill() && hdr.fileoff + hdr.size > seg_end as u64 {
-                crate::early_layout_error!(
+        for hdr in seg.chunks.iter().map(|&id| ctx.chunk_header(id)).filter(|hdr| hdr.is_sect) {
+            if !hdr.is_zerofill() && hdr.fileoff + hdr.size > seg_end as u64 {
+                crate::layout_error!(
                     "section {},{} file end ({}) goes past the segment end ({seg_end}) ",
                     hdr.segname,
                     hdr.sectname,
                     hdr.fileoff + hdr.size
                 );
-                return true;
+                return 2;
+            }
+            if matches!(hdr.sectname.as_str(), "__thread_data" | "__thread_bss")
+                && !hdr.is_thread_local()
+            {
+                crate::layout_error!(
+                    "Missing TLV section flags in {},{}",
+                    hdr.segname,
+                    hdr.sectname
+                );
+                return 1;
             }
         }
     }
-    false
-}
-
-/// In an image dyld slides, ld-prime refuses a segment below the one
-/// before it - an error in the layout it finds before __LINKEDIT (see
-/// error::early_layout_error). It reports the first such segment.
-/// Returns whether it found one.
-fn check_segments_in_order<E: Target>(ctx: &Context<E>) -> bool {
-    if !dyld_slides(ctx) {
-        return false;
-    }
-    let (linkedit, segs) = ctx.segments.split_last().unwrap();
-    for pair in segs.windows(2) {
-        if pair[1].cmd.vmaddr < pair[0].cmd.vmaddr {
-            crate::early_layout_error!("segment {} address is out of order", pair[1].name);
-            return true;
-        }
-    }
-    if let (Some(addr), Some(last)) = (ctx.args.segaddr(linkedit.name), segs.last())
+    if slides
+        && let (Some(addr), Some(last)) = (ctx.args.segaddr(linkedit.name), segs.last())
         && addr < last.cmd.vmaddr
     {
-        crate::early_layout_error!("segment {} address is out of order", linkedit.name);
-        return true;
+        crate::layout_error!("segment {} address is out of order", linkedit.name);
+        return 2;
     }
-    false
+    0
+}
+
+/// Reports thread-local data (of input sections so typed) that a rename
+/// put in a section of another type, no part of the template: the
+/// offset from the template's start its variables' descriptors hold
+/// falls outside it. ld-prime reports data before the template, whose
+/// offset wraps past 4GB; mold also data after it, of which ld-prime
+/// writes an image dyld refuses, and data with no template left, on
+/// which ld-prime crashes. It is an error in the layout ld-prime finds
+/// after those of check_segments.
+fn check_tlv_template<E: Target>(ctx: &Context<E>) {
+    if ctx.output_sections.iter().any(|osec| osec.has_tlv_data && !osec.hdr.is_thread_local()) {
+        crate::layout_error!("thread-locals too large.  Max 4GB for 64-bit architectures");
+    }
 }
 
 /// Where ld-prime has __LINKEDIT when an error in the layout stops it

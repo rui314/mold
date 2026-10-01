@@ -842,8 +842,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
 /// output_section_for), creating the output sections in the order their
 /// first members come, and drops the sections the link consumes. A
 /// final image's sections that renames made of zero-fill and
-/// file-backed members alike are then settled, and its thread-local
-/// ones checked.
+/// file-backed members alike are then settled.
 fn assign_input_sections<E: Target>(ctx: &mut Context<E>, text: SectionName) {
     let map = SectionMap::new(ctx);
     // Each input section name's output section, keyed by the raw
@@ -869,8 +868,6 @@ fn assign_input_sections<E: Target>(ctx: &mut Context<E>, text: SectionName) {
     // Whether each output section has zero-fill (bit 0) and
     // file-backed (bit 1) input sections; renames can mix them.
     let mut fill_kinds: Vec<u8> = Vec::new();
-    // The output sections thread-local data went to.
-    let mut tlv_data: Vec<OutputSectionId> = Vec::new();
     for i in 0..ctx.isecs.len() {
         if !ctx.isecs[i].is_alive()
             || ctx.isecs[i].replacement != crate::input_sections::NO_REPLACEMENT
@@ -911,7 +908,7 @@ fn assign_input_sections<E: Target>(ctx: &mut Context<E>, text: SectionName) {
                 }
                 fill_kinds[id.index()] |= if hdr.is_zerofill() { 1 } else { 2 };
                 if matches!(hdr.section_type(), S_THREAD_LOCAL_REGULAR | S_THREAD_LOCAL_ZEROFILL) {
-                    tlv_data.push(id);
+                    ctx.output_section_mut(id).has_tlv_data = true;
                 }
             }
             last_hdr = hdr_ptr;
@@ -931,7 +928,6 @@ fn assign_input_sections<E: Target>(ctx: &mut Context<E>, text: SectionName) {
     }
     if !ctx.args.relocatable {
         resolve_zerofill_conflicts(ctx, &fill_kinds);
-        check_tlv_sections(ctx, &tlv_data);
     }
 }
 
@@ -1890,41 +1886,6 @@ fn resolve_zerofill_conflict<E: Target>(
         msg += &format!("\n  {}", name(file));
     }
     crate::warn!("{msg}");
-}
-
-/// Reports each section of a final image named __thread_data or
-/// __thread_bss, in any segment, that its first member doesn't type as
-/// thread-local data, as ld-prime does: it takes those names for the
-/// template dyld copies for each thread, which the variables' offsets
-/// count from. Failing that, reports thread-local data (of input
-/// sections so typed, which went to the `tlv_data` output sections)
-/// that a rename put in a section of another type, no part of the
-/// template: the offset from the template's start its variables'
-/// descriptors hold falls outside it. ld-prime reports data before the
-/// template, whose offset wraps past 4GB; mold also data after it, of
-/// which ld-prime writes an image dyld refuses, and data with no
-/// template left, on which ld-prime crashes. Both are errors in the
-/// layout, the first found before __LINKEDIT (see
-/// error::early_layout_error).
-fn check_tlv_sections<E: Target>(ctx: &Context<E>, tlv_data: &[OutputSectionId]) {
-    let is_tlv = |hdr: &crate::chunks::ChunkHeader| {
-        matches!(hdr.flags & SECTION_TYPE, S_THREAD_LOCAL_REGULAR | S_THREAD_LOCAL_ZEROFILL)
-    };
-    let mut missing = false;
-    for osec in &ctx.output_sections {
-        let hdr = &osec.hdr;
-        if matches!(hdr.sectname.as_str(), "__thread_data" | "__thread_bss") && !is_tlv(hdr) {
-            crate::early_layout_error!(
-                "Missing TLV section flags in {},{}",
-                hdr.segname,
-                hdr.sectname
-            );
-            missing = true;
-        }
-    }
-    if !missing && tlv_data.iter().any(|&id| !is_tlv(&ctx.output_section(id).hdr)) {
-        crate::layout_error!("thread-locals too large.  Max 4GB for 64-bit architectures");
-    }
 }
 
 /// The object each common symbol's subsection stands for the tentative

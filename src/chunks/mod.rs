@@ -101,6 +101,12 @@ impl ChunkHeader {
     pub fn is_zerofill(&self) -> bool {
         matches!(self.flags & SECTION_TYPE, S_ZEROFILL | S_THREAD_LOCAL_ZEROFILL)
     }
+
+    /// Whether the section is typed as part of the thread-local
+    /// template: its initial values or its zero fill.
+    pub fn is_thread_local(&self) -> bool {
+        matches!(self.flags & SECTION_TYPE, S_THREAD_LOCAL_REGULAR | S_THREAD_LOCAL_ZEROFILL)
+    }
 }
 
 /// Index of an output section in `Context::output_sections`.
