@@ -2011,6 +2011,7 @@ pub fn links_only_bitcode<E: Target>(ctx: &Context<E>) -> bool {
 /// Writes a -r link of bitcode alone as one merged bitcode file (see
 /// links_only_bitcode). ld-prime warns, then fails, if libLTO can't.
 pub fn write_merged_bitcode<E: Target>(ctx: &Context<E>) {
+    crate::error::checkpoint();
     let plugin = ctx.lto_plugin.unwrap();
     // SAFETY: libLTO calls with handles created by the same library.
     unsafe {
@@ -2196,9 +2197,21 @@ pub fn do_lto<E: Target>(ctx: &mut Context<E>) -> bool {
 
     // Retire the placeholders: the compiled object provides the real
     // definitions, so they must neither claim nor reference anything in
-    // the next resolution round.
+    // the next resolution round. What diagnostics still need to know of
+    // the files compiled is kept aside.
     let modules = std::mem::take(&mut ctx.lto_modules);
     for &(obj_idx, _) in &modules {
+        let obj = &ctx.objs[obj_idx];
+        if obj.is_alive {
+            let strong_defs = obj
+                .nlists
+                .iter()
+                .zip(&obj.symbols)
+                .filter(|(nlist, _)| nlist.n_type() == N_ABS && nlist.n_desc & N_WEAK_DEF == 0)
+                .map(|(_, &id)| id)
+                .collect();
+            ctx.lto_inputs.push(crate::lto::LtoInput { obj: obj_idx, strong_defs });
+        }
         let ids = ctx.objs[obj_idx].symbols.clone();
         for id in ids {
             let sym = &mut ctx.symbols[id];
@@ -3157,6 +3170,20 @@ pub fn coalesce_weak_defs<E: Target>(ctx: &mut Context<E>) {
 /// symbols it doesn't report in the number all the same. It lists them
 /// in no stable order; mold sorts them by name.
 pub fn check_duplicate_symbols<E: Target>(ctx: &Context<E>) {
+    report_duplicate_symbols(ctx, false);
+}
+
+/// Reports, before LTO, the symbols two bitcode files define strongly,
+/// which libLTO could not merge. ld-prime leaves a duplicate between
+/// bitcode and a Mach-O object to the check after LTO, which then finds
+/// it in the compiled object as well (see lto_roots).
+pub fn check_bitcode_duplicates<E: Target>(ctx: &Context<E>) {
+    if ctx.lto_modules.len() > 1 {
+        report_duplicate_symbols(ctx, true);
+    }
+}
+
+fn report_duplicate_symbols<E: Target>(ctx: &Context<E>, among_bitcode: bool) {
     // Each losing definition, and whether it is live.
     let mut losers: Vec<(SymbolId, usize, bool)> = ctx
         .objs
@@ -3194,11 +3221,36 @@ pub fn check_duplicate_symbols<E: Target>(ctx: &Context<E>) {
     losers.sort_by_key(|&(sym_id, obj_idx, _)| (ctx.symbols[sym_id].name(), obj_idx));
     losers.dedup();
 
+    // ld-prime lists the Mach-O objects that define the symbol, then the
+    // bitcode files, then the object LTO compiled them to - each group
+    // in no stable order, which mold makes input order.
+    let is_bitcode = |obj: usize| ctx.objs[obj].lto_module.is_some();
+    let rank = |obj: usize| {
+        let kind = match () {
+            _ if ctx.lto_obj == Some(obj) => 2,
+            _ if is_bitcode(obj) => 1,
+            _ => 0,
+        };
+        (kind, ctx.objs[obj].priority)
+    };
+
     let mut count = 0;
     let mut reported = false;
     for group in losers.chunk_by(|a, b| a.0 == b.0) {
         let id = group[0].0;
         let sym = &ctx.symbols[id];
+        let Some(FileId::Obj(winner)) = sym.file() else { continue };
+        let mut files: Vec<usize> = group.iter().map(|&(_, obj, _)| obj).collect();
+        files.push(winner as usize);
+        if among_bitcode && files.iter().filter(|&&obj| is_bitcode(obj)).count() < 2 {
+            continue;
+        }
+        // The bitcode files the compiled object took its definition
+        // from define the symbol too.
+        if files.iter().any(|&obj| ctx.lto_obj == Some(obj)) {
+            let defines = |input: &&crate::lto::LtoInput| input.strong_defs.contains(&id);
+            files.extend(ctx.lto_inputs.iter().filter(defines).map(|input| input.obj));
+        }
         if ctx.args.allow_dead_duplicates && group.iter().all(|&(_, _, live)| !live) {
             continue;
         }
@@ -3207,10 +3259,7 @@ pub fn check_duplicate_symbols<E: Target>(ctx: &Context<E>) {
             continue;
         }
         reported = true;
-        let Some(FileId::Obj(winner)) = sym.file() else { continue };
-        let mut files: Vec<usize> = group.iter().map(|&(_, obj, _)| obj).collect();
-        files.push(winner as usize);
-        files.sort_unstable();
+        files.sort_by_key(|&obj| rank(obj));
         crate::error::notice(format_args!("duplicate symbol '{sym}' in:"));
         for obj in files {
             crate::error::notice(format_args!("    {}", resolved_file_name(ctx.objs[obj].mf)));

@@ -114,6 +114,8 @@ pub struct Context<E: Target> {
     pub lto_modules: Vec<(usize, usize)>,
     /// The object LTO compiled the live bitcode modules to.
     pub lto_obj: Option<usize>,
+    /// The bitcode files LTO compiled, in input order.
+    pub lto_inputs: Vec<crate::lto::LtoInput>,
     /// Auto-link options already acted on.
     pub processed_linker_options: std::collections::HashSet<Vec<Vec<u8>>>,
     /// -add_linker_option's auto-link options, once read as an
@@ -249,6 +251,7 @@ impl<E: Target> Context<E> {
             lto_plugin: None,
             lto_modules: Vec::new(),
             lto_obj: None,
+            lto_inputs: Vec::new(),
             visited_files: std::collections::HashSet::new(),
             processed_linker_options: std::collections::HashSet::new(),
             cmdline_linker_options: None,

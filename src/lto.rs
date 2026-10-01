@@ -210,6 +210,15 @@ pub unsafe fn write_merged_modules(
     Ok(())
 }
 
+/// A bitcode file LTO compiled, as the passes after LTO still see it
+/// once its placeholder object is retired.
+pub struct LtoInput {
+    /// The placeholder object.
+    pub obj: usize,
+    /// The external symbols the file defines, other than weakly.
+    pub strong_defs: Vec<crate::symbol::SymbolId>,
+}
+
 /// A parsed bitcode module's symbol, in linker terms.
 pub struct LtoSymbol {
     pub name: String,

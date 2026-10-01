@@ -88,6 +88,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     }
     passes::warn_subtype_mismatches(&ctx);
     let checked = passes::check_input_versions(&ctx, &Default::default());
+    passes::check_bitcode_duplicates(&ctx);
     if ctx.args.relocatable && passes::links_only_bitcode(&ctx) {
         t.stop();
         passes::write_merged_bitcode(&ctx);
