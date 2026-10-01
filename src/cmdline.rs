@@ -757,7 +757,8 @@ pub struct Args {
     pub move_to_ro: Vec<SymbolMove>,
     /// -dirty_data_list: the lists of the data to move to __DATA_DIRTY.
     pub dirty_data: Vec<SymbolMove>,
-    /// ZERO_AR_DATE is set: the stabs record no modification times.
+    /// ZERO_AR_DATE is set, or -reproducible given: the stabs record no
+    /// modification times.
     pub zero_ar_date: bool,
     /// A static executable (-static, -preload): an image no dyld loads
     /// (the XNU kernel), with no LC_MAIN or imports, and fixups only if
@@ -3051,9 +3052,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 fatal!("unsupported platform: {}", platform_name(platform));
             }
 
-            // This linker's output is always deterministic, so
-            // -reproducible has nothing to switch on.
-            b"-reproducible" => {}
+            // This linker's output is always deterministic, but ld-prime
+            // writes no modification times in the stabs then either.
+            b"-reproducible" => args.zero_ar_date = true,
 
             b"-lto_library" => lto_libraries.push(path(next_arg(&mut i, name))),
             b"-mcpu" => args.lto_cpu = Some(text(name, next_arg(&mut i, name)).to_string()),

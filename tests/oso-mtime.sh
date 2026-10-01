@@ -24,3 +24,9 @@ ZERO_AR_DATE=1 $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/libam.a
 
 ZERO_AR_DATE= $mold -arch $ARCH -r $t/main.o -o $t/r.o
 [ "$(osos $t/r.o)" = '0000000000000000 ' ]
+
+# So does -reproducible.
+$CC --ld-path=$mold -o $t/exe3 $t/main.o $t/libam.a -Wl,-reproducible
+[ "$(osos $t/exe3)" = '0000000000000000 0000000000000000 ' ]
+$mold -arch $ARCH -r $t/main.o -o $t/r2.o -reproducible
+[ "$(osos $t/r2.o)" = '0000000000000000 ' ]
