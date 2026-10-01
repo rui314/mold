@@ -391,6 +391,11 @@ pub struct Args {
     /// tentative definition that wins over a dylib's definition.
     pub commons: CommonsMode,
     pub warn_commons: bool,
+    /// -max_default_common_align, as a power of two: the most a common
+    /// symbol with no alignment of its own is aligned to (its size
+    /// rounded up to a power of two). 2^15 unless given, 2^8 in a
+    /// -preload image.
+    pub max_default_common_align: u8,
     /// -w: suppress warnings.
     pub suppress_warnings: bool,
     pub fatal_warnings: bool,
@@ -684,6 +689,7 @@ impl Default for Args {
             weak_reference_mismatches: WeakRefMismatches::NonWeak,
             commons: CommonsMode::IgnoreDylibs,
             warn_commons: false,
+            max_default_common_align: 15,
             suppress_warnings: false,
             fatal_warnings: false,
             demangle: false,
@@ -1526,6 +1532,7 @@ pub(crate) fn missing_argument(opt: &str) -> String {
         "-undefined" => "missing <dynamic_lookup>",
         "-dyld_env" => "missing <arg>",
         "-weak_reference_mismatches" => "missing [ error | weak | non-weak ]",
+        "-max_default_common_align" => "missing <align-value>",
         "-read_only_relocs" | "-arch_variant_lto_cache_mismatch" => "missing <option>",
         "-target" => "missing <target-triple>",
         "-alias" => "missing <real-name> <alias-name>",
@@ -1566,6 +1573,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut data_in_code_info: Option<bool> = None;
     let mut source_version: Option<bool> = None;
     let mut source_version_number: Option<u64> = None;
+    let mut max_default_common_align: Option<u8> = None;
     let mut adhoc_codesign: Option<bool> = None;
     let mut fixup_chains: Option<bool> = None;
     let mut objc_relative_method_lists: Option<bool> = None;
@@ -2317,6 +2325,29 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 }
             }
             b"-warn_commons" => args.warn_commons = true,
+            // A hexadecimal power of two up to 0x8000; ld-prime takes 0
+            // for 1 and anything else for the power of two below it,
+            // with a warning.
+            b"-max_default_common_align" => {
+                let arg = text(name, next_arg(&mut i, name));
+                let Some(align) = hex_number(arg) else {
+                    fatal!("-max_default_common_align must specify an integer size");
+                };
+                if align > 0x8000 {
+                    fatal!(
+                        "argument for -max_default_common_align ({align:#x}) must be less than or equal to 0x8000"
+                    );
+                }
+                if align == 0 {
+                    warnings.warn("zero is not a valid -max_default_common_align");
+                } else if !align.is_power_of_two() {
+                    warnings.warn(format!(
+                        "alignment for -max_default_common_align is not a power of two, using {:#x}",
+                        1u64 << align.ilog2()
+                    ));
+                }
+                max_default_common_align = Some(align.max(1).ilog2() as u8);
+            }
 
             b"-dyld_env" => {
                 let arg = next_arg(&mut i, name).as_bytes();
@@ -2550,6 +2581,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     // relocations of a -pie one). The options asking for the code
     // tables, a build or source version or a signature go unheeded, as
     // does -rpath, which only dyld would read.
+    // A -preload image aligns its common symbols to 256 bytes at most.
+    args.max_default_common_align =
+        max_default_common_align.unwrap_or(if args.preload { 8 } else { 15 });
     if args.preload {
         args.function_starts = false;
         args.data_in_code_info = false;
