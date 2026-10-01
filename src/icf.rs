@@ -322,35 +322,42 @@ fn mark_swift_functions<E: Target>(
     obj: &ObjectFile,
     flags: &[AtomicBool],
 ) {
-    // Only a function whose address is taken needs to be one.
+    // Only a function whose address is taken needs to be one; most
+    // subsections Swift names so are its metadata, of other sections.
     let is_swift = |name: &str| name.starts_with("_$s") && !name.ends_with("To");
-    for (isec, sym) in subsec_names(ctx, i, obj, |isec| ctx.isecs[isec].is_address_taken()) {
+    let wanted =
+        |isec: usize| ctx.isecs[isec].is_address_taken() && is_text_function(ctx, &ctx.isecs[isec]);
+    for (isec, sym) in subsec_names(ctx, i, obj, wanted) {
         if is_swift(ctx.symbols[sym].name()) {
             flags[isec as usize].store(true, Ordering::Relaxed);
         }
     }
 }
 
-/// The labels at the start of object `i`'s subsections, but for an
-/// exported one another object's definition won: (subsection, rank of
-/// the label as ld-prime picks the one naming the subsection, name,
-/// symbol).
-/// An alternate entry point (N_ALT_ENTRY) names no subsection but where
-/// no other label does.
+/// The labels at the start of object `i`'s subsections that `wanted`
+/// takes, but for an exported one another object's definition won:
+/// (subsection, rank of the label as ld-prime picks the one naming the
+/// subsection, name, symbol). An alternate entry point (N_ALT_ENTRY)
+/// names no subsection but where no other label does. (An object's
+/// nlists are mostly of undefined symbols, which are passed over
+/// before their symbols are looked at.)
 fn start_labels<'a, E: Target>(
     ctx: &'a Context<E>,
     i: usize,
     obj: &'a ObjectFile,
+    wanted: impl Fn(usize) -> bool + 'a,
 ) -> impl Iterator<Item = (u32, u8, &'static str, SymbolId)> + 'a {
     obj.nlists.iter().zip(&obj.symbols).filter_map(move |(nlist, &id)| {
+        if nlist.is_stab() || nlist.n_type() != N_SECT {
+            return None;
+        }
         let sym = &ctx.symbols[id];
         let isec = sym.input_section()?;
+        if sym.value != 0 || sym.file() != Some(FileId::Obj(i as u32)) || !wanted(isec as usize) {
+            return None;
+        }
         let entry = (nlist.n_desc & N_ALT_ENTRY == 0) as u8;
-        (!nlist.is_stab()
-            && nlist.n_type() == N_SECT
-            && sym.value == 0
-            && sym.file() == Some(FileId::Obj(i as u32)))
-        .then(|| (isec, entry << 4 | subsec_name_rank(nlist, sym.name()), sym.name(), id))
+        Some((isec, entry << 4 | subsec_name_rank(nlist, sym.name()), sym.name(), id))
     })
 }
 
@@ -363,7 +370,7 @@ fn subsec_names<E: Target>(
     obj: &ObjectFile,
     wanted: impl Fn(usize) -> bool,
 ) -> Vec<(u32, SymbolId)> {
-    let mut labels: Vec<_> = start_labels(ctx, i, obj).filter(|l| wanted(l.0 as usize)).collect();
+    let mut labels: Vec<_> = start_labels(ctx, i, obj, wanted).collect();
     labels.sort_unstable();
     labels.chunk_by(|a, b| a.0 == b.0).map(|run| (run[0].0, run[run.len() - 1].3)).collect()
 }
