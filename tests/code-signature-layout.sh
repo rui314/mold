@@ -31,3 +31,13 @@ lib=$t/out/libdata.dylib
 # (codesign prints no executable segment for a zero limit.)
 codesign -d -vvvvv $lib > $t/libsig 2>&1
 not grep -q 'Executable Segment limit=[1-9]' $t/libsig
+
+# The identifier is the leaf name of the install name: -install_name's
+# (an executable's too), else -final_output's, else the output's.
+ident() { $CC --ld-path=$mold -o $t/out/x -Wl,-adhoc_codesign "$@"; field $t/out/x Identifier=; }
+[ "$(ident -shared $t/b.o -Wl,-install_name,/usr/lib/libfoo.dylib)" = libfoo.dylib ]
+[ "$(ident -shared $t/b.o -Wl,-install_name,@rpath/Foo.framework/Foo)" = Foo ]
+[ "$(ident -shared $t/b.o -Wl,-final_output,/tmp/libbar.dylib)" = libbar.dylib ]
+[ "$(ident $t/a.o -Wl,-install_name,/usr/lib/libbaz.dylib)" = libbaz.dylib ]
+[ "$(ident $t/a.o -Wl,-final_output,/tmp/qux)" = qux ]
+[ "$(ident $t/a.o)" = x ]

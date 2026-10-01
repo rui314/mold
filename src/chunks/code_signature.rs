@@ -1,8 +1,6 @@
 //! The ad-hoc code signature: SHA-256 page hashes in a code directory, the
 //! last chunk of the file.
 
-use std::path::Path;
-
 use rayon::prelude::*;
 
 use crate::chunks::ChunkHeader;
@@ -53,7 +51,7 @@ fn directory_size(ident: &[u8], nblocks: u64, hash_size: usize) -> u64 {
 /// `fileoff`: its header and blob index, then the code directories, one
 /// right after another.
 fn superblob_size<E: Target>(ctx: &Context<E>, fileoff: u64) -> u64 {
-    let ident = file_basename(&ctx.args.output);
+    let ident = identifier(&ctx.args);
     let nblocks = fileoff.div_ceil(CS_PAGE_SIZE);
     let size = 12 + 8 + directory_size(ident, nblocks, SHA256_SIZE);
     if has_sha1_directory(ctx) {
@@ -69,9 +67,12 @@ pub fn size<E: Target>(ctx: &Context<E>, fileoff: u64) -> u64 {
     align_to(superblob_size(ctx, fileoff), 8)
 }
 
-/// The signature's identifier: the output's leaf name, as bytes.
-fn file_basename(path: &Path) -> &[u8] {
-    path.file_name().map_or(&[][..], |name| std::os::unix::ffi::OsStrExt::as_bytes(name))
+/// The signature's identifier, as ld-prime takes it: the leaf name of
+/// the image's install name, which -install_name gives (an executable's
+/// too), else -final_output, else the output path - what follows the
+/// last slash, so nothing for a name that ends in one.
+fn identifier(args: &crate::cmdline::Args) -> &[u8] {
+    args.output_install_name().rsplit(|&b| b == b'/').next().unwrap()
 }
 
 fn push_be32(buf: &mut Vec<u8>, val: u32) {
@@ -146,7 +147,7 @@ pub fn write<E: Target>(ctx: &Context<E>, buf: &mut [u8], hashes: &[[u8; SHA256_
             push_be32(&mut sig, CSSLOT_CODEDIRECTORY);
             push_be32(&mut sig, 28);
             push_be32(&mut sig, CSSLOT_ALTERNATE_CODEDIRECTORIES);
-            let ident = file_basename(&ctx.args.output);
+            let ident = identifier(&ctx.args);
             push_be32(&mut sig, 28 + directory_size(ident, sha1.len() as u64, SHA1_SIZE) as u32);
             push_code_directory(ctx, &mut sig, CS_HASHTYPE_SHA1, sha1.as_flattened(), SHA1_SIZE);
         }
@@ -176,7 +177,7 @@ fn push_code_directory<E: Target>(
     hash_size: usize,
 ) {
     let cs_off = ctx.code_signature.hdr.fileoff;
-    let ident = file_basename(&ctx.args.output);
+    let ident = identifier(&ctx.args);
     let ident_size = ident.len() as u64 + 1;
     let nblocks = cs_off.div_ceil(CS_PAGE_SIZE);
     debug_assert_eq!(hashes.len() as u64, nblocks * hash_size as u64);
