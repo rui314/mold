@@ -733,13 +733,13 @@ fn folds_objc_classrefs<E: Target>(ctx: &Context<E>) -> bool {
         && ctx.args.platform_minos >= encode_version(15, 0, 0)
 }
 
-/// Names by a symbol of its object, anonymous and in no symbol table,
-/// the class each class-reference slot points at section-relatively,
-/// for fold_objc_classrefs to fold the slot as it does one naming a
-/// symbol; the slots of an object pointing at one class share it. A
-/// slot that points into the middle of a subsection is left alone and
-/// keeps its slot: ld-prime folds it to the start of its atom, losing
-/// the offset.
+/// Names by a symbol of its object, anonymous and in no symbol table, the
+/// class each class-reference slot points at section-relatively, for
+/// fold_objc_classrefs to fold the slot as it does one naming a symbol;
+/// the slots of an object pointing at one class share it. A slot that
+/// points into the middle of a subsection is left alone and keeps its
+/// slot: ld-prime folds it to the start of its subsection, losing the
+/// offset.
 fn name_classref_targets<E: Target>(ctx: &mut Context<E>) {
     for obj_idx in 0..ctx.objs.len() {
         let obj = &ctx.objs[obj_idx];

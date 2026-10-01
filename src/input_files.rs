@@ -140,8 +140,8 @@ pub struct ObjectFile {
     /// externals.
     pub hidden: bool,
     /// MH_SUBSECTIONS_VIA_SYMBOLS was set: symbols split the sections
-    /// into atoms. A -r output carries the flag only if every input
-    /// had it.
+    /// into subsections. A -r output carries the flag only if every
+    /// input had it.
     pub subsections_via_symbols: bool,
     /// Section headers in ordinal order (all segments' sections
     /// concatenated in load command order). Borrowed from the mapped
@@ -221,13 +221,13 @@ impl ObjectFile {
         }
     }
 
-    /// The subsection - ld64's atom - holding a linker optimization
-    /// hint's instructions, if they are where ld64 takes a hint: one to
-    /// three of them, 4-byte aligned, in one subsection of code and
-    /// within 64 KiB of each other. ld64 drops any other hint as it
-    /// reads the object. Without MH_SUBSECTIONS_VIA_SYMBOLS a section
-    /// is one subsection here, but ld64 still cuts its atoms at every
-    /// symbol, so a hint may not span one.
+    /// The subsection holding a linker optimization hint's instructions,
+    /// if they are where ld64 takes a hint: one to three of them, 4-byte
+    /// aligned, in one subsection of code and within 64 KiB of each
+    /// other. ld64 drops any other hint as it reads the object. Without
+    /// MH_SUBSECTIONS_VIA_SYMBOLS a section is one subsection here, but
+    /// ld64 still splits it into subsections at every symbol, so a hint
+    /// may not span one.
     pub fn hint_subsec(&self, isecs: &[InputSection], addrs: &[u64]) -> Option<usize> {
         let lo = *addrs.iter().min()?;
         let hi = *addrs.iter().max()?;
@@ -253,9 +253,9 @@ impl ObjectFile {
     }
 }
 
-/// Whether ld64 names no atom after a label (its ignoreLabel): in a
-/// section of C strings or of 4-, 8- or 16-byte literals, which it
-/// splits into one atom per literal, a private label (see
+/// Whether ld64 names no subsection after a label (its ignoreLabel): in
+/// a section of C strings or of 4-, 8- or 16-byte literals, which it
+/// splits into one subsection per literal, a private label (see
 /// is_private_label) names nothing, and the literal is known by its
 /// contents or size.
 pub fn is_ignored_literal_label(section_type: u32, name: &str) -> bool {
@@ -275,10 +275,10 @@ pub fn is_private_label(name: &str) -> bool {
 
 /// Whether a section is one ld-prime reads as a list of records -
 /// CFStrings, UTF-16 strings, selector and class references, Objective-C
-/// class and category lists - whose atoms no local symbol names: they
-/// are "anon" in its diagnostics and -map. The UTF-16 strings of an
-/// object without subsections (`split` false) are one atom, named by
-/// its labels.
+/// class and category lists - whose subsections no local symbol names:
+/// they are "anon" in its diagnostics and -map. The UTF-16 strings of
+/// an object without subsections (`split` false) are one subsection,
+/// named by its labels.
 pub fn is_record_list(hdr: &MachSection, split: bool) -> bool {
     hdr.section_type() == S_LITERAL_POINTERS
         || matches!(
@@ -293,9 +293,10 @@ pub fn is_record_list(hdr: &MachSection, split: bool) -> bool {
         || split && hdr.sectname_is("__ustring")
 }
 
-/// How ld-prime prefers a symbol at an atom's start to name the atom in
-/// a diagnostic: an exported one before a private extern, a local, a
-/// weak definition and an ltmpN label; among equals, the greatest name.
+/// How ld-prime prefers a symbol at a subsection's start to name the
+/// subsection in a diagnostic: an exported one before a private extern,
+/// a local, a weak definition and an ltmpN label; among equals, the
+/// greatest name.
 pub fn subsec_name_rank(nlist: &NList, name: &str) -> u8 {
     if name.starts_with("ltmp") {
         0
@@ -310,10 +311,10 @@ pub fn subsec_name_rank(nlist: &NList, name: &str) -> u8 {
     }
 }
 
-/// Reports a relocation record ld-prime rejects, in its words. `atom`
-/// is the name of the atom holding it, and `bounds` the atom's place
-/// in the section.
-fn report_bad_reloc(file: &Path, nsects: usize, bad: &BadReloc, atom: &str, bounds: (u32, u32)) {
+/// Reports a relocation record ld-prime rejects, in its words.
+/// `subsec` is the name of the subsection holding it, and `bounds` the
+/// subsection's place in the section.
+fn report_bad_reloc(file: &Path, nsects: usize, bad: &BadReloc, subsec: &str, bounds: (u32, u32)) {
     let r = &bad.rel;
     let fields = || {
         format!(
@@ -334,7 +335,7 @@ fn report_bad_reloc(file: &Path, nsects: usize, bad: &BadReloc, atom: &str, boun
         // significant bit, address:24, type:4, length:2, pcrel:1 and
         // the scattered bit.
         RelocError::Scattered => crate::error!(
-            "scattered relocation in '{atom}' is not supported: r_address=0x{:X}, r_type={}, \
+            "scattered relocation in '{subsec}' is not supported: r_address=0x{:X}, r_type={}, \
              r_pcrel={}, r_length={} in '{name}'",
             r.r_address & 0xff_ffff,
             (r.r_address >> 24) & 0xf,
@@ -342,7 +343,7 @@ fn report_bad_reloc(file: &Path, nsects: usize, bad: &BadReloc, atom: &str, boun
             (r.r_address >> 28) & 3
         ),
         RelocError::Unsupported => {
-            crate::error!("relocation in '{atom}' is not supported: {} in '{name}'", fields())
+            crate::error!("relocation in '{subsec}' is not supported: {} in '{name}'", fields())
         }
         RelocError::Invalid(what) => crate::error!("{what}: {} in '{name}'", fields()),
         RelocError::SymbolOutOfRange => {
@@ -355,7 +356,7 @@ fn report_bad_reloc(file: &Path, nsects: usize, bad: &BadReloc, atom: &str, boun
 }
 
 /// Reports a relocated field of `size` bytes at `offset` in a section
-/// that runs past the end of its atom, which spans `bounds`.
+/// that runs past the end of its subsection, which spans `bounds`.
 fn report_out_of_bounds(file: &Path, size: u8, offset: u32, bounds: (u32, u32)) {
     crate::error!(
         "{size} byte relocaton at r_address (0x{offset:04X}) is not fully within bounds of atom \
@@ -440,7 +441,7 @@ pub struct DylibFile {
     /// doesn't check (see passes::check_input_versions).
     pub in_sdk: bool,
     /// Read from a Mach-O file, not a .tbd stub. (A mergeable dylib
-    /// records whether every input was split into atoms by its
+    /// records whether every input was split into subsections by its
     /// symbols, which a dylib's header never says.)
     pub from_binary: bool,
     /// The 1-based ordinal used to refer to this dylib in bind records;
@@ -595,18 +596,18 @@ fn is_discarded_section(hdr: &MachSection) -> bool {
 }
 
 /// The alignment of every record of a section of fixed-size records (see
-/// record_size), as ld-prime gives its atoms: with no modulus, each
-/// record starting at a multiple of it whatever its offset in the
-/// input, and mostly the section's own. A literal is aligned to its
-/// size: compilers emit __literal16 with p2align 3 for a 16-byte
-/// constant whose type is only 8-aligned, and rely on the linker to
-/// place it where a 16-byte load can reach it. An initializer,
-/// terminator or non-lazy symbol pointer, a GOT slot of any type (see
-/// fold_input_got), a CFString constant and a pointer-auth slot are
-/// aligned to a pointer, even from a section that claims less or more,
-/// in a -r output as in an image; a thread-local variable descriptor
-/// (from a section clang aligns to a byte) to a pointer in an image,
-/// and in a -r output to at least one.
+/// record_size), as ld-prime gives its subsections: with no modulus, each
+/// record starting at a multiple of it whatever its offset in the input,
+/// and mostly the section's own. A literal is aligned to its size:
+/// compilers emit __literal16 with p2align 3 for a 16-byte constant whose
+/// type is only 8-aligned, and rely on the linker to place it where a
+/// 16-byte load can reach it. An initializer, terminator or non-lazy
+/// symbol pointer, a GOT slot of any type (see fold_input_got), a
+/// CFString constant and a pointer-auth slot are aligned to a pointer,
+/// even from a section that claims less or more, in a -r output as in an
+/// image; a thread-local variable descriptor (from a section clang aligns
+/// to a byte) to a pointer in an image, and in a -r output to at least
+/// one.
 fn record_p2align(hdr: &MachSection, relocatable: bool) -> Option<u8> {
     let size = record_size(hdr)?;
     let p2align = hdr.p2align as u8;
@@ -625,11 +626,11 @@ fn record_p2align(hdr: &MachSection, relocatable: bool) -> Option<u8> {
 }
 
 /// The size of each record of a section ld-prime splits into fixed-size
-/// atoms. Its name decides for the __DATA segment's GOT and Objective-C
+/// records. Its name decides for the __DATA segment's GOT and Objective-C
 /// lists, whatever their type, and for a CFString, pointer-auth or
 /// compact unwind section of the regular type; its type does for the
-/// others: literals, pointers to initializers, terminators or GOT
-/// slots, and thread-local variable descriptors (three pointers).
+/// others: literals, pointers to initializers, terminators or GOT slots,
+/// and thread-local variable descriptors (three pointers).
 pub(crate) fn record_size(hdr: &MachSection) -> Option<u64> {
     let regular = hdr.section_type() == S_REGULAR;
     match (hdr.segname(), hdr.sectname()) {
@@ -653,8 +654,8 @@ pub(crate) fn record_size(hdr: &MachSection) -> Option<u64> {
     }
 }
 
-/// Reports the first section of an object ld-prime refuses to split
-/// into atoms, and returns its index if there is one: a section of
+/// Reports the first section of an object ld-prime refuses to split into
+/// subsections, and returns its index if there is one: a section of
 /// fixed-size records that doesn't end on a record boundary, or a
 /// non-empty one of the pointers only ld-prime makes (see
 /// linker_pointer_content). `nindirect` is the number of the object's
@@ -740,7 +741,8 @@ pub struct StagedObject {
     pub sect_hdrs: &'static [MachSection],
     pub linker_options: Vec<Vec<Vec<u8>>>,
     pub platform_versions: Vec<PlatformVersion>,
-    /// MH_SUBSECTIONS_VIA_SYMBOLS: symbols split sections into atoms.
+    /// MH_SUBSECTIONS_VIA_SYMBOLS: symbols split sections into
+    /// subsections.
     pub subsections_via_symbols: bool,
     /// The object's subsections, in section order and by address
     /// within a section; the other fields refer to them by their index
@@ -779,7 +781,7 @@ pub struct StagedObject {
     /// In a -r link, the labels at the start of __compact_unwind
     /// records - an arm64 assembler's ltmpN at the section's -, as
     /// (subsection, function offset, nlist) of their records: one names
-    /// its record in the map, of which ld-prime makes an atom.
+    /// its record in the map, of which ld-prime makes a subsection.
     pub unwind_labels: Vec<(u32, u32, u32)>,
     pub objc_image_info: Option<u32>,
     pub has_debug_info: bool,
@@ -862,10 +864,10 @@ fn first_global_of(nlists: &[NList], dysym: Option<&DysymtabCommand>) -> Option<
 }
 
 /// Which of an object's sections ld-prime ignores: those with no bytes
-/// that define no symbol naming an atom there. Such a section makes no
-/// output section and takes no part in ordering, in a final link and
-/// in -r alike. An arm64 assembler's ltmpN label names an atom only in
-/// an object without subsections, so it keeps an empty section there
+/// that define no symbol naming a subsection there. Such a section makes
+/// no output section and takes no part in ordering, in a final link and
+/// in -r alike. An arm64 assembler's ltmpN label names a subsection only
+/// in an object without subsections, so it keeps an empty section there
 /// and nowhere else - but for one of fixed-size records, where no label
 /// at the end names anything (see extraneous_labels).
 fn bare_sections(
@@ -1074,7 +1076,7 @@ impl KeptFdes {
 /// Parses one object file without touching any linker state.
 /// `relocatable` is set for a -r link, which keeps the flags of a
 /// .weak_def_can_be_hidden symbol that names a whole section (see
-/// unweaken_section_atom_names).
+/// unweaken_whole_section_names).
 pub fn stage_object<E: Target>(
     mf: &'static MappedFile,
     alive: bool,
@@ -1148,7 +1150,7 @@ pub fn stage_object<E: Target>(
     obj.extraneous_labels = extraneous_labels(&obj.nlists, strtab, split_ok, &record_ends);
     let bare = bare_sections(sect_hdrs, &obj.nlists, strtab, split_ok, &record_ends);
     if !obj.subsections_via_symbols {
-        obj.unweaken_section_atom_names(strtab, relocatable);
+        obj.unweaken_whole_section_names(strtab, relocatable);
     }
     obj.demote_unnamed_subsec_names();
     obj.demote_thread_local_zerofill_names();
@@ -1159,7 +1161,7 @@ pub fn stage_object<E: Target>(
     let mut relocs_ok = obj.failed_at.is_none() && obj.read_relocations::<E>(&bare, &sect_isecs);
 
     // ld-prime checks the relocations of __compact_unwind as any
-    // section's, each 32-byte record being an atom.
+    // section's, each 32-byte record being a subsection.
     if relocs_ok
         && let Some(i) = sect_hdrs
             .iter()
@@ -1204,18 +1206,18 @@ pub fn stage_object<E: Target>(
 }
 
 impl StagedObject {
-    /// Without subsections a section is one atom, and ld64 takes the
-    /// atom's attributes from one symbol at the section's start (the
-    /// arm64 assembler's ltmpN labels don't count): a non-weak one if
-    /// there is any, local or global, else the last weak one in symbol
-    /// table order. An atom cannot be swapped for another copy, so a
+    /// Without subsections a section is one subsection, and ld64 takes
+    /// its attributes from one symbol at the section's start (the arm64
+    /// assembler's ltmpN labels don't count): a non-weak one if there is
+    /// any, local or global, else the last weak one in symbol table
+    /// order. A whole section cannot be swapped for another copy, so a
     /// weak symbol that names it is no longer weak; the other symbols
-    /// are labels into the atom and keep their flags. A
+    /// are labels into the section and keep their flags. A
     /// .weak_def_can_be_hidden name becomes a hidden non-weak
     /// definition, except in a -r output, which keeps it as is.
     /// REFERENCED_DYNAMICALLY, which ld-prime ignores on a weak
     /// definition, stays ignored.
-    fn unweaken_section_atom_names(&mut self, strtab: &'static [u8], relocatable: bool) {
+    fn unweaken_whole_section_names(&mut self, strtab: &'static [u8], relocatable: bool) {
         let sect_hdrs = self.sect_hdrs;
         let mut named_by_strong = vec![false; sect_hdrs.len()];
         let mut last_weak: Vec<Option<usize>> = vec![None; sect_hdrs.len()];
@@ -1255,13 +1257,13 @@ impl StagedObject {
         }
     }
 
-    /// Demotes the external symbols of the sections whose atoms ld-prime
-    /// makes by content and names none of (see has_unnamed_subsecs and
-    /// is_unnamed_objc_list) to locals that were private externals, as
-    /// ld -r does: such a symbol defines nothing, so another object's
-    /// reference to its name is undefined, another definition is no
-    /// duplicate and no output lists it, while its own object's
-    /// relocations still reach the atom.
+    /// Demotes the external symbols of the sections whose subsections
+    /// ld-prime makes by content and names none of (see
+    /// has_unnamed_subsecs and is_unnamed_objc_list) to locals that were
+    /// private externals, as ld -r does: such a symbol defines nothing,
+    /// so another object's reference to its name is undefined, another
+    /// definition is no duplicate and no output lists it, while its own
+    /// object's relocations still reach the subsection.
     fn demote_unnamed_subsec_names(&mut self) {
         use crate::passes::{has_unnamed_subsecs, is_unnamed_objc_list};
         let split = self.subsections_via_symbols;
@@ -1347,7 +1349,8 @@ impl StagedObject {
                 std::mem::take(&mut split_points[i])
             };
             // Each initializer, terminator or non-lazy symbol pointer is
-            // an atom of its own too, which ld-prime's diagnostics name.
+            // a subsection of its own too, which ld-prime's diagnostics
+            // name.
             if matches!(
                 sect.section_type(),
                 S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS | S_NON_LAZY_SYMBOL_POINTERS
@@ -1459,8 +1462,8 @@ impl StagedObject {
             if sect_isecs[i].is_empty() || sect.nreloc == 0 {
                 continue;
             }
-            let atom_at = |off| self.subsec_at(sect_isecs[i].clone(), off);
-            let Some(mut rels) = self.read_section_relocs::<E>(i, atom_at) else {
+            let subsec_at = |off| self.subsec_at(sect_isecs[i].clone(), off);
+            let Some(mut rels) = self.read_section_relocs::<E>(i, subsec_at) else {
                 return false;
             };
             // The sort must be stable: a SUBTRACTOR and the UNSIGNED it
@@ -1482,7 +1485,7 @@ impl StagedObject {
             }
 
             // read_relocs has checked that each field lies within the
-            // section; ld-prime also wants it within its atom.
+            // section; ld-prime also wants it within its subsection.
             let mut pos = 0;
             let mut straddles = false;
             for sub in sect_isecs[i].clone() {
@@ -1510,13 +1513,13 @@ impl StagedObject {
     }
 
     /// Reads the relocations of section `i`. If ld-prime would reject
-    /// one, reports the first such and returns None. `atom_at` gives the
-    /// place in the section of the atom holding an offset, which the
-    /// diagnostic names.
+    /// one, reports the first such and returns None. `subsec_at` gives
+    /// the place in the section of the subsection holding an offset,
+    /// which the diagnostic names.
     fn read_section_relocs<E: Target>(
         &self,
         i: usize,
-        atom_at: impl Fn(u32) -> (u32, u32),
+        subsec_at: impl Fn(u32) -> (u32, u32),
     ) -> Option<Vec<crate::input_sections::Reloc>> {
         let mf = self.mf;
         let sect = &self.sect_hdrs[i];
@@ -1538,14 +1541,14 @@ impl StagedObject {
             Ok(rels) => return Some(rels),
             Err(bad) => bad,
         };
-        let bounds = atom_at(bad.rel.r_address);
+        let bounds = subsec_at(bad.rel.r_address);
         let name = self.subsec_name(i + 1, sect.addr + bounds.0 as u64);
         report_bad_reloc(&mf.name, self.sect_hdrs.len(), &bad, name, bounds);
         None
     }
 
     /// The place in its section of the subsection holding `offset`, the
-    /// atom ld-prime names in a diagnostic: the last one for an offset
+    /// one ld-prime names in a diagnostic: the last one for an offset
     /// past the end. `isecs` are the section's subsections, in address
     /// order.
     fn subsec_at(&self, isecs: std::ops::Range<usize>, offset: u32) -> (u32, u32) {
@@ -1558,9 +1561,9 @@ impl StagedObject {
         (start, start + isec.size)
     }
 
-    /// The name ld-prime gives the atom at `addr` in section `n_sect` in
-    /// a diagnostic: that of a symbol there, ranked by subsec_name_rank,
-    /// or none.
+    /// The name ld-prime gives the subsection at `addr` in section
+    /// `n_sect` in a diagnostic: that of a symbol there, ranked by
+    /// subsec_name_rank, or none.
     fn subsec_name(&self, n_sect: usize, addr: u64) -> &'static str {
         self.nlists
             .iter()
@@ -1698,7 +1701,7 @@ pub fn is_literal_section(sect: &MachSection) -> bool {
     ) || (sect.segname() == "__DATA" && (sect.sectname() == "__cfstring" || is_pointer_list(sect)))
 }
 
-/// Whether ld-prime merges a section's atoms by their content - the
+/// Whether ld-prime merges a section's subsections by their content - the
 /// literal pools, C strings, selector references and CFStrings, not the
 /// pointer lists it takes one by one - which the labels an assembler
 /// makes for itself name none of (see Context::subsec_label).
@@ -1706,8 +1709,8 @@ pub fn has_merged_subsecs(sect: &MachSection) -> bool {
     is_literal_section(sect) && !(sect.segname() == "__DATA" && is_pointer_list(sect))
 }
 
-/// Whether a section's atoms are its literals or fixed-size records,
-/// whatever its labels (see initialize_sections).
+/// Whether a section's subsections are its literals or fixed-size
+/// records, whatever its labels (see initialize_sections).
 pub fn is_record_section(sect: &MachSection) -> bool {
     is_literal_section(sect)
         || matches!(
@@ -1746,9 +1749,9 @@ fn literal_split_points(sect: &MachSection, data: &[u8]) -> Vec<u64> {
         S_4BYTE_LITERALS => 4,
         S_8BYTE_LITERALS => 8,
         S_16BYTE_LITERALS => 16,
-        // A literal-pointer section (__objc_selrefs) is one atom per
-        // pointer, as in ld64, so references to the same selector can be
-        // coalesced across objects; so are the other pointer lists.
+        // A literal-pointer section (__objc_selrefs) is one subsection
+        // per pointer, as in ld64, so references to the same selector can
+        // be coalesced across objects; so are the other pointer lists.
         S_LITERAL_POINTERS => 8,
         _ if is_pointer_list(sect) => 8,
         // __cfstring: one 32-byte constant per record.
@@ -2055,8 +2058,8 @@ pub fn integrate_object<E: Target>(ctx: &mut Context<E>, mut staged: StagedObjec
 }
 
 /// What check_unwind_sections found of an object, to report once the
-/// object's atoms are warned of (see passes::load_pending): the warnings
-/// and, for an FDE in a section of data, the object's name.
+/// object's subsections are warned of (see passes::load_pending): the
+/// warnings and, for an FDE in a section of data, the object's name.
 pub struct UnwindCheck {
     warnings: Vec<String>,
     data_fde: Option<String>,
@@ -2341,8 +2344,8 @@ impl StagedObject {
 
             match field {
                 // The function the record covers, looked for in that
-                // section as a label's place is: the section's end is
-                // its last atom's, not the next section's first one's.
+                // section as a label's place is: the section's end is its
+                // last subsection's, not the next section's first one's.
                 0 => {
                     let Some((isec, off)) =
                         find_symbol_subsec(&self.isecs, &self.subsecs, n_sect, addr)
@@ -2875,10 +2878,10 @@ impl StagedObject {
         })
     }
 
-    /// The first pointer, an atom of ld-prime's own, that has no
-    /// relocation to name its target though ld-prime requires one: an
+    /// The first pointer, a subsection of its own to ld-prime, that has
+    /// no relocation to name its target though ld-prime requires one: an
     /// initializer or terminator pointer, which names a function and is
-    /// an atom of mold's too, or an entry of __objc_clsrolist, which
+    /// a subsection of mold's too, or an entry of __objc_clsrolist, which
     /// lists the class_ro_t records of Swift's generic classes. mold
     /// keeps that list whole: the compiler marks only the symbol at its
     /// start no-dead-strip, and what it lists must stay for the method
@@ -4270,7 +4273,7 @@ struct DylibBinary {
     rpaths: Vec<PathBuf>,
 }
 
-/// Whether a dylib is mergeable: -make_mergeable gave it its atoms
+/// Whether a dylib is mergeable: -make_mergeable gave it its record
 /// (LC_ATOM_INFO), which a stub never has.
 pub fn is_mergeable(mf: &MappedFile) -> bool {
     if crate::filetype::get_file_type(mf) != crate::filetype::FileType::Dylib {
@@ -5033,7 +5036,8 @@ fn add_moved_dylibs<E: Target>(
 
 /// Adds a dylib a merged mergeable dylib links (see
 /// passes::add_merged_dependencies), as one named on the command line
-/// after the others, which has the exports the merged atoms import.
+/// after the others, which has the exports the merged dylib's entries
+/// import.
 pub fn add_merged_dependency<E: Target>(ctx: &mut Context<E>, dep: crate::mergeable::Dependency) {
     let before = ctx.dylibs.len();
     let priority = ctx.next_priority();

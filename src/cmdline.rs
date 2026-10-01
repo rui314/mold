@@ -237,7 +237,7 @@ pub enum CommonsMode {
     Error,
 }
 
-/// A list of symbols whose atoms move to another segment: one of
+/// A list of symbols whose subsections move to another segment: one of
 /// -move_to_rw_segment, -move_to_ro_segment or -dirty_data_list (see
 /// symbol_moves).
 #[derive(Debug)]
@@ -624,8 +624,8 @@ pub struct Args {
     /// -export_dynamic: keep all global symbols through LTO even in an
     /// executable, for dlsym or plugin use.
     pub export_dynamic: bool,
-    /// -order_file: files of symbol names; matching atoms are placed
-    /// first in their output sections, in file order.
+    /// -order_file: files of symbol names; the subsections they name are
+    /// placed first in their output sections, in file order.
     pub order_files: Vec<PathBuf>,
     /// -order_file_statistics (or LD_PRINT_ORDER_FILE_STATISTICS in the
     /// environment): report the -order_file lines that order nothing.
@@ -800,8 +800,8 @@ pub struct Args {
     /// bundle_hook). On unless -no_merged_libraries_hook.
     pub merged_libraries_hook: bool,
     /// -make_mergeable: a dylib that a later link may merge (-merge_*),
-    /// for which ld-prime records its atoms in LC_ATOM_INFO, as Xcode
-    /// builds a MERGEABLE_LIBRARY.
+    /// for which ld-prime writes the mergeable record (LC_ATOM_INFO), as
+    /// Xcode builds a MERGEABLE_LIBRARY.
     pub make_mergeable: bool,
     /// -add_mergeable_debug_hook: a debug build of a mergeable dylib
     /// gets the hook of merged libraries itself, for its classes that
@@ -2679,9 +2679,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // ld-prime's reports on its own workings that mold does not
             // give: the branch islands it inserts, a snapshot of the link to
             // replay it from (in /tmp unless -snapshot_dir says; a
-            // replay passes -no_snapshot not to take another), the atom
-            // graph for Graphviz, and its output compared to a reference
-            // one. -arch_multiple
+            // replay passes -no_snapshot not to take another), the graph
+            // of its subsections for Graphviz, and its output compared to
+            // a reference one. -arch_multiple
             // once named the architecture in ld64's messages, for a link
             // that is one of several.
             b"-verbose_branch_islands" | b"-no_snapshot" | b"-arch_multiple" => {}
@@ -3838,7 +3838,7 @@ fn check_relocatable(args: &Args, data_const: Option<bool>) {
 /// namespace in one bound for the shared cache, whose builder binds
 /// each import to the dylib that exports it once and for all (dyld,
 /// which binds nothing, may have one), or in a mergeable dylib, whose
-/// atoms a two-level image may take in; and the debug hook in a
+/// subsections a two-level image may take in; and the debug hook in a
 /// mergeable dylib, which only a debug build that merges nothing gets.
 fn check_dylib_use(target: &TargetTraits, args: &Args) {
     if args.flat_namespace && !args.is_dylinker() && shared_region_eligible(target, args) {

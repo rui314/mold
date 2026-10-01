@@ -80,7 +80,8 @@ pub enum LazyRef {
 /// first bad one; the variants follow its diagnostics.
 #[derive(Clone, Copy, Debug)]
 pub enum RelocError {
-    /// The relocated field runs past the end of its section or atom.
+    /// The relocated field runs past the end of its section or
+    /// subsection.
     OutOfBounds,
     /// A scattered record, which only 32-bit targets define.
     Scattered,
@@ -368,9 +369,9 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
 /// address lies, as ld-prime reads it. Only the ordinal tells apart
 /// sections that share an address - an empty one and its successor,
 /// or one section's end and the next one's start. An address outside
-/// the section, ld-prime takes for its first or last atom's with a
-/// warning; one past its end (a label after the last instruction) is
-/// its last atom's.
+/// the section, ld-prime takes for its first or last subsection's with
+/// a warning; one past its end (a label after the last instruction) is
+/// its last subsection's.
 pub fn nonextern_target_section(
     sections: &[MachSection],
     ordinal: u32,

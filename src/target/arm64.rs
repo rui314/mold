@@ -1425,7 +1425,7 @@ impl Target for Arm64 {
 
     // The adrp's register. ld-prime takes code whose link register is
     // saved - a frame record stored (stp x29, x30, [sp...], of any
-    // addressing form) before the adrp in its atom - to be free to
+    // addressing form) before the adrp in its subsection - to be free to
     // call the helper; other code branches to a helper of its own.
     fn lazy_load_site(data: &[u8], offset: u32) -> (u8, bool) {
         let reg = read32(&data[offset as usize..]) & 0x1f;

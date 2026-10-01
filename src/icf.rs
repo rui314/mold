@@ -306,16 +306,16 @@ fn mark_auto_hidden<E: Target>(ctx: &Context<E>, i: usize, obj: &ObjectFile, fla
     }
 }
 
-/// Marks the Swift functions of object `i`: those whose atom ld-prime
-/// names (see Context::subsec_label) by a symbol Swift mangled, "_$s...".
-/// Swift promises no function an address of its own, so ld-prime folds
-/// one even where its address is taken (a coroutine's resume function,
-/// a value witness) or it is exported; it goes by the atom's name only,
-/// so another label at the function's start that outranks the Swift
-/// one keeps it apart. An @objc thunk ("...To"), which an Objective-C
-/// method list names, is no such function: ld-prime folds one only as
-/// it folds a C function (SwiftyMarkdown's unimplemented init()'s
-/// thunk stays apart from the identical init() it calls for).
+/// Marks the Swift functions of object `i`: those whose subsection
+/// ld-prime names (see Context::subsec_label) by a symbol Swift mangled,
+/// "_$s...". Swift promises no function an address of its own, so
+/// ld-prime folds one even where its address is taken (a coroutine's
+/// resume function, a value witness) or it is exported; it goes by the
+/// subsection's name only, so another label at the function's start that
+/// outranks the Swift one keeps it apart. An @objc thunk ("...To"), which
+/// an Objective-C method list names, is no such function: ld-prime folds
+/// one only as it folds a C function (SwiftyMarkdown's unimplemented
+/// init()'s thunk stays apart from the identical init() it calls for).
 fn mark_swift_functions<E: Target>(
     ctx: &Context<E>,
     i: usize,
@@ -333,7 +333,8 @@ fn mark_swift_functions<E: Target>(
 
 /// The labels at the start of object `i`'s subsections, but for an
 /// exported one another object's definition won: (subsection, rank of
-/// the label as ld-prime picks the one naming the atom, name, symbol).
+/// the label as ld-prime picks the one naming the subsection, name,
+/// symbol).
 /// An alternate entry point (N_ALT_ENTRY) names no subsection but where
 /// no other label does.
 fn start_labels<'a, E: Target>(
@@ -353,8 +354,8 @@ fn start_labels<'a, E: Target>(
     })
 }
 
-/// The symbol naming the atom of each of object `i`'s subsections that
-/// a label starts (see Context::subsec_label) and `wanted` takes, by
+/// The symbol naming each of object `i`'s subsections that a label
+/// starts (see Context::subsec_label) and `wanted` takes, by
 /// subsection.
 fn subsec_names<E: Target>(
     ctx: &Context<E>,
