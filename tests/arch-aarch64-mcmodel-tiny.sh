@@ -7,7 +7,7 @@ int *get_addr() { return &foo; }
 int get_foo() { return foo; }
 EOF
 
-$OBJDUMP -r $t/a.o | grep -q R_AARCH64_GOT_LD_PREL19 || skip
+$OBJDUMP -r $t/a.o | grep R_AARCH64_GOT_LD_PREL19 || skip
 
 cat <<EOF | $CC -fPIC -shared -o $t/b.so -xc -
 int foo = 42;

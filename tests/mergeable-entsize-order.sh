@@ -24,8 +24,8 @@ EOF
 
 for i in 1 2 3; do
   ./mold -shared -o $t/c.so $t/a.o $t/b.o
-  readelf -SW $t/c.so | grep -F ' .foo ' | head -1 | grep -w 08
+  readelf -SW $t/c.so | grep -F ' .foo ' | sed -n 1p | grep -w 08
 done
 
 ./mold -shared -o $t/d.so $t/b.o $t/a.o
-readelf -SW $t/d.so | grep -F ' .foo ' | head -1 | grep -w 04
+readelf -SW $t/d.so | grep -F ' .foo ' | sed -n 1p | grep -w 04
