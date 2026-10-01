@@ -3183,6 +3183,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // told not to - and then fails to link the sites, branches
             // to address 0.
             b"-no_dtrace_dof" => args.dtrace_dof = false,
+            // ld-prime skips an empty argument, which names no file: a
+            // build system's empty variable, or '' in a response file.
+            b"" => {}
 
             raw => {
                 if let Some(&(prefix, kind)) = JOINED_LIBRARY_OPTIONS
