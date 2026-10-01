@@ -138,7 +138,7 @@ $t/exe3 | grep -q '^5 0$'
 
 # ld-prime writes an image dyld refuses for data after the template,
 # and crashes with no template left.
-if $mold -v 2> /dev/null | grep -q mold-macho; then
+if $mold -v 2>&1 | grep -q mold-macho; then
   not $CC --ld-path=$mold -o $t/exe3 $t/d.o $t/a.o \
     -Wl,-rename_section,__DATA,__thread_data,__FOO,__bar 2> $t/log
   grep -q 'thread-locals too large' $t/log

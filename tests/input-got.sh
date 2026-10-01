@@ -91,7 +91,7 @@ set_flags $t/c.o __DATA __got 2
 
 # ld-prime fails an assertion on a slot a symbol names, as arm64 code
 # names the slots it loads.
-if [ $ARCH = x86_64 ] || $mold -v 2> /dev/null | grep -q mold-macho; then
+if [ $ARCH = x86_64 ] || $mold -v 2>&1 | grep -q mold-macho; then
   for obj in a c; do
     $CC --ld-path=$mold -o $t/exe-$obj $t/$obj.o $t/b.o
     $t/exe-$obj > $t/out
@@ -105,7 +105,7 @@ if [ $ARCH = x86_64 ] || $mold -v 2> /dev/null | grep -q mold-macho; then
   done
 fi
 
-if $mold -v 2> /dev/null | grep -q mold-macho; then
+if $mold -v 2>&1 | grep -q mold-macho; then
   for obj in a c; do
     $mold -r -arch $ARCH -o $t/r.o $t/$obj.o
     otool -l $t/r.o | grep -A9 'sectname __got$' | grep -q 'flags 0x00000000'

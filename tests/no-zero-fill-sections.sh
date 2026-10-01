@@ -45,7 +45,7 @@ int main() {
   printf("%d %d\n", tz[5], td);
 }
 EOF
-if $mold -v 2> /dev/null | grep -q mold-macho; then
+if $mold -v 2>&1 | grep -q mold-macho; then
   $CC --ld-path=$mold -o $t/exe2 $t/b.o -Wl,-no_zero_fill_sections
   otool -l $t/exe2 > $t/lc2
   sect $t/lc2 __thread_bss | grep -q ' flags 0x00000011 '

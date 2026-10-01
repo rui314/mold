@@ -23,10 +23,16 @@ use crate::util::{display, os_str, page_align};
 /// number (Xcode 26.6 ships ld-1267).
 pub const LD64_COMPAT_VERSION: &str = "1267";
 
-/// Prints the -v banner. ld-prime gives its own on stderr; mold's goes
-/// to stdout, as mold's does on ELF.
+/// Prints the -v banner on stderr, where ld-prime prints its own.
 pub fn print_version() {
-    println!("mold-macho {} (compatible with Apple ld64)", env!("CARGO_PKG_VERSION"));
+    eprintln!("mold-macho {} (compatible with Apple ld64)", env!("CARGO_PKG_VERSION"));
+}
+
+/// Prints the -version_details JSON on stdout, as ld-prime does.
+pub fn print_version_details() {
+    println!(
+        "{{\n\t\"version\": \"{LD64_COMPAT_VERSION}\",\n\t\"architectures\": [\n\t\t\"arm64\",\n\t\t\"x86_64\"\n\t]\n}}"
+    );
 }
 
 /// An input in command line order. Paths keep the bytes they were given
@@ -181,6 +187,9 @@ pub struct Args {
     pub no_standard_dirs: bool,
     /// -v: print the version and the search paths.
     pub verbose: bool,
+    /// -version_details: print the linker's description in JSON and,
+    /// as -v does, the search paths.
+    pub version_details: bool,
     /// -x: strip non-global symbols from the output symbol table.
     pub strip_locals: bool,
     /// Fold identical functions (on by default; -no_deduplicate turns
@@ -449,6 +458,7 @@ impl Default for Args {
             flat_namespace: false,
             no_standard_dirs: false,
             verbose: false,
+            version_details: false,
             strip_locals: false,
             deduplicate: true,
             function_starts: true,
@@ -1607,12 +1617,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // also reports its LTO and TAPI versions; they are ignored.
             // We claim the ld64 version whose command line we implement
             // so that Xcode drives us exactly as it drives ld-prime.
-            b"-version_details" => {
-                println!(
-                    "{{\n\t\"version\": \"{LD64_COMPAT_VERSION}\",\n\t\"architectures\": [\n\t\t\"arm64\",\n\t\t\"x86_64\"\n\t]\n}}"
-                );
-                std::process::exit(0);
-            }
+            // With something to link, ld-prime goes on to link it.
+            b"-version_details" => args.version_details = true,
             b"-noall_load" => args.all_load = false,
             b"-ObjC" => args.load_objc = true,
             b"-force_load" => args.inputs.push(InputArg::ForceLoad(path(next_arg(&mut i, name)))),
@@ -1868,12 +1874,17 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
 
     // `ld -v` with nothing to link just reports the version; build
     // systems and configure scripts probe the linker that way. mold
-    // does the same for -v/--version with no inputs.
-    if args.verbose && args.inputs.is_empty() {
-        print_version();
-        std::process::exit(0);
-    }
+    // does the same for -v/--version with no inputs. So does
+    // -version_details, unless -v comes with it.
     if args.inputs.is_empty() {
+        if args.verbose {
+            print_version();
+            std::process::exit(0);
+        }
+        if args.version_details {
+            print_version_details();
+            std::process::exit(0);
+        }
         fatal!("no object files specified");
     }
 

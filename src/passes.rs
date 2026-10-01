@@ -36,16 +36,20 @@ const STANDARD_FRAMEWORK_DIRS: &[&str] = &["/Library/Frameworks", "/System/Libra
 
 /// Settles the library and framework search paths, once the options
 /// are checked, as ld-prime does: the -L (-F) directories, then, unless
-/// -Z, the default ones (see search_dirs). -v prints the banner here,
-/// then the paths on stderr, as ld-prime does.
+/// -Z, the default ones (see search_dirs). -v prints the banner here and
+/// -version_details its JSON; then either prints the paths on stderr,
+/// as ld-prime does.
 pub fn set_search_paths<E: Target>(ctx: &mut Context<E>) {
     let args = &mut ctx.args;
     if args.verbose {
         crate::cmdline::print_version();
     }
+    if args.version_details {
+        crate::cmdline::print_version_details();
+    }
     args.library_paths = search_dirs(args, &args.library_paths, STANDARD_LIBRARY_DIRS);
     args.framework_paths = search_dirs(args, &args.framework_paths, STANDARD_FRAMEWORK_DIRS);
-    if args.verbose {
+    if args.verbose || args.version_details {
         let mut out = Vec::new();
         for (title, dirs) in
             [("Library", &args.library_paths), ("Framework", &args.framework_paths)]

@@ -31,7 +31,7 @@ otool -l $t/lib.dylib | grep -A4 'sectname __init_offsets' | grep -q 'size 0x0*8
 # Of an older image, which keeps __mod_init_func, ld-prime runs no
 # -init function; ld64 named it in LC_ROUTINES_64, which dyld runs
 # before the other initializers, and so do we.
-if $mold -v 2> /dev/null | grep -q mold-macho; then
+if $mold -v 2>&1 | grep -q mold-macho; then
   $CC --ld-path=$mold -o $t/lib2.dylib -shared $t/a.o -Wl,-init,_init -mmacosx-version-min=11.0
   [ "$($t/exe2 $t/lib2.dylib)" = 'main init ctor 1' ]
   otool -l $t/lib2.dylib | grep -q 'cmd LC_ROUTINES_64'

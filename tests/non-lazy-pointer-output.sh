@@ -121,7 +121,7 @@ otool -l $t/kext | grep -A10 'sectname __foo$' | grep -q 'flags 0x00000000'
 # A -r output keeps the type and the relocations, and so is pointers
 # to a later link (ld-prime names the slots in the indirect symbol
 # table instead, which no link takes as input).
-if $mold -v 2> /dev/null | grep -q mold-macho; then
+if $mold -v 2>&1 | grep -q mold-macho; then
   $mold -r -arch $ARCH -o $t/r.o $t/a.o
   otool -l $t/r.o | grep -A10 'sectname __foo$' | grep -q 'flags 0x00000006'
   objdump --macho -r $t/r.o | grep -q ' _puts$'

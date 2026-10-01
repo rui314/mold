@@ -49,7 +49,7 @@ not grep -q __objc_classrefs $t/lc
 
 # A reference into the middle of an atom keeps its slot: ld-prime would
 # point the load at the atom's start instead.
-if $mold -v 2> /dev/null | grep -q mold-macho; then
+if $mold -v 2>&1 | grep -q mold-macho; then
   class b '.quad 7'
   $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/b.o -mmacosx-version-min=15.0
   $t/exe2 | grep -q '^1$'
