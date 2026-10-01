@@ -1,20 +1,21 @@
-//! -make_mergeable: the LC_ATOM_INFO record of a dylib's atoms, which
+//! -make_mergeable: the LC_ATOM_INFO record of a dylib's contents, which
 //! lets a later link's -merge_* take the dylib as the objects it was
 //! made of (mergeable.rs reads the record; see there for its format).
 //!
-//! An atom is what the linker moves as a whole: each live subsection of
-//! the objects, an alias for each other symbol it defines, a tentative
-//! definition, an import or a symbol the linker defines, an initializer
-//! offset the link made of an initializer pointer, and an unwind record
-//! (an __eh_frame CIE or FDE, a __compact_unwind entry). Each has its
-//! name, linkage and section, and fixups that say what the relocations
-//! of its object said, by atom; its bytes are the dylib's own, linked
-//! (an unwind entry's, which the image has none of, are the object's).
-//! The dylibs the dylib links are recorded by install name, for the
-//! merging link to load in its place, and the objects with debug info
-//! by the notes that point a debugger at them.
+//! The record has an entry for each piece the linker moves as a whole:
+//! each live subsection of the objects, an alias for each other symbol
+//! it defines, a tentative definition, an import or a symbol the linker
+//! defines, an initializer offset the link made of an initializer
+//! pointer, and an unwind record (an __eh_frame CIE or FDE, a
+//! __compact_unwind record). Each entry has its name, linkage and
+//! section, and fixups that say what the relocations of its object
+//! said, by entry; its bytes are the dylib's own, linked (an unwind
+//! record's, which the image has none of, are the object's). The dylibs
+//! the dylib links are recorded by install name, for the merging link
+//! to load in its place, and the objects with debug info by the notes
+//! that point a debugger at them.
 //!
-//! ld-prime orders the atoms by object, and in an object by section
+//! ld-prime orders the entries by object, and in an object by section
 //! and address, then the imports and what the linker made; the
 //! imports of a dylib come in an order of its own, which isn't
 //! reproduced (they go by name here).
@@ -47,7 +48,7 @@ const CT_THREAD_VARS: u8 = 57;
 #[derive(Debug)]
 pub struct MergeableRecordSection {
     pub hdr: ChunkHeader,
-    /// The record, with the content offsets of the atoms whose bytes
+    /// The record, with the content offsets of the entries whose bytes
     /// are the image's left to fill.
     pub contents: Vec<u8>,
     /// Where in the record each such offset goes, and the file offset
@@ -74,7 +75,7 @@ impl Default for MergeableRecordSection {
     }
 }
 
-/// Copies the record out, pointing its atoms at their bytes now that
+/// Copies the record out, pointing its entries at their bytes now that
 /// the record has its place: by offsets back from the content pool, and
 /// the whole file by one back from the record.
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
@@ -92,16 +93,16 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 /// Builds the record, once the sections have their places in the file.
 pub fn build<E: Target>(ctx: &mut Context<E>) {
     let mut b = Builder::new(ctx);
-    b.add_object_atoms();
-    let selrefs = b.add_objc_atoms();
+    b.add_object_entries();
+    let selrefs = b.add_objc_entries();
     b.add_object_fixups();
     b.add_objc_fixups(&selrefs);
     b.add_objc_placeholders();
     b.add_init_offsets();
-    b.add_cfi_atoms();
-    b.add_compact_unwind_atoms();
-    let file = b.finish();
-    let out = file.serialize::<E>(ctx);
+    b.add_cfi_entries();
+    b.add_compact_unwind_entries();
+    let record = b.finish();
+    let out = record.serialize::<E>(ctx);
     let sec = &mut ctx.mergeable_record;
     sec.hdr.size = out.bytes.len() as u64;
     sec.contents = out.bytes;
@@ -109,7 +110,7 @@ pub fn build<E: Target>(ctx: &mut Context<E>) {
     sec.pool_offset = out.pool_offset;
 }
 
-/// Where an atom's bytes are.
+/// Where an entry's bytes are.
 #[derive(Clone, Copy, Debug)]
 enum Content {
     None,
@@ -119,15 +120,15 @@ enum Content {
     Pool(&'static [u8]),
 }
 
-/// What a fixup refers to, before the atoms have their final places:
-/// an atom of the objects, one the linker made, or the atom of a
+/// What a fixup refers to, before the entries have their final places:
+/// an entry of the objects, one the linker made, or the entry of a
 /// symbol the objects import or the linker defines.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum To {
-    Atom(u32),
+    Entry(u32),
     Tail(u32),
     Sym(SymbolId),
-    /// The atom before the one of the fixup: an alias's target, made
+    /// The entry before the one of the fixup: an alias's target, made
     /// with it.
     Prev,
 }
@@ -138,7 +139,7 @@ struct OutFixup {
     target: To,
     kind: u16,
     addend: i64,
-    /// The atom a difference subtracts.
+    /// The entry a difference subtracts.
     from: Option<To>,
     /// The second instruction of a fused pair, in instructions from the
     /// first, and the size of the access it makes.
@@ -153,7 +154,7 @@ impl OutFixup {
 }
 
 #[derive(Clone, Debug)]
-struct OutAtom {
+struct OutEntry {
     name: Option<&'static [u8]>,
     scope: u8,
     kind: u8,
@@ -174,7 +175,7 @@ struct OutAtom {
     fixups: Vec<OutFixup>,
 }
 
-impl OutAtom {
+impl OutEntry {
     fn new(scope: u8, kind: u8, content_type: u8) -> Self {
         Self {
             name: None,
@@ -233,10 +234,10 @@ struct DebugRecord {
     install_name: Vec<u8>,
 }
 
-/// The atoms and tables, in their final order.
+/// The entries and tables, in their final order.
 struct MergeableRecord {
-    atoms: Vec<OutAtom>,
-    /// Each fixup with its target and subtracted atom numbered.
+    entries: Vec<OutEntry>,
+    /// Each fixup with its target and subtracted entry numbered.
     fixups: Vec<(OutFixup, u32, u32)>,
     first_fixup: Vec<u32>,
     sections: Vec<CustomSection>,
@@ -248,20 +249,20 @@ struct MergeableRecord {
 
 struct Builder<'a, E: Target> {
     ctx: &'a Context<E>,
-    /// The atoms of the objects, in their order.
-    atoms: Vec<OutAtom>,
+    /// The entries of the objects, in their order.
+    entries: Vec<OutEntry>,
     /// The subsection each of them stands for.
-    atom_isec: Vec<Option<u32>>,
-    /// The atoms the linker made, which follow the imports.
-    tail: Vec<OutAtom>,
-    /// Each live subsection's atom, the objects' and the linker's: the
-    /// first, if its records are atoms of their own (see record_size).
-    isec_atom: HashMap<u32, To>,
+    entry_isec: Vec<Option<u32>>,
+    /// The entries the linker made, which follow the imports.
+    tail: Vec<OutEntry>,
+    /// Each live subsection's entry, the objects' and the linker's: the
+    /// first, if its records are entries of their own (see record_size).
+    isec_entry: HashMap<u32, To>,
     /// The size of the records of the subsections split so.
     isec_split: HashMap<u32, u32>,
-    /// The atoms that symbols name but for their subsection's (aliases,
-    /// tentative definitions).
-    sym_atom: HashMap<SymbolId, To>,
+    /// The entries that symbols name but for their subsection's
+    /// (aliases, tentative definitions).
+    sym_entry: HashMap<SymbolId, To>,
     /// The aliases standing for the functions identical code folding
     /// folded, each with its subsection (see add_folded_function).
     folded: Vec<(u32, u32)>,
@@ -275,12 +276,12 @@ impl<'a, E: Target> Builder<'a, E> {
     fn new(ctx: &'a Context<E>) -> Self {
         Self {
             ctx,
-            atoms: Vec::new(),
-            atom_isec: Vec::new(),
+            entries: Vec::new(),
+            entry_isec: Vec::new(),
             tail: Vec::new(),
-            isec_atom: HashMap::new(),
+            isec_entry: HashMap::new(),
             isec_split: HashMap::new(),
-            sym_atom: HashMap::new(),
+            sym_entry: HashMap::new(),
             folded: Vec::new(),
             sections: Vec::new(),
             debug: Vec::new(),
@@ -288,37 +289,37 @@ impl<'a, E: Target> Builder<'a, E> {
         }
     }
 
-    fn push_atom(&mut self, atom: OutAtom, isec: Option<u32>) -> u32 {
-        self.atoms.push(atom);
-        self.atom_isec.push(isec);
-        (self.atoms.len() - 1) as u32
+    fn push_entry(&mut self, entry: OutEntry, isec: Option<u32>) -> u32 {
+        self.entries.push(entry);
+        self.entry_isec.push(isec);
+        (self.entries.len() - 1) as u32
     }
 
-    /// Adds a subsection's atom, or the atoms of its records (see
+    /// Adds a subsection's entry, or the entries of its records (see
     /// split_records); returns the first.
-    fn push_records(&mut self, atom: OutAtom, id: u32, record: Option<u32>) -> u32 {
-        let first = self.atoms.len() as u32;
-        for rec in self.split_records(id, atom, record) {
-            self.push_atom(rec, Some(id));
+    fn push_records(&mut self, entry: OutEntry, id: u32, record: Option<u32>) -> u32 {
+        let first = self.entries.len() as u32;
+        for rec in self.split_records(id, entry, record) {
+            self.push_entry(rec, Some(id));
         }
         first
     }
 
-    /// The atoms of the records a subsection holds several of, of
+    /// The entries of the records a subsection holds several of, of
     /// `record` bytes each, as ld-prime takes a list section's (see
-    /// record_size); its own atom if it holds one.
-    fn split_records(&mut self, id: u32, atom: OutAtom, record: Option<u32>) -> Vec<OutAtom> {
-        let Some(size) = record.filter(|&r| atom.size > r && atom.size.is_multiple_of(r)) else {
-            return vec![atom];
+    /// record_size); its own entry if it holds one.
+    fn split_records(&mut self, id: u32, entry: OutEntry, record: Option<u32>) -> Vec<OutEntry> {
+        let Some(size) = record.filter(|&r| entry.size > r && entry.size.is_multiple_of(r)) else {
+            return vec![entry];
         };
         self.isec_split.insert(id, size);
-        let content = |k: u32| record_content(atom.content, k * size, size);
-        (0..atom.size / size)
-            .map(|k| OutAtom { size, content: content(k), ..atom.clone() })
+        let content = |k: u32| record_content(entry.content, k * size, size);
+        (0..entry.size / size)
+            .map(|k| OutEntry { size, content: content(k), ..entry.clone() })
             .collect()
     }
 
-    /// Which of a subsection's atoms each fixup goes to (see
+    /// Which of a subsection's entries each fixup goes to (see
     /// split_records), with its offset there.
     fn place_fixups(&self, id: u32, fixups: Vec<OutFixup>) -> Vec<(usize, OutFixup)> {
         let size = self.isec_split.get(&id).copied();
@@ -333,11 +334,11 @@ impl<'a, E: Target> Builder<'a, E> {
             .collect()
     }
 
-    /// The objects' atoms: object by object, the live subsections by
+    /// The objects' entries: object by object, the live subsections by
     /// section and address, each followed by the aliases of the other
     /// symbols in it, and then the tentative definitions the object
     /// made.
-    fn add_object_atoms(&mut self) {
+    fn add_object_entries(&mut self) {
         let ctx = self.ctx;
         for (obj_idx, obj) in ctx.objs.iter().enumerate() {
             if !obj.is_alive || ctx.is_internal(obj_idx) {
@@ -348,9 +349,9 @@ impl<'a, E: Target> Builder<'a, E> {
             let mut subsecs = obj.subsecs.clone();
             subsecs.sort_by_key(|&id| (ctx.isecs[id].shndx, ctx.isecs[id].input_addr));
             for id in subsecs {
-                self.add_isec_atom(obj, id, debug);
+                self.add_isec_entry(obj, id, debug);
             }
-            self.add_absolute_atoms(obj_idx);
+            self.add_absolute_entries(obj_idx);
             self.add_tentative_defs(obj_idx, debug);
         }
         // Each folded function's alias is of the function kept, which
@@ -359,7 +360,7 @@ impl<'a, E: Target> Builder<'a, E> {
             let (alias, id) = self.folded[k];
             if let Some(kept) = self.isec_target(id) {
                 let fixup = OutFixup::new(0, kept, fk::ALIAS_OF, 0);
-                self.atoms[alias as usize].fixups.push(fixup);
+                self.entries[alias as usize].fixups.push(fixup);
             }
         }
     }
@@ -384,9 +385,9 @@ impl<'a, E: Target> Builder<'a, E> {
         self.debug.len() as u16
     }
 
-    /// A live subsection's atom (its records', if it is a list of them),
-    /// and those of its aliases.
-    fn add_isec_atom(&mut self, obj: &ObjectFile, id: u32, debug: u16) {
+    /// A live subsection's entry (its records', if it is a list of
+    /// them), and those of its aliases.
+    fn add_isec_entry(&mut self, obj: &ObjectFile, id: u32, debug: u16) {
         let ctx = self.ctx;
         let isec = &ctx.isecs[id];
         if !isec.is_alive() {
@@ -400,7 +401,7 @@ impl<'a, E: Target> Builder<'a, E> {
         if isec.replacement != NO_REPLACEMENT && !got_slot {
             return self.add_folded_function(obj, id, debug);
         }
-        if !has_atoms(hdr) {
+        if !has_entries(hdr) {
             return;
         }
         // A list record's labels name nothing, nor do a literal's but a
@@ -410,39 +411,39 @@ impl<'a, E: Target> Builder<'a, E> {
         let record = crate::input_files::is_record_list(hdr, obj.subsections_via_symbols);
         let label = if record { None } else { ctx.subsec_label_index(id as usize) };
         let (content_type, custom) = self.content_type(hdr);
-        let mut atom = match label {
-            Some(i) => named_atom(ctx, obj, i, hdr, content_type, debug),
+        let mut entry = match label {
+            Some(i) => named_entry(ctx, obj, i, hdr, content_type, debug),
             None if literal => {
-                OutAtom::new(scope::HIDDEN, kind::ANON_COAL_BY_CONTENT, content_type)
+                OutEntry::new(scope::HIDDEN, kind::ANON_COAL_BY_CONTENT, content_type)
             }
-            None => OutAtom::new(0, kind::ANON, content_type),
+            None => OutEntry::new(0, kind::ANON, content_type),
         };
-        atom.custom_section = custom;
+        entry.custom_section = custom;
         // What is live whatever refers to it: an initializer or a
         // terminator, and what its section says (but a class reference,
         // which ld-prime reads as a pointer to the class whatever its
         // section's attributes; not so a reference to a superclass).
         let classref = hdr.sectname() == "__objc_classrefs";
-        atom.no_dead_strip |= hdr.flags & S_ATTR_NO_DEAD_STRIP != 0 && !classref
+        entry.no_dead_strip |= hdr.flags & S_ATTR_NO_DEAD_STRIP != 0 && !classref
             || matches!(hdr.section_type(), S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS);
-        atom.dds_if_refs_live = hdr.flags & S_ATTR_LIVE_SUPPORT != 0;
-        atom.size = isec.size;
-        atom.p2align = isec.p2align;
+        entry.dds_if_refs_live = hdr.flags & S_ATTR_LIVE_SUPPORT != 0;
+        entry.size = isec.size;
+        entry.p2align = isec.p2align;
         if !isec.is_record() {
-            atom.modulus = (isec.input_addr & ((1 << isec.p2align) - 1)) as u16;
+            entry.modulus = (isec.input_addr & ((1 << isec.p2align) - 1)) as u16;
         }
         let placed = if got_slot { &ctx.isecs[isec.replacement] } else { isec };
-        atom.content = self.isec_content(placed, ctx.hdr_of(placed));
-        let atom_idx = self.push_records(atom, id, record_size(hdr));
-        self.isec_atom.insert(id, To::Atom(atom_idx));
+        entry.content = self.isec_content(placed, ctx.hdr_of(placed));
+        let entry_idx = self.push_records(entry, id, record_size(hdr));
+        self.isec_entry.insert(id, To::Entry(entry_idx));
         if got_slot {
-            self.isec_atom.insert(isec.replacement, To::Atom(atom_idx));
+            self.isec_entry.insert(isec.replacement, To::Entry(entry_idx));
         }
         if let Some(i) = label {
-            self.sym_atom.insert(obj.symbols[i], To::Atom(atom_idx));
+            self.sym_entry.insert(obj.symbols[i], To::Entry(entry_idx));
         }
         if !record && !literal {
-            self.add_aliases(obj, id, label, atom_idx, debug);
+            self.add_aliases(obj, id, label, entry_idx, debug);
         }
     }
 
@@ -466,11 +467,11 @@ impl<'a, E: Target> Builder<'a, E> {
         }
         let (scope, kind) = linkage(ctx, &obj.nlists[label], sym_id);
         let kind = if kind == kind::WEAK_DEF { kind::WEAK_DEF_ALIAS } else { kind::ALIAS };
-        let mut alias = OutAtom::new(scope, kind, CT_NONE);
+        let mut alias = OutEntry::new(scope, kind, CT_NONE);
         alias.name = Some(ctx.symbols[sym_id].name().as_bytes());
-        let idx = self.push_atom(alias, None);
+        let idx = self.push_entry(alias, None);
         self.folded.push((idx, id));
-        self.sym_atom.insert(sym_id, To::Atom(idx));
+        self.sym_entry.insert(sym_id, To::Entry(idx));
         self.add_aliases(obj, id, Some(label), idx, debug);
     }
 
@@ -494,14 +495,14 @@ impl<'a, E: Target> Builder<'a, E> {
     }
 
     /// The other symbols a subsection defines, each an alias of the
-    /// subsection's atom at its offset there; but the labels the
+    /// subsection's entry at its offset there; but the labels the
     /// compiler made for itself.
     fn add_aliases(
         &mut self,
         obj: &ObjectFile,
         id: u32,
         label: Option<usize>,
-        atom: u32,
+        entry: u32,
         debug: u16,
     ) {
         let ctx = self.ctx;
@@ -528,21 +529,21 @@ impl<'a, E: Target> Builder<'a, E> {
             }
             let (scope, kind) = linkage(ctx, &obj.nlists[i], sym_id);
             let kind = if kind == kind::WEAK_DEF { kind::WEAK_DEF_ALIAS } else { kind::ALIAS };
-            let mut alias = OutAtom::new(scope, kind, CT_NONE);
+            let mut alias = OutEntry::new(scope, kind, CT_NONE);
             alias.name = Some(sym.name().as_bytes());
             alias.dds_if_refs_live = true;
             alias.no_dead_strip = obj.nlists[i].n_desc & N_NO_DEAD_STRIP != 0;
             alias.debug = debug;
             let offset = (obj.nlists[i].n_value - start) as i64;
-            alias.fixups.push(OutFixup::new(0, To::Atom(atom), fk::ALIAS_OF, offset));
-            let idx = self.push_atom(alias, None);
-            self.sym_atom.insert(sym_id, To::Atom(idx));
+            alias.fixups.push(OutFixup::new(0, To::Entry(entry), fk::ALIAS_OF, offset));
+            let idx = self.push_entry(alias, None);
+            self.sym_entry.insert(sym_id, To::Entry(idx));
         }
     }
 
-    /// The absolute symbols an object defines, each an atom whose eight
-    /// bytes are its value.
-    fn add_absolute_atoms(&mut self, obj_idx: usize) {
+    /// The absolute symbols an object defines, each an entry whose
+    /// eight bytes are its value.
+    fn add_absolute_entries(&mut self, obj_idx: usize) {
         let ctx = self.ctx;
         let obj = &ctx.objs[obj_idx];
         for (n, &sym_id) in obj.nlists.iter().zip(&obj.symbols) {
@@ -550,18 +551,18 @@ impl<'a, E: Target> Builder<'a, E> {
             if n.is_stab()
                 || n.n_type() != N_ABS
                 || sym.file() != Some(FileId::Obj(obj_idx as u32))
-                || self.sym_atom.contains_key(&sym_id)
+                || self.sym_entry.contains_key(&sym_id)
             {
                 continue;
             }
             let (scope, _) = linkage(ctx, n, sym_id);
-            let mut atom = OutAtom::new(scope, kind::ABSOLUTE, CT_DATA);
-            atom.name = Some(sym.name().as_bytes());
-            atom.size = 8;
-            atom.p2align = 3;
-            atom.content = Content::Pool(Box::leak(Box::new(sym.value.to_le_bytes())));
-            let idx = self.push_atom(atom, None);
-            self.sym_atom.insert(sym_id, To::Atom(idx));
+            let mut entry = OutEntry::new(scope, kind::ABSOLUTE, CT_DATA);
+            entry.name = Some(sym.name().as_bytes());
+            entry.size = 8;
+            entry.p2align = 3;
+            entry.content = Content::Pool(Box::leak(Box::new(sym.value.to_le_bytes())));
+            let idx = self.push_entry(entry, None);
+            self.sym_entry.insert(sym_id, To::Entry(idx));
         }
     }
 
@@ -574,7 +575,7 @@ impl<'a, E: Target> Builder<'a, E> {
             if n.is_stab() || !n.is_extern() || n.n_type() != N_UNDF || !n.is_common() {
                 continue;
             }
-            if self.sym_atom.contains_key(&sym_id) {
+            if self.sym_entry.contains_key(&sym_id) {
                 continue;
             }
             let sym = &ctx.symbols[sym_id];
@@ -584,13 +585,13 @@ impl<'a, E: Target> Builder<'a, E> {
             }
             let isec = &ctx.isecs[isec];
             let scope = if sym.is_private_extern() { scope::HIDDEN } else { scope::GLOBAL };
-            let mut atom = OutAtom::new(scope, kind::TENTATIVE_DEF, CT_COMMON);
-            atom.name = Some(sym.name().as_bytes());
-            atom.size = isec.size;
-            atom.p2align = isec.p2align;
-            atom.debug = debug;
-            let idx = self.push_atom(atom, None);
-            self.sym_atom.insert(sym_id, To::Atom(idx));
+            let mut entry = OutEntry::new(scope, kind::TENTATIVE_DEF, CT_COMMON);
+            entry.name = Some(sym.name().as_bytes());
+            entry.size = isec.size;
+            entry.p2align = isec.p2align;
+            entry.debug = debug;
+            let idx = self.push_entry(entry, None);
+            self.sym_entry.insert(sym_id, To::Entry(idx));
         }
     }
 
@@ -614,29 +615,29 @@ impl<'a, E: Target> Builder<'a, E> {
         (CT_CUSTOM, Some(idx as u8))
     }
 
-    /// The fixups of the objects' atoms, from their relocations.
+    /// The fixups of the objects' entries, from their relocations.
     fn add_object_fixups(&mut self) {
         let mut i = 0;
-        while i < self.atoms.len() {
-            let Some(id) = self.atom_isec[i] else {
+        while i < self.entries.len() {
+            let Some(id) = self.entry_isec[i] else {
                 i += 1;
                 continue;
             };
             let fixups = self.isec_fixups(id as usize);
             for (k, f) in self.place_fixups(id, fixups) {
-                self.atoms[i + k].fixups.push(f);
+                self.entries[i + k].fixups.push(f);
             }
             i += 1;
-            while i < self.atoms.len() && self.atom_isec[i] == Some(id) {
+            while i < self.entries.len() && self.entry_isec[i] == Some(id) {
                 i += 1;
             }
         }
     }
 
-    /// The atom a symbol refers to, and its offset there.
+    /// The entry a symbol refers to, and its offset there.
     fn sym_target(&self, id: SymbolId) -> (To, i64) {
         let ctx = self.ctx;
-        if let Some(&to) = self.sym_atom.get(&id) {
+        if let Some(&to) = self.sym_entry.get(&id) {
             return (to, 0);
         }
         let sym = &ctx.symbols[id];
@@ -648,32 +649,32 @@ impl<'a, E: Target> Builder<'a, E> {
         (To::Sym(id), 0)
     }
 
-    /// The atom of a subsection, or of the one that replaced it.
+    /// The entry of a subsection, or of the one that replaced it.
     fn isec_target(&self, isec: u32) -> Option<To> {
-        self.isec_atom.get(&(self.ctx.resolve_isec(isec as usize) as u32)).copied()
+        self.isec_entry.get(&(self.ctx.resolve_isec(isec as usize) as u32)).copied()
     }
 
-    /// The atom holding offset `off` of a subsection (of the one that
+    /// The entry holding offset `off` of a subsection (of the one that
     /// replaced it), and the offset there.
     fn isec_target_at(&self, isec: u32, off: i64) -> Option<(To, i64)> {
         let isec = self.ctx.resolve_isec(isec as usize) as u32;
-        let to = *self.isec_atom.get(&isec)?;
+        let to = *self.isec_entry.get(&isec)?;
         let Some(&size) = self.isec_split.get(&isec) else { return Some((to, off)) };
         let k = off.max(0) / size as i64;
         let to = match to {
-            To::Atom(i) => To::Atom(i + k as u32),
+            To::Entry(i) => To::Entry(i + k as u32),
             To::Tail(i) => To::Tail(i + k as u32),
             to => to,
         };
         Some((to, off - k * size as i64))
     }
 
-    /// The atom a relocation refers to, and the offset there.
+    /// The entry a relocation refers to, and the offset there.
     fn reloc_target(&self, obj: usize, rel: &Reloc) -> (To, i64) {
         match rel.target() {
             RelocTarget::Sym(idx) => self.sym_target(self.ctx.objs[obj].symbols[idx as usize]),
             // The offset the relocation's addend has in the subsection
-            // is the atom's if it is a record of it.
+            // is the entry's if it is a record of it.
             RelocTarget::Section(isec) => match self.isec_target_at(isec, rel.addend) {
                 Some((to, off)) => (to, off - rel.addend),
                 None => fatal!(
@@ -813,8 +814,8 @@ impl<'a, E: Target> Builder<'a, E> {
     }
 
     /// The initializer offsets the link made of the objects'
-    /// initializer pointers: an atom of no bytes each, an image offset
-    /// of the function.
+    /// initializer pointers: an entry of no bytes each, an image
+    /// offset of the function.
     fn add_init_offsets(&mut self) {
         let ctx = self.ctx;
         if !ctx.chunks.contains(&crate::chunks::ChunkId::InitOffsets) {
@@ -830,19 +831,19 @@ impl<'a, E: Target> Builder<'a, E> {
                 }
                 _ => continue,
             };
-            let mut atom = OutAtom::new(0, kind::ANON, ctype::INIT_OFFSET);
-            atom.size = 4;
-            atom.p2align = 2;
-            atom.no_dead_strip = true;
-            atom.fixups.push(OutFixup::new(0, target, fk::IMAGE_OFFSET32, addend));
-            self.tail.push(atom);
+            let mut entry = OutEntry::new(0, kind::ANON, ctype::INIT_OFFSET);
+            entry.size = 4;
+            entry.p2align = 2;
+            entry.no_dead_strip = true;
+            entry.fixups.push(OutFixup::new(0, target, fk::IMAGE_OFFSET32, addend));
+            self.tail.push(entry);
         }
     }
 
     /// The __eh_frame records the image has, in its order: a CIE, with
     /// its personality's GOT slot; an FDE, with the differences that
     /// make its CIE pointer, function and LSDA.
-    fn add_cfi_atoms(&mut self) {
+    fn add_cfi_entries(&mut self) {
         let ctx = self.ctx;
         if !ctx.chunks.contains(&crate::chunks::ChunkId::EhFrame) {
             return;
@@ -857,65 +858,65 @@ impl<'a, E: Target> Builder<'a, E> {
             records.push((fde.output_offset, Some(i), fde.cie as usize));
         }
         records.sort_by_key(|r| r.0);
-        let mut cie_atom: HashMap<usize, u32> = HashMap::new();
+        let mut cie_entries: HashMap<usize, u32> = HashMap::new();
         for (output_offset, fde, cie) in records {
             let me = To::Tail(self.tail.len() as u32);
-            let mut atom = match fde {
+            let mut entry = match fde {
                 None => {
-                    cie_atom.insert(cie, self.tail.len() as u32);
-                    self.cie_atom(cie)
+                    cie_entries.insert(cie, self.tail.len() as u32);
+                    self.cie_entry(cie)
                 }
                 Some(fde) => {
-                    let Some(&cie) = cie_atom.get(&cie) else { continue };
-                    let Some(atom) = self.fde_atom(fde, me, To::Tail(cie)) else { continue };
-                    atom
+                    let Some(&cie) = cie_entries.get(&cie) else { continue };
+                    let Some(entry) = self.fde_entry(fde, me, To::Tail(cie)) else { continue };
+                    entry
                 }
             };
-            atom.content = Content::Image(ctx.eh_frame.hdr.fileoff + output_offset as u64);
-            self.tail.push(atom);
+            entry.content = Content::Image(ctx.eh_frame.hdr.fileoff + output_offset as u64);
+            self.tail.push(entry);
         }
     }
 
-    fn cie_atom(&self, idx: usize) -> OutAtom {
+    fn cie_entry(&self, idx: usize) -> OutEntry {
         let cie = &self.ctx.cies[idx];
-        let mut atom = OutAtom::new(scope::HIDDEN, kind::ANON, ctype::CFI);
-        atom.size = cie.data.len() as u32;
+        let mut entry = OutEntry::new(scope::HIDDEN, kind::ANON, ctype::CFI);
+        entry.size = cie.data.len() as u32;
         if let Some(p) = cie.personality {
             let (to, off) = self.sym_target(p);
-            atom.fixups.push(OutFixup::new(cie.personality_offset, to, fk::PCREL32_TO_GOT, off));
+            entry.fixups.push(OutFixup::new(cie.personality_offset, to, fk::PCREL32_TO_GOT, off));
         }
-        atom
+        entry
     }
 
-    /// An FDE's atom, if its function has one.
-    fn fde_atom(&self, idx: usize, me: To, cie: To) -> Option<OutAtom> {
+    /// An FDE's entry, if its function has one.
+    fn fde_entry(&self, idx: usize, me: To, cie: To) -> Option<OutEntry> {
         let ctx = self.ctx;
         let fde = &ctx.fdes[idx];
         let cie_rec = &ctx.cies[fde.cie as usize];
         let func = self.isec_target(fde.isec)?;
-        let mut atom = OutAtom::new(scope::HIDDEN, kind::ANON, ctype::CFI);
-        atom.size = fde.data.len() as u32;
-        atom.dds_if_refs_live = true;
+        let mut entry = OutEntry::new(scope::HIDDEN, kind::ANON, ctype::CFI);
+        entry.size = fde.data.len() as u32;
+        entry.dds_if_refs_live = true;
         let diff = |offset: u32, target: To, size: usize, addend: i64| {
             let kind = if size == 4 { fk::DIFF32 } else { fk::DIFF64 };
             OutFixup { from: Some(me), ..OutFixup::new(offset, target, kind, addend) }
         };
-        atom.fixups.push(OutFixup { from: Some(cie), ..OutFixup::new(4, me, fk::DIFF32, 4) });
+        entry.fixups.push(OutFixup { from: Some(cie), ..OutFixup::new(4, me, fk::DIFF32, 4) });
         let pc = fde.func_offset as i64 - 8;
-        atom.fixups.push(diff(8, func, cie_rec.pc_size(), pc));
+        entry.fixups.push(diff(8, func, cie_rec.pc_size(), pc));
         if let Some((isec, off)) = fde.lsda
             && let Some(lsda) = self.isec_target(isec)
         {
             let pos = crate::chunks::eh_frame::lsda_pos(fde.data, cie_rec.pc_size()) as u32;
             let addend = off as i64 - pos as i64;
-            atom.fixups.push(diff(pos, lsda, cie_rec.lsda_size(), addend));
+            entry.fixups.push(diff(pos, lsda, cie_rec.lsda_size(), addend));
         }
-        Some(atom)
+        Some(entry)
     }
 
     /// The objects' compact unwind records of the functions kept, as
-    /// they had them: an atom each, its pointers fixups.
-    fn add_compact_unwind_atoms(&mut self) {
+    /// they had them: an entry each, its pointers fixups.
+    fn add_compact_unwind_entries(&mut self) {
         let ctx = self.ctx;
         for (obj_idx, obj) in ctx.objs.iter().enumerate() {
             if !obj.is_alive || ctx.is_internal(obj_idx) {
@@ -926,13 +927,13 @@ impl<'a, E: Target> Builder<'a, E> {
                 .iter()
                 .position(|h| h.segname() == "__LD" && h.sectname() == "__compact_unwind");
             if let Some(sect) = sect {
-                let atoms = self.object_unwind_atoms(obj, sect);
-                self.tail.extend(atoms);
+                let entries = self.object_unwind_entries(obj, sect);
+                self.tail.extend(entries);
             }
         }
     }
 
-    fn object_unwind_atoms(&self, obj: &ObjectFile, sect: usize) -> Vec<OutAtom> {
+    fn object_unwind_entries(&self, obj: &ObjectFile, sect: usize) -> Vec<OutEntry> {
         let ctx = self.ctx;
         let hdr = &obj.sect_hdrs[sect];
         let data = obj.mf.data();
@@ -944,20 +945,20 @@ impl<'a, E: Target> Builder<'a, E> {
             return Vec::new();
         };
         let mut out = Vec::new();
-        for (k, entry) in contents.as_chunks::<32>().0.iter().enumerate() {
+        for (k, bytes) in contents.as_chunks::<32>().0.iter().enumerate() {
             let start = (k * 32) as u32;
-            let mut atom = OutAtom::new(scope::HIDDEN, kind::ANON, CT_COMPACT_UNWIND);
-            atom.size = 32;
-            atom.p2align = 3;
-            atom.dds_if_refs_live = true;
-            atom.content = Content::Pool(entry);
+            let mut entry = OutEntry::new(scope::HIDDEN, kind::ANON, CT_COMPACT_UNWIND);
+            entry.size = 32;
+            entry.p2align = 3;
+            entry.dds_if_refs_live = true;
+            entry.content = Content::Pool(bytes);
             for r in rels.iter().filter(|r| (start..start + 32).contains(&r.offset)) {
                 let Some((to, addend)) = self.unwind_target(obj, r) else { continue };
                 let kind = if r.size == 4 { fk::PTR32 } else { fk::PTR64 };
-                atom.fixups.push(OutFixup::new(r.offset - start, to, kind, addend));
+                entry.fixups.push(OutFixup::new(r.offset - start, to, kind, addend));
             }
             // The record of a function not kept goes with it.
-            if !atom.fixups.iter().any(|f| f.offset == 0) {
+            if !entry.fixups.iter().any(|f| f.offset == 0) {
                 continue;
             }
             let addr = hdr.addr + start as u64;
@@ -968,25 +969,25 @@ impl<'a, E: Target> Builder<'a, E> {
                     && n.n_value == addr
             });
             if let Some((_, &id)) = label {
-                atom.name = Some(ctx.symbols[id].name().as_bytes());
-                atom.scope = 0;
-                atom.kind = kind::REGULAR;
+                entry.name = Some(ctx.symbols[id].name().as_bytes());
+                entry.scope = 0;
+                entry.kind = kind::REGULAR;
             }
-            out.push(atom);
+            out.push(entry);
         }
         out
     }
 
-    /// The atom a pointer of a compact unwind record refers to, and the
-    /// addend there; none for a subsection of the object not kept as an
-    /// atom of its own (dead, or folded into another, whose own record
-    /// stays).
+    /// The entry a pointer of a compact unwind record refers to, and
+    /// the addend there; none for a subsection of the object not kept
+    /// as an entry of its own (dead, or folded into another, whose own
+    /// record stays).
     fn unwind_target(&self, obj: &ObjectFile, r: &Reloc) -> Option<(To, i64)> {
         let ctx = self.ctx;
         let local = |addr: u64| {
             let (isec, off) = crate::input_files::find_subsec(&ctx.isecs, &obj.subsecs, addr)?;
-            let atom = self.isec_atom.get(&(isec as u32))?;
-            Some((*atom, off as i64))
+            let entry = self.isec_entry.get(&(isec as u32))?;
+            Some((*entry, off as i64))
         };
         match r.target() {
             RelocTarget::Sym(idx) => {
@@ -1004,55 +1005,55 @@ impl<'a, E: Target> Builder<'a, E> {
         }
     }
 
-    /// Puts the atoms in their final order - the objects', then those of
-    /// the symbols they leave to the linker or import, then the
+    /// Puts the entries in their final order - the objects', then those
+    /// of the symbols they leave to the linker or import, then the
     /// linker's - and numbers the fixups' targets.
     fn finish(self) -> MergeableRecord {
         let ctx = self.ctx;
         let deps = dependencies(ctx);
-        let mut sym_atoms: Vec<OutAtom> = Vec::new();
+        let mut sym_entries: Vec<OutEntry> = Vec::new();
         let mut sym_index: HashMap<SymbolId, usize> = HashMap::new();
         for (id, dep) in self.referenced_syms(&deps) {
             match dep {
-                Some(dylib) => sym_atoms.push(import_atom(ctx, id, dylib)),
-                None => sym_atoms.extend(undefine_atoms(ctx, id)),
+                Some(dylib) => sym_entries.push(import_entry(ctx, id, dylib)),
+                None => sym_entries.extend(undefine_entries(ctx, id)),
             }
-            sym_index.insert(id, sym_atoms.len() - 1);
+            sym_index.insert(id, sym_entries.len() - 1);
         }
-        let order = self.final_order(sym_atoms.len());
+        let order = self.final_order(sym_entries.len());
         let mut index =
-            [vec![0u32; self.atoms.len()], vec![0; self.tail.len()], vec![0; sym_atoms.len()]];
+            [vec![0u32; self.entries.len()], vec![0; self.tail.len()], vec![0; sym_entries.len()]];
         for (i, &(list, j)) in order.iter().enumerate() {
             index[list][j] = i as u32;
         }
         let number = |to: To, me: u32| match to {
-            To::Atom(a) => index[0][a as usize],
+            To::Entry(a) => index[0][a as usize],
             To::Tail(t) => index[1][t as usize],
             To::Sym(id) => index[2][sym_index[&id]],
             To::Prev => me - 1,
         };
-        let lists = [&self.atoms, &self.tail, &sym_atoms];
-        let mut atoms: Vec<OutAtom> =
+        let lists = [&self.entries, &self.tail, &sym_entries];
+        let mut entries: Vec<OutEntry> =
             order.iter().map(|&(list, j)| lists[list][j].clone()).collect();
         let mut fixups = Vec::new();
-        let mut first_fixup = Vec::with_capacity(atoms.len());
-        for (i, atom) in atoms.iter_mut().enumerate() {
+        let mut first_fixup = Vec::with_capacity(entries.len());
+        for (i, entry) in entries.iter_mut().enumerate() {
             first_fixup.push(fixups.len() as u32);
-            atom.fixups.sort_by_key(|f| f.offset);
-            for f in &atom.fixups {
+            entry.fixups.sort_by_key(|f| f.offset);
+            for f in &entry.fixups {
                 let from = f.from.map_or(0, |to| number(to, i as u32));
                 fixups.push((*f, number(f.target, i as u32), from));
             }
         }
         MergeableRecord {
-            atoms,
+            entries,
             fixups,
             first_fixup,
             sections: self.sections,
             own: own_record(ctx),
             deps: deps.into_iter().map(|(_, d)| d).collect(),
             debug: self.debug,
-            flags: atom_file_flags(ctx),
+            flags: record_flags(ctx),
         }
     }
 
@@ -1074,7 +1075,7 @@ impl<'a, E: Target> Builder<'a, E> {
                 syms.push(id);
             }
         }
-        for f in self.atoms.iter().chain(&self.tail).flat_map(|a| &a.fixups) {
+        for f in self.entries.iter().chain(&self.tail).flat_map(|e| &e.fixups) {
             for to in [Some(f.target), f.from].into_iter().flatten() {
                 if let To::Sym(id) = to
                     && seen.insert(id)
@@ -1099,16 +1100,16 @@ impl<'a, E: Target> Builder<'a, E> {
         syms
     }
 
-    /// The atoms' final order, as (list, index) pairs of the objects'
-    /// atoms (0), the linker's (1) and the symbols' (2): the objects'
+    /// The entries' final order, as (list, index) pairs of the objects'
+    /// entries (0), the linker's (1) and the symbols' (2): the objects'
     /// but the folded functions and the thread-local variables, the
     /// symbols', the folded functions, the thread-local variables, and
     /// the linker's.
     fn final_order(&self, nsyms: usize) -> Vec<(usize, usize)> {
-        let is_tlv = |i: &usize| self.atoms[*i].content_type == CT_THREAD_VARS;
+        let is_tlv = |i: &usize| self.entries[*i].content_type == CT_THREAD_VARS;
         let folded: hashbrown::HashSet<usize> =
             self.folded.iter().map(|&(alias, _)| alias as usize).collect();
-        let objs = 0..self.atoms.len();
+        let objs = 0..self.entries.len();
         let mut order: Vec<(usize, usize)> =
             (objs.clone()).filter(|i| !is_tlv(i) && !folded.contains(i)).map(|i| (0, i)).collect();
         order.extend((0..nsyms).map(|i| (2, i)));
@@ -1119,10 +1120,10 @@ impl<'a, E: Target> Builder<'a, E> {
     }
 }
 
-/// Whether a section's subsections are atoms of the record: not the
-/// debug info, the unwind sections (whose records are atoms of their
-/// own) and the image info the link makes afresh.
-fn has_atoms(hdr: &MachSection) -> bool {
+/// Whether a section's subsections each get an entry in the record: not
+/// the debug info, the unwind sections (whose records get entries of
+/// their own) and the image info the link makes afresh.
+fn has_entries(hdr: &MachSection) -> bool {
     hdr.flags & S_ATTR_DEBUG == 0
         && hdr.segname() != "__LLVM"
         && !(hdr.segname() == "__LD" && hdr.sectname() == "__compact_unwind")
@@ -1136,16 +1137,16 @@ fn is_input_got(hdr: &MachSection) -> bool {
     hdr.segname() == "__DATA" && hdr.sectname() == "__got"
 }
 
-/// Whether ld-prime merges a section's atoms by their contents: the
-/// literals (not an object's GOT slots, which it takes one by one all
-/// the same), and the UTF-16 strings.
+/// Whether ld-prime merges a section's subsections by their contents:
+/// the literals (not an object's GOT slots, which it takes one by one
+/// all the same), and the UTF-16 strings.
 fn merges_by_content(hdr: &MachSection) -> bool {
     crate::input_files::is_literal_section(hdr) && !is_input_got(hdr)
         || (hdr.segname() == "__TEXT" && hdr.sectname() == "__ustring")
 }
 
 /// The size of the records of a section that ld-prime takes one by
-/// one, each an atom (as mold takes literals): the Objective-C pointer
+/// one, each an entry (as mold takes literals): the Objective-C pointer
 /// lists and references, and the CFStrings.
 fn record_size(hdr: &MachSection) -> Option<u32> {
     if !hdr.segname().starts_with("__DATA") {
@@ -1182,7 +1183,7 @@ fn standard_content_type(hdr: &MachSection) -> Option<u8> {
     })
 }
 
-/// The scope and kind of the atom a symbol of an object names: local
+/// The scope and kind of the entry a symbol of an object names: local
 /// to its object, hidden, hidden unless something takes its address
 /// (a weak definition that can be hidden), or global; a weak definition
 /// only where it is not hidden.
@@ -1213,62 +1214,62 @@ fn linkage<E: Target>(ctx: &Context<E>, nlist: &NList, id: SymbolId) -> (u8, u8)
     (scope, kind)
 }
 
-/// The atom a symbol of an object names: its linkage, its name, and
+/// The entry a symbol of an object names: its linkage, its name, and
 /// its debug notes if a final link would note it.
-fn named_atom<E: Target>(
+fn named_entry<E: Target>(
     ctx: &Context<E>,
     obj: &ObjectFile,
     i: usize,
     hdr: &MachSection,
     content_type: u8,
     debug: u16,
-) -> OutAtom {
+) -> OutEntry {
     let (scope, kind) = linkage(ctx, &obj.nlists[i], obj.symbols[i]);
     let name = ctx.symbols[obj.symbols[i]].name();
-    let mut atom = OutAtom::new(scope, kind, content_type);
-    atom.name = Some(name.as_bytes());
-    atom.cold = obj.nlists[i].n_desc & N_COLD_FUNC != 0;
-    atom.no_dead_strip = obj.nlists[i].n_desc & N_NO_DEAD_STRIP != 0;
+    let mut entry = OutEntry::new(scope, kind, content_type);
+    entry.name = Some(name.as_bytes());
+    entry.cold = obj.nlists[i].n_desc & N_COLD_FUNC != 0;
+    entry.no_dead_strip = obj.nlists[i].n_desc & N_NO_DEAD_STRIP != 0;
     if !crate::input_files::is_private_label(name) && crate::chunks::symtab::has_stabs(hdr) {
-        atom.debug = debug;
+        entry.debug = debug;
     }
-    atom
+    entry
 }
 
-/// The atoms of a symbol the objects refer to that no object defines:
+/// The entries of a symbol the objects refer to that no object defines:
 /// one the linker defines, or one left to dynamic lookup.
 /// ___dso_handle is ld-prime's alias of the image's start.
-fn undefine_atoms<E: Target>(ctx: &Context<E>, id: SymbolId) -> Vec<OutAtom> {
+fn undefine_entries<E: Target>(ctx: &Context<E>, id: SymbolId) -> Vec<OutEntry> {
     let sym = &ctx.symbols[id];
     let kind = if sym.is_weak_ref() && !sym.is_defined() {
         kind::UNDEFINE_WEAK_IMPORT
     } else {
         kind::UNDEFINE
     };
-    let mut atom = OutAtom::new(scope::GLOBAL, kind, CT_NONE);
+    let mut entry = OutEntry::new(scope::GLOBAL, kind, CT_NONE);
     if sym.name() == "___dso_handle" {
-        atom.name = Some(b"segment$start$__TEXT");
-        let mut alias = OutAtom::new(scope::HIDDEN, kind::ALIAS, CT_NONE);
+        entry.name = Some(b"segment$start$__TEXT");
+        let mut alias = OutEntry::new(scope::HIDDEN, kind::ALIAS, CT_NONE);
         alias.name = Some(b"___dso_handle");
         alias.fixups.push(OutFixup::new(0, To::Prev, fk::ALIAS_OF, 0));
-        return vec![atom, alias];
+        return vec![entry, alias];
     }
-    atom.name = Some(sym.name().as_bytes());
-    vec![atom]
+    entry.name = Some(sym.name().as_bytes());
+    vec![entry]
 }
 
-/// An import's atom: the library's export, weak if it defines it so,
+/// An import's entry: the library's export, weak if it defines it so,
 /// and how strongly the image refers to it.
-fn import_atom<E: Target>(ctx: &Context<E>, id: SymbolId, dylib: u8) -> OutAtom {
+fn import_entry<E: Target>(ctx: &Context<E>, id: SymbolId, dylib: u8) -> OutEntry {
     let sym = &ctx.symbols[id];
     let Some(FileId::Dylib(d)) = sym.file() else { unreachable!() };
     let weak_def = ctx.dylibs[d as usize].weak_exports.contains(sym.name());
     let kind = if weak_def { kind::DYLIB_EXPORT_WEAK_DEF } else { kind::DYLIB_EXPORT };
-    let mut atom = OutAtom::new(scope::GLOBAL, kind, CT_NONE);
-    atom.name = Some(sym.name().as_bytes());
-    atom.import = if sym.is_weak_ref() { 1 } else { 2 };
-    atom.dylib = Some(dylib);
-    atom
+    let mut entry = OutEntry::new(scope::GLOBAL, kind, CT_NONE);
+    entry.name = Some(sym.name().as_bytes());
+    entry.import = if sym.is_weak_ref() { 1 } else { 2 };
+    entry.dylib = Some(dylib);
+    entry
 }
 
 /// The dylibs the image loads, in the order of their load commands,
@@ -1307,15 +1308,15 @@ fn own_record<E: Target>(ctx: &Context<E>) -> DylibRecord {
     }
 }
 
-/// ld-prime's AtomFileFlags: whether every input was split into atoms
-/// by its symbols (bit 24: every object has
+/// The record's flags word: whether every input was split into
+/// subsections by its symbols (bit 24: every object has
 /// MH_SUBSECTIONS_VIA_SYMBOLS, and no dylib was read from a Mach-O
 /// file, which never does); whether an object has Swift metadata (a
 /// __TEXT,__swift* section) or Objective-C classes or categories (bit
 /// 30, image info or not); and what the Objective-C image info says:
 /// that there was one (26), with the Swift versions (bits 0-23) and
 /// category class properties (29), and classes (31).
-fn atom_file_flags<E: Target>(ctx: &Context<E>) -> u64 {
+fn record_flags<E: Target>(ctx: &Context<E>) -> u64 {
     use crate::mergeable::{
         FLAG_CATEGORY_CLASS_PROPERTIES, FLAG_HAS_CLASSES, FLAG_HAS_OBJC_INFO,
         FLAG_HAS_SWIFT_OR_OBJC,

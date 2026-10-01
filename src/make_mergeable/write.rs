@@ -1,4 +1,4 @@
-//! The record's bytes: ld-prime's AtomFileWriter layout.
+//! The record's bytes, laid out as ld-prime writes them.
 
 use super::{Content, DylibRecord, MergeableRecord, OutFixup};
 use crate::context::Context;
@@ -177,7 +177,7 @@ impl Writer {
 }
 
 /// What the record leaves to fill once it has its place in the file:
-/// the content offsets of the atoms whose bytes are the image's (at
+/// the content offsets of the entries whose bytes are the image's (at
 /// which offset of the record, of which file offset), and the content
 /// pool's offset.
 pub(super) struct Serialized {
@@ -187,22 +187,22 @@ pub(super) struct Serialized {
 }
 
 impl MergeableRecord {
-    /// The record's bytes in ld-prime's AtomFileWriter layout: the
-    /// header, the atoms, then each 8-aligned after the one before the
+    /// The record's bytes, laid out as ld-prime writes them: the
+    /// header, the entries, then each 8-aligned after the one before the
     /// fixups, large addends, custom sections, linker options (none),
     /// name records, this dylib's info, its dependencies', the debug
     /// notes, the C string pool, the name pool and the content pool.
     pub(super) fn serialize<E: Target>(&self, ctx: &Context<E>) -> Serialized {
-        use crate::mergeable::{ATOM_SIZE, DEBUG_INFO_SIZE, HEADER_SIZE};
+        use crate::mergeable::{DEBUG_INFO_SIZE, ENTRY_SIZE, HEADER_SIZE};
         let mut w = Writer { out: vec![0; HEADER_SIZE], cstrings: Vec::new() };
         self.write_header::<E>(&mut w, ctx);
-        let atoms_at = w.reserve(self.atoms.len() * ATOM_SIZE);
-        w.table(0x60, atoms_at, self.atoms.len());
+        let entries_at = w.reserve(self.entries.len() * ENTRY_SIZE);
+        w.table(0x60, entries_at, self.entries.len());
         self.write_fixups(&mut w);
         self.write_sections(&mut w);
         let options_at = w.align(8);
         w.table(0x80, options_at, 0);
-        let names: Vec<&[u8]> = self.atoms.iter().filter_map(|a| a.name).collect();
+        let names: Vec<&[u8]> = self.entries.iter().filter_map(|e| e.name).collect();
         let names_at = w.reserve(names.len() * 16);
         w.table(0x88, names_at, names.len());
         self.write_dylib_infos(&mut w);
@@ -227,7 +227,7 @@ impl MergeableRecord {
         }
         w.table(0x90, pool, w.out.len() - pool);
 
-        let (image_contents, pool_offset) = self.write_atoms(&mut w, atoms_at);
+        let (image_contents, pool_offset) = self.write_entries(&mut w, entries_at);
         let total = w.out.len() as u32;
         w.put32(0x5c, total);
         Serialized { bytes: w.out, image_contents, pool_offset }
@@ -240,8 +240,8 @@ impl MergeableRecord {
         w.out[8..10].copy_from_slice(&3u16.to_le_bytes());
         w.out[10] = 2;
         w.out[11] = 2;
-        w.out[12] = self.atoms.iter().map(|a| a.kind).max().unwrap_or(0);
-        w.out[13] = self.atoms.iter().map(|a| a.content_type).max().unwrap_or(0);
+        w.out[12] = self.entries.iter().map(|e| e.kind).max().unwrap_or(0);
+        w.out[13] = self.entries.iter().map(|e| e.content_type).max().unwrap_or(0);
         let max_kind = |arch: bool| {
             let kinds = self.fixups.iter().map(|(f, _, _)| f.kind);
             kinds.filter(|&k| (k >= 0x80) == arch).max().unwrap_or(0)
@@ -307,21 +307,21 @@ impl MergeableRecord {
         w.put32(0xb8, size as u32);
     }
 
-    /// The atom records, and the content pool after everything else:
-    /// the bytes the image has none of, each at its alignment. Returns
-    /// the atoms whose bytes are the image's, and the pool's offset.
-    fn write_atoms(&self, w: &mut Writer, atoms_at: usize) -> (Vec<(u32, u64)>, u32) {
-        use crate::mergeable::ATOM_SIZE;
-        let pool_align = (self.atoms.iter())
-            .filter(|a| matches!(a.content, Content::Pool(_)))
+    /// The entries, and the content pool after everything else: the
+    /// bytes the image has none of, each at its alignment. Returns the
+    /// entries whose bytes are the image's, and the pool's offset.
+    fn write_entries(&self, w: &mut Writer, entries_at: usize) -> (Vec<(u32, u64)>, u32) {
+        use crate::mergeable::ENTRY_SIZE;
+        let pool_align = (self.entries.iter())
+            .filter(|e| matches!(e.content, Content::Pool(_)))
             .map(|a| 1usize << a.p2align)
             .fold(16, usize::max);
         let pool = w.align(pool_align);
         let mut image = Vec::new();
         let mut names = 0u32;
-        for (i, atom) in self.atoms.iter().enumerate() {
-            let at = atoms_at + i * ATOM_SIZE;
-            let content: i32 = match atom.content {
+        for (i, entry) in self.entries.iter().enumerate() {
+            let at = entries_at + i * ENTRY_SIZE;
+            let content: i32 = match entry.content {
                 Content::None => -1,
                 Content::Image(fileoff) => {
                     image.push(((at + 0x18) as u32, fileoff));
@@ -329,8 +329,8 @@ impl MergeableRecord {
                 }
                 Content::Pool(bytes) => {
                     let size = w.out.len() - pool;
-                    let align = 1usize << atom.p2align;
-                    let mut off = (size & !(align - 1)) + atom.modulus as usize;
+                    let align = 1usize << entry.p2align;
+                    let mut off = (size & !(align - 1)) + entry.modulus as usize;
                     if off < size {
                         off += align;
                     }
@@ -339,7 +339,7 @@ impl MergeableRecord {
                     off as i32
                 }
             };
-            let name = match atom.name {
+            let name = match entry.name {
                 Some(_) => {
                     names += 1;
                     names - 1
@@ -347,16 +347,16 @@ impl MergeableRecord {
                 None => 0xff_ffff,
             };
             w.put32(at, i as u32);
-            w.put32(at + 4, atom.fixups.len() as u32);
+            w.put32(at + 4, entry.fixups.len() as u32);
             w.put32(at + 8, self.first_fixup[i]);
             w.put32(at + 12, name);
-            w.put32(at + 16, atom.flags());
-            w.put32(at + 20, atom.size);
+            w.put32(at + 16, entry.flags());
+            w.put32(at + 20, entry.size);
             w.put32(at + 24, content as u32);
-            w.out[at + 0x1c] = atom.dylib.unwrap_or(0xff);
-            w.out[at + 0x1d] = atom.p2align;
-            w.out[at + 0x1e..at + 0x20].copy_from_slice(&atom.modulus.to_le_bytes());
-            w.out[at + 0x20..at + 0x22].copy_from_slice(&atom.debug.to_le_bytes());
+            w.out[at + 0x1c] = entry.dylib.unwrap_or(0xff);
+            w.out[at + 0x1d] = entry.p2align;
+            w.out[at + 0x1e..at + 0x20].copy_from_slice(&entry.modulus.to_le_bytes());
+            w.out[at + 0x20..at + 0x22].copy_from_slice(&entry.debug.to_le_bytes());
         }
         w.table(0x98, pool, w.out.len() - pool);
         (image, pool as u32)
