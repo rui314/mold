@@ -114,7 +114,7 @@ fn import_table(fixups: &[Fixup]) -> (Vec<(SymbolId, u64)>, ImportOrdinals) {
 /// target on every architecture and output kind, and for a -static
 /// image, which no dyld reads, whatever its target; the former only
 /// when -fixup_chains forces chains on an older one.
-fn pointer_format<E: Target>(ctx: &Context<E>) -> u16 {
+pub(crate) fn pointer_format<E: Target>(ctx: &Context<E>) -> u16 {
     let macos12 = crate::macho::encode_version(12, 0, 0);
     if ctx.args.static_link
         || crate::macho::targets_macos(ctx.args.platform, ctx.args.platform_minos, macos12)
@@ -306,9 +306,46 @@ fn chain_page_size<E: Target>(ctx: &Context<E>) -> u64 {
     if E::CPUTYPE == CPU_TYPE_X86_64 { 0x1000 } else { ctx.args.segment_align }
 }
 
+/// The farthest a fixup can be from the next one of its chain: the
+/// 12-bit `next` field counts 4-byte strides.
+const MAX_CHAIN_STRIDE: u64 = 0xfff * 4;
+
+/// The chains of an image whose starts __TEXT,__chain_starts lists
+/// (-fixup_chains_section): each segment's fixups chain on from the
+/// first, a chain ending where the next fixup is out of its stride's
+/// reach - ld-prime cuts none at a page, as dyld would need. Returns
+/// each chain's start, an offset from the image's address, and the
+/// room ld-prime makes for them: as many starts as there would be if
+/// every section's fixups chained apart from the next section's.
+pub fn section_chain_starts<E: Target>(ctx: &Context<E>) -> (Vec<u32>, usize) {
+    // The first fixups of the chains of those in [start, end).
+    fn chains(addrs: &[u64], start: u64, end: u64) -> impl Iterator<Item = u64> + '_ {
+        let lo = addrs.partition_point(|&a| a < start);
+        let hi = addrs.partition_point(|&a| a < end);
+        (lo..hi)
+            .filter(move |&i| i == lo || addrs[i] - addrs[i - 1] > MAX_CHAIN_STRIDE)
+            .map(|i| addrs[i])
+    }
+    let (fixups, _) = collect_fixups(ctx);
+    let addrs: Vec<u64> = fixups.iter().map(|&(addr, ..)| addr).collect();
+    let base = ctx.mach_header.hdr.addr;
+    let starts = (ctx.segments.iter())
+        .flat_map(|seg| chains(&addrs, seg.cmd.vmaddr, seg.cmd.vmaddr + seg.cmd.vmsize))
+        .map(|addr| addr.wrapping_sub(base) as u32)
+        .collect();
+    let room = (ctx.chunks.iter())
+        .map(|&id| ctx.chunk_header(id))
+        .filter(|hdr| hdr.is_sect)
+        .map(|hdr| chains(&addrs, hdr.addr, hdr.addr + hdr.size).count())
+        .sum();
+    (starts, room)
+}
+
 /// Writes the fixup chains into the copied output: every fixup word is
 /// rewritten to encode its payload plus the 4-byte-stride distance to
-/// the next fixup in the same page.
+/// the next fixup of its chain, in the same page (or, under
+/// -fixup_chains_section, in its stride's reach; see
+/// section_chain_starts).
 pub fn write_fixup_chains<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let page_shift = chain_page_size(ctx).trailing_zeros();
     // What a rebase target counts from: zero for a VM address, the
@@ -327,10 +364,17 @@ pub fn write_fixup_chains<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
         let fx = &ctx.chained_fixups.fixups[lo..hi];
         // Pages count from the segment's start.
         let page = |addr: u64| (addr - seg.cmd.vmaddr) >> page_shift;
+        let chains_to = |addr: u64, next: u64| {
+            if ctx.args.fixup_chains_section {
+                next - addr <= MAX_CHAIN_STRIDE
+            } else {
+                page(next) == page(addr)
+            }
+        };
 
         for (i, &(addr, sym, addend)) in fx.iter().enumerate() {
             let next = match fx.get(i + 1) {
-                Some(&(next_addr, _, _)) if page(next_addr) == page(addr) => (next_addr - addr) / 4,
+                Some(&(next_addr, _, _)) if chains_to(addr, next_addr) => (next_addr - addr) / 4,
                 _ => 0,
             };
             if addr % 4 != 0 {

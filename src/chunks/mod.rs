@@ -10,6 +10,7 @@
 //! same shape.
 
 pub mod bind_info;
+pub mod chain_starts;
 pub mod chained_fixups;
 pub mod code_signature;
 pub mod data_in_code;
@@ -153,6 +154,7 @@ pub enum ChunkId {
     /// -add_empty_section): an index into `Context::sectcreate_sections`.
     SectCreate(u32),
     InitOffsets,
+    ChainStarts,
     UnwindInfo,
     EhFrame,
     RebaseInfo,
@@ -177,7 +179,7 @@ pub enum ChunkId {
 impl ChunkId {
     /// The chunks that exist at most once, in the order `pack` numbers
     /// them.
-    const UNITS: [Self; 32] = [
+    const UNITS: [Self; 33] = [
         Self::MachHeader,
         Self::Stubs,
         Self::StubHelper,
@@ -192,6 +194,7 @@ impl ChunkId {
         Self::ObjcMethlist,
         Self::ObjcImageInfo,
         Self::InitOffsets,
+        Self::ChainStarts,
         Self::UnwindInfo,
         Self::EhFrame,
         Self::RebaseInfo,
@@ -329,6 +332,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, id: ChunkId, buf: &mut [u8]) {
         ChunkId::ObjcImageInfo => objc_imageinfo::copy_buf(ctx, buf),
         ChunkId::SectCreate(i) => sectcreate::copy_buf(ctx, i, buf),
         ChunkId::InitOffsets => init_offsets::copy_buf(ctx, buf),
+        ChunkId::ChainStarts => chain_starts::copy_buf(ctx, buf),
         ChunkId::UnwindInfo => unwind_info::copy_buf(ctx, buf),
         ChunkId::EhFrame => eh_frame::copy_buf(ctx, buf),
         ChunkId::RebaseInfo => rebase_info::copy_buf(ctx, buf),
@@ -787,9 +791,10 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
     // sizes the header before the tables exist.)
     // (A -preload image under -fixup_chains gets its chains, and their
     // table after the segments, but ld-prime writes no command naming
-    // the table: its loader must know where to find it.)
+    // the table: its loader must know where to find it. Under
+    // -fixup_chains_section the starts are in __TEXT instead.)
     if ctx.use_chained_fixups() {
-        if !ctx.args.preload {
+        if !ctx.args.preload && !ctx.args.fixup_chains_section {
             vec.push(create_linkedit_data_cmd(LC_DYLD_CHAINED_FIXUPS, &ctx.chained_fixups.hdr));
         }
         // Present even with nothing exported (an 8-byte empty trie),

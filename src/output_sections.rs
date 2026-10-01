@@ -842,6 +842,10 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     lay_out_objc_method_lists(ctx);
     add_sectcreate_sections(ctx);
     merge_objc_image_info(ctx);
+    if ctx.args.fixup_chains_section {
+        ctx.chain_starts.hdr.reserved1 = ctx.args.chain_starts_kind;
+        ctx.chunks.push(ChunkId::ChainStarts);
+    }
     if ctx.args.unwind_info() && chunks::unwind_info::is_needed(ctx) {
         ctx.chunks.push(ChunkId::UnwindInfo);
     }
@@ -1440,6 +1444,9 @@ fn sort_chunks<E: Target>(ctx: &mut Context<E>) {
         let seg_rank = (seg_rank, first_seen[hdr.segname]);
         let sect_rank = match id {
             ChunkId::MachHeader => 0,
+            // After the input sections, like __unwind_info, which a
+            // -static image has none of.
+            ChunkId::ChainStarts => 99,
             ChunkId::UnwindInfo => 100,
             ChunkId::EhFrame => 101,
             ChunkId::CodeSignature => u32::MAX,
@@ -1861,7 +1868,9 @@ fn add_linkedit_chunks<E: Target>(ctx: &mut Context<E>) {
         ctx.chunks.push(ChunkId::LazyBindInfo);
         ctx.chunks.push(ChunkId::ExportTrie);
     } else if ctx.use_chained_fixups() {
-        ctx.chunks.push(ChunkId::ChainedFixups);
+        if !ctx.args.fixup_chains_section {
+            ctx.chunks.push(ChunkId::ChainedFixups);
+        }
     } else if ctx.args.no_fixup_chains {
         ctx.chunks.push(ChunkId::RebaseInfo);
         ctx.chunks.push(ChunkId::WeakBindInfo);

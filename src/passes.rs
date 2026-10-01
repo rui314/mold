@@ -4919,6 +4919,10 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
         }
     }
 
+    while !finish_chain_starts(ctx) {
+        fileoff = lay_out_segments(ctx);
+    }
+
     // The output sections with range-extension thunks (executable
     // sections); their entries' addresses are recorded on the symbols
     // now that the sections are placed.
@@ -5152,6 +5156,22 @@ fn finish_unwind_info<E: Target>(ctx: &mut Context<E>) -> bool {
     ctx.unwind_info.contents = data;
     ctx.unwind_info.personalities = personalities;
     true
+}
+
+/// Finds where the chains __TEXT,__chain_starts lists start, which
+/// follows from where the fixups in the other segments are. Returns
+/// false if their number changes the section's size; the layout is
+/// then done again (which moves later segments whole, and so no chain).
+fn finish_chain_starts<E: Target>(ctx: &mut Context<E>) -> bool {
+    if !ctx.args.fixup_chains_section {
+        return true;
+    }
+    let (starts, room) = chunks::chained_fixups::section_chain_starts(ctx);
+    let size = chunks::chain_starts::ChainStartsSection::size(room);
+    let fits = size == ctx.chain_starts.hdr.size;
+    ctx.chain_starts.hdr.size = size;
+    ctx.chain_starts.starts = starts;
+    fits
 }
 
 /// Lays out a segment's chunks from file offset `fileoff` and address

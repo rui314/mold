@@ -4,6 +4,7 @@
 use std::marker::PhantomData;
 
 use crate::chunks::bind_info::BindInfoSection;
+use crate::chunks::chain_starts::ChainStartsSection;
 use crate::chunks::chained_fixups::ChainedFixupsSection;
 use crate::chunks::code_signature::CodeSignatureSection;
 use crate::chunks::data_in_code::DataInCodeSection;
@@ -65,6 +66,7 @@ macro_rules! chunk_header {
             ChunkId::ObjcImageInfo => &$($mutable)? $ctx.objc_imageinfo.hdr,
             ChunkId::SectCreate(i) => &$($mutable)? $ctx.sectcreate_sections[i as usize].hdr,
             ChunkId::InitOffsets => &$($mutable)? $ctx.init_offsets.hdr,
+            ChunkId::ChainStarts => &$($mutable)? $ctx.chain_starts.hdr,
             ChunkId::UnwindInfo => &$($mutable)? $ctx.unwind_info.hdr,
             ChunkId::EhFrame => &$($mutable)? $ctx.eh_frame.hdr,
             ChunkId::RebaseInfo => &$($mutable)? $ctx.rebase_info.hdr,
@@ -156,6 +158,7 @@ pub struct Context<E: Target> {
     pub objc_imageinfo: ObjcImageInfoSection,
     pub sectcreate_sections: Vec<SectCreateSection>,
     pub init_offsets: InitOffsetsSection,
+    pub chain_starts: ChainStartsSection,
     pub unwind_info: UnwindInfoSection,
     pub eh_frame: EhFrameSection,
     pub rebase_info: RebaseInfoSection,
@@ -270,6 +273,7 @@ impl<E: Target> Context<E> {
             objc_imageinfo: ObjcImageInfoSection::new(),
             sectcreate_sections: Vec::new(),
             init_offsets: InitOffsetsSection::new(),
+            chain_starts: ChainStartsSection::new(),
             unwind_info: UnwindInfoSection::new(),
             eh_frame: EhFrameSection::new(),
             rebase_info: RebaseInfoSection::new(),

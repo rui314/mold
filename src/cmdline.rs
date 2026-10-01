@@ -703,6 +703,14 @@ pub struct Args {
     /// commons too, form one __zerofill section (see
     /// output_sections::SectionMap::zero_fill_name).
     pub merge_zero_fill_sections: bool,
+    /// -fixup_chains_section (or -fixup_chains_section_vm): a -static
+    /// image's fixup chains start where __TEXT,__chain_starts says, for
+    /// its own loader, not where an LC_DYLD_CHAINED_FIXUPS would.
+    pub fixup_chains_section: bool,
+    /// What the section's reserved1 says its starts are: 1 for file
+    /// offsets (-fixup_chains_section), 2 for VM offsets
+    /// (-fixup_chains_section_vm). ld-prime writes VM offsets either way.
+    pub chain_starts_kind: u32,
 }
 
 impl Default for Args {
@@ -870,6 +878,8 @@ impl Default for Args {
             linker_options: Vec::new(),
             force_load_swift_libs: false,
             merge_zero_fill_sections: false,
+            fixup_chains_section: false,
+            chain_starts_kind: 0,
         }
     }
 }
@@ -1675,6 +1685,35 @@ pub(crate) fn missing_argument(opt: &str) -> String {
     format!("{opt} {usage}")
 }
 
+/// ld-prime's checks of the options that put an image's fixups in a
+/// section of its own, for its own loader: -fixup_chains_section, which
+/// rules out -rebase_section as -fixup_chains does, and -rebase_section.
+/// Only an image no dyld loads can have them (a kext or a -kernel
+/// image, which have neither, ignores them), and only a 32-bit one
+/// -rebase_section's.
+fn check_fixup_sections(
+    args: &Args,
+    fixup_chains: Option<bool>,
+    fixup_chains_section: bool,
+    rebase_section: bool,
+) {
+    if rebase_section && fixup_chains == Some(true) {
+        fatal!(
+            "-fixup_chains*, -rebase_section and -threaded_starts_section can't be used together"
+        );
+    }
+    let dynamic = !args.static_link && !args.relocatable && !args.is_kext();
+    if rebase_section && dynamic {
+        fatal!("-rebase_section can't be used with dynamic binaries");
+    }
+    if fixup_chains_section && dynamic {
+        fatal!("-fixup_chains_section* can't be used with dynamic binaries");
+    }
+    if rebase_section && !args.is_kext() && !args.kernel {
+        fatal!("-rebase_section can only be used on 32-bit architectures");
+    }
+}
+
 /// Adds an -add_linker_option's words to `words`. ld-prime splits the
 /// option at its first space only for an option that names a framework
 /// (any word with "framework" in it), and takes the rest for its
@@ -1737,6 +1776,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut incompatible_platforms: Option<(u32, u32)> = None;
     let mut objc_stubs_small: Option<bool> = None;
     let mut const_selrefs: Option<bool> = None;
+    // -fixup_chains_section's kind (see Args::chain_starts_kind), unless
+    // a later -fixup_chains or -no_fixup_chains turned it off.
+    let mut chain_starts: Option<u32> = None;
+    let mut rebase_section = false;
     let mut warnings = OptionWarnings::default();
     let mut i = 1;
 
@@ -1889,9 +1932,27 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-map" => args.map = Some(path(next_arg(&mut i, name))),
             b"-sdk_imports" => args.sdk_imports = Some(path(next_arg(&mut i, name))),
-            b"-fixup_chains" => fixup_chains = Some(true),
+            b"-fixup_chains" | b"-no_fixup_chains" => {
+                fixup_chains = Some(name == "-fixup_chains");
+                chain_starts = None;
+            }
+            // The last of these and -fixup_chains or -no_fixup_chains
+            // counts, but ld-prime refuses to switch from one kind of
+            // chain starts to the other.
+            b"-fixup_chains_section" | b"-fixup_chains_section_vm" => {
+                let kind = if name == "-fixup_chains_section" { 1 } else { 2 };
+                if chain_starts.is_some_and(|k| k != kind) {
+                    fatal!(
+                        "{name} can't be used together with other -fixup_chains_section* options"
+                    );
+                }
+                fixup_chains = Some(true);
+                chain_starts = Some(kind);
+            }
+            // A 32-bit image's rebases in a section, which no image of
+            // the 64-bit targets mold has can have.
+            b"-rebase_section" => rebase_section = true,
             b"-threaded_starts_section" => threaded_starts = true,
-            b"-no_fixup_chains" => fixup_chains = Some(false),
             b"-adhoc_codesign" => adhoc_codesign = Some(true),
             b"-no_adhoc_codesign" => adhoc_codesign = Some(false),
             b"-dynamic" => args.dynamic = true,
@@ -2930,6 +2991,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         }
         fatal!("-threaded_starts_section is no longer supported");
     }
+    check_fixup_sections(&args, fixup_chains, chain_starts.is_some(), rebase_section);
     // Only a dylib is mergeable: ld-prime checks so here, and that only
     // a dylib gets the debug hook right after the next check.
     if args.make_mergeable && args.output_type != MH_DYLIB {
@@ -3001,6 +3063,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     args.pie = resolve_pie(target, &args, pie, fixup_chains);
     args.fixup_chains = resolve_fixup_chains(target, &args, fixup_chains);
     args.no_fixup_chains = fixup_chains == Some(false);
+    args.fixup_chains_section = chain_starts.is_some() && args.static_link && args.fixup_chains;
+    args.chain_starts_kind = chain_starts.unwrap_or(0);
     // ld64 binds lazily below the chained-fixups deployment targets
     // unless -bind_at_load.
     args.lazy_binding =
