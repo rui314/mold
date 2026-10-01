@@ -429,14 +429,15 @@ fn bare_code_records<E: Target>(ctx: &Context<E>, records: &[UnwindRecord]) -> V
     use std::collections::HashMap;
 
     // Where each subsection's first record is, and for a section of an
-    // object without subsections, where each of its records is.
+    // object without subsections, where each of its records is and how
+    // much code it spans.
     let mut first: HashMap<u32, u32> = HashMap::new();
-    let mut unsplit: HashMap<u32, Vec<u32>> = HashMap::new();
+    let mut unsplit: HashMap<u32, Vec<(u32, u32)>> = HashMap::new();
     for rec in records {
         let off = first.entry(rec.isec).or_insert(rec.input_offset);
         *off = (*off).min(rec.input_offset);
         if !ctx.objs[ctx.isecs[rec.isec as usize].file as usize].subsections_via_symbols {
-            unsplit.entry(rec.isec).or_default().push(rec.input_offset);
+            unsplit.entry(rec.isec).or_default().push((rec.input_offset, rec.code_len));
         }
     }
 
@@ -490,19 +491,23 @@ fn first_alt_entry(obj: &crate::input_files::ObjectFile, isec: &InputSection) ->
         .unwrap_or(u32::MAX)
 }
 
-/// The atoms, as (offset, size), that have none of the records at
-/// `records` (offsets) in a section of an object without
+/// The atoms, as (offset, size), that have none of the records of
+/// `records` (offset, length) in a section of an object without
 /// MH_SUBSECTIONS_VIA_SYMBOLS. ld-prime cuts such a section into atoms
 /// at each label past its start, an alternate entry point's too, as if
 /// symbols split it: the labels at its start name its first atom, and
 /// of several labels at one place, all but the last name empty atoms
-/// (all do at its end). As it does with subsections, it goes by the
-/// labels alone: one inside a function the function's record spans by
-/// its length starts an atom of no unwind info all the same.
+/// (all do at its end).
+///
+/// ld-prime goes by the labels alone, so a label inside a function,
+/// within the length of the function's record, gets encoding 0 too,
+/// and the code past it can't be unwound. Such a label gets no entry
+/// here, leaving the record the whole of its code (a section that
+/// can't be split is one function there).
 fn unsplit_bare_atoms(
     obj: &crate::input_files::ObjectFile,
     isec: &InputSection,
-    records: &[u32],
+    records: &[(u32, u32)],
 ) -> Vec<(u32, u32)> {
     let lo = isec.input_addr as u64;
     let mut labels: Vec<u32> = obj
@@ -520,6 +525,14 @@ fn unsplit_bare_atoms(
     labels.sort_unstable();
     let mut records = records.to_vec();
     records.sort_unstable();
+    // How far the records up to each one reach.
+    let reach: Vec<u64> = records
+        .iter()
+        .scan(0, |end, &(off, len)| {
+            *end = (*end).max(off as u64 + len as u64);
+            Some(*end)
+        })
+        .collect();
 
     // An atom has the records from its start to the next label; the
     // last one, those at the section's end too.
@@ -527,9 +540,10 @@ fn unsplit_bare_atoms(
         .filter_map(|k| {
             let start = if k == 0 { 0 } else { labels[k - 1] };
             let next = labels.get(k).copied();
-            let rec = records[records.partition_point(|&off| off < start)..].first();
-            let bare = rec.is_none_or(|&off| next.is_some_and(|next| next <= off));
-            bare.then(|| (start, next.unwrap_or(isec.size) - start))
+            let i = records.partition_point(|&(off, _)| off < start);
+            let in_function = i > 0 && reach[i - 1] > start as u64;
+            let has_record = records.get(i).is_some_and(|&(off, _)| next.is_none_or(|n| off < n));
+            (!has_record && !in_function).then(|| (start, next.unwrap_or(isec.size) - start))
         })
         .collect()
 }

@@ -84,7 +84,7 @@ _h:
 .quad 0
 .quad 0
 .quad _f
-.long 7
+.long 11
 .long 0x01000000
 .quad 0
 .quad 0
