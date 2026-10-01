@@ -135,7 +135,7 @@ fn dependency_inputs<E: Target>(ctx: &Context<E>) -> Vec<(u8, Vec<u8>)> {
         _ => None,
     }));
     named.extend(ctx.args.filelists.iter().map(PathBuf::as_path));
-    named.extend(ctx.args.sectcreate.iter().map(|(_, _, path)| path.as_path()));
+    named.extend(ctx.args.sectcreate.iter().filter_map(|(_, _, path)| path.as_deref()));
     // A fat file's slice is the file's.
     let mut named: Vec<Vec<u8>> = named
         .into_iter()

@@ -1559,25 +1559,24 @@ fn lay_out_objc_method_lists<E: Target>(ctx: &mut Context<E>) {
 
 /// Adds the sections -sectcreate makes from files, and the empty ones
 /// -add_empty_section asks for, which give tools a named anchor (their
-/// section$start/end addresses) without any content.
+/// section$start/end addresses) without any content. They come in
+/// command-line order, the two options' interleaved, as ld-prime
+/// creates them: that orders them within a segment, and orders the
+/// segments only they make.
 fn add_sectcreate_sections<E: Target>(ctx: &mut Context<E>) {
     let sectcreate = std::mem::take(&mut ctx.args.sectcreate);
     for (seg, sect, path) in &sectcreate {
-        let data = std::fs::read(path).unwrap_or_else(|e| {
-            let errno = crate::error::errno_text(&e);
-            fatal!("file cannot be open()ed, {errno} path={}", path.display())
-        });
+        let data: &'static [u8] = match path {
+            Some(path) => Vec::leak(std::fs::read(path).unwrap_or_else(|e| {
+                let errno = crate::error::errno_text(&e);
+                fatal!("file cannot be open()ed, {errno} path={}", path.display())
+            })),
+            None => &[],
+        };
         let segname: &'static str = String::leak(seg.clone());
-        add_sectcreate(ctx, SectCreateSection::new(segname, sect, Vec::leak(data), true));
+        add_sectcreate(ctx, SectCreateSection::new(segname, sect, data, true));
     }
     ctx.args.sectcreate = sectcreate;
-
-    let empties = std::mem::take(&mut ctx.args.add_empty_section);
-    for (seg, sect) in &empties {
-        let segname: &'static str = String::leak(seg.clone());
-        add_sectcreate(ctx, SectCreateSection::new(segname, sect, &[], true));
-    }
-    ctx.args.add_empty_section = empties;
 }
 
 /// Merges the objects' __objc_imageinfo records into the image's: the

@@ -24,3 +24,13 @@ cat <<EOF | $CC -o $t/b.o -c -xassembler -
 EOF
 $CC --ld-path=$mold -o $t/exe3 $t/a.o $t/b.o -Wl,-sectcreate,__FOO,__blob,$t/blob
 otool -l $t/exe3 | grep -A9 'segname __FOO' | grep 'flags 0x0'
+
+# The sections of -add_empty_section and -sectcreate come in
+# command-line order, the two options' interleaved, and so do the
+# segments only they make.
+$CC --ld-path=$mold -o $t/exe4 $t/a.o -Wl,-add_empty_section,__BAR,__e1 \
+  -Wl,-sectcreate,__FOO,__s1,$t/blob -Wl,-add_empty_section,__FOO,__e2 \
+  -Wl,-sectcreate,__FOO,__s2,$t/blob -Wl,-add_empty_section,__BAR,__e3
+otool -l $t/exe4 | grep -A1 'sectname __[es][0-9]' | grep -v -- -- | paste - - |
+  awk '{print $4 "," $2}' | tr '\n' ' ' > $t/log4
+grep -q '^__BAR,__e1 __BAR,__e3 __FOO,__s1 __FOO,__e2 __FOO,__s2 $' $t/log4

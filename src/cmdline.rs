@@ -344,12 +344,10 @@ pub struct Args {
     /// or reserved as the __UNIXSTACK segment of an executable that
     /// starts from LC_UNIXTHREAD.
     pub stack_size: u64,
-    /// -sectcreate: sections to synthesize from files:
-    /// (segment, section, path).
-    pub sectcreate: Vec<(String, String, PathBuf)>,
-    /// -add_empty_section: zero-length sections to synthesize:
-    /// (segment, section).
-    pub add_empty_section: Vec<(String, String)>,
+    /// -sectcreate and -add_empty_section, in command-line order: the
+    /// sections to synthesize, (segment, section, file) - from the
+    /// file's contents, or empty for -add_empty_section.
+    pub sectcreate: Vec<(String, String, Option<PathBuf>)>,
     /// -r: produce a relocatable object instead of a final image.
     pub relocatable: bool,
     /// -flat_namespace: bind imports by name across all loaded images
@@ -821,7 +819,6 @@ impl Default for Args {
             save_temps: false,
             stack_size: 0,
             sectcreate: Vec::new(),
-            add_empty_section: Vec::new(),
             relocatable: false,
             flat_namespace: false,
             no_standard_dirs: false,
@@ -2230,12 +2227,12 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 let sect = text(name, next_arg(&mut i, name));
                 let sect = sectcreate_name("section", sect, &mut warnings);
                 let file = path(next_arg(&mut i, name));
-                args.sectcreate.push((seg, sect, file));
+                args.sectcreate.push((seg, sect, Some(file)));
             }
             b"-add_empty_section" => {
                 let seg = section_name(text(name, next_arg(&mut i, name)));
                 let sect = section_name(text(name, next_arg(&mut i, name)));
-                args.add_empty_section.push((seg, sect));
+                args.sectcreate.push((seg, sect, None));
             }
             b"-x" => args.strip_locals = true,
             b"-Z" => args.no_standard_dirs = true,
