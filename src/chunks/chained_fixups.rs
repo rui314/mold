@@ -604,8 +604,8 @@ pub fn small_pointer_subsecs<E: Target>(ctx: &Context<E>, obj: usize) -> Vec<u32
     }
     let file = &ctx.objs[obj];
     let is_pointer = |rel: &crate::input_sections::Reloc| {
-        E::classify_reloc(rel.r_type) == RelocClass::Plain
-            && rel.size == 8
+        rel.size == 8
+            && E::classify_reloc(rel.r_type) == RelocClass::Plain
             && !rel.is_pcrel
             && !rel.is_subtracted
             && rel.r_type != E::RELOC_SUBTRACTOR
@@ -620,8 +620,10 @@ pub fn small_pointer_subsecs<E: Target>(ctx: &Context<E>, obj: usize) -> Vec<u32
             let isec = &ctx.isecs[id];
             let hdr = ctx.hdr_of(isec);
             isec.p2align < 3
-                && !matches!(hdr.segname(), "__DWARF" | "__LLVM")
-                && !matches!(hdr.sectname(), "__compact_unwind" | "__eh_frame")
+                && !hdr.segname_is("__DWARF")
+                && !hdr.segname_is("__LLVM")
+                && !hdr.sectname_is("__compact_unwind")
+                && !hdr.sectname_is("__eh_frame")
                 && ctx.isec_relocs(id as usize).iter().any(is_pointer)
         })
         .collect();

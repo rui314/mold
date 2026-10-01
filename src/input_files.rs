@@ -2913,9 +2913,10 @@ impl StagedObject {
         self.isecs.iter().find_map(|isec| {
             let shndx = isec.shndx as usize;
             let hdr = &self.sect_hdrs[shndx];
-            if (hdr.segname(), hdr.sectname()) != ("__DATA", "__cfstring")
+            if isec.size == 0
+                || !hdr.sectname_is("__cfstring")
+                || !hdr.segname_is("__DATA")
                 || hdr.section_type() != S_REGULAR
-                || isec.size == 0
             {
                 return None;
             }
