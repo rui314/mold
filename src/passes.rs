@@ -186,12 +186,17 @@ fn find_dylib<E: Target>(ctx: &Context<E>, name: &OsStr) -> Option<PathBuf> {
 
 /// Looks for lib<name>.<ext> in the library search path, for each pass
 /// of extensions in turn. What is there counts, as for ld-prime, which
-/// fails on a directory it finds (see unreadable_input).
+/// fails on a directory it finds (see unreadable_input). A name ending
+/// in .o is a file name to look up as it is, whatever the option:
+/// clang links crt1.o for an old deployment target as -lcrt1.10.6.o.
 fn search_library<E: Target>(
     ctx: &Context<E>,
     name: &OsStr,
     passes: &[&[&str]],
 ) -> Option<PathBuf> {
+    if name.as_bytes().ends_with(b".o") {
+        return ctx.args.library_paths.iter().map(|dir| dir.join(name)).find(|p| p.exists());
+    }
     for exts in passes {
         for dir in &ctx.args.library_paths {
             for ext in *exts {
