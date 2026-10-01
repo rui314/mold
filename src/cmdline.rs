@@ -425,6 +425,9 @@ pub struct Args {
     /// -keep_duplicate / -keep_duplicates_list: the functions (local
     /// ones too) function deduplication leaves alone.
     pub keep_duplicates: Glob,
+    /// -allow_dead_duplicates: a symbol defined more than once is fine
+    /// if -dead_strip removes all its definitions but the one kept.
+    pub allow_dead_duplicates: bool,
     /// -w: suppress warnings.
     pub suppress_warnings: bool,
     pub fatal_warnings: bool,
@@ -722,6 +725,7 @@ impl Default for Args {
             force_weak: Glob::new(),
             force_not_weak: Glob::new(),
             keep_duplicates: Glob::new(),
+            allow_dead_duplicates: false,
             suppress_warnings: false,
             fatal_warnings: false,
             demangle: false,
@@ -1572,7 +1576,9 @@ pub(crate) fn missing_argument(opt: &str) -> String {
         "-force_symbols_not_weak_list" => {
             return "-force_symbols_weak_list missing <path>".to_string();
         }
-        "-read_only_relocs" | "-arch_variant_lto_cache_mismatch" => "missing <option>",
+        "-read_only_relocs" | "-arch_variant_lto_cache_mismatch" | "-duplicate_symbols" => {
+            "missing <option>"
+        }
         "-target" => "missing <target-triple>",
         "-alias" => "missing <real-name> <alias-name>",
         "-dylib_file" => "missing <path:path>",
@@ -2406,6 +2412,12 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 for pat in read_symbol_list(name, &path(next_arg(&mut i, name))) {
                     keep_duplicates.add(pat.as_bytes(), 0);
                 }
+            }
+            b"-allow_dead_duplicates" => args.allow_dead_duplicates = true,
+            // For duplicate symbols ld-prime would only warn of, which
+            // it has no more: it takes the treatment and does nothing.
+            b"-duplicate_symbols" => {
+                parse_treatment(name, next_arg(&mut i, name), false);
             }
 
             b"-dyld_env" => {

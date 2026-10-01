@@ -2831,16 +2831,18 @@ pub fn coalesce_weak_defs<E: Target>(ctx: &mut Context<E>) {
     }
 }
 
-/// Reports two live strong definitions of one name. Resolution keeps
-/// the first strong definition it meets; a strong definition in any
-/// other live object that lost to it is an error (a weak or common one
-/// yields quietly). Reported after resolution settles, sorted by name,
-/// so the messages are deterministic: mold's
-/// check_duplicate_symbols. As in ld-prime, a final link reports them
-/// only if no symbol is undefined, and only of the symbols -dead_strip
-/// leaves live.
+/// Reports the symbols live objects define strongly more than once, as
+/// ld-prime does once resolution settles (and, in a final link, no
+/// symbol is undefined): each with the files that define it, then their
+/// number. Resolution keeps the first strong definition it meets; a weak
+/// or common one yields quietly. Under -dead_strip only a symbol whose
+/// kept definition is live is reported, and -allow_dead_duplicates lets
+/// one stay whose other definitions are all dead; ld-prime counts the
+/// symbols it doesn't report in the number all the same. It lists them
+/// in no stable order; mold sorts them by name.
 pub fn check_duplicate_symbols<E: Target>(ctx: &Context<E>) {
-    let mut duplicates: Vec<(crate::symbol::SymbolId, usize)> = ctx
+    // Each losing definition, and whether it is live.
+    let mut losers: Vec<(SymbolId, usize, bool)> = ctx
         .objs
         .par_iter()
         .enumerate()
@@ -2852,37 +2854,54 @@ pub fn check_duplicate_symbols<E: Target>(ctx: &Context<E>) {
                     || !nlist.is_extern()
                     || !matches!(nlist.n_type(), N_SECT | N_ABS)
                     || nlist.n_desc & N_WEAK_DEF != 0
+                    || !matches!(ctx.symbols[sym_id].file(), Some(FileId::Obj(owner)) if owner as usize != obj_idx)
                 {
                     return None;
                 }
-                let sym = &ctx.symbols[sym_id];
-                match sym.file() {
-                    Some(FileId::Obj(owner))
-                        if owner as usize != obj_idx
-                            && sym
-                                .input_section()
-                                .is_none_or(|i| ctx.isecs[i as usize].is_alive()) =>
-                    {
-                        Some((sym_id, obj_idx))
-                    }
+                let isec = match nlist.n_type() {
+                    N_SECT => input_files::find_symbol_subsec(
+                        &ctx.isecs,
+                        &obj.subsecs,
+                        nlist.n_sect,
+                        nlist.n_value,
+                    ),
                     _ => None,
-                }
+                };
+                let live = isec.is_none_or(|(isec, _)| ctx.isecs[isec].is_alive());
+                Some((sym_id, obj_idx, live))
             })
         })
         .collect();
-    duplicates.sort_by_key(|&(sym_id, obj_idx)| (ctx.symbols[sym_id].name(), obj_idx));
-    duplicates.dedup();
-    for (sym_id, obj_idx) in duplicates {
-        let prev = match ctx.symbols[sym_id].file() {
-            Some(FileId::Obj(idx)) => file_display(&ctx.objs[idx as usize]),
-            _ => "?".into(),
-        };
-        error!(
-            "duplicate symbol: {}: {}: {}",
-            file_display(&ctx.objs[obj_idx]),
-            prev,
-            ctx.symbols[sym_id]
-        );
+    if losers.is_empty() {
+        return;
+    }
+    losers.sort_by_key(|&(sym_id, obj_idx, _)| (ctx.symbols[sym_id].name(), obj_idx));
+    losers.dedup();
+
+    let mut count = 0;
+    let mut reported = false;
+    for group in losers.chunk_by(|a, b| a.0 == b.0) {
+        let id = group[0].0;
+        let sym = &ctx.symbols[id];
+        if ctx.args.allow_dead_duplicates && group.iter().all(|&(_, _, live)| !live) {
+            continue;
+        }
+        count += 1;
+        if !sym.input_section().is_none_or(|isec| ctx.isecs[isec as usize].is_alive()) {
+            continue;
+        }
+        reported = true;
+        let Some(FileId::Obj(winner)) = sym.file() else { continue };
+        let mut files: Vec<usize> = group.iter().map(|&(_, obj, _)| obj).collect();
+        files.push(winner as usize);
+        files.sort_unstable();
+        crate::error::notice(format_args!("duplicate symbol '{sym}' in:"));
+        for obj in files {
+            crate::error::notice(format_args!("    {}", resolved_file_name(ctx.objs[obj].mf)));
+        }
+    }
+    if reported {
+        error!("{count} duplicate symbols");
     }
 }
 

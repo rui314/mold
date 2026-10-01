@@ -11,7 +11,15 @@ int main() {}
 EOF
 
 ! $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o 2> $t/log || false
-grep -q 'duplicate symbol: .*/b.o: .*/a.o: _hello' $t/log
+# (ld-prime lists the files in no stable order.)
+grep -v '^+' $t/log | sed -E 's|^(ld: \|mold: error: )||; s|/.*/||' > $t/msgs
+cat > $t/expected <<EOF
+duplicate symbol '_hello' in:
+    a.o
+    b.o
+1 duplicate symbols
+EOF
+grep -v 'linker command failed' $t/msgs | sort | diff - <(sort $t/expected)
 
 # A relocatable link must fail before publishing an erroneous object.
 # Exercise both the default parent/child protocol and the debugger mode.
@@ -22,7 +30,7 @@ for no_fork in no yes; do
   else
     ! $mold -r -arch $ARCH -o $t/merged.o $t/a.o $t/b.o 2> $t/log || false
   fi
-  grep -q 'duplicate symbol: .*_hello' $t/log
+  grep -q "duplicate symbol '_hello' in:" $t/log
   test ! -e $t/merged.o
 done
 
