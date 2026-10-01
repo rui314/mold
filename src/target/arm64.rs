@@ -1506,7 +1506,7 @@ impl Target for Arm64 {
                 ARM64_RELOC_UNSIGNED => {
                     ctx.check_text_reloc(isec_id, rels, i, p);
                     // An imported symbol's address is written by dyld,
-                    // via a bind record (a -flat_namespace export's too).
+                    // via a bind record (an interposable export's too).
                     let imported =
                         ctx.reloc_target_sym(obj, r).is_some_and(|id| ctx.binds_as_import(id));
                     if imported {

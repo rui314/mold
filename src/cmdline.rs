@@ -438,6 +438,10 @@ pub struct Args {
     /// -unaligned_pointers, resolved for the image at the end of
     /// parsing (see resolve_unaligned_pointers).
     pub unaligned_pointers: Treatment,
+    /// The exports -interposable (all of them) or -interposable_list
+    /// (those it names, whatever -interposable says) make interposable:
+    /// the image refers to them through binds to itself.
+    pub interposable: Option<Glob>,
     /// -w: suppress warnings.
     pub suppress_warnings: bool,
     pub fatal_warnings: bool,
@@ -739,6 +743,7 @@ impl Default for Args {
             poisoned: Glob::new(),
             deployment_target_mismatches: Treatment::Warning,
             unaligned_pointers: Treatment::Suppress,
+            interposable: None,
             suppress_warnings: false,
             fatal_warnings: false,
             demangle: false,
@@ -1670,6 +1675,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut keep_duplicates = GlobBuilder::default();
     let mut poisoned = GlobBuilder::default();
     let mut unaligned_pointers: Option<Treatment> = None;
+    let mut interposable_all = false;
+    let mut interposable_list: Option<GlobBuilder> = None;
     let mut export_choice: Option<ExportChoice> = None;
     // The warnings about the obsolete options given, which ld-prime
     // ignores with a warning once it has read them all.
@@ -2437,6 +2444,12 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 args.deployment_target_mismatches =
                     parse_treatment(name, next_arg(&mut i, name), true);
             }
+            b"-interposable" => interposable_all = true,
+            b"-interposable_list" => {
+                let names = read_symbol_list(name, &path(next_arg(&mut i, name)));
+                let glob = interposable_list.get_or_insert_default();
+                add_patterns(glob, name, names.iter().map(String::as_str));
+            }
             b"-unaligned_pointers" => {
                 unaligned_pointers = Some(parse_treatment(name, next_arg(&mut i, name), true));
             }
@@ -2742,6 +2755,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     args.force_not_weak = force_not_weak.build();
     args.keep_duplicates = keep_duplicates.build();
     args.poisoned = poisoned.build();
+    if interposable_all && interposable_list.is_none() {
+        interposable_list.get_or_insert_default().add(b"*", 0);
+    }
+    args.interposable = interposable_list.map(GlobBuilder::build);
 
     // -fatal_warnings applies to every warning, wherever it appears on
     // the command line. So does -w to those from the option checks
