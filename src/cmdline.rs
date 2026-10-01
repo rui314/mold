@@ -42,64 +42,124 @@ pub fn print_version_details() {
 pub enum InputArg {
     /// A file path.
     File(PathBuf),
-    /// `-lfoo`: a library to search for in the library paths. The flag
-    /// marks a weak library (`-weak-lfoo`).
-    Lib(OsString, bool),
-    /// `-framework Foo`: a framework to search for in the framework
-    /// paths. The flag marks a weak framework.
-    Framework(OsString, bool),
-    /// `-force_load path`: an archive all of whose members are linked.
-    ForceLoad(PathBuf),
-    /// `-weak_library path`: a dylib whose absence is tolerated at load
-    /// time.
-    WeakFile(PathBuf),
-    /// `-reexport-lfoo` / `-reexport_library path`: a dylib whose
-    /// exports this dylib re-exports as its own.
-    ReexportLib(OsString),
-    ReexportFile(PathBuf),
-    ReexportFramework(OsString),
-    /// `-hidden-lfoo`: an archive whose external symbols are demoted
-    /// to private externals.
-    HiddenLib(OsString),
-    /// `-needed-lfoo` / `-needed_framework Foo`: always keep the
-    /// dylib's load command.
-    NeededLib(OsString),
-    NeededFramework(OsString),
-    NeededFile(PathBuf),
-    /// -upward-lfoo / -upward_framework Foo / -upward_library path: a
-    /// dylib that depends on this one in turn (LC_LOAD_UPWARD_DYLIB).
-    /// -upward-l looks for a dylib only.
-    UpwardLib(OsString),
-    UpwardFramework(OsString),
-    UpwardFile(PathBuf),
-    /// -lazy-lfoo / -lazy_framework Foo / -lazy_library path: a dylib
-    /// dyld loads at the first use of one of its symbols, from macOS 27
-    /// on (see Args::lazy_load); before, a library like any other.
-    LazyLib(OsString),
-    LazyFramework(OsString),
-    LazyFile(PathBuf),
-    /// -no_merge-lfoo / -no_merge_framework Foo / -no_merge_library
-    /// path: a mergeable library this image re-exports, as Xcode's
-    /// debug builds link what its release builds merge (-merge_*).
-    /// They are -reexport-l, -reexport_framework and -reexport_library
-    /// but for the hook ld-prime adds for such libraries (see
-    /// Args::merged_libraries_hook), and as ld-prime spells them.
-    NoMergeLib(OsString),
-    NoMergeFramework(OsString),
-    NoMergeFile(PathBuf),
-    /// -merge-lfoo / -merge_framework Foo / -merge_library path: a
-    /// library whose content goes into this image, a dylib that
-    /// -make_mergeable made mergeable (LC_ATOM_INFO) linked as its
-    /// objects would be, in place of a load command. Only a dylib can
-    /// be found for one, never a stub; an object or archive the path
-    /// names links as ever.
-    MergeLib(OsString),
-    MergeFramework(OsString),
-    MergeFile(PathBuf),
+    /// A library option: what it makes of the library, and how it
+    /// names it.
+    Library(LibraryKind, LibraryName),
     /// `-bundle_loader path`: the executable a bundle's undefined
     /// symbols may resolve to, bound at run time as the main executable.
     /// A file of another kind is an input like any other.
     BundleLoader(PathBuf),
+}
+
+/// How a library option names its library: `-lfoo` and the like, by a
+/// name to look up in the library paths; `-framework Foo` and the
+/// like, in the framework paths; `-weak_library path` and the like, by
+/// its path.
+#[derive(Clone, Debug)]
+pub enum LibraryName {
+    Lib(OsString),
+    Framework(OsString),
+    Path(PathBuf),
+}
+
+/// What a library option makes of the library it names. The options
+/// of each kind name a library in each of the three ways (see
+/// LibraryName), but for those that say otherwise.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LibraryKind {
+    /// -l, -framework: a library like any other.
+    Plain,
+    /// -weak-l, -weak_framework, -weak_library: a dylib whose absence
+    /// is tolerated at load time.
+    Weak,
+    /// -reexport-l, -reexport_framework, -reexport_library (and
+    /// -sub_library, a name): a dylib whose exports this dylib
+    /// re-exports as its own. -reexport-l looks for a dylib only.
+    Reexport,
+    /// -hidden-l: an archive whose external symbols are demoted to
+    /// private externals.
+    Hidden,
+    /// -needed-l, -needed_framework, -needed_library: always keep the
+    /// dylib's load command.
+    Needed,
+    /// -upward-l, -upward_framework, -upward_library: a dylib that
+    /// depends on this one in turn (LC_LOAD_UPWARD_DYLIB). -upward-l
+    /// looks for a dylib only.
+    Upward,
+    /// -lazy-l, -lazy_framework, -lazy_library: a dylib dyld loads at
+    /// the first use of one of its symbols, from macOS 27 on (see
+    /// Args::lazy_load); before, a library like any other.
+    Lazy,
+    /// -no_merge-l, -no_merge_framework, -no_merge_library: a mergeable
+    /// library this image re-exports, as Xcode's debug builds link what
+    /// its release builds merge (-merge_*). They are -reexport-l,
+    /// -reexport_framework and -reexport_library but for the hook
+    /// ld-prime adds for such libraries (see
+    /// Args::merged_libraries_hook), and as ld-prime spells them.
+    NoMerge,
+    /// -merge-l, -merge_framework, -merge_library: a library whose
+    /// content goes into this image, a dylib that -make_mergeable made
+    /// mergeable (LC_ATOM_INFO) linked as its objects would be, in place
+    /// of a load command. Only a dylib can be found for one, never a
+    /// stub; an object or archive the path names links as ever.
+    Merge,
+    /// -force_load path: an archive all of whose members are linked.
+    Force,
+}
+
+impl LibraryKind {
+    /// The option of this kind that names a library as `name` does, as
+    /// ld-prime spells it in diagnostics: with the name joined to it,
+    /// or followed by a space.
+    pub fn option(self, name: &LibraryName) -> &'static str {
+        use LibraryKind::*;
+        match name {
+            LibraryName::Lib(_) => match self {
+                Plain => "-l",
+                Weak => "-weak-l",
+                Reexport => "-reexport-l",
+                Hidden => "-hidden-l",
+                Needed => "-needed-l",
+                Upward => "-upward-l",
+                Lazy => "-lazy-l",
+                NoMerge => "-no_merge-l",
+                Merge => "-merge-l",
+                Force => unreachable!(),
+            },
+            LibraryName::Framework(_) => match self {
+                Plain => "-framework ",
+                Weak => "-weak_framework ",
+                Reexport => "-reexport_framework ",
+                Needed => "-needed_framework ",
+                Upward => "-upward_framework ",
+                Lazy => "-lazy_framework ",
+                NoMerge => "-no_merge_framework ",
+                Merge => "-merge_framework ",
+                Hidden | Force => unreachable!(),
+            },
+            LibraryName::Path(_) => match self {
+                Weak => "-weak_library ",
+                Reexport => "-reexport_library ",
+                Needed => "-needed_library ",
+                Upward => "-upward_library ",
+                Lazy => "-lazy_library ",
+                NoMerge => "-no_merge_library ",
+                Merge => "-merge_library ",
+                Force => "-force_load ",
+                Plain | Hidden => unreachable!(),
+            },
+        }
+    }
+}
+
+impl LibraryName {
+    /// The name or path as the option gives it.
+    pub fn as_os_str(&self) -> &OsStr {
+        match self {
+            Self::Lib(name) | Self::Framework(name) => name,
+            Self::Path(path) => path.as_os_str(),
+        }
+    }
 }
 
 /// Parsed command line arguments.
@@ -757,10 +817,108 @@ fn is_other_platform(name: &str) -> bool {
     }
 }
 
-/// Notes a library a -lazy_ option names, once, for its warning.
-fn add_lazy(libs: &mut Vec<Vec<u8>>, name: &[u8]) {
-    if !libs.iter().any(|lib| lib == name) {
-        libs.push(name.to_vec());
+/// Makes the name a library option gives of its argument.
+type Naming = fn(&OsStr) -> LibraryName;
+
+/// The library options with the library's name or path in the next
+/// argument: the kind of library each names, and how it names it.
+fn library_option(opt: &[u8]) -> Option<(LibraryKind, Naming)> {
+    use LibraryKind::*;
+    let lib: Naming = |name| LibraryName::Lib(name.to_owned());
+    let framework: Naming = |name| LibraryName::Framework(name.to_owned());
+    let path: Naming = |path| LibraryName::Path(PathBuf::from(path));
+    Some(match opt {
+        b"-l" => (Plain, lib),
+        b"-sub_library" => (Reexport, lib),
+        b"-framework" => (Plain, framework),
+        b"-weak_framework" => (Weak, framework),
+        b"-reexport_framework" => (Reexport, framework),
+        b"-needed_framework" => (Needed, framework),
+        b"-upward_framework" => (Upward, framework),
+        b"-lazy_framework" => (Lazy, framework),
+        b"-no_merge_framework" => (NoMerge, framework),
+        b"-merge_framework" => (Merge, framework),
+        b"-weak_library" => (Weak, path),
+        b"-reexport_library" => (Reexport, path),
+        b"-needed_library" => (Needed, path),
+        b"-upward_library" => (Upward, path),
+        b"-lazy_library" => (Lazy, path),
+        b"-no_merge_library" => (NoMerge, path),
+        b"-merge_library" => (Merge, path),
+        b"-force_load" => (Force, path),
+        _ => return None,
+    })
+}
+
+/// The library options with the library's name joined to them
+/// (-weak-lfoo), and the kind of library each names; -l, the others'
+/// prefix, last.
+const JOINED_LIBRARY_OPTIONS: [(&str, LibraryKind); 9] = [
+    ("-reexport-l", LibraryKind::Reexport),
+    ("-no_merge-l", LibraryKind::NoMerge),
+    ("-merge-l", LibraryKind::Merge),
+    ("-hidden-l", LibraryKind::Hidden),
+    ("-needed-l", LibraryKind::Needed),
+    ("-upward-l", LibraryKind::Upward),
+    ("-lazy-l", LibraryKind::Lazy),
+    ("-weak-l", LibraryKind::Weak),
+    ("-l", LibraryKind::Plain),
+];
+
+/// The frameworks and the other libraries the options of a kind name,
+/// each once, in command line order: ld-prime keeps the two apart.
+fn libraries_of_kind(inputs: &[InputArg], kind: LibraryKind) -> (Vec<&[u8]>, Vec<&[u8]>) {
+    let mut frameworks: Vec<&[u8]> = Vec::new();
+    let mut libraries: Vec<&[u8]> = Vec::new();
+    for input in inputs {
+        if let InputArg::Library(k, name) = input
+            && *k == kind
+        {
+            let list = match name {
+                LibraryName::Framework(_) => &mut frameworks,
+                _ => &mut libraries,
+            };
+            let name = name.as_os_str().as_bytes();
+            if !list.contains(&name) {
+                list.push(name);
+            }
+        }
+    }
+    (frameworks, libraries)
+}
+
+/// Decides whether the dylibs -lazy-l and the like name load lazily:
+/// dyld loads one when __dyld_lazy_load says so, which ld-prime keeps
+/// as an import of any final image that names one, used or not, for
+/// macOS 27 on. Firmware, a -preload image included, has no dyld:
+/// ld-prime links the library as usual there, with a second warning.
+fn resolve_lazy_load(args: &mut Args) {
+    let (frameworks, libraries) = libraries_of_kind(&args.inputs, LibraryKind::Lazy);
+    if frameworks.is_empty() && libraries.is_empty() {
+        return;
+    }
+    let lazy_load = args.platform == PLATFORM_MACOS
+        && args.platform_minos >= encode_version(27, 0, 0)
+        && !args.preload;
+    for lib in frameworks.iter().chain(&libraries).filter(|_| !lazy_load) {
+        crate::warn!(
+            "lazy-load will be ignored for '{}' because deployment target version is too low",
+            display(lib)
+        );
+    }
+    if args.platform == PLATFORM_FIRMWARE || args.preload {
+        for _ in &frameworks {
+            crate::warn!(
+                "-lazy_framework cannot be used on firmware, changing to regular -framework"
+            );
+        }
+        for _ in &libraries {
+            crate::warn!("-lazy_library cannot be used on firmware, changing to regular link");
+        }
+    }
+    args.lazy_load = lazy_load;
+    if lazy_load && !args.relocatable {
+        args.forced_undefined.push("__dyld_lazy_load".to_string());
     }
 }
 
@@ -1306,10 +1464,6 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     // The warnings about the obsolete options given, which ld-prime
     // ignores with a warning once it has read them all.
     let mut obsolete: Vec<String> = Vec::new();
-    // The libraries and the frameworks to load lazily, which ld-prime
-    // keeps apart.
-    let mut lazy_libraries: Vec<Vec<u8>> = Vec::new();
-    let mut lazy_frameworks: Vec<Vec<u8>> = Vec::new();
     let mut unknown = String::new();
 
     crate::error::set_color(std::io::stderr().is_terminal());
@@ -1386,63 +1540,12 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-syslibroot" => args.syslibroot.push(path(next_arg(&mut i, name))),
             b"-L" => args.library_paths.push(path(next_arg(&mut i, name))),
-            b"-l" => args.inputs.push(InputArg::Lib(next_arg(&mut i, name).to_owned(), false)),
-            b"-framework" => {
-                args.inputs.push(InputArg::Framework(next_arg(&mut i, name).to_owned(), false))
-            }
-            b"-weak_framework" => {
-                args.inputs.push(InputArg::Framework(next_arg(&mut i, name).to_owned(), true))
-            }
-            b"-reexport_framework" => {
-                args.inputs.push(InputArg::ReexportFramework(next_arg(&mut i, name).to_owned()))
-            }
-            b"-needed_framework" => {
-                args.inputs.push(InputArg::NeededFramework(next_arg(&mut i, name).to_owned()))
-            }
-            b"-needed_library" => {
-                args.inputs.push(InputArg::NeededFile(path(next_arg(&mut i, name))))
-            }
-            b"-weak_library" => args.inputs.push(InputArg::WeakFile(path(next_arg(&mut i, name)))),
-            b"-reexport_library" => {
-                args.inputs.push(InputArg::ReexportFile(path(next_arg(&mut i, name))))
-            }
-            b"-upward_library" => {
-                args.inputs.push(InputArg::UpwardFile(path(next_arg(&mut i, name))))
-            }
-            b"-upward_framework" => {
-                args.inputs.push(InputArg::UpwardFramework(next_arg(&mut i, name).to_owned()))
-            }
-            // A dylib loaded lazily, at its first use, is in ld-prime
-            // for macOS 27 on (LC_LAZY_LOAD_DYLIB_INFO); otherwise it
-            // links the library as usual, with a warning.
-            b"-lazy_library" => {
-                let arg = next_arg(&mut i, name);
-                add_lazy(&mut lazy_libraries, arg.as_bytes());
-                args.inputs.push(InputArg::LazyFile(path(arg)));
-            }
-            b"-lazy_framework" => {
-                let arg = next_arg(&mut i, name);
-                add_lazy(&mut lazy_frameworks, arg.as_bytes());
-                args.inputs.push(InputArg::LazyFramework(arg.to_owned()));
-            }
-            b"-sub_library" => {
-                args.inputs.push(InputArg::ReexportLib(next_arg(&mut i, name).to_owned()))
-            }
-            b"-no_merge_framework" => {
-                args.inputs.push(InputArg::NoMergeFramework(next_arg(&mut i, name).to_owned()))
-            }
-            b"-no_merge_library" => {
-                args.inputs.push(InputArg::NoMergeFile(path(next_arg(&mut i, name))))
+            raw if let Some((kind, naming)) = library_option(raw) => {
+                args.inputs.push(InputArg::Library(kind, naming(next_arg(&mut i, name))));
             }
             b"-no_merged_libraries_hook" => args.merged_libraries_hook = false,
             b"-make_mergeable" => args.make_mergeable = true,
             b"-add_mergeable_debug_hook" => args.add_mergeable_debug_hook = true,
-            b"-merge_framework" => {
-                args.inputs.push(InputArg::MergeFramework(next_arg(&mut i, name).to_owned()))
-            }
-            b"-merge_library" => {
-                args.inputs.push(InputArg::MergeFile(path(next_arg(&mut i, name))))
-            }
             b"-filelist" => {
                 args.inputs
                     .extend(read_filelist(next_arg(&mut i, name)).into_iter().map(InputArg::File));
@@ -1786,7 +1889,6 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-version_details" => args.version_details = true,
             b"-noall_load" => args.all_load = false,
             b"-ObjC" => args.load_objc = true,
-            b"-force_load" => args.inputs.push(InputArg::ForceLoad(path(next_arg(&mut i, name)))),
 
             // The default library search behavior already matches
             // -search_paths_first: each path is tried for both a dylib
@@ -2135,48 +2237,19 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
 
             raw => {
-                // The library options with the name joined to them take
-                // it as the next argument as well, as -l does.
-                let joined;
-                let raw = match [
-                    "-reexport-l",
-                    "-hidden-l",
-                    "-needed-l",
-                    "-upward-l",
-                    "-lazy-l",
-                    "-weak-l",
-                    "-no_merge-l",
-                    "-merge-l",
-                ]
-                .into_iter()
-                .find(|prefix| raw == prefix.as_bytes())
+                if let Some(&(prefix, kind)) = JOINED_LIBRARY_OPTIONS
+                    .iter()
+                    .find(|(prefix, _)| raw.starts_with(prefix.as_bytes()))
                 {
-                    Some(prefix) => {
-                        joined = [raw, next_arg(&mut i, prefix).as_bytes()].concat();
-                        &joined[..]
-                    }
-                    None => raw,
-                };
-                let os_name = |rest: &[u8]| os_str(rest).to_owned();
-                if let Some(lib) = raw.strip_prefix(b"-reexport-l") {
-                    args.inputs.push(InputArg::ReexportLib(os_name(lib)));
-                } else if let Some(lib) = raw.strip_prefix(b"-no_merge-l") {
-                    args.inputs.push(InputArg::NoMergeLib(os_name(lib)));
-                } else if let Some(lib) = raw.strip_prefix(b"-merge-l") {
-                    args.inputs.push(InputArg::MergeLib(os_name(lib)));
-                } else if let Some(lib) = raw.strip_prefix(b"-hidden-l") {
-                    args.inputs.push(InputArg::HiddenLib(os_name(lib)));
-                } else if let Some(lib) = raw.strip_prefix(b"-needed-l") {
-                    args.inputs.push(InputArg::NeededLib(os_name(lib)));
-                } else if let Some(lib) = raw.strip_prefix(b"-upward-l") {
-                    args.inputs.push(InputArg::UpwardLib(os_name(lib)));
-                } else if let Some(lib) = raw.strip_prefix(b"-lazy-l") {
-                    add_lazy(&mut lazy_libraries, lib);
-                    args.inputs.push(InputArg::LazyLib(os_name(lib)));
-                } else if let Some(lib) = raw.strip_prefix(b"-weak-l") {
-                    args.inputs.push(InputArg::Lib(os_name(lib), true));
-                } else if let Some(lib) = raw.strip_prefix(b"-l") {
-                    args.inputs.push(InputArg::Lib(os_name(lib), false));
+                    // An option with no name joined to it takes the
+                    // next argument for one, as ld-prime does: -weak-l
+                    // foo is -weak-lfoo.
+                    let lib = match &raw[prefix.len()..] {
+                        [] => next_arg(&mut i, prefix),
+                        lib => os_str(lib),
+                    };
+                    let lib = LibraryName::Lib(lib.to_owned());
+                    args.inputs.push(InputArg::Library(kind, lib));
                 } else if let Some(dir) = raw.strip_prefix(b"-L") {
                     args.library_paths.push(PathBuf::from(os_str(dir)));
                 } else if let Some(dir) = raw.strip_prefix(b"-F") {
@@ -2350,34 +2423,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         fatal!("-bundle_loader can only be used with -bundle");
     }
 
-    // dyld loads a lazy dylib when __dyld_lazy_load says so, which
-    // ld-prime keeps as an import of any final image that names one,
-    // used or not. Firmware, a -preload image included, has no dyld:
-    // ld-prime links the library as usual there, with a second warning.
-    if !lazy_libraries.is_empty() || !lazy_frameworks.is_empty() {
-        args.lazy_load = args.platform == PLATFORM_MACOS
-            && args.platform_minos >= encode_version(27, 0, 0)
-            && !args.preload;
-        if args.lazy_load && !args.relocatable {
-            args.forced_undefined.push("__dyld_lazy_load".to_string());
-        }
-    }
-    for lib in lazy_frameworks.iter().chain(&lazy_libraries).filter(|_| !args.lazy_load) {
-        crate::warn!(
-            "lazy-load will be ignored for '{}' because deployment target version is too low",
-            display(lib)
-        );
-    }
-    if args.platform == PLATFORM_FIRMWARE || args.preload {
-        for _ in &lazy_frameworks {
-            crate::warn!(
-                "-lazy_framework cannot be used on firmware, changing to regular -framework"
-            );
-        }
-        for _ in &lazy_libraries {
-            crate::warn!("-lazy_library cannot be used on firmware, changing to regular link");
-        }
-    }
+    resolve_lazy_load(&mut args);
     // ld64 chained a static arm64e image's rebases through its pointers
     // from a __TEXT,__thread_starts list; ld-prime has chained fixups.
     if threaded_starts {

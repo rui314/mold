@@ -9,7 +9,7 @@ use rayon::prelude::*;
 
 use crate::chunks::init_offsets::InitFunc;
 use crate::chunks::{self, ChunkId, OutputSectionId, OutputSegment, mach_header_size};
-use crate::cmdline::{Args, InputArg};
+use crate::cmdline::{Args, InputArg, LibraryKind, LibraryName};
 use crate::context::Context;
 use crate::error;
 use crate::fatal;
@@ -644,23 +644,8 @@ fn warn_duplicate_libraries<E: Target>(ctx: &Context<E>) {
     let mut dups = std::collections::BTreeSet::new();
     for arg in &ctx.args.inputs {
         let (option, name) = match arg {
-            InputArg::Lib(name, false) => ("-l", name.as_os_str()),
-            InputArg::Lib(name, true) => ("-weak-l", name.as_os_str()),
-            InputArg::NeededLib(name) => ("-needed-l", name.as_os_str()),
-            InputArg::ReexportLib(name) => ("-reexport-l", name.as_os_str()),
-            InputArg::HiddenLib(name) => ("-hidden-l", name.as_os_str()),
-            InputArg::UpwardLib(name) => ("-upward-l", name.as_os_str()),
-            InputArg::LazyLib(name) => ("-lazy-l", name.as_os_str()),
-            InputArg::NoMergeLib(name) => ("-no_merge-l", name.as_os_str()),
-            InputArg::MergeLib(name) => ("-merge-l", name.as_os_str()),
-            InputArg::ForceLoad(path) => ("-force_load ", path.as_os_str()),
-            InputArg::WeakFile(path) => ("-weak_library ", path.as_os_str()),
-            InputArg::ReexportFile(path) => ("-reexport_library ", path.as_os_str()),
-            InputArg::NeededFile(path) => ("-needed_library ", path.as_os_str()),
-            InputArg::UpwardFile(path) => ("-upward_library ", path.as_os_str()),
-            InputArg::LazyFile(path) => ("-lazy_library ", path.as_os_str()),
-            InputArg::NoMergeFile(path) => ("-no_merge_library ", path.as_os_str()),
-            InputArg::MergeFile(path) => ("-merge_library ", path.as_os_str()),
+            InputArg::Library(_, LibraryName::Framework(_)) => continue,
+            InputArg::Library(kind, name) => (kind.option(name), name.as_os_str()),
             // Objects, which are many, go without a string.
             InputArg::File(path) => {
                 if !seen_files.insert(path)
@@ -698,7 +683,7 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
         let stubs: Vec<&'static MappedFile> = inputs
             .iter()
             .zip(&paths)
-            .filter(|(arg, _)| !matches!(arg, InputArg::ForceLoad(_)))
+            .filter(|(arg, _)| !matches!(arg, InputArg::Library(LibraryKind::Force, _)))
             .filter_map(|(_, path)| MappedFile::open(path.as_ref()?))
             .filter(|mf| get_file_type(mf) == FileType::Tapi)
             .collect();
@@ -755,9 +740,9 @@ pub fn check_mergeable_libraries<E: Target>(ctx: &Context<E>) {
         return;
     }
     let no_merge = ctx.args.inputs.iter().find_map(|arg| match arg {
-        InputArg::NoMergeLib(name) => Some(format!("-no_merge-l{}", name.display())),
-        InputArg::NoMergeFramework(name) => Some(format!("-no_merge_framework {}", name.display())),
-        InputArg::NoMergeFile(path) => Some(format!("-no_merge_library {}", path.display())),
+        InputArg::Library(kind @ LibraryKind::NoMerge, name) => {
+            Some(format!("{}{}", kind.option(name), name.as_os_str().display()))
+        }
         _ => None,
     });
     if let Some(opt) = no_merge {
@@ -805,32 +790,20 @@ pub fn unreadable_file(path: &Path, e: &std::io::Error) -> String {
 /// not found, or a file a library option, -force_load or -bundle_loader
 /// names that isn't there.
 fn find_inputs<E: Target>(ctx: &Context<E>, inputs: &[InputArg]) -> Vec<Option<PathBuf>> {
+    use LibraryKind::*;
     let find = |arg: &InputArg| match arg {
         InputArg::File(path) => Some(path.clone()),
-        InputArg::ForceLoad(path)
-        | InputArg::BundleLoader(path)
-        | InputArg::WeakFile(path)
-        | InputArg::ReexportFile(path)
-        | InputArg::NeededFile(path)
-        | InputArg::UpwardFile(path)
-        | InputArg::LazyFile(path)
-        | InputArg::NoMergeFile(path) => find_file(ctx, path, true),
-        InputArg::MergeFile(path) => find_file(ctx, path, false),
-        InputArg::Lib(name, _)
-        | InputArg::HiddenLib(name)
-        | InputArg::NeededLib(name)
-        | InputArg::LazyLib(name) => find_library(ctx, name),
-        InputArg::UpwardLib(name) | InputArg::ReexportLib(name) | InputArg::NoMergeLib(name) => {
+        InputArg::Library(Merge, LibraryName::Path(path)) => find_file(ctx, path, false),
+        InputArg::BundleLoader(path) | InputArg::Library(_, LibraryName::Path(path)) => {
+            find_file(ctx, path, true)
+        }
+        InputArg::Library(Upward | Reexport | NoMerge, LibraryName::Lib(name)) => {
             find_dylib(ctx, name)
         }
-        InputArg::MergeLib(name) => find_mergeable_dylib(ctx, name),
-        InputArg::Framework(name, _)
-        | InputArg::ReexportFramework(name)
-        | InputArg::NeededFramework(name)
-        | InputArg::UpwardFramework(name)
-        | InputArg::LazyFramework(name)
-        | InputArg::NoMergeFramework(name) => find_framework(ctx, name, true),
-        InputArg::MergeFramework(name) => find_framework(ctx, name, false),
+        InputArg::Library(Merge, LibraryName::Lib(name)) => find_mergeable_dylib(ctx, name),
+        InputArg::Library(_, LibraryName::Lib(name)) => find_library(ctx, name),
+        InputArg::Library(Merge, LibraryName::Framework(name)) => find_framework(ctx, name, false),
+        InputArg::Library(_, LibraryName::Framework(name)) => find_framework(ctx, name, true),
     };
     inputs.iter().map(find).collect()
 }
@@ -862,10 +835,11 @@ fn find_file<E: Target>(ctx: &Context<E>, path: &Path, stubs: bool) -> Option<Pa
 /// option naming the library's path, under a -syslibroot joined to it
 /// (see find_file); otherwise by a search (see searched_in_sdk).
 fn found_in_sdk(args: &Args, arg: &InputArg, found: &Path) -> bool {
-    use InputArg::*;
+    use LibraryKind::*;
     match arg {
-        WeakFile(path) | ReexportFile(path) | NeededFile(path) | UpwardFile(path)
-        | LazyFile(path) => found != path && found != path.with_extension("tbd"),
+        InputArg::Library(Weak | Reexport | Needed | Upward | Lazy, LibraryName::Path(path)) => {
+            found != path && found != path.with_extension("tbd")
+        }
         _ => searched_in_sdk(args, found),
     }
 }
@@ -886,56 +860,24 @@ fn searched_in_sdk(args: &Args, found: &Path) -> bool {
 /// gives the file, whether the library is a framework, and its name as
 /// the option gives it (a path, for the options that take one).
 fn library_option(arg: &InputArg) -> Option<(ReaderContext, bool, &OsStr)> {
-    use InputArg::*;
-    let name = match arg {
-        Lib(name, _)
-        | ReexportLib(name)
-        | HiddenLib(name)
-        | NeededLib(name)
-        | UpwardLib(name)
-        | LazyLib(name)
-        | Framework(name, _)
-        | ReexportFramework(name)
-        | NeededFramework(name)
-        | UpwardFramework(name)
-        | LazyFramework(name)
-        | NoMergeLib(name)
-        | NoMergeFramework(name)
-        | MergeLib(name)
-        | MergeFramework(name) => name.as_os_str(),
-        WeakFile(path) | ReexportFile(path) | NeededFile(path) | UpwardFile(path)
-        | LazyFile(path) | NoMergeFile(path) | MergeFile(path) => path.as_os_str(),
-        File(_) | ForceLoad(_) | BundleLoader(_) => return None,
-    };
+    use LibraryKind::*;
+    // -force_load loads its archive apart from the other namings.
+    let InputArg::Library(kind, name) = arg else { return None };
+    let kind = *kind;
+    if kind == Force {
+        return None;
+    }
     let rc = ReaderContext {
-        weak: matches!(arg, Lib(_, true) | Framework(_, true) | WeakFile(_)),
-        reexport: matches!(
-            arg,
-            ReexportLib(_)
-                | ReexportFramework(_)
-                | ReexportFile(_)
-                | NoMergeLib(_)
-                | NoMergeFramework(_)
-                | NoMergeFile(_)
-        ),
-        hidden: matches!(arg, HiddenLib(_)),
-        needed: matches!(arg, NeededLib(_) | NeededFramework(_) | NeededFile(_)),
-        upward: matches!(arg, UpwardLib(_) | UpwardFramework(_) | UpwardFile(_)),
-        lazy: matches!(arg, LazyLib(_) | LazyFramework(_) | LazyFile(_)),
-        merge: matches!(arg, MergeLib(_) | MergeFramework(_) | MergeFile(_)),
+        weak: kind == Weak,
+        reexport: matches!(kind, Reexport | NoMerge),
+        hidden: kind == Hidden,
+        needed: kind == Needed,
+        upward: kind == Upward,
+        lazy: kind == Lazy,
+        merge: kind == Merge,
         ..Default::default()
     };
-    let framework = matches!(
-        arg,
-        Framework(..)
-            | ReexportFramework(_)
-            | NeededFramework(_)
-            | UpwardFramework(_)
-            | LazyFramework(_)
-            | NoMergeFramework(_)
-            | MergeFramework(_)
-    );
-    Some((rc, framework, name))
+    Some((rc, matches!(name, LibraryName::Framework(_)), name.as_os_str()))
 }
 
 /// How each input is named: the flags its option gives the file, None
@@ -965,7 +907,8 @@ fn library_namings(
             }
             (Some((_, false, name)), None) => fatal!("library '{}' not found", name.display()),
             (None, None) => match arg {
-                InputArg::ForceLoad(path) | InputArg::BundleLoader(path) => {
+                InputArg::Library(LibraryKind::Force, LibraryName::Path(path))
+                | InputArg::BundleLoader(path) => {
                     fatal!("library '{}' not found", path.display())
                 }
                 _ => None,
@@ -977,7 +920,7 @@ fn library_namings(
                 let all = merged.entry(key).or_default();
                 // An archive has no imports to make weak; ld-prime warns
                 // of a -weak-l that finds one, once for the library.
-                if let InputArg::Lib(_, true) = arg
+                if let InputArg::Library(LibraryKind::Weak, LibraryName::Lib(_)) = arg
                     && !all.weak
                     && path.extension() == Some(OsStr::new("a"))
                 {
@@ -1005,7 +948,7 @@ fn library_namings(
     let naming = |(arg, key): (&InputArg, Option<_>)| match key {
         Some(key) => merged.remove(&key),
         None => Some(ReaderContext {
-            force_load: matches!(arg, InputArg::ForceLoad(_)),
+            force_load: matches!(arg, InputArg::Library(LibraryKind::Force, _)),
             ..Default::default()
         }),
     };
@@ -3015,7 +2958,7 @@ pub fn print_why_load<E: Target>(ctx: &Context<E>) {
         .inputs
         .iter()
         .filter_map(|arg| match arg {
-            InputArg::ForceLoad(path) => Some(path.as_path()),
+            InputArg::Library(LibraryKind::Force, LibraryName::Path(path)) => Some(path.as_path()),
             _ => None,
         })
         .collect();
