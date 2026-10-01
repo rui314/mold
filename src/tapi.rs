@@ -557,7 +557,7 @@ fn packed_version(s: &str) -> Option<u32> {
 
 /// Strips a YAML scalar's surrounding quotes, if any.
 fn unquote(s: &str) -> &str {
-    let s = s.trim();
+    let s = trim_end(trim_start(s));
     s.strip_prefix('\'')
         .and_then(|s| s.strip_suffix('\''))
         .or_else(|| s.strip_prefix('"').and_then(|s| s.strip_suffix('"')))
@@ -754,17 +754,45 @@ impl YamlField {
     }
 
     /// The items of a sequence as written, with any blanks after one.
+    /// (A stub's export lists are most of its bytes, an item a line,
+    /// indented: the items are split with memchr and their blanks
+    /// skipped byte by byte.)
     fn raw_items(&self) -> impl Iterator<Item = &'static str> {
         let block = self.value.starts_with("- ");
         let (body, sep) = match block {
-            true => (self.value, '\n'),
-            false => (self.value.trim_start_matches('[').trim_end_matches(']'), ','),
+            true => (self.value, b'\n'),
+            false => (self.value.trim_start_matches('[').trim_end_matches(']'), b','),
         };
-        body.split(sep).map(move |item| match block {
-            true => item.trim_start().trim_start_matches('-').trim_start(),
-            false => item.trim_start(),
+        let mut start = 0;
+        let ends = memchr::memchr_iter(sep, body.as_bytes()).chain([body.len()]);
+        ends.map(move |end| {
+            let item = &body[start..end];
+            start = end + 1;
+            match block {
+                true => trim_start(trim_start(item).trim_start_matches('-')),
+                false => trim_start(item),
+            }
         })
     }
+}
+
+/// Whether a byte is an ASCII character that str::trim takes for
+/// white space.
+fn is_blank(b: u8) -> bool {
+    matches!(b, b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r')
+}
+
+/// `s.trim_start()`, which tests its characters byte by byte up to
+/// the first that isn't ASCII.
+fn trim_start(s: &str) -> &str {
+    let rest = &s[s.bytes().position(|b| !is_blank(b)).unwrap_or(s.len())..];
+    if rest.as_bytes().first().is_some_and(|&b| !b.is_ascii()) { rest.trim_start() } else { rest }
+}
+
+/// `s.trim_end()`, likewise.
+fn trim_end(s: &str) -> &str {
+    let rest = &s[..s.bytes().rposition(|b| !is_blank(b)).map_or(0, |i| i + 1)];
+    if rest.as_bytes().last().is_some_and(|&b| !b.is_ascii()) { rest.trim_end() } else { rest }
 }
 
 /// The scalar a block sequence's line ("- a") gives, if it gives one
@@ -1370,6 +1398,22 @@ mod tests {
             mtime: None,
             is_lto_output: false,
         }))
+    }
+
+    #[test]
+    fn trims_as_str_does() {
+        for s in [
+            "",
+            " ",
+            " \n\t  'a b' \r\n",
+            "\u{b}\u{c}x\u{b}",
+            "\u{a0} \u{a0}x \u{2003}",
+            "é ",
+            " é",
+        ] {
+            assert_eq!(trim_start(s), s.trim_start(), "{s:?}");
+            assert_eq!(trim_end(s), s.trim_end(), "{s:?}");
+        }
     }
 
     #[test]
