@@ -1,6 +1,6 @@
 .\" generated with Ronn-NG/v0.9.1
 .\" http://github.com/apjanke/ronn-ng/tree/0.9.1
-.TH "MOLD" "1" "September 2026" ""
+.TH "MOLD" "1" "October 2026" ""
 .SH "NAME"
 \fBmold\fR \- a modern linker
 .SH "SYNOPSIS"
@@ -481,6 +481,23 @@ Intel Control\-flow Enforcement Technology (CET) is a new x86 feature available 
 .IP
 \fBmold\fR looks for \fBGNU_PROPERTY_X86_FEATURE_1_IBT\fR bit and \fBGNU_PROPERTY_X86_FEATURE_1_SHSTK\fR bit in \fB\.note\.gnu\.property\fR section to determine whether or not an object file was compiled with \fB\-fcf\-protection\fR\.
 .TP
+\fB\-z bti\-report\fR=[ \fBwarning\fR | \fBerror\fR | \fBnone\fR ]
+Branch Target Identification (BTI) is an ARM64 feature to protect programs from control hijacking attacks by requiring indirect branches to land on \fBbti\fR instructions\. You can tell the compiler to use the feature by specifying the \fB\-mbranch\-protection=bti\fR or \fB\-mbranch\-protection=standard\fR flag\. An output file is marked as BTI\-enabled only if all object files are\.
+.IP
+\fB\-z bti\-report\fR flag is used to make sure that all object files were compiled with BTI\. If \fBwarning\fR or \fBerror\fR are given, \fBmold\fR prints out a warning or an error message if an object file lacks \fBGNU_PROPERTY_AARCH64_FEATURE_1_BTI\fR bit in its \fB\.note\.gnu\.property\fR section\.
+.TP
+\fB\-z force\-bti\fR
+Turn on \fBGNU_PROPERTY_AARCH64_FEATURE_1_BTI\fR bit in \fB\.note\.gnu\.property\fR section even if some object files were not compiled with BTI, and generate a PLT with BTI landing pads\. This option implies \fB\-z bti\-report=warning\fR\.
+.TP
+\fB\-z gcs\fR=[ \fBimplicit\fR | \fBalways\fR | \fBnever\fR ]
+Guarded Control Stack (GCS) is an ARM64 shadow stack feature\. With \fBimplicit\fR, which is the default, \fBGNU_PROPERTY_AARCH64_FEATURE_1_GCS\fR bit in \fB\.note\.gnu\.property\fR section is turned on only if all object files have the bit\. \fBalways\fR turns it on regardless of object files and implies \fB\-z gcs\-report=warning\fR\. \fBnever\fR turns it off\.
+.TP
+\fB\-z gcs\-report\fR=[ \fBwarning\fR | \fBerror\fR | \fBnone\fR ]
+Print out a warning or an error message if an object file lacks \fBGNU_PROPERTY_AARCH64_FEATURE_1_GCS\fR bit in its \fB\.note\.gnu\.property\fR section\.
+.TP
+\fB\-z pac\-plt\fR
+Generate an ARM64 PLT that authenticates function addresses read from \fB\.got\.plt\fR using Pointer Authentication (PAC), and turn on \fBGNU_PROPERTY_AARCH64_FEATURE_1_PAC\fR bit in \fB\.note\.gnu\.property\fR section\. The output works only with a dynamic linker that signs \fB\.got\.plt\fR entries\.
+.TP
 \fB\-z now\fR, \fB\-z lazy\fR
 By default, functions referring to other ELF modules are resolved by the dynamic linker when they are called for the first time\. \fB\-z now\fR marks an executable or a shared library file so that all dynamic symbols are resolved when a file is loaded to memory\. \fB\-z lazy\fR restores the default behavior\.
 .TP
@@ -517,20 +534,20 @@ If one memory page contains multiple segments, the page protection bits are set 
 .IP
 \fBseparate\-loadable\-segments\fR adds paddings between segments with different attributes so that they do not share the same page\.
 .IP
-\fBseparate\-code\fR adds paddings only between executable and non\-executable segments\. This is the default\.
+\fBseparate\-code\fR adds paddings only between executable and non\-executable segments\.
 .IP
-\fBnoseparate\-code\fR does not add any paddings between segments\.
+\fBnoseparate\-code\fR does not add any paddings between segments\. This is the default\.
 .TP
-\fB\-z defs\fR, \fB\-z nodefs\fR
+\fB\-z defs\fR, \fB\-z undefs\fR
 Report undefined symbols (even with \fB\-\-shared\fR)\.
 .TP
 \fB\-z shstk\fR
 Enforce shadow stack by turning \fBGNU_PROPERTY_X86_FEATURE_1_SHSTK\fR bit in \fB\.note\.gnu\.property\fR output section\. Shadow stack is part of Intel Control\-flow Enforcement Technology (CET), which is available since Tiger Lake (2020)\.
 .TP
-\fB\-z start_stop_visibility\fR=[ \fBhidden\fR | \fBprotected\fR ]
+\fB\-z start\-stop\-visibility\fR=[ \fBhidden\fR | \fBprotected\fR ]
 If a section name is valid as a C identifier (i\.e\., it matches \fB/^[_a\-zA\-Z][_a\-zA\-Z0\-9]*$/\fR), mold creates \fB__start_SECNAME\fR and \fB__stop_SECNAME\fR symbols to mark the beginning and end of the section, where \fBSECNAME\fR is the section name\.
 .IP
-You can make these marker symbols visible from other ELF modules by passing \fB\-z start_stop_visibility=protected\fR\. Default is \fBhidden\fR\.
+You can make these marker symbols visible from other ELF modules by passing \fB\-z start\-stop\-visibility=protected\fR\. Default is \fBhidden\fR\.
 .TP
 \fB\-z text\fR, \fB\-z notext\fR, \fB\-z textoff\fR
 \fBmold\fR by default reports an error if dynamic relocations are created in read\-only sections\. If \fB\-z notext\fR or \fB\-z textoff\fR are given, \fBmold\fR creates such dynamic relocations without reporting an error\. \fB\-z text\fR restores the default behavior\.
