@@ -72,9 +72,9 @@ pub enum LibraryKind {
     /// -weak-l, -weak_framework, -weak_library: a dylib whose absence
     /// is tolerated at load time.
     Weak,
-    /// -reexport-l, -reexport_framework, -reexport_library (and
-    /// -sub_library, a name): a dylib whose exports this dylib
-    /// re-exports as its own. -reexport-l looks for a dylib only.
+    /// -reexport-l, -reexport_framework, -reexport_library: a dylib
+    /// whose exports this dylib re-exports as its own. -reexport-l looks
+    /// for a dylib only.
     Reexport,
     /// -hidden-l, -hidden_framework, -load_hidden: an archive whose
     /// external symbols are demoted to private externals.
@@ -442,6 +442,11 @@ pub struct Args {
     /// (those it names, whatever -interposable says) make interposable:
     /// the image refers to them through binds to itself.
     pub interposable: Option<Glob>,
+    /// -sub_library / -sub_umbrella: the libraries (by file name, less
+    /// the extension) and the frameworks (by -framework name) to
+    /// re-export, which no other naming of them may make weak.
+    pub sub_libraries: Vec<Vec<u8>>,
+    pub sub_umbrellas: Vec<Vec<u8>>,
     /// -w: suppress warnings.
     pub suppress_warnings: bool,
     pub fatal_warnings: bool,
@@ -744,6 +749,8 @@ impl Default for Args {
             deployment_target_mismatches: Treatment::Warning,
             unaligned_pointers: Treatment::Suppress,
             interposable: None,
+            sub_libraries: Vec::new(),
+            sub_umbrellas: Vec::new(),
             suppress_warnings: false,
             fatal_warnings: false,
             demangle: false,
@@ -983,7 +990,6 @@ fn library_option(opt: &[u8]) -> Option<(LibraryKind, Naming)> {
     let path: Naming = |path| LibraryName::Path(PathBuf::from(path));
     Some(match opt {
         b"-l" => (Plain, lib),
-        b"-sub_library" => (Reexport, lib),
         b"-framework" => (Plain, framework),
         b"-weak_framework" => (Weak, framework),
         b"-reexport_framework" => (Reexport, framework),
@@ -1563,6 +1569,7 @@ pub(crate) fn missing_argument(opt: &str) -> String {
         | "-exported_symbol"
         | "-unexported_symbol"
         | "-sub_library"
+        | "-sub_umbrella"
         | "-umbrella"
         | "-allowable_client"
         | "-client_name"
@@ -2444,6 +2451,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 args.deployment_target_mismatches =
                     parse_treatment(name, next_arg(&mut i, name), true);
             }
+            b"-sub_library" => args.sub_libraries.push(bytes(next_arg(&mut i, name))),
+            b"-sub_umbrella" => args.sub_umbrellas.push(bytes(next_arg(&mut i, name))),
             b"-interposable" => interposable_all = true,
             b"-interposable_list" => {
                 let names = read_symbol_list(name, &path(next_arg(&mut i, name)));

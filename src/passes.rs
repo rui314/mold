@@ -286,6 +286,15 @@ fn name_dylib<E: Target>(ctx: &mut Context<E>, idx: usize, mf: &MappedFile, rc: 
     dylib.is_upward |= rc.upward;
     dylib.in_sdk = rc.sdk;
     dylib.is_implicit = false;
+    // A library -sub_library or -sub_umbrella re-exports loads strongly.
+    if rc.sub_reexport {
+        if dylib.is_weak {
+            let name = crate::util::display(&dylib.install_name);
+            crate::warn!("re-exported dylibs cannot be weak-linked: {name}");
+            dylib.is_weak = false;
+        }
+        dylib.is_reexported = true;
+    }
 }
 
 /// How an input was named: the flags its option gives the file, as
@@ -320,6 +329,9 @@ struct ReaderContext {
     /// -delay-l, -delay_library, -delay_framework: the dylib's
     /// initializers run at the first use of one of its symbols.
     delay: bool,
+    /// Matched by -sub_library or -sub_umbrella: re-exported, and not
+    /// weak whatever the naming says (see sub_reexport).
+    sub_reexport: bool,
 }
 
 impl ReaderContext {
@@ -337,6 +349,7 @@ impl ReaderContext {
         sdk: false,
         assert_weak: false,
         delay: false,
+        sub_reexport: false,
     };
 
     /// What two namings of one library say together.
@@ -354,6 +367,7 @@ impl ReaderContext {
             sdk: self.sdk || other.sdk,
             assert_weak: self.assert_weak || other.assert_weak,
             delay: self.delay || other.delay,
+            sub_reexport: self.sub_reexport || other.sub_reexport,
         }
     }
 }
@@ -762,13 +776,14 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
 
     let mut queue: Vec<PendingObject> = Vec::new();
     for ((arg, path), rc) in inputs.iter().zip(paths).zip(namings) {
-        let (Some(path), Some(rc)) = (path, rc) else { continue };
+        let (Some(path), Some(mut rc)) = (path, rc) else { continue };
         // A library only -possible-l and the like name is a hint, which
         // loads with the auto-linked ones.
         if rc.autolinked {
             ctx.possible_files.push(path);
             continue;
         }
+        rc.sub_reexport = sub_reexport(ctx, arg, &path);
         match MappedFile::try_open(&path) {
             Ok(mf) if mf.size() == 0 => error!("file is empty in '{}'", path.display()),
             Ok(mf) if matches!(arg, InputArg::BundleLoader(_)) => {
@@ -813,6 +828,41 @@ pub fn check_mergeable_libraries<E: Target>(ctx: &Context<E>) {
              use -no_merged_libraries_hook"
         );
     }
+}
+
+/// Whether -sub_umbrella or -sub_library re-exports an input: the
+/// former a framework a -framework option names so, the latter a
+/// library whose file is so named less its extension ("libfoo" for
+/// libfoo.dylib or libfoo.tbd, whatever its install name), a
+/// framework's included, which ld-prime deprecates.
+fn sub_reexport<E: Target>(ctx: &Context<E>, arg: &InputArg, path: &Path) -> bool {
+    use LibraryKind::*;
+    let (umbrellas, libraries) = (&ctx.args.sub_umbrellas, &ctx.args.sub_libraries);
+    if umbrellas.is_empty() && libraries.is_empty() {
+        return false;
+    }
+    let framework = match arg {
+        InputArg::Library(
+            Plain | Weak | Reexport | Needed | Upward | Lazy,
+            LibraryName::Framework(name),
+        ) => Some(name.as_bytes()),
+        _ => None,
+    };
+    // (Less the suffix a -framework option may give after a comma.)
+    let framework = framework.map(|name| name.split(|&c| c == b',').next().unwrap_or(name));
+    if framework.is_some_and(|name| umbrellas.iter().any(|u| u == name)) {
+        return true;
+    }
+    let stem = path.file_stem().map_or(&b""[..], |stem| stem.as_bytes());
+    if !libraries.iter().any(|l| l == stem) {
+        return false;
+    }
+    if framework.is_some() {
+        crate::warn!(
+            "using -sub_library to re-export a framework is deprecated.  Use -reexport_framework instead"
+        );
+    }
+    true
 }
 
 /// Loads the files that -dylib_file names for re-exported libraries
