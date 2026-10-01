@@ -2670,6 +2670,17 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-no_eh_labels" | b"-no_order_inits" | b"-no_huge" => {}
             b"-no_dwarf_unwind" => args.no_dwarf_unwind = true,
             b"-merge_zero_fill_sections" => args.merge_zero_fill_sections = true,
+            // ld64's order file for one section, -sectorder <segment>
+            // <section> <path>, ld-prime takes for an -order_file
+            // whatever the section names, empty ones too.
+            b"-sectorder" => {
+                let file = match (cmdline.get(i + 1), cmdline.get(i + 2), cmdline.get(i + 3)) {
+                    (Some(_), Some(_), Some(file)) if !file.is_empty() => file,
+                    _ => fatal!("-sectorder missing <segment> <section> <file-path>"),
+                };
+                args.order_files.push(path(file));
+                i += 3;
+            }
             b"-ignore_auto_link" => args.ignore_auto_link = true,
             b"-force_load_swift_libs" => args.force_load_swift_libs = true,
             b"-add_linker_option" => {
