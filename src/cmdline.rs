@@ -1818,7 +1818,11 @@ pub(crate) fn missing_argument(opt: &str) -> String {
         | "-why_live"
         | "-keep_duplicate"
         | "-poison_symbol" => "missing <name>",
-        "-headerpad" | "-pagezero_size" | "-stack_size" | "-segalign" => "missing <size>",
+        "-headerpad"
+        | "-pagezero_size"
+        | "-stack_size"
+        | "-segalign"
+        | "-branch_island_region_size" => "missing <size>",
         "-image_base" | "-seg1addr" => "missing <address>",
         "-current_version"
         | "-dylib_current_version"
@@ -2194,6 +2198,14 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     fatal!("-headerpad size too large");
                 }
                 headerpad = Some(size);
+            }
+            // ld-prime spaces its branch island clusters by this size;
+            // mold places range-extension thunks by each branch's reach
+            // instead (see thunks.rs), so the size is checked and unused.
+            b"-branch_island_region_size" => {
+                if hex_number(text(name, next_arg(&mut i, name))).is_none() {
+                    fatal!("{name} must specify a hexadecimal size");
+                }
             }
             b"-pagezero_size" => {
                 args.pagezero_size = parse_hex(name, text(name, next_arg(&mut i, name)));
