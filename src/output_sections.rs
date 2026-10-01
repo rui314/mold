@@ -63,6 +63,9 @@ fn output_section_rank(name: Option<(&str, &str)>, flags: u32, static_link: bool
         S_THREAD_LOCAL_VARIABLES => return 33,
         S_THREAD_LOCAL_REGULAR => return 36,
         S_THREAD_LOCAL_ZEROFILL => return 0,
+        // A DTrace DOF section comes after all others of __TEXT,
+        // -sectcreate's too, but before __unwind_info (see sort_chunks).
+        S_DTRACE_DOF => return 97,
         _ => {}
     }
     match segname {
@@ -1145,8 +1148,9 @@ fn assign_input_sections<E: Target>(
 /// output_section_traced), then the renames: "symbol '_y', -data_const
 /// mapped it to __DATA_CONST/__const". The atoms come in the order
 /// ld-prime comes to them (see traced_atom_symbols), then those it makes
-/// itself: the Objective-C stubs, the method lists it rewrites in the
-/// relative form, __dyld_private and the thread-local variables'
+/// itself: the Objective-C stubs, the DOFs of DTrace probes (named as
+/// -map names them), the -alias names, the method lists it rewrites in
+/// the relative form, __dyld_private and the thread-local variables'
 /// descriptors. ld-prime warns about a file it can't write, ending the
 /// warning with a blank line, and reports nothing then. A -r link
 /// reports nothing.
@@ -1207,6 +1211,10 @@ fn trace_symbol_layout<E: Target>(ctx: &Context<E>, moves: &hashbrown::HashMap<u
     let to = traced_renames(args, step, stubs, section, &mut |how, to| steps.push((how, to)));
     for &(sym, _) in &ctx.objc_stubs.symbols {
         write(ctx.symbols[sym].name(), steps.clone(), to);
+    }
+    for dof in &ctx.dof_sections {
+        let (steps, to) = atom_mapping(ctx, map, dof.isec as usize, None);
+        write(&dof.atom_name, steps, to);
     }
     // An -alias name maps as its base's atom (see symbol_moves), as
     // does a method list, which a symbol move may take too.
@@ -1498,7 +1506,7 @@ fn sort_section_members<E: Target>(ctx: &mut Context<E>) {
 /// input, as the map numbers them. Every other section keeps its place,
 /// ranked by the latest input up to it. (-r lays them out after the
 /// inputs, as they come.)
-fn lto_layout_ranks<E: Target>(ctx: &Context<E>) -> Option<Vec<u32>> {
+pub(crate) fn lto_layout_ranks<E: Target>(ctx: &Context<E>) -> Option<Vec<u32>> {
     if ctx.lto_objs.is_empty() || ctx.args.relocatable {
         return None;
     }

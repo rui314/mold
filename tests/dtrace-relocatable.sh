@@ -6,13 +6,13 @@ source "$(dirname "$0")"/common.inc
 # provider's stability and typedefs symbols, which nothing relocates
 # (the header names them by N_NO_DEAD_STRIP .reference) but the final
 # link reads the provider's attributes from.
-command -v dtrace > /dev/null || skip
+source "$(dirname "$0")"/dtrace.inc
 cat > $t/p.d <<EOF
 provider myapp {
   probe start(int, char *);
 };
 EOF
-dtrace -h -s $t/p.d -o $t/p.h >& /dev/null || skip
+dtrace_header p
 
 cat > $t/a.c <<EOF
 #include "p.h"
@@ -27,6 +27,15 @@ nm -m $t/r.o > $t/log
 grep -q '(undefined) external ___dtrace_probe\$myapp\$start\$v1\$696e74\$63686172202a$' $t/log
 grep -q '(undefined) external ___dtrace_stability\$myapp\$v1\$1_1_0_1_1_0_1_1_0_1_1_0_1_1_0$' $t/log
 grep -q '(undefined) external ___dtrace_typedefs\$myapp\$v2$' $t/log
+
+# A final link of the output makes the DOF a link of the input does.
+$CC --ld-path=$mold -o $t/exe $t/r.o
+$t/exe
+$CC --ld-path=$mold -o $t/exe2 $t/a.o
+dof_dump $t/exe > $t/dof
+dof_dump $t/exe2 > $t/dof2
+diff $t/dof $t/dof2
+grep -q '^probe start(int, char \*) in main: 1 sites, 0 tests$' $t/dof
 
 # Any name with the prefix, a weak reference too (which loses its
 # flag); a .reference of another name goes.

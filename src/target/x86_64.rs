@@ -5,6 +5,7 @@ use std::path::Path;
 use crate::chunks::delay_init::{DelayCode, DelayTarget, DelayUse};
 use crate::chunks::lazy_helpers::{LazyTarget, LazyUse};
 use crate::context::Context;
+use crate::dtrace::SiteKind;
 use crate::fatal;
 use crate::input_sections::{Reloc, RelocTarget};
 use crate::macho::*;
@@ -65,6 +66,23 @@ fn write32(loc: &mut [u8], val: u32) {
 
 fn write64(loc: &mut [u8], val: u64) {
     loc[..8].copy_from_slice(&val.to_le_bytes());
+}
+
+/// What the call or jmp of a DTrace probe site becomes, from its opcode
+/// on, if relocation `r` of subsection `isec` is one (see dtrace): a
+/// nop and a 4-byte nop, or for an is-enabled test "xorl %eax, %eax"
+/// (its result false) and nops.
+fn dtrace_site_code(
+    ctx: &Context<X86_64>,
+    obj: usize,
+    isec: usize,
+    r: &Reloc,
+) -> Option<&'static [u8; 5]> {
+    let id = ctx.reloc_target_sym(obj, r)?;
+    match crate::dtrace::site_kind(ctx, isec, id)? {
+        SiteKind::Probe => Some(&[0x90, 0x0f, 0x1f, 0x40, 0x00]),
+        SiteKind::IsEnabled => Some(&[0x33, 0xc0, 0x90, 0x90, 0x90]),
+    }
 }
 
 /// The SIGNED_K relocation types describe a pcrel field followed by K
@@ -669,6 +687,16 @@ impl Target for X86_64 {
                 write32(&mut buf[at + 1..], disp as u32);
                 let end = r.offset as usize + if r.r_type == X86_64_RELOC_GOT { 5 } else { 4 };
                 buf[at + 5..end].fill(0x90);
+                i += 1;
+                continue;
+            }
+            // A DTrace probe site does nothing (see dtrace).
+            if r.r_type == X86_64_RELOC_BRANCH
+                && r.size == 4
+                && let Some(code) = dtrace_site_code(ctx, obj, isec_id, r)
+            {
+                let at = r.offset as usize - 1;
+                buf[at..at + 5].copy_from_slice(code);
                 i += 1;
                 continue;
             }

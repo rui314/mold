@@ -257,6 +257,9 @@ pub struct Context<E: Target> {
     /// The symbols naming the atoms of the functions icf folded, each
     /// with whether the output drops it (see icf::folded_atom_names).
     pub folded_atom_names: hashbrown::HashMap<SymbolId, bool>,
+    /// A DOF section for each provider of DTrace probes the image has
+    /// sites of (see dtrace::create_dof_sections).
+    pub dof_sections: Vec<crate::dtrace::DofSection>,
     /// -alias and selective reexports: (alias, imported target).
     /// Emitted as N_INDR symbols and re-export trie entries.
     pub indirect_aliases: Vec<(SymbolId, SymbolId)>,
@@ -396,6 +399,7 @@ impl<E: Target> Context<E> {
             extra_local_syms: Vec::new(),
             common_first_obj: None,
             folded_atom_names: hashbrown::HashMap::new(),
+            dof_sections: Vec::new(),
             dylib_load_seq: 0,
             autolinked_archives: hashbrown::HashMap::new(),
             indirect_aliases: Vec::new(),
@@ -669,8 +673,12 @@ impl<E: Target> Context<E> {
     pub fn sym_addr(&self, id: SymbolId) -> u64 {
         let sym = &self.symbols[id];
         match sym.file() {
+            // A DTrace symbol, never defined, is at address 0 for
+            // ld-prime: where a branch that is no probe site goes.
             None => {
-                error!("undefined symbol: {sym}");
+                if !crate::dtrace::is_dtrace_symbol(sym.name()) {
+                    error!("undefined symbol: {sym}");
+                }
                 0
             }
             Some(FileId::Obj(_)) => {

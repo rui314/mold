@@ -8,6 +8,7 @@ use crate::branch_shims;
 use crate::chunks::delay_init::{DelayCode, DelayTarget, DelayUse};
 use crate::chunks::lazy_helpers::{LazyTarget, LazyUse};
 use crate::context::Context;
+use crate::dtrace::SiteKind;
 use crate::fatal;
 use crate::input_files::ObjectFile;
 use crate::input_sections::{Reloc, RelocTarget};
@@ -183,6 +184,17 @@ fn report_ldst_alignment(
 // the target address read back from the relocated instructions.
 
 const NOP: u32 = 0xd503_201f;
+
+/// What the bl or b of a DTrace probe site becomes, if relocation `r`
+/// of subsection `isec` is one (see dtrace): a nop, or for an
+/// is-enabled test "movz x0, #0", its result false.
+fn dtrace_site_insn(ctx: &Context<Arm64>, obj: usize, isec: usize, r: &Reloc) -> Option<u32> {
+    let id = ctx.reloc_target_sym(obj, r)?;
+    match crate::dtrace::site_kind(ctx, isec, id)? {
+        SiteKind::Probe => Some(NOP),
+        SiteKind::IsEnabled => Some(0xd280_0000),
+    }
+}
 
 /// ld64's withinOneMeg: whether `to` is in reach of an adr or a
 /// literal load at `from`.
@@ -1567,6 +1579,12 @@ impl Target for Arm64 {
                     }
                 }
                 ARM64_RELOC_BRANCH26 => {
+                    // A DTrace probe site does nothing (see dtrace).
+                    if let Some(insn) = dtrace_site_insn(ctx, obj, isec_id, r) {
+                        write32(loc, insn);
+                        i += 1;
+                        continue;
+                    }
                     // A branch from 4 GiB away goes through its target's
                     // shim (see branch_shims).
                     let sym = ctx.reloc_target_sym(obj, r);

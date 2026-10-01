@@ -138,10 +138,13 @@ fn initial_undefines<E: Target>(ctx: &Context<E>) -> impl Iterator<Item = Symbol
 /// content (literals, CFStrings, class references, thread-local
 /// variable descriptors) are stripped as usual. ld-prime strips a class
 /// reference nothing uses although clang marks __objc_classrefs
-/// no-dead-strip (it keeps unused selector references).
+/// no-dead-strip (it keeps unused selector references). A DOF the link
+/// makes is a root too, which keeps every function with a DTrace probe
+/// site alive.
 fn should_keep<E: Target>(ctx: &Context<E>, isec: &InputSection) -> bool {
     let hdr = ctx.hdr_of(isec);
     matches!(hdr.section_type(), S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS)
+        || crate::dtrace::is_dof(ctx, isec)
         || hdr.section_type() == S_INIT_FUNC_OFFSETS
         || (hdr.flags & S_ATTR_NO_DEAD_STRIP != 0
             && !(hdr.segname() == "__DATA" && hdr.sectname() == "__objc_classrefs"))
@@ -545,16 +548,20 @@ fn mark_live_references<E: Target>(ctx: &mut Context<E>) {
 
 /// An atom of ld-prime's, for -why_live: a subsection, a symbol in a
 /// section of an object without MH_SUBSECTIONS_VIA_SYMBOLS that does
-/// not name the section, a dylib's symbol, or one of the linker's own
-/// (those of a "boundary-file"). Such a section is one atom, named by
-/// the symbol at its start, and each other symbol in it an atom of its
-/// own that references that one.
+/// not name the section, a dylib's symbol, one of the linker's own
+/// (those of a "boundary-file"), a DOF the link made (by its index in
+/// ctx.dof_sections, of a "dtrace-file") or a DTrace symbol, which
+/// counts as the first object's that refers to it. Such a section is
+/// one atom, named by the symbol at its start, and each other symbol in
+/// it an atom of its own that references that one.
 #[derive(Clone, Copy)]
 enum Atom {
     Isec(usize),
     Label(SymbolId),
     Import(SymbolId),
     Boundary(&'static str),
+    Dof(usize),
+    Dtrace(SymbolId),
 }
 
 /// The names of the mach header, which ld-prime's boundary-file defines
@@ -667,8 +674,9 @@ impl<'a, E: Target> WhyLive<'a, E> {
             }
             // An initializer pointer ld-prime keeps, even converted to
             // __init_offsets (which leaves its section dead).
+            // The DOFs come last (see below).
             let init_pointers = ctx.hdr_of(isec).section_type() == S_MOD_INIT_FUNC_POINTERS;
-            if !isec.is_alive() && !init_pointers {
+            if !isec.is_alive() && !init_pointers || crate::dtrace::is_dof(ctx, isec) {
                 continue;
             }
             let keep = should_keep(ctx, isec) || init_pointers;
@@ -685,9 +693,12 @@ impl<'a, E: Target> WhyLive<'a, E> {
                 }
             }
         }
-        // An executable's mach header is a root, last.
+        // An executable's mach header is a root, then the DOFs.
         if ctx.args.output_type == MH_EXECUTE && !ctx.args.preload {
             self.walk_from(Atom::Boundary(HEADER_NAMES[0]), Root::DontDeadStrip);
+        }
+        for i in 0..ctx.dof_sections.len() {
+            self.walk_from(Atom::Dof(i), Root::DontDeadStrip);
         }
     }
 
@@ -696,6 +707,9 @@ impl<'a, E: Target> WhyLive<'a, E> {
         let symbol = &self.ctx.symbols[sym];
         if matches!(symbol.file(), Some(FileId::Dylib(_))) {
             return Some(Atom::Import(sym));
+        }
+        if !symbol.is_defined() && crate::dtrace::is_dtrace_symbol(symbol.name()) {
+            return Some(Atom::Dtrace(sym));
         }
         let Some(isec) = symbol.input_section() else {
             let name = HEADER_NAMES.into_iter().find(|&name| name == symbol.name())?;
@@ -714,7 +728,8 @@ impl<'a, E: Target> WhyLive<'a, E> {
     fn mark(&mut self, atom: Atom) -> bool {
         match atom {
             Atom::Isec(id) => self.ctx.isecs[id].mark_visited(),
-            Atom::Label(sym) | Atom::Import(sym) => self.live_syms.insert(sym),
+            Atom::Dof(i) => self.ctx.isecs[self.ctx.dof_sections[i].isec].mark_visited(),
+            Atom::Label(sym) | Atom::Import(sym) | Atom::Dtrace(sym) => self.live_syms.insert(sym),
             Atom::Boundary(name) => self.live_boundaries.insert(name),
         }
     }
@@ -732,8 +747,15 @@ impl<'a, E: Target> WhyLive<'a, E> {
                 let isec = ctx.symbols[sym].input_section().unwrap() as usize;
                 return vec![(Atom::Isec(self.redirects[isec]), true)];
             }
-            Atom::Import(_) | Atom::Boundary(TEXT_START) => return Vec::new(),
+            Atom::Import(_) | Atom::Dtrace(_) | Atom::Boundary(TEXT_START) => return Vec::new(),
             Atom::Boundary(_) => return vec![(Atom::Boundary(TEXT_START), true)],
+            // A DOF refers to each site's atom and, for the site's
+            // distance, to itself, site by site.
+            Atom::Dof(i) => {
+                let sites = ctx.dof_sections[i].sites.iter();
+                let refs = sites.flat_map(|&s| [Atom::Isec(self.redirects[s as usize]), atom]);
+                return refs.map(|atom| (atom, true)).collect();
+            }
             Atom::Isec(id) => id,
         };
         let file = &ctx.objs[ctx.isecs[id].file as usize];
@@ -824,8 +846,9 @@ impl<'a, E: Target> WhyLive<'a, E> {
                 let name = ctx.symbols[sym].name();
                 Some(if in_chain && name.starts_with("ltmp") { "none" } else { name })
             }
-            Atom::Import(sym) => Some(ctx.symbols[sym].name()),
+            Atom::Import(sym) | Atom::Dtrace(sym) => Some(ctx.symbols[sym].name()),
             Atom::Boundary(name) => Some(name),
+            Atom::Dof(i) => Some(&ctx.dof_sections[i].atom_name),
             Atom::Isec(id) => {
                 let hdr = ctx.hdr_of(&ctx.isecs[id]);
                 if in_chain && hdr.section_type() == S_MOD_INIT_FUNC_POINTERS {
@@ -854,6 +877,13 @@ impl<'a, E: Target> WhyLive<'a, E> {
             Atom::Isec(id) => id,
             Atom::Label(sym) => ctx.symbols[sym].input_section().unwrap() as usize,
             Atom::Boundary(_) => return format!("{name} from boundary-file"),
+            Atom::Dof(_) => return format!("{name} from dtrace-file"),
+            Atom::Dtrace(sym) => {
+                let mut objs = ctx.objs.iter().filter(|obj| obj.is_alive);
+                let obj = objs.find(|obj| crate::dtrace::refers_to(obj, sym));
+                let path = obj.map(|obj| crate::passes::resolved_file_name(obj.mf));
+                return format!("{name} from {}", path.unwrap_or_default());
+            }
             Atom::Import(sym) => {
                 let Some(FileId::Dylib(i)) = ctx.symbols[sym].file() else { unreachable!() };
                 let path = self.providers.get(&sym).copied();

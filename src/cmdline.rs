@@ -401,6 +401,10 @@ pub struct Args {
     /// Fold identical functions (on by default; -no_deduplicate turns
     /// it off and a later -deduplicate back on).
     pub deduplicate: bool,
+    /// Describe the image's DTrace probe sites in DOF sections (on by
+    /// default; -no_dtrace_dof turns it off, and with it what makes the
+    /// sites links: see dtrace).
+    pub dtrace_dof: bool,
     /// -verbose_deduplicate: report what folding saved.
     pub verbose_deduplicate: bool,
     /// Emit LC_FUNCTION_STARTS (on by default but in a -static image).
@@ -905,6 +909,7 @@ impl Default for Args {
             version_details: false,
             strip_locals: false,
             deduplicate: true,
+            dtrace_dof: true,
             verbose_deduplicate: false,
             function_starts: true,
             data_in_code_info: true,
@@ -3140,9 +3145,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             // The DOF that describes the image's USDT probe sites
             // (__TEXT,__dof_<provider>), which ld-prime makes unless
-            // told not to - and then fails to link the sites. mold
-            // makes none.
-            b"-no_dtrace_dof" => {}
+            // told not to - and then fails to link the sites, branches
+            // to address 0.
+            b"-no_dtrace_dof" => args.dtrace_dof = false,
 
             raw => {
                 if let Some(&(prefix, kind)) = JOINED_LIBRARY_OPTIONS

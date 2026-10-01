@@ -1656,6 +1656,12 @@ fn synthetic_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Ve
         let name = Cow::Borrowed(island);
         entries.push(MapEntry { addr, size: E::THUNK_SIZE, file: 0, name });
     }
+    // The DOF of each provider of DTrace probes, which the symbol table
+    // doesn't name.
+    for dof in &ctx.dof_sections {
+        let (addr, size) = (ctx.isec_addr(dof.isec as usize), ctx.isecs[dof.isec].size as u64);
+        entries.push(MapEntry { addr, size, file: 0, name: name(&dof.atom_name) });
+    }
     if ctx.chunks.contains(&ChunkId::UnwindInfo) {
         let hdr = &ctx.unwind_info.hdr;
         let name = name("compact unwind info");

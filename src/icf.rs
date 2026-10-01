@@ -414,8 +414,8 @@ fn is_text_function<E: Target>(ctx: &Context<E>, isec: &InputSection) -> bool {
 }
 
 /// Whether each subsection is a function -keep_duplicate or
-/// -keep_duplicates_list names, a local one too, which is neither
-/// folded nor folded into.
+/// -keep_duplicates_list names, a local one too, or one with a DTrace
+/// probe site, which is neither folded nor folded into.
 fn kept_sections<E: Target>(ctx: &Context<E>) -> Vec<bool> {
     let kept: Vec<AtomicBool> = (0..ctx.isecs.len()).map(|_| AtomicBool::new(false)).collect();
     let keep = &ctx.args.keep_duplicates;
@@ -429,7 +429,11 @@ fn kept_sections<E: Target>(ctx: &Context<E>) -> Vec<bool> {
             }
         });
     }
-    kept.into_iter().map(AtomicBool::into_inner).collect()
+    let mut kept: Vec<bool> = kept.into_iter().map(AtomicBool::into_inner).collect();
+    for &isec in ctx.dof_sections.iter().flat_map(|dof| &dof.sites) {
+        kept[isec as usize] = true;
+    }
+    kept
 }
 
 /// Candidates: the non-empty functions whose addresses no one can

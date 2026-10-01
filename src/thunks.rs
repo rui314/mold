@@ -422,6 +422,9 @@ fn needs_thunk<E: Target>(ctx: &Context<E>, reach: &Reach, p: u64, id: SymbolId)
             None if aux.objc_stub_idx != NO_IDX => reach.objc_stubs,
             None => Side::Outside,
         },
+        // A DTrace symbol, at address 0 outside __TEXT: a probe site
+        // needs no island, being no branch in the output (see dtrace).
+        None => Side::OtherSegment,
         _ => Side::Outside,
     };
     match side {

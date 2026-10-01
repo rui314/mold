@@ -2285,6 +2285,11 @@ fn claim_dylib_exports<E: Target>(
         if (sym.is_common() && !use_dylibs) || won >> 40 < 2 {
             return;
         }
+        // A DTrace symbol binds to no dylib, whatever exports one (see
+        // dtrace).
+        if crate::dtrace::is_dtrace_symbol(sym.name()) {
+            return;
+        }
         for (dylib_idx, dylib) in dylibs.iter().enumerate() {
             let rank = (2u64 << 40) | dylib.priority as u64;
             if rank < won && dylib.exports.contains(sym.name()) {
@@ -4159,9 +4164,13 @@ pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
     // such a name without a word: no error, and no import under
     // -undefined dynamic_lookup. Most links have no undefined symbol at
     // all, so the relocations are looked at only when there is one.
+    // A DTrace symbol is never defined (see dtrace).
     let mut undef: Vec<usize> = (0..ctx.symbols.syms.len())
         .into_par_iter()
-        .filter(|&i| ctx.symbols.syms[i].is_used() && !ctx.symbols.syms[i].is_defined())
+        .filter(|&i| {
+            let sym = &ctx.symbols.syms[i];
+            sym.is_used() && !sym.is_defined() && !crate::dtrace::is_dtrace_symbol(sym.name())
+        })
         .collect();
     if undef.is_empty() {
         return;
