@@ -31,15 +31,18 @@ fn json_string(s: &str) -> String {
 }
 
 /// Xcode's version-1 API import report. Despite its name, sdkImports
-/// includes imports from non-SDK dylibs too, grouped by install name -
-/// those an -sdk_imports_api_list lists only, if there is one, whose
-/// version the report records. An image with none to report has no
-/// input in the report.
+/// includes imports from non-SDK dylibs too, grouped by install name in
+/// the order of the image's load commands - those an
+/// -sdk_imports_api_list lists only, if there is one, whose version the
+/// report records. An image with none to report has no input in the
+/// report. The JSON is laid out as ld-prime lays it out, but each
+/// library's symbols are listed once, by name: ld-prime lists one a
+/// time for each reference to it (its stub, its GOT slot, ...).
 pub fn write_sdk_imports<E: Target>(ctx: &Context<E>) {
     use crate::macho::{format_version, platform_name};
     let Some(path) = &ctx.args.sdk_imports else { return };
     let api_list = ctx.args.sdk_imports_api_list.as_ref();
-    let mut imports = std::collections::BTreeMap::<&[u8], Vec<&str>>::new();
+    let mut imports = std::collections::BTreeMap::<(i32, &[u8]), Vec<&str>>::new();
     for sym in &ctx.symbols.syms {
         if !sym.is_imported() || !sym.is_used() {
             continue;
@@ -50,30 +53,36 @@ pub fn write_sdk_imports<E: Target>(ctx: &Context<E>) {
         let Some(FileId::Dylib(idx)) = sym.file() else { continue };
         // Dynamic-lookup symbols have no defining library to report.
         let Some(dylib) = ctx.dylibs.get(idx as usize) else { continue };
-        imports.entry(&dylib.install_name).or_default().push(sym.name());
+        let key = (dylib.dylib_idx, dylib.install_name.as_slice());
+        imports.entry(key).or_default().push(sym.name());
     }
-    let libraries: Vec<String> = imports
-        .into_iter()
-        .map(|(name, mut symbols)| {
-            symbols.sort_unstable();
-            symbols.dedup();
-            let symbols: Vec<String> = symbols.into_iter().map(json_string).collect();
-            format!(
-                "{{\"installName\":{},\"symbols\":[{}]}}",
-                json_string(&crate::util::display(name)),
-                symbols.join(",")
-            )
-        })
-        .collect();
+
     // JSON is text: a path or install name outside UTF-8 is spelled lossily.
     let output = json_string(&ctx.args.output.to_string_lossy());
+    let mut libraries = Vec::new();
+    for ((_, name), mut symbols) in imports {
+        symbols.sort_unstable();
+        symbols.dedup();
+        let symbols: Vec<String> =
+            symbols.into_iter().map(|s| format!("            {}", json_string(s))).collect();
+        libraries.push(format!(
+            "        {{\n          \"installName\": {},\n          \"symbols\": [\n{}\n          \
+             ]\n        }}",
+            json_string(&crate::util::display(name)),
+            symbols.join(",\n")
+        ));
+    }
     let inputs = match libraries.is_empty() {
         true => String::new(),
-        false => format!("{{\"path\":{output},\"sdkImports\":[{}]}}", libraries.join(",")),
+        false => format!(
+            "    {{\n      \"path\": {output},\n      \"sdkImports\": [\n{}\n      ]\n    }}",
+            libraries.join(",\n")
+        ),
     };
     let report = format!(
-        "{{\"version\":1,\"output\":{output},\"arch\":{},\"linker\":{},\"apiListVersion\":{},\
-         \"platform\":{},\"deploymentVersion\":{},\"sdkVersion\":{},\"inputs\":[{inputs}]}}\n",
+        "{{\n  \"version\": 1,\n  \"output\": {output},\n  \"arch\": {},\n  \"linker\": {},\n  \
+         \"apiListVersion\": {},\n  \"platform\": {},  \"deploymentVersion\": {},  \
+         \"sdkVersion\": {},  \"inputs\": [\n{inputs}\n  ]\n}}\n",
         json_string(E::NAME),
         json_string(concat!("mold-macho-", env!("CARGO_PKG_VERSION"))),
         api_list.map_or(0, |list| list.version),
