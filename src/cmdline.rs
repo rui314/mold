@@ -94,7 +94,7 @@ pub enum LibraryKind {
     /// library this image re-exports, as Xcode's debug builds link what
     /// its release builds merge (-merge_*). They are -reexport-l,
     /// -reexport_framework and -reexport_library but for the hook
-    /// ld-prime adds for such libraries (see
+    /// ld-prime adds for the classes of such libraries (see
     /// Args::merged_libraries_hook), and as ld-prime spells them.
     NoMerge,
     /// -merge-l, -merge_framework, -merge_library: a library whose
@@ -662,7 +662,9 @@ pub struct Args {
     /// objc_setHook_getImageName place each such class in its
     /// framework's directory within the app bundle, where the
     /// framework's resources stay, rather than in this image. On
-    /// unless -no_merged_libraries_hook; mold has no such hook.
+    /// unless -no_merged_libraries_hook; mold has no such hook, and
+    /// refuses a link that needs it (see
+    /// passes::check_mergeable_libraries).
     pub merged_libraries_hook: bool,
     /// -make_mergeable: a dylib that a later link may merge (-merge_*),
     /// for which ld-prime records its atoms in LC_ATOM_INFO, as Xcode

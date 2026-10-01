@@ -4133,6 +4133,10 @@ struct LdSymbols {
     /// The exports that move: each with the install name it moves to
     /// and the version the directive gives, if any.
     moved: Vec<(&'static str, &'static str, Option<u32>)>,
+    /// The $ld$previous names it can't read, which `finish` warns of:
+    /// a library's directives may be read again (see exported_class),
+    /// but only loading it warns.
+    malformed: Vec<&'static str>,
 }
 
 impl LdSymbols {
@@ -4144,6 +4148,7 @@ impl LdSymbols {
             hidden: hashbrown::HashSet::new(),
             install_name: None,
             moved: Vec::new(),
+            malformed: Vec::new(),
         };
         for name in names {
             if let Some(rest) = name.strip_prefix("$ld$previous$") {
@@ -4151,7 +4156,7 @@ impl LdSymbols {
                 // follows the fifth separator, less the final '$'.
                 let f: Vec<&'static str> = rest.splitn(6, '$').collect();
                 let Some(sym) = f.get(5).and_then(|s| s.strip_suffix('$')) else {
-                    crate::warn!("malformed linker directive: {name}");
+                    ld.malformed.push(name);
                     continue;
                 };
                 if f[2].parse::<u32>() == Ok(ctx.args.platform)
@@ -4202,6 +4207,9 @@ impl LdSymbols {
     /// The directives' effect beyond the exports, for a library at
     /// `current_version` and `compatibility_version` (after renaming).
     fn finish(self, current_version: u32, compatibility_version: u32) -> LdDirectives {
+        for name in &self.malformed {
+            crate::warn!("malformed linker directive: {name}");
+        }
         let moved = self
             .moved
             .into_iter()
@@ -4268,6 +4276,55 @@ pub fn load_tbd<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> Option<
         ignore_foreign_file(ctx, mf, &why);
     }
     tbd
+}
+
+/// The first Objective-C or Swift class (see is_class_export) that a
+/// dylib or stub exports itself for the link's target, after its
+/// $ld$hide and $ld$add directives: the classes of the libraries it
+/// re-exports don't count, those it re-exports one by one (an alias, a
+/// -reexported_symbols_list entry) do. None for a file the link
+/// ignores, or one that is no library. (For such a class ld-prime adds
+/// its hook to an image that re-exports the library with -no_merge_*;
+/// see passes::check_mergeable_libraries.)
+pub fn exported_class<E: Target>(
+    ctx: &Context<E>,
+    mf: &'static MappedFile,
+) -> Option<&'static str> {
+    use crate::filetype::{FileType, get_file_type};
+    let mf = match get_file_type(mf) {
+        FileType::Fat => fat_slice::<E>(mf)?,
+        _ => mf,
+    };
+    let (ld, exports) = match get_file_type(mf) {
+        FileType::Tapi => {
+            let tbd = read_tbd(ctx, mf)?;
+            let ld = LdSymbols::read(ctx, &tbd.exports);
+            (ld, [tbd.exports, tbd.weak_exports, tbd.tlv_exports].concat())
+        }
+        FileType::Dylib
+            if foreign_arch::<E>(mf).is_none()
+                || (ctx.args.allow_sub_type_mismatches && is_subtype_mismatch::<E>(mf)) =>
+        {
+            let dylib = read_dylib_binary(mf);
+            (LdSymbols::read(ctx, &dylib.ld_symbols), dylib.exports)
+        }
+        _ => return None,
+    };
+    let mut own = exports.into_iter().filter(|name| ld.keeps(name)).chain(ld.added.iter().copied());
+    own.find(|name| is_class_export(name))
+}
+
+/// Whether an export is that of a class, as ld-prime's hook for the
+/// classes of mergeable libraries goes by its name: an Objective-C
+/// class or metaclass object (_OBJC_CLASS_$_Foo, _OBJC_METACLASS_$_Foo),
+/// or a Swift class's type metadata (_$s...CN, of any class, Objective-C
+/// or not). A Swift class's other symbols (its nominal type descriptor,
+/// metaclass or accessor), and an Objective-C class's exception type or
+/// instance variables, don't count.
+fn is_class_export(name: &str) -> bool {
+    name.starts_with("_OBJC_CLASS_$_")
+        || name.starts_with("_OBJC_METACLASS_$_")
+        || (name.starts_with("_$s") && name.ends_with("CN"))
 }
 
 pub fn parse_dylib<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFile) -> Option<usize> {

@@ -842,10 +842,14 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
 /// do yet: write a dylib's atoms (-make_mergeable), or add the hook for
 /// classes (Args::merged_libraries_hook). A debug build of a mergeable
 /// dylib gets the hook with -add_mergeable_debug_hook, if it has
-/// classes it doesn't export; an image that re-exports a library with
-/// -no_merge_* gets it whenever the library has classes, Objective-C
-/// or Swift, unless -no_merged_libraries_hook. (A -r output and an
-/// image that links no dylib ignore the library.)
+/// classes it doesn't export. An image gets it, unless
+/// -no_merged_libraries_hook, if a library a -no_merge_* option names
+/// exports a class itself (see input_files::exported_class), mergeable
+/// or not - a system stub too - and whether or not the option is the
+/// one to load it: `-lfoo -no_merge_library ./libfoo.dylib` adds the
+/// hook to an image that doesn't re-export libfoo. Without the hook the
+/// option is -reexport_*. (A -r output and an image that links no dylib
+/// ignore the library.)
 pub fn check_mergeable_libraries<E: Target>(ctx: &Context<E>) {
     if ctx.args.make_mergeable {
         fatal!("-make_mergeable is not supported");
@@ -856,17 +860,19 @@ pub fn check_mergeable_libraries<E: Target>(ctx: &Context<E>) {
     if !ctx.args.merged_libraries_hook || ctx.args.relocatable || !ctx.args.links_dylibs() {
         return;
     }
-    let no_merge = ctx.args.inputs.iter().find_map(|arg| match arg {
-        InputArg::Library(kind @ LibraryKind::NoMerge, name) => {
-            Some(format!("{}{}", kind.option(name), name.as_os_str().display()))
+    for arg in &ctx.args.inputs {
+        let InputArg::Library(kind @ LibraryKind::NoMerge, name) = arg else { continue };
+        // One not found failed the link already.
+        let Some(mf) = find_input(ctx, arg).and_then(MappedFile::open) else { continue };
+        if let Some(class) = input_files::exported_class(ctx, mf) {
+            fatal!(
+                "{}{}: the hook for the classes of mergeable libraries is not supported \
+                 ('{}' exports {class}); use -no_merged_libraries_hook",
+                kind.option(name),
+                name.as_os_str().display(),
+                mf.name.display()
+            );
         }
-        _ => None,
-    });
-    if let Some(opt) = no_merge {
-        fatal!(
-            "{opt}: the hook for the classes of mergeable libraries is not supported; \
-             use -no_merged_libraries_hook"
-        );
     }
 }
 
@@ -942,8 +948,13 @@ pub fn unreadable_file(path: &Path, e: &std::io::Error) -> String {
 /// not found, or a file a library option, -force_load or -bundle_loader
 /// names that isn't there.
 fn find_inputs<E: Target>(ctx: &Context<E>, inputs: &[InputArg]) -> Vec<Option<PathBuf>> {
+    inputs.iter().map(|arg| find_input(ctx, arg)).collect()
+}
+
+/// Finds the file an input names (see find_inputs).
+fn find_input<E: Target>(ctx: &Context<E>, arg: &InputArg) -> Option<PathBuf> {
     use LibraryKind::*;
-    let find = |arg: &InputArg| match arg {
+    match arg {
         InputArg::File(path) => Some(path.clone()),
         InputArg::Library(Merge, LibraryName::Path(path)) => find_file(ctx, path, false),
         InputArg::BundleLoader(path) | InputArg::Library(_, LibraryName::Path(path)) => {
@@ -956,8 +967,7 @@ fn find_inputs<E: Target>(ctx: &Context<E>, inputs: &[InputArg]) -> Vec<Option<P
         InputArg::Library(_, LibraryName::Lib(name)) => find_library(ctx, name),
         InputArg::Library(Merge, LibraryName::Framework(name)) => find_framework(ctx, name, false),
         InputArg::Library(_, LibraryName::Framework(name)) => find_framework(ctx, name, true),
-    };
-    inputs.iter().map(find).collect()
+    }
 }
 
 /// The file an option that takes a library's path names: an absolute
