@@ -312,11 +312,39 @@ fn is_text_function<E: Target>(ctx: &Context<E>, isec: &InputSection) -> bool {
         && hdr.sectname_is("__text")
 }
 
+/// Whether each subsection is a function -keep_duplicate or
+/// -keep_duplicates_list names, a local one too, which is neither
+/// folded nor folded into.
+fn kept_sections<E: Target>(ctx: &Context<E>) -> Vec<bool> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let kept: Vec<AtomicBool> = (0..ctx.isecs.len()).map(|_| AtomicBool::new(false)).collect();
+    let keep = &ctx.args.keep_duplicates;
+    if !keep.is_empty() {
+        ctx.symbols.syms.par_iter().for_each(|sym| {
+            if matches!(sym.file(), Some(FileId::Obj(_)))
+                && let Some(isec) = sym.input_section()
+                && keep.find(sym.name().as_bytes()) != -1
+            {
+                kept[isec as usize].store(true, Ordering::Relaxed);
+            }
+        });
+    }
+    kept.into_iter().map(AtomicBool::into_inner).collect()
+}
+
 /// Candidates: the non-empty functions whose addresses no one can
-/// compare.
-fn is_candidate<E: Target>(ctx: &Context<E>, auto_hidden: &[bool], id: usize) -> bool {
+/// compare, but those -keep_duplicate names.
+fn is_candidate<E: Target>(
+    ctx: &Context<E>,
+    auto_hidden: &[bool],
+    kept: &[bool],
+    id: usize,
+) -> bool {
     let isec = &ctx.isecs[id];
-    is_text_function(ctx, isec) && isec.size != 0 && (auto_hidden[id] || !isec.is_address_taken())
+    is_text_function(ctx, isec)
+        && isec.size != 0
+        && (auto_hidden[id] || !isec.is_address_taken())
+        && !kept[id]
 }
 
 /// -verbose_deduplicate: ld-prime's summary of the functions folded
@@ -563,9 +591,10 @@ pub fn icf_sections<E: Target>(ctx: &mut Context<E>) {
     let _t_all = ctx.timer("icf");
     let mut t = ctx.timer("icf-prep");
     let auto_hidden = auto_hidden_sections(ctx);
+    let kept = kept_sections(ctx);
     let candidates: Vec<usize> = (0..ctx.isecs.len())
         .into_par_iter()
-        .filter(|&i| is_candidate(ctx, &auto_hidden, i))
+        .filter(|&i| is_candidate(ctx, &auto_hidden, &kept, i))
         .collect();
     if candidates.len() < 2 {
         return;

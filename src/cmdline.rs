@@ -401,6 +401,9 @@ pub struct Args {
     /// whatever their objects say (the weak list winning).
     pub force_weak: Glob,
     pub force_not_weak: Glob,
+    /// -keep_duplicate / -keep_duplicates_list: the functions (local
+    /// ones too) function deduplication leaves alone.
+    pub keep_duplicates: Glob,
     /// -w: suppress warnings.
     pub suppress_warnings: bool,
     pub fatal_warnings: bool,
@@ -697,6 +700,7 @@ impl Default for Args {
             max_default_common_align: 15,
             force_weak: Glob::new(),
             force_not_weak: Glob::new(),
+            keep_duplicates: Glob::new(),
             suppress_warnings: false,
             fatal_warnings: false,
             demangle: false,
@@ -1519,7 +1523,8 @@ pub(crate) fn missing_argument(opt: &str) -> String {
         | "-umbrella"
         | "-allowable_client"
         | "-client_name"
-        | "-why_live" => "missing <name>",
+        | "-why_live"
+        | "-keep_duplicate" => "missing <name>",
         "-headerpad" | "-pagezero_size" | "-stack_size" | "-segalign" => "missing <size>",
         "-image_base" | "-seg1addr" => "missing <address>",
         "-current_version"
@@ -1618,6 +1623,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut force_weak = GlobBuilder::default();
     let mut force_not_weak = GlobBuilder::default();
     let mut force_weakness_listed = false;
+    let mut keep_duplicates = GlobBuilder::default();
     let mut export_choice: Option<ExportChoice> = None;
     // The warnings about the obsolete options given, which ld-prime
     // ignores with a warning once it has read them all.
@@ -2373,6 +2379,16 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 add_patterns(glob, name, names.iter().map(String::as_str));
                 force_weakness_listed = true;
             }
+            // ld-prime takes a malformed pattern here without a word,
+            // matching nothing.
+            b"-keep_duplicate" => {
+                keep_duplicates.add(next_arg(&mut i, name).as_bytes(), 0);
+            }
+            b"-keep_duplicates_list" => {
+                for pat in read_symbol_list(name, &path(next_arg(&mut i, name))) {
+                    keep_duplicates.add(pat.as_bytes(), 0);
+                }
+            }
 
             b"-dyld_env" => {
                 let arg = next_arg(&mut i, name).as_bytes();
@@ -2646,6 +2662,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     args.local_keep_list = local_keep_list.map(GlobBuilder::build);
     args.force_weak = force_weak.build();
     args.force_not_weak = force_not_weak.build();
+    args.keep_duplicates = keep_duplicates.build();
 
     // -fatal_warnings applies to every warning, wherever it appears on
     // the command line. So does -w to those from the option checks
