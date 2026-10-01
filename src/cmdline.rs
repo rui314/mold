@@ -1793,6 +1793,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut objc_stubs_small: Option<bool> = None;
     let mut const_selrefs: Option<bool> = None;
     let mut lto_softload: Option<bool> = None;
+    let mut lto_libraries: Vec<PathBuf> = Vec::new();
     // -fixup_chains_section's kind (see Args::chain_starts_kind), unless
     // a later -fixup_chains or -no_fixup_chains turned it off.
     let mut chain_starts: Option<u32> = None;
@@ -2692,7 +2693,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // -reproducible has nothing to switch on.
             b"-reproducible" => {}
 
-            b"-lto_library" => args.lto_library = Some(path(next_arg(&mut i, name))),
+            b"-lto_library" => lto_libraries.push(path(next_arg(&mut i, name))),
             b"-mcpu" => args.lto_cpu = Some(text(name, next_arg(&mut i, name)).to_string()),
             b"-save-temps" => args.save_temps = true,
             // The ThinLTO cache, which mold, compiling all bitcode as one
@@ -2821,6 +2822,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         i += 1;
     }
 
+    args.lto_library = resolve_lto_library(lto_libraries);
     // ld-prime reports the options it doesn't know together, once it
     // has read the others (and given their warnings).
     if !unknown.is_empty() {
@@ -3796,6 +3798,23 @@ fn resolve_image_base(args: &mut Args) {
         crate::warn!("prefered load addresses (-seg1addr) are disabled with chained fixups");
         args.image_base = text;
     }
+}
+
+/// ld-prime vets -lto_library before the rest of the command line: it
+/// loads the library in place of its own by running itself again with
+/// the library's directory first in the dynamic loader's search path,
+/// so every one given must be named libLTO.dylib. The last one counts,
+/// unless no such file exists - then ld-prime warns and keeps its own.
+fn resolve_lto_library(mut paths: Vec<PathBuf>) -> Option<PathBuf> {
+    if paths.iter().any(|path| path.file_name() != Some(OsStr::new("libLTO.dylib"))) {
+        fatal!("-lto_library library filename must be 'libLTO.dylib'");
+    }
+    let path = paths.pop()?;
+    if std::fs::metadata(&path).is_err() {
+        crate::warn!("ignoring -lto_library '{}', file does not exist", path.display());
+        return None;
+    }
+    Some(path)
 }
 
 /// Without -arch, ld-prime links for the target of the first object
