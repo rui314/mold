@@ -967,7 +967,8 @@ impl<E: Target> Context<E> {
     /// alternate entry point, or in an object without subsections any
     /// label past a section's start - but for a literal's or a
     /// fixed-size record's. An arm64 assembler's ltmpN counts only in an
-    /// object without subsections, and after a literal's atom.
+    /// object without subsections, and after a literal's atom or a class
+    /// reference's, which ld-prime coalesces by content too.
     pub fn atom_ordinal(&self, id: usize) -> usize {
         use crate::input_files::{has_merged_atoms, is_record_section};
         let obj = &self.objs[self.isecs[id].file as usize];
@@ -1013,7 +1014,7 @@ impl<E: Target> Context<E> {
             let lo = labels.partition_point(|l| l.0 < shndx);
             let hi = labels.partition_point(|l| l.0 <= shndx);
             let sect_labels = &labels[lo..hi];
-            let merged = has_merged_atoms(hdr);
+            let merged = has_merged_atoms(hdr) || hdr.sectname() == "__objc_classrefs";
             let records = is_record_section(hdr);
             for (j, &sub) in sect_subs.iter().enumerate() {
                 let isec = &self.isecs[sub];
@@ -1116,7 +1117,9 @@ impl<E: Target> Context<E> {
     /// points into - as for a label an assembler made for itself on a
     /// literal (see literal_label_target). A class reference slot folded
     /// into the GOT is its class's GOT entry, an atom of ld-prime's
-    /// stubs-got-file (see stubs_got_ordinal).
+    /// stubs-got-file (see stubs_got_ordinal); one left in place is an
+    /// atom no label names, whatever labels it has: the copy of it
+    /// ld-prime keeps.
     pub fn text_reloc_target_name(
         &self,
         obj: usize,
@@ -1124,6 +1127,11 @@ impl<E: Target> Context<E> {
     ) -> std::borrow::Cow<'static, str> {
         if let Some(class) = self.folded_classref_target(obj, rel) {
             return format!("anon-{}", self.stubs_got_ordinal(class)).into();
+        }
+        if let Some(isec) = self.reloc_target_isec(obj, rel)
+            && self.hdr_of(&self.isecs[isec]).sectname() == "__objc_classrefs"
+        {
+            return format!("anon-{}", self.atom_ordinal(self.resolve_isec(isec))).into();
         }
         match self.literal_label_target(obj, rel) {
             Some(isec) => self.atom_name(isec),
