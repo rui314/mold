@@ -198,7 +198,7 @@ impl Target for X86_64 {
     const STUB_HELPER_ENTRY_SIZE: u64 = 12;
     const STUB_HELPER_ENTRY_PADDING: u64 = 2;
     const UNWIND_MODE_DWARF: u32 = UNWIND_X86_64_MODE_DWARF;
-    const OBJC_STUB_SIZE: u64 = 16;
+    const OBJC_STUB_SIZE: u64 = 13;
     const LAZY_HELPERS_P2ALIGN: u32 = 0;
     const LAZY_CALL_OWN_SLOT: bool = true;
     const DELAY_STUB_SIZE: u64 = 25;
@@ -323,14 +323,13 @@ impl Target for X86_64 {
         let msgsend_got = ctx.objc_msgsend_got_addr();
 
         for i in 0..ctx.objc_stubs.symbols.len() {
-            let ent = &mut buf[i * 16..];
-            let ent_addr = addr + i as u64 * 16;
+            let ent = &mut buf[i * 13..];
+            let ent_addr = addr + i as u64 * 13;
             let sel_addr = ctx.objc_selref_addr(i);
 
-            // mov sel(%rip), %rsi; jmp *_objc_msgSend@GOT(%rip); int3 x3
-            ent[..16].copy_from_slice(&[
-                0x48, 0x8b, 0x35, 0, 0, 0, 0, 0xff, 0x25, 0, 0, 0, 0, 0xcc, 0xcc, 0xcc,
-            ]);
+            // mov sel(%rip), %rsi; jmp *_objc_msgSend@GOT(%rip), packed
+            // back to back as ld-prime lays them out.
+            ent[..13].copy_from_slice(&[0x48, 0x8b, 0x35, 0, 0, 0, 0, 0xff, 0x25, 0, 0, 0, 0]);
             write32(&mut ent[3..], sel_addr.wrapping_sub(ent_addr + 7) as u32);
             write32(&mut ent[9..], msgsend_got.wrapping_sub(ent_addr + 13) as u32);
         }
