@@ -1389,10 +1389,16 @@ fn lay_out_eh_frame<E: Target>(ctx: &mut Context<E>) {
     if ctx.fdes.is_empty() && !ctx.cies.iter().any(|cie| cie.is_alive) {
         return;
     }
+    ctx.eh_frame.hdr.flags = output_section_flags("__TEXT", "__eh_frame", 0, true, false);
+    ctx.eh_frame.hdr.size = assign_eh_frame_offsets(ctx) as u64;
+    ctx.chunks.push(ChunkId::EhFrame);
+}
 
-    // ld-prime lays the records out as the inputs have them: object by
-    // object, the CIEs and FDEs of each in the order of its __eh_frame
-    // (which both lists keep).
+/// Gives the live CIEs and the FDEs their offsets in __eh_frame and
+/// returns its size. ld-prime lays the records out as the inputs have
+/// them: object by object, the CIEs and FDEs of each in the order of
+/// its __eh_frame (which both lists keep).
+fn assign_eh_frame_offsets<E: Target>(ctx: &mut Context<E>) -> u32 {
     debug_assert!(ctx.cies.is_sorted_by_key(|cie| (cie.obj, cie.input_addr)));
     debug_assert!(ctx.fdes.is_sorted_by_key(|fde| (fde.obj, fde.input_addr)));
     let mut off = 0;
@@ -1412,10 +1418,7 @@ fn lay_out_eh_frame<E: Target>(ctx: &mut Context<E>) {
         fde.output_offset = off;
         off += fde.data.len() as u32;
     }
-
-    ctx.eh_frame.hdr.flags = output_section_flags("__TEXT", "__eh_frame", 0, true, false);
-    ctx.eh_frame.hdr.size = off as u64;
-    ctx.chunks.push(ChunkId::EhFrame);
+    off
 }
 
 /// Warns, as ld-prime does, if __unwind_info points a function at an
