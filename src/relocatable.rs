@@ -17,6 +17,7 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use crate::chunks::symtab::{SymtabSection, par_push_entries};
 use crate::chunks::{ChunkHeader, ChunkId, OutputSectionId};
 use crate::context::Context;
 use crate::error;
@@ -419,8 +420,8 @@ pub fn link<E: Target>(ctx: &mut Context<E>) -> u64 {
         seg_filesize: content_end - seg_fileoff,
         diceoff: place(cmds.dice.len() * 8),
         lohoff: place(cmds.loh.as_ref().map_or(0, Vec::len)),
-        symoff: place(symtab.nlists.len() * size_of::<NList>()),
-        stroff: place(symtab.strtab.len()),
+        symoff: place(symtab.table.len() * size_of::<NList>()),
+        stroff: place(symtab.table.strtab_size),
     };
     let headers: Vec<MachSection> = sects
         .iter()
@@ -452,9 +453,10 @@ pub fn link<E: Target>(ctx: &mut Context<E>) -> u64 {
         let lohoff = layout.lohoff as usize;
         buf[lohoff..lohoff + loh.len()].copy_from_slice(loh);
     }
-    write_array(&mut buf, layout.symoff as usize, &symtab.nlists);
-    let stroff = layout.stroff as usize;
-    buf[stroff..stroff + symtab.strtab.len()].copy_from_slice(&symtab.strtab);
+    let (syms, strtab) =
+        buf[layout.symoff as usize..].split_at_mut(symtab.table.len() * size_of::<NList>());
+    let strtab = &mut strtab[..symtab.table.strtab_size];
+    crate::chunks::symtab::write_symtab(ctx, &symtab.table, syms, strtab);
 
     drop(t);
 
@@ -1203,9 +1205,9 @@ fn write_load_commands<E: Target>(
         cmd: LC_SYMTAB,
         cmdsize: size_of::<SymtabCommand>() as u32,
         symoff: layout.symoff as u32,
-        nsyms: symtab.nlists.len() as u32,
+        nsyms: symtab.table.len() as u32,
         stroff: layout.stroff as u32,
-        strsize: symtab.strtab.len() as u32,
+        strsize: symtab.table.strtab_size as u32,
     };
     st.write_to(&mut buf[p..]);
     p += size_of::<SymtabCommand>();
@@ -1329,8 +1331,10 @@ fn rewrite_field<E: Target>(
 /// A -r output's symbol and string tables, and where relocations find
 /// the atoms ld64 names itself.
 struct RSymtab {
-    nlists: Vec<NList>,
-    strtab: Vec<u8>,
+    /// The tables, laid out as a final image's are and written by the
+    /// same writer (see write_symtab), but with every entry's n_value
+    /// set already.
+    table: SymtabSection,
     index_of_sym: HashMap<SymbolId, u32>,
     /// The linker-named atoms: each one's symbol index and address.
     atoms: LiteralAtoms<(u32, u64)>,
@@ -1338,7 +1342,7 @@ struct RSymtab {
 
 /// A local symbol of a -r output.
 struct Local {
-    name: String,
+    name: &'static str,
     n_type: u8,
     n_desc: u16,
     n_sect: u8,
@@ -1352,6 +1356,14 @@ struct Local {
     /// object's symbol table.
     at: (u32, u8, u64),
     rank: Rank,
+}
+
+impl Local {
+    /// Its entry but for the name.
+    fn nlist(&self) -> NList {
+        let (n_type, n_sect, n_desc) = (self.n_type, self.n_sect, self.n_desc);
+        NList { n_strx: 0, n_type, n_sect, n_desc, n_value: self.addr }
+    }
 }
 
 /// The name a local takes: its own, or one ld64 makes for a literal
@@ -1387,7 +1399,8 @@ fn sym_addr<E: Target>(ctx: &Context<E>, id: SymbolId) -> u64 {
 /// object's local symbols in the order of its sections and of their
 /// addresses in each (a zerofill section comes by ordinal), then
 /// the stabs, opened by an N_SO of their own, then the defined
-/// externals and the undefined symbols, each by name.
+/// externals and the undefined symbols, each by name. The strings are
+/// laid out as a final image's (see layout_strings).
 fn build_symtab<E: Target>(ctx: &Context<E>, merged: &[OutputSectionId]) -> RSymtab {
     let t = ctx.timer("r-symtab-locals");
     let referenced = referenced_syms(ctx);
@@ -1400,89 +1413,68 @@ fn build_symtab<E: Target>(ctx: &Context<E>, merged: &[OutputSectionId]) -> RSym
         locals.add_private_externs();
     }
     let (locals, atoms) = locals.finish();
-
-    let mut index_of_sym: HashMap<SymbolId, u32> = HashMap::new();
-    let mut ents: Vec<(NList, Option<SymbolId>)> = Vec::new();
-    let mut names: Vec<&[u8]> = Vec::new();
-    for l in &locals {
-        for &sym_id in &l.syms {
-            index_of_sym.insert(sym_id, ents.len() as u32);
-        }
-        names.push(l.name.as_bytes());
-        let ent = NList {
-            n_strx: 0,
-            n_type: l.n_type,
-            n_sect: l.n_sect,
-            n_desc: l.n_desc,
-            n_value: l.addr,
-        };
-        ents.push((ent, l.syms.first().copied()));
-    }
-    let nplain = ents.len();
     drop(t);
 
     // Debug-note stabs: ld64 does not merge the inputs' DWARF into a -r
     // output, it names the objects that hold it (N_OSO) and where their
     // symbols landed, and a later link carries the notes through.
     let t = ctx.timer("r-symtab-stabs");
-    let mut names_of: Vec<Option<SymbolId>> = Vec::new();
-    if !ctx.args.strip_debug {
-        let cwd = std::env::current_dir().unwrap_or_default();
-        let commons = crate::chunks::symtab::common_stab_owners(ctx);
-        let plans: Vec<crate::chunks::symtab::StabPlan> = (0..ctx.objs.len())
-            .map(|obj_idx| crate::chunks::symtab::plan_object_stabs(ctx, obj_idx, &cwd, &commons))
-            .collect();
-        let stabs: Vec<crate::chunks::symtab::Stab> =
-            plans.iter().flat_map(|p| p.stabs(ctx)).collect();
-        if !stabs.is_empty() {
-            names.push(b"");
-            ents.push((NList { n_strx: 1, n_type: N_SO, n_sect: 1, ..Default::default() }, None));
-            names_of.push(None);
-        }
-        for stab in stabs {
-            let mut ent = stab.ent;
-            if let Some(id) = stab.value_of {
-                ent.n_value = sym_addr(ctx, id);
-            }
-            names.push(stab.name);
-            ents.push((ent, None));
-            names_of.push(stab.name_of);
-        }
-    }
-    let nlocal = ents.len();
+    let stabs = crate::chunks::symtab::plan_stabs(ctx);
+    let nstabs: usize = stabs.iter().map(|plan| plan.len()).sum();
     drop(t);
 
     // The defined externals, then the undefined and tentative symbols.
     let t = ctx.timer("r-symtab-externals");
-    for (ent, id) in defined_externals(ctx).into_iter().chain(undefined_symbols(ctx, &referenced)) {
-        index_of_sym.insert(id, ents.len() as u32);
-        names.push(ctx.symbols[id].name().as_bytes());
-        ents.push((ent, Some(id)));
-    }
+    let mut externals = defined_externals(ctx);
+    externals.extend(undefined_symbols(ctx, &referenced));
     drop(t);
 
-    // The string table, in ld-prime's layout (see layout_strings).
+    // The entries, each made on all cores straight into its slot, and
+    // their strings.
     let t = ctx.timer("r-symtab-strings");
-    let entry_of =
-        crate::chunks::symtab::symbol_entries(&ents, nplain, nlocal, ctx.symbols.syms.len());
-    let size = crate::chunks::symtab::layout_strings(
-        &mut ents,
-        &mut names,
-        nlocal,
-        (nplain, &names_of),
-        &entry_of,
-    )
-    .next_multiple_of(8);
-    let mut strtab = vec![0u8; size];
-    strtab[0] = b' ';
-    for ((ent, _), name) in ents.iter().zip(&names) {
-        let off = ent.n_strx as usize;
-        strtab[off..off + name.len()].copy_from_slice(name);
+    let mut table = SymtabSection::new();
+    let total = locals.len() + usize::from(nstabs != 0) + externals.len();
+    let mut names: Vec<&'static [u8]> = Vec::with_capacity(total);
+    table.entries.reserve_exact(total);
+    par_push_entries(&mut names, &mut table.entries, &locals, |l| {
+        (l.name.as_bytes(), l.nlist(), None)
+    });
+    if nstabs != 0 {
+        names.push(b"");
+        table.entries.push((crate::chunks::symtab::STAB_END, None));
     }
+    let stabs_start = table.entries.len();
+    par_push_entries(&mut names, &mut table.entries, &externals, |&(ent, id)| {
+        (ctx.symbols[id].name().as_bytes(), ent, None)
+    });
+    let strtab_end = crate::chunks::symtab::layout_strings(&mut table.entries, &names, stabs_start);
+    table.names = names;
 
+    // Each symbol's index in the table, for the relocations, and its
+    // string, for the notes naming it - but for the first local's,
+    // whose notes ld-prime gives a copy of their own.
+    let mut index_of_sym: HashMap<SymbolId, u32> = HashMap::new();
+    let mut strx_of = vec![u32::MAX; ctx.symbols.syms.len()];
+    for (i, l) in locals.iter().enumerate() {
+        for &id in &l.syms {
+            index_of_sym.insert(id, i as u32);
+        }
+        if let Some(&id) = l.syms.first()
+            && i != 0
+        {
+            strx_of[id as usize] = table.entries[i].0.n_strx;
+        }
+    }
+    for (k, &(_, id)) in externals.iter().enumerate() {
+        let i = stabs_start + k;
+        index_of_sym.insert(id, (i + nstabs) as u32);
+        strx_of[id as usize] = table.entries[i].0.n_strx;
+    }
+    table.strx_of = strx_of;
+    table.set_stabs(ctx, stabs, stabs_start, strtab_end);
     drop(t);
 
-    RSymtab { nlists: ents.into_iter().map(|e| e.0).collect(), strtab, index_of_sym, atoms }
+    RSymtab { table, index_of_sym, atoms }
 }
 
 /// A -r output's defined externals, sorted by name, with their entries.
@@ -1730,7 +1722,7 @@ impl<'a, E: Target> Locals<'a, E> {
                 for k in 0..n {
                     atoms.atoms.insert((id, k), locals.len());
                     locals.push(Local {
-                        name: String::new(),
+                        name: "",
                         n_type: N_PEXT | N_SECT,
                         n_desc: section_desc(ctx, id),
                         n_sect: chunk.hdr.n_sect,
@@ -1840,7 +1832,7 @@ impl<'a, E: Target> Locals<'a, E> {
                 // section's no_dead_strip marks.
                 let section_desc = if aliases.contains(&i) { 0 } else { section_desc(ctx, input) };
                 self.locals.push(Local {
-                    name: sym.name().to_string(),
+                    name: sym.name(),
                     n_type: nlist.n_type,
                     n_desc: whole_desc(nlist.n_desc, whole) | section_desc,
                     n_sect: ctx.isec_n_sect(&ctx.isecs[isec]),
@@ -1888,7 +1880,7 @@ impl<'a, E: Target> Locals<'a, E> {
                     continue;
                 }
                 self.locals.push(Local {
-                    name: sym.name().to_string(),
+                    name: sym.name(),
                     n_type: N_PEXT | N_SECT,
                     n_desc: whole_desc(
                         nlist.n_desc & (N_ALT_ENTRY | N_NO_DEAD_STRIP | N_WEAK_DEF),
@@ -1912,7 +1904,7 @@ impl<'a, E: Target> Locals<'a, E> {
     fn add_absolute(&mut self, obj_idx: usize, i: usize, sym_id: SymbolId, n_type: u8, rank: Rank) {
         let sym = &self.ctx.symbols[sym_id];
         self.locals.push(Local {
-            name: sym.name().to_string(),
+            name: sym.name(),
             n_type,
             n_desc: 0,
             n_sect: 0,
@@ -1933,7 +1925,7 @@ impl<'a, E: Target> Locals<'a, E> {
         let place = |l: &Local| (l.at.0, l.n_type & N_TYPE == N_ABS, l.at.1, l.at.2);
         order.sort_by(|&a, &b| {
             let (a, b) = (&locals[a], &locals[b]);
-            place(a).cmp(&place(b)).then(a.rank.cmp(&b.rank)).then(b.name.cmp(&a.name))
+            place(a).cmp(&place(b)).then(a.rank.cmp(&b.rank)).then(b.name.cmp(a.name))
         });
         let mut index_of = vec![0u32; locals.len()];
         for (i, &e) in order.iter().enumerate() {
@@ -1947,11 +1939,11 @@ impl<'a, E: Target> Locals<'a, E> {
             match l.rename {
                 Rename::None => {}
                 Rename::Cstring => {
-                    l.name = format!("LC{counter}");
+                    l.name = format!("LC{counter}").leak();
                     counter += 1;
                 }
                 Rename::Anon => {
-                    l.name = format!("l{counter:03}");
+                    l.name = format!("l{counter:03}").leak();
                     counter += 1;
                 }
             }

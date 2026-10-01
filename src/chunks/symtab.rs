@@ -86,6 +86,33 @@ impl SymtabSection {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+
+    /// Takes the debug notes, entries [stabs_start, stabs_start + n) of
+    /// the table, and lays out their strings after the entries', which
+    /// end at `strtab_end`: each object's after the previous one's, but
+    /// for those the notes share with the symbols they name (`strx_of`,
+    /// set by now).
+    pub fn set_stabs<E: Target>(
+        &mut self,
+        ctx: &Context<E>,
+        plans: Vec<StabPlan>,
+        stabs_start: usize,
+        strtab_end: usize,
+    ) {
+        let sizes: Vec<usize> =
+            plans.par_iter().map(|plan| plan.strtab_size(ctx, &self.strx_of)).collect();
+        let mut strx = strtab_end;
+        self.stab_strx = Vec::with_capacity(plans.len() + 1);
+        for size in sizes {
+            self.stab_strx.push(strx as u32);
+            strx += size;
+        }
+        self.stab_strx.push(strx as u32);
+        self.strtab_size = strx.next_multiple_of(8);
+        self.nstabs = plans.iter().map(StabPlan::len).sum();
+        self.stabs = plans;
+        self.stabs_start = stabs_start;
+    }
 }
 
 impl Default for SymtabSection {
@@ -204,8 +231,9 @@ impl StabPlan {
         let fixed =
             self.fixed.iter().filter(|s| !s.name.is_empty() && s.shared_strx(strx_of).is_none());
         let syms = self.syms.iter().filter(|s| strx_of[s.sym as usize] == u32::MAX);
-        fixed.map(|s| s.name.len() + 1).sum::<usize>()
-            + syms.map(|s| ctx.symbols[s.sym].name().len() + 1).sum::<usize>()
+        let size = |name: &[u8]| if name.is_empty() { 0 } else { name.len() + 1 };
+        fixed.map(|s| size(s.name)).sum::<usize>()
+            + syms.map(|s| size(ctx.symbols[s.sym].name().as_bytes())).sum::<usize>()
     }
 
     /// Writes the entries, with their final addresses and their own names,
@@ -288,13 +316,31 @@ impl SymbolStabs {
     }
 }
 
+/// Plans every object's debug notes (stabs), on all cores: each
+/// object's run is independent. Mach-O binaries don't carry DWARF;
+/// instead, for each object with debug info the symbol table gets stab
+/// entries telling the debugger where the object file is (N_OSO) and
+/// where its functions and globals ended up, and the debugger reads the
+/// DWARF from the objects. Shared by the final link and -r.
+pub fn plan_stabs<E: Target>(ctx: &Context<E>) -> Vec<StabPlan> {
+    if ctx.args.strip_debug {
+        return Vec::new();
+    }
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let commons = common_stab_owners(ctx);
+    (0..ctx.objs.len())
+        .into_par_iter()
+        .map(|obj_idx| plan_object_stabs(ctx, obj_idx, &cwd, &commons))
+        .collect()
+}
+
 /// Plans one object's debug-note stabs. An object with DWARF gets the
 /// run ld64 writes: N_SO, N_OSO naming the object, N_FUN pairs and
 /// N_GSYM/N_STSYM for its symbols, and a closing N_SO. An object that
 /// already carries such a run (a -r output: ld64 does not merge DWARF,
 /// it writes these notes) has it copied through (see
-/// copy_object_stabs). Shared by the final link and -r.
-pub fn plan_object_stabs<E: Target>(
+/// copy_object_stabs).
+fn plan_object_stabs<E: Target>(
     ctx: &Context<E>,
     obj_idx: usize,
     cwd: &Path,
@@ -633,7 +679,7 @@ fn has_stabs(hdr: &MachSection) -> bool {
 
 /// The object whose stabs note each tentative definition that no real
 /// one overrode: the first live object that declares it.
-pub fn common_stab_owners<E: Target>(
+fn common_stab_owners<E: Target>(
     ctx: &Context<E>,
 ) -> hashbrown::HashMap<crate::symbol::SymbolId, usize> {
     let per_obj: Vec<Vec<crate::symbol::SymbolId>> = ctx
@@ -669,7 +715,7 @@ pub fn common_stab_owners<E: Target>(
 
 /// An N_SO with an empty name: it closes an object's stabs, and
 /// ld-prime opens the stabs of an image with one too.
-const STAB_END: NList = NList { n_strx: 1, n_type: N_SO, n_sect: 1, n_desc: 0, n_value: 0 };
+pub const STAB_END: NList = NList { n_strx: 1, n_type: N_SO, n_sect: 1, n_desc: 0, n_value: 0 };
 
 /// A final image's local symbols in ld-prime's order: the non-external
 /// symbols it keeps, the private externals it demotes, the linker's own
@@ -897,7 +943,7 @@ type LocalEnt = (u64, u8, &'static [u8], NList, Option<crate::symbol::SymbolId>)
 
 /// Appends an entry and its name for each item, made by `f` on all cores
 /// straight into the arrays' spare capacity, which the caller reserved.
-fn par_push_entries<T: Sync>(
+pub fn par_push_entries<T: Sync>(
     names: &mut Vec<&'static [u8]>,
     entries: &mut Vec<(NList, Option<crate::symbol::SymbolId>)>,
     items: &[T],
@@ -943,23 +989,9 @@ pub fn create_output_symtab<E: Target>(
     let locals = plan_local_symbols(ctx, &pexts, sorted_globals);
     drop(t);
 
-    // Debug stabs. Mach-O binaries don't carry DWARF; instead, for each
-    // object with debug info the symbol table gets stab entries telling
-    // the debugger where the object file is (N_OSO) and where its
-    // functions and globals ended up, and the debugger reads the DWARF
-    // from the objects. Each object's run is independent.
+    // Debug stabs (see plan_stabs).
     let t = ctx.timer("symtab-stabs");
-    let planned: Vec<StabPlan> = if ctx.args.strip_debug {
-        Vec::new()
-    } else {
-        let cwd = std::env::current_dir().unwrap_or_default();
-        let commons = common_stab_owners(ctx);
-        ctx.objs
-            .par_iter()
-            .enumerate()
-            .map(|(obj_idx, _)| plan_object_stabs(ctx, obj_idx, &cwd, &commons))
-            .collect()
-    };
+    let planned = plan_stabs(ctx);
     drop(t);
 
     let t = ctx.timer("symtab-entries");
@@ -1015,7 +1047,7 @@ pub fn create_output_symtab<E: Target>(
     // locals', then each object's notes' in a block of its own. No note
     // is among the entries, so none shares a string there.
     let t = ctx.timer("symtab-strings");
-    let strtab_end = layout_strings(&mut data.entries, &mut names, stabs_start, (0, &[]), &[]);
+    let strtab_end = layout_strings(&mut data.entries, &names, stabs_start);
     data.names = names;
 
     // Each symbol's index, for the indirect symbol table, and its string,
@@ -1041,21 +1073,7 @@ pub fn create_output_symtab<E: Target>(
     });
     data.output_sym_indices = entry_of.into_iter().map(AtomicU32::into_inner).collect();
     data.strx_of = strx_of.into_iter().map(AtomicU32::into_inner).collect();
-
-    // The notes' strings, each object's after the previous one's.
-    let sizes: Vec<usize> =
-        planned.par_iter().map(|plan| plan.strtab_size(ctx, &data.strx_of)).collect();
-    let mut strx = strtab_end;
-    data.stab_strx = Vec::with_capacity(planned.len() + 1);
-    for size in sizes {
-        data.stab_strx.push(strx as u32);
-        strx += size;
-    }
-    data.stab_strx.push(strx as u32);
-    data.strtab_size = strx.next_multiple_of(8);
-    data.stabs = planned;
-    data.stabs_start = stabs_start;
-    data.nstabs = nstabs;
+    data.set_stabs(ctx, planned, stabs_start, strtab_end);
 
     make_indirect_aliases(ctx, &mut data);
     drop(t);
@@ -1263,7 +1281,20 @@ pub fn copy_symtab<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
         let (lo, hi) = buf.split_at_mut(symoff);
         (&mut hi[..symsize], &mut lo[stroff..stroff + symtab.strtab_size])
     };
+    write_symtab(ctx, symtab, syms, strtab);
+}
 
+/// Writes a symbol table's entries into `syms` and their strings into
+/// `strtab`, which hold exactly the table and its strings: each entry
+/// with the address of its symbol, if it has one, as n_value, and each
+/// object's debug notes from its plan. A -r output's table is written
+/// this way too.
+pub fn write_symtab<E: Target>(
+    ctx: &Context<E>,
+    symtab: &SymtabSection,
+    syms: &mut [u8],
+    strtab: &mut [u8],
+) {
     // The entries before the notes, the notes, and the externals; the
     // entries' strings, then the notes'.
     let start = symtab.stabs_start;
@@ -1368,61 +1399,19 @@ impl SymtabBlock<'_> {
     }
 }
 
-/// Each symbol's entry among a symbol table's plain locals, [0, nplain),
-/// and externals, [nlocal, len) - never a debug note - or u32::MAX.
-pub fn symbol_entries(
-    entries: &[(NList, Option<SymbolId>)],
-    nplain: usize,
-    nlocal: usize,
-    nsyms: usize,
-) -> Vec<AtomicU32> {
-    let entry_of: Vec<AtomicU32> =
-        (0..nsyms).into_par_iter().map(|_| AtomicU32::new(u32::MAX)).collect();
-    (0..nplain).into_par_iter().chain(nlocal..entries.len()).for_each(|i| {
-        if let Some(id) = entries[i].1 {
-            entry_of[id as usize].store(i as u32, Ordering::Relaxed);
-        }
-    });
-    entry_of
-}
-
 /// Lays out a symbol table's strings as ld-prime does and sets every
-/// entry's n_strx. The strings follow the defined and undefined
-/// externals, then the local symbols, then the debug notes, each entry
-/// with a copy of its own - two locals of one name get two - except
-/// that a note naming a symbol shares that symbol's string (though not
-/// the first local's, which ld-prime copies again) and an empty name is
-/// offset 1, after the table's leading " ". `stabs` gives where the
-/// notes start and the symbol each one names, `entry_of` each symbol's
-/// entry (symbol_entries), and [nlocal, len) are the externals. A note
-/// that shares a string gets an empty name, so that afterwards an
-/// entry's name is exactly the string to write at its n_strx. Returns
-/// where the strings end.
+/// entry's n_strx: the defined and undefined externals' names, [nlocal,
+/// len), then the local symbols', each entry with a copy of its own -
+/// two locals of one name get two - but that an empty name is offset 1,
+/// after the table's leading " ". The debug notes' follow (see
+/// SymtabSection::set_stabs). Returns where the strings end.
 pub fn layout_strings(
     entries: &mut [(NList, Option<SymbolId>)],
-    names: &mut [&[u8]],
+    names: &[&[u8]],
     nlocal: usize,
-    stabs: (usize, &[Option<SymbolId>]),
-    entry_of: &[AtomicU32],
 ) -> usize {
-    // The notes that share a string, and the entries they share it
-    // with: a plain local's or an external's, never another note's.
-    let (stabs_start, names_of) = stabs;
-    let shared: Vec<u32> = names[stabs_start..stabs_start + names_of.len()]
-        .par_iter_mut()
-        .zip(names_of)
-        .map(|(name, id)| {
-            let e = id.map_or(u32::MAX, |id| entry_of[id as usize].load(Ordering::Relaxed));
-            if e == u32::MAX || e == 0 {
-                return u32::MAX;
-            }
-            *name = b"";
-            e
-        })
-        .collect();
-
-    // The externals' strings come first, then the locals' and notes',
-    // each block of entries at its prefix-summed offset.
+    // The externals' strings come first, then the locals', each block
+    // of entries at its prefix-summed offset.
     const CHUNK: usize = 1 << 16;
     let (locals, externs) = entries.split_at_mut(nlocal);
     let (local_names, extern_names) = names.split_at(nlocal);
@@ -1446,17 +1435,5 @@ pub fn layout_strings(
                 off += size(name);
             }
         });
-
-    // The notes that share take their entry's offset.
-    let (head, rest) = entries.split_at_mut(stabs_start);
-    let (notes, tail) = rest.split_at_mut(shared.len());
-    let tail_start = stabs_start + shared.len();
-    notes.par_iter_mut().zip(shared).for_each(|((ent, _), e)| {
-        let e = e as usize;
-        if e != u32::MAX as usize {
-            let owner = if e < stabs_start { &head[e] } else { &tail[e - tail_start] };
-            ent.n_strx = owner.0.n_strx;
-        }
-    });
     total as usize
 }
