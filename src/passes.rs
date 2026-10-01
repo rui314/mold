@@ -3723,7 +3723,8 @@ fn referenced_symbols<E: Target>(ctx: &Context<E>) -> Vec<std::sync::atomic::Ato
                 .iter()
                 .filter(|fde| alive(fde.isec))
                 .filter_map(|fde| ctx.cies[fde.cie as usize].personality),
-        );
+        )
+        .chain(lone_cie_personalities(ctx));
     for id in personalities {
         referenced[id as usize].store(true, Ordering::Relaxed);
     }
@@ -4452,12 +4453,19 @@ pub fn is_thread_local_sym<E: Target>(ctx: &Context<E>, id: crate::symbol::Symbo
     }
 }
 
-/// Personality functions are referenced from __unwind_info through the
-/// GOT.
+/// The personalities of the lone CIEs the output keeps (see
+/// Context::keeps_lone_cie), which no unwind record or FDE names.
+fn lone_cie_personalities<E: Target>(ctx: &Context<E>) -> impl Iterator<Item = SymbolId> + '_ {
+    ctx.cies.iter().filter(|cie| ctx.keeps_lone_cie(cie)).filter_map(|cie| cie.personality)
+}
+
+/// Personality functions are referenced from __unwind_info, and from
+/// __eh_frame's CIEs, through the GOT.
 pub fn scan_unwind_personalities<E: Target>(ctx: &mut Context<E>) {
     let mut personalities: Vec<_> =
         ctx.unwind_records.iter().filter_map(|rec| rec.personality()).collect();
     personalities.extend(ctx.fdes.iter().filter_map(|fde| ctx.cies[fde.cie as usize].personality));
+    personalities.extend(lone_cie_personalities(ctx));
     for id in personalities {
         add_got(ctx, id);
     }

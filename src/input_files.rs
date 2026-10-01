@@ -2360,6 +2360,9 @@ pub struct Cie {
     pub lsda_enc: Option<u8>,
     pub output_offset: u32,
     pub is_alive: bool,
+    /// Whether an FDE of the input points at it, whether or not the
+    /// FDE is kept (see Context::keeps_lone_cie).
+    pub has_fdes: bool,
 }
 
 #[cfg(target_pointer_width = "64")]
@@ -2484,6 +2487,7 @@ impl StagedObject {
                     lsda_enc,
                     output_offset: 0,
                     is_alive: false,
+                    has_fdes: false,
                 });
             } else {
                 // The ID is how far back the CIE is from the ID itself,
@@ -2504,6 +2508,7 @@ impl StagedObject {
                 if len < 4 {
                     truncated_cfi(&mf.name, pos);
                 }
+                self.cies[cie].has_fdes = true;
                 fdes.push((input_addr, rec, cie as u32));
             }
             pos += 4 + len;

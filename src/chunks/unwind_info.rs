@@ -350,10 +350,12 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
 
 /// Whether the image has __unwind_info: ld-prime writes it for any
 /// unwind info, an FDE of a function that gets no entry of its own
-/// (not being code) too, listing each code atom then.
+/// (not being code) or a CIE no FDE points at too, listing each code
+/// atom then.
 pub fn is_needed<E: Target>(ctx: &Context<E>) -> bool {
+    let has_eh_frame = || !ctx.fdes.is_empty() || ctx.cies.iter().any(|c| ctx.keeps_lone_cie(c));
     !ctx.unwind_records.is_empty()
-        || (!ctx.fdes.is_empty() && ctx.isecs.par_iter().any(|isec| is_code_atom(ctx, isec)))
+        || (has_eh_frame() && ctx.isecs.par_iter().any(|isec| is_code_atom(ctx, isec)))
 }
 
 /// Whether __unwind_info covers addresses outside __TEXT, its own

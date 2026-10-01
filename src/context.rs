@@ -441,6 +441,18 @@ impl<E: Target> Context<E> {
         self.internal_obj == Some(idx)
     }
 
+    /// Whether a lone CIE - one no FDE of its object points at - goes
+    /// to the output: ld-prime carries it as any other atom of a live
+    /// file, so that a -r output keeps it too, but dead stripping drops
+    /// it. (A CIE whose FDEs all go, as those of functions with compact
+    /// unwind records do, goes with them.) Its personality, if it names
+    /// one, then gets a GOT slot for the CIE to point at.
+    pub fn keeps_lone_cie(&self, cie: &crate::input_files::Cie) -> bool {
+        !cie.has_fdes
+            && self.objs[cie.obj as usize].is_alive
+            && (self.args.relocatable || !self.args.dead_strip)
+    }
+
     /// Adds a section the linker synthesizes to the internal object,
     /// returning the (file, shndx) pair a subsection standing for it
     /// carries.

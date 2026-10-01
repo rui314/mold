@@ -1377,11 +1377,16 @@ fn lay_out_eh_frame<E: Target>(ctx: &mut Context<E>) {
         true
     });
 
-    if ctx.fdes.is_empty() {
-        return;
-    }
     for fde in &ctx.fdes {
         ctx.cies[fde.cie as usize].is_alive = true;
+    }
+    for i in 0..ctx.cies.len() {
+        if ctx.keeps_lone_cie(&ctx.cies[i]) {
+            ctx.cies[i].is_alive = true;
+        }
+    }
+    if ctx.fdes.is_empty() && !ctx.cies.iter().any(|cie| cie.is_alive) {
+        return;
     }
 
     // ld-prime lays the records out as the inputs have them: object by

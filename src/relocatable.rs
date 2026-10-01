@@ -842,12 +842,17 @@ impl EhRec {
 }
 
 /// __TEXT,__eh_frame's records and their offsets there: every input
-/// CIE and FDE whose function survives (a coalesced-away weak copy's
-/// goes with it), laid out per object in input order, as ld64 carries
-/// them. The loader kept the FDEs of compactly-encoded functions for
-/// this.
+/// FDE whose function survives (a coalesced-away weak copy's goes with
+/// it), the CIEs they point at and those no FDE does, laid out per
+/// object in input order, as ld64 carries them. The loader kept the
+/// FDEs of compactly-encoded functions for this.
 fn eh_frame_records<E: Target>(ctx: &Context<E>) -> Vec<(EhRec, u32)> {
     let mut per_obj: HashMap<u32, Vec<(u32, EhRec)>> = HashMap::new();
+    for (c, cie) in ctx.cies.iter().enumerate() {
+        if ctx.keeps_lone_cie(cie) {
+            per_obj.entry(cie.obj).or_default().push((cie.input_addr, EhRec::Cie(c)));
+        }
+    }
     let mut cies_used: HashSet<usize> = HashSet::new();
     for (f, fde) in ctx.fdes.iter().enumerate() {
         let isec = &ctx.isecs[fde.isec as usize];
