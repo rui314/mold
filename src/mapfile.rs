@@ -171,14 +171,15 @@ fn dependency_inputs<E: Target>(ctx: &Context<E>) -> Vec<(u8, Vec<u8>)> {
         .collect();
     named.sort_unstable();
     named.dedup();
-    let named: Vec<Vec<u8>> =
-        named.iter().map(|path| dependency_path(Path::new(crate::util::os_str(path)))).collect();
+    let named = dependency_paths(named.iter().map(|path| Path::new(crate::util::os_str(path))));
 
-    let mut reexports: Vec<Vec<u8>> =
-        ctx.reexport_files.iter().map(|path| dependency_path(path)).collect();
+    let mut reexports = dependency_paths(ctx.reexport_files.iter().map(PathBuf::as_path));
     reexports.sort_unstable();
     reexports.dedup();
-    reexports.retain(|path| !named.contains(path));
+    {
+        let named: hashbrown::HashSet<&[u8]> = named.iter().map(Vec::as_slice).collect();
+        reexports.retain(|path| !named.contains(path.as_slice()));
+    }
     let reexports = reexports.into_iter().flat_map(|path| [path.clone(), path]);
     named.into_iter().chain(reexports).map(|path| (0x10, path)).collect()
 }
@@ -192,6 +193,53 @@ fn dependency_path(path: &Path) -> Vec<u8> {
         return path_bytes(&real).to_vec();
     }
     path_bytes(path).to_vec()
+}
+
+/// dependency_path of each of `paths`, which resolves the directory of
+/// the relative ones once each, rather than every path's components: a
+/// file that is no symbolic link is in its directory's real path, by
+/// the name the directory lists it by (realpath(3) gives a name as the
+/// directory has it - on a case-insensitive file system, in its case,
+/// not the path's -, and only an exact match is taken). The others are
+/// resolved one by one, as are those of a directory listed too long
+/// without them.
+fn dependency_paths<'a>(paths: impl Iterator<Item = &'a Path>) -> Vec<Vec<u8>> {
+    use crate::util::os_str;
+    use std::os::unix::ffi::OsStrExt;
+    let split = |path: &'a [u8]| match memchr::memrchr(b'/', path) {
+        Some(slash) => (&path[..slash], &path[slash + 1..]),
+        None => (&b"."[..], path),
+    };
+    let paths: Vec<&[u8]> = paths.map(path_bytes).collect();
+    let mut dirs: hashbrown::HashMap<&[u8], hashbrown::HashSet<&[u8]>> = hashbrown::HashMap::new();
+    for &path in paths.iter().filter(|path| !path.starts_with(b"/")) {
+        let (dir, leaf) = split(path);
+        if !matches!(leaf, b"" | b"." | b"..") {
+            dirs.entry(dir).or_default().insert(leaf);
+        }
+    }
+    // (An absolute path's directory is no relative one's.)
+    let mut real: hashbrown::HashMap<(&[u8], &[u8]), Vec<u8>> = hashbrown::HashMap::new();
+    for (dir, mut wanted) in dirs {
+        let Ok(real_dir) = std::fs::canonicalize(os_str(dir)) else { continue };
+        let Ok(entries) = std::fs::read_dir(os_str(dir)) else { continue };
+        for entry in entries.take(64 + 32 * wanted.len()).flatten() {
+            let name = entry.file_name();
+            let Some(leaf) = wanted.take(name.as_bytes()) else { continue };
+            if entry.file_type().is_ok_and(|t| !t.is_symlink()) {
+                real.insert((dir, leaf), path_bytes(&real_dir.join(&name)).to_vec());
+            }
+            if wanted.is_empty() {
+                break;
+            }
+        }
+    }
+    (paths.into_iter())
+        .map(|path| match real.get(&split(path)) {
+            Some(real) => real.clone(),
+            None => dependency_path(Path::new(os_str(path))),
+        })
+        .collect()
 }
 
 /// -trace_file, -trace_file_shared_cache and -trace_symbols_file: the

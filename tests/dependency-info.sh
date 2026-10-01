@@ -70,6 +70,22 @@ $mold -r -arch $ARCH -o $t/r.o $t/link/a.o -dependency_info $t/deps-r
 entries $t/deps-r > $t/deps-r.txt
 grep -qx "40 $(cd $t && pwd -P)/r.o" $t/deps-r.txt
 
+# A relative path that is a symbolic link resolves to the file it links
+# to, and one spelled in another case than the file's, where the file
+# system ignores case, to the file's name in its own case.
+rm -f $t/dir/c.o
+ln -s b.o $t/dir/c.o
+$mold -r -arch $ARCH -o $t/r.o $t/link/a.o $t/link/c.o -dependency_info $t/deps-r
+entries $t/deps-r > $t/deps-r.txt
+grep -qx "10 $dir/a.o" $t/deps-r.txt
+grep -qx "10 $dir/b.o" $t/deps-r.txt
+if [ -e $t/LINK/A.O ]; then
+  $mold -r -arch $ARCH -o $t/r.o $t/LINK/A.O $t/link/B.O -dependency_info $t/deps-r
+  entries $t/deps-r > $t/deps-r.txt
+  grep -qx "10 $dir/a.o" $t/deps-r.txt
+  grep -qx "10 $dir/b.o" $t/deps-r.txt
+fi
+
 # The files the searches for inputs looked for and didn't find are
 # listed as missing, each once: for -lfoo, the stub, the dylib, the .so
 # and the archive in each directory until one is there, and the dylib
