@@ -562,7 +562,11 @@ pub(crate) fn is_coalesced_away<E: Target>(ctx: &Context<E>, isec: usize) -> boo
 /// an empty name as the closing one, so a -r output without them
 /// crashed it. N_OSO then points at the object (or "archive(member)"),
 /// as an absolute path; a fat file's slice goes by the file's own.
-fn object_stabs_opening<E: Target>(ctx: &Context<E>, obj: &ObjectFile, cwd: &Path) -> Vec<Stab> {
+pub(crate) fn object_stabs_opening<E: Target>(
+    ctx: &Context<E>,
+    obj: &ObjectFile,
+    cwd: &Path,
+) -> Vec<Stab> {
     let mut out = Vec::new();
     let (dir, name) = match crate::dwarf::compile_unit_name(obj.mf.data(), &obj.sect_hdrs) {
         Some((dir, name)) => (dir, name),

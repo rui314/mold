@@ -168,6 +168,8 @@ pub enum ChunkId {
     ExternRelocs,
     FunctionStarts,
     DataInCode,
+    /// LC_ATOM_INFO's record of a -make_mergeable dylib's atoms.
+    AtomInfo,
     SplitInfo,
     LazyLoadInfo,
     IndirectSymtab,
@@ -180,7 +182,7 @@ pub enum ChunkId {
 impl ChunkId {
     /// The chunks that exist at most once, in the order `pack` numbers
     /// them.
-    const UNITS: [Self; 33] = [
+    const UNITS: [Self; 34] = [
         Self::MachHeader,
         Self::Stubs,
         Self::StubHelper,
@@ -208,6 +210,7 @@ impl ChunkId {
         Self::ExternRelocs,
         Self::FunctionStarts,
         Self::DataInCode,
+        Self::AtomInfo,
         Self::SplitInfo,
         Self::LazyLoadInfo,
         Self::IndirectSymtab,
@@ -344,6 +347,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, id: ChunkId, buf: &mut [u8]) {
         ChunkId::ExportTrie => export_trie::copy_buf(ctx, buf),
         ChunkId::FunctionStarts => function_starts::copy_buf(ctx, buf),
         ChunkId::DataInCode => data_in_code::copy_buf(ctx, buf),
+        ChunkId::AtomInfo => crate::make_mergeable::copy_buf(ctx, buf),
         ChunkId::SplitInfo => split_info::copy_buf(ctx, buf),
         ChunkId::LazyLoadInfo => lazy_load_info::copy_buf(ctx, buf),
         ChunkId::IndirectSymtab => indirect_symtab::copy_buf(ctx, buf),
@@ -923,6 +927,9 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
     // tooling takes its absence as "old linker".
     if ctx.chunks.contains(&ChunkId::DataInCode) {
         vec.push(create_linkedit_data_cmd(LC_DATA_IN_CODE, &ctx.data_in_code.hdr));
+    }
+    if ctx.chunks.contains(&ChunkId::AtomInfo) {
+        vec.push(create_linkedit_data_cmd(LC_ATOM_INFO, &ctx.atom_info.hdr));
     }
     if ctx.chunks.contains(&ChunkId::CodeSignature) {
         vec.push(create_code_signature_cmd(ctx));

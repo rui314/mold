@@ -3320,6 +3320,12 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     if args.make_mergeable && args.output_type != MH_DYLIB {
         fatal!("-make_mergeable can only be used when creating a dynamic library");
     }
+    // A mergeable dylib's code is linked again where it is merged, by
+    // the fixups of the instructions it has, which an applied hint may
+    // have rewritten (ld-prime applies none anywhere).
+    if args.make_mergeable {
+        args.ignore_optimization_hints = true;
+    }
     // What is dead is known only once the final link sees every
     // reference.
     if args.relocatable && args.dead_strip {

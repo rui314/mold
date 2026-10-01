@@ -77,6 +77,7 @@ macro_rules! chunk_header {
             ChunkId::ExportTrie => &$($mutable)? $ctx.export_trie.hdr,
             ChunkId::FunctionStarts => &$($mutable)? $ctx.function_starts.hdr,
             ChunkId::DataInCode => &$($mutable)? $ctx.data_in_code.hdr,
+            ChunkId::AtomInfo => &$($mutable)? $ctx.atom_info.hdr,
             ChunkId::SplitInfo => &$($mutable)? $ctx.split_info.hdr,
             ChunkId::LazyLoadInfo => &$($mutable)? $ctx.lazy_load_info.hdr,
             ChunkId::LocalRelocs => &$($mutable)? $ctx.local_relocs.hdr,
@@ -212,6 +213,7 @@ pub struct Context<E: Target> {
     pub export_trie: ExportTrieSection,
     pub function_starts: FunctionStartsSection,
     pub data_in_code: DataInCodeSection,
+    pub atom_info: crate::make_mergeable::AtomInfoSection,
     pub split_info: SplitInfoSection,
     pub lazy_load_info: LazyLoadInfoSection,
     pub local_relocs: LocalRelocsSection,
@@ -364,6 +366,7 @@ impl<E: Target> Context<E> {
             export_trie: ExportTrieSection::new(),
             function_starts: FunctionStartsSection::new(),
             data_in_code: DataInCodeSection::new(),
+            atom_info: crate::make_mergeable::AtomInfoSection::new(),
             split_info: SplitInfoSection::new(),
             lazy_load_info: LazyLoadInfoSection::new(),
             local_relocs: LocalRelocsSection::new(),
@@ -1020,6 +1023,14 @@ impl<E: Target> Context<E> {
     /// one takes the literal's bytes from a symbol beside it, leaving it
     /// unnamed (see atom_ordinal).
     pub fn atom_label(&self, id: usize) -> Option<&'static str> {
+        let isec = &self.isecs[id];
+        let obj = &self.objs[isec.file as usize];
+        self.atom_label_index(id).map(|i| self.symbols[obj.symbols[i]].name())
+    }
+
+    /// The index in its object's symbol table of the symbol that names
+    /// the atom (subsection) `id` (see atom_label).
+    pub fn atom_label_index(&self, id: usize) -> Option<usize> {
         use crate::input_files::is_private_label;
         let isec = &self.isecs[id];
         let obj = &self.objs[isec.file as usize];
@@ -1028,23 +1039,25 @@ impl<E: Target> Context<E> {
             .nlists
             .iter()
             .zip(&obj.symbols)
-            .filter(|(n, _)| {
+            .enumerate()
+            .filter(|(_, (n, _))| {
                 !n.is_stab()
                     && n.n_type() == crate::macho::N_SECT
                     && n.n_sect as u32 == isec.shndx + 1
                     && n.n_value == isec.input_addr as u64
             })
-            .map(|(n, &id)| (n, self.symbols[id].name()));
+            .map(|(i, (n, &id))| (i, n, self.symbols[id].name()));
         if merged
-            && labels.clone().any(|(_, name)| is_private_label(name) && !name.starts_with("ltmp"))
+            && labels
+                .clone()
+                .any(|(_, _, name)| is_private_label(name) && !name.starts_with("ltmp"))
         {
             return None;
         }
         labels
-            .filter(|(_, name)| !(merged && is_private_label(name)))
-            .map(|(n, name)| (crate::input_files::atom_name_rank(n, name), name))
-            .max()
-            .map(|(_, name)| name)
+            .filter(|(_, _, name)| !(merged && is_private_label(name)))
+            .max_by_key(|&(i, n, name)| (crate::input_files::atom_name_rank(n, name), name, i))
+            .map(|(i, _, _)| i)
     }
 
     /// The name ld-prime gives the atom (subsection) `id` in a

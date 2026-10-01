@@ -48,7 +48,29 @@ not $CC --ld-path=$mold -shared -o $t/a.dylib $t/a.o -Wl,-make_mergeable \
   -Wl,-flat_namespace -Wl,-install_name,/usr/lib/liba.dylib 2> $t/log11
 grep -q "Shared cache eligible dylibs cannot use '-flat_namespace'" $t/log11
 
-# mold writes no LC_ATOM_INFO, nor the hook, yet.
+# The atoms are in a table at the start of __LINKEDIT after the
+# function starts and data in code, and its load command follows
+# theirs. mold has no debug hook yet.
+$CC --ld-path=$mold -shared -o $t/a.dylib $t/a.o -Wl,-make_mergeable
+otool -l $t/a.dylib > $t/cmds
+grep -A3 LC_ATOM_INFO $t/cmds > $t/atom-info
+grep -B5 LC_ATOM_INFO $t/cmds | grep -q LC_DATA_IN_CODE
+dataoff=$(grep dataoff $t/atom-info | awk '{print $2}')
+dice=$(grep -A3 LC_DATA_IN_CODE $t/cmds | grep dataoff | awk '{print $2}')
+dicesize=$(grep -A3 LC_DATA_IN_CODE $t/cmds | grep datasize | awk '{print $2}')
+[ $dataoff = $((dice + dicesize)) ]
+dd if=$t/a.dylib bs=1 skip=$dataoff count=8 2> /dev/null | grep -q nldprecr
+
+# Its code is linked again where it is merged, by the fixups of what
+# the objects had: an applied optimization hint would have changed it.
+cat <<EOF | $CC -o $t/c.o -c -O2 -xc -
+int counter;
+int get(void) { return counter; }
+EOF
+$CC --ld-path=$mold -shared -o $t/c.dylib $t/c.o -Wl,-make_mergeable
+otool -tv $t/c.dylib > $t/disasm
+not grep -q 'nop' $t/disasm
+
 cat <<EOF | $CC -o $t/b.o -c -xobjective-c -
 #import <Foundation/Foundation.h>
 __attribute__((visibility("hidden")))
@@ -58,14 +80,10 @@ __attribute__((visibility("hidden")))
 @end
 EOF
 if $mold -v 2>&1 | grep -q mold-macho; then
-  not $CC --ld-path=$mold -shared -o $t/a.dylib $t/a.o -Wl,-make_mergeable 2> $t/log12
-  grep -q -- '-make_mergeable is not supported' $t/log12
   not $CC --ld-path=$mold -shared -o $t/b.dylib $t/b.o -framework Foundation \
     -Wl,-add_mergeable_debug_hook 2> $t/log13
   grep -q -- '-add_mergeable_debug_hook is not supported' $t/log13
 else
-  $CC --ld-path=$mold -shared -o $t/a.dylib $t/a.o -Wl,-make_mergeable
-  otool -l $t/a.dylib | grep -q LC_ATOM_INFO
   $CC --ld-path=$mold -shared -o $t/b.dylib $t/b.o -framework Foundation \
     -Wl,-add_mergeable_debug_hook
   nm $t/b.dylib | grep -q imageNameHook

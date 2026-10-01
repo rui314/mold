@@ -24,7 +24,8 @@
 //! dylibs the mergeable one links stand by their install names (see
 //! passes::add_merged_dependencies). What ld-prime keeps of the objects
 //! is all there is: no data-in-code entries and no optimization hints
-//! survive, in its merged images either.
+//! survive, in its merged images either. make_mergeable writes the
+//! record in a dylib linked with -make_mergeable.
 
 use std::path::Path;
 
@@ -36,16 +37,16 @@ use crate::target::Target;
 /// What ld-prime's -make_mergeable writes: an atom file whose atoms
 /// point into the image around it ("nldpatom" and "nldprdcr" are the
 /// plain and the image-backed kinds it reads besides).
-const MAGIC: &[u8; 8] = b"nldprecr";
+pub(crate) const MAGIC: &[u8; 8] = b"nldprecr";
 
 /// The atom file header's size in file version 3; the atoms follow it
 /// directly.
-const HEADER_SIZE: usize = 0xf8;
-const ATOM_SIZE: usize = 40;
-const FIXUP_SIZE: usize = 16;
-const SECTION_SIZE: usize = 44;
-const DYLIB_INFO_SIZE: usize = 0x88;
-const DEBUG_INFO_SIZE: usize = 0x98;
+pub(crate) const HEADER_SIZE: usize = 0xf8;
+pub(crate) const ATOM_SIZE: usize = 40;
+pub(crate) const FIXUP_SIZE: usize = 16;
+pub(crate) const SECTION_SIZE: usize = 44;
+pub(crate) const DYLIB_INFO_SIZE: usize = 0x88;
+pub(crate) const DEBUG_INFO_SIZE: usize = 0x98;
 
 /// An atom's kind (bits 3-7 of its flags word).
 pub mod kind {
@@ -75,7 +76,7 @@ pub mod scope {
 }
 
 /// The content types whose atoms need more than their section.
-mod ctype {
+pub(crate) mod ctype {
     pub const CFI: u8 = 31;
     pub const OBJC_METHOD_LIST: u8 = 15;
     pub const OBJC_IMAGE_INFO: u8 = 43;
@@ -83,7 +84,7 @@ mod ctype {
 }
 
 /// The fixup kinds (ld-prime's Fixup::Kind), generic and per target.
-mod fk {
+pub(crate) mod fk {
     pub const KEEP_ALIVE: u16 = 1;
     pub const PTR64: u16 = 2;
     pub const PTR32: u16 = 3;
@@ -129,7 +130,7 @@ mod fk {
 
 /// How a fixup kind uses its last word and where its addend is
 /// (ld-prime's Fixup::KindInfo extrasUsage).
-fn extras_usage(kind: u16) -> u8 {
+pub(crate) fn extras_usage(kind: u16) -> u8 {
     use fk::*;
     match kind {
         0
@@ -257,9 +258,9 @@ pub struct Dependency {
 /// AtomFileFlags bit 31: the dylib defines Objective-C or Swift
 /// classes, for which ld-prime adds its hook to a merging image.
 pub const FLAG_HAS_CLASSES: u64 = 1 << 31;
-const FLAG_HAS_OBJC_INFO: u64 = 1 << 26;
-const FLAG_SIGNED_CLASS_RO: u64 = 1 << 28;
-const FLAG_CATEGORY_CLASS_PROPERTIES: u64 = 1 << 29;
+pub(crate) const FLAG_HAS_OBJC_INFO: u64 = 1 << 26;
+pub(crate) const FLAG_SIGNED_CLASS_RO: u64 = 1 << 28;
+pub(crate) const FLAG_CATEGORY_CLASS_PROPERTIES: u64 = 1 << 29;
 
 /// A symbol name as the linker keeps one.
 fn symbol_str(name: &'static [u8]) -> &'static str {
@@ -596,7 +597,7 @@ impl Reader<'_> {
 /// The section ld-prime gives an atom of a content type: its segment
 /// and section names and Mach-O flags, as an object would have them
 /// (its StandardSection::fromContentType).
-fn standard_section(ct: u8) -> Option<(&'static str, &'static str, u32)> {
+pub(crate) fn standard_section(ct: u8) -> Option<(&'static str, &'static str, u32)> {
     const TEXT: u32 = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
     Some(match ct {
         2 => ("__TEXT", "__text", TEXT),
@@ -767,6 +768,7 @@ enum SymPlace {
     Defined { sect: usize, offset: u64 },
     Undefined,
     Common { size: u64, p2align: u8 },
+    Absolute(u64),
 }
 
 struct Symbol {
@@ -846,7 +848,7 @@ impl<E: Target> Synth<'_, E> {
         use kind::*;
         let atom = &self.af.atoms[i];
         if !matches!(atom.kind, REGULAR | WEAK_DEF | RESOLVER | ANON | ANON_COAL_BY_CONTENT) {
-            if matches!(atom.kind, ABSOLUTE | 13..=17) {
+            if matches!(atom.kind, 13..=17) {
                 fatal!("{}: unsupported atom kind {} in LC_ATOM_INFO", path.display(), atom.kind);
             }
             return;
@@ -994,6 +996,18 @@ impl<E: Target> Synth<'_, E> {
                     name: name.to_vec(),
                     place: SymPlace::Common { size: atom.size as u64, p2align: atom.p2align },
                     n_type: n_type | N_EXT,
+                    n_desc,
+                }));
+            }
+            // Its value is its content, eight bytes.
+            ABSOLUTE => {
+                let (Some(name), Some(value)) = (name, atom.content) else { return };
+                let value = value.get(..8).map_or(0, |v| read64(v, 0));
+                let (n_type, n_desc) = scope_bits(atom.scope);
+                self.sym_of[i] = Some(self.add_symbol(Symbol {
+                    name: name.to_vec(),
+                    place: SymPlace::Absolute(value),
+                    n_type,
                     n_desc,
                 }));
             }
@@ -1464,7 +1478,7 @@ impl<E: Target> Synth<'_, E> {
         let name = strtab.add(&sym.name);
         let (sect, offset) = match sym.place {
             SymPlace::Common { .. } => return Some((u64::MAX, vec![entry(N_GSYM, name, 0, 0)])),
-            SymPlace::Undefined => return None,
+            SymPlace::Undefined | SymPlace::Absolute(_) => return None,
             SymPlace::Defined { sect, offset } => (sect, offset),
         };
         let section = &self.sections[sect];
@@ -1495,8 +1509,8 @@ impl<E: Target> Synth<'_, E> {
     fn symbol_table(&self) -> SymbolTable {
         let kind = |s: &Symbol| match s.place {
             SymPlace::Undefined | SymPlace::Common { .. } => 2,
-            SymPlace::Defined { .. } if s.n_type & N_EXT != 0 => 1,
-            SymPlace::Defined { .. } => 0,
+            SymPlace::Defined { .. } | SymPlace::Absolute(_) if s.n_type & N_EXT != 0 => 1,
+            SymPlace::Defined { .. } | SymPlace::Absolute(_) => 0,
         };
         let mut order: Vec<usize> = (0..self.symbols.len()).collect();
         order.sort_by_key(|&i| kind(&self.symbols[i]));
@@ -1540,6 +1554,10 @@ impl<E: Target> Synth<'_, E> {
             SymPlace::Common { size, p2align } => {
                 n.n_value = size;
                 n.n_desc |= (p2align as u16 & 0xf) << 8;
+            }
+            SymPlace::Absolute(value) => {
+                n.n_type |= N_ABS;
+                n.n_value = value;
             }
         }
         table.index[i] = table.nlists.len() as u32;

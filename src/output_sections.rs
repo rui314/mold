@@ -2266,6 +2266,9 @@ fn add_linkedit_chunks<E: Target>(ctx: &mut Context<E>) {
     if ctx.args.data_in_code_info {
         ctx.chunks.push(ChunkId::DataInCode);
     }
+    if ctx.args.make_mergeable {
+        ctx.chunks.push(ChunkId::AtomInfo);
+    }
     ctx.chunks.push(ChunkId::Symtab);
     if ctx.args.is_kext() {
         ctx.chunks.push(ChunkId::ExternRelocs);

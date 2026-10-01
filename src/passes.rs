@@ -1022,9 +1022,6 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
 /// option is -reexport_*. (A -r output and an image that links no dylib
 /// ignore the library.)
 pub fn check_mergeable_libraries<E: Target>(ctx: &Context<E>) {
-    if ctx.args.make_mergeable {
-        fatal!("-make_mergeable is not supported");
-    }
     if ctx.args.add_mergeable_debug_hook {
         fatal!("-add_mergeable_debug_hook is not supported");
     }
@@ -6291,6 +6288,7 @@ fn layout_segment<E: Target>(
             | ChunkId::ExportTrie
             | ChunkId::FunctionStarts
             | ChunkId::DataInCode
+            | ChunkId::AtomInfo
             | ChunkId::SplitInfo
             | ChunkId::ExternRelocs => 3,
             ChunkId::IndirectSymtab => 2,
@@ -6804,6 +6802,10 @@ fn build_linkedit_tables<E: Target>(ctx: &mut Context<E>) {
     ctx.export_trie.hdr.size = trie.len() as u64;
     ctx.export_trie.contents = trie;
     collect_relocations(ctx);
+    if ctx.chunks.contains(&ChunkId::AtomInfo) {
+        let _t = ctx.timer("atom_info");
+        crate::make_mergeable::build(ctx);
+    }
 }
 
 /// Resolves the entry point symbol.
