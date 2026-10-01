@@ -50,6 +50,9 @@ pub struct TbdFile {
     /// in platform order. The one read is the link's, or else the
     /// first (which a firmware link takes).
     pub platforms: Vec<u32>,
+    /// The minimum OS version of the target read, which only a version 5
+    /// file gives (min_deployment); 0 for none.
+    pub minos: u32,
 }
 
 impl TbdFile {
@@ -338,6 +341,15 @@ fn parse_json(
             && let Some(s) = v.get("version").and_then(Json::str)
         {
             tbd.compatibility_version = parse_version(s);
+        }
+        let info = lib.get("target_info").map(Json::arr).unwrap_or(&[]);
+        if let Some(s) = info
+            .iter()
+            .find(|t| t.get("target").and_then(Json::str).and_then(self::target) == Some(target))
+            .and_then(|t| t.get("min_deployment"))
+            .and_then(Json::str)
+        {
+            tbd.minos = parse_version(s);
         }
         for group in lib.get("parent_umbrellas").map(Json::arr).unwrap_or(&[]) {
             if applies(group, target) {

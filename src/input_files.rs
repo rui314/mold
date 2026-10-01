@@ -396,6 +396,12 @@ pub struct DylibFile {
     pub install_name: Vec<u8>,
     pub current_version: u32,
     pub compatibility_version: u32,
+    /// The minimum OS version the library was built for on the link's
+    /// platform, 0 if it names none.
+    pub minos: u32,
+    /// Found in the SDK, whose libraries' minimum OS versions ld-prime
+    /// doesn't check (see passes::check_input_versions).
+    pub in_sdk: bool,
     /// The 1-based ordinal used to refer to this dylib in bind records;
     /// BIND_SPECIAL_DYLIB_MAIN_EXECUTABLE (-1) for a -bundle_loader.
     pub dylib_idx: i32,
@@ -3235,7 +3241,7 @@ fn load_reexports<E: Target>(
                     ctx.dylibs[idx].is_implicit = true;
                     continue;
                 }
-                check_dylib_versions(ctx, binary);
+                check_dylib_platform(ctx, binary);
                 let mut dylib = read_dylib_binary(binary);
                 walk.moved.extend(interpret_binary_ld_symbols(ctx, &mut dylib).moved);
                 if map {
@@ -3413,9 +3419,11 @@ pub fn is_allowed_client<E: Target>(ctx: &Context<E>, dylib: &DylibIdentity) -> 
     umbrella == Some(name.as_slice()) || dylib.clients.iter().any(|c| c.starts_with(&name))
 }
 
-/// Check binary dependencies, including private reexports whose symbols
-/// are merged into their parent's export set instead of a DylibFile.
-fn check_dylib_versions<E: Target>(ctx: &Context<E>, mf: &MappedFile) {
+/// Checks that a dylib binary - a private re-export, whose exports merge
+/// into its parent's, too - was built for the link's platform, and
+/// returns the minimum OS version it names for that platform (0 for
+/// none).
+fn check_dylib_platform<E: Target>(ctx: &Context<E>, mf: &MappedFile) -> u32 {
     let hdr = MachHeader::read_from(mf.data());
     let mut versions = Vec::new();
     let mut off = size_of::<MachHeader>();
@@ -3428,16 +3436,9 @@ fn check_dylib_versions<E: Target>(ctx: &Context<E>, mf: &MappedFile) {
         off += lc.cmdsize as usize;
     }
     if let Some(version) = versions.iter().find(|v| v.platform == ctx.args.platform) {
-        if ctx.args.platform_minos != 0 && version.minos > ctx.args.platform_minos {
-            crate::warn!(
-                "building for {}-{}, but linking with dylib '{}' which was built for newer version {}",
-                platform_name(ctx.args.platform),
-                format_version(ctx.args.platform_minos),
-                mf.name.display(),
-                format_version(version.minos)
-            );
-        }
-    } else if let Some(first) = versions.first() {
+        return version.minos;
+    }
+    if let Some(first) = versions.first() {
         // A zippered dylib has a build version for macOS and one for
         // Mac Catalyst.
         let platforms: Vec<u32> = versions.iter().map(|v| v.platform).collect();
@@ -3449,6 +3450,7 @@ fn check_dylib_versions<E: Target>(ctx: &Context<E>, mf: &MappedFile) {
             };
         check_dylib_platforms(ctx, mf, &platforms, &name);
     }
+    0
 }
 
 /// Reports a dylib built for none of the link's platform - for
@@ -3476,7 +3478,7 @@ fn check_dylib_platforms<E: Target>(
 }
 
 pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFile) -> usize {
-    check_dylib_versions(ctx, mf);
+    let minos = check_dylib_platform(ctx, mf);
     let mut dylib = read_dylib_binary(mf);
     if dylib.install_name.is_empty() {
         fatal!("{}: dylib has no LC_ID_DYLIB", mf.name.display());
@@ -3523,6 +3525,8 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
             install_name,
             current_version,
             compatibility_version,
+            minos,
+            in_sdk: false,
             dylib_idx: next_dylib_ordinal(ctx),
             is_bundle_loader: false,
             priority,
@@ -3728,6 +3732,8 @@ pub fn parse_bundle_loader<E: Target>(ctx: &mut Context<E>, mf: &'static MappedF
             install_name: crate::util::path_bytes(&mf.name).to_vec(),
             current_version: encode_version(1, 0, 0),
             compatibility_version: encode_version(1, 0, 0),
+            minos: 0,
+            in_sdk: false,
             dylib_idx: BIND_SPECIAL_DYLIB_MAIN_EXECUTABLE,
             is_bundle_loader: true,
             priority,
@@ -4222,6 +4228,8 @@ fn register_tbd<E: Target>(
             install_name: tbd.install_name.into_bytes(),
             current_version: tbd.current_version,
             compatibility_version: tbd.compatibility_version,
+            minos: tbd.minos,
+            in_sdk: false,
             dylib_idx: next_dylib_ordinal(ctx),
             is_bundle_loader: false,
             priority,
@@ -4271,6 +4279,8 @@ fn add_moved_dylibs<E: Target>(
                     install_name: export.install_name.as_bytes().to_vec(),
                     current_version: export.current_version,
                     compatibility_version: export.compatibility_version,
+                    minos: 0,
+                    in_sdk: false,
                     dylib_idx: next_dylib_ordinal(ctx),
                     is_bundle_loader: false,
                     priority,

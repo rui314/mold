@@ -253,6 +253,7 @@ fn name_dylib<E: Target>(ctx: &mut Context<E>, idx: usize, mf: &MappedFile, rc: 
     dylib.is_reexported |= rc.reexport;
     dylib.is_needed |= rc.needed;
     dylib.is_upward |= rc.upward;
+    dylib.in_sdk = rc.sdk;
     dylib.is_implicit = false;
 }
 
@@ -277,6 +278,8 @@ struct ReaderContext {
     lazy: bool,
     /// Named by an object's auto-link option: a hint.
     autolinked: bool,
+    /// Found in the SDK (see found_in_sdk).
+    sdk: bool,
 }
 
 impl ReaderContext {
@@ -291,6 +294,7 @@ impl ReaderContext {
             upward: self.upward || other.upward,
             lazy: self.lazy || other.lazy,
             autolinked: self.autolinked && other.autolinked,
+            sdk: self.sdk || other.sdk,
         }
     }
 }
@@ -639,7 +643,7 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
     warn_duplicate_libraries(ctx);
     let inputs = std::mem::take(&mut ctx.args.inputs);
     let paths = find_inputs(ctx, &inputs);
-    let namings = library_namings(&inputs, &paths);
+    let namings = library_namings(&ctx.args, &inputs, &paths);
 
     // Warm the .tbd parse cache: parse every input that is a stub
     // library on all cores, then do the same for the stubs they
@@ -766,6 +770,31 @@ fn find_file<E: Target>(ctx: &Context<E>, path: &Path) -> Option<PathBuf> {
     candidates.into_iter().find(|path| path.exists())
 }
 
+/// Whether the library an option names was `found` in the SDK, whose
+/// libraries ld-prime trusts to suit the deployment target: for an
+/// option naming the library's path, under a -syslibroot joined to it
+/// (see find_file); otherwise by a search (see searched_in_sdk).
+fn found_in_sdk(args: &Args, arg: &InputArg, found: &Path) -> bool {
+    use InputArg::*;
+    match arg {
+        WeakFile(path) | ReexportFile(path) | NeededFile(path) | UpwardFile(path)
+        | LazyFile(path) => found != path && found != path.with_extension("tbd"),
+        _ => searched_in_sdk(args, found),
+    }
+}
+
+/// Whether a library search `found` a file in the SDK: in a directory
+/// under a -syslibroot as their paths spell them, the root joined to the
+/// directory or not (-L$SDK/usr/lib, say). ld64 drops the roots when
+/// the last one is /.
+fn searched_in_sdk(args: &Args, found: &Path) -> bool {
+    let roots = match args.syslibroot.last() {
+        Some(root) if root.as_os_str() == "/" => &[][..],
+        _ => &args.syslibroot[..],
+    };
+    roots.iter().any(|root| path_bytes(found).starts_with(path_bytes(root)))
+}
+
 /// What a library option says of the library it names: the flags it
 /// gives the file, whether the library is a framework, and its name as
 /// the option gives it (a path, for the options that take one).
@@ -818,7 +847,11 @@ fn library_option(arg: &InputArg) -> Option<(ReaderContext, bool, &OsStr)> {
 /// collect_file). ld-prime stops at the first library it doesn't find,
 /// -force_load's among them, and at a naming check_naming refuses; it
 /// looks the frameworks up only after all of the libraries.
-fn library_namings(inputs: &[InputArg], paths: &[Option<PathBuf>]) -> Vec<Option<ReaderContext>> {
+fn library_namings(
+    args: &Args,
+    inputs: &[InputArg],
+    paths: &[Option<PathBuf>],
+) -> Vec<Option<ReaderContext>> {
     let mut merged: hashbrown::HashMap<(bool, &OsStr), ReaderContext> = hashbrown::HashMap::new();
     let mut keys = Vec::with_capacity(inputs.len());
     let mut missing_framework = None;
@@ -852,7 +885,7 @@ fn library_namings(inputs: &[InputArg], paths: &[Option<PathBuf>]) -> Vec<Option
                         path.display()
                     );
                 }
-                *all = all.union(rc);
+                *all = all.union(ReaderContext { sdk: found_in_sdk(args, arg, path), ..rc });
                 if missing_framework.is_none() {
                     check_naming(*all, framework, name);
                 }
@@ -1047,7 +1080,8 @@ fn autolinked_input<E: Target>(
                     crate::util::display(name)
                 ));
             }
-            (path, rc)
+            let sdk = path.as_ref().is_some_and(|path| searched_in_sdk(&ctx.args, path));
+            (path, ReaderContext { sdk, ..rc })
         }
         [flag, name] if flag.ends_with(b"framework") => {
             let path = find_framework(ctx, os_str(name));
@@ -1060,7 +1094,8 @@ fn autolinked_input<E: Target>(
                     crate::util::display(name)
                 ));
             }
-            (path, rc)
+            let sdk = path.as_ref().is_some_and(|path| searched_in_sdk(&ctx.args, path));
+            (path, ReaderContext { sdk, ..rc })
         }
         [flag, file] if flag == b"-force_load" => {
             (Some(PathBuf::from(os_str(file))), ReaderContext { force_load: true, ..rc })
@@ -2019,13 +2054,37 @@ fn initializers<E: Target>(ctx: &Context<E>) -> Vec<(&str, String)> {
 
 /// Validates only objects selected by resolution, including the LTO
 /// output. Unused archive members must not cause errors or warnings.
+/// ld-prime checks the dylibs the link names along with them, in input
+/// order, used or not; not those they re-export, nor those of the SDK,
+/// built for newer OS versions as a matter of course.
 pub fn check_input_versions<E: Target>(ctx: &Context<E>) {
     // A -r or -preload output for no platform takes any object.
     let (platform, minos) = (ctx.args.platform, ctx.args.platform_minos);
     if platform == 0 {
         return;
     }
+    let mut dylibs: Vec<(u32, &input_files::DylibFile)> = ctx
+        .dylibs
+        .iter()
+        .filter(|d| !d.is_implicit && !d.in_sdk && minos != 0 && d.minos > minos)
+        .map(|d| (d.named_at.as_ref().map_or(d.priority, |(priority, _)| *priority), d))
+        .collect();
+    dylibs.sort_by_key(|&(priority, _)| priority);
+    let mut dylibs = dylibs.into_iter().peekable();
+    let warn_dylib = |dylib: &input_files::DylibFile| {
+        crate::warn!(
+            "building for {}-{}, but linking with dylib '{}' which was built for newer version {}",
+            platform_name(platform),
+            format_version(minos),
+            crate::util::display(&dylib.install_name),
+            format_version(dylib.minos)
+        );
+    };
+
     for (i, obj) in ctx.objs.iter().enumerate().filter(|(_, obj)| obj.is_alive) {
+        while let Some((_, dylib)) = dylibs.next_if(|&(priority, _)| priority < obj.priority) {
+            warn_dylib(dylib);
+        }
         // An object may declare more than one platform; use the
         // deployment target for the platform being linked. ld-prime
         // takes one with no version command (an old one, or one
@@ -2065,6 +2124,9 @@ pub fn check_input_versions<E: Target>(ctx: &Context<E>) {
                 format_version(minos)
             );
         }
+    }
+    for (_, dylib) in dylibs {
+        warn_dylib(dylib);
     }
 }
 
