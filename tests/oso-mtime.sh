@@ -30,3 +30,10 @@ $CC --ld-path=$mold -o $t/exe3 $t/main.o $t/libam.a -Wl,-reproducible
 [ "$(osos $t/exe3)" = '0000000000000000 0000000000000000 ' ]
 $mold -arch $ARCH -r $t/main.o -o $t/r2.o -reproducible
 [ "$(osos $t/r2.o)" = '0000000000000000 ' ]
+
+# The notes a -r input carries keep the modification times that link
+# wrote, but for -reproducible, which zeroes them too.
+$mold -arch $ARCH -r $t/main.o -o $t/r3.o
+[ "$(osos $t/r3.o)" != '0000000000000000 ' ]
+$CC --ld-path=$mold -o $t/exe4 $t/r3.o $t/libam.a -Wl,-reproducible
+[ "$(osos $t/exe4)" = '0000000000000000 0000000000000000 ' ]

@@ -508,6 +508,11 @@ fn copy_object_stabs<E: Target>(
         // would read as the name " ", and lldb then never sees
         // the unit's end.
         ent.n_strx = if name.is_empty() { 1 } else { 0 };
+        // -reproducible (or ZERO_AR_DATE) zeroes the modification time
+        // the earlier link wrote, as it does an object's own.
+        if nlist.n_type == N_OSO && ctx.args.zero_ar_date {
+            ent.n_value = 0;
+        }
         if nlist.n_type == N_GSYM {
             let stab = copy_global_stab(ctx, obj_idx, name, ent, &locals, commons);
             noted |= stab.is_some();
