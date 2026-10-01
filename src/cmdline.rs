@@ -375,6 +375,9 @@ pub struct Args {
     /// -arch_errors_fatal: an input file without the link's
     /// architecture is an error rather than ignored with a warning.
     pub arch_errors_fatal: bool,
+    /// -allow_sub_type_mismatches: an object of another subtype of the
+    /// link's CPU type is linked, with a warning, rather than ignored.
+    pub allow_sub_type_mismatches: bool,
     /// -ignore_optimization_hints: skip LC_LINKER_OPTIMIZATION_HINT
     /// processing.
     pub ignore_optimization_hints: bool,
@@ -580,6 +583,7 @@ impl Default for Args {
             client_name: None,
             trace: false,
             arch_errors_fatal: false,
+            allow_sub_type_mismatches: false,
             ignore_optimization_hints: false,
             perf: false,
             warn_duplicate_libraries: true,
@@ -1860,6 +1864,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // than arm64, and changes nothing seen in an arm64 image.
             b"-x86_64_layout_emulation" => x86_64_layout_emulation = true,
             b"-arch_errors_fatal" => args.arch_errors_fatal = true,
+            b"-allow_sub_type_mismatches" => args.allow_sub_type_mismatches = true,
             b"-ignore_optimization_hints" => args.ignore_optimization_hints = true,
             b"-print_statistics" => args.perf = true,
             b"-warn_duplicate_libraries" => args.warn_duplicate_libraries = true,

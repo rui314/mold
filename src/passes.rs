@@ -347,8 +347,15 @@ fn refuses_client<E: Target>(ctx: &Context<E>, mf: &'static MappedFile, rc: Read
 /// Whether an object or dylib is for an architecture the link doesn't
 /// take (see input_files::takes_arch), which ld-prime ignores with a
 /// warning - an archive member too, whether the link needs it or not.
+/// -allow_sub_type_mismatches has it take one of another subtype with
+/// a warning instead (see also warn_subtype_mismatches).
 fn is_foreign<E: Target>(ctx: &Context<E>, mf: &MappedFile) -> bool {
     let Some(arch) = input_files::foreign_arch::<E>(mf) else { return false };
+    if ctx.args.allow_sub_type_mismatches && input_files::is_subtype_mismatch::<E>(mf) {
+        let name = mf.name.display();
+        crate::warn!("linking {arch} file '{name}' into {} link", E::NAME);
+        return false;
+    }
     let why = format!("found architecture '{arch}', required architecture '{}'", E::NAME);
     input_files::ignore_foreign_file(ctx, mf, &why);
     true
@@ -2158,6 +2165,25 @@ fn initializers<E: Target>(ctx: &Context<E>) -> Vec<(&str, String)> {
         }
     }
     vec
+}
+
+/// ld-prime warns again about each object of another subtype that
+/// -allow_sub_type_mismatches had it take (see is_foreign) once it
+/// knows the link uses it: an archive member it loads, or a file on the
+/// command line.
+pub fn warn_subtype_mismatches<E: Target>(ctx: &Context<E>) {
+    if !ctx.args.allow_sub_type_mismatches {
+        return;
+    }
+    for (i, obj) in ctx.objs.iter().enumerate() {
+        if obj.is_alive
+            && !ctx.is_internal(i)
+            && let Some(arch) = input_files::foreign_arch::<E>(obj.mf)
+        {
+            let name = obj.mf.name.display();
+            crate::warn!("linking {arch} file '{name}' into {} link", E::NAME);
+        }
+    }
 }
 
 /// Validates only objects selected by resolution, including the LTO

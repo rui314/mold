@@ -2996,6 +2996,14 @@ pub fn foreign_arch<E: Target>(mf: &MappedFile) -> Option<&'static str> {
         .then(|| arch_name(hdr.cputype, hdr.cpusubtype))
 }
 
+/// Whether a thin file the link doesn't take is of its CPU type all the
+/// same, an x86_64h object in an x86_64 link: -allow_sub_type_mismatches
+/// has ld-prime take it, but for arm64e, whose pointers are signed.
+pub fn is_subtype_mismatch<E: Target>(mf: &MappedFile) -> bool {
+    let hdr = MachHeader::read_from(mf.data());
+    hdr.cputype == E::CPUTYPE && arch_name(hdr.cputype, hdr.cpusubtype) != "arm64e"
+}
+
 /// A fat (universal) file's slices: each one's CPU type, subtype, file
 /// offset and size. Fat headers are big-endian.
 fn fat_arches(mf: &MappedFile) -> impl Iterator<Item = (u32, u32, usize, usize)> + '_ {

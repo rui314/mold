@@ -100,6 +100,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
         }
     }
     t.stop();
+    passes::warn_subtype_mismatches(&ctx);
     passes::check_input_versions(&ctx);
     let t = ctx.timer("remove_unreachable_files");
     passes::remove_unreachable_files(&mut ctx);
