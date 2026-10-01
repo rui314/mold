@@ -105,6 +105,11 @@ pub fn leak_bytes(bytes: Vec<u8>) -> &'static [u8] {
     Vec::leak(bytes)
 }
 
+/// Fills `buf` with random bytes from the operating system.
+pub fn random_bytes(buf: &mut [u8]) {
+    getrandom::fill(buf).unwrap_or_else(|err| crate::fatal!("cannot get random bytes: {err}"));
+}
+
 /// Formats a byte string for diagnostics, replacing invalid UTF-8.
 pub fn display(bytes: &[u8]) -> std::borrow::Cow<'_, str> {
     String::from_utf8_lossy(bytes)

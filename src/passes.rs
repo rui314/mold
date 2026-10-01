@@ -5445,24 +5445,32 @@ pub fn copy_chunks<E: Target>(
     // the UUID depends on the contents before the signature only, not on
     // the signature blob (whose identifier is the output's basename);
     // unsigned output hashes its pages the same way.
+    // A -random_uuid one goes in before anything is hashed.
+    let set_uuid = |uuid: &[u8], buf: &mut [u8]| {
+        let mut uuid: [u8; 16] = uuid[..16].try_into().unwrap();
+        uuid[6] = (uuid[6] & 0x0f) | 0x40; // version 4
+        uuid[8] = (uuid[8] & 0x3f) | 0x80; // RFC 4122 variant
+        *ctx.uuid.lock().unwrap() = uuid;
+        chunks::write_uuid(ctx, buf);
+    };
+    let content_uuid = ctx.args.uuid && !ctx.args.random_uuid;
+    if ctx.args.uuid && ctx.args.random_uuid {
+        let mut uuid = [0; 16];
+        crate::util::random_bytes(&mut uuid);
+        set_uuid(&uuid, buf);
+    }
     let mut hashes: Vec<[u8; 32]> = Vec::new();
-    if ctx.args.uuid || ctx.args.adhoc_codesign {
+    if content_uuid || ctx.args.adhoc_codesign {
         let _t = ctx.timer("page_hashes");
         hashes = chunks::code_signature::page_hashes(&buf[..sig_start]);
     }
-    if ctx.args.uuid {
+    if content_uuid {
         let _t = ctx.timer("uuid");
-        {
-            let flat: Vec<u8> = hashes.concat();
-            let mut hash = [0; 32];
-            crate::util::sha256(&flat, &mut hash);
-            let mut uuid: [u8; 16] = hash[..16].try_into().unwrap();
-            uuid[6] = (uuid[6] & 0x0f) | 0x40; // version 4
-            uuid[8] = (uuid[8] & 0x3f) | 0x80; // RFC 4122 variant
-            *ctx.uuid.lock().unwrap() = uuid;
-            chunks::write_uuid(ctx, buf);
-            chunks::code_signature::rehash_pages(&buf[..sig_start], &mut hashes, 0..hdr_end);
-        }
+        let flat: Vec<u8> = hashes.concat();
+        let mut hash = [0; 32];
+        crate::util::sha256(&flat, &mut hash);
+        set_uuid(&hash, buf);
+        chunks::code_signature::rehash_pages(&buf[..sig_start], &mut hashes, 0..hdr_end);
     }
     out.queue(0, hdr_end);
 

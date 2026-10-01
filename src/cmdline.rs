@@ -350,6 +350,9 @@ pub struct Args {
     /// Compute a content-hash LC_UUID (on by default; -no_uuid leaves
     /// it zeroed - dyld refuses executables without the load command).
     pub uuid: bool,
+    /// -random_uuid: a random LC_UUID in place of the content hash,
+    /// which saves hashing a large output.
+    pub random_uuid: bool,
     /// -w: suppress warnings.
     pub suppress_warnings: bool,
     pub fatal_warnings: bool,
@@ -631,6 +634,7 @@ impl Default for Args {
             objc_relative_method_lists: false,
             objc_category_merging: true,
             uuid: true,
+            random_uuid: false,
             suppress_warnings: false,
             fatal_warnings: false,
             demangle: false,
@@ -2208,7 +2212,12 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-add_split_seg_info" => args.add_split_seg_info = true,
             b"-no_data_in_code_info" => data_in_code_info = Some(false),
 
+            // The last of the two counts.
             b"-no_uuid" => args.uuid = false,
+            b"-random_uuid" => {
+                args.uuid = true;
+                args.random_uuid = true;
+            }
 
             b"-dyld_env" => {
                 let arg = next_arg(&mut i, name).as_bytes();

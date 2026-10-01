@@ -25,6 +25,7 @@ mold-macho = { path = "." }
 
 [dependencies]
 cpp_demangle = "0.4"
+getrandom = "0.4.3"
 hashbrown = "0.17"
 libc.workspace = true
 memchr = "2.8.3"

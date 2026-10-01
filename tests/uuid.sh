@@ -22,3 +22,20 @@ not grep -q LC_UUID $t/lc3
 u1=$(otool -l $t/exe1 | grep uuid)
 $CC --ld-path=$mold -o $t/exe1 $t/a.o
 [ "$u1" = "$(otool -l $t/exe1 | grep uuid)" ]
+
+# -random_uuid takes a random version-4 UUID instead, and the last of it
+# and -no_uuid counts.
+$CC --ld-path=$mold -o $t/exe3 $t/a.o -Wl,-random_uuid
+$CC --ld-path=$mold -o $t/exe4 $t/a.o -Wl,-random_uuid
+u3=$(otool -l $t/exe3 | grep uuid)
+u4=$(otool -l $t/exe4 | grep uuid)
+[ "$u3" != "$u4" ]
+echo "$u3" | grep -Eq 'uuid [0-9A-F]{8}-[0-9A-F]{4}-4[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$'
+if [ $ARCH = arm64 ]; then
+  codesign -v $t/exe3
+fi
+$CC --ld-path=$mold -o $t/exe5 $t/a.o -Wl,-random_uuid,-no_uuid
+otool -l $t/exe5 > $t/lc5
+not grep -q LC_UUID $t/lc5
+$CC --ld-path=$mold -o $t/exe6 $t/a.o -Wl,-no_uuid,-random_uuid
+otool -l $t/exe6 | grep -A2 LC_UUID | grep -v '00000000-0000'
