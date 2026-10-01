@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use rayon::prelude::*;
 
 use crate::chunks::init_offsets::InitFunc;
-use crate::chunks::{self, ChunkId, OutputSectionId, OutputSegment, mach_header_size};
+use crate::chunks::{self, ChunkHeader, ChunkId, OutputSectionId, OutputSegment, mach_header_size};
 use crate::cmdline::{Args, InputArg, LibraryKind, LibraryName, Treatment};
 use crate::context::Context;
 use crate::error;
@@ -6120,13 +6120,19 @@ fn check_segment_overlaps<E: Target>(ctx: &Context<E>) {
 /// every segment empty. And it takes a section named __thread_data or
 /// __thread_bss, in any segment, for part of the template dyld copies
 /// for each thread, which the variables' offsets count from, and
-/// refuses one its first member doesn't type as thread-local data.
-/// Returns how many times ld-prime prints the layout for the error:
-/// twice for a segment or a section out of place, once for a section's
-/// type, and none if there is no error.
+/// refuses one its first member doesn't type as thread-local data - and
+/// a section of the template that doesn't follow the one before, as a
+/// rename or a symbol move to another segment leaves them (dyld copies
+/// the template as one block). Returns how many times ld-prime prints
+/// the layout for the error: twice for a segment or a section out of
+/// place, once for a section's type or the template, and none if there
+/// is no error.
 fn check_segments<E: Target>(ctx: &Context<E>) -> usize {
     let slides = dyld_slides(ctx);
     let (linkedit, segs) = ctx.segments.split_last().unwrap();
+    // The last section of the template seen, with its place in the walk.
+    let mut template: Option<(usize, &ChunkHeader)> = None;
+    let mut nsects = 0;
     for (i, seg) in segs.iter().enumerate() {
         if slides && i > 0 && seg.cmd.vmaddr < segs[i - 1].cmd.vmaddr {
             crate::layout_error!("segment {} address is out of order", seg.name);
@@ -6153,6 +6159,22 @@ fn check_segments<E: Target>(ctx: &Context<E>) -> usize {
                 );
                 return 1;
             }
+            if hdr.is_thread_local() {
+                if let Some((n, prev)) = template
+                    && n + 1 != nsects
+                {
+                    crate::layout_error!(
+                        "TLV sections must be contiguous, but {},{} - {},{} aren't",
+                        prev.segname,
+                        prev.sectname,
+                        hdr.segname,
+                        hdr.sectname
+                    );
+                    return 1;
+                }
+                template = Some((nsects, hdr));
+            }
+            nsects += 1;
         }
     }
     if slides

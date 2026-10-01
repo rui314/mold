@@ -148,3 +148,29 @@ if $mold -v 2>&1 | grep -q mold-macho; then
     -Wl,-rename_section,__DATA,__thread_bss,__DATA,__bar 2> $t/log
   grep -q 'thread-locals too large' $t/log
 fi
+
+# dyld copies the template as one block: ld-prime refuses sections of it
+# that a rename or a symbol move parted, naming the first two with
+# another section between them in the layout, even across segments. It
+# finds that in its walk too, before a segment out of order after them,
+# and before data outside the template.
+cat <<EOF2 | $CC -o $t/h.o -c -xassembler -
+.zerofill __DATA,__bss,_h,8,3
+EOF2
+
+$CC --ld-path=$mold -o $t/exe4 $t/a.o -Wl,-rename_section,__DATA,__thread_data,__FOO,__thread_data
+not $CC --ld-path=$mold -o $t/exe4 $t/a.o $t/h.o \
+  -Wl,-rename_section,__DATA,__thread_data,__FOO,__thread_data 2> $t/log
+grep -q 'TLV sections must be contiguous, but __DATA,__thread_bss - __FOO,__thread_data aren.t$' \
+  $t/log
+[ "$(grep -c '^final section layout:$' $t/log)" = 1 ]
+grep -q '^    __LINKEDIT .* size=0x000000000, .*, fileSize=0x00000000$' $t/log
+
+echo '_x$tlv$init' > $t/list
+not $CC --ld-path=$mold -o $t/exe4 $t/a.o $t/h.o -Wl,-move_to_rw_segment,__FOO,$t/list 2> $t/log
+grep -q 'TLV sections must be contiguous, but __DATA,__thread_bss - __FOO,__thread_data' $t/log
+
+not $CC --ld-path=$mold -o $t/exe4 $t/a.o $t/h.o $t/f.o -Wl,-segaddr,__AAA,0x200000000 \
+  -Wl,-rename_section,__DATA,__thread_data,__FOO,__thread_data 2> $t/log
+grep -q 'TLV sections must be contiguous' $t/log
+not grep -q 'out of order' $t/log
