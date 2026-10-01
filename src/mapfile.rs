@@ -1186,8 +1186,10 @@ fn symbol_entries<'a, E: Target>(
         {
             continue;
         }
+        // The alias ld-prime makes of a folded function is its own, but
+        // the function's other labels stay their file's.
         let file = match files.commons.get(&(isec as u32)) {
-            _ if folded => 0,
+            _ if folded && ctx.folded_atom_names.contains_key(&i) => 0,
             _ if ctx.hdr_of(&ctx.isecs[isec]).section_type() == S_THREAD_LOCAL_VARIABLES => 0,
             Some(&owner) => files.objs[owner as usize],
             None if is_rewritten_method_list(ctx, isec) => 0,

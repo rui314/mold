@@ -65,3 +65,29 @@ nm -m $t/exe4 > $t/nm4
 [ "$(grep -c ' _helper$' $t/nm4)" = 1 ]
 grep -q 'non-external (was a private external) _helper$' $t/nm4
 grep -q ' _other$' $t/nm4
+
+# A folded function's other labels keep their file in -map; only the
+# alias named as the function was is the linker's.
+{
+  echo '.subsections_via_symbols'
+  echo '.text'
+  echo '.globl _call5'
+  echo '.p2align 2'
+  echo '_call5:'
+  jump _x5
+  echo '.p2align 2'
+  echo '_x5:'
+  echo '.alt_entry _y5'
+  echo '_y5:'
+  body 7
+} > $t/a5.s
+$CC -o $t/a5.o -c $t/a5.s
+cat <<EOF | $CC -o $t/main5.o -c -xc -
+int call1(void), call5(void);
+int main() { return call1() + call5() != 14; }
+EOF
+$CC --ld-path=$mold -o $t/exe5 $t/main5.o $t/a1.o $t/a5.o -Wl,-deduplicate \
+  -Wl,-map,$t/map5
+$t/exe5
+grep -q '\[  3\] _y5$' $t/map5
+grep -q '\[  0\] _x5$' $t/map5

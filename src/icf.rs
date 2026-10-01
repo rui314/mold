@@ -331,6 +331,8 @@ fn mark_swift_functions<E: Target>(
 /// The labels at the start of object `i`'s subsections, but for an
 /// exported one another object's definition won: (subsection, rank of
 /// the label as ld-prime picks the one naming the atom, name, symbol).
+/// An alternate entry point (N_ALT_ENTRY) names no subsection but where
+/// no other label does.
 fn start_labels<'a, E: Target>(
     ctx: &'a Context<E>,
     i: usize,
@@ -339,11 +341,12 @@ fn start_labels<'a, E: Target>(
     obj.nlists.iter().zip(&obj.symbols).filter_map(move |(nlist, &id)| {
         let sym = &ctx.symbols[id];
         let isec = sym.input_section()?;
+        let entry = (nlist.n_desc & N_ALT_ENTRY == 0) as u8;
         (!nlist.is_stab()
             && nlist.n_type() == N_SECT
             && sym.value == 0
             && sym.file() == Some(FileId::Obj(i as u32)))
-        .then(|| (isec, atom_name_rank(nlist, sym.name()), sym.name(), id))
+        .then(|| (isec, entry << 4 | atom_name_rank(nlist, sym.name()), sym.name(), id))
     })
 }
 
@@ -361,9 +364,9 @@ fn atom_names<E: Target>(
     labels.chunk_by(|a, b| a.0 == b.0).map(|run| (run[0].0, run[run.len() - 1].3)).collect()
 }
 
-/// The symbols naming the atoms of folded functions, each with whether
-/// ld-prime drops it. It gives a folded function an alias atom of its
-/// own named as the function's atom was (file 0's in -map), but one
+/// The symbols naming the subsections of folded functions, each with
+/// whether ld-prime drops it. It gives a folded function an alias of its
+/// own, of no size, named as the function was (file 0's in -map), but one
 /// named as the function it folded into is listed in the symbol table
 /// only if it is the first function of its scope, local or private
 /// extern, to fold into that one, and of another scope than that one's.
