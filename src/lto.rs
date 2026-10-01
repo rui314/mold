@@ -84,9 +84,23 @@ unsafe fn dlsym<T>(handle: *mut c_void, name: &CStr) -> T {
 const DEFAULT_LTO_LIBRARY: &str =
     if cfg!(target_os = "macos") { "libLTO.dylib" } else { "libLTO.so" };
 
-/// Loads libLTO from the given path (from -lto_library, with a plain
-/// library-name fallback that relies on the dynamic loader's search).
+/// The LTO library of the toolchain the linker is installed in, if
+/// there is one: ld-prime links the libLTO in lib beside its bin
+/// directory (@rpath, which is @executable_path/../lib), as ld64 looked
+/// for it by its own real path, and clang passes -lto_library with the
+/// one beside it in the same way.
+fn toolchain_lto_library() -> Option<std::path::PathBuf> {
+    let exe = std::env::current_exe().ok()?.canonicalize().ok()?;
+    let path = exe.parent()?.parent()?.join("lib").join(DEFAULT_LTO_LIBRARY);
+    path.is_file().then_some(path)
+}
+
+/// Loads libLTO from the given path (from -lto_library), or else the
+/// linker's toolchain's, or else the one the dynamic loader finds by
+/// name in its search path.
 pub fn load_plugin(path: Option<&Path>) -> Plugin {
+    let default = path.is_none().then(toolchain_lto_library).flatten();
+    let path = path.or(default.as_deref());
     let path = CString::new(path.map_or(DEFAULT_LTO_LIBRARY.as_bytes(), crate::util::path_bytes))
         .unwrap_or_else(|_| fatal!("-lto_library: path contains a NUL byte"));
     // SAFETY: dlopen/dlsym with valid NUL-terminated strings.
