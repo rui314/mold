@@ -813,7 +813,7 @@ fn add_merged_dependencies<E: Target>(ctx: &mut Context<E>) {
 /// ld-prime warns of some sections of every object it parses - archive
 /// members the link doesn't use included: it drops each __LD section it
 /// doesn't know, aligns the constants of a __DATA,__cfstring to a
-/// pointer whatever the section says, reads an __objc_imageinfo record
+/// pointer whatever the section says, reads a __DATA,__objc_imageinfo record
 /// only if it has its 8 bytes and no more than their worth, and ignores
 /// a label at the end of a section of fixed-size records. It fails the
 /// link on an initializer, terminator or __objc_clsrolist pointer with
@@ -840,7 +840,7 @@ fn warn_about_sections(staged: &[input_files::StagedObject]) {
                     "section __DATA/__cfstring is not pointer aligned in {}",
                     resolved_file_name(obj.mf)
                 );
-            } else if hdr.sectname() == "__objc_imageinfo" && hdr.size > 8 {
+            } else if input_files::is_objc_image_info(hdr) && hdr.size > 8 {
                 crate::warn!(
                     "section {}/{} has unexpectedly large size {} in {}",
                     hdr.segname(),
@@ -848,7 +848,7 @@ fn warn_about_sections(staged: &[input_files::StagedObject]) {
                     hdr.size,
                     resolved_file_name(obj.mf)
                 );
-            } else if hdr.sectname() == "__objc_imageinfo" && hdr.size != 0 && hdr.size < 8 {
+            } else if input_files::is_objc_image_info(hdr) && hdr.size != 0 && hdr.size < 8 {
                 crate::warn!(
                     "can't parse {}/{} section in {}",
                     hdr.segname(),

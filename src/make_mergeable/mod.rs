@@ -1159,7 +1159,7 @@ fn has_entries(hdr: &MachSection) -> bool {
         && hdr.segname() != "__LLVM"
         && !(hdr.segname() == "__LD" && hdr.sectname() == "__compact_unwind")
         && hdr.sectname() != "__eh_frame"
-        && hdr.sectname() != "__objc_imageinfo"
+        && !crate::input_files::is_objc_image_info(hdr)
 }
 
 /// Whether a section is an object's __DATA,__got, whose slots the link

@@ -132,7 +132,10 @@ fn initial_undefines<E: Target>(ctx: &Context<E>) -> impl Iterator<Item = Symbol
 }
 
 /// Sections the format keeps regardless of references: initializers
-/// and terminators, no-dead-strip sections and the ObjC image info. So
+/// and terminators, and no-dead-strip sections (the ObjC image info
+/// has no subsections: the link makes its own, see
+/// input_files::is_objc_image_info; an __objc_imageinfo of another
+/// segment than __DATA is any section to ld-prime, which strips it). So
 /// is every section of an object without MH_SUBSECTIONS_VIA_SYMBOLS
 /// that ld64 splits at symbols: it cannot tell where such a subsection
 /// ends, so it treats the object as one huge subsection. Sections it
@@ -149,7 +152,6 @@ fn should_keep<E: Target>(ctx: &Context<E>, isec: &InputSection) -> bool {
         || hdr.section_type() == S_INIT_FUNC_OFFSETS
         || (hdr.flags & S_ATTR_NO_DEAD_STRIP != 0
             && !(hdr.segname() == "__DATA" && hdr.sectname() == "__objc_classrefs"))
-        || hdr.sectname() == "__objc_imageinfo"
         || (!ctx.objs[isec.file as usize].subsections_via_symbols
             && !is_literal_section(hdr)
             && hdr.section_type() != S_THREAD_LOCAL_VARIABLES)

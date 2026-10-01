@@ -722,6 +722,15 @@ fn linker_pointer_content(hdr: &MachSection) -> Option<&'static str> {
     }
 }
 
+/// Whether a section is an object's Objective-C image info, the record
+/// whose flags the link merges into the image's own (see
+/// output_sections::merge_objc_image_info): ld-prime knows it in
+/// __DATA alone, and links an __objc_imageinfo of another segment as
+/// any other section.
+pub fn is_objc_image_info(hdr: &MachSection) -> bool {
+    hdr.segname() == "__DATA" && hdr.sectname() == "__objc_imageinfo"
+}
+
 /// Whether a section is one of the __LD segment's that ld-prime doesn't
 /// know. It reads only __LD,__compact_unwind and drops any other with a
 /// warning; a symbol defined in one is gone.
@@ -1107,7 +1116,7 @@ pub fn stage_object<E: Target>(
     // unless empty, see warn_about_sections) and reads a longer one's
     // first 8.
     let objc_image_info =
-        sect_hdrs.iter().find(|s| s.sectname() == "__objc_imageinfo" && s.size >= 8).map(|s| {
+        sect_hdrs.iter().find(|s| is_objc_image_info(s) && s.size >= 8).map(|s| {
             let off = s.offset as usize + 4;
             u32::from_le_bytes(data[off..off + 4].try_into().unwrap())
         });
@@ -1334,11 +1343,11 @@ impl StagedObject {
 
         for (i, sect) in sect_hdrs.iter().enumerate() {
             // __eh_frame is re-synthesized from parsed CIE/FDE records, and
-            // __objc_imageinfo sections are merged into one synthesized
+            // the __objc_imageinfo records are merged into one synthesized
             // record; neither is copied through.
             if is_discarded_section(sect)
                 || (sect.segname() == "__TEXT" && sect.sectname() == "__eh_frame")
-                || sect.sectname() == "__objc_imageinfo"
+                || is_objc_image_info(sect)
             {
                 continue;
             }
