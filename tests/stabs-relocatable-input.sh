@@ -35,3 +35,20 @@ not grep -q ' GSYM _wh$' $t/stabs
 grep -q '^0000000000000000 - 00 0000  GSYM _wg$' $t/stabs
 [ "$(grep -c ' GSYM _wg$' $t/stabs)" = 1 ]
 [ "$(grep -c ' FUN _wf$' $t/stabs)" = 1 ]
+
+# A unit left with no notes goes, N_SO and N_OSO entries and all: here
+# dead.o's only function is dead-stripped.
+echo 'int live(void) { return 1; }' > $t/live.c
+echo 'int dead(void) { return 2; }' > $t/dead.c
+echo 'int live(void); int main(void) { return live() - 1; }' > $t/main.c
+$CC -g -c $t/live.c -o $t/live.o
+$CC -g -c $t/dead.c -o $t/dead.o
+$CC -g -c $t/main.c -o $t/main.o
+$mold -r -arch $ARCH -o $t/r.o $t/live.o $t/dead.o
+grep -q dead.o $t/r.o
+$CC --ld-path=$mold -o $t/exe2 $t/main.o $t/r.o -Wl,-dead_strip
+$t/exe2
+nm -ap $t/exe2 > $t/stabs2
+grep -q ' OSO .*/live.o$' $t/stabs2
+not grep -q 'dead' $t/stabs2
+[ "$(grep -c ' SO $' $t/stabs2)" = 3 ]

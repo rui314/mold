@@ -416,8 +416,13 @@ fn plan_object_stabs<E: Target>(
 /// The stabs of an object that carries its own (an earlier -r output's),
 /// copied through: the address-bearing entries rebased to their
 /// subsections' output addresses, and those of dead subsections or ones
-/// coalesced away dropped. An N_GSYM names its symbol instead, with no
-/// address, and goes as the symbol does (see copy_global_stab).
+/// coalesced away dropped, as are those of sections whose symbols
+/// ld-prime notes in no object (see has_stabs): a method list the -r
+/// link left alone and this one rewrote in the relative form. An N_GSYM
+/// names its symbol instead, with no address, and goes as the symbol
+/// does (see copy_global_stab). A unit left with no notes - all of
+/// whose code is dead, or that never had any - goes, N_SO and N_OSO
+/// entries and all.
 fn copy_object_stabs<E: Target>(ctx: &Context<E>, obj_idx: usize) -> StabPlan {
     let obj = &ctx.objs[obj_idx];
     let mut out = Vec::new();
@@ -442,6 +447,10 @@ fn copy_object_stabs<E: Target>(ctx: &Context<E>, obj_idx: usize) -> StabPlan {
         .collect();
     let mut skip_size = false;
     let mut in_unit = false;
+    // The unit being copied's entries so far, and whether any of them
+    // is a note.
+    let mut unit_start = 0;
+    let mut noted = false;
     for (nlist, &sym_id) in obj.nlists.iter().zip(&obj.symbols) {
         if !nlist.is_stab() {
             continue;
@@ -454,8 +463,12 @@ fn copy_object_stabs<E: Target>(ctx: &Context<E>, obj_idx: usize) -> StabPlan {
             if !std::mem::replace(&mut in_unit, false) {
                 continue;
             }
-        } else {
-            in_unit = true;
+            if !std::mem::take(&mut noted) {
+                out.truncate(unit_start);
+                continue;
+            }
+        } else if !std::mem::replace(&mut in_unit, true) {
+            unit_start = out.len();
         }
         // The string table starts " \0": offset 1 is the empty
         // name (a closing N_SO, an N_FUN size entry); offset 0
@@ -463,16 +476,21 @@ fn copy_object_stabs<E: Target>(ctx: &Context<E>, obj_idx: usize) -> StabPlan {
         // the unit's end.
         ent.n_strx = if name.is_empty() { 1 } else { 0 };
         if nlist.n_type == N_GSYM {
-            out.extend(copy_global_stab(ctx, obj_idx, name, ent, &locals));
+            let stab = copy_global_stab(ctx, obj_idx, name, ent, &locals);
+            noted |= stab.is_some();
+            out.extend(stab);
             continue;
         }
         if addressed(nlist) {
-            let Some((isec, off)) = noted_subsec(ctx, obj, nlist.n_sect, nlist.n_value) else {
+            let noted_at = noted_subsec(ctx, obj, nlist.n_sect, nlist.n_value)
+                .filter(|&(isec, _)| has_stabs(ctx.hdr_of(&ctx.isecs[isec])));
+            let Some((isec, off)) = noted_at else {
                 // Dead code: drop the note, and a function's size
                 // entry with it.
                 skip_size = nlist.n_type == N_FUN;
                 continue;
             };
+            noted = true;
             ent.n_value = ctx.isec_addr(isec) + off;
             ent.n_sect = ctx.isec_n_sect(&ctx.isecs[isec]);
         } else if nlist.n_type == N_FUN && skip_size {
@@ -495,7 +513,9 @@ fn copy_object_stabs<E: Target>(ctx: &Context<E>, obj_idx: usize) -> StabPlan {
 /// defines the symbol, and dropped if another file's definition won.
 /// A symbol that is one of the object's locals - a private external
 /// the -r link demoted - gets an N_STSYM of its address instead, as it
-/// would have had in a unit with DWARF.
+/// would have had in a unit with DWARF, unless its section is one whose
+/// symbols ld-prime notes in no object (Swift's protocol method lists,
+/// rewritten in the relative form).
 fn copy_global_stab<E: Target>(
     ctx: &Context<E>,
     obj_idx: usize,
@@ -509,6 +529,9 @@ fn copy_global_stab<E: Target>(
             0
         } else {
             let (isec, _) = noted_subsec(ctx, obj, nlist.n_sect, nlist.n_value)?;
+            if !has_stabs(ctx.hdr_of(&ctx.isecs[isec])) {
+                return None;
+            }
             ctx.isec_n_sect(&ctx.isecs[isec])
         };
         let ent = NList { n_type: N_STSYM, n_sect, ..ent };
