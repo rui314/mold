@@ -1602,6 +1602,14 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-r" => kind = OutputKind::Object,
             b"-flat_namespace" => args.flat_namespace = true,
             b"-twolevel_namespace" => args.flat_namespace = false,
+            // ld64 made an executable bind its dylibs' imports flat too
+            // (MH_FORCE_FLAT); ld-prime takes it for -flat_namespace.
+            b"-force_flat_namespace" => {
+                warnings.warn(
+                    "-force_flat_namespace is no longer supported, using -flat_namespace instead",
+                );
+                args.flat_namespace = true;
+            }
             // How relocations in read-only segments are treated:
             // warning and suppress allow them (ld-prime prints no
             // warning either way), error refuses them. See
