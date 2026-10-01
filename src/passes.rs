@@ -2486,6 +2486,7 @@ fn thin_lto<E: Target>(
             expiration: ctx.args.lto_cache_expiration,
             max_size: ctx.args.lto_cache_max_size,
         }),
+        save_temps: ctx.args.save_temps.then_some(ctx.args.output.as_path()),
     };
     // SAFETY: the plugin is the library that parsed the modules.
     let objects = unsafe { crate::lto::compile_thin(plugin, &thin_modules, roots, &cross, &opts) };

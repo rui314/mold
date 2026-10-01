@@ -60,6 +60,7 @@ pub struct Plugin {
     pub thinlto_codegen_add_module:
         unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char, c_int),
     pub thinlto_set_generated_objects_dir: unsafe extern "C" fn(*mut c_void, *const c_char),
+    pub thinlto_codegen_set_savetemps_dir: unsafe extern "C" fn(*mut c_void, *const c_char),
     pub thinlto_codegen_set_cache_dir: unsafe extern "C" fn(*mut c_void, *const c_char),
     pub thinlto_codegen_set_cache_pruning_interval: unsafe extern "C" fn(*mut c_void, c_int),
     pub thinlto_codegen_set_cache_entry_expiration: unsafe extern "C" fn(*mut c_void, u32),
@@ -201,6 +202,7 @@ pub fn load_plugin(path: Option<&Path>) -> Plugin {
             ),
             thinlto_codegen_add_module: dlsym(handle, c"thinlto_codegen_add_module"),
             thinlto_set_generated_objects_dir: dlsym(handle, c"thinlto_set_generated_objects_dir"),
+            thinlto_codegen_set_savetemps_dir: dlsym(handle, c"thinlto_codegen_set_savetemps_dir"),
             thinlto_codegen_set_cache_dir: dlsym(handle, c"thinlto_codegen_set_cache_dir"),
             thinlto_codegen_set_cache_pruning_interval: dlsym(
                 handle,
@@ -262,11 +264,7 @@ pub struct CodegenOptions<'a> {
 ///
 /// `cg` must be a live code generator of the plugin's library.
 pub unsafe fn compile(plugin: &Plugin, cg: *mut c_void, opts: &CodegenOptions) -> Vec<u8> {
-    let temp_path = |suffix: &str| {
-        let mut path = opts.save_temps?.as_os_str().to_owned();
-        path.push(suffix);
-        Some(path)
-    };
+    let temp_path = |suffix: &str| Some(temp_path(opts.save_temps?, suffix));
     // SAFETY: the generator is live per the caller, and the strings
     // passed are NUL-terminated.
     unsafe {
@@ -344,6 +342,9 @@ pub struct ThinOptions<'a> {
     pub objects_dir: Option<&'a Path>,
     /// -cache_path_lto and its policy.
     pub cache: Option<CacheOptions<'a>>,
+    /// The output, if -save-temps keeps the intermediate files beside
+    /// it.
+    pub save_temps: Option<&'a Path>,
 }
 
 /// Where ThinLTO caches the objects it compiles, keyed by everything
@@ -454,6 +455,11 @@ pub unsafe fn compile_thin(
                 module.data.len() as c_int,
             );
         }
+        if let Some(output) = opts.save_temps {
+            make_save_temps_dir(output);
+            let dir = temp_path(output, ".thinlto.bcs/");
+            (plugin.thinlto_codegen_set_savetemps_dir)(cg, c(dir.as_bytes()).as_ptr());
+        }
         let objects_dir = opts.objects_dir.map(|dir| c(crate::util::path_bytes(dir)));
         if let Some(dir) = &objects_dir {
             (plugin.thinlto_set_generated_objects_dir)(cg, dir.as_ptr());
@@ -472,7 +478,42 @@ pub unsafe fn compile_thin(
                 plugin.version()
             );
         }
+        if let Some(output) = opts.save_temps {
+            save_thin_objects(output, &objects);
+        }
         objects
+    }
+}
+
+/// A file -save-temps keeps beside the output: its name plus a suffix.
+fn temp_path(output: &Path, suffix: &str) -> std::ffi::OsString {
+    let mut path = output.as_os_str().to_owned();
+    path.push(suffix);
+    path
+}
+
+/// Has -save-temps keep ThinLTO's bitcode at each stage in
+/// <output>.thinlto.bcs, which libLTO fills (and which ld-prime makes,
+/// owner-only, if it is not a directory yet).
+fn make_save_temps_dir(output: &Path) {
+    use std::os::unix::fs::DirBuilderExt;
+    let dir = temp_path(output, ".thinlto.bcs/");
+    if !Path::new(&dir).is_dir() && std::fs::DirBuilder::new().mode(0o700).create(&dir).is_err() {
+        crate::warn!(
+            "unable to create ThinLTO output directory for temporary bitcode files: {}",
+            dir.display()
+        );
+    }
+}
+
+/// Keeps the objects ThinLTO compiled beside the output, for
+/// -save-temps, as <output>.<index>.thinlto.o.
+fn save_thin_objects(output: &Path, objects: &[ThinObject]) {
+    for (i, obj) in objects.iter().enumerate() {
+        let path = temp_path(output, &format!(".{i}.thinlto.o"));
+        if std::fs::write(&path, &obj.data).is_err() {
+            crate::warn!("unable to write temporary ThinLTO output: {}", path.display());
+        }
     }
 }
 

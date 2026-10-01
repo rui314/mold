@@ -46,6 +46,16 @@ grep -q "^\[ *[0-9]*\] $t/objs/0.$ARCH.thinlto.o\$" $t/map2
 grep -q "^\[ *[0-9]*\] $t/objs/lto.o\$" $t/map2
 nm -ap $t/exe2 | grep -q " OSO $(pwd)/$t/objs/0.$ARCH.thinlto.o\$"
 
+# -save-temps keeps ThinLTO's bitcode at each stage in the directory
+# <output>.thinlto.bcs, and the objects as <output>.<index>.thinlto.o,
+# besides the merged modules' <output>.lto.bc, .lto.opt.bc and .lto.o.
+rm -rf $t/exe7*
+$CC --ld-path=$mold -o $t/exe7 $t/a.o $t/b.o $t/c.o $t/d.o -Wl,-save-temps
+$t/exe7 | grep -q '^8 0$'
+otool -hv $t/exe7.1.thinlto.o | grep -q OBJECT
+[ -s $t/exe7.thinlto.bcs/0.4.opt.bc ]
+[ -s $t/exe7.lto.bc ]
+
 # ThinLTO bitcode in an archive, and in a dylib, which keeps its exports.
 rm -f $t/libfoo.a
 ar rcs $t/libfoo.a $t/b.o

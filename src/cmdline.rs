@@ -340,8 +340,8 @@ pub struct Args {
     /// the last one given, or else whether the image is -static or
     /// -preload (see passes::LTO_RUNTIME_ROUTINES).
     pub lto_softload: bool,
-    /// -save-temps: keep LTO's merged bitcode and its object beside the
-    /// output.
+    /// -save-temps: keep LTO's intermediate bitcode and objects beside
+    /// the output.
     pub save_temps: bool,
     /// -mllvm: options for LLVM's optimizer and code generator, which
     /// libLTO parses as its own command line.
