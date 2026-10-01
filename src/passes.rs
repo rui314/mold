@@ -2013,6 +2013,7 @@ fn claim_locals<E: Target>(ctx: &mut Context<E>) {
                         sym.set_no_dead_strip(
                             nlist.n_desc & (N_NO_DEAD_STRIP | REFERENCED_DYNAMICALLY) != 0,
                         );
+                        sym.set_is_alt_entry(nlist.n_desc & N_ALT_ENTRY != 0);
                     }
                 }
                 _ => {}
@@ -2034,6 +2035,7 @@ fn clear_claims<E: Target>(ctx: &mut Context<E>) {
             sym.common_p2align = 0;
             sym.set_no_dead_strip(false);
             sym.set_is_referenced_dynamically(false);
+            sym.set_is_alt_entry(false);
         }
     });
 }
@@ -2260,6 +2262,7 @@ fn claim_definitions<E: Target>(
                         && nlist.n_desc & (REFERENCED_DYNAMICALLY | N_WEAK_DEF)
                             == REFERENCED_DYNAMICALLY,
                 );
+                sym.set_is_alt_entry(nlist.n_desc & N_ALT_ENTRY != 0);
 
                 match nlist.n_type() {
                     N_ABS => {

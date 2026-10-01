@@ -958,11 +958,18 @@ fn object_locals<E: Target>(ctx: &Context<E>, obj: &ObjectFile) -> Vec<LocalEnt>
     out
 }
 
-/// Puts each atom's own name after its aliases, unless a strong
-/// external names the atom: `ents` are sorted by address and rank, so
-/// the atom's own name, the highest-ranked, leads its run. Few atoms
-/// have aliases, so those are found first, and only their addresses
-/// are looked for among the externals.
+/// Orders the names at each place that has several as ld-prime does.
+/// `ents` are sorted by address, rank and descending name, so the
+/// subsection's own name - the highest-ranked label at its start that
+/// is not an alternate entry point (N_ALT_ENTRY), unless a strong
+/// external names the subsection - leads the run of those of its
+/// object. ld-prime lists the other labels first, each a place of no
+/// size of its own, object by object in input order and each object's
+/// alternate entry points last; then the aliases it makes of the
+/// functions -deduplicate folded into the subsection, in input order
+/// (see icf::folded_atom_names); and the subsection's own name last.
+/// Few subsections have aliases, so those are found first, and only
+/// their addresses are looked for among the externals.
 fn put_atom_names_last<E: Target>(
     ctx: &Context<E>,
     ents: &mut [LocalEnt],
@@ -980,7 +987,8 @@ fn put_atom_names_last<E: Target>(
     sorted_globals.par_iter().for_each(|&i| {
         let sym = &ctx.symbols[i];
         if !sym.is_weak_def()
-            && sym.input_section().is_some()
+            && !sym.is_alt_entry()
+            && sym.input_section().is_some_and(|isec| !is_coalesced_away(ctx, isec as usize))
             && let Ok(k) = addrs.binary_search(&ctx.sym_addr(i))
         {
             named[k].store(true, Ordering::Relaxed);
@@ -988,10 +996,51 @@ fn put_atom_names_last<E: Target>(
     });
     for (&i, named) in aliased.iter().zip(named) {
         let n = ents[i..].iter().take_while(|e| e.0 == ents[i].0).count();
-        if !named.into_inner() {
-            ents[i..i + n].rotate_left(1);
-        }
+        let run = &mut ents[i..i + n];
+        let keys = name_order_keys(ctx, run, named.into_inner());
+        let mut order: Vec<usize> = (0..n).collect();
+        order.sort_by_key(|&j| keys[j]);
+        let sorted: Vec<LocalEnt> = order.iter().map(|&j| run[j]).collect();
+        run.copy_from_slice(&sorted);
     }
+}
+
+/// The keys by which put_atom_names_last orders the names `run` has at
+/// one place: (0, object, alternate entry point) for a label naming no
+/// subsection, (1, object, subsection) for the alias of a folded
+/// function and (2, 0, 0) for the subsection's own name, each with the
+/// label's place in the run last. `named` says that a strong external
+/// names the subsection.
+fn name_order_keys<E: Target>(
+    ctx: &Context<E>,
+    run: &[LocalEnt],
+    named: bool,
+) -> Vec<(u8, u32, u32, usize)> {
+    let mut named = named;
+    let mut keys = Vec::with_capacity(run.len());
+    for (pos, e) in run.iter().enumerate() {
+        let Some(id) = e.4 else {
+            keys.push((0, u32::MAX, 0, pos));
+            continue;
+        };
+        let sym = &ctx.symbols[id];
+        let obj = match sym.file() {
+            Some(FileId::Obj(obj)) => obj,
+            _ => u32::MAX,
+        };
+        let own = sym.input_section().unwrap_or(crate::symbol::NONE);
+        let folded = own != crate::symbol::NONE && ctx.resolve_isec(own as usize) != own as usize;
+        let key = if folded && ctx.folded_atom_names.contains_key(&id) {
+            (1, obj, own, pos)
+        } else if !folded && !sym.is_alt_entry() && !named {
+            named = true;
+            (2, 0, 0, pos)
+        } else {
+            (0, obj, sym.is_alt_entry() as u32, pos)
+        };
+        keys.push(key);
+    }
+    keys
 }
 
 /// A local symbol table entry as plan_local_symbols sorts it: address,

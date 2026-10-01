@@ -146,6 +146,9 @@ const F_STRONG_REF: u16 = 1 << 9;
 /// Defined, non-weak, in a section, with REFERENCED_DYNAMICALLY in its
 /// object, which the output's entry keeps.
 const F_REFERENCED_DYNAMICALLY: u16 = 1 << 10;
+/// Defined as an alternate entry point (N_ALT_ENTRY): a label inside
+/// another's subsection, which names none.
+const F_ALT_ENTRY: u16 = 1 << 11;
 
 macro_rules! sym_flag {
     ($get:ident, $set:ident, $bit:expr, $doc:expr) => {
@@ -210,6 +213,12 @@ impl Symbol {
         set_is_referenced_dynamically,
         F_REFERENCED_DYNAMICALLY,
         "Defined with REFERENCED_DYNAMICALLY (see F_REFERENCED_DYNAMICALLY)."
+    );
+    sym_flag!(
+        is_alt_entry,
+        set_is_alt_entry,
+        F_ALT_ENTRY,
+        "Defined as an alternate entry point (see F_ALT_ENTRY)."
     );
     sym_flag!(
         is_common,
