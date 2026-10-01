@@ -124,6 +124,29 @@ grep -q 'prefered load addresses (-seg1addr) are disabled with chained fixups' $
 seg=$(otool -l $t/c.dylib | awk '$1 == "segname" && !seen[$2]++ { print $2 }' | sed -n 2p)
 [ $(hex $(addr $t/c.dylib $seg)) = $(end $t/c.dylib __TEXT) ]
 
+# Without chained fixups a dylib's preferred address holds, a pinned
+# __TEXT is its base, and the others follow it, not a pin below it.
+cat <<EOF | $CC -o $t/d.o -c -xassembler -
+.text
+_f:
+  ret
+.data
+.quad 1
+.section __AAA,__a
+.quad 2
+EOF
+not $CC --ld-path=$mold -shared -o $t/d.dylib $t/d.o -Wl,-no_fixup_chains \
+  -Wl,-segaddr,__TEXT,0x200000000 -Wl,-segaddr,__AAA,0x100000000 2> $t/log15
+grep -q 'segment __AAA address is out of order' $t/log15
+grep -q "^    __DATA  *addr=$(printf '0x%09x' $((0x200000000 + page))), " $t/log15
+
+# ld-prime checks for overlaps before it places the segments, with each
+# one that floats right after the one before it: __BBB after __AAA runs
+# into __CCC, where it would have moved out of the way.
+not link -o $t/exe16 -segaddr __AAA 0x300000000 -segaddr __CCC 0x300008000 2> $t/log16
+bbb="__BBB(0x300008000-$(hex "0x300008000 + $page"))"
+grep -q "custom segments overlap: $bbb __CCC(0x300008000-$(hex "0x300008000 + $page"))" $t/log16
+
 # A -static image's mach header moves with -rename_segment __TEXT, and
 # a -segaddr for its new segment places it; -image_base then only
 # places the segments that float.

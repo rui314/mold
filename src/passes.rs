@@ -5736,8 +5736,8 @@ fn lay_out_segments<E: Target>(ctx: &mut Context<E>) -> u64 {
         };
         addr = vmaddr + segment_span(ctx, &ctx.segments[seg_idx]);
     }
-    place_segments(ctx);
     check_segment_overlaps(ctx);
+    place_segments(ctx);
     crate::error::checkpoint_in_layout();
     fileoff
 }
@@ -5961,10 +5961,9 @@ fn layout_segment<E: Target>(
 ///   segments ahead of it are simply laid out one after another - into
 ///   a pinned one, if it is in their way. A pinned __LINKEDIT, not
 ///   sized yet, counts from the start, as an empty segment.
-/// - In an image dyld slides, a pinned __TEXT is no base the others
-///   float from (ld-prime ignores it as a PIE's image base): every
-///   pinned segment then counts as placed from the start, and a
-///   segment may follow one below the base.
+/// - Where a pinned __TEXT is no base the others float from (see
+///   is_pin_no_base), every pinned segment counts as placed from the
+///   start, and a segment may follow one below the base.
 fn place_segments<E: Target>(ctx: &mut Context<E>) {
     let base = ctx.image_base();
     let header_seg = in_place_segment(ctx);
@@ -5992,8 +5991,7 @@ fn place_segments<E: Target>(ctx: &mut Context<E>) {
 
     let fixed: Vec<usize> =
         (0..segs.len()).filter(|&i| !in_place[i] && addrs[i].is_some()).collect();
-    let detached =
-        dyld_slides(ctx) && header_seg.is_some_and(|seg| ctx.args.segaddr(seg).is_some());
+    let detached = header_seg.is_some_and(|seg| is_pin_no_base(ctx, seg));
     let first_pin = if detached { Some(0) } else { fixed.first().copied() };
     let floor = if detached { 0 } else { base };
     let header = segs.iter().position(|seg| Some(seg.name) == header_seg);
@@ -6071,26 +6069,35 @@ fn move_segment<E: Target>(ctx: &mut Context<E>, seg_idx: usize, addr: u64) {
 }
 
 /// ld-prime refuses segments that overlap, which takes a -segaddr (or
-/// an -image_base inside __PAGEZERO). It reports the first such pair.
-/// Left out are empty segments and __LINKEDIT, sized last.
+/// an -image_base inside __PAGEZERO). It reports the first such pair,
+/// as it lays them out before it places them (see place_segments): each
+/// segment where -segaddr pins it, or right after the one before it, so
+/// that a segment after a pinned one runs into the next pinned one
+/// where place_segments would move it out of the way. Left out are
+/// empty segments and __LINKEDIT, sized last.
 fn check_segment_overlaps<E: Target>(ctx: &Context<E>) {
     let segs = &ctx.segments[..ctx.segments.len() - 1];
-    let end = |seg: &OutputSegment| seg.cmd.vmaddr + seg.cmd.vmsize;
-    for (i, a) in segs.iter().enumerate() {
-        for b in &segs[i + 1..] {
-            if a.cmd.vmsize > 0
-                && b.cmd.vmsize > 0
-                && a.cmd.vmaddr < end(b)
-                && b.cmd.vmaddr < end(a)
-            {
+    let header_seg = in_place_segment(ctx);
+    let mut addrs = Vec::with_capacity(segs.len());
+    let mut next = ctx.image_base();
+    for (i, seg) in segs.iter().enumerate() {
+        let addr = if seg.name == "__PAGEZERO" || Some(seg.name) == header_seg {
+            seg.cmd.vmaddr
+        } else {
+            ctx.args.segaddr(seg.name).unwrap_or(align_to(next, segment_start_align(ctx, i)))
+        };
+        addrs.push(addr);
+        next = addr + segment_span(ctx, seg);
+    }
+
+    let span = |i: usize| addrs[i]..addrs[i] + segs[i].cmd.vmsize;
+    for i in 0..segs.len() {
+        for j in i + 1..segs.len() {
+            let (a, b) = (span(i), span(j));
+            if !a.is_empty() && !b.is_empty() && a.start < b.end && b.start < a.end {
                 error!(
                     "custom segments overlap: {}({:#x}-{:#x}) {}({:#x}-{:#x})",
-                    a.name,
-                    a.cmd.vmaddr,
-                    end(a),
-                    b.name,
-                    b.cmd.vmaddr,
-                    end(b)
+                    segs[i].name, a.start, a.end, segs[j].name, b.start, b.end
                 );
                 return;
             }
@@ -6218,6 +6225,17 @@ fn place_linkedit<E: Target>(ctx: &mut Context<E>) {
 /// dylib or a bundle, but not a -static image or a non-PIE executable.
 fn dyld_slides<E: Target>(ctx: &Context<E>) -> bool {
     !ctx.args.static_link && (ctx.args.output_type != MH_EXECUTE || ctx.args.pie)
+}
+
+/// Whether ld-prime takes the -segaddr of the mach header's segment,
+/// `segname`, for no base address the other segments float from: in an
+/// image dyld slides, unless it is a dylib's or a bundle's preferred
+/// address, which ld-prime honors without chained fixups (see
+/// cmdline::resolve_image_base; a PIE's it ignores).
+fn is_pin_no_base<E: Target>(ctx: &Context<E>, segname: &str) -> bool {
+    ctx.args.segaddr(segname).is_some()
+        && dyld_slides(ctx)
+        && (ctx.args.output_type == MH_EXECUTE || ctx.args.fixup_chains)
 }
 
 /// Builds the __LINKEDIT tables, once every other address is final.
