@@ -561,6 +561,9 @@ pub struct Args {
     /// gets the hook of merged libraries itself, for its classes that
     /// it doesn't export, which no image re-exporting it can name.
     pub add_mergeable_debug_hook: bool,
+    /// -dyld_env: DYLD_xxx=value settings dyld applies as it launches a
+    /// main executable (LC_DYLD_ENVIRONMENT), as given.
+    pub dyld_envs: Vec<Vec<u8>>,
 }
 
 impl Default for Args {
@@ -698,6 +701,7 @@ impl Default for Args {
             merged_libraries_hook: true,
             make_mergeable: false,
             add_mergeable_debug_hook: false,
+            dyld_envs: Vec::new(),
         }
     }
 }
@@ -1454,6 +1458,7 @@ pub(crate) fn missing_argument(opt: &str) -> String {
         "-mcpu" => "missing <cpu>",
         "-trace_implicit_library" => return "-trace_implicit_library_name missing <name>".into(),
         "-undefined" => "missing <dynamic_lookup>",
+        "-dyld_env" => "missing <arg>",
         "-read_only_relocs" | "-arch_variant_lto_cache_mismatch" => "missing <option>",
         "-target" => "missing <target-triple>",
         "-alias" => "missing <real-name> <alias-name>",
@@ -2205,6 +2210,17 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
 
             b"-no_uuid" => args.uuid = false,
 
+            b"-dyld_env" => {
+                let arg = next_arg(&mut i, name).as_bytes();
+                if !arg.starts_with(b"DYLD_") || !arg.contains(&b'=') {
+                    fatal!(
+                        "malformed '-dyld_env {}', arg should be of form 'DYLD_xxx=something'",
+                        display(arg)
+                    );
+                }
+                args.dyld_envs.push(arg.to_vec());
+            }
+
             // The old pre-LC_BUILD_VERSION way of stating the
             // deployment target, still emitted by clang for older
             // -mmacosx-version-min targets. It fixes the platform to
@@ -2753,6 +2769,10 @@ fn check_output_kind(
 ) {
     let main_executable = args.output_type == MH_EXECUTE && !args.relocatable;
     let has_stack = main_executable && !args.preload;
+    // Only dyld reads LC_DYLD_ENVIRONMENT, and only a main executable's.
+    if !args.dyld_envs.is_empty() && (!main_executable || args.static_link) {
+        fatal!("-dyld_env can only used used when creating a main executables");
+    }
     if args.client_name.is_some()
         && (args.relocatable || matches!(args.output_type, MH_DYLIB | MH_DYLINKER))
     {

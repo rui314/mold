@@ -846,6 +846,10 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
             vec.push(create_string_cmd(LC_SUB_FRAMEWORK, name));
         }
     }
+    // (Only a main executable has them.)
+    for env in &ctx.args.dyld_envs {
+        vec.push(create_string_cmd(LC_DYLD_ENVIRONMENT, env));
+    }
 
     // Also present with no functions at all (an 8-byte empty table),
     // as ld-prime writes it; -no_function_starts drops it.

@@ -77,6 +77,7 @@ pub const LC_DYLD_INFO_ONLY: u32 = 0x22 | LC_REQ_DYLD;
 pub const LC_VERSION_MIN_MACOSX: u32 = 0x24;
 pub const LC_VERSION_MIN_IPHONEOS: u32 = 0x25;
 pub const LC_FUNCTION_STARTS: u32 = 0x26;
+pub const LC_DYLD_ENVIRONMENT: u32 = 0x27;
 pub const LC_MAIN: u32 = 0x28 | LC_REQ_DYLD;
 pub const LC_DATA_IN_CODE: u32 = 0x29;
 pub const LC_LINKER_OPTIMIZATION_HINT: u32 = 0x2e;
