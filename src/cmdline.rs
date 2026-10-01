@@ -2617,6 +2617,12 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-objc_stubs_small" => objc_stubs_small = Some(true),
             b"-const_selrefs" => const_selrefs = Some(true),
             b"-no_const_selrefs" => const_selrefs = Some(false),
+            // ld64's switches for passes ld-prime doesn't run: the
+            // labels a -r output gave the FDEs in __eh_frame, the
+            // ordering of initializer functions within __text, and
+            // x86-64's pass for zero-fill sections out of reach of
+            // 32-bit displacements. ld-prime takes them silently.
+            b"-no_eh_labels" | b"-no_order_inits" | b"-no_huge" => {}
 
             raw => {
                 if let Some(&(prefix, kind)) = JOINED_LIBRARY_OPTIONS
