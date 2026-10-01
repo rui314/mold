@@ -1472,13 +1472,18 @@ fn sort_chunks<E: Target>(ctx: &mut Context<E>) {
         // Code in __TEXT_EXEC follows __TEXT. The __DATA_CONST of an
         // image no dyld loads (a -static one with -data_const or in the
         // shared region, a kext) comes after __DATA, as ld-prime
-        // places it.
+        // places it. The segments of signed pointers, __AUTH_CONST then
+        // __AUTH, go before __DATA, but in an image no loader slides by
+        // its fixups (a -static or -preload one).
+        let auth = !ctx.args.static_link && !ctx.args.preload;
         let standard = match hdr.segname {
             "__TEXT" | "__TEXT_EXEC" => 0,
             "__DATA_CONST" if !ctx.args.without_dyld() => 1,
-            "__DATA" => 2,
-            "__DATA_CONST" => 3,
-            _ => 4,
+            "__AUTH_CONST" if auth => 2,
+            "__AUTH" if auth => 3,
+            "__DATA" => 4,
+            "__DATA_CONST" => 5,
+            _ => 6,
         };
         // -segment_order orders the rest: __TEXT, which holds the
         // mach header, stays first and __LINKEDIT last. A -preload
