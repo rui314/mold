@@ -24,6 +24,11 @@ pub struct UnwindInfoSection {
     /// first encoding takes: what an encoding with every segment placed
     /// took (see set_osec_offsets). The contents are padded with zeros.
     pub min_size: u64,
+    /// Stubs that joined a code section of their name (see
+    /// output_sections::merge_synthetic_sections), which ld-prime
+    /// gives an entry each, as other code there: a subsection standing
+    /// for the stubs, and the size of each.
+    pub merged_stubs: Vec<(u32, u64)>,
 }
 
 /// The greatest offset into __eh_frame the low 24 bits of a DWARF-mode
@@ -34,7 +39,13 @@ impl UnwindInfoSection {
     pub fn new() -> Self {
         let mut hdr = ChunkHeader::new("__TEXT", "__unwind_info");
         hdr.p2align = 2;
-        Self { hdr, contents: Vec::new(), personalities: Vec::new(), min_size: 0 }
+        Self {
+            hdr,
+            contents: Vec::new(),
+            personalities: Vec::new(),
+            min_size: 0,
+            merged_stubs: Vec::new(),
+        }
     }
 }
 
@@ -431,7 +442,6 @@ pub(crate) fn function_lsda<E: Target>(
 /// is one subsection, but ld-prime still splits it at its labels (see
 /// unsplit_bare_subsecs).
 fn bare_code_records<E: Target>(ctx: &Context<E>, records: &[UnwindRecord]) -> Vec<UnwindRecord> {
-    use crate::input_files::UNWIND_NONE;
     use std::collections::HashMap;
 
     // Where each subsection's first record is, and for a section of an
@@ -447,7 +457,8 @@ fn bare_code_records<E: Target>(ctx: &Context<E>, records: &[UnwindRecord]) -> V
         }
     }
 
-    ctx.isecs
+    let mut bare: Vec<UnwindRecord> = ctx
+        .isecs
         .par_iter()
         .enumerate()
         .filter(|&(_, isec)| is_code_subsec(ctx, isec))
@@ -464,18 +475,33 @@ fn bare_code_records<E: Target>(ctx: &Context<E>, records: &[UnwindRecord]) -> V
             } else {
                 unsplit_bare_subsecs(obj, isec, unsplit.get(&i).map_or(&[], Vec::as_slice))
             };
-            pieces.into_iter().map(move |(off, size)| UnwindRecord {
-                isec: i,
-                input_offset: off,
-                code_len: size,
-                encoding: 0,
-                personality_sym: UNWIND_NONE,
-                lsda_isec: UNWIND_NONE,
-                lsda_off: 0,
-                fde_idx: UNWIND_NONE,
-            })
+            pieces.into_iter().map(move |(off, size)| bare_record(i, off, size))
         })
-        .collect()
+        .collect();
+
+    // Stubs that joined a code section are pieces of its code too, a
+    // stub each.
+    for &(isec, size) in &ctx.unwind_info.merged_stubs {
+        let len = ctx.isecs[isec as usize].size;
+        let stubs = (0..len).step_by(size as usize);
+        bare.extend(stubs.map(|off| bare_record(isec, off, size as u32)));
+    }
+    bare
+}
+
+/// The record of a piece of code with no unwind information.
+fn bare_record(isec: u32, off: u32, size: u32) -> UnwindRecord {
+    use crate::input_files::UNWIND_NONE;
+    UnwindRecord {
+        isec,
+        input_offset: off,
+        code_len: size,
+        encoding: 0,
+        personality_sym: UNWIND_NONE,
+        lsda_isec: UNWIND_NONE,
+        lsda_off: 0,
+        fde_idx: UNWIND_NONE,
+    }
 }
 
 /// The offset of the first alternate entry point (N_ALT_ENTRY) inside

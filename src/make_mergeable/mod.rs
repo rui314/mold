@@ -849,7 +849,7 @@ impl<'a, E: Target> Builder<'a, E> {
     /// offset of the function.
     fn add_init_offsets(&mut self) {
         let ctx = self.ctx;
-        if !ctx.chunks.contains(&crate::chunks::ChunkId::InitOffsets) {
+        if !ctx.has_chunk(crate::chunks::ChunkId::InitOffsets) {
             return;
         }
         for &func in &ctx.init_offsets.init_funcs {
@@ -876,7 +876,7 @@ impl<'a, E: Target> Builder<'a, E> {
     /// make its CIE pointer, function and LSDA.
     fn add_cfi_entries(&mut self) {
         let ctx = self.ctx;
-        if !ctx.chunks.contains(&crate::chunks::ChunkId::EhFrame) {
+        if !ctx.has_chunk(crate::chunks::ChunkId::EhFrame) {
             return;
         }
         let mut records: Vec<(u32, Option<usize>, usize)> = Vec::new();
@@ -1373,7 +1373,7 @@ fn record_flags<E: Target>(ctx: &Context<E>) -> u64 {
     if swift || has_classes || has_section(&["__objc_catlist", "__objc_nlcatlist"]) {
         flags |= FLAG_HAS_SWIFT_OR_OBJC;
     }
-    if !ctx.chunks.contains(&crate::chunks::ChunkId::ObjcImageInfo) {
+    if !ctx.has_chunk(crate::chunks::ChunkId::ObjcImageInfo) {
         return flags;
     }
     let info = ctx.objc_imageinfo.flags as u64;

@@ -227,9 +227,17 @@ impl Reach {
         };
         let mut sides = vec![Side::Outside; ctx.output_sections.len()];
         let (mut stubs, mut objc_stubs) = (Side::Outside, Side::Outside);
+        // (Stubs that joined an output section of their name lie where
+        // it does.)
         for (i, &id) in ctx.chunks.iter().enumerate() {
+            let id = match id {
+                ChunkId::Output(id) => {
+                    sides[id.index()] = side(i);
+                    ctx.output_section(id).synthetic.unwrap_or(ChunkId::Output(id))
+                }
+                id => id,
+            };
             match id {
-                ChunkId::Output(id) => sides[id.index()] = side(i),
                 ChunkId::Stubs => stubs = side(i),
                 ChunkId::ObjcStubs => objc_stubs = side(i),
                 _ => {}
@@ -333,8 +341,18 @@ fn create_thunks<E: Target>(ctx: &mut Context<E>, reach: &mut Reach) {
             ctx.symbols[sym].unmark();
         }
     }
+    // A synthesized section that joined this one (the stubs, say)
+    // follows the last thunk.
+    let synthetic = ctx.output_sections[id.index()].synthetic.map(|chunk| {
+        let hdr = ctx.chunk_header(chunk);
+        (hdr.size, hdr.p2align)
+    });
     let osec = &mut ctx.output_sections[id.index()];
     osec.hdr.size = offset;
+    if let Some((size, p2align)) = synthetic {
+        osec.synthetic_off = align_to(offset, 1 << p2align);
+        osec.hdr.size = osec.synthetic_off + size;
+    }
     osec.thunks = thunks;
     osec.members = members;
 }

@@ -1502,7 +1502,7 @@ fn eh_frame_entries<'a, E: Target>(
     files: &MapFiles,
     named: &[MapEntry<'a>],
 ) -> Vec<MapEntry<'a>> {
-    if !ctx.chunks.contains(&ChunkId::EhFrame) {
+    if !ctx.has_chunk(ChunkId::EhFrame) {
         return Vec::new();
     }
     let fde_names = FdeNames::new(named);
@@ -1729,7 +1729,7 @@ fn synthetic_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Ve
         let addr = init_offsets.hdr.addr + i * 4;
         entries.push(MapEntry { addr, size: 4, file: 0, name: name("init-offset") });
     }
-    if ctx.chunks.contains(&ChunkId::ObjcImageInfo) {
+    if ctx.has_chunk(ChunkId::ObjcImageInfo) {
         entries.push(anon(ctx.objc_imageinfo.hdr.addr, ctx.objc_imageinfo.hdr.size));
     }
     if let Some(stack) = ctx.segments.iter().find(|seg| seg.name == "__UNIXSTACK") {

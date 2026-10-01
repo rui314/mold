@@ -146,6 +146,8 @@ struct Places<'a, E: Target> {
     header_addr: u64,
     /// The sections with contents, by address: (start, end, ordinal).
     sects: Vec<(u64, u64, u8)>,
+    /// Each section's address, by ordinal.
+    starts: Vec<u64>,
     /// The layout-boundary symbols (section$start$..., segment$end$...),
     /// each at the section it bounds.
     boundaries: hashbrown::HashMap<SymbolId, Place>,
@@ -161,10 +163,15 @@ impl<'a, E: Target> Places<'a, E> {
             .map(|h| (h.addr, h.addr + h.size, h.n_sect))
             .collect();
         sects.sort_unstable();
+        let mut starts = vec![0; 256];
+        for hdr in ctx.chunks.iter().map(|&id| ctx.chunk_header(id)).filter(|h| h.is_sect) {
+            starts[hdr.n_sect as usize] = hdr.addr;
+        }
         let mut places = Self {
             ctx,
             header_addr: ctx.mach_header.hdr.addr,
             sects,
+            starts,
             boundaries: Default::default(),
         };
         places.boundaries = ctx
@@ -195,8 +202,12 @@ impl<'a, E: Target> Places<'a, E> {
         Some((hdr.n_sect, if is_start { 0 } else { end - hdr.addr }))
     }
 
+    /// Where offset `off` of chunk `id` lies: in a section of its own,
+    /// or in the output section a synthesized one joined, after what
+    /// was there.
     fn chunk(&self, id: ChunkId, off: u64) -> Place {
-        (self.ctx.chunk_header(id).n_sect, off)
+        let hdr = self.ctx.chunk_header(id);
+        (hdr.n_sect, hdr.addr - self.starts[hdr.n_sect as usize] + off)
     }
 
     /// Where a subsection lies, if it is laid out.
@@ -412,7 +423,7 @@ impl<'a, E: Target> Places<'a, E> {
     /// range-extension thunks.
     fn stub_entries(&self, out: &mut Vec<Entry>) {
         let ctx = self.ctx;
-        let has = |id| ctx.chunks.contains(&id);
+        let has = |id| ctx.has_chunk(id);
         if has(ChunkId::Stubs) {
             for (i, &id) in ctx.stubs.symbols.iter().enumerate() {
                 let slot = if ctx.args.lazy_binding && !ctx.binds_weak_lookup(id) {
@@ -572,7 +583,7 @@ impl<'a, E: Target> Places<'a, E> {
     fn objc_entries(&self, out: &mut Vec<Entry>) {
         let ctx = self.ctx;
         let stubs = &ctx.objc_stubs;
-        if ctx.chunks.contains(&ChunkId::ObjcStubs) {
+        if ctx.has_chunk(ChunkId::ObjcStubs) {
             let [sel, msgsend] = E::OBJC_STUB_REF_OFFS;
             let msgsend_slot = self.got_index(stubs.msgsend_got_idx as usize);
             for i in 0..stubs.symbols.len() {
@@ -628,7 +639,7 @@ impl<'a, E: Target> Places<'a, E> {
     /// __init_offsets: an image offset per initializer.
     fn table_entries(&self, out: &mut Vec<Entry>) {
         let ctx = self.ctx;
-        if !ctx.chunks.contains(&ChunkId::InitOffsets) {
+        if !ctx.has_chunk(ChunkId::InitOffsets) {
             return;
         }
         for (i, &func) in ctx.init_offsets.init_funcs.iter().enumerate() {
@@ -673,7 +684,7 @@ impl<'a, E: Target> Places<'a, E> {
     /// FDE itself), function and LSDA.
     fn eh_frame_entries(&self, out: &mut Vec<Entry>) {
         let ctx = self.ctx;
-        if !ctx.chunks.contains(&ChunkId::EhFrame) {
+        if !ctx.has_chunk(ChunkId::EhFrame) {
             return;
         }
         let at = |off: u64| self.chunk(ChunkId::EhFrame, off);

@@ -997,6 +997,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     warn_eh_frame_too_large(ctx);
     add_linkedit_chunks(ctx);
     rename_synthetic_sections(ctx);
+    merge_synthetic_sections(ctx);
     add_boundary_sections(ctx);
 
     sort_chunks(ctx, lto_ranks.as_deref());
@@ -2226,6 +2227,13 @@ fn create_segments<E: Target>(ctx: &mut Context<E>) {
         }
     }
     ctx.segments = segments;
+    // A synthesized section that joined another is part of it.
+    for i in 0..ctx.output_sections.len() {
+        if let Some(chunk) = ctx.output_sections[i].synthetic {
+            let n_sect = ctx.output_sections[i].hdr.n_sect;
+            ctx.chunk_header_mut(chunk).n_sect = n_sect;
+        }
+    }
 }
 
 /// -no_zero_fill_sections gives every zero-fill section its bytes in
@@ -2372,6 +2380,86 @@ fn rename_synthetic_sections<E: Target>(ctx: &mut Context<E>) {
         hdr.segname = seg;
         hdr.sectname = sect.to_string();
     }
+}
+
+/// ld-prime makes one output section of each name: a section the
+/// linker synthesizes (the stubs, the GOT, the lazy pointers, the
+/// Objective-C stubs, image info and method lists, ...) that has, its
+/// renames applied, an input section's name - an input
+/// __DATA_CONST,__got, or one -rename_section gives the name - joins
+/// that section, after what the inputs (and the linker's records)
+/// put there. The section keeps the input's flags, so the GOT or the
+/// stubs in a regular section are no longer typed as such: the
+/// indirect symbol table leaves their slots out, and the stubs lose
+/// their stub size. (ld-prime fails on a zero-fill section joined so,
+/// and on two synthesized sections of one name, which keep sections of
+/// their own here, as do __unwind_info and __chain_starts, which only
+/// layout sizes.)
+fn merge_synthetic_sections<E: Target>(ctx: &mut Context<E>) {
+    if ctx.args.relocatable {
+        return;
+    }
+    let mut i = 0;
+    while i < ctx.chunks.len() {
+        let id = ctx.chunks[i];
+        let hdr = ctx.chunk_header(id);
+        let host = match id {
+            ChunkId::Output(_)
+            | ChunkId::SectCreate(_)
+            | ChunkId::UnwindInfo
+            | ChunkId::ChainStarts => None,
+            _ if !hdr.is_sect => None,
+            _ => ctx.output_sections.iter().position(|osec| {
+                osec.hdr.segname == hdr.segname
+                    && osec.hdr.sectname == hdr.sectname
+                    && osec.synthetic.is_none()
+                    && !osec.hdr.is_zerofill()
+            }),
+        };
+        let Some(host) = host else {
+            i += 1;
+            continue;
+        };
+        let (size, p2align) = (hdr.size, hdr.p2align);
+        ctx.chunks.remove(i);
+        let osec = &mut ctx.output_sections[host];
+        osec.synthetic = Some(id);
+        osec.synthetic_off = align_to(osec.hdr.size, 1 << p2align);
+        osec.hdr.size = osec.synthetic_off + size;
+        osec.hdr.p2align = osec.hdr.p2align.max(p2align);
+        if osec.hdr.flags & S_ATTR_PURE_INSTRUCTIONS != 0 {
+            add_merged_stubs(ctx, id);
+        }
+    }
+}
+
+/// Stubs in a code section are code there, which ld-prime gives an
+/// __unwind_info entry per stub as it does any code without unwind
+/// information (see chunks::unwind_info::bare_code_records): a
+/// subsection stands for them, at the place of the stubs' chunk.
+fn add_merged_stubs<E: Target>(ctx: &mut Context<E>, id: ChunkId) {
+    let stub_size = match id {
+        ChunkId::Stubs => E::STUB_SIZE,
+        ChunkId::ObjcStubs => ctx.objc_stub_size(),
+        ChunkId::DelayStubs => E::DELAY_STUB_SIZE,
+        _ => return,
+    };
+    let hdr = ctx.chunk_header(id);
+    let size = hdr.size;
+    let sect = MachSection {
+        segname: str_to_name(hdr.segname),
+        sectname: str_to_name(&hdr.sectname),
+        flags: S_ATTR_PURE_INSTRUCTIONS,
+        size,
+        ..Default::default()
+    };
+    let sect = ctx.add_synthetic_section(sect);
+    let size = size as u32;
+    let isec = crate::objc::add_slot_stand_in(ctx, sect);
+    ctx.isecs[isec as usize].size = size;
+    ctx.isecs[isec as usize].offset = 0;
+    ctx.isecs[isec as usize].set_output_section(id);
+    ctx.unwind_info.merged_stubs.push((isec, stub_size));
 }
 
 /// Resolves each section$start$/section$end$ and segment$start$/
