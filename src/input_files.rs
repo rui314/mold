@@ -4338,7 +4338,7 @@ fn resolve_dylib_ref<E: Target>(
 /// Locates a re-exported library by its install name as load_reexports
 /// does, but quietly: ahead of the link, or again after it.
 pub fn find_reexport<E: Target>(ctx: &Context<E>, name: &[u8]) -> Option<&'static MappedFile> {
-    let prober = crate::passes::Prober::quiet();
+    let prober = crate::passes::Prober::quiet(ctx);
     MappedFile::open(&find_dylib_ref(ctx, &prober, name, None, false)?)
 }
 

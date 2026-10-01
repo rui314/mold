@@ -145,18 +145,21 @@ pub(crate) fn under_root(root: &Path, path: &Path) -> PathBuf {
 /// Looks for files as ld-prime does in its searches for inputs, noting
 /// each file it looks for and doesn't find: -dependency_info lists
 /// them, so that a build system links again once one appears. A lookup
-/// made ahead of time, or made again, is quiet.
+/// made ahead of time, or made again, is quiet, without a warning too.
 pub struct Prober<'a> {
     missing: Option<&'a std::sync::Mutex<Vec<PathBuf>>>,
+    quiet: bool,
+    prefer_stubs: bool,
 }
 
 impl<'a> Prober<'a> {
     pub fn new<E: Target>(ctx: &'a Context<E>) -> Self {
-        Self { missing: ctx.args.dependency_info.is_some().then_some(&ctx.missing_files) }
+        let missing = ctx.args.dependency_info.is_some().then_some(&ctx.missing_files);
+        Self { missing, quiet: false, prefer_stubs: ctx.args.prefer_stubs }
     }
 
-    pub fn quiet() -> Self {
-        Self { missing: None }
+    pub fn quiet<E: Target>(ctx: &Context<E>) -> Self {
+        Self { missing: None, quiet: true, prefer_stubs: ctx.args.prefer_stubs }
     }
 
     /// Whether there is a file at `path`.
@@ -170,12 +173,31 @@ impl<'a> Prober<'a> {
 
     /// The library at `path` or its stub, `path` with .tbd for its
     /// extension: ld-prime looks for both, the stub first, and takes
-    /// the stub where both are there.
+    /// the one there - where both are, the stub, but in an SDK, where a
+    /// library has no business next to its stub: there it warns (but
+    /// in Apple's internal SDK) and takes the library, unless
+    /// $LD_PREFER_TAPI_FILE (Args::prefer_stubs).
     pub fn library(&self, path: &Path) -> Option<PathBuf> {
         let stub = path.with_extension("tbd");
         let has_stub = self.exists(&stub);
         let has_library = self.exists(path);
-        if has_stub { Some(stub) } else { has_library.then(|| path.to_path_buf()) }
+        if !has_stub {
+            return has_library.then(|| path.to_path_buf());
+        }
+        let stub_bytes = path_bytes(&stub);
+        let in_sdk = memchr::memmem::find(stub_bytes, b".sdk/").is_some();
+        if !has_library || stub == path || !in_sdk || self.prefer_stubs {
+            return Some(stub);
+        }
+        if !self.quiet && memchr::memmem::find(stub_bytes, b"/SDKs/Xcode.Internal").is_none() {
+            crate::warn!(
+                "text-based stub file {} and library file {} unexpectedly found. Falling back \
+                 to library file for linking.",
+                stub.display(),
+                path.display()
+            );
+        }
+        Some(path.to_path_buf())
     }
 }
 
