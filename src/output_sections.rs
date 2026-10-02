@@ -2870,20 +2870,21 @@ fn add_sectcreate<E: Target>(ctx: &mut Context<E>, sec: SectCreateSection) {
 /// arch qualifier gates the whole line; an object qualifier narrows the
 /// match to symbols from that file, by leaf name alone as ld-prime
 /// compares it: m.o, or lib.a(m.o) for an archive member, but no longer
-/// path.
+/// path. Both are bytes, as names are.
 struct OrderEntry {
-    name: String,
-    file: Option<String>,
+    name: Vec<u8>,
+    file: Option<Vec<u8>>,
 }
 
 /// Reads the -order_file lists, #-comments and the lines for other
 /// architectures left out.
 fn read_order_files<E: Target>(ctx: &Context<E>) -> Vec<OrderEntry> {
-    const ARCHS: [&str; 6] = ["arm64", "arm64e", "x86_64", "i386", "armv7", "ppc"];
+    use crate::util::{split_once, trim_space};
+    const ARCHS: [&[u8]; 6] = [b"arm64", b"arm64e", b"x86_64", b"i386", b"armv7", b"ppc"];
     let mut entries = Vec::new();
     for path in &ctx.args.order_files {
         // ld64 links on without the order a missing file would give.
-        let text = match std::fs::read_to_string(path) {
+        let text = match std::fs::read(path) {
             Ok(text) => text,
             Err(e) => {
                 let errno = crate::error::errno_text(&e);
@@ -2891,24 +2892,24 @@ fn read_order_files<E: Target>(ctx: &Context<E>) -> Vec<OrderEntry> {
                 continue;
             }
         };
-        for line in text.lines() {
-            let mut line = line.split('#').next().unwrap_or("").trim();
+        for line in crate::util::lines(&text) {
+            let mut line = trim_space(line.split(|&c| c == b'#').next().unwrap_or_default());
             if line.is_empty() {
                 continue;
             }
-            if let Some((first, rest)) = line.split_once(':')
-                && ARCHS.contains(&first.trim())
+            if let Some((first, rest)) = split_once(line, b':')
+                && ARCHS.contains(&trim_space(first))
             {
-                if first.trim() != E::NAME {
+                if trim_space(first) != E::NAME.as_bytes() {
                     continue;
                 }
-                line = rest.trim();
+                line = trim_space(rest);
             }
-            let (file, name) = match line.split_once(':') {
-                Some((file, name)) => (Some(file.trim().to_string()), name.trim()),
+            let (file, name) = match split_once(line, b':') {
+                Some((file, name)) => (Some(trim_space(file).to_vec()), trim_space(name)),
                 None => (None, line),
             };
-            entries.push(OrderEntry { name: name.to_string(), file });
+            entries.push(OrderEntry { name: name.to_vec(), file });
         }
     }
     entries
@@ -2931,12 +2932,12 @@ fn order_file_ranks<E: Target>(ctx: &Context<E>) -> Option<Vec<u64>> {
     let entries = read_order_files(ctx);
     // A line naming an object and a symbol again is dropped, as
     // ld-prime drops it: it finds no other subsection, nor is it
-    // reported.
-    let mut rank_of: std::collections::HashMap<&[u8], Vec<(Option<&str>, u64)>> =
-        std::collections::HashMap::new();
+    // reported. A name's lines are (object, rank).
+    type Lines<'a> = Vec<(Option<&'a [u8]>, u64)>;
+    let mut rank_of: std::collections::HashMap<&[u8], Lines> = std::collections::HashMap::new();
     let mut repeated = vec![false; entries.len()];
     for (i, entry) in entries.iter().enumerate() {
-        let lines = rank_of.entry(entry.name.as_bytes()).or_default();
+        let lines = rank_of.entry(&entry.name).or_default();
         let file = entry.file.as_deref();
         if file.is_some() && lines.iter().any(|&(f, _)| f == file) {
             repeated[i] = true;
@@ -2971,7 +2972,7 @@ fn order_file_ranks<E: Target>(ctx: &Context<E>) -> Option<Vec<u64>> {
             obj = origin;
         }
         let leaf = ctx.objs[obj].mf.name.file_name().map_or(&[][..], |f| f.as_bytes());
-        let first = lines.iter().find(|(file, _)| file.is_none_or(|f| leaf == f.as_bytes()));
+        let first = lines.iter().find(|(file, _)| file.is_none_or(|f| leaf == f));
         if let Some(&(_, rank)) = first {
             let isec = ctx.resolve_isec(sym.input_section().unwrap() as usize);
             ranks[isec] = ranks[isec].min(rank);
@@ -2999,8 +3000,8 @@ fn report_order_file_statistics<E: Target>(
     let mut once = hashbrown::HashSet::new();
     let ambiguous: hashbrown::HashSet<&[u8]> = entries
         .iter()
-        .filter(|e| e.file.is_none() && !once.insert(e.name.as_bytes()))
-        .map(|e| e.name.as_bytes())
+        .filter(|e| e.file.is_none() && !once.insert(e.name.as_slice()))
+        .map(|e| e.name.as_slice())
         .collect();
     for syms in named {
         for &(sym, _) in syms {
@@ -3015,19 +3016,19 @@ fn report_order_file_statistics<E: Target>(
     }
     for (entry, syms) in entries.iter().zip(named) {
         if entry.file.is_none()
-            && !ambiguous.contains(entry.name.as_bytes())
+            && !ambiguous.contains(entry.name.as_slice())
             && syms.iter().any(|&(_, obj)| obj != syms[0].1)
         {
             crate::warn!(
                 "{} specified in order_file but it exists in multiple .o files. Prefix symbol with .o filename in order_file to disambiguate",
-                entry.name
+                raw(&entry.name)
             );
         }
     }
     let mut missing = 0;
     for (i, entry) in entries.iter().enumerate() {
         if named[i].is_empty() && !repeated[i] {
-            crate::warn!("can't find function/data for order_file entry: {}", entry.name);
+            crate::warn!("can't find function/data for order_file entry: {}", raw(&entry.name));
             missing += 1;
         }
     }

@@ -17,7 +17,7 @@ use crate::input_files::PlatformVersion;
 use crate::macho::*;
 use crate::mapped_file::MappedFile;
 use crate::util::glob::{Glob, GlobBuilder};
-use crate::util::{display, os_str, page_align};
+use crate::util::{display, is_space, lines, os_str, page_align, trim_space};
 
 /// The Apple ld64 version whose command line this linker implements,
 /// reported by -version_details. Xcode passes flags according to this
@@ -1580,9 +1580,9 @@ fn check_export_choice(seen: &mut Option<ExportChoice>, choice: ExportChoice, op
 /// a pattern, which has a wildcard (`*`, `?` or `[`) no backslash
 /// escapes; otherwise the entry with a backslash taking the character
 /// after it as itself (`_a\*` names `_a*`, `_a\b` `_ab`).
-fn exact_name(entry: &str) -> Option<String> {
+fn exact_name(entry: &[u8]) -> Option<Vec<u8>> {
     let mut name = Vec::with_capacity(entry.len());
-    let mut bytes = entry.bytes();
+    let mut bytes = entry.iter().copied();
     while let Some(c) = bytes.next() {
         match c {
             b'*' | b'?' | b'[' => return None,
@@ -1590,38 +1590,36 @@ fn exact_name(entry: &str) -> Option<String> {
             _ => name.push(c),
         }
     }
-    // A backslash dropped from UTF-8 leaves UTF-8.
-    Some(String::from_utf8(name).unwrap())
+    Some(name)
 }
 
 /// Makes the names among a symbol list's entries initial undefines: an
 /// object need not mention them for them to pull in an archive member,
 /// and each must resolve. Patterns only match symbols already there.
-fn add_initial_undefines(undefs: &mut Vec<Vec<u8>>, entries: impl IntoIterator<Item: AsRef<str>>) {
-    undefs.extend(
-        entries.into_iter().filter_map(|entry| exact_name(entry.as_ref())).map(String::into_bytes),
-    );
+fn add_initial_undefines(undefs: &mut Vec<Vec<u8>>, entries: impl IntoIterator<Item: AsRef<[u8]>>) {
+    undefs.extend(entries.into_iter().filter_map(|entry| exact_name(entry.as_ref())));
 }
 
 /// Adds a symbol list's entries to `glob` with `value`: the names they
 /// spell (see exact_name), and the patterns - a malformed one, such as
 /// `_a[`, matching nothing, as ld-prime takes it without a word.
-fn add_patterns(glob: &mut GlobBuilder, entries: impl IntoIterator<Item: AsRef<str>>, value: i64) {
+fn add_patterns(glob: &mut GlobBuilder, entries: impl IntoIterator<Item: AsRef<[u8]>>, value: i64) {
     for entry in entries {
         let entry = entry.as_ref();
         match exact_name(entry) {
-            Some(name) => glob.add_literal(name.as_bytes(), value),
+            Some(name) => glob.add_literal(&name, value),
             None => {
-                glob.add(entry.as_bytes(), value);
+                glob.add(entry, value);
             }
         }
     }
 }
 
-/// Reads a symbol list file. ld-prime ends its error about one it can't
-/// open, as about a -filelist file, with a blank line.
-fn read_symbol_list(opt: &str, path: &Path) -> Vec<String> {
-    match std::fs::read_to_string(path) {
+/// Reads a symbol list file, its names bytes, as ld-prime takes them.
+/// ld-prime ends its error about one it can't open, as about a
+/// -filelist file, with a blank line.
+fn read_symbol_list(opt: &str, path: &Path) -> Vec<Vec<u8>> {
+    match std::fs::read(path) {
         Ok(text) => symbol_list(&text),
         Err(e) => fatal!(
             "{opt} file '{}' could not be opened, {}\n",
@@ -1639,19 +1637,19 @@ fn symbol_move(opt: &str, segment: &[u8], path: &Path) -> SymbolMove {
     let mut symbols = GlobBuilder::default();
     for entry in read_symbol_list(opt, path) {
         match exact_name(&entry) {
-            Some(name) => symbols.add_literal(name.as_bytes(), 1),
-            None => add_patterns(&mut symbols, [entry.as_str()], 0),
+            Some(name) => symbols.add_literal(&name, 1),
+            None => add_patterns(&mut symbols, [entry], 0),
         }
     }
     SymbolMove { segment: segment.to_vec(), symbols: symbols.build() }
 }
 
 /// The entries of a symbol list: one per line, '#' starting a comment.
-fn symbol_list(text: &str) -> Vec<String> {
-    text.lines()
-        .map(|line| line.split('#').next().unwrap_or("").trim())
+fn symbol_list(text: &[u8]) -> Vec<Vec<u8>> {
+    lines(text)
+        .map(|line| trim_space(line.split(|&c| c == b'#').next().unwrap_or_default()))
         .filter(|line| !line.is_empty())
-        .map(String::from)
+        .map(<[u8]>::to_vec)
         .collect()
 }
 
@@ -1739,11 +1737,6 @@ fn sectcreate_name(kind: &str, name: &[u8], warnings: &mut OptionWarnings) -> Ve
         ));
     }
     cut
-}
-
-fn is_space(c: u8) -> bool {
-    // Same as isspace() in the C locale, without the function call.
-    matches!(c, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
 }
 
 /// Splits a response file into arguments, as ld-prime does: at runs of
@@ -2207,7 +2200,7 @@ impl<'a> ArgCursor<'a> {
     }
 
     /// The entries of the symbol list file an option names.
-    fn next_symbol_list(&mut self, opt: &str) -> Vec<String> {
+    fn next_symbol_list(&mut self, opt: &str) -> Vec<Vec<u8>> {
         read_symbol_list(opt, &self.next_path(opt))
     }
 
@@ -2469,25 +2462,24 @@ fn read_alias_list(
     aliases: &mut Vec<(Vec<u8>, Vec<u8>)>,
     warnings: &mut OptionWarnings,
 ) {
-    let contents = match std::fs::read_to_string(list) {
+    let contents = match std::fs::read(list) {
         Ok(contents) => contents,
         Err(e) => {
             let errno = crate::error::errno_text(&e);
             warnings.warn(format!("order file '{}' could not be opened, {errno}", list.display()));
-            String::new()
+            Vec::new()
         }
     };
-    for line in contents.lines() {
-        let line = line.split('#').next().unwrap_or("").trim();
+    for line in lines(&contents) {
+        let line = line.split(|&c| c == b'#').next().unwrap_or_default();
+        let line = trim_space(line);
         if line.is_empty() {
             continue;
         }
-        let mut it = line.split_whitespace();
+        let mut it = line.split(|&c| is_space(c)).filter(|w| !w.is_empty());
         match (it.next(), it.next()) {
-            (Some(existing), Some(new)) => {
-                aliases.push((existing.as_bytes().to_vec(), new.as_bytes().to_vec()))
-            }
-            _ => fatal!("malformed -alias_list line: {line}"),
+            (Some(existing), Some(new)) => aliases.push((existing.to_vec(), new.to_vec())),
+            _ => fatal!("malformed -alias_list line: {}", crate::error::raw(line)),
         }
     }
 }
@@ -2572,9 +2564,10 @@ fn env_defaults() -> Args {
 ///
 /// Options are matched as bytes and their arguments keep the bytes they
 /// were given in: paths, install names and rpaths pass through to the
-/// file system and the load commands unchanged. Arguments that are text
-/// by nature (symbol and section names, versions, the -undefined
-/// treatment) must be UTF-8.
+/// file system and the load commands unchanged, and the names of
+/// symbols, segments and sections are bytes, UTF-8 or not, as the
+/// inputs' are. Arguments that are text by nature (versions, numbers,
+/// the -undefined treatment) must be UTF-8.
 pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut args = env_defaults();
     let mut st = ParseState::default();
@@ -2608,10 +2601,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-kernel" => args.kernel = true,
             b"-dynamic" => args.dynamic = true,
             b"-e" => {
-                args.entry = cur.next_text(name).as_bytes().to_vec();
+                args.entry = cur.next_bytes(name);
                 st.explicit_entry = true;
             }
-            b"-init" => args.init = Some(cur.next_text(name).as_bytes().to_vec()),
+            b"-init" => args.init = Some(cur.next_bytes(name)),
             b"-bundle_loader" => read_bundle_loader(&mut cur, &mut args, &mut st.warnings, name),
             b"-final_output" => args.final_output = Some(cur.next_bytes(name)),
             // (dyld's own LC_ID_DYLINKER names /usr/lib/dyld, whatever
@@ -2740,8 +2733,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
 
             // Symbols: which must be defined, which are exported, kept or
             // stripped, and how they bind.
-            b"-u" => args.forced_undefined.push(cur.next_text(name).as_bytes().to_vec()),
-            b"-U" => args.allowed_undefined.push(cur.next_text(name).as_bytes().to_vec()),
+            b"-u" => args.forced_undefined.push(cur.next_bytes(name)),
+            b"-U" => args.allowed_undefined.push(cur.next_bytes(name)),
             // ld-prime knows one treatment besides the default error:
             // dynamic_lookup, which suppress selects too. It deprecates
             // every other one (error, warning or anything else) and
@@ -2757,7 +2750,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-exported_symbol" => {
                 check_export_choice(&mut st.export_choice, ExportChoice::Exported, name);
-                let pat = cur.next_text(name);
+                let pat = cur.next_arg(name).as_bytes();
                 add_initial_undefines(&mut args.forced_undefined, [pat]);
                 add_patterns(st.lists.exported_symbols.get_or_insert_default(), [pat], 0);
             }
@@ -2769,7 +2762,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-unexported_symbol" => {
                 check_export_choice(&mut st.export_choice, ExportChoice::Unexported, name);
-                add_patterns(&mut st.lists.unexported_symbols, [cur.next_text(name)], 0)
+                add_patterns(&mut st.lists.unexported_symbols, [cur.next_arg(name).as_bytes()], 0)
             }
             b"-unexported_symbols_list" => {
                 check_export_choice(&mut st.export_choice, ExportChoice::Unexported, name);
@@ -2792,8 +2785,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-export_dynamic" => args.export_dynamic = true,
             b"-keep_private_externs" => args.keep_private_externs = true,
             b"-alias" => {
-                let existing = cur.next_text(name).as_bytes().to_vec();
-                let new = cur.next_text(name).as_bytes().to_vec();
+                let existing = cur.next_bytes(name);
+                let new = cur.next_bytes(name);
                 args.aliases.push((existing, new));
             }
             b"-alias_list" => {
@@ -2861,7 +2854,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 st.max_default_common_align = Some(align);
             }
             b"-keep_duplicate" => {
-                add_patterns(&mut st.lists.keep_duplicates, [cur.next_text(name)], 0);
+                add_patterns(&mut st.lists.keep_duplicates, [cur.next_arg(name).as_bytes()], 0);
             }
             b"-keep_duplicates_list" => {
                 add_patterns(&mut st.lists.keep_duplicates, cur.next_symbol_list(name), 0);
@@ -2877,7 +2870,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-poison_symbols_list" => {
                 for pat in cur.next_symbol_list(name) {
-                    st.lists.poisoned.add(pat.as_bytes(), 0);
+                    st.lists.poisoned.add(&pat, 0);
                 }
             }
 
@@ -3212,7 +3205,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"--print-dependencies" => args.print_dependencies = true,
             b"-print_statistics" => args.perf = true,
             b"-why_load" | b"-whyload" => args.why_load = true,
-            b"-why_live" => add_patterns(&mut st.lists.why_live, [cur.next_text(name)], 0),
+            b"-why_live" => {
+                add_patterns(&mut st.lists.why_live, [cur.next_arg(name).as_bytes()], 0)
+            }
             b"-t" => args.trace = true,
             b"-trace_symbol_layout" => args.trace_symbol_layout = true,
             b"-trace_symbol_layout_file" => {
@@ -3820,12 +3815,12 @@ fn resolve_dirty_data(args: &mut Args) {
     let leaf = install_name.rsplit(|&c| c == b'/').next().unwrap_or_default();
     let file = [leaf, b".dirty"].concat();
     let path = root.join("AppleInternal/DirtyDataFiles").join(std::ffi::OsStr::from_bytes(&file));
-    let Ok(text) = std::fs::read_to_string(&path) else {
+    let Ok(text) = std::fs::read(&path) else {
         return;
     };
     let mut symbols = GlobBuilder::default();
     for sym in symbol_list(&text) {
-        symbols.add_literal(sym.as_bytes(), 1);
+        symbols.add_literal(&sym, 1);
     }
     let segment = b"__DATA_DIRTY".to_vec();
     args.dirty_data.push(SymbolMove { segment, symbols: symbols.build() });

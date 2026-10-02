@@ -98,6 +98,37 @@ pub fn path_bytes(path: &std::path::Path) -> &[u8] {
     std::os::unix::ffi::OsStrExt::as_bytes(path.as_os_str())
 }
 
+/// Whether a byte is white space as isspace() takes it in the C locale.
+pub fn is_space(c: u8) -> bool {
+    matches!(c, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
+}
+
+/// A byte string without the white space (see is_space) it starts and
+/// ends with.
+pub fn trim_space(mut bytes: &[u8]) -> &[u8] {
+    while let [first, rest @ ..] = bytes
+        && is_space(*first)
+    {
+        bytes = rest;
+    }
+    while let [rest @ .., last] = bytes
+        && is_space(*last)
+    {
+        bytes = rest;
+    }
+    bytes
+}
+
+/// The lines of a text file, as str::lines splits a string: at each
+/// '\n', a '\r' before it dropped, the last line ended or not. Lists
+/// of names (symbols, files) are bytes, whatever their encoding.
+pub fn lines(text: &[u8]) -> impl Iterator<Item = &[u8]> {
+    let n = if text.is_empty() { 0 } else { usize::MAX };
+    let text = text.strip_suffix(b"\n").unwrap_or(text);
+    let lines = text.split(|&c| c == b'\n').take(n);
+    lines.map(|line| line.strip_suffix(b"\r").unwrap_or(line))
+}
+
 /// Splits a byte string at the first `sep`, as str::split_once does a
 /// string.
 pub fn split_once(bytes: &[u8], sep: u8) -> Option<(&[u8], &[u8])> {
