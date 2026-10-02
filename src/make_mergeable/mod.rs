@@ -1091,7 +1091,9 @@ impl<'a, E: Target> Builder<'a, E> {
     /// The symbols the fixups refer to by name, each with its library's
     /// index among the dependencies if it is an import: those the
     /// linker defines (or leaves to dynamic lookup) as first referred
-    /// to, then the imports by library and name.
+    /// to, then the imports by library and name. An import the link
+    /// names as an initial undefine (-u) is one whether or not anything
+    /// refers to it.
     fn referenced_syms(&self, deps: &[(i32, DylibRecord)]) -> Vec<(SymbolId, Option<u8>)> {
         let ctx = self.ctx;
         let mut syms: Vec<SymbolId> = Vec::new();
@@ -1113,6 +1115,14 @@ impl<'a, E: Target> Builder<'a, E> {
                 {
                     syms.push(id);
                 }
+            }
+        }
+        for name in &ctx.args.forced_undefined {
+            if let Some(id) = ctx.symbols.get(name)
+                && ctx.symbols[id].is_imported()
+                && seen.insert(id)
+            {
+                syms.push(id);
             }
         }
         let dep_index = |id: SymbolId| match ctx.symbols[id].file() {
