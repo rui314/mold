@@ -57,3 +57,12 @@ cat > $t/lib.tbd <<EOF
 EOF
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/lib.tbd
 otool -L $t/exe | grep -q '/usr/lib/libfirst.dylib (compatibility version 1.0.0, current version 2.0.0)'
+
+# Of a key given twice the last counts, and a number with no fractional
+# part is an integer, even written with one.
+cat > $t/lib.tbd <<EOF
+{ "tapi_tbd_version": 5.0, "main_library": { $target, $syms,
+  "install_names": [{"name": "/usr/lib/libfirst.dylib"}], $name } }
+EOF
+$CC --ld-path=$mold -o $t/exe $t/a.o $t/lib.tbd
+otool -L $t/exe | grep -q '/usr/lib/libt.dylib'

@@ -14,6 +14,7 @@
 use std::path::Path;
 
 use rayon::prelude::*;
+use serde_json::Value;
 
 use crate::fatal;
 use crate::macho::*;
@@ -62,202 +63,23 @@ impl TbdFile {
     }
 }
 
-/// A JSON value, as much of JSON as a TBD v5 file uses. Strings borrow
-/// from the file (input files are leaked); one with an escape is
-/// unescaped into a leaked copy.
-enum Json {
-    Null,
-    Bool,
-    Num(f64),
-    Str(&'static str),
-    Arr(Vec<Self>),
-    Obj(Vec<(&'static str, Self)>),
+/// The elements of an object's array-valued key; none for a key with
+/// another value, or none.
+fn list<'a>(obj: &'a Value, key: &str) -> &'a [Value] {
+    obj.get(key).and_then(Value::as_array).map_or(&[], Vec::as_slice)
 }
 
-impl Json {
-    fn get(&self, key: &str) -> Option<&Self> {
-        match self {
-            Self::Obj(fields) => fields.iter().find(|(k, _)| *k == key).map(|(_, v)| v),
-            _ => None,
-        }
-    }
-    fn arr(&self) -> &[Self] {
-        match self {
-            Self::Arr(items) => items,
-            _ => &[],
-        }
-    }
-    fn str(&self) -> Option<&'static str> {
-        match self {
-            Self::Str(s) => Some(s),
-            _ => None,
-        }
-    }
-    /// The strings of an array-valued key.
-    fn strs(&self, key: &str) -> impl Iterator<Item = &'static str> {
-        self.get(key).map(Self::arr).unwrap_or(&[]).iter().filter_map(Self::str)
-    }
-
-    /// The value as an integer, as LLVM's JSON reader takes one: a
-    /// number with no fraction.
-    fn integer(&self) -> Option<i64> {
-        match *self {
-            Self::Num(n) if n.fract() == 0.0 && n.abs() < 9.2e18 => Some(n as i64),
-            _ => None,
-        }
-    }
+/// The strings of an object's array-valued key.
+fn strs(obj: &'static Value, key: &str) -> impl Iterator<Item = &'static str> {
+    list(obj, key).iter().filter_map(Value::as_str)
 }
 
-struct JsonParser<'a> {
-    file: &'a Path,
-    text: &'static str,
-    pos: usize,
-}
-
-impl JsonParser<'_> {
-    fn fail(&self, what: &str) -> ! {
-        fatal!("{}: malformed .tbd JSON at byte {}: {what}", self.file.display(), self.pos);
-    }
-
-    fn skip_ws(&mut self) {
-        let b = self.text.as_bytes();
-        while self.pos < b.len() && matches!(b[self.pos], b' ' | b'\t' | b'\n' | b'\r') {
-            self.pos += 1;
-        }
-    }
-
-    fn eat(&mut self, c: u8) -> bool {
-        self.skip_ws();
-        if self.text.as_bytes().get(self.pos) == Some(&c) {
-            self.pos += 1;
-            true
-        } else {
-            false
-        }
-    }
-
-    fn value(&mut self) -> Json {
-        self.skip_ws();
-        let b = self.text.as_bytes();
-        match b.get(self.pos) {
-            Some(b'{') => {
-                self.pos += 1;
-                let mut fields = Vec::new();
-                if !self.eat(b'}') {
-                    loop {
-                        self.skip_ws();
-                        let key = self.string();
-                        if !self.eat(b':') {
-                            self.fail("expected ':'");
-                        }
-                        let val = self.value();
-                        fields.push((key, val));
-                        if self.eat(b',') {
-                            continue;
-                        }
-                        if self.eat(b'}') {
-                            break;
-                        }
-                        self.fail("expected ',' or '}'");
-                    }
-                }
-                Json::Obj(fields)
-            }
-            Some(b'[') => {
-                self.pos += 1;
-                let mut items = Vec::new();
-                if !self.eat(b']') {
-                    loop {
-                        items.push(self.value());
-                        if self.eat(b',') {
-                            continue;
-                        }
-                        if self.eat(b']') {
-                            break;
-                        }
-                        self.fail("expected ',' or ']'");
-                    }
-                }
-                Json::Arr(items)
-            }
-            Some(b'"') => Json::Str(self.string()),
-            Some(b't') if self.text[self.pos..].starts_with("true") => {
-                self.pos += 4;
-                Json::Bool
-            }
-            Some(b'f') if self.text[self.pos..].starts_with("false") => {
-                self.pos += 5;
-                Json::Bool
-            }
-            Some(b'n') if self.text[self.pos..].starts_with("null") => {
-                self.pos += 4;
-                Json::Null
-            }
-            Some(_) => {
-                let start = self.pos;
-                while self.pos < b.len()
-                    && matches!(b[self.pos], b'0'..=b'9' | b'-' | b'+' | b'.' | b'e' | b'E')
-                {
-                    self.pos += 1;
-                }
-                match self.text[start..self.pos].parse::<f64>() {
-                    Ok(n) => Json::Num(n),
-                    Err(_) => self.fail("expected a value"),
-                }
-            }
-            None => self.fail("unexpected end of file"),
-        }
-    }
-
-    fn string(&mut self) -> &'static str {
-        let b = self.text.as_bytes();
-        if b.get(self.pos) != Some(&b'"') {
-            self.fail("expected a string");
-        }
-        self.pos += 1;
-        let start = self.pos;
-        let mut escaped = false;
-        while self.pos < b.len() && b[self.pos] != b'"' {
-            if b[self.pos] == b'\\' {
-                escaped = true;
-                self.pos += 1;
-            }
-            self.pos += 1;
-        }
-        if self.pos >= b.len() {
-            self.fail("unterminated string");
-        }
-        let raw = &self.text[start..self.pos];
-        self.pos += 1;
-        if !escaped {
-            return raw;
-        }
-        let mut out = String::with_capacity(raw.len());
-        let mut chars = raw.chars();
-        while let Some(c) = chars.next() {
-            if c != '\\' {
-                out.push(c);
-                continue;
-            }
-            match chars.next() {
-                Some('n') => out.push('\n'),
-                Some('t') => out.push('\t'),
-                Some('r') => out.push('\r'),
-                Some('b') => out.push('\u{8}'),
-                Some('f') => out.push('\u{c}'),
-                Some('u') => {
-                    let hex: String = chars.by_ref().take(4).collect();
-                    match u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32) {
-                        Some(ch) => out.push(ch),
-                        None => self.fail("bad \\u escape"),
-                    }
-                }
-                Some(other) => out.push(other),
-                None => self.fail("bad escape"),
-            }
-        }
-        String::leak(out)
-    }
+/// The value as an integer, as LLVM's JSON reader takes one: a number
+/// with no fraction, which serde_json reads as a float if written with
+/// one (5.0).
+fn integer(v: &Value) -> Option<i64> {
+    let float = v.as_f64().filter(|n| n.fract() == 0.0 && n.abs() < 9.2e18);
+    v.as_i64().or(float.map(|n| n as i64))
 }
 
 /// Adds the symbols of an Objective-C class a stub lists by name to its
@@ -282,49 +104,51 @@ fn parse_json(
     arch: &'static str,
     platform: u32,
 ) -> Option<TbdFile> {
-    let mut p = JsonParser { file, text, pos: 0 };
-    let root = p.value();
-    check_json(file, &root);
-
-    let targets_of = |lib: &Json| -> Vec<Target> {
-        let info = lib.get("target_info").map(Json::arr).unwrap_or(&[]);
-        info.iter().filter_map(|t| t.get("target").and_then(Json::str)).filter_map(target).collect()
+    // The parsed file lives as long as the link, like the input files,
+    // so that the names in it can be borrowed.
+    let root: &'static Value = match serde_json::from_str(text) {
+        Ok(root) => Box::leak(Box::new(root)),
+        Err(e) => fatal!("{}: malformed .tbd JSON: {e}", file.display()),
     };
-    let target_of = |lib: &Json| select_target(arch, platform, &targets_of(lib)).0;
+    check_json(file, root);
+
+    let targets_of = |lib: &'static Value| -> Vec<Target> {
+        let info = list(lib, "target_info").iter();
+        info.filter_map(|t| t.get("target").and_then(Value::as_str)).filter_map(target).collect()
+    };
+    let target_of = |lib| select_target(arch, platform, &targets_of(lib)).0;
     // A group's targets TAPI can't read - not an array, or one with
     // something other than a string - don't restrict it.
-    let applies = |group: &Json, want: Target| match group.get("targets") {
-        Some(Json::Arr(targets)) if targets.iter().all(|t| t.str().is_some()) => {
-            targets.iter().filter_map(Json::str).any(|t| target(t) == Some(want))
+    let applies = |group: &'static Value, want: Target| match group.get("targets") {
+        Some(Value::Array(targets)) if targets.iter().all(Value::is_string) => {
+            targets.iter().filter_map(Value::as_str).any(|t| target(t) == Some(want))
         }
         _ => true,
     };
-    let library_applies = |lib: &Json, want: Target| {
+    let library_applies = |lib: &'static Value, want: Target| {
         lib.get("target_info").is_none() || targets_of(lib).contains(&want)
     };
 
     // Adds one library object's symbols for the requested target.
-    let add_symbols = |tbd: &mut TbdFile, lib: &Json| {
+    let add_symbols = |tbd: &mut TbdFile, lib: &'static Value| {
         let target = target_of(lib);
         if !library_applies(lib, target) {
             return;
         }
         for key in ["exported_symbols", "reexported_symbols"] {
-            for group in
-                lib.get(key).map(Json::arr).unwrap_or(&[]).iter().filter(|g| applies(g, target))
-            {
+            for group in list(lib, key).iter().filter(|g| applies(g, target)) {
                 for section in ["data", "text"] {
                     let Some(kinds) = group.get(section) else { continue };
-                    tbd.exports.extend(kinds.strs("global"));
-                    tbd.weak_exports.extend(kinds.strs("weak"));
-                    tbd.tlv_exports.extend(kinds.strs("thread_local"));
-                    for name in kinds.strs("objc_class") {
+                    tbd.exports.extend(strs(kinds, "global"));
+                    tbd.weak_exports.extend(strs(kinds, "weak"));
+                    tbd.tlv_exports.extend(strs(kinds, "thread_local"));
+                    for name in strs(kinds, "objc_class") {
                         push_objc_class(&mut tbd.exports, name, false);
                     }
-                    for name in kinds.strs("objc_eh_type") {
+                    for name in strs(kinds, "objc_eh_type") {
                         push_objc_class(&mut tbd.exports, name, true);
                     }
-                    for name in kinds.strs("objc_ivar") {
+                    for name in strs(kinds, "objc_ivar") {
                         tbd.exports.push(String::leak(format!("_OBJC_IVAR_$_{name}")));
                     }
                 }
@@ -335,7 +159,7 @@ fn parse_json(
     // One library object (the main library or an inlined re-export) as
     // a TbdFile: its install name, version, flags, symbols and the
     // names it re-exports, for the requested target.
-    let parse_library = |lib: &Json| -> Option<TbdFile> {
+    let parse_library = |lib: &'static Value| -> Option<TbdFile> {
         let target = target_of(lib);
         if !library_applies(lib, target) {
             return None;
@@ -347,9 +171,7 @@ fn parse_json(
         };
         // TAPI takes the install name and versions from the first entry
         // of their lists, whatever its targets.
-        let first = |key: &str, field: &str| {
-            lib.get(key).map(Json::arr).and_then(<[Json]>::first)?.get(field)?.str()
-        };
+        let first = |key: &str, field: &str| list(lib, key).first()?.get(field)?.as_str();
         if let Some(s) = first("install_names", "name") {
             tbd.install_name = s.to_string();
         }
@@ -359,34 +181,26 @@ fn parse_json(
         if let Some(s) = first("compatibility_versions", "version") {
             tbd.compatibility_version = packed_version(s).unwrap();
         }
-        let info = lib.get("target_info").map(Json::arr).unwrap_or(&[]);
-        if let Some(s) = info
-            .iter()
-            .find(|t| t.get("target").and_then(Json::str).and_then(self::target) == Some(target))
+        if let Some(s) = (list(lib, "target_info").iter())
+            .find(|t| t["target"].as_str().and_then(self::target) == Some(target))
             .and_then(|t| t.get("min_deployment"))
-            .and_then(Json::str)
+            .and_then(Value::as_str)
         {
             tbd.minos = parse_version(s);
         }
-        for group in lib.get("parent_umbrellas").map(Json::arr).unwrap_or(&[]) {
+        for group in list(lib, "parent_umbrellas") {
             if applies(group, target) {
-                tbd.parent_umbrella = group.get("umbrella").and_then(Json::str);
+                tbd.parent_umbrella = group.get("umbrella").and_then(Value::as_str);
             }
         }
-        for group in lib.get("allowable_clients").map(Json::arr).unwrap_or(&[]) {
+        for group in list(lib, "allowable_clients") {
             if applies(group, target) {
-                tbd.allowable_clients.extend(group.strs("clients"));
+                tbd.allowable_clients.extend(strs(group, "clients"));
             }
         }
         add_symbols(&mut tbd, lib);
-        for group in lib
-            .get("reexported_libraries")
-            .map(Json::arr)
-            .unwrap_or(&[])
-            .iter()
-            .filter(|g| applies(g, target))
-        {
-            for name in group.strs("names") {
+        for group in list(lib, "reexported_libraries").iter().filter(|g| applies(g, target)) {
+            for name in strs(group, "names") {
                 if !tbd.reexports.contains(&name) {
                     tbd.reexports.push(name);
                 }
@@ -402,7 +216,7 @@ fn parse_json(
     tbd.platforms = select_target(arch, platform, &targets_of(main)).1;
     // The re-exported libraries inlined in "libraries" are documents
     // of their own.
-    for lib in root.get("libraries").map(Json::arr).unwrap_or(&[]) {
+    for lib in list(root, "libraries") {
         if let Some(doc) = parse_library(lib) {
             tbd.documents.push(doc);
         }
@@ -418,88 +232,80 @@ fn parse_json(
 /// naming the section at fault: the first one that isn't what it should
 /// be, by the order TAPI reads them in. Of some lists it reads the first
 /// element only; unknown keys it ignores.
-fn check_json(file: &Path, root: &Json) {
+fn check_json(file: &Path, root: &Value) {
     let fail = |key: &str| -> ! {
         fatal!("tapi error: invalid {key} section\n in '{}'", file.display());
     };
-    if root.get("tapi_tbd_version").and_then(Json::integer) != Some(5) {
+    if root.get("tapi_tbd_version").and_then(integer) != Some(5) {
         fail("tapi_tbd_version");
     }
     let Some(main) = root.get("main_library") else {
         fatal!("{}: no main_library in .tbd file", file.display());
     };
-    let libraries = root.get("libraries").map(Json::arr).unwrap_or(&[]);
-    for lib in
-        std::iter::once(main).chain(libraries.iter().filter(|lib| matches!(lib, Json::Obj(_))))
-    {
+    let libraries = list(root, "libraries").iter().filter(|lib| lib.is_object());
+    for lib in std::iter::once(main).chain(libraries) {
         check_json_library(lib, &fail);
     }
 }
 
 /// check_json for a library: the main one or one inlined.
-fn check_json_library(lib: &Json, fail: &dyn Fn(&str) -> !) {
-    let Some(Json::Arr(targets)) = lib.get("target_info") else { fail("targets") };
+fn check_json_library(lib: &Value, fail: &dyn Fn(&str) -> !) {
+    let Some(Value::Array(targets)) = lib.get("target_info") else { fail("targets") };
     for info in targets {
-        if info.get("target").and_then(Json::str).is_none() {
+        if !info["target"].is_string() {
             fail("target");
         }
-        if let Some(version) = info.get("min_deployment").and_then(Json::str)
+        if let Some(version) = info.get("min_deployment").and_then(Value::as_str)
             && !is_version_tuple(version)
         {
             fail("min_deployment");
         }
     }
-    match lib.get("install_names").map(Json::arr).and_then(<[Json]>::first) {
-        Some(name @ Json::Obj(_)) if name.get("name").and_then(Json::str).is_none() => fail("name"),
-        Some(Json::Obj(_)) => {}
+    match list(lib, "install_names").first() {
+        Some(name @ Value::Object(_)) if !name["name"].is_string() => fail("name"),
+        Some(Value::Object(_)) => {}
         Some(_) => fail("install_names"),
-        None if matches!(lib.get("install_names"), Some(Json::Arr(_))) => {}
+        None if matches!(lib.get("install_names"), Some(Value::Array(_))) => {}
         None => fail("install_names"),
     }
     for key in ["current_versions", "compatibility_versions"] {
-        match lib.get(key).map(Json::arr).and_then(<[Json]>::first) {
-            Some(Json::Obj(_)) => {}
+        let version = match list(lib, key).first() {
+            Some(first @ Value::Object(_)) => first.get("version").and_then(Value::as_str),
             Some(_) => fail(key),
             None => continue,
-        }
-        let version = lib.get(key).unwrap().arr()[0].get("version").and_then(Json::str);
+        };
         if version.is_some_and(|v| packed_version(v).is_none()) {
             fail("version");
         }
     }
-    match lib.get("swift_abi").map(Json::arr).and_then(<[Json]>::first) {
-        Some(abi @ Json::Obj(_)) if abi.get("abi").and_then(Json::integer).is_none() => fail("abi"),
-        Some(Json::Obj(_)) | None => {}
+    match list(lib, "swift_abi").first() {
+        Some(abi @ Value::Object(_)) if abi.get("abi").and_then(integer).is_none() => fail("abi"),
+        Some(Value::Object(_)) | None => {}
         Some(_) => fail("swift_abi"),
     }
-    match lib.get("flags").map(Json::arr).and_then(<[Json]>::first) {
-        Some(flags @ Json::Obj(_)) => check_json_strings(flags, "attributes", fail),
+    match list(lib, "flags").first() {
+        Some(flags @ Value::Object(_)) => check_json_strings(flags, "attributes", fail),
         Some(_) => fail("flags"),
         None => {}
     }
-    for umbrella in lib.get("parent_umbrellas").map(Json::arr).unwrap_or(&[]) {
+    for umbrella in list(lib, "parent_umbrellas") {
         match umbrella {
-            Json::Obj(_) if umbrella.get("umbrella").and_then(Json::str).is_none() => {
-                fail("umbrella")
-            }
-            Json::Obj(_) => {}
+            Value::Object(_) if !umbrella["umbrella"].is_string() => fail("umbrella"),
+            Value::Object(_) => {}
             _ => fail("parent_umbrellas"),
         }
     }
     for (key, names) in
         [("allowable_clients", "clients"), ("reexported_libraries", "names"), ("rpaths", "paths")]
     {
-        for group in lib.get(key).map(Json::arr).unwrap_or(&[]) {
+        for group in list(lib, key) {
             check_json_strings(group, names, fail);
         }
     }
     for key in ["exported_symbols", "reexported_symbols", "undefined_symbols"] {
-        for group in lib.get(key).map(Json::arr).unwrap_or(&[]) {
-            if !matches!(group, Json::Obj(_)) {
-                continue;
-            }
-            let segments: Vec<&Json> = (["data", "text"].iter())
-                .filter_map(|seg| group.get(seg).filter(|v| matches!(v, Json::Obj(_))))
+        for group in list(lib, key).iter().filter(|g| g.is_object()) {
+            let segments: Vec<&Value> = (["data", "text"].iter())
+                .filter_map(|seg| group.get(seg).filter(|v| v.is_object()))
                 .collect();
             if segments.is_empty() {
                 fail(key);
@@ -516,9 +322,9 @@ fn check_json_library(lib: &Json, fail: &dyn Fn(&str) -> !) {
 }
 
 /// Fails on an array `key` of `obj` with something other than a string.
-fn check_json_strings(obj: &Json, key: &str, fail: &dyn Fn(&str) -> !) {
-    if let Some(Json::Arr(items)) = obj.get(key)
-        && items.iter().any(|item| item.str().is_none())
+fn check_json_strings(obj: &Value, key: &str, fail: &dyn Fn(&str) -> !) {
+    if let Some(Value::Array(items)) = obj.get(key)
+        && !items.iter().all(Value::is_string)
     {
         fail(key);
     }
