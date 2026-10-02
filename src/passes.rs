@@ -5700,6 +5700,12 @@ pub(crate) fn pointer_target<E: Target>(ctx: &Context<E>, i: usize) -> Option<u3
 /// goes through the slot likewise (see LazyUse). ld-prime refuses any
 /// other reference, such as a pointer in data, which dyld would have
 /// to bind at launch; the error names the fixup as it does.
+///
+/// A mergeable dylib would record a rewritten instruction under the
+/// compiler's fixup, for no merge to relink: ld-prime crashes on one
+/// that uses a lazy dylib (and makes a dylib no link can merge of one
+/// that uses a delay-init dylib), which mold refuses; one that names
+/// such a dylib but uses nothing of it links as any other.
 pub fn create_lazy_loads<E: Target>(ctx: &mut Context<E>) {
     if ctx.args.lazy_load {
         ctx.lazy_helpers.keep_alive = add_keep_alive_subsec(ctx);
@@ -5714,6 +5720,9 @@ pub fn create_lazy_loads<E: Target>(ctx: &mut Context<E>) {
         error!("keepAlive use of '__dyld_lazy_load' in 'anon' cannot be lazy loaded.");
     }
     let uses = lazy_uses(ctx);
+    if ctx.args.make_mergeable && !uses.is_empty() {
+        fatal!("-lazy-l/-lazy_library/-lazy_framework cannot be used with -make_mergeable");
+    }
     let (flags, slots) = create_lazy_load_slots(ctx, &uses);
     create_lazy_helpers(ctx, &uses, &flags, &slots);
 

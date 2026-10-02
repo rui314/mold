@@ -4051,9 +4051,10 @@ fn check_relocatable(args: &Args, data_const: Option<bool>) {
 /// namespace in one bound for the shared cache, whose builder binds
 /// each import to the dylib that exports it once and for all (dyld,
 /// which binds nothing, may have one), or in a mergeable dylib, whose
-/// subsections a two-level image may take in; the debug hook in a
-/// mergeable dylib, which only a debug build that merges nothing gets;
-/// and the lazy-load and delay-init dylibs in one.
+/// subsections a two-level image may take in; and the debug hook in a
+/// mergeable dylib, which only a debug build that merges nothing gets.
+/// (A mergeable dylib may name lazy-load and delay-init dylibs, but not
+/// use them; see passes::create_lazy_loads.)
 fn check_dylib_use(target: &TargetTraits, args: &Args) {
     if args.flat_namespace && !args.is_dylinker() && shared_region_eligible(target, args) {
         fatal!(
@@ -4067,18 +4068,6 @@ fn check_dylib_use(target: &TargetTraits, args: &Args) {
     }
     if args.make_mergeable && args.add_mergeable_debug_hook {
         fatal!("-add_mergeable_debug_hook cannot be used with -make_mergeable");
-    }
-    // Code reaching a lazy-load or delay-init dylib's symbol is
-    // rewritten to call a helper, which a mergeable dylib would record
-    // under the compiler's fixup, for no merge to relink: ld-prime
-    // aborts on the first and makes a dylib no link can merge of the
-    // second. (A -lazy-l the deployment target ignores is a plain -l.)
-    if args.make_mergeable && args.lazy_load {
-        fatal!("-lazy-l/-lazy_library/-lazy_framework cannot be used with -make_mergeable");
-    }
-    let delay = |arg: &InputArg| matches!(arg, InputArg::Library(LibraryKind::Delay, _));
-    if args.make_mergeable && args.inputs.iter().any(delay) {
-        fatal!("-delay-l/-delay_library/-delay_framework cannot be used with -make_mergeable");
     }
 }
 
