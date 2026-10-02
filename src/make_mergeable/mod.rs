@@ -485,7 +485,7 @@ impl<'a, E: Target> Builder<'a, E> {
         let sym_id = obj.symbols[label];
         // (A losing copy of a weak definition, whose symbol is the
         // winner's, which may be the folded one, has no entry at all.)
-        if !ctx.folded_subsec_names.contains_key(&sym_id)
+        if !ctx.folded_subsec_names.contains(&sym_id)
             || ctx.symbols[sym_id].input_section() != Some(id)
         {
             return;

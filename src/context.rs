@@ -239,10 +239,9 @@ pub struct Context<E: Target> {
     /// ld64's __OBJC_$_INSTANCE_METHODS_Foo(A|B) on a merged method
     /// list, and the like. (name, subsection).
     pub extra_local_syms: Vec<(&'static [u8], u32)>,
-    /// The symbols naming the subsections of the functions icf folded,
-    /// each with whether the output drops it (see
-    /// icf::folded_subsec_names).
-    pub folded_subsec_names: hashbrown::HashMap<SymbolId, bool>,
+    /// The symbols naming the subsections of the functions icf folded
+    /// (see icf::folded_subsec_names).
+    pub folded_subsec_names: hashbrown::HashSet<SymbolId>,
     /// A DOF section for each provider of DTrace probes the image has
     /// sites of (see dtrace::create_dof_sections).
     pub dof_sections: Vec<crate::dtrace::DofSection>,
@@ -373,7 +372,7 @@ impl<E: Target> Context<E> {
             code_signature: CodeSignatureSection::new(),
             data_blobs: Vec::new(),
             extra_local_syms: Vec::new(),
-            folded_subsec_names: hashbrown::HashMap::new(),
+            folded_subsec_names: hashbrown::HashSet::new(),
             dof_sections: Vec::new(),
             dylib_load_seq: 0,
             indirect_aliases: Vec::new(),

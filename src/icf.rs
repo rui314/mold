@@ -286,51 +286,27 @@ fn subsec_names<E: Target>(
     labels.chunk_by(|a, b| a.0 == b.0).map(|run| (run[0].0, run[run.len() - 1].3)).collect()
 }
 
-/// The symbols naming the subsections of folded functions, each with
-/// whether ld-prime drops it. It gives a folded function an alias of its
-/// own, of no size, named as the function was, but one
-/// named as the function it folded into is listed in the symbol table
-/// only if it is the first function of its scope, local or private
-/// extern, to fold into that one, and of another scope than that one's.
-/// So a name that functions of internal linkage share across objects
-/// (an inline function's .cold.1 part) is there once at most, and not
-/// at all after a local of another name folded in first. `folded`
-/// pairs each folded subsection, in input order, with the one it folded
-/// into.
+/// The symbols naming the subsections of folded functions: a folded
+/// function keeps its name, at the function it folded into. `folded`
+/// pairs each folded subsection with the one it folded into.
 fn folded_subsec_names<E: Target>(
     ctx: &Context<E>,
     folded: &[(usize, usize)],
-) -> hashbrown::HashMap<SymbolId, bool> {
+) -> hashbrown::HashSet<SymbolId> {
     let mut involved = vec![false; ctx.isecs.len()];
     let mut objs = Vec::new();
-    for &(member, leader) in folded {
+    for &(member, _) in folded {
         involved[member] = true;
-        involved[leader] = true;
-        objs.extend([ctx.isecs[member].file, ctx.isecs[leader].file]);
+        objs.push(ctx.isecs[member].file);
     }
     objs.sort_unstable();
     objs.dedup();
-    let names: hashbrown::HashMap<u32, SymbolId> = objs
-        .par_iter()
+    objs.par_iter()
         .flat_map_iter(|&i| subsec_names(ctx, i as usize, &ctx.objs[i as usize], |j| involved[j]))
         .collect::<Vec<_>>()
         .into_iter()
-        .collect();
-
-    let scoped = |id: SymbolId| (ctx.symbols[id].name(), ctx.symbols[id].is_extern());
-    // The scopes of the functions folded into each so far.
-    let mut seen = hashbrown::HashSet::new();
-    let mut out = hashbrown::HashMap::new();
-    for &(member, leader) in folded {
-        let Some(&id) = names.get(&(member as u32)) else { continue };
-        let first = seen.insert((leader, scoped(id).1));
-        let dropped = names.get(&(leader as u32)).is_some_and(|&l| {
-            let (a, b) = (scoped(id), scoped(l));
-            a.0 == b.0 && (a == b || !first)
-        });
-        out.insert(id, dropped);
-    }
-    out
+        .map(|(_, id)| id)
+        .collect()
 }
 
 /// Whether a subsection is a function of __TEXT,__text (ld64 folds no
