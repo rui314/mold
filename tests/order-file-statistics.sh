@@ -2,17 +2,16 @@
 source "$(dirname "$0")"/common.inc
 
 # -order_file_statistics (or LD_PRINT_ORDER_FILE_STATISTICS in the
-# environment) reports the -order_file lines that order no subsection:
-# a symbol no subsection is named after - not a dylib's, nor one dead
-# stripped, nor a C string's label -, or one an earlier line named. A
-# symbol named again without an object is ambiguous, and one without
-# an object that several objects define needs one.
+# environment) reports the -order_file lines that name no live symbol
+# of the objects - nor of their object, if they name one -, and how
+# many did. (ld-prime also counts a line naming only a C string's label
+# or an earlier line's symbol as naming nothing, and warns about names
+# given twice or found in several objects.)
 cat <<EOF | $CC -o $t/a.o -c -xc -
 static int st(void) { return 1; }
 int fa(void) { return st(); }
 int fb(void);
 int main() { return fa() + fb(); }
-const char *str(void) { return "hello"; }
 EOF
 
 cat <<EOF | $CC -o $t/b.o -c -xc -
@@ -25,12 +24,10 @@ cat <<EOF > $t/order
 _main
 _nosuch
 _fa
-_main
 _printf
 b.o:_fb
 a.o:_fb
 _st
-l_.str
 _unused
 EOF
 
@@ -42,18 +39,19 @@ link 2> $t/log1
 not grep -q warning: $t/log1
 
 link -Wl,-order_file_statistics 2> $t/log2
-grep -q "position of '_main' ambiguous, entry specified multiple times in the order file" $t/log2
-grep -q '_st specified in order_file but it exists in multiple .o files. Prefix symbol with .o filename in order_file to disambiguate' $t/log2
-[ "$(grep -c "can't find function/data for order_file entry" $t/log2)" = 6 ]
-for sym in _nosuch _main _printf _fb l_.str _unused; do
-  grep -q "can't find function/data for order_file entry: $sym$" $t/log2
-done
-grep -q 'only 4 out of 10 order_file symbols were applicable' $t/log2
+grep "can't find function/data for order_file entry" $t/log2 | sed 's/.*: //' > $t/missing2
+diff - $t/missing2 <<EOF
+_nosuch
+_printf
+_fb
+_unused
+EOF
+grep -q 'only 4 out of 8 order_file symbols were applicable' $t/log2
 
 LD_PRINT_ORDER_FILE_STATISTICS=1 link 2> $t/log3
-grep -q 'only 4 out of 10 order_file symbols were applicable' $t/log3
+grep -q 'only 4 out of 8 order_file symbols were applicable' $t/log3
 
-# Every line ordering a subsection, nothing is reported.
+# Every line naming a symbol, nothing is reported.
 printf '_fa\n_main\n' > $t/order
 link -Wl,-order_file_statistics 2> $t/log4
 not grep -q warning: $t/log4

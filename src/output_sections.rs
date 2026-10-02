@@ -2736,33 +2736,23 @@ fn read_order_files<E: Target>(ctx: &Context<E>) -> Vec<OrderEntry> {
 
 /// Ranks every subsection by the -order_file lists: the subsection the
 /// first line names gets rank 0 and so on; unlisted subsections rank
-/// last. A line names the subsections a symbol of its name names (see
-/// mapfile::names_its_subsec), not a C string's label, say, and a
-/// subsection takes the rank of the first line that names it. A
-/// symbol of the object LTO compiled counts as the bitcode file's it
-/// came from, if that is known (see lto::origins), unless
-/// -no_use_lto_filenames_in_order_file_matching says to take the
-/// object's own name, lto.o. -order_file_statistics reports the lines
-/// that order nothing (see report_order_file_statistics).
+/// last. A line names the live subsections of the symbols of its name
+/// (of its object, if it names one), and a subsection takes the rank of
+/// the first line that names it. A symbol of the object LTO compiled
+/// counts as the bitcode file's it came from, if that is known (see
+/// lto::origins), unless -no_use_lto_filenames_in_order_file_matching
+/// says to take the object's own name, lto.o. -order_file_statistics
+/// reports the lines that name nothing.
 fn order_file_ranks<E: Target>(ctx: &Context<E>) -> Option<Vec<u64>> {
     if ctx.args.order_files.is_empty() {
         return None;
     }
     let entries = read_order_files(ctx);
-    // A line naming an object and a symbol again is dropped, as
-    // ld-prime drops it: it finds no other subsection, nor is it
-    // reported. A name's lines are (object, rank).
+    // A name's lines, as (object, rank).
     type Lines<'a> = Vec<(Option<&'a [u8]>, u64)>;
-    let mut rank_of: std::collections::HashMap<&[u8], Lines> = std::collections::HashMap::new();
-    let mut repeated = vec![false; entries.len()];
+    let mut rank_of: hashbrown::HashMap<&[u8], Lines> = hashbrown::HashMap::new();
     for (i, entry) in entries.iter().enumerate() {
-        let lines = rank_of.entry(&entry.name).or_default();
-        let file = entry.file.as_deref();
-        if file.is_some() && lines.iter().any(|&(f, _)| f == file) {
-            repeated[i] = true;
-            continue;
-        }
-        lines.push((file, i as u64));
+        rank_of.entry(&entry.name).or_default().push((entry.file.as_deref(), i as u64));
     }
 
     let origins = if !ctx.lto_objs.is_empty() && ctx.args.lto_filenames_in_order_file {
@@ -2771,85 +2761,43 @@ fn order_file_ranks<E: Target>(ctx: &Context<E>) -> Option<Vec<u64>> {
         hashbrown::HashMap::new()
     };
     let mut ranks = vec![u64::MAX; ctx.isecs.len()];
-    // The subsections each line names, as (symbol, object) by line.
-    let mut named: Vec<Vec<(crate::symbol::SymbolId, usize)>> = vec![Vec::new(); entries.len()];
-    for id in 0..ctx.symbols.syms.len() as crate::symbol::SymbolId {
-        let sym = &ctx.symbols[id];
-        let Some(FileId::Obj(obj)) = sym.file() else {
+    let mut found = vec![false; entries.len()];
+    for sym in &ctx.symbols.syms {
+        let (Some(FileId::Obj(obj)), Some(isec)) = (sym.file(), sym.input_section()) else {
             continue;
         };
-        let mut obj = obj as usize;
         let Some(lines) = rank_of.get(sym.name()) else {
             continue;
         };
-        if !crate::mapfile::names_its_subsec(ctx, id) {
+        let isec = ctx.resolve_isec(isec as usize);
+        if !ctx.isecs[isec].is_alive() {
             continue;
         }
+        let mut obj = obj as usize;
         if ctx.is_lto_obj(obj)
             && let Some(&Some(origin)) = origins.get(sym.name())
         {
             obj = origin;
         }
         let leaf = ctx.objs[obj].mf.name.file_name().map_or(&[][..], |f| f.as_bytes());
-        let first = lines.iter().find(|(file, _)| file.is_none_or(|f| leaf == f));
-        if let Some(&(_, rank)) = first {
-            let isec = ctx.resolve_isec(sym.input_section().unwrap() as usize);
+        for &(_, rank) in lines.iter().filter(|(file, _)| file.is_none_or(|f| leaf == f)) {
             ranks[isec] = ranks[isec].min(rank);
-            named[rank as usize].push((id, obj));
+            found[rank as usize] = true;
         }
     }
     if ctx.args.order_file_statistics {
-        report_order_file_statistics(ctx, &entries, &repeated, &named);
+        report_order_file_statistics(&entries, &found);
     }
     Some(ranks)
 }
 
-/// -order_file_statistics: reports, as ld-prime does, the symbols named
-/// more than once without an object (of which the subsections take the
-/// first line's place), once for each subsection so named, then the
-/// symbols a line names without an object that more than one object
-/// defines, then the lines that name no subsection another line didn't
-/// name first, and how many of the lines ordered a subsection.
-fn report_order_file_statistics<E: Target>(
-    ctx: &Context<E>,
-    entries: &[OrderEntry],
-    repeated: &[bool],
-    named: &[Vec<(crate::symbol::SymbolId, usize)>],
-) {
-    let mut once = hashbrown::HashSet::new();
-    let ambiguous: hashbrown::HashSet<&[u8]> = entries
-        .iter()
-        .filter(|e| e.file.is_none() && !once.insert(e.name.as_slice()))
-        .map(|e| e.name.as_slice())
-        .collect();
-    for syms in named {
-        for &(sym, _) in syms {
-            let name = ctx.symbols[sym].name();
-            if ambiguous.contains(name) {
-                let name = raw(name);
-                crate::warn!(
-                    "position of '{name}' ambiguous, entry specified multiple times in the order file"
-                );
-            }
-        }
-    }
-    for (entry, syms) in entries.iter().zip(named) {
-        if entry.file.is_none()
-            && !ambiguous.contains(entry.name.as_slice())
-            && syms.iter().any(|&(_, obj)| obj != syms[0].1)
-        {
-            crate::warn!(
-                "{} specified in order_file but it exists in multiple .o files. Prefix symbol with .o filename in order_file to disambiguate",
-                raw(&entry.name)
-            );
-        }
-    }
+/// -order_file_statistics: warns about each line that names no symbol
+/// (see order_file_ranks), and tells how many did.
+fn report_order_file_statistics(entries: &[OrderEntry], found: &[bool]) {
     let mut missing = 0;
-    for (i, entry) in entries.iter().enumerate() {
-        if named[i].is_empty() && !repeated[i] {
-            crate::warn!("can't find function/data for order_file entry: {}", raw(&entry.name));
-            missing += 1;
-        }
+    for (entry, _) in entries.iter().zip(found).filter(|&(_, &found)| !found) {
+        crate::warn!("can't find function/data for order_file entry: {}", raw(&entry.name));
+        missing += 1;
     }
     if missing > 0 {
         crate::warn!(

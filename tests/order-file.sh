@@ -56,9 +56,10 @@ EOF
 $CC --ld-path=$mold -o $t/exe5 $t/a.o -Wl,-order_file,$t/order5
 $t/exe5 | grep '^1$'
 
-# A line names a subsection by a symbol that names it in the map: a C
-# string is known by its contents, not by a label of it, which orders
-# nothing.
+# A line names a subsection by any symbol of it, a C string's or a
+# literal's label too. (ld-prime orders only by the names its -map
+# gives subsections: a C string is known by its contents there, so its
+# label orders nothing.)
 cat <<EOF2 | $CC -o $t/s.o -c -xassembler -
 .globl _main
 .p2align 2
@@ -72,9 +73,9 @@ lc2: .quad 2
 .subsections_via_symbols
 EOF2
 printf 'l_.str.1\nlc2\n' > $t/order6
-$CC --ld-path=$mold -o $t/exe6 $t/s.o -Wl,-order_file,$t/order6 -Wl,-map,$t/map6
-grep -A1 'literal string: first$' $t/map6 | grep -q 'literal string: second$'
-grep -A1 'lc2$' $t/map6 | grep -q 'lc1$'
+$CC --ld-path=$mold -o $t/exe6 $t/s.o -Wl,-order_file,$t/order6
+otool -X -v -s __TEXT __cstring $t/exe6 | head -1 | grep -q 'second$'
+[ "$(otool -X -s __TEXT __const $t/exe6 | head -1 | awk '{ print $2 + 0 }')" = 2 ]
 
 # With no -order_file, an Apple-internal SDK's file for the
 # -final_output name orders the image: the first -syslibroot's
