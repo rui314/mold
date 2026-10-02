@@ -101,9 +101,8 @@ type SectionName = (&'static [u8], &'static [u8]);
 /// section the renames leave in place then merges as in ld64 -
 /// __StaticInit into __text, the fixed-size literal pools
 /// (__literal4/8/16, already merged per element) into __const - under
-/// that section's renamed name, if it is the standard section of its
-/// name (see is_standard_section): a regular __literal8 holds no
-/// literals, and a section renamed __literal8 is not one of the pools.
+/// that section's renamed name: a section renamed __literal8 is not one
+/// of the pools.
 /// The flags follow the name before the renames: a renamed
 /// __objc_classlist is still a list the runtime scans, a renamed
 /// __literal8 still a literal pool. A -r output keeps every section
@@ -128,9 +127,7 @@ fn output_section_for(
     let name = map.builtin_name(name, flags);
     let out = map.renamed(args, name);
     Some(match merged_name(name) {
-        Some(merged) if out == name && is_standard_section(segname, sectname, flags) => {
-            (renamed(args, merged), merged)
-        }
+        Some(merged) if out == name => (renamed(args, merged), merged),
         _ => (out, name),
     })
 }
@@ -530,9 +527,8 @@ pub(crate) fn canonical_section_flags(segname: &[u8], sectname: &[u8], flags: u3
 /// standard_section_flags) as that standard section: one of the
 /// table's type, or of any type for the Objective-C runtime's sections
 /// and __got, which it knows by name. Only such a section moves to
-/// __DATA_CONST or merges into another section in a final image; any
-/// other, such as a __mod_init_func or __literal8 assembled without
-/// its type, stays where data of its name goes.
+/// __DATA_CONST in a final image; any other, such as a __mod_init_func
+/// assembled without its type, stays where data of its name goes.
 fn is_standard_section(segname: &[u8], sectname: &[u8], flags: u32) -> bool {
     let Some(table) = standard_section_flags(segname, sectname) else {
         return false;

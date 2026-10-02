@@ -4,9 +4,9 @@ source "$(dirname "$0")"/common.inc
 # ld-prime merges identical fixed-size literals only in the standard
 # pools, __TEXT,__literal4/8/16 of their own types; records of a
 # literal type in a section of another name (or a pool of another
-# type) all stay. A record with a relocation never merges: its bytes
-# are the addend alone, so identical records may point at different
-# targets.
+# type) all stay. A pool of either type then joins __TEXT,__const.
+# A record with a relocation never merges: its bytes are the addend
+# alone, so identical records may point at different targets.
 for n in a b; do
   if [ $ARCH = arm64 ]; then
     load="adrp x8, Lp_$n@PAGE
@@ -72,10 +72,11 @@ $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o $t/c.o
 $t/exe | grep -q '^1 2$'
 [ "$(sect $t/exe __DATA __lit)" = 0x0000000000000010 ]
 [ "$(sect $t/exe __DATA __lit2)" = 0x0000000000000020 ]
-[ "$(sect $t/exe __TEXT __literal4)" = 0x0000000000000008 ]
+[ "$(sect $t/exe __TEXT __literal4)" = '' ]
 # __literal8's 43s merge into one in __TEXT,__const, and so do a.o's
-# 44s in __literal4's.
-[ "$(sect $t/exe __TEXT __const)" = 0x000000000000000c ]
+# 44s in __literal4's; b.o's pool of 8-byte literals named __literal4
+# joins them with its record.
+[ "$(sect $t/exe __TEXT __const)" = 0x0000000000000018 ]
 
 $mold -r -arch $ARCH -o $t/r.o $t/a.o $t/b.o
 [ "$(sect $t/r.o __DATA __lit)" = 0x0000000000000010 ]

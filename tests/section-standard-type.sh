@@ -4,11 +4,11 @@ source "$(dirname "$0")"/common.inc
 # ld-prime takes an input section of a standard name for that standard
 # section only if it has the type the name implies - but for the
 # Objective-C runtime's sections (and __got), which it knows by name
-# alone. Only such a section gets the standard flags, moves to
-# __DATA_CONST or merges into __text or __const; a __mod_init_func or
-# __literal8 assembled without its type stays where data of its name
-# goes, and so does a section a -rename_section names __literal8 or
-# __StaticInit.
+# alone. Only such a section gets the standard flags or moves to
+# __DATA_CONST: a __mod_init_func assembled without its type stays where
+# data of its name goes. A __literal8 merges into __const by its name
+# whatever its type (ld-prime keeps one without its type apart), but a
+# section a -rename_section names __literal8 or __StaticInit does not.
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .section __TEXT,__objc_methname
 .asciz "foo"
@@ -75,7 +75,7 @@ $CC --ld-path=$mold -o $t/exe $t/a.o $t/main.o \
 [ "$(sect $t/exe __objc_methname)" = '__TEXT 0x00000002' ]
 [ "$(sect $t/exe __objc_protolist)" = '__DATA_CONST 0x00000000' ]
 [ "$(sect $t/exe __mod_init_func)" = '__DATA 0x00000000' ]
-[ "$(sect $t/exe __const)" = '__DATA 0x00000000' ]
+[ "$(sect $t/exe __const | sort | tr '\n' ' ')" = '__DATA 0x00000000 __TEXT 0x00000000 ' ]
 [ "$(sect $t/exe __literal8)" = '__TEXT 0x00000000' ]
 [ "$(sect $t/exe __StaticInit)" = '__TEXT 0x80000400' ]
 $t/exe
