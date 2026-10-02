@@ -1249,11 +1249,11 @@ fn add_objc_stubs<E: Target>(ctx: &mut Context<E>) {
 }
 
 /// Lays out __objc_methlist, the method lists rewritten in the relative
-/// form (see convert_objc_method_lists). ld64 lays the lists out sorted
-/// by their symbol's name, each 8-byte aligned; category merging also
-/// retires some after their first placement. ld-prime lays out the
-/// lists -move_to_ro_segment takes to another segment (see
-/// symbol_moves) alike, in an __objc_methlist there.
+/// form (see convert_objc_method_lists), in the order they were made,
+/// each 8-byte aligned (the class records point at them); category
+/// merging also retires some after their first placement. The lists
+/// -move_to_ro_segment takes to another segment (see symbol_moves) go
+/// alike to an __objc_methlist there.
 fn lay_out_objc_method_lists<E: Target>(
     ctx: &mut Context<E>,
     text: SectionName,
@@ -1262,18 +1262,7 @@ fn lay_out_objc_method_lists<E: Target>(
     if ctx.objc_methlist.lists.is_empty() {
         return;
     }
-    let mut name_of: hashbrown::HashMap<u32, &'static [u8]> = hashbrown::HashMap::new();
-    let syms = ctx.symbols.syms.iter().filter_map(|sym| Some((sym.name(), sym.input_section()?)));
-    // (The lists category merging builds are named as extra locals.)
-    for (name, isec) in syms.chain(ctx.extra_local_syms.iter().copied()) {
-        let r = ctx.resolve_isec(isec as usize) as u32;
-        let e = name_of.entry(r).or_insert(name);
-        if name < *e {
-            *e = name;
-        }
-    }
-    let mut order: Vec<u32> = ctx.objc_methlist.lists.iter().map(|l| l.isec).collect();
-    order.sort_by_key(|&isec| (name_of.get(&isec).copied().unwrap_or_default(), isec));
+    let order: Vec<u32> = ctx.objc_methlist.lists.iter().map(|l| l.isec).collect();
 
     // The lists of each section, by the section: None for
     // __TEXT,__objc_methlist. (Of the symbol moves, only
