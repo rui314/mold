@@ -53,13 +53,11 @@ fn section_desc<E: Target>(ctx: &Context<E>, isec: usize) -> u16 {
 /// for no command. ld64 carries the arm64 hints through -r for the
 /// final link to apply: each hint it takes (see
 /// ObjectFile::hint_subsec) moves with its subsection, and goes with a
-/// coalesced-away weak copy. The command appears if any input had such
-/// a hint, even if none survives. As in ld64's output, the hints are
+/// coalesced-away weak copy. As in ld64's output, the hints are
 /// written subsection by subsection in address order, each
 /// subsection's in input order: ULEB128 kind, count and addresses,
 /// zero-padded to 8 bytes. (ld-prime 27037 drops them all.)
 fn optimization_hints<E: Target>(ctx: &Context<E>) -> Option<Vec<u8>> {
-    let mut found = false;
     // The subsection's new and input addresses, and the hint.
     let mut hints = Vec::new();
     for obj in ctx.objs.iter().filter(|o| o.is_alive) {
@@ -67,14 +65,13 @@ fn optimization_hints<E: Target>(ctx: &Context<E>) -> Option<Vec<u8>> {
             let Some(id) = obj.hint_subsec(&ctx.isecs, &hint.1) else {
                 continue;
             };
-            found = true;
             let isec = &ctx.isecs[id];
             if isec.is_alive() && isec.replacement == NO_REPLACEMENT {
                 hints.push((ctx.isec_addr(id), isec.input_addr as u64, hint));
             }
         }
     }
-    if !found {
+    if hints.is_empty() {
         return None;
     }
 

@@ -131,8 +131,8 @@ symoff=$(awk '$1 == "symoff" { print $2 }' $t/lc)
 [ $((datasize % 8)) = 0 ]
 [ $((dataoff + datasize)) = $symoff ]
 
-# An object whose every hint is dropped as it is read adds no command;
-# one whose hints all go with a coalesced-away copy leaves it empty.
+# An object whose every hint is dropped as it is read adds no command,
+# and neither does one whose hints all go with a coalesced-away copy.
 cat <<EOF | $CC -o $t/c.o -c -xassembler -
 .data
 L1: .long 0
@@ -167,4 +167,5 @@ L2: add x0, x0, _v@PAGEOFF
 .subsections_via_symbols
 EOF
 $mold -r -arch $ARCH -o $t/r3.o $t/d.o $t/e.o
-otool -l $t/r3.o | grep -A3 LC_LINKER_OPTIMIZATION_HINT | grep -q 'datasize 0$'
+otool -l $t/r3.o > $t/lc3
+not grep -q LC_LINKER_OPTIMIZATION_HINT $t/lc3
