@@ -1,13 +1,11 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# ld-prime names a subsection by the best label at its start that is not
-# an alternate entry point. In the symbol table it lists the other
-# labels there first - object by object in input order, each object's
-# by rank (private extern, local, weak) and descending name, its
-# alternate entry points last -, then the aliases of the functions
-# -deduplicate folded into the subsection, in input order, and the
-# subsection's own name last. -map lists every name there, one with
+# A final image lists every name at a subsection's start - its labels,
+# alternate entry points, the private externals it demotes, and the
+# names of the functions -deduplicate folded into it - all at its
+# address. (ld-prime lists the names in an order of its own, the
+# subsection's best name last.) -map lists every name there, one with
 # the subsection's size.
 if [ $ARCH = arm64 ]; then
   body() { echo 'mov w0, #7'; echo ret; }
@@ -48,7 +46,12 @@ int call_a(void), call_b(void), call_c(void), call_d(void);
 int main() { return call_a() + call_b() + call_c() + call_d() != 28; }
 EOF
 
-order() { nm -p $1 | sed -n 's/.* _\([a-z][0-9]\)$/\1/p' | tr '\n' ' '; }
+# The names, sorted, and that they are at one address.
+names() {
+  nm -p $1 | grep -E ' _[a-z][0-9]$' > $1.names &&
+    [ "$(awk '{ print $1 }' $1.names | sort -u | wc -l)" -eq 1 ] &&
+    sed 's/.* _//' $1.names | sort | tr '\n' ' '
+}
 # The map's rows of the names: $2 of them, at one address, one sized.
 maprows() {
   grep -E '\] _[a-z][0-9]$' $1 > $1.rows &&
@@ -61,12 +64,12 @@ maprows() {
 echo 'int call_d(void); int main() { return call_d() != 7; }' | $CC -o $t/main1.o -c -xc -
 $CC --ld-path=$mold -o $t/exe1 $t/main1.o $t/d.o -Wl,-map,$t/map1
 $t/exe1
-[ "$(order $t/exe1)" = "z1 y1 a1 b1 x1 " ]
+[ "$(names $t/exe1)" = "a1 b1 x1 y1 z1 " ]
 maprows $t/map1 5
 
 # With b's, c's and d's functions folded into a's.
 $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/a.o $t/b.o $t/c.o $t/d.o \
   -Wl,-deduplicate -Wl,-map,$t/map2
 $t/exe2
-[ "$(order $t/exe2)" = "j1 b7 c7 w6 z1 y1 a1 b1 x7 x6 x1 k1 " ]
+[ "$(names $t/exe2)" = "a1 b1 b7 c7 j1 k1 w6 x1 x6 x7 y1 z1 " ]
 maprows $t/map2 12

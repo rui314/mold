@@ -685,29 +685,19 @@ fn is_still_common<E: Target>(ctx: &Context<E>, id: SymbolId) -> bool {
 /// An N_SO with an empty name: it closes an object's stabs.
 pub const STAB_END: NList = NList { n_strx: 1, n_type: N_SO, n_sect: 1, n_desc: 0, n_value: 0 };
 
-/// A final image's local symbols in ld-prime's order: the non-external
-/// symbols it keeps, the private externals it demotes, the linker's own
-/// names and the objc_msgSend$ stubs, all by address. Names at one
-/// address are aliases of one subsection, which ld-prime names by its
-/// highest-ranked symbol - a strong external, then a private external,
-/// a local, a weak definition, each rank by descending name - and it
-/// lists the other names in that order before the subsection's own (a
-/// strong external's goes with the externals). The absolute symbols,
-/// which are in no section, follow by value, locals before private
-/// externals where values tie. -x drops them all, the demoted private
-/// externals too, as ld64 lists no local symbol under it.
-fn plan_local_symbols<E: Target>(
-    ctx: &Context<E>,
-    pexts: &[usize],
-    sorted_globals: &[SymbolId],
-) -> Vec<LocalEnt> {
+/// A final image's local symbols: each object's non-external symbols
+/// it keeps, in its symbol table's order, then the private externals
+/// demoted to locals, then the linker's own names and the objc_msgSend$
+/// stubs. -x drops them all, the demoted private externals too, as ld64
+/// lists no local symbol under it. (ld-prime lists them by address, the
+/// names at one address by rank, a subsection's own name last.)
+fn plan_local_symbols<E: Target>(ctx: &Context<E>, pexts: &[usize]) -> Vec<LocalEnt> {
     if ctx.args.strip_locals {
         return Vec::new();
     }
     let per_obj: Vec<Vec<LocalEnt>> =
         ctx.objs.par_iter().map(|obj| object_locals(ctx, obj)).collect();
     let mut ents = per_obj.concat();
-    ents.extend(linker_locals(ctx));
 
     // Private external symbols resolve globally but appear as locals
     // (with N_PEXT still set) in the output.
@@ -728,25 +718,10 @@ fn plan_local_symbols<E: Target>(
             (_, None) => (NList { n_type: N_ABS | N_PEXT, ..local_nlist(0, sym.value) }, None),
         };
         // A demoted weak definition keeps N_WEAK_DEF.
-        let (rank, ent) = if sym.is_weak_def() {
-            (RANK_WEAK, NList { n_desc: N_WEAK_DEF, ..ent })
-        } else {
-            (RANK_PEXT, ent)
-        };
-        let name = local_symbol_name(sym.name());
-        ents.push((ctx.sym_addr(i as u32), rank, name, ent, id));
+        let n_desc = if sym.is_weak_def() { N_WEAK_DEF } else { 0 };
+        ents.push((local_symbol_name(sym.name()), NList { n_desc, ..ent }, id));
     }
-
-    // A stable sort, so that absolute symbols of one value keep the
-    // order they were added in.
-    let is_abs = |e: &LocalEnt| e.3.n_type() == N_ABS;
-    ents.par_sort_by(|a, b| {
-        is_abs(a).cmp(&is_abs(b)).then(a.0.cmp(&b.0)).then_with(|| {
-            if is_abs(a) { std::cmp::Ordering::Equal } else { a.1.cmp(&b.1).then(b.2.cmp(a.2)) }
-        })
-    });
-    let nsect = ents.partition_point(|e| !is_abs(e));
-    put_subsec_names_last(ctx, &mut ents[..nsect], sorted_globals);
+    ents.extend(linker_locals(ctx));
     ents
 }
 
@@ -762,7 +737,7 @@ fn linker_locals<E: Target>(ctx: &Context<E>) -> Vec<LocalEnt> {
         if sec.is_alive() && sec.output_section().is_some() {
             let addr = ctx.isec_addr(isec as usize);
             let ent = local_nlist(ctx.isec_n_sect(sec), addr);
-            ents.push((addr, RANK_LOCAL, name, ent, None));
+            ents.push((name, ent, None));
         }
     }
     // The selector stubs, each a non-external symbol with N_PEXT
@@ -772,24 +747,24 @@ fn linker_locals<E: Target>(ctx: &Context<E>) -> Vec<LocalEnt> {
     for (i, &(sym, _)) in ctx.objc_stubs.symbols.iter().enumerate() {
         let addr = hdr.addr + i as u64 * ctx.objc_stub_size();
         let ent = NList { n_type: N_PEXT | N_SECT, ..local_nlist(hdr.n_sect, addr) };
-        ents.push((addr, RANK_PEXT, ctx.symbols[sym].name(), ent, None));
+        ents.push((ctx.symbols[sym].name(), ent, None));
     }
     // The lazy-load helpers - a call helper, like a selector stub,
     // with N_PEXT set - and slots.
     let hdr = &ctx.lazy_helpers.hdr;
     for (i, h) in ctx.lazy_helpers.helpers.iter().enumerate() {
         let addr = ctx.lazy_helper_addr(i);
-        let (rank, n_type) = match h.kind {
-            crate::chunks::lazy_helpers::LazyUse::Call => (RANK_PEXT, N_PEXT | N_SECT),
-            _ => (RANK_LOCAL, N_SECT),
+        let n_type = match h.kind {
+            crate::chunks::lazy_helpers::LazyUse::Call => N_PEXT | N_SECT,
+            _ => N_SECT,
         };
         let ent = NList { n_type, ..local_nlist(hdr.n_sect, addr) };
-        ents.push((addr, rank, h.name, ent, None));
+        ents.push((h.name, ent, None));
     }
     let hdr = &ctx.lazy_load_got.hdr;
     for (i, &(_, name)) in ctx.lazy_load_got.slots.iter().enumerate() {
         let addr = hdr.addr + i as u64 * 8;
-        ents.push((addr, RANK_LOCAL, name, local_nlist(hdr.n_sect, addr), None));
+        ents.push((name, local_nlist(hdr.n_sect, addr), None));
     }
     // The delay-init stubs, like selector stubs with N_PEXT set, and
     // the helpers. (The dlopen helpers' flags are extra_local_syms.)
@@ -797,33 +772,26 @@ fn linker_locals<E: Target>(ctx: &Context<E>) -> Vec<LocalEnt> {
     for (i, stub) in delay.stubs.iter().enumerate() {
         let addr = ctx.delay_stub_addr(i);
         let ent = NList { n_type: N_PEXT | N_SECT, ..local_nlist(delay.stubs_hdr.n_sect, addr) };
-        ents.push((addr, RANK_PEXT, stub.name, ent, None));
+        ents.push((stub.name, ent, None));
     }
     let n_sect = delay.helper_hdr.n_sect;
     for (i, h) in delay.helpers.iter().enumerate() {
         let addr = ctx.delay_helper_addr(i);
-        ents.push((addr, RANK_LOCAL, h.name, local_nlist(n_sect, addr), None));
+        ents.push((h.name, local_nlist(n_sect, addr), None));
     }
     for (i, d) in delay.dlopens.iter().enumerate() {
         let addr = ctx.dlopen_helper_addr(i);
-        ents.push((addr, RANK_LOCAL, d.name, local_nlist(n_sect, addr), None));
+        ents.push((d.name, local_nlist(n_sect, addr), None));
     }
     // The range-extension thunks' entries, named as ld-prime names
     // its branch islands.
     for (addr, n_sect, name) in crate::thunks::island_symbols(ctx) {
         if !is_listed_out(ctx, name) {
-            ents.push((addr, RANK_LOCAL, name, local_nlist(n_sect, addr), None));
+            ents.push((name, local_nlist(n_sect, addr), None));
         }
     }
     ents
 }
-
-// The ranks of the local names at one address, which order them (see
-// plan_local_symbols): the private externals first, then the locals,
-// then the demoted weak definitions.
-const RANK_PEXT: u8 = 0;
-const RANK_LOCAL: u8 = 1;
-const RANK_WEAK: u8 = 2;
 
 /// A local symbol's entry, in section `n_sect`.
 fn local_nlist(n_sect: u8, n_value: u64) -> NList {
@@ -859,7 +827,7 @@ fn object_locals<E: Target>(ctx: &Context<E>, obj: &ObjectFile) -> Vec<LocalEnt>
             if nlist.n_type() == N_ABS {
                 let ent = NList { n_type: N_ABS, ..local_nlist(0, 0) };
                 let name = local_symbol_name(sym.name());
-                out.push((sym.value, RANK_LOCAL, name, ent, Some(sym_id)));
+                out.push((name, ent, Some(sym_id)));
             }
             continue;
         };
@@ -870,99 +838,14 @@ fn object_locals<E: Target>(ctx: &Context<E>, obj: &ObjectFile) -> Vec<LocalEnt>
         }
         let ent = local_nlist(ctx.isec_n_sect(&ctx.isecs[kept]), 0);
         let name = local_symbol_name(sym.name());
-        out.push((ctx.sym_addr(sym_id), RANK_LOCAL, name, ent, Some(sym_id)));
+        out.push((name, ent, Some(sym_id)));
     }
     out
 }
 
-/// Orders the names at each place that has several as ld-prime does.
-/// `ents` are sorted by address, rank and descending name, so the
-/// subsection's own name - the highest-ranked label at its start that
-/// is not an alternate entry point (N_ALT_ENTRY), unless a strong
-/// external names the subsection - leads the run of those of its
-/// object. ld-prime lists the other labels first, each a place of no
-/// size of its own, object by object in input order and each object's
-/// alternate entry points last; then the aliases it makes of the
-/// functions -deduplicate folded into the subsection, in input order
-/// (see icf::folded_subsec_names); and the subsection's own name last.
-/// Few subsections have aliases, so those are found first, and only
-/// their addresses are looked for among the externals.
-fn put_subsec_names_last<E: Target>(
-    ctx: &Context<E>,
-    ents: &mut [LocalEnt],
-    sorted_globals: &[SymbolId],
-) {
-    let aliased: Vec<usize> = (0..ents.len().saturating_sub(1))
-        .into_par_iter()
-        .filter(|&i| ents[i].0 == ents[i + 1].0 && (i == 0 || ents[i - 1].0 != ents[i].0))
-        .collect();
-    if aliased.is_empty() {
-        return;
-    }
-    let addrs: Vec<u64> = aliased.iter().map(|&i| ents[i].0).collect();
-    let named: Vec<AtomicBool> = addrs.iter().map(|_| AtomicBool::new(false)).collect();
-    sorted_globals.par_iter().for_each(|&i| {
-        let sym = &ctx.symbols[i];
-        if !sym.is_weak_def()
-            && !sym.is_alt_entry()
-            && sym.input_section().is_some_and(|isec| !is_coalesced_away(ctx, isec as usize))
-            && let Ok(k) = addrs.binary_search(&ctx.sym_addr(i))
-        {
-            named[k].store(true, Ordering::Relaxed);
-        }
-    });
-    for (&i, named) in aliased.iter().zip(named) {
-        let n = ents[i..].iter().take_while(|e| e.0 == ents[i].0).count();
-        let run = &mut ents[i..i + n];
-        let keys = name_order_keys(ctx, run, named.into_inner());
-        let mut order: Vec<usize> = (0..n).collect();
-        order.sort_by_key(|&j| keys[j]);
-        let sorted: Vec<LocalEnt> = order.iter().map(|&j| run[j]).collect();
-        run.copy_from_slice(&sorted);
-    }
-}
-
-/// The keys by which put_subsec_names_last orders the names `run` has at
-/// one place: (0, object, alternate entry point) for a label naming no
-/// subsection, (1, object, subsection) for the alias of a folded
-/// function and (2, 0, 0) for the subsection's own name, each with the
-/// label's place in the run last. `named` says that a strong external
-/// names the subsection.
-fn name_order_keys<E: Target>(
-    ctx: &Context<E>,
-    run: &[LocalEnt],
-    named: bool,
-) -> Vec<(u8, u32, u32, usize)> {
-    let mut named = named;
-    let mut keys = Vec::with_capacity(run.len());
-    for (pos, e) in run.iter().enumerate() {
-        let Some(id) = e.4 else {
-            keys.push((0, u32::MAX, 0, pos));
-            continue;
-        };
-        let sym = &ctx.symbols[id];
-        let obj = match sym.file() {
-            Some(FileId::Obj(obj)) => obj,
-            _ => u32::MAX,
-        };
-        let own = sym.input_section().unwrap_or(crate::symbol::NONE);
-        let folded = own != crate::symbol::NONE && ctx.resolve_isec(own as usize) != own as usize;
-        let key = if folded && ctx.folded_subsec_names.contains_key(&id) {
-            (1, obj, own, pos)
-        } else if !folded && !sym.is_alt_entry() && !named {
-            named = true;
-            (2, 0, 0, pos)
-        } else {
-            (0, obj, sym.is_alt_entry() as u32, pos)
-        };
-        keys.push(key);
-    }
-    keys
-}
-
-/// A local symbol table entry as plan_local_symbols sorts it: address,
-/// rank, name, entry, and the symbol whose address fills n_value.
-type LocalEnt = (u64, u8, &'static [u8], NList, Option<crate::symbol::SymbolId>);
+/// A local symbol table entry: its name, its entry, and the symbol
+/// whose address fills n_value.
+type LocalEnt = (&'static [u8], NList, Option<crate::symbol::SymbolId>);
 
 /// Appends an entry and its name for each item, made by `f` on all cores
 /// straight into the arrays' spare capacity, which the caller reserved.
@@ -1009,7 +892,7 @@ pub fn create_output_symtab<E: Target>(
     let pexts: Vec<usize> =
         (0..classes.len()).into_par_iter().filter(|&i| classes[i] == SymbolClass::Pext).collect();
     let t = ctx.timer("symtab-locals");
-    let locals = plan_local_symbols(ctx, &pexts, sorted_globals);
+    let locals = plan_local_symbols(ctx, &pexts);
     drop(t);
 
     // Debug stabs (see plan_stabs).
@@ -1033,9 +916,7 @@ pub fn create_output_symtab<E: Target>(
     let mut names: Vec<&'static [u8]> = Vec::with_capacity(total);
     data.entries.reserve_exact(total);
 
-    par_push_entries(&mut names, &mut data.entries, &locals, |&(_, _, name, ent, sym)| {
-        (name, ent, sym)
-    });
+    par_push_entries(&mut names, &mut data.entries, &locals, |&ent| ent);
     let nplain = data.entries.len();
     drop(locals);
 

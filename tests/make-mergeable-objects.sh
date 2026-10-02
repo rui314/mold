@@ -65,7 +65,9 @@ fi
 mkdir -p $t/x $t/y
 $CC --ld-path=$mold -o $t/x/exe $t/main.o -L$t -Wl,-merge-lfoo $nohints
 $CC --ld-path=$mold -o $t/y/exe $t/main.o $t/a.o $t/b.o $nohints
-cmp $t/x/exe $t/y/exe
+# The same image, but for the order of the locals, each object's in
+# its symbol table's order, which the merged record doesn't keep.
+cmp_but_symbol_order $t/x/exe $t/y/exe
 $t/x/exe > $t/out
 grep -q 'hello from a two 33 1234' $t/out
 grep -q '^16909092$' $t/out

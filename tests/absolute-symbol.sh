@@ -30,8 +30,7 @@ done
 # local, as ld64 keeps it.
 nm -m $t/exe | grep '(absolute) non-external (was a private external) _private_answer'
 
-# So does a local one, but for an assembler-private (l or L) label. The
-# absolute symbols follow the symbols of the sections, by value. -x
+# So does a local one, but for an assembler-private (l or L) label. -x
 # drops the locals.
 cat <<EOF2 | $CC -c -xassembler - -o $t/local.o
 _local_answer = 44
@@ -46,8 +45,8 @@ EOF2
 $CC --ld-path=$mold $t/main.o $t/absolute.o $t/local.o -o $t/exe2
 $t/exe2 | grep '^42 43 43 43 1$'
 nm -m $t/exe2 | grep -q '(absolute) non-external _local_answer$'
-[ "$(nm -p $t/exe2 | awk '$2 ~ /^[a-z]$/ {printf "%s ", $3}')" = \
-  '_data_local _hidden_answer _private_answer _local_answer ' ]
+[ "$(nm -p $t/exe2 | awk '$2 ~ /^[a-z]$/ {print $3}' | sort | tr '\n' ' ')" = \
+  '_data_local _hidden_answer _local_answer _private_answer ' ]
 
 $CC --ld-path=$mold $t/main.o $t/absolute.o $t/local.o -o $t/exe3 -Wl,-x
 nm $t/exe3 > $t/syms3
