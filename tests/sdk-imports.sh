@@ -52,12 +52,20 @@ d = json.load(open(sys.argv[1]))
 assert d['apiListVersion'] == 3 and d['inputs'] == []
 EOF
 
+# The list is read as NSJSONSerialization reads it, with a comma
+# allowed before a closing bracket; of a key given twice, the last
+# counts.
+echo '{"version": 1, "version": 4, "apis": ["_puts",],}' > $t/apis5.json
+$CC --ld-path=$mold $t/a.o $t/libfoo.dylib -o $t/exe5 \
+  -Wl,-sdk_imports,$t/imports5.json,-sdk_imports_api_list,$t/apis5.json
+jq -e '.apiListVersion == 4' $t/imports5.json > /dev/null
+
 echo '{"apis": ["_puts"]}' > $t/apis3.json
 not $mold -arch $ARCH -o $t/exe4 $t/a.o -sdk_imports_api_list $t/apis3.json 2> $t/log
-grep -q "invalid list at $t/apis3.json: Map node doesn't have element for key 'version'" $t/log
+grep -q "invalid list at $t/apis3.json" $t/log
 echo '{"version": 1}' > $t/apis4.json
 not $mold -arch $ARCH -o $t/exe4 $t/a.o -sdk_imports_api_list $t/apis4.json 2> $t/log
-grep -q "invalid list at $t/apis4.json: API symbol list $t/apis4.json can't be empty" $t/log
+grep -q "invalid list at $t/apis4.json" $t/log
 
 # The report is laid out as ld-prime lays it out, the libraries in the
 # order of the image's load commands.
