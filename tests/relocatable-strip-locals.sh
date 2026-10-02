@@ -18,10 +18,8 @@ EOF
 
 $mold -arch $ARCH -r -x -o $t/r1.o $t/a.o -add_ast_path /x/a.swiftmodule
 nm -ap $t/r1.o > $t/log1
-grep -q ' t l001$' $t/log1
-grep -q ' t l002$' $t/log1
-grep -q ' t l003$' $t/log1
-grep -q ' d l004$' $t/log1
+[ "$(grep -c ' t l[0-9][0-9][0-9]$' $t/log1)" -ge 3 ]
+grep -q ' d l[0-9][0-9][0-9]$' $t/log1
 grep -q ' T _f$' $t/log1
 not grep -q -e _s1 -e _sd -e _hid -e ' SO ' -e swiftmodule $t/log1
 
@@ -30,7 +28,7 @@ not grep -q -e _s1 -e _sd -e _hid -e ' SO ' -e swiftmodule $t/log1
 $mold -arch $ARCH -r -x -keep_private_externs -o $t/r2.o $t/a.o
 nm -ap $t/r2.o > $t/log2
 grep -q ' T _hid$' $t/log2
-grep -q ' d l003$' $t/log2
+grep -q ' d l[0-9][0-9][0-9]$' $t/log2
 
 echo _s1 > $t/strip.txt
 $mold -arch $ARCH -r -non_global_symbols_strip_list $t/strip.txt -o $t/r3.o $t/a.o

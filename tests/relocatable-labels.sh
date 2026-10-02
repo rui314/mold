@@ -1,12 +1,12 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# ld-prime -r keeps every label an object defines, linker-private
-# (l...) ones too: aliases of a global or of each other, labels of
-# their own subsections and one on an empty section, those at one place
-# listed by descending name. The ltmpN labels the arm64 assembler puts
-# at each section's start go wherever another symbol names the place,
-# and stay where none does.
+# A -r output keeps every label an object defines, linker-private
+# (l...) ones and the arm64 assembler's ltmpN labels too: aliases of a
+# global or of each other, labels of their own subsections and one on
+# an empty section. Each marks where a subsection starts, and a later
+# link splits the output at them as it would the object. (ld-prime
+# drops the ltmpN labels other symbols name.)
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .text
 .p2align 2
@@ -30,9 +30,10 @@ ldata: .quad lalone
 .subsections_via_symbols
 EOF
 $mold -arch $ARCH -r $t/a.o -o $t/r.o
-nm -p $t/r.o | awk '{printf "%s ", $NF}' > $t/syms
-if [ $ARCH = arm64 ]; then
-  grep -qx 'l3 l2 l1 lafter_g lalone lab_e ldata ltmp3 _g ' $t/syms
-else
-  grep -qx 'l3 l2 l1 lafter_g lalone lab_e ldata _g ' $t/syms
-fi
+nm -m $t/a.o | cut -c18- | sort > $t/syms-a
+nm -m $t/r.o | cut -c18- | sort > $t/syms-r
+diff $t/syms-a $t/syms-r
+
+echo 'int main() { return 0; }' | $CC -o $t/main.o -c -xc -
+$CC --ld-path=$mold -o $t/exe $t/main.o $t/r.o
+$t/exe

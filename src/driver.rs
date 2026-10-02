@@ -152,10 +152,8 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
         passes::handle_exported_symbols_list(&mut ctx);
         passes::handle_unexported_symbols_list(&mut ctx);
         passes::check_weak_exports(&ctx);
-        let t = ctx.timer("merge_literals");
-        passes::merge_literals(&mut ctx);
-        objc::coalesce_objc_refs(&mut ctx);
-        drop(t);
+        // Literals are left for the final link to merge: every input
+        // label and relocation then carries through as it is.
         // ld64 -r keeps one copy of each weak definition (the marker
         // stays on it for the final link to auto-hide); Swift's
         // per-object conformance and metadata records doubled

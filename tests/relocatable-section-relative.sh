@@ -2,13 +2,9 @@
 source "$(dirname "$0")"/common.inc
 
 # A non-extern relocation names its target by section and address. A
-# -r link re-targets one at the symbol at or before that address in its
-# subsection - an alt entry too - with the rest as the addend; where
-# names share a place, the first as ld-prime ranks them: non-weak before
-# weak, then external, private external and local, by descending name.
-# A target no symbol precedes stays section-relative, as x86-64 objects
-# refer to a label before a section's first symbol; on arm64 an ltmpN
-# label names that place.
+# -r output keeps it so, with the address moved to the merged layout,
+# and a later link finds the subsection by the address as this one did.
+# (ld-prime re-targets one at the symbol at or before the address.)
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .data
 .p2align 3
@@ -71,24 +67,10 @@ otool -rv $t/b.o > $t/log
 [ "$(grep -c ' False  UNSIGND ' $t/log)" = 7 ]
 
 $mold -r -arch $ARCH -o $t/c.o $t/b.o
-otool -rv $t/c.o | awk '/UNSIGND/ { print $1, $5, $NF }' | sort > $t/relocs
-if [ $ARCH = arm64 ]; then
-  head='00000068 True ltmp1'
-else
-  head='00000068 False (__DATA,__data)'
-fi
-cat <<EOF > $t/expected
-00000038 True _g
-00000040 True _b
-00000048 True _alt
-00000050 True _alt
-00000058 True _l
-00000060 True _y
-$head
-EOF
-diff $t/expected $t/relocs
+otool -rv $t/c.o > $t/log2
+[ "$(grep -c ' False  UNSIGND False     1 (__DATA,__data)$' $t/log2)" = 7 ]
 
-# The fields now hold the offsets from those symbols.
+# The fields still point where they did.
 cat <<EOF | $CC -o $t/main.o -c -xc -
 extern char g[], alt[], w[], *p[];
 int main() {
@@ -99,8 +81,7 @@ EOF
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/c.o
 $t/exe
 
-# One before its section's start is re-targeted at the section's
-# first symbol, with a negative addend.
+# So does one before its section's start.
 cat <<EOF | $CC -o $t/f.o -c -xassembler -
 .text
 .globl _fn
@@ -115,7 +96,7 @@ _q: .quad _d - 8
 EOF
 python3 $t/patch.py $t/f.o $t/g.o
 $mold -r -arch $ARCH -o $t/h.o $t/g.o
-otool -rv $t/h.o | grep -q '^00000008 False ?( 3)  True   UNSIGND False     _d$'
+otool -rv $t/h.o | grep -q '^00000008 False ?( 3)  False  UNSIGND False     2 (__DATA,__data)$'
 cat <<EOF | $CC -o $t/main3.o -c -xc -
 extern char d[], *q;
 int main() { return q != d - 8; }
@@ -143,7 +124,7 @@ _zz: .quad 0
 EOF
 $mold -r -arch $ARCH -o $t/e.o $t/d.o
 otool -rv $t/e.o > $t/log
-[ "$(grep -c ' True   SIGNED .* _z$' $t/log)" = 2 ]
+[ "$(grep -c ' False  SIGNED .* (__DATA,__data)$' $t/log)" = 2 ]
 
 cat <<EOF | $CC -o $t/main2.o -c -xc -
 extern char zz[];

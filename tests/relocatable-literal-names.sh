@@ -2,10 +2,10 @@
 source "$(dirname "$0")"/common.inc
 [ $ARCH = arm64 ] || skip
 
-# arm64 ld-prime -r names each record of the fixed-size literal
-# sections l<nnn>, a private external, on the counter it names
-# cstrings LC<n> with, and points relocations at the new names; the
-# records' own labels vanish. Identical literals are merged first.
+# arm64 relocations must name what they refer to. A -r output keeps the
+# literal records and their labels as they are, for the final link to
+# merge, and the relocations keep naming the labels. (ld-prime merges
+# the literals and names each record itself, l<nnn> or LC<n>.)
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .text
 .globl _f
@@ -21,8 +21,8 @@ lB: .long 1
 lC: .long 2
 .section __TEXT,__literal8,8byte_literals
 .p2align 3
-lCPI0_0: .quad 5
-lCPI0_1: .quad 6
+lCPI0_0: .double 5.5
+lCPI0_1: .double 6.5
 .section __TEXT,__literal16,16byte_literals
 .p2align 4
 lD: .quad 1, 2
@@ -32,17 +32,21 @@ lstr: .asciz "hello"
 EOF
 $mold -arch $ARCH -r $t/a.o -o $t/r.o
 nm -pm $t/r.o > $t/nm
-awk '{printf "%s ", $NF}' $t/nm > $t/syms
-grep -qx 'l001 l002 l003 l004 l005 LC6 _f ' $t/syms
-grep -q '(__TEXT,__literal8) non-external (was a private external) l004$' $t/nm
+for s in lA lB lC lCPI0_0 lCPI0_1 lD lstr; do
+  grep -q " non-external $s\$" $t/nm
+done
 otool -rv $t/r.o > $t/relocs
-grep -q 'PAGE21  False     l004$' $t/relocs
-grep -q 'PAGOF12 False     l004$' $t/relocs
+grep -q 'PAGE21  False     lCPI0_1$' $t/relocs
+grep -q 'PAGOF12 False     lCPI0_1$' $t/relocs
 
-# A record's greatest label is the name its l<nnn> replaces; any other
-# label of the record stays, a plain local alias that relocations keep
-# naming - the assembler's ltmpN at a section's start too, in an object
-# without subsections, unless it is the record's only label.
+cat <<EOF | $CC -o $t/main.o -c -xc -
+#include <stdio.h>
+double f(void);
+float g(void);
+int main() { printf("%g %g\n", f(), g()); }
+EOF
+
+# Two labels of one record: the relocations keep naming each.
 cat <<EOF2 | $CC -o $t/b.o -c -xassembler -
 .text
 .globl _g
@@ -51,22 +55,28 @@ _g:
  adrp x0, la@PAGE
  ldr s0, [x0, la@PAGEOFF]
  adrp x0, lb@PAGE
- ldr s0, [x0, lb@PAGEOFF]
+ ldr s1, [x0, lb@PAGEOFF]
+ fadd s0, s0, s1
  ret
 .section __TEXT,__literal4,4byte_literals
 .p2align 2
 la:
-lb: .long 7
-.long 8
+lb: .float 7.5
+.float 8.5
 .section __TEXT,__literal8,8byte_literals
 .p2align 3
 .quad 9
 EOF2
 $mold -arch $ARCH -r $t/b.o -o $t/r2.o
-nm -pm $t/r2.o > $t/nm2
-awk '{printf "%s ", $NF}' $t/nm2 > $t/syms2
-grep -qx 'ltmp0 l001 la ltmp1 l002 l003 _g ' $t/syms2
-grep -q '(__TEXT,__literal4) non-external la$' $t/nm2
 otool -rv $t/r2.o > $t/relocs2
 [ "$(grep -c 'False     la$' $t/relocs2)" = 2 ]
-[ "$(grep -c 'False     l001$' $t/relocs2)" = 2 ]
+[ "$(grep -c 'False     lb$' $t/relocs2)" = 2 ]
+
+# Programs linked from the outputs, with either linker, read the same
+# values as from the objects.
+$CC --ld-path=$mold -o $t/exe $t/main.o $t/a.o $t/b.o
+$t/exe | grep -q '^6.5 15$'
+$CC --ld-path=$mold -o $t/exe2 $t/main.o $t/r.o $t/r2.o
+$t/exe2 | grep -q '^6.5 15$'
+$CC -o $t/exe3 $t/main.o $t/r.o $t/r2.o
+$t/exe3 | grep -q '^6.5 15$'

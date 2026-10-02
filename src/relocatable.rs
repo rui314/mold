@@ -10,7 +10,9 @@
 //! Section contents are copied raw (relocations stay unapplied), so
 //! fields that embed addends keep them; only non-external relocations
 //! need their embedded target addresses rewritten into the merged
-//! address space. DWARF is not merged (its section-relative offsets
+//! address space. Literals are not deduplicated (the final link does
+//! that), so every input label, and every relocation's target, carries
+//! through as it was. DWARF is not merged (its section-relative offsets
 //! carry no relocations); like ld64, the output gets debug-note stabs
 //! naming the input objects, which a later link carries through.
 
@@ -21,7 +23,7 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, Ordering};
 
 use crate::chunks::symtab::{SymtabSection, local_symbol_name, par_push_entries};
-use crate::chunks::{ChunkHeader, ChunkId, OutputSectionId};
+use crate::chunks::{ChunkHeader, OutputSectionId};
 use crate::context::Context;
 use crate::error;
 use crate::fatal;
@@ -95,71 +97,6 @@ fn external_places<E: Target>(ctx: &Context<E>) -> HashSet<(u32, u8, u64)> {
     per_obj.into_iter().flatten().collect()
 }
 
-/// The places the -r output's symbols name, by subsection and offset:
-/// the symbol indices of the first and the last of their names, and
-/// their address. ld-prime ranks the names of a place non-weak before
-/// weak, then global, private external and local, each by descending
-/// name, an assembler's ltmpN label last. A reference to the place
-/// names the first, and so does one past it, into the subsection's
-/// bytes: the names are aliases of one subsection. But in an object
-/// without subsections only those at the start of a section are;
-/// elsewhere ld-prime makes a subsection of each name, all empty but
-/// the last, which holds the bytes and is the one a reference into
-/// them names.
-fn symbol_places<E: Target>(ctx: &Context<E>, index_of_sym: &[u32]) -> Places {
-    let mut names: Vec<_> = (0..index_of_sym.len())
-        .into_par_iter()
-        .filter(|&id| index_of_sym[id] != u32::MAX)
-        .filter_map(|id| {
-            let symnum = index_of_sym[id];
-            let sym = &ctx.symbols[id];
-            let isec = ctx.resolve_isec(sym.input_section()? as usize);
-            let scope = match (sym.is_extern(), sym.is_private_extern()) {
-                (true, false) => 0,
-                (true, true) => 1,
-                (false, _) => 2,
-            };
-            let is_ltmp = !sym.is_extern() && sym.name().starts_with(b"ltmp");
-            let rank = (is_ltmp, sym.is_weak_def(), scope, Reverse(sym.name()));
-            Some(((isec, sym.value), rank, symnum))
-        })
-        .collect();
-    names.par_sort_unstable();
-    let mut starts = vec![0u32; ctx.isecs.len() + 1];
-    let places = names
-        .chunk_by(|a, b| a.0 == b.0)
-        .map(|names| {
-            let (isec, at) = names[0].0;
-            starts[isec + 1] += 1;
-            (at, names[0].2, names[names.len() - 1].2, ctx.isec_addr(isec) + at)
-        })
-        .collect();
-    for i in 1..starts.len() {
-        starts[i] += starts[i - 1];
-    }
-    Places { places, starts }
-}
-
-/// The places a -r output's symbols name (see symbol_places), by
-/// subsection.
-struct Places {
-    /// Each place's offset in its subsection, the symbol indices of the
-    /// first and the last of its names, and its address, by subsection
-    /// and offset.
-    places: Vec<(u64, u32, u32, u64)>,
-    /// Where each subsection's places start in `places`, and where the
-    /// last one's end.
-    starts: Vec<u32>,
-}
-
-impl Places {
-    /// The nearest place at or before offset `off` of subsection `t`.
-    fn at_or_before(&self, t: usize, off: u64) -> Option<(u64, u32, u32, u64)> {
-        let places = &self.places[self.starts[t] as usize..self.starts[t + 1] as usize];
-        places[..places.partition_point(|p| p.0 <= off)].last().copied()
-    }
-}
-
 /// Which symbols the relocations of the live input sections that `pred`
 /// takes refer to by name, by symbol.
 fn reloc_syms<E: Target>(ctx: &Context<E>, pred: impl Fn(&Reloc) -> bool + Sync) -> Vec<bool> {
@@ -191,30 +128,6 @@ fn referenced_syms<E: Target>(ctx: &Context<E>) -> Vec<bool> {
         syms[p as usize] = true;
     }
     syms
-}
-
-/// The symbols the terms of a subtraction (a SUBTRACTOR and the
-/// relocation it pairs with) refer to, by symbol.
-fn subtracted_syms<E: Target>(ctx: &Context<E>) -> Vec<bool> {
-    reloc_syms(ctx, |rel| rel.r_type == E::RELOC_SUBTRACTOR || rel.is_subtracted)
-}
-
-/// The places an object names with a symbol other than an assembler
-/// temporary (ltmpN), where an ltmpN label is a mere alias.
-fn named_places<E: Target>(
-    ctx: &Context<E>,
-    obj: &crate::input_files::ObjectFile,
-) -> HashSet<(u8, u64)> {
-    obj.nlists
-        .iter()
-        .zip(&obj.symbols)
-        .filter(|&(nlist, &sym_id)| {
-            !nlist.is_stab()
-                && nlist.n_type() == N_SECT
-                && !ctx.symbols[sym_id].name().starts_with(b"ltmp")
-        })
-        .map(|(nlist, _)| (nlist.n_sect, nlist.n_value))
-        .collect()
 }
 
 /// The n_desc of a symbol from an object without subsections: ld64
@@ -369,7 +282,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) -> u64 {
         })
         .collect();
     let t = ctx.timer("r-symtab");
-    let symtab = build_symtab(ctx, &merged, sectcreate_locals(ctx));
+    let symtab = build_symtab(ctx, sectcreate_locals(ctx));
     drop(t);
     let t = ctx.timer("r-relocs");
     let targets = RelocTargets::new(ctx, &symtab);
@@ -1051,10 +964,7 @@ fn push_reloc<E: Target>(
             }
             (symnum, true)
         }
-        OutTarget::Section(target, addend) => match targets.extern_target(target, addend) {
-            Some((symnum, _)) => (symnum, true),
-            None => (ctx.isec_n_sect(&ctx.isecs[target]) as u32, false),
-        },
+        OutTarget::Section(target, _) => (ctx.isec_n_sect(&ctx.isecs[target]) as u32, false),
     };
     out.push(MachRel {
         r_address,
@@ -1071,25 +981,21 @@ enum OutTarget {
     /// By the symbol at this index of its symbol table.
     Sym(u32),
     /// Section-relatively: a subsection and the offset in it. A
-    /// section-relative input relocation stays so, and so does one
-    /// against a label the output drops (see Locals).
+    /// section-relative input relocation stays so: a later link finds
+    /// the subsection by the address, as this one did.
     Section(usize, i64),
 }
 
 /// How the -r output names the targets of its relocations and pointer
-/// fields: by their symbols in its symbol table, by a symbol ld-prime
-/// re-derives from the address, or section-relatively.
+/// fields: by their symbols in its symbol table, or section-relatively.
 struct RelocTargets<'a, E: Target> {
     ctx: &'a Context<E>,
     symtab: &'a RSymtab,
-    /// The named places (see symbol_places).
-    places: Places,
 }
 
 impl<'a, E: Target> RelocTargets<'a, E> {
     fn new(ctx: &'a Context<E>, symtab: &'a RSymtab) -> Self {
-        let places = symbol_places(ctx, &symtab.index_of_sym);
-        Self { ctx, symtab, places }
+        Self { ctx, symtab }
     }
 
     /// How the output refers to a relocation's target.
@@ -1111,41 +1017,13 @@ impl<'a, E: Target> RelocTargets<'a, E> {
         }
     }
 
-    /// The symbol a reference to offset `off` of subsection `t` names
-    /// where ld-prime re-derives it from the address, and the symbol's
-    /// address: the nearest named place's first name, or in an object
-    /// without subsections, past a place that does not start the
-    /// section, its last (see symbol_places).
-    fn name_at(&self, t: usize, off: u64) -> Option<(u32, u64)> {
-        let (at, first, last, addr) = self.places.at_or_before(t, off)?;
-        let whole = !self.ctx.objs[self.ctx.isecs[t].file as usize].subsections_via_symbols;
-        Some((if whole && at != 0 && at != off { last } else { first }, addr))
-    }
-
-    /// The symbol a section-relative relocation becomes an extern one
-    /// against, and its address: the literal's in a section whose
-    /// literals ld64 names itself, else the name of the place - for a
-    /// target before the section's start (a negative addend), of its
-    /// first.
-    fn extern_target(&self, t: usize, addend: i64) -> Option<(u32, u64)> {
-        if let Some(literal) = self.symtab.literals.get(self.ctx, t, addend) {
-            return Some(literal);
-        }
-        self.name_at(t, u64::try_from(addend).unwrap_or(0))
-    }
-
-    /// A pointer field to offset `off` of subsection `t`: its contents
-    /// and its relocation's symbol, length (`len`) and extern bits. ld64
-    /// names the target by symbol where one names the place (an extern
-    /// relocation, the offset from the symbol in the field); a nameless
-    /// one is referred to section-relatively.
+    /// A pointer field to offset `off` of subsection `t`: its contents,
+    /// the target's address, and its relocation's section and length
+    /// (`len`) bits. It is section-relative, as clang writes the
+    /// function and LSDA fields of __compact_unwind.
     fn pointer_to(&self, t: usize, off: u64, len: u32) -> (u64, u32) {
         let ctx = self.ctx;
-        let target = ctx.isec_addr(t) + off;
-        match self.name_at(t, off) {
-            Some((symnum, addr)) => (target - addr, symnum | len | (1 << 27)),
-            None => (target, ctx.isec_n_sect(&ctx.isecs[t]) as u32 | len),
-        }
+        (ctx.isec_addr(t) + off, ctx.isec_n_sect(&ctx.isecs[t]) as u32 | len)
     }
 
     /// The symbol index of an unwind record's or a CIE's personality
@@ -1316,8 +1194,7 @@ fn copy_section_contents<E: Target>(
 /// Rewrites the field a relocation at address `here` applies to, as a
 /// -r output holds it: an x86-64 GOT load's cell, or the address a
 /// non-external relocation's field embeds, now in the merged address
-/// space - or relative to the symbol of the target where the relocation
-/// becomes an extern one against it.
+/// space.
 fn rewrite_field<E: Target>(
     targets: &RelocTargets<E>,
     isec: &InputSection,
@@ -1339,21 +1216,6 @@ fn rewrite_field<E: Target>(
     };
     // The addend is negative for a target before its section's start.
     let target_addr = ctx.isec_addr(target).wrapping_add_signed(addend);
-    if let Some((_, sym_addr)) = targets.extern_target(target, addend) {
-        // Now a relocation against that symbol: the field holds the
-        // addend relative to it, in the form an object's extern
-        // relocation uses.
-        let mut val = target_addr.wrapping_sub(sym_addr) as i64;
-        if rel.is_pcrel {
-            val -= E::reloc_bias(rel.r_type);
-        }
-        match rel.size {
-            8 => field[..8].copy_from_slice(&val.to_le_bytes()),
-            4 => field[..4].copy_from_slice(&(val as i32).to_le_bytes()),
-            _ => {}
-        }
-        return;
-    }
     if rel.r_type == E::RELOC_UNSIGNED && !rel.is_pcrel {
         match rel.size {
             8 => field[..8].copy_from_slice(&target_addr.to_le_bytes()),
@@ -1372,8 +1234,7 @@ fn rewrite_field<E: Target>(
     }
 }
 
-/// A -r output's symbol and string tables, and where relocations find
-/// the literals ld64 names itself.
+/// A -r output's symbol and string tables.
 struct RSymtab {
     /// The tables, laid out as a final image's are and written by the
     /// same writer (see write_symtab), but with every entry's n_value
@@ -1381,8 +1242,6 @@ struct RSymtab {
     table: SymtabSection,
     /// Each symbol's index in the table, or u32::MAX if it has none.
     index_of_sym: Vec<u32>,
-    /// The linker-named literals: each one's symbol index and address.
-    literals: NamedLiterals<(u32, u64)>,
 }
 
 impl RSymtab {
@@ -1402,9 +1261,7 @@ struct Local {
     n_sect: u8,
     addr: u64,
     rename: Rename,
-    /// The input symbol it stands for: a label's own, or the first of the
-    /// labels of a literal ld64 names itself (none, often), whose other
-    /// labels stand for it too (see Locals::literal_labels).
+    /// The input symbol it stands for, if any.
     sym: Option<SymbolId>,
     /// The object, the section there and the address, which order the
     /// locals - for an absolute symbol, section 0 and its index in the
@@ -1421,20 +1278,18 @@ impl Local {
     }
 }
 
-/// The name a local takes: its own, or one ld64 makes for a literal.
+/// The name a local takes: its own, or one made up (see Locals::rename).
 #[derive(Clone, Copy, PartialEq)]
 enum Rename {
     None,
-    Cstring,
     Anon,
 }
 
 /// How a local ranks among the names of a place: ld-prime orders them
-/// a literal it names itself, a private external, a local, a weak
-/// definition, an ltmpN label, each rank by descending name.
+/// a private external, a local, a weak definition, an ltmpN label, each
+/// rank by descending name.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Rank {
-    Literal,
     PrivateExtern,
     Local,
     Weak,
@@ -1457,15 +1312,11 @@ fn sym_addr<E: Target>(ctx: &Context<E>, id: SymbolId) -> u64 {
 /// image, then the stabs, opened by an N_SO of their own, then the
 /// defined externals and the undefined symbols, each by name. The
 /// strings are laid out as a final image's (see layout_strings).
-fn build_symtab<E: Target>(
-    ctx: &Context<E>,
-    merged: &[OutputSectionId],
-    sectcreate: Vec<Local>,
-) -> RSymtab {
+fn build_symtab<E: Target>(ctx: &Context<E>, sectcreate: Vec<Local>) -> RSymtab {
     let t = ctx.timer("r-symtab-locals");
     let referenced = referenced_syms(ctx);
-    let mut locals = Locals::new(ctx, merged);
-    locals.add_labels(&referenced);
+    let mut locals = Locals::new(ctx);
+    locals.add_labels();
     // Private externals (visibility hidden) are demoted unless
     // -keep_private_externs (which Apple's strip passes to the `ld -r`
     // it runs on each archive member).
@@ -1473,7 +1324,7 @@ fn build_symtab<E: Target>(
         locals.add_private_externs();
     }
     locals.locals.extend(sectcreate);
-    let (locals, literals, literal_labels) = locals.finish();
+    let locals = locals.finish();
     drop(t);
 
     // Debug-note stabs: ld64 does not merge the inputs' DWARF into a -r
@@ -1533,9 +1384,6 @@ fn build_symtab<E: Target>(
             }
         }
     });
-    literal_labels.par_iter().for_each(|&(e, id)| {
-        index_of_sym[id as usize].store(e as u32, Ordering::Relaxed);
-    });
     externals.par_iter().enumerate().for_each(|(k, &(_, id))| {
         let i = stabs_start + k;
         index_of_sym[id as usize].store((i + nstabs) as u32, Ordering::Relaxed);
@@ -1545,11 +1393,7 @@ fn build_symtab<E: Target>(
     table.set_stabs(ctx, stabs, stabs_start, strtab_end);
     drop(t);
 
-    RSymtab {
-        table,
-        index_of_sym: index_of_sym.into_iter().map(AtomicU32::into_inner).collect(),
-        literals,
-    }
+    RSymtab { table, index_of_sym: index_of_sym.into_iter().map(AtomicU32::into_inner).collect() }
 }
 
 /// The symbols `pred` takes, sorted by name on all cores, ties by index.
@@ -1681,233 +1525,44 @@ fn undefined_symbols<E: Target>(ctx: &Context<E>, referenced: &[bool]) -> Vec<(N
         .collect()
 }
 
-/// The literals ld64 names itself in a -r output's literal sections
-/// (see Locals), by subsection and record index.
-struct NamedLiterals<T> {
-    /// The record size of each output section whose literals are named;
-    /// 0 for one record per subsection.
-    entsize_of: HashMap<OutputSectionId, u64>,
-    literals: HashMap<(usize, u64), T>,
-}
-
-impl<T: Copy> NamedLiterals<T> {
-    /// The literal a reference to offset `addend` of subsection `t`
-    /// lands in, if ld64 names it.
-    fn get<E: Target>(&self, ctx: &Context<E>, t: usize, addend: i64) -> Option<T> {
-        let ChunkId::Output(osec) = ctx.isecs[t].output_section()? else {
-            return None;
-        };
-        let entsize = *self.entsize_of.get(&osec)?;
-        let k = (addend as u64).checked_div(entsize).unwrap_or(0);
-        self.literals.get(&(t, k)).copied()
-    }
-}
-
 /// The local symbols of a -r output, in ld64's form, as they are
-/// gathered. ld-prime makes the literals - the strings of a
-/// cstring-literal section, the records of a fixed-size literal section
-/// and the subsections has_unnamed_subsecs names (CFStrings, selector
-/// and class references, UTF-16 and ObjC constant literals) - by
-/// content: their labels vanish, all but those of the cstring and
-/// fixed-size literals a symbol names (labeled, kept apart). arm64
-/// relocations must name what they refer to, so there ld64 names each
-/// such literal itself, and each superclass or protocol reference no
-/// label names, with one shared counter: a cstring literal LC<n>, the
-/// others l<nnn>, all with N_PEXT set so that a later link can still
-/// coalesce them. x86-64 ones refer to them section-relatively, and only
-/// the literals of __TEXT,__cstring get names (LC<n>). The entries of
-/// the __objc_*list sections get no symbol, and on x86-64 neither do the
-/// class and protocol references only a linker-private label (l...)
-/// names. Relocations against the vanished labels - by label, or
-/// section-relative as x86-64 objects refer to literals - are
-/// re-targeted at the new symbols, or are section-relative. Other labels
-/// survive, those of the linker-private kind too, except the ltmpN
-/// labels the arm64 assembler puts at each section's start: in an object
-/// with subsections one survives only where no other symbol names the
-/// place, or where a relocation refers to it. Private externals are
-/// demoted to non-external symbols that keep N_PEXT
-/// (add_private_externs). Each object's are gathered on a core of its
-/// own.
+/// gathered: every label of a live section, as it marked a subsection's
+/// start in its input and a later link splits the output at it the same
+/// way, and the private externals, demoted to non-external symbols that
+/// keep N_PEXT (add_private_externs). Each object's are gathered on a
+/// core of its own.
 struct Locals<'a, E: Target> {
     ctx: &'a Context<E>,
     locals: Vec<Local>,
-    /// The literals ld64 names itself: each one's entry in `locals`.
-    literals: NamedLiterals<usize>,
-    /// The labels of those literals, in the objects' order.
-    literal_labels: Vec<LiteralLabel>,
-    /// The literal sections whose literals get no name.
-    unnamed: HashSet<OutputSectionId>,
-    /// The symbols a subtraction names, on x86-64 (see vanishes).
-    subtracted: Vec<bool>,
-}
-
-/// A label on a literal ld64 names itself, which stands for the
-/// literal (see Locals): the literal's entry among the locals, and the
-/// label's symbol.
-type LiteralLabel = (usize, SymbolId);
-
-/// The size of the records of a literal subsection whose literals
-/// ld-prime makes by content, 0 for one record per subsection (as C
-/// string literals are split), or None for any other subsection: that
-/// of a section of another kind, or of a __ustring section without
-/// subsections, which ld-prime keeps whole (see has_unnamed_subsecs).
-fn literal_size<E: Target>(ctx: &Context<E>, isec: usize) -> Option<u64> {
-    let h = ctx.hdr_of(&ctx.isecs[isec]);
-    match h.section_type() {
-        S_CSTRING_LITERALS => return Some(0),
-        S_4BYTE_LITERALS => return Some(4),
-        S_8BYTE_LITERALS => return Some(8),
-        S_16BYTE_LITERALS => return Some(16),
-        _ => {}
-    }
-    let split = ctx.objs[ctx.isecs[isec].file as usize].subsections_via_symbols;
-    if !crate::passes::has_unnamed_subsecs(h, split) {
-        // Superclass and protocol references are cut one per pointer
-        // too; on arm64 ld-prime names those no label names (a labeled
-        // one keeps its label).
-        return (E::CPUTYPE == CPU_TYPE_ARM64 && crate::passes::is_class_or_protocol_ref(h))
-            .then_some(8);
-    }
-    match h.sectname() {
-        b"__cfstring" => Some(32),
-        b"__objc_selrefs" | b"__objc_classrefs" | b"__objc_superrefs" | b"__objc_protorefs" => {
-            Some(8)
-        }
-        _ => Some(0),
-    }
 }
 
 impl<'a, E: Target> Locals<'a, E> {
-    /// Starts the locals with the literals ld64 names itself.
-    fn new(ctx: &'a Context<E>, merged: &[OutputSectionId]) -> Self {
-        let names_literals = |segname: &[u8], sectname: &[u8]| {
-            E::CPUTYPE == CPU_TYPE_ARM64 || (segname == b"__TEXT" && sectname == b"__cstring")
-        };
-
-        let mut locals = Vec::new();
-        let mut literals = NamedLiterals { entsize_of: HashMap::new(), literals: HashMap::new() };
-        let mut unnamed = HashSet::new();
-        for &chunk_idx in merged {
-            let chunk = ctx.output_section(chunk_idx);
-            let Some(entsize) = chunk.members.iter().find_map(|&id| literal_size(ctx, id as usize))
-            else {
-                continue;
-            };
-            if !names_literals(chunk.hdr.segname, chunk.hdr.sectname) {
-                unnamed.insert(chunk_idx);
-                continue;
-            }
-            literals.entsize_of.insert(chunk_idx, entsize);
-            for &id in &chunk.members {
-                let id = id as usize;
-                let isec = &ctx.isecs[id];
-                // A literal a label names keeps that label instead, as
-                // does a section ld-prime keeps whole.
-                if !isec.is_alive()
-                    || isec.replacement != NO_REPLACEMENT
-                    || isec.is_labeled()
-                    || literal_size(ctx, id).is_none()
-                {
-                    continue;
-                }
-                let size = isec.data().len() as u64;
-                if size == 0 {
-                    continue;
-                }
-                let n = if entsize == 0 { 1 } else { size.div_ceil(entsize) };
-                for k in 0..n {
-                    literals.literals.insert((id, k), locals.len());
-                    locals.push(Local {
-                        name: b"",
-                        n_type: N_PEXT | N_SECT,
-                        n_desc: section_desc(ctx, id),
-                        n_sect: chunk.hdr.n_sect,
-                        addr: chunk.hdr.addr + isec.offset as u64 + k * entsize,
-                        rename: if chunk.hdr.flags & SECTION_TYPE == S_CSTRING_LITERALS {
-                            Rename::Cstring
-                        } else {
-                            Rename::Anon
-                        },
-                        sym: None,
-                        at: (isec.file, isec.shndx as u8 + 1, isec.input_addr as u64 + k * entsize),
-                        rank: Rank::Literal,
-                    });
-                }
-            }
-        }
-
-        let subtracted =
-            if E::CPUTYPE == CPU_TYPE_ARM64 { Vec::new() } else { subtracted_syms(ctx) };
-        Self { ctx, locals, literals, literal_labels: Vec::new(), unnamed, subtracted }
+    fn new(ctx: &'a Context<E>) -> Self {
+        Self { ctx, locals: Vec::new() }
     }
 
-    /// Whether a label vanishes. On x86-64 the label of a literal left
-    /// unnamed vanishes, as does a linker-private (l...) name of a class
-    /// or protocol reference, a demoted private external's too (Swift's
-    /// protocol references) - unless a subtraction names it, which has
-    /// no section-relative form (ld-prime fails an assertion on it).
-    fn vanishes(&self, isec: usize, sym_id: SymbolId) -> bool {
-        let ctx = self.ctx;
-        if E::CPUTYPE == CPU_TYPE_ARM64 || self.subtracted[sym_id as usize] {
-            return false;
-        }
-        let t = &ctx.isecs[isec];
-        if let Some(ChunkId::Output(osec)) = t.output_section()
-            && self.unnamed.contains(&osec)
-            && literal_size(ctx, isec).is_some()
-        {
-            return !t.is_labeled();
-        }
-        let h = ctx.hdr_of(t);
-        h.segname_is(b"__DATA")
-            && (h.sectname_is(b"__objc_superrefs") || h.sectname_is(b"__objc_protorefs"))
-            && ctx.symbols[sym_id].name().starts_with(b"l")
-    }
-
-    /// Whether a subsection is an entry of an __objc_*list section, which
-    /// gets no symbol but its aliases (see objc_list_aliases).
-    fn in_unnamed_list(&self, isec: usize) -> bool {
-        crate::passes::is_unnamed_objc_list(self.ctx.hdr_of(&self.ctx.isecs[isec]))
-    }
-
-    /// Adds the objects' local labels that survive, `referenced` being
-    /// the symbols the output's relocations name.
-    fn add_labels(&mut self, referenced: &[bool]) {
-        let per_obj: Vec<(Vec<Local>, Vec<LiteralLabel>)> = (0..self.ctx.objs.len())
+    /// Adds the objects' local labels.
+    fn add_labels(&mut self) {
+        let per_obj: Vec<Vec<Local>> = (0..self.ctx.objs.len())
             .into_par_iter()
-            .map(|obj_idx| self.object_labels(obj_idx, referenced))
+            .map(|obj_idx| self.object_labels(obj_idx))
             .collect();
-        for (labels, literal_labels) in per_obj {
-            self.locals.extend(labels);
-            for (e, sym_id) in literal_labels {
-                self.locals[e].sym.get_or_insert(sym_id);
-                self.literal_labels.push((e, sym_id));
-            }
-        }
+        self.locals.extend(per_obj.into_iter().flatten());
     }
 
-    /// An object's local labels that survive, and those that stand for
-    /// literals ld64 names itself, each with its literal's entry.
-    fn object_labels(
-        &self,
-        obj_idx: usize,
-        referenced: &[bool],
-    ) -> (Vec<Local>, Vec<LiteralLabel>) {
+    /// An object's local labels: every one of a live section.
+    fn object_labels(&self, obj_idx: usize) -> Vec<Local> {
         let ctx = self.ctx;
         let obj = &ctx.objs[obj_idx];
         let mut labels = Vec::new();
-        let mut literal_labels = Vec::new();
         if !obj.is_alive {
-            return (labels, literal_labels);
+            return labels;
         }
         // Without subsections each of the object's sections is one
         // subsection, which ld64 marks no-dead-strip - every symbol, the
         // assembler's ltmpN labels (they name the sections) included -
         // and an alt entry means nothing there.
         let whole = !obj.subsections_via_symbols;
-        let aliases = crate::passes::objc_list_aliases(ctx, obj);
-        let named_at = named_places(ctx, obj);
-        let literal_names = self.fixed_literal_names(obj);
         for i in obj.local_range() {
             let (nlist, sym_id) = (&obj.nlists[i], obj.symbols[i]);
             if nlist.is_stab() || nlist.is_extern() {
@@ -1924,39 +1579,10 @@ impl<'a, E: Target> Locals<'a, E> {
             if !ctx.isecs[isec].is_alive() || sym.name().is_empty() {
                 continue;
             }
-            // A label on a literal ld64 names itself stands for that
-            // literal, but for a fixed-size literal's other labels (see
-            // fixed_literal_names).
-            let named_literal = self.literals.get(ctx, isec, sym.value as i64);
-            let place = (nlist.n_sect, nlist.n_value);
-            if let Some(e) = named_literal
-                && literal_names.get(&place).is_none_or(|&name| name == sym_id)
-            {
-                literal_labels.push((e, sym_id));
-                continue;
-            }
-            if (self.in_unnamed_list(isec) && !referenced[sym_id as usize] && !aliases.contains(&i))
-                || self.vanishes(isec, sym_id)
-            {
-                continue;
-            }
-            if sym.name().starts_with(b"ltmp")
-                && !whole
-                && !referenced[sym_id as usize]
-                && named_at.contains(&place)
-            {
-                continue;
-            }
-            // A labeled literal is a subsection of its own, not a whole
-            // section's, and so is one ld64 names itself.
-            let whole = whole && !ctx.isecs[isec].is_labeled() && named_literal.is_none();
-            // The section's no_dead_strip marks a list entry's name, not
-            // its aliases.
-            let section_desc = if aliases.contains(&i) { 0 } else { section_desc(ctx, input) };
             labels.push(Local {
                 name: local_symbol_name(sym.name()),
                 n_type: nlist.n_type,
-                n_desc: whole_desc(nlist.n_desc, whole) | section_desc,
+                n_desc: whole_desc(nlist.n_desc, whole) | section_desc(ctx, input),
                 n_sect: ctx.isec_n_sect(&ctx.isecs[isec]),
                 addr: sym_addr(ctx, sym_id),
                 rename: self.rename(sym.name()),
@@ -1965,48 +1591,7 @@ impl<'a, E: Target> Locals<'a, E> {
                 rank: if sym.name().starts_with(b"ltmp") { Rank::Ltmp } else { Rank::Local },
             });
         }
-        (labels, literal_labels)
-    }
-
-    /// The label that stands for each record of an object's fixed-size
-    /// literal sections (__literal4/8/16) ld64 names itself, by the
-    /// record's place (section and address in the object): of the
-    /// record's local labels, the one ld-prime takes for the record's
-    /// name, which the record's l<nnn> replaces: the greatest name, an
-    /// ltmpN label only if no other names the record (see
-    /// symbol_places). The others stay as its aliases, unlike a C
-    /// string's labels, which all stand for its LC<n>. (A record merged
-    /// into another by its contents is named apart all the same.)
-    fn fixed_literal_names(
-        &self,
-        obj: &crate::input_files::ObjectFile,
-    ) -> HashMap<(u8, u64), SymbolId> {
-        let ctx = self.ctx;
-        type Name<'a> = (bool, Reverse<&'a [u8]>, SymbolId);
-        let mut names: HashMap<(u8, u64), Name> = HashMap::new();
-        for i in obj.local_range() {
-            let (nlist, sym_id) = (&obj.nlists[i], obj.symbols[i]);
-            let sym = &ctx.symbols[sym_id];
-            if nlist.is_stab() || nlist.is_extern() || sym.name().is_empty() {
-                continue;
-            }
-            let Some(isec) = sym.input_section().map(|i| ctx.resolve_isec(i as usize)) else {
-                continue;
-            };
-            let fixed_size = matches!(
-                ctx.hdr_of(&ctx.isecs[isec]).section_type(),
-                S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS
-            );
-            if !fixed_size {
-                continue;
-            }
-            if self.literals.get(ctx, isec, sym.value as i64).is_some() {
-                let name = (sym.name().starts_with(b"ltmp"), Reverse(sym.name()), sym_id);
-                let place = (nlist.n_sect, nlist.n_value);
-                names.entry(place).and_modify(|best| *best = (*best).min(name)).or_insert(name);
-            }
-        }
-        names.into_iter().map(|(place, (_, _, id))| (place, id)).collect()
+        labels
     }
 
     /// Adds the private externals, which become non-external symbols in
@@ -2052,10 +1637,7 @@ impl<'a, E: Target> Locals<'a, E> {
                 continue;
             };
             let isec = ctx.resolve_isec(input);
-            if !ctx.isecs[isec].is_alive()
-                || self.in_unnamed_list(isec)
-                || self.vanishes(isec, sym_id)
-            {
+            if !ctx.isecs[isec].is_alive() {
                 continue;
             }
             out.push(Local {
@@ -2115,12 +1697,10 @@ impl<'a, E: Target> Locals<'a, E> {
         }
     }
 
-    /// The locals in ld-prime's order, the literals ld64 names numbered
-    /// in it with one counter, and those literals' symbol indices (the
-    /// locals open the symbol table) and addresses, and their labels'
-    /// (see literal_labels).
-    fn finish(self) -> (Vec<Local>, NamedLiterals<(u32, u64)>, Vec<LiteralLabel>) {
-        let Self { ctx, locals, literals, literal_labels, .. } = self;
+    /// The locals in ld-prime's order, those it renames (see rename)
+    /// numbered in it.
+    fn finish(self) -> Vec<Local> {
+        let Self { ctx, locals } = self;
         // A stable sort, by object first: each object's locals as they
         // were gathered where all else ties.
         let mut order: Vec<usize> = (0..locals.len()).collect();
@@ -2129,28 +1709,20 @@ impl<'a, E: Target> Locals<'a, E> {
             let (a, b) = (&locals[a], &locals[b]);
             place(a).cmp(&place(b)).then_with(|| (a.rank, b.name).cmp(&(b.rank, a.name)))
         });
-        let mut index_of = vec![0u32; locals.len()];
-        for (i, &e) in order.iter().enumerate() {
-            index_of[e] = i as u32;
-        }
         let mut locals: Vec<Local> = order.par_iter().map(|&e| locals[e]).collect();
 
         let mut counter = 1u32;
         for l in &mut locals {
-            let name = match l.rename {
-                Rename::None => continue,
-                Rename::Cstring => format!("LC{counter}"),
-                Rename::Anon => format!("l{counter:03}"),
-            };
-            l.name = name.leak().as_bytes();
-            counter += 1;
+            if l.rename == Rename::Anon {
+                l.name = format!("l{counter:03}").leak().as_bytes();
+                counter += 1;
+            }
         }
 
         // The first name at a place names the subsection, unless an
         // external there does; the others are its aliases. An alias in an
         // initializer or terminator list is not marked no-dead-strip
-        // (see in_init_term_list). (A name ld64 makes for a literal
-        // record has no symbol.)
+        // (see in_init_term_list).
         let in_lists: Vec<usize> = (0..locals.len())
             .into_par_iter()
             .filter(|&i| locals[i].sym.is_some_and(|s| in_init_term_list(ctx, s)))
@@ -2165,19 +1737,6 @@ impl<'a, E: Target> Locals<'a, E> {
             }
         }
 
-        let literals = NamedLiterals {
-            entsize_of: literals.entsize_of,
-            literals: literals
-                .literals
-                .into_iter()
-                .map(|(key, e)| {
-                    let i = index_of[e];
-                    (key, (i, locals[i as usize].addr))
-                })
-                .collect(),
-        };
-        let literal_labels =
-            literal_labels.into_iter().map(|(e, id)| (index_of[e] as usize, id)).collect();
-        (locals, literals, literal_labels)
+        locals
     }
 }

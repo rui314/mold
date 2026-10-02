@@ -1,16 +1,12 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# Where a -r relocation is re-derived from an address - a
+# Where a relocation refers to its target by section and address - a
 # __compact_unwind record's function or LSDA, or an x86-64
-# section-relative relocation - ld-prime names the symbol there: of
-# several at one place, the first by non-weak before weak, then
-# global, private external and local, each by descending name, an
-# arm64 ltmpN label last. Past the place, into the subsection's bytes,
-# it names the first too, plus the offset, as the names are aliases of
-# one subsection - except in an object without subsections away from a
-# section's start, where each name is a subsection of its own, all
-# empty but the last, which holds the bytes and is named.
+# section-relative relocation - a -r output keeps it so, the address
+# moved to the merged layout. A later link finds the subsection by the
+# address, as this one did. (ld-prime names a symbol at the place
+# instead.)
 for subs in '' .subsections_via_symbols; do
   if [ $ARCH = arm64 ]; then
     cat <<EOF | $CC -o $t/a.o -c -xassembler -
@@ -50,25 +46,19 @@ EOF
 
     $mold -arch $ARCH -r $t/a.o -o $t/r.o
     otool -rv $t/r.o > $t/relocs
-    sed -n '/__compact_unwind/,$p' $t/relocs | awk 'NR > 2 {print $1, $NF}' > $t/names
-    grep -qx '00000000 _main' $t/names
-    grep -qx '00000020 _main' $t/names
-    grep -qx '00000040 _zz' $t/names
-    grep -qx '00000060 _l' $t/names
-    grep -qx '00000080 _g' $t/names
-    if [ -z "$subs" ]; then
-      grep -qx '000000a0 _k' $t/names
-    else
-      grep -qx '000000a0 _g' $t/names
-    fi
-    # The function fields of the two past a place hold their offsets.
-    otool -s __LD __compact_unwind $t/r.o > $t/unwind
-    awk 'NR == 5 || NR == 13 {printf "%s ", $2}' $t/unwind | grep -qx '00000004 00000004 '
+    sed -n '/__compact_unwind/,$p' $t/relocs | awk 'NR > 2 {print $1, $5, $NF}' > $t/names
+    [ "$(grep -c ' False (__TEXT,__text)$' $t/names)" = 6 ]
+    # The images linked from the object and from the output unwind
+    # the same functions alike.
+    $CC --ld-path=$mold -o $t/exe1 $t/a.o
+    $CC --ld-path=$mold -o $t/exe2 $t/r.o
+    objdump --macho --unwind-info $t/exe1 | tail -n +2 > $t/unwind1
+    objdump --macho --unwind-info $t/exe2 | tail -n +2 > $t/unwind2
+    diff $t/unwind1 $t/unwind2
     continue
   fi
 
-  # An x86-64 section-relative relocation to a named place becomes an
-  # extern one; one to a nameless place stays section-relative.
+  # x86-64 section-relative relocations, to a named place or not.
   cat <<EOF | $CC -o $t/b.o -c -xassembler -
 $subs
 .globl _w, _p, _ptrs
@@ -94,12 +84,8 @@ EOF
   $mold -arch $ARCH -r $t/b.o -o $t/r.o
   otool -rv $t/r.o | awk 'NR > 2 {print $1, $5, $NF}' > $t/names
   grep -qx '00000000 False (__TEXT,__text)' $t/names
-  grep -qx '00000008 True _p' $t/names
-  if [ -z "$subs" ]; then
-    grep -qx '00000010 True _w' $t/names
-  else
-    grep -qx '00000010 True _p' $t/names
-  fi
+  grep -qx '00000008 False (__TEXT,__text)' $t/names
+  grep -qx '00000010 False (__TEXT,__text)' $t/names
 
   # The fields still point where they did.
   cat <<EOF | $CC -o $t/c.o -c -xc -

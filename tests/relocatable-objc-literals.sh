@@ -5,10 +5,8 @@ source "$(dirname "$0")"/common.inc
 # __objc_doubleobj, __objc_arraydata, __objc_arrayobj, __objc_dictobj
 # ...), __cfstring and __ustring into subsections by content, and names
 # none of them: their labels, linker-private or not (clang's
-# __unnamed_array_storage), are in no output's symbol table. A -r
-# output names the literals itself on arm64, l<nnn> with N_PEXT, since
-# arm64 relocations must name what they refer to; x86-64 relocations
-# refer to them section-relatively, and they get no symbol at all.
+# __unnamed_array_storage), are in no image's symbol table. A -r output
+# keeps them all, labels and all, for the final link to merge.
 cat <<EOF | $CC -o $t/a.o -c -xobjective-c -fno-objc-arc -
 #import <Foundation/Foundation.h>
 id num(void) { return @42; }
@@ -25,19 +23,8 @@ nm $t/a.o | grep -q __unnamed_array_storage
 
 $mold -r -arch $ARCH -o $t/r.o $t/a.o
 nm -m $t/r.o > $t/nm
-not grep -q '__unnamed\|l_\.str' $t/nm
-for s in __objc_intobj __objc_doubleobj __objc_arraydata __objc_arrayobj __objc_dictobj \
-  __cfstring __ustring; do
-  if [ "$ARCH" = arm64 ]; then
-    grep -q ",$s) non-external (was a private external) .*l[0-9][0-9][0-9]\$" $t/nm
-  else
-    not grep -q ",$s)" $t/nm
-  fi
-done
-if [ "$ARCH" != arm64 ]; then
-  otool -rv $t/r.o > $t/relocs
-  grep -q 'False  SIGNED  False     [0-9]* (__DATA,__objc_intobj)' $t/relocs
-fi
+grep -q '(__DATA,__objc_arraydata) non-external .*__unnamed_array_storage$' $t/nm
+not grep -q 'l[0-9][0-9][0-9]$' $t/nm
 
 cat <<EOF | $CC -o $t/main.o -c -xobjective-c -fno-objc-arc -
 #import <Foundation/Foundation.h>
@@ -51,6 +38,8 @@ int main() {
 EOF
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/r.o -framework Foundation
 $t/exe | grep -q '^42 2.5 a,1 v cfstr 3$'
+nm $t/exe > $t/nm1
+not grep -q __unnamed_array_storage $t/nm1
 $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/a.o -framework Foundation
 $t/exe2 | grep -q '^42 2.5 a,1 v cfstr 3$'
 nm $t/exe2 > $t/nm2

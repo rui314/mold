@@ -3570,8 +3570,7 @@ pub fn refresh_unwind_ranges<E: Target>(ctx: &mut Context<E>) {
 /// (L-prefixed, which the arm64 assembler keeps for relocations to
 /// name) or linker-private (l-prefixed, the assembler's ltmpN labels
 /// included) one: ld-prime keeps each such record a subsection of its
-/// own, merged with no identical copy, and a -r output keeps its label
-/// rather than naming it LC<n>/l<nnn>. So it keeps an __objc_superrefs
+/// own, merged with no identical copy. So it keeps an __objc_superrefs
 /// or __objc_protorefs entry any symbol names, even the ltmpN label of
 /// its section's start (see coalesce_objc_refs), unless the section
 /// is of the literal-pointer type (see is_class_or_protocol_ref).
@@ -6305,8 +6304,7 @@ pub(crate) fn objc_list_aliases<E: Target>(
 /// Whether ld-prime splits a section into subsections by content and
 /// names none of them: CFStrings, selector and class references,
 /// UTF-16 literals and Objective-C constant literals (@42, @[...],
-/// @{...}). No label of theirs is in an output's symbol table; a -r
-/// output names the subsections itself on arm64 (see relocatable.rs).
+/// @{...}). No label of theirs is in an image's symbol table.
 /// Selector references are so only of the literal-pointer type the
 /// compilers give them: a regular or coalesced __objc_selrefs is data,
 /// whose labels stay and whose references don't merge. Superclass and

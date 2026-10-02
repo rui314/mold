@@ -33,10 +33,14 @@ $t/exe | grep -q '^1 1 11$'
 [ "$(size $t/exe __ustring)" = 0x0000000000000030 ]
 [ "$(size $t/exe __cfstring)" = 0x0000000000000020 ]
 
-# A -r output merges them too.
+# A -r output leaves them to the final link, which merges them as it
+# does the objects'.
 $mold -r -arch $ARCH -o $t/r.o $t/a1.o $t/a2.o
-[ "$(size $t/r.o __ustring)" = 0x0000000000000030 ]
-[ "$(size $t/r.o __cfstring)" = 0x0000000000000020 ]
+[ "$(size $t/r.o __ustring)" = 0x0000000000000060 ]
+$CC --ld-path=$mold -o $t/exe3 $t/main.o $t/r.o -framework CoreFoundation
+$t/exe3 | grep -q '^1 1 11$'
+[ "$(size $t/exe3 __ustring)" = 0x0000000000000030 ]
+[ "$(size $t/exe3 __cfstring)" = 0x0000000000000020 ]
 
 # So does a subsection a symbol other than an l-label names, or one of
 # several strings.

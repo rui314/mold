@@ -43,11 +43,12 @@ sed -n '/__eh_frame/,+3p' $t/relocs | grep '1     2      1      4'
 
 # The assembler gave the frame a DWARF-mode compact unwind record;
 # ld64 -r copies it as it came (the next link regenerates its
-# encoding from the FDE), naming the function by an extern
-# relocation, as it names every function and LSDA that has a symbol.
+# encoding from the FDE). The function and LSDA fields refer to their
+# sections, as clang writes them; the personality is named.
 otool -l $t/merged.o | grep -A3 'sectname __compact_unwind' | grep 'size 0x0000000000000060'
-sed -n '/__compact_unwind/,/^Relocation information (__TEXT/p' $t/relocs > $t/cu_relocs
-grep -q '^00000000 .* _through_asm$\|^00000000 .*1 *_through_asm' $t/cu_relocs || otool -rv $t/merged.o | sed -n '/__compact_unwind/,/^Rel/p' | grep '^00000000 .*True   UNSIGND False     _through_asm'
+otool -rv $t/merged.o | sed -n '/__compact_unwind/,/^Rel/p' > $t/cu_relocs
+grep -q '^00000000 .*False  UNSIGND False     1 (__TEXT,__text)$' $t/cu_relocs
+grep -q 'True   UNSIGND False     ___gxx_personality_v0$' $t/cu_relocs
 python3 - $t/merged.o <<'EOF2'
 import struct, subprocess, sys
 f = sys.argv[1]

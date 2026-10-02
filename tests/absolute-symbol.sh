@@ -53,12 +53,13 @@ $CC --ld-path=$mold $t/main.o $t/absolute.o $t/local.o -o $t/exe3 -Wl,-x
 nm $t/exe3 > $t/syms3
 not grep -q _local_answer $t/syms3
 
-# A -r output keeps them all, after each object's section symbols in
-# the object's order, the demoted private externals last, and with no
-# n_desc flags (the assembler marks an absolute symbol no-dead-strip).
+# A -r output keeps them all, the private external demoted, and a
+# program links with it as with the object.
 $mold -r -arch $ARCH -o $t/r.o $t/local.o
-[ "$(nm -p $t/r.o | awk '{printf "%s ", $3}')" = \
-  '_data_local _local_answer lprivate _hidden_answer ' ]
 nm -m $t/r.o > $t/syms4
-grep -q '(absolute) non-external (was a private external) _hidden_answer$' $t/syms4
-not grep -q 'no dead strip' $t/syms4
+grep -q '(absolute) non-external [^(]*_local_answer$' $t/syms4
+grep -q '(absolute) non-external [^(]*lprivate$' $t/syms4
+grep -q '(absolute) non-external (was a private external) [^(]*_hidden_answer$' $t/syms4
+$CC --ld-path=$mold $t/main.o $t/absolute.o $t/r.o -o $t/exe4
+$t/exe4 | grep '^42 43 43 43 1$'
+nm -m $t/exe4 | grep -q '(absolute) non-external _local_answer$'

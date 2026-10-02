@@ -313,16 +313,15 @@ pub(crate) fn cstring_of(data: &[u8]) -> &[u8] {
 /// once per object: __objc_selrefs entries naming the same selector
 /// (of the literal-pointer type, see has_unnamed_subsecs),
 /// __objc_classrefs entries naming the same class, and identical
-/// __cfstring constants. ld64 keeps one of each, in a -r output as in
-/// a final link (NetNewsWire's RSCore prelink had 56 class references
-/// where ld-prime's has 30, its debug dylib 592 selector references
-/// too many); the first copy wins and the rest redirect to it, like
-/// merged literals. A final link from macOS 15 on leaves class
-/// references to fold_objc_classrefs, which turns them into GOT slots
-/// (and coalesces those nothing refers to). __objc_superrefs and
-/// __objc_protorefs entries of one class or protocol coalesce too, but
-/// for those a symbol names (see mark_labeled_literals): the compiler
-/// labels each, but an x86-64 -r output drops the labels.
+/// __cfstring constants. ld64 keeps one of each in a final link
+/// (NetNewsWire's debug dylib had 592 selector references too many);
+/// the first copy wins and the rest redirect to it, like merged
+/// literals. (A -r link leaves them all to the final link.) A final
+/// link from macOS 15 on leaves class references to
+/// fold_objc_classrefs, which turns them into GOT slots (and coalesces
+/// those nothing refers to). __objc_superrefs and __objc_protorefs
+/// entries of one class or protocol coalesce too, but for those a
+/// symbol names (see mark_labeled_literals).
 pub fn coalesce_objc_refs<E: Target>(ctx: &mut Context<E>) {
     // What a pointer relocation refers to: a place in a subsection
     // (where identical content has already been merged), or a symbol

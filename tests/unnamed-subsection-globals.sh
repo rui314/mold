@@ -90,7 +90,11 @@ nm -m $t/exe3 | grep -q '(__DATA,__data) external _selref'
 not $CC --ld-path=$mold -o $t/exe4 $t/a.o -Wl,-u,_ustr 2> $t/log4
 grep -q '_ustr' $t/log4
 
-# ld -r names such subsections itself.
+# A -r output keeps them as the non-external symbols they now are: it
+# defines nothing by those names either, and its own references still
+# reach them.
 $CC --ld-path=$mold -r -o $t/d.o $t/a.o
-nm $t/d.o > $t/log5
+nm -g $t/d.o > $t/log5
 not grep -q '_ustr\|_selref' $t/log5
+$CC --ld-path=$mold -o $t/exe5 $t/d.o
+$t/exe5

@@ -78,12 +78,14 @@ $t/exe | grep -q '^1 2$'
 # joins them with its record.
 [ "$(sect $t/exe __TEXT __const)" = 0x0000000000000018 ]
 
+# A -r output leaves the merging to the final link, which merges as
+# it does the objects'.
 $mold -r -arch $ARCH -o $t/r.o $t/a.o $t/b.o
-[ "$(sect $t/r.o __DATA __lit)" = 0x0000000000000010 ]
-[ "$(sect $t/r.o __DATA __lit2)" = 0x0000000000000020 ]
-[ "$(sect $t/r.o __TEXT __literal8)" = 0x0000000000000008 ]
+[ "$(sect $t/r.o __TEXT __literal8)" = 0x0000000000000020 ]
 $CC --ld-path=$mold -o $t/exe2 $t/r.o $t/c.o
 $t/exe2 | grep -q '^1 2$'
+[ "$(sect $t/exe2 __DATA __lit)" = 0x0000000000000010 ]
+[ "$(sect $t/exe2 __DATA __lit2)" = 0x0000000000000020 ]
 
 # Nor do __literal8 records with relocations merge, which ld-prime
 # does: its -r output points both at _x_a.

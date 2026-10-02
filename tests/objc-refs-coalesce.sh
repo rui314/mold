@@ -4,8 +4,8 @@ source "$(dirname "$0")"/common.inc
 # ld-prime coalesces the __objc_superrefs and __objc_protorefs entries
 # of one class or protocol but for those a symbol names - on arm64 the
 # assembler's ltmp label of the section's start too. The compiler
-# labels each entry, but an x86-64 -r output drops the labels, so two
-# categories calling super on one class share an entry after it.
+# labels each entry, and a -r output keeps the labels, so two
+# categories calling super on one class keep an entry each.
 cat <<EOF | $CC -o $t/base.o -c -xobjective-c -
 #import <Foundation/Foundation.h>
 @interface Base : NSObject
@@ -39,10 +39,9 @@ size() {
     f && $1 == "size" { print $2; f = 0 }'
 }
 
-[ $ARCH = arm64 ] && n=0x0000000000000010 || n=0x0000000000000008
 $CC --ld-path=$mold -o $t/exe $t/base.o $t/ra.o $t/rb.o -framework Foundation
 $t/exe | grep -q '^1 0$'
-[ "$(size $t/exe __objc_superrefs)" = $n ]
+[ "$(size $t/exe __objc_superrefs)" = 0x0000000000000010 ]
 
 # Unlabeled entries of one target in two objects.
 for n in c d; do

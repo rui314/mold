@@ -3,9 +3,8 @@ source "$(dirname "$0")"/common.inc
 
 # ld-prime cuts __objc_superrefs and __objc_protorefs into a subsection
 # per pointer. One a symbol names stays apart and keeps its label, in
-# an image's symbol table too; the others merge by target, and a -r
-# output names each of them l<nnn> on arm64, whose relocations name
-# what they refer to.
+# an image's symbol table too; the others merge by target. A -r output
+# keeps every entry and label for the final link to merge.
 cat <<EOF | $CC -o $t/c.o -c -xassembler -
 .section __DATA,__objc_data
 .p2align 3
@@ -44,15 +43,11 @@ grep -q ',__objc_protorefs) non-external _pro_a$' $t/nm
 $mold -r -arch $ARCH -o $t/r.o $t/a.o
 nm -m $t/r.o > $t/nm-r
 grep -q '(__DATA,__objc_superrefs) non-external \[no dead strip\] _sup_a$' $t/nm-r
-if [ $ARCH = arm64 ]; then
-  grep -q '(__DATA,__objc_superrefs) non-external \[no dead strip\] l_sup_b$' $t/nm-r
-  grep -q '(__DATA,__objc_superrefs) non-external (was a private external) \[no dead strip\] l001$' $t/nm-r
-  grep -q '(__DATA,__objc_protorefs) non-external (was a private external) \[no dead strip\] l002$' $t/nm-r
-else
-  # x86-64 relocations refer to these section-relatively, and a
-  # linker-private label vanishes.
-  not grep -q ' l00[12]$\| l_sup_b$' $t/nm-r
-fi
+grep -q '(__DATA,__objc_superrefs) non-external \[no dead strip\] l_sup_b$' $t/nm-r
+$CC --ld-path=$mold -o $t/exe-r $t/main.o $t/r.o $t/c.o
+$t/exe-r
+nm -m $t/exe-r | grep -q ',__objc_superrefs) non-external _sup_a$'
+[ "$(size $t/exe-r __objc_superrefs)" = 0x0000000000000018 ]
 
 # Of the literal-pointer type, such references are taken for class
 # references: all of one target merge, whatever labels them, and no
@@ -74,7 +69,6 @@ $t/exe2
 nm -m $t/exe2 > $t/nm2
 not grep -q '_sup_a[12]' $t/nm2
 $mold -r -arch $ARCH -o $t/r2.o $t/b1.o $t/b2.o
-[ "$(size $t/r2.o __objc_superrefs)" = 0x0000000000000010 ]
 otool -l $t/r2.o | grep -A8 'sectname __objc_superrefs' | grep -q 'flags 0x10000000'
-nm -m $t/r2.o > $t/nm-r2
-not grep -q 'sup_' $t/nm-r2
+$CC --ld-path=$mold -o $t/exe2-r $t/main.o $t/r2.o $t/c.o
+$t/exe2-r

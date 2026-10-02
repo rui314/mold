@@ -53,5 +53,5 @@ not grep -q _objc_categories_stubs $t/nm
 $mold -r -arch $ARCH -o $t/r.o $t/a.o
 otool -l $t/r.o | grep 'sectname __objc_' > $t/sects-r
 [ "$(grep -A1 __objc_catlist2 $t/sects-r | tail -1 | awk '{print $2}')" = __objc_imageinfo ]
-nm $t/r.o > $t/nm-r
-not grep -q _objc_categories_stubs $t/nm-r
+swiftc -use-ld=$mold -o $t/exe-r $t/r.o -L$t -lBase -Xlinker -rpath -Xlinker $t
+$t/exe-r | grep -q '^true true$'

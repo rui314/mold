@@ -2,11 +2,11 @@
 source "$(dirname "$0")"/common.inc
 
 # A literal record a symbol labels stays a subsection of its own, as in
-# ld-prime: it merges with no identical record, labeled or not, and a
-# -r output keeps its label, a plain local, where it names the other
-# records LC<n> or l<nnn>. A linker-private (l) or temporary (L)
-# label doesn't count; its record merges as an unlabeled one does. So
-# it goes in objects with subsections and without alike.
+# ld-prime: it merges with no identical record, labeled or not. A
+# linker-private (l) or temporary (L) label doesn't count; its record
+# merges as an unlabeled one does. So it goes in objects with
+# subsections and without alike, and in a -r output, which keeps every
+# record and label for the final link to merge.
 cat > $t/a.s <<EOF
 .text
 .globl _f
@@ -41,16 +41,16 @@ $CC -o $t/a2.o -c $t/a2.s
 for obj in a a2; do
   $mold -arch $ARCH -r $t/$obj.o -o $t/r$obj.o
   nm -m $t/r$obj.o > $t/nm$obj
-  grep -q '(__TEXT,__cstring) non-external sa$' $t/nm$obj
-  grep -q '(__TEXT,__cstring) non-external sb$' $t/nm$obj
-  grep -q '(__TEXT,__literal8) non-external fa$' $t/nm$obj
-  grep -q '(__TEXT,__literal8) non-external fb$' $t/nm$obj
-  not grep -q ' lc$' $t/nm$obj
-  [ "$(grep -c ' s[ab]$' $t/nm$obj)" = 2 ]
-  [ "$(grep ' s[ab]$' $t/nm$obj | cut -d' ' -f1 | sort -u | wc -l)" -eq 2 ]
-  objdump -h $t/r$obj.o > $t/sect$obj
-  grep -Eq ' __cstring\s+00000014\s' $t/sect$obj
-  grep -Eq ' __literal8\s+00000020\s' $t/sect$obj
+  grep -q '(__TEXT,__cstring) non-external.* sa$' $t/nm$obj
+  grep -q '(__TEXT,__cstring) non-external.* sb$' $t/nm$obj
+  grep -q '(__TEXT,__literal8) non-external.* fa$' $t/nm$obj
+  grep -q '(__TEXT,__literal8) non-external.* fb$' $t/nm$obj
+  for in in $obj r$obj; do
+    $CC --ld-path=$mold -shared -o $t/$in.dylib $t/$in.o
+    objdump -h $t/$in.dylib > $t/sect$in
+    grep -Eq ' __cstring\s+00000014\s' $t/sect$in
+    grep -Eq ' __const\s+00000020\s' $t/sect$in
+  done
 done
 
 # Across objects too: another object's labeled copy stays apart, its
@@ -71,11 +71,9 @@ _q: .quad sc
 .subsections_via_symbols
 EOF
 $mold -arch $ARCH -r $t/a2.o $t/b.o -o $t/rab.o
-objdump -h $t/rab.o > $t/sectab
-grep -Eq ' __cstring\s+0000001a\s' $t/sectab
-grep -Eq ' __literal8\s+00000028\s' $t/sectab
-
-$CC --ld-path=$mold -shared -o $t/c.dylib $t/a2.o $t/b.o
-objdump -h $t/c.dylib > $t/sectc
-grep -Eq ' __cstring\s+0000001a\s' $t/sectc
-grep -Eq ' __const\s+00000028\s' $t/sectc
+for in in "$t/a2.o $t/b.o" $t/rab.o; do
+  $CC --ld-path=$mold -shared -o $t/c.dylib $in
+  objdump -h $t/c.dylib > $t/sectc
+  grep -Eq ' __cstring\s+0000001a\s' $t/sectc
+  grep -Eq ' __const\s+00000028\s' $t/sectc
+done
