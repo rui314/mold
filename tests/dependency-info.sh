@@ -40,51 +40,39 @@ entries $t/deps > $t/deps.txt
 head -1 $t/deps.txt | grep -q '^00 .*\\n$'
 [ "$(tail -n +2 $t/deps.txt)" = "$(tail -n +2 $t/deps.txt | LC_ALL=C sort)" ]
 
-# A relative path is resolved to the file's real path: every file the
-# command line names, an archive whether or not a member loads, and the
-# -filelist and -sectcreate files (but not a symbol list).
-dir=$(cd $t/dir && pwd -P)
-grep -qx "10 $dir/a.o" $t/deps.txt
-grep -qx "10 $dir/libb.a" $t/deps.txt
-grep -qx "10 $dir/filelist" $t/deps.txt
-grep -qx "10 $dir/sect.txt" $t/deps.txt
+# A relative path is made absolute, as spelled (ld-prime resolves it to
+# the file's real path): every file the command line names, an archive
+# whether or not a member loads, and the -filelist and -sectcreate
+# files (but not a symbol list).
+cwd=$(pwd -P)
+grep -qx "10 $cwd/$t/link/a.o" $t/deps.txt
+grep -qx "10 $cwd/$t/link/libb.a" $t/deps.txt
+grep -qx "10 $cwd/$t/link/filelist" $t/deps.txt
+grep -qx "10 $cwd/$t/link/sect.txt" $t/deps.txt
 not grep -q exports $t/deps.txt
 
-# The libraries loaded as another's re-exports are listed twice each.
+# The libraries loaded as another's re-exports are listed too, once
+# each (ld-prime lists them twice).
 grep -q '^10 .*/usr/lib/libSystem.tbd$' $t/deps.txt
-[ "$(grep -c '^10 .*/usr/lib/system/libsystem_c.tbd$' $t/deps.txt)" = 2 ]
+[ "$(grep -c '^10 .*/usr/lib/system/libsystem_c.tbd$' $t/deps.txt)" = 1 ]
 
-# The outputs are the image and the map, as named before the link wrote
-# them.
-grep -qx "40 $t/exe" $t/deps.txt
-grep -qx "40 $t/map" $t/deps.txt
+# The outputs are the image and the map.
+grep -qx "40 $cwd/$t/exe" $t/deps.txt
+grep -qx "40 $cwd/$t/map" $t/deps.txt
 
 # A -r link writes it too; Xcode asks its prelinks for one and fails the
-# build if the file is missing. Its output resolves too once it exists.
+# build if the file is missing.
 rm -f $t/r.o
 $mold -r -arch $ARCH -o $t/r.o $t/link/a.o -dependency_info $t/deps-r
 entries $t/deps-r > $t/deps-r.txt
-grep -qx "10 $dir/a.o" $t/deps-r.txt
-grep -qx "40 $t/r.o" $t/deps-r.txt
-$mold -r -arch $ARCH -o $t/r.o $t/link/a.o -dependency_info $t/deps-r
-entries $t/deps-r > $t/deps-r.txt
-grep -qx "40 $(cd $t && pwd -P)/r.o" $t/deps-r.txt
+grep -qx "10 $cwd/$t/link/a.o" $t/deps-r.txt
+grep -qx "40 $cwd/$t/r.o" $t/deps-r.txt
 
-# A relative path that is a symbolic link resolves to the file it links
-# to, and one spelled in another case than the file's, where the file
-# system ignores case, to the file's name in its own case.
-rm -f $t/dir/c.o
-ln -s b.o $t/dir/c.o
-$mold -r -arch $ARCH -o $t/r.o $t/link/a.o $t/link/c.o -dependency_info $t/deps-r
+# An absolute path is listed as it is.
+$mold -r -arch $ARCH -o $cwd/$t/r.o $cwd/$t/dir/a.o -dependency_info $t/deps-r
 entries $t/deps-r > $t/deps-r.txt
-grep -qx "10 $dir/a.o" $t/deps-r.txt
-grep -qx "10 $dir/b.o" $t/deps-r.txt
-if [ -e $t/LINK/A.O ]; then
-  $mold -r -arch $ARCH -o $t/r.o $t/LINK/A.O $t/link/B.O -dependency_info $t/deps-r
-  entries $t/deps-r > $t/deps-r.txt
-  grep -qx "10 $dir/a.o" $t/deps-r.txt
-  grep -qx "10 $dir/b.o" $t/deps-r.txt
-fi
+grep -qx "10 $cwd/$t/dir/a.o" $t/deps-r.txt
+grep -qx "40 $cwd/$t/r.o" $t/deps-r.txt
 
 # The files the searches for inputs looked for and didn't find are
 # listed as missing, each once: for -lfoo, the stub, the dylib, the .so

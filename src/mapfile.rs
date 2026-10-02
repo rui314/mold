@@ -80,44 +80,28 @@ pub fn write_sdk_imports<E: Target>(ctx: &Context<E>) {
 /// Writes the -dependency_info file: Xcode's incremental build system
 /// reads it to learn which files the link consumed and wrote. The
 /// format is binary: an opcode byte then a NUL-terminated string - 0x00
-/// the linker's version (ld-prime's -v banner, newline and all), 0x10
-/// an input, 0x11 a file looked for and missing, 0x40 an output -, the
-/// entries sorted by opcode and then path, duplicates kept. The inputs
-/// are every file the command line names - objects, archives whether
-/// or not a member loads, dylibs whether or not -dead_strip_dylibs
-/// keeps them, the -bundle_loader -, the -filelist and -sectcreate
-/// files, the libraries auto-link options load, and twice each the
-/// libraries loaded only as another's re-exports (ld-prime records them
-/// as it finds them and as it loads them). The missing files are those
-/// the searches for inputs looked for, each once, as spelled (see
-/// passes::Prober): a build system links again when one appears. The
-/// outputs are the image, the -map and the -sdk_imports file. A file
-/// is named as often as it is spelled differently, and a relative path
-/// resolved to the file's real path, where there is one: an output's,
-/// where a previous link wrote it.
+/// the linker's version, 0x10 an input, 0x11 a file looked for and
+/// missing, 0x40 an output -, the entries sorted by opcode and then
+/// path. The inputs are every file the command line names - objects,
+/// archives whether or not a member loads, dylibs whether or not
+/// -dead_strip_dylibs keeps them, the -bundle_loader -, the -filelist
+/// and -sectcreate files, the libraries auto-link options load and
+/// those loaded as another's re-exports, each once. The missing files
+/// are those the searches for inputs looked for, each once, as spelled
+/// (see passes::Prober): a build system links again when one appears.
+/// The outputs are the image, the -map and the -sdk_imports file.
+/// Inputs and outputs are named by absolute paths.
 pub fn write_dependency_info<E: Target>(ctx: &Context<E>) {
     let Some(path) = &ctx.args.dependency_info else {
         return;
     };
-    let mut entries: Vec<(u8, Vec<u8>)> = dependency_inputs(ctx);
-    // Paths are equal as their components are, and sort so, which is
-    // slow; but a path that spells its components as they are - with
-    // no empty or "." component past the first, no trailing slash -
-    // compares as its bytes do.
-    let mut missing = ctx.missing_files.lock().unwrap().clone();
-    let plain = |path: &[u8]| {
-        memchr::memmem::find(path, b"//").is_none()
-            && memchr::memmem::find(path, b"/./").is_none()
-            && !path.ends_with(b"/")
-            && !path.ends_with(b"/.")
-    };
-    if missing.iter().all(|path| plain(path_bytes(path))) {
-        missing.sort_unstable_by(|a, b| path_bytes(a).cmp(path_bytes(b)));
-    } else {
-        missing.sort_unstable();
-    }
+    let mut entries: Vec<(u8, Vec<u8>)> =
+        dependency_inputs(ctx).into_iter().map(|path| (0x10, path)).collect();
+    let missing = ctx.missing_files.lock().unwrap();
+    let mut missing: Vec<&[u8]> = missing.iter().map(|path| path_bytes(path)).collect();
+    missing.sort_unstable();
     missing.dedup();
-    entries.extend(missing.iter().map(|path| (0x11, path_bytes(path).to_vec())));
+    entries.extend(missing.into_iter().map(|path| (0x11, path.to_vec())));
     let outputs = [Some(&ctx.args.output), ctx.args.map.as_ref(), ctx.args.sdk_imports.as_ref()];
     entries.extend(outputs.into_iter().flatten().map(|path| (0x40, dependency_path(path))));
     entries.sort();
@@ -139,12 +123,12 @@ pub fn write_dependency_info<E: Target>(ctx: &Context<E>) {
 }
 
 /// The -dependency_info file's inputs (see write_dependency_info).
-fn dependency_inputs<E: Target>(ctx: &Context<E>) -> Vec<(u8, Vec<u8>)> {
+fn dependency_inputs<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
     use crate::cmdline::InputArg;
     // The object LTO compiled is no input (a build system can't depend
     // on it), whatever -object_path_lto made of it, nor is the hook for
     // the classes of mergeable libraries (see bundle_hook).
-    let mut named: Vec<&Path> = ctx
+    let mut paths: Vec<&Path> = ctx
         .objs
         .iter()
         .enumerate()
@@ -153,89 +137,29 @@ fn dependency_inputs<E: Target>(ctx: &Context<E>) -> Vec<(u8, Vec<u8>)> {
         })
         .map(|(_, o)| o.mf.parent.map_or(o.mf.name.as_path(), |p| p.name.as_path()))
         .collect();
-    named.extend(ctx.visited_files.iter().map(PathBuf::as_path));
-    named.extend(ctx.args.inputs.iter().filter_map(|arg| match arg {
+    paths.extend(ctx.visited_files.iter().map(PathBuf::as_path));
+    paths.extend(ctx.args.inputs.iter().filter_map(|arg| match arg {
         InputArg::BundleLoader(path) => Some(path.as_path()),
         _ => None,
     }));
-    named.extend(ctx.args.filelists.iter().map(PathBuf::as_path));
-    named.extend(ctx.args.sectcreate.iter().filter_map(|sc| sc.path.as_deref()));
+    paths.extend(ctx.args.filelists.iter().map(PathBuf::as_path));
+    paths.extend(ctx.args.sectcreate.iter().filter_map(|sc| sc.path.as_deref()));
+    paths.extend(ctx.reexport_files.iter().map(PathBuf::as_path));
     // A fat file's slice is the file's.
-    let mut named: Vec<Vec<u8>> = named
-        .into_iter()
-        .map(|path| crate::input_files::without_fat_arch(path_bytes(path)))
+    let mut paths: Vec<Vec<u8>> = (paths.into_iter())
+        .map(|path| crate::input_files::without_fat_arch(&dependency_path(path)))
         .collect();
-    named.sort_unstable();
-    named.dedup();
-    let named = dependency_paths(named.iter().map(|path| Path::new(crate::util::os_str(path))));
-
-    let mut reexports = dependency_paths(ctx.reexport_files.iter().map(PathBuf::as_path));
-    reexports.sort_unstable();
-    reexports.dedup();
-    {
-        let named: hashbrown::HashSet<&[u8]> = named.iter().map(Vec::as_slice).collect();
-        reexports.retain(|path| !named.contains(path.as_slice()));
-    }
-    let reexports = reexports.into_iter().flat_map(|path| [path.clone(), path]);
-    named.into_iter().chain(reexports).map(|path| (0x10, path)).collect()
+    paths.sort_unstable();
+    paths.dedup();
+    paths
 }
 
-/// A path as the -dependency_info file has it: a relative one resolved
-/// to the file's real path, if it exists, an absolute one as it is.
+/// A path as the -dependency_info file has it: absolute.
 fn dependency_path(path: &Path) -> Vec<u8> {
-    if !path.is_absolute()
-        && let Ok(real) = std::fs::canonicalize(path)
-    {
-        return path_bytes(&real).to_vec();
+    match std::path::absolute(path) {
+        Ok(path) => path_bytes(&path).to_vec(),
+        Err(_) => path_bytes(path).to_vec(),
     }
-    path_bytes(path).to_vec()
-}
-
-/// dependency_path of each of `paths`, which resolves the directory of
-/// the relative ones once each, rather than every path's components: a
-/// file that is no symbolic link is in its directory's real path, by
-/// the name the directory lists it by (realpath(3) gives a name as the
-/// directory has it - on a case-insensitive file system, in its case,
-/// not the path's -, and only an exact match is taken). The others are
-/// resolved one by one, as are those of a directory listed too long
-/// without them.
-fn dependency_paths<'a>(paths: impl Iterator<Item = &'a Path>) -> Vec<Vec<u8>> {
-    use crate::util::os_str;
-    use std::os::unix::ffi::OsStrExt;
-    let split = |path: &'a [u8]| match memchr::memrchr(b'/', path) {
-        Some(slash) => (&path[..slash], &path[slash + 1..]),
-        None => (&b"."[..], path),
-    };
-    let paths: Vec<&[u8]> = paths.map(path_bytes).collect();
-    let mut dirs: hashbrown::HashMap<&[u8], hashbrown::HashSet<&[u8]>> = hashbrown::HashMap::new();
-    for &path in paths.iter().filter(|path| !path.starts_with(b"/")) {
-        let (dir, leaf) = split(path);
-        if !matches!(leaf, b"" | b"." | b"..") {
-            dirs.entry(dir).or_default().insert(leaf);
-        }
-    }
-    // (An absolute path's directory is no relative one's.)
-    let mut real: hashbrown::HashMap<(&[u8], &[u8]), Vec<u8>> = hashbrown::HashMap::new();
-    for (dir, mut wanted) in dirs {
-        let Ok(real_dir) = std::fs::canonicalize(os_str(dir)) else { continue };
-        let Ok(entries) = std::fs::read_dir(os_str(dir)) else { continue };
-        for entry in entries.take(64 + 32 * wanted.len()).flatten() {
-            let name = entry.file_name();
-            let Some(leaf) = wanted.take(name.as_bytes()) else { continue };
-            if entry.file_type().is_ok_and(|t| !t.is_symlink()) {
-                real.insert((dir, leaf), path_bytes(&real_dir.join(&name)).to_vec());
-            }
-            if wanted.is_empty() {
-                break;
-            }
-        }
-    }
-    (paths.into_iter())
-        .map(|path| match real.get(&split(path)) {
-            Some(real) => real.clone(),
-            None => dependency_path(Path::new(os_str(path))),
-        })
-        .collect()
 }
 
 /// -trace_file, -trace_file_shared_cache and -trace_symbols_file: the
