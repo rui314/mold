@@ -2,7 +2,8 @@
 source "$(dirname "$0")"/common.inc
 
 # A final image's debug notes (stabs) follow its non-debug local
-# symbols and open with a closing N_SO of their own. Each compilation
+# symbols, each unit's opening with the N_SO pair naming its source
+# file. (ld-prime opens them with an empty N_SO.) Each compilation
 # unit notes its functions and data once; ld-prime lists them by
 # address, mold in symbol-table order, and neither dsymutil nor lldb
 # cares: both map a unit's notes by name. A global's N_GSYM carries no
@@ -28,10 +29,10 @@ EOF
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o
 nm -ap $t/exe > $t/nm
 
-# The locals, then the first stab, an N_SO with an empty name.
+# The locals, then the first stab, the first unit's N_SO.
 awk '{ if ($2 == "-") exit; print $3 }' $t/nm > $t/locals
 [ "$(sort $t/locals | tr '\n' ' ')" = '_f1 _s1 _s2 _sz ' ]
-awk '$2 == "-" { print $5, $6; exit }' $t/nm | grep -qx 'SO '
+awk '$2 == "-" { print $5, $6; exit }' $t/nm | grep -q '^SO /'
 
 # dsymutil's debug map: each unit's symbols, at their addresses in the
 # image, the functions with their sizes from the N_FUN pairs.

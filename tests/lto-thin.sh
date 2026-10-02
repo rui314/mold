@@ -33,22 +33,6 @@ $t/exe | grep -q '^8 0$'
 sed -n '/^# Object files:/,/^# Sections:/p' $t/map | grep '^\[' | grep -v '\.tbd$' > $t/files
 [ "$(tail -3 $t/files | sed 's/^\[ *[0-9]*\] //')" = "$(printf '\n\n/tmp/lto.o')" ]
 nm -ap $t/exe | grep -q '^0000000000000000 - .. 0001   OSO $'
-# That N_OSO's string is the string table's first byte, a space.
-cat > $t/oso.py <<'EOF2'
-import struct, sys
-d = open(sys.argv[1], 'rb').read()
-off = 32
-for _ in range(struct.unpack_from('<I', d, 16)[0]):
-    cmd, size = struct.unpack_from('<II', d, off)
-    if cmd == 2:  # LC_SYMTAB
-        symoff, nsyms = struct.unpack_from('<II', d, off + 8)
-        for i in range(nsyms):
-            strx, n_type = struct.unpack_from('<IB', d, symoff + 16 * i)
-            if n_type == 0x66:  # N_OSO
-                print(strx)
-    off += size
-EOF2
-python3 $t/oso.py $t/exe | grep -qx 0
 
 # With -object_path_lto, libLTO writes them to that directory as
 # <index>.<arch>.thinlto.o, and they go by those names; the merged

@@ -51,4 +51,4 @@ $t/exe2
 nm -ap $t/exe2 > $t/stabs2
 grep -q ' OSO .*/live.o$' $t/stabs2
 not grep -q 'dead' $t/stabs2
-[ "$(grep -c ' SO $' $t/stabs2)" = 3 ]
+[ "$(grep -c ' SO $' $t/stabs2)" = 2 ]

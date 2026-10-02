@@ -292,12 +292,10 @@ impl StabPlan {
                 }
                 ent.n_value = addr.1;
             }
-            // The N_OSO of a nameless ThinLTO object gets the string
-            // table's first byte, a space, from ld-prime; other nameless
-            // entries the empty string after it.
+            // A nameless entry gets the empty string after the string
+            // table's leading space.
             ent.n_strx = match stab.shared_strx(strx_of) {
                 Some(strx) => strx,
-                None if stab.name.is_empty() && ent.n_type == N_OSO => 0,
                 None if stab.name.is_empty() => 1,
                 None => block.add_string(stab.name),
             };
@@ -493,8 +491,8 @@ fn copy_object_stabs<E: Target>(
         }
         let mut ent = *nlist;
         let name = ctx.symbols[sym_id].name();
-        // The closing N_SO that opens the input's stabs is not
-        // copied: the output has its own.
+        // A closing N_SO before the first unit (ld-prime's -r outputs
+        // open their stabs with one) closes nothing: it is not copied.
         if nlist.n_type == N_SO && name.is_empty() {
             if !std::mem::replace(&mut in_unit, false) {
                 continue;
@@ -819,8 +817,7 @@ fn common_stab_owners<E: Target>(
     owners
 }
 
-/// An N_SO with an empty name: it closes an object's stabs, and
-/// ld-prime opens the stabs of an image with one too.
+/// An N_SO with an empty name: it closes an object's stabs.
 pub const STAB_END: NList = NList { n_strx: 1, n_type: N_SO, n_sect: 1, n_desc: 0, n_value: 0 };
 
 /// A final image's local symbols in ld-prime's order: the non-external
@@ -1186,11 +1183,7 @@ pub fn create_output_symtab<E: Target>(
     // are not among them: copy_symtab writes them from their plans.
     let nstabs: usize = planned.iter().map(|plan| plan.len()).sum();
     let nglobals = sorted_globals.len();
-    let total = locals.len()
-        + ast_paths(ctx).len()
-        + usize::from(nstabs != 0)
-        + sorted_globals.len()
-        + undefs.len();
+    let total = locals.len() + ast_paths(ctx).len() + sorted_globals.len() + undefs.len();
     let mut names: Vec<&'static [u8]> = Vec::with_capacity(total);
     data.entries.reserve_exact(total);
 
@@ -1202,11 +1195,6 @@ pub fn create_output_symtab<E: Target>(
 
     push_ast_paths(ctx, &mut names, &mut data.entries);
 
-    // ld-prime opens the stabs with a closing N_SO of its own.
-    if nstabs != 0 {
-        names.push(b"");
-        data.entries.push((STAB_END, None));
-    }
     let stabs_start = data.entries.len();
     let nlocal = stabs_start + nstabs;
     data.nlocal = nlocal as u32;
