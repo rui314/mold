@@ -2,72 +2,85 @@
 source "$(dirname "$0")"/common.inc
 
 # A -r output lists each section's relocations subsection by
-# subsection, and each subsection's by descending offset - the order
-# compilers write them - with a SUBTRACTOR and its UNSIGNED, or an arm64
-# ADDEND and the PAGE21 or PAGEOFF12 it goes with, kept together in
-# order (ld-prime).
+# subsection in input order, keeping a pair - a SUBTRACTOR and its
+# UNSIGNED, an arm64 ADDEND and the PAGE21 or PAGEOFF12 it goes with -
+# together and in order, so that a later link reads each as the input
+# had it. (ld-prime lists each subsection's by descending offset.)
 if [ $ARCH = arm64 ]; then
   cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .text
-.globl _f
+.globl _hp
 .p2align 2
-_f:
-  adrp x0, _g@PAGE
-  add x0, x0, _g@PAGEOFF
-  adrp x1, _h@PAGE+16
-  add x1, x1, _h@PAGEOFF+16
-  bl _ext1
-  bl _ext2
+_hp:
+  adrp x0, _h@PAGE+16
+  add x0, x0, _h@PAGEOFF+16
   ret
 .globl _f2
 _f2:
-  bl _ext3
-  ret
+  b _ext3
 .data
 .globl _g
 .p2align 3
 _g: .quad _ext1
   .quad _ext2
-  .quad _f - _g
+  .quad _f2 - _g
   .quad _ext3
 .globl _h
 _h: .quad 0, 0, 0
 .subsections_via_symbols
 EOF
-  text='14:2 10:2 0c:10 0c:4 08:10 08:3 04:4 00:3 1c:2 '
+  sub=1
 else
   cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .text
-.globl _f
-_f:
-  leaq _g(%rip), %rax
-  movq _h@GOTPCREL(%rip), %rcx
-  callq _ext1
-  callq _ext2
+.globl _hp
+_hp:
+  leaq _h+16(%rip), %rax
   retq
 .globl _f2
 _f2:
-  callq _ext3
-  retq
+  jmp _ext3
 .data
 .globl _g
 .p2align 3
 _g: .quad _ext1
   .quad _ext2
-  .quad _f - _g
+  .quad _f2 - _g
   .quad _ext3
 .globl _h
 _h: .quad 0, 0, 0
 .subsections_via_symbols
 EOF
-  text='14:2 0f:2 0a:3 03:1 1a:2 '
+  sub=5
 fi
-[ $ARCH = arm64 ] && sub=1 || sub=5
 
 $mold -arch $ARCH -r $t/a.o -o $t/r.o
-relocs() {
-  otool -r $t/r.o | awk -v s="$1" '/^Relocation information/ { in_s = ($3 == s) }
-    in_s && /^0/ { printf "%s:%s ", substr($1, 7), $5 }'
+otool -r $t/r.o | awk '/^0/ { print substr($1, 7), $5 }' > $t/relocs
+# Each SUBTRACTOR, and each ADDEND, comes just before the relocation at
+# its address that it goes with.
+awk -v sub_=$sub '
+  pending != "" { if ($1 != pending) exit 1; pending = "" }
+  $2 == sub_ || (sub_ == 1 && $2 == 10) { pending = $1 }
+  END { if (pending != "") exit 1 }' $t/relocs
+[ "$(grep -c " $sub\$" $t/relocs)" = 1 ]
+if [ $ARCH = arm64 ]; then
+  [ "$(grep -c ' 10$' $t/relocs)" = 2 ]
+fi
+
+cat <<EOF | $CC -o $t/main.o -c -xc -
+#include <stdio.h>
+extern long g[];
+extern char h[];
+char *hp(void);
+int f2(void);
+int ext1, ext2;
+int ext3(void) { return 3; }
+int main() {
+  printf("%d %d %d %d %d\n", g[0] == (long)&ext1, g[1] == (long)&ext2,
+         g[2] == (char *)f2 - (char *)g, hp() == h + 16, f2());
 }
-[ "$(relocs '(__TEXT,__text)')" = "$text" ]
-[ "$(relocs '(__DATA,__data)')" = "18:0 10:$sub 10:0 08:0 00:0 " ]
+EOF
+$CC --ld-path=$mold -o $t/exe $t/main.o $t/r.o
+$t/exe | grep -q '^1 1 1 1 3$'
+$CC -o $t/exe2 $t/main.o $t/r.o
+$t/exe2 | grep -q '^1 1 1 1 3$'

@@ -1,10 +1,8 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# ld-prime splits __objc_clsrolist into one subsection per pointer, so
-# a -r output lists its relocations by ascending pointer, though mold
-# keeps the list whole (each subsection's relocations go by descending
-# offset).
+# A -r output keeps __objc_clsrolist, the list of class_ro_t records,
+# with each pointer's relocation naming its target as the input did.
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .section __DATA,__objc_const
 .p2align 3
@@ -22,6 +20,6 @@ l_list:
 EOF
 
 $mold -r -arch $ARCH -o $t/r.o $t/a.o
-otool -r $t/r.o > $t/log
-grep -A5 __objc_clsrolist $t/log | awk '$1 ~ /^0000/ { print $1 }' > $t/addrs
-[ "$(tr '\n' ' ' < $t/addrs)" = "00000000 00000008 00000010 " ]
+otool -rv $t/r.o > $t/log
+grep -A5 __objc_clsrolist $t/log | awk '$1 ~ /^0000/ { print $1, $NF }' | sort > $t/relocs
+[ "$(tr '\n' ' ' < $t/relocs)" = "00000000 _a 00000008 _b 00000010 _c " ]

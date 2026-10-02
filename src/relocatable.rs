@@ -18,7 +18,6 @@
 
 use hashbrown::{HashMap, HashSet};
 use rayon::prelude::*;
-use std::cmp::Reverse;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU16, AtomicU32, Ordering};
 
@@ -810,13 +809,10 @@ fn eh_frame_contents<E: Target>(
 }
 
 /// A -r output section's relocations, regenerated against the merged
-/// tables, each subsection's on a core of its own. ld-prime writes each
-/// subsection's relocations by descending offset whatever the input's
-/// order, keeping a pair - a SUBTRACTOR and its UNSIGNED, an arm64
-/// ADDEND and its PAGE21 or PAGEOFF12 - in order. A section of
-/// fixed-size records it splits into one subsection per record, so a
-/// subsection mold keeps whole (__objc_clsrolist's) has its records'
-/// relocations in ascending order, each record's descending.
+/// tables, each subsection's on a core of its own, in the order the
+/// reader has them: by offset, a SUBTRACTOR just before the relocation
+/// it pairs with (an arm64 ADDEND goes before its relocation too, see
+/// push_reloc). Nothing else orders a section's relocations.
 fn section_relocs<E: Target>(
     targets: &RelocTargets<E>,
     chunk_idx: OutputSectionId,
@@ -827,31 +823,11 @@ fn section_relocs<E: Target>(
         .par_iter()
         .flat_map_iter(|&id| {
             let isec = &ctx.isecs[id];
-            // The entries, and where each group of them starts: one
-            // relocation's, a SUBTRACTOR's with the next one's.
             let mut rels: Vec<MachRel> = Vec::new();
-            let mut starts: Vec<usize> = Vec::new();
-            let mut open = false;
             for rel in crate::input_files::isec_relocs_of(&ctx.objs, isec) {
-                if !open {
-                    starts.push(rels.len());
-                }
                 push_reloc(targets, isec, rel, &mut rels);
-                open = rel.r_type == E::RELOC_SUBTRACTOR;
             }
-            let ends = starts.iter().skip(1).copied().chain([rels.len()]);
-            let mut groups: Vec<std::ops::Range<usize>> =
-                starts.iter().zip(ends).map(|(&start, end)| start..end).collect();
-            let record = crate::input_files::record_size(ctx.hdr_of(isec)).unwrap_or(u64::MAX);
-            groups.sort_by_key(|g| {
-                let addr = rels[g.start].r_address;
-                ((addr - isec.offset) as u64 / record, Reverse(addr))
-            });
-            let mut out = Vec::with_capacity(rels.len());
-            for g in groups {
-                out.extend_from_slice(&rels[g]);
-            }
-            out
+            rels
         })
         .collect()
 }
