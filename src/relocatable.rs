@@ -2174,13 +2174,10 @@ impl<'a, E: Target> Locals<'a, E> {
         }
         for i in obj.global_range() {
             let (nlist, sym_id) = (&obj.nlists[i], obj.symbols[i]);
-            // A debug note among the globals names no symbol.
-            if nlist.is_stab() {
-                continue;
-            }
             let sym = &ctx.symbols[sym_id];
             // Only the copy that won resolution is emitted.
-            if !nlist.is_extern()
+            if nlist.is_stab()
+                || !nlist.is_extern()
                 || !sym.is_private_extern()
                 || !matches!(sym.file(), Some(FileId::Obj(o)) if o as usize == obj_idx)
             {

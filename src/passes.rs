@@ -3035,8 +3035,7 @@ pub fn convert_common_symbols<E: Target>(ctx: &mut Context<E>) {
         let p2align = if sym.common_p2align != 0 || size == 0 {
             sym.common_p2align
         } else {
-            (size.checked_next_power_of_two().map_or(64, u64::trailing_zeros) as u8)
-                .min(ctx.args.max_default_common_align)
+            (size.next_power_of_two().trailing_zeros() as u8).min(ctx.args.max_default_common_align)
         };
 
         let (file, shndx) = ctx.add_synthetic_section(MachSection {
