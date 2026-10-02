@@ -64,18 +64,15 @@ EOF
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/r.o -Wl,-dead_strip
 $t/exe | grep '^3 4 4 9$'
 
-# The whole-section object: ld-prime marks every symbol no-dead-strip,
-# drops the alt-entry marker (meaningless without subsections) and
-# keeps the arm64 assembler's ltmp labels, which name the subsections.
+# The whole-section object's output says so too, lacking
+# MH_SUBSECTIONS_VIA_SYMBOLS, and a later link keeps each of its
+# sections whole, dead stripping or not, with either linker. (ld-prime
+# also marks every symbol no-dead-strip and drops the alt-entry marker,
+# which means nothing there.)
 $mold -r -arch $ARCH -o $t/whole_r.o $t/whole.o
-nm -m $t/whole_r.o > $t/nm_whole
-not grep -q 'alt entry' $t/nm_whole
-if [ $ARCH = arm64 ]; then
-  [ "$(grep -c 'no dead strip' $t/nm_whole)" = 6 ]
-  grep -q 'non-external \[no dead strip\] ltmp0' $t/nm_whole
-  grep -q 'non-external \[no dead strip\] ltmp1' $t/nm_whole
-else
-  [ "$(grep -c 'no dead strip' $t/nm_whole)" = 4 ]
-fi
 otool -h $t/whole_r.o | tail -1 | grep ' 0x00000000$'
 otool -h $t/r.o | tail -1 | grep ' 0x00002000$'
+$CC --ld-path=$mold -o $t/exe2 $t/main.o $t/whole_r.o -Wl,-dead_strip
+$t/exe2 | grep '^3 4 4 9$'
+$CC -o $t/exe3 $t/main.o $t/whole_r.o -Wl,-dead_strip
+$t/exe3 | grep '^3 4 4 9$'

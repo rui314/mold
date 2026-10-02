@@ -38,63 +38,16 @@ use crate::util::{align_to, encode_uleb, leak_bytes, name_sort_key};
 /// N_NO_DEAD_STRIP for a symbol from this input section: ld-prime
 /// marks every symbol of a no_dead_strip section, local or global, so
 /// the next link keeps it even when the output section takes another
-/// member's attributes - but none of __objc_classrefs - and those of
-/// the initializer and terminator pointer lists, which dead stripping
-/// keeps whatever their attributes.
+/// member's attributes - but none of __objc_classrefs.
 fn section_desc<E: Target>(ctx: &Context<E>, isec: usize) -> u16 {
     let h = ctx.hdr_of(&ctx.isecs[isec]);
-    let roots = matches!(h.section_type(), S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS);
-    if roots
-        || h.flags & S_ATTR_NO_DEAD_STRIP != 0
-            && !(h.segname() == b"__DATA" && h.sectname() == b"__objc_classrefs")
+    if h.flags & S_ATTR_NO_DEAD_STRIP != 0
+        && !(h.segname() == b"__DATA" && h.sectname() == b"__objc_classrefs")
     {
         N_NO_DEAD_STRIP
     } else {
         0
     }
-}
-
-/// Whether a symbol lies in an initializer or terminator pointer list,
-/// whose subsections dead stripping keeps by their section type alone:
-/// there ld-prime marks only the name of each subsection no-dead-strip,
-/// not its aliases - unless the section says no_dead_strip itself.
-fn in_init_term_list<E: Target>(ctx: &Context<E>, sym: SymbolId) -> bool {
-    let Some(isec) = ctx.symbols[sym].input_section() else { return false };
-    let h = ctx.hdr_of(&ctx.isecs[isec as usize]);
-    matches!(h.section_type(), S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS)
-        && h.flags & S_ATTR_NO_DEAD_STRIP == 0
-}
-
-/// Where the -r output's defined externals sit, as (object, section,
-/// address): an external names its subsection over any local there (a
-/// weak one only in an object with subsections).
-fn external_places<E: Target>(ctx: &Context<E>) -> HashSet<(u32, u8, u64)> {
-    let per_obj: Vec<Vec<(u32, u8, u64)>> = ctx
-        .objs
-        .par_iter()
-        .enumerate()
-        .map(|(obj_idx, obj)| {
-            if !obj.is_alive {
-                return Vec::new();
-            }
-            let r = obj.global_range();
-            obj.nlists[r.clone()]
-                .iter()
-                .zip(&obj.symbols[r])
-                .filter(|&(nlist, &sym_id)| {
-                    let sym = &ctx.symbols[sym_id];
-                    !nlist.is_stab()
-                        && nlist.is_extern()
-                        && nlist.n_type() == N_SECT
-                        && (ctx.args.keep_private_externs || !sym.is_private_extern())
-                        && (obj.subsections_via_symbols || !sym.is_weak_def())
-                        && matches!(sym.file(), Some(FileId::Obj(o)) if o as usize == obj_idx)
-                })
-                .map(|(nlist, _)| (obj_idx as u32, nlist.n_sect, nlist.n_value))
-                .collect()
-        })
-        .collect();
-    per_obj.into_iter().flatten().collect()
 }
 
 /// Which symbols the relocations of the live input sections that `pred`
@@ -128,13 +81,6 @@ fn referenced_syms<E: Target>(ctx: &Context<E>) -> Vec<bool> {
         syms[p as usize] = true;
     }
     syms
-}
-
-/// The n_desc of a symbol from an object without subsections: ld64
-/// marks the subsections that are whole sections no-dead-strip and
-/// drops the alt-entry marker, which means nothing there.
-fn whole_desc(desc: u16, whole: bool) -> u16 {
-    if whole { (desc | N_NO_DEAD_STRIP) & !N_ALT_ENTRY } else { desc }
 }
 
 /// The payload of the output's LC_LINKER_OPTIMIZATION_HINT, or None
@@ -1472,11 +1418,6 @@ fn defined_externals<E: Target>(ctx: &Context<E>) -> Vec<(NList, SymbolId)> {
             if sym.is_weak_def() {
                 n_desc |= N_WEAK_DEF;
             }
-            if let Some(FileId::Obj(o)) = sym.file()
-                && !ctx.objs[o as usize].subsections_via_symbols
-            {
-                n_desc = whole_desc(n_desc, true);
-            }
             n_desc |= section_desc(ctx, input as usize);
             let n_value = sym_addr(ctx, i as u32);
             (NList { n_strx: 0, n_type, n_sect, n_desc, n_value }, i as u32)
@@ -1558,11 +1499,6 @@ impl<'a, E: Target> Locals<'a, E> {
         if !obj.is_alive {
             return labels;
         }
-        // Without subsections each of the object's sections is one
-        // subsection, which ld64 marks no-dead-strip - every symbol, the
-        // assembler's ltmpN labels (they name the sections) included -
-        // and an alt entry means nothing there.
-        let whole = !obj.subsections_via_symbols;
         for i in obj.local_range() {
             let (nlist, sym_id) = (&obj.nlists[i], obj.symbols[i]);
             if nlist.is_stab() || nlist.is_extern() {
@@ -1582,7 +1518,7 @@ impl<'a, E: Target> Locals<'a, E> {
             labels.push(Local {
                 name: local_symbol_name(sym.name()),
                 n_type: nlist.n_type,
-                n_desc: whole_desc(nlist.n_desc, whole) | section_desc(ctx, input),
+                n_desc: nlist.n_desc | section_desc(ctx, input),
                 n_sect: ctx.isec_n_sect(&ctx.isecs[isec]),
                 addr: sym_addr(ctx, sym_id),
                 rename: self.rename(sym.name()),
@@ -1643,10 +1579,8 @@ impl<'a, E: Target> Locals<'a, E> {
             out.push(Local {
                 name: local_symbol_name(sym.name()),
                 n_type: N_PEXT | N_SECT,
-                n_desc: whole_desc(
-                    nlist.n_desc & (N_ALT_ENTRY | N_NO_DEAD_STRIP | N_WEAK_DEF),
-                    !obj.subsections_via_symbols,
-                ) | section_desc(ctx, input),
+                n_desc: nlist.n_desc & (N_ALT_ENTRY | N_NO_DEAD_STRIP | N_WEAK_DEF)
+                    | section_desc(ctx, input),
                 n_sect: ctx.isec_n_sect(&ctx.isecs[isec]),
                 addr: sym_addr(ctx, sym_id),
                 rename: self.rename(sym.name()),
@@ -1700,7 +1634,7 @@ impl<'a, E: Target> Locals<'a, E> {
     /// The locals in ld-prime's order, those it renames (see rename)
     /// numbered in it.
     fn finish(self) -> Vec<Local> {
-        let Self { ctx, locals } = self;
+        let Self { locals, .. } = self;
         // A stable sort, by object first: each object's locals as they
         // were gathered where all else ties.
         let mut order: Vec<usize> = (0..locals.len()).collect();
@@ -1716,24 +1650,6 @@ impl<'a, E: Target> Locals<'a, E> {
             if l.rename == Rename::Anon {
                 l.name = format!("l{counter:03}").leak().as_bytes();
                 counter += 1;
-            }
-        }
-
-        // The first name at a place names the subsection, unless an
-        // external there does; the others are its aliases. An alias in an
-        // initializer or terminator list is not marked no-dead-strip
-        // (see in_init_term_list).
-        let in_lists: Vec<usize> = (0..locals.len())
-            .into_par_iter()
-            .filter(|&i| locals[i].sym.is_some_and(|s| in_init_term_list(ctx, s)))
-            .collect();
-        if !in_lists.is_empty() {
-            let externals = external_places(ctx);
-            for i in in_lists {
-                let at = locals[i].at;
-                if (i > 0 && locals[i - 1].at == at) || externals.contains(&at) {
-                    locals[i].n_desc &= !N_NO_DEAD_STRIP;
-                }
             }
         }
 

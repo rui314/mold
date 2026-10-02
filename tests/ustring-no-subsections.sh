@@ -5,8 +5,7 @@ source "$(dirname "$0")"/common.inc
 # none of them, but in an object without subsections the __ustring
 # section is one subsection, whose labels it keeps as those of any other
 # section: in the symbol table and the map of a final image, and in a -r
-# output (which marks the names of such a whole-section subsection
-# no-dead-strip).
+# output.
 cat <<'EOF' > $t/a.s
 .text
 .globl _main
@@ -43,6 +42,6 @@ not grep -q anon $t/map
 
 $mold -r -arch $ARCH -o $t/r.o $t/a.o
 nm -m $t/r.o > $t/syms2
-grep -q '(__TEXT,__ustring) non-external \[no dead strip\] _ustr_local$' $t/syms2
-grep -q '(__TEXT,__ustring) non-external \[no dead strip\] lustr_temp$' $t/syms2
-grep -q 'non-external (was a private external) \[no dead strip\] _ustr_pext$' $t/syms2
+grep -q '(__TEXT,__ustring) non-external _ustr_local$' $t/syms2
+grep -q '(__TEXT,__ustring) non-external lustr_temp$' $t/syms2
+grep -q 'non-external (was a private external) _ustr_pext$' $t/syms2
