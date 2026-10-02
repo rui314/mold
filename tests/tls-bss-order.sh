@@ -1,12 +1,10 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# ld-prime lays out a final image's __thread_bss by subsection size,
-# smallest first and in input order among equals, whatever the command
-# line or -order_file says; -r keeps the input order. A subsection's
-# size runs to the next subsection of its object, padding included, so
-# b.o's c and a.o's y count as 2 and 4 bytes, and the section comes to
-# 0x18 bytes.
+# __thread_bss lays its subsections out like any other section's: in
+# input order, with -order_file's first. (ld-prime lays out a final
+# image's by subsection size, whatever -order_file says.) Each variable
+# keeps a place of its own, zero at first.
 cat <<EOF | $CC -o $t/a.o -c -xc -
 #include <stdio.h>
 __thread int y;
@@ -14,7 +12,11 @@ __thread char d;
 extern __thread long w;
 extern __thread char c;
 extern __thread short s;
-int main() { printf("%d %d %ld %d %d\n", y, d, w, c, s); }
+int main() {
+  printf("%d %d %ld %d %d\n", y, d, w, c, s);
+  y = 1; d = 2; w = 3; c = 4; s = 5;
+  printf("%d %d %ld %d %d\n", y, d, w, c, s);
+}
 EOF
 
 cat <<EOF | $CC -o $t/b.o -c -xc -
@@ -28,16 +30,20 @@ order() {
 }
 
 $CC --ld-path=$mold -o $t/exe1 $t/b.o $t/a.o
-$t/exe1 | grep -q '^0 0 0 0 0$'
-order $t/exe1 | grep -q '^_d _c _s _y _w $'
-otool -l $t/exe1 | grep -A3 'sectname __thread_bss' | grep -q 'size 0x0*18$'
+$t/exe1 > $t/out1
+diff - $t/out1 <<EOF
+0 0 0 0 0
+1 2 3 4 5
+EOF
+order $t/exe1 | grep -q '^_w _c _s _y _d $'
 
 $CC --ld-path=$mold -o $t/exe2 $t/a.o $t/b.o
-order $t/exe2 | grep -q '^_d _c _s _y _w $'
+order $t/exe2 | grep -q '^_y _d _w _c _s $'
 
-printf '_w$tlv$init\n_s$tlv$init\n' > $t/order
+printf '_s$tlv$init\n_y$tlv$init\n' > $t/order
 $CC --ld-path=$mold -o $t/exe3 $t/b.o $t/a.o -Wl,-order_file,$t/order
-order $t/exe3 | grep -q '^_d _c _s _y _w $'
+order $t/exe3 | grep -q '^_s _y _w _c _d $'
+$t/exe3 | grep '^1 2 3 4 5$'
 
 $CC --ld-path=$mold -o $t/c.o -r $t/b.o $t/a.o
 order $t/c.o | grep -q '^_w _c _s _y _d $'

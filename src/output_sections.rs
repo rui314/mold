@@ -1085,24 +1085,13 @@ fn finish_section_alignments<E: Target>(ctx: &mut Context<E>, text: SectionName)
 
 /// Orders each output section's members: the subsections -order_file
 /// names first, cold code last, and the rest in input order (see
-/// assign_input_sections). Thread-local zero fill goes by size instead.
+/// assign_input_sections).
 fn sort_section_members<E: Target>(ctx: &mut Context<E>) {
-    // ld-prime lays out a final image's __thread_bss by subsection size,
-    // smallest first and in input order among equals, whatever
-    // -order_file says. A subsection's size runs to the next one in its
-    // object, padding included.
-    let is_tbss = |osec: &OutputSection| osec.hdr.flags & SECTION_TYPE == S_THREAD_LOCAL_ZEROFILL;
-    if !ctx.args.relocatable {
-        for osec in ctx.output_sections.iter_mut().filter(|osec| is_tbss(osec)) {
-            osec.members.sort_by_key(|&id| ctx.isecs[id as usize].size);
-        }
-    }
-
     // -order_file moves the subsections it names to the front of their
     // output sections, in the file's order; everything else keeps its
     // input order behind them. A stable sort by rank does both.
     if let Some(ranks) = order_file_ranks(ctx) {
-        for osec in ctx.output_sections.iter_mut().filter(|osec| !is_tbss(osec)) {
+        for osec in &mut ctx.output_sections {
             osec.members.sort_by_key(|&id| ranks[id as usize]);
         }
     }
