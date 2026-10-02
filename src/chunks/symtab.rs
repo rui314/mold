@@ -938,7 +938,6 @@ pub fn create_output_symtab<E: Target>(
     // The string table: the entries' names, then each object's notes'
     // in a block of its own.
     let t = ctx.timer("symtab-strings");
-    add_indirect_target_names(ctx, &data.entries, &mut names, stabs_start..stabs_start + nglobals);
     let strtab_end = layout_strings(&mut data.entries, &names);
     data.names = names;
 
@@ -1167,36 +1166,10 @@ fn import_entry<E: Target>(ctx: &Context<E>, i: usize) -> (&'static [u8], NList,
     (sym.name(), ent, None)
 }
 
-/// Gives each alias of an imported symbol (see make_indirect_aliases),
-/// among the entries in `globals`, the name it stands for as a string of
-/// its own right after its name, as ld-prime lays them out, rather than
-/// the import's: the two as one name with a NUL between. An alias of
-/// the import's own name has only the one.
-fn add_indirect_target_names<E: Target>(
-    ctx: &Context<E>,
-    entries: &[(NList, Option<SymbolId>)],
-    names: &mut [&'static [u8]],
-    globals: std::ops::Range<usize>,
-) {
-    if ctx.indirect_aliases.is_empty() {
-        return;
-    }
-    let targets: hashbrown::HashMap<SymbolId, SymbolId> =
-        ctx.indirect_aliases.iter().copied().collect();
-    for i in globals {
-        if let Some(id) = entries[i].1
-            && let Some(&target) = targets.get(&id)
-            && names[i] != ctx.symbols[target].name()
-        {
-            names[i] = leak_bytes([names[i], b"\0", ctx.symbols[target].name()].concat());
-        }
-    }
-}
-
 /// Makes each alias of an imported symbol an N_INDR entry whose n_value
-/// is the string-table offset of the name it stands for: the string
-/// after its own name (see add_indirect_target_names), or that name
-/// itself. The slot is detached from the symbol so copy_symtab leaves
+/// is the string-table offset of the name it stands for: the string of
+/// the import's own entry. (ld-prime writes the name again after the
+/// alias's.) The slot is detached from the symbol so copy_symtab leaves
 /// n_value alone.
 fn make_indirect_aliases<E: Target>(ctx: &Context<E>, data: &mut SymtabSection) {
     let (stabs_start, nstabs) = (data.stabs_start, data.nstabs);
@@ -1206,16 +1179,16 @@ fn make_indirect_aliases<E: Target>(ctx: &Context<E>, data: &mut SymtabSection) 
     };
     for &(alias, target) in &ctx.indirect_aliases {
         let a = data.output_sym_indices[alias as usize];
-        if a == u32::MAX || data.output_sym_indices[target as usize] == u32::MAX {
+        let t = data.output_sym_indices[target as usize];
+        if a == u32::MAX || t == u32::MAX {
             continue;
         }
-        let name = ctx.symbols[alias].name();
-        let skip = if name == ctx.symbols[target].name() { 0 } else { name.len() + 1 };
+        let target_strx = data.entries[entry(t)].0.n_strx;
         let ent = &mut data.entries[entry(a)];
         ent.0.n_type = N_INDR | N_EXT;
         ent.0.n_sect = 0;
         ent.0.n_desc = 0;
-        ent.0.n_value = (ent.0.n_strx as usize + skip) as u64;
+        ent.0.n_value = target_strx as u64;
         ent.1 = None;
     }
 }
