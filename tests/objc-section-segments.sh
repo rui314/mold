@@ -1,11 +1,12 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# ld-prime's rules for the flags of the Objective-C runtime's sections -
-# no-dead-strip lists, selector references that stay literal pointers,
-# a protocol list that stays coalesced in __DATA - hold for the
-# sections of those names in __DATA, where compilers put them. One of
-# an input's __DATA_CONST or another segment is data like any other.
+# The Objective-C runtime's sections stay in the segment an input puts
+# them in, __DATA_CONST or another one, unless they are __DATA's, which
+# may move to __DATA_CONST. In a final image they are plain data
+# wherever they are: the runtime finds them by name, and their
+# no-dead-strip, literal-pointer or coalesced bits direct the linker
+# alone. (ld-prime keeps those bits for the sections in __DATA.)
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .section __DATA_CONST,__objc_classlist,regular,no_dead_strip
 .p2align 3
@@ -47,10 +48,10 @@ $t/exe | grep -q '^3 P$'
 [ "$(flags $t/exe __DATA_CONST __objc_classlist)" = 0x00000000 ]
 [ "$(flags $t/exe __FOO __objc_nlclslist)" = 0x00000000 ]
 [ "$(flags $t/exe __DATA_CONST __objc_selrefs)" = 0x00000000 ]
-[ "$(flags $t/exe __DATA __objc_selrefs)" = 0x10000005 ]
+[ "$(flags $t/exe __DATA __objc_selrefs)" = 0x00000000 ]
 
 $CC --ld-path=$mold -o $t/exe2 $t/b.o -framework Foundation -Wl,-no_data_const
 $t/exe2 | grep -q '^3 P$'
-[ "$(flags $t/exe2 __DATA __objc_protolist)" = 0x0000000b ]
-[ "$(flags $t/exe2 __DATA __objc_protorefs)" = 0x1000000b ]
-[ "$(flags $t/exe2 __DATA __objc_classlist)" = 0x10000000 ]
+[ "$(flags $t/exe2 __DATA __objc_protolist)" = 0x00000000 ]
+[ "$(flags $t/exe2 __DATA __objc_protorefs)" = 0x00000000 ]
+[ "$(flags $t/exe2 __DATA __objc_classlist)" = 0x00000000 ]

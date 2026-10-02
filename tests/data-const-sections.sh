@@ -50,7 +50,7 @@ EOF
 
 $CC --ld-path=$mold -o $t/exe3 $t/b.o -Wl,-undefined,dynamic_lookup
 sects $t/exe3 > $t/sects3
-grep -q '^__DATA_CONST,__objc_catlist2 0x10000000$' $t/sects3
+grep -q '^__DATA_CONST,__objc_catlist2 0x00000000$' $t/sects3
 
 # ld-prime knows the initializer and terminator lists by their types,
 # as it does non-lazy pointers: a __DATA section of either type moves

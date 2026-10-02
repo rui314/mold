@@ -7,9 +7,9 @@ source "$(dirname "$0")"/common.inc
 # protocol lists, __mod_init_func ...); __StaticInit joins __text;
 # literal pools join __TEXT,__const; the __LLVM segment and
 # __objc_clsrolist are consumed. Linker-directing attributes
-# (no_dead_strip, live_support, coalesced ...) are dropped from the
-# output, except that the ObjC lists dyld scans stay no-dead-strip;
-# __eh_frame carries its conventional flags.
+# (no_dead_strip, live_support, coalesced ...) and types no reader of
+# an image acts on (literal pointers) are dropped from the output, the
+# ObjC lists' and __eh_frame's too (ld-prime keeps some of those).
 cat <<EOF2 | $CC -o $t/a.o -c -xobjective-c -fno-objc-arc -
 #import <Foundation/Foundation.h>
 @protocol Greeter
@@ -68,25 +68,25 @@ for s in __const __cfstring __objc_classlist __objc_catlist __objc_protolist \
   not grep -q "^__DATA,$s " $t/sects
 done
 # Protocol references are written by the runtime before macOS 15: they
-# stay in __DATA, flags and all.
+# stay in __DATA.
 for s in __objc_selrefs __objc_classrefs __objc_protorefs __objc_const __objc_data __data __mine __coal; do
   grep -q "^__DATA,$s " $t/sects
 done
-grep -q '^__DATA,__objc_protorefs 0x1000000b$' $t/sects
+grep -q '^__DATA,__objc_protorefs 0x00000000$' $t/sects
 not grep -q '__StaticInit\|__literal16\|__LLVM\|__objc_clsrolist' $t/sects
 grep -q '^__TEXT,__const ' $t/sects
 
 # Flags.
-grep -q '^__DATA_CONST,__objc_classlist 0x10000000$' $t/sects
-grep -q '^__DATA_CONST,__objc_catlist 0x10000000$' $t/sects
-grep -q '^__DATA,__objc_selrefs 0x10000005$' $t/sects
+grep -q '^__DATA_CONST,__objc_classlist 0x00000000$' $t/sects
+grep -q '^__DATA_CONST,__objc_catlist 0x00000000$' $t/sects
+grep -q '^__DATA,__objc_selrefs 0x00000000$' $t/sects
 grep -q '^__DATA_CONST,__objc_protolist 0x00000000$' $t/sects
 not grep -q '__DATA_CONST,__objc_protorefs' $t/sects
 grep -q '^__DATA,__mine 0x00000000$' $t/sects
 grep -q '^__DATA,__coal 0x00000000$' $t/sects
 grep -q '^__TEXT,__text 0x80000400$' $t/sects
 if grep -q '__eh_frame' $t/sects; then   # arm64 usually has compact unwind only
-  grep -q '^__TEXT,__eh_frame 0x6800000b$' $t/sects
+  grep -q '^__TEXT,__eh_frame 0x00000000$' $t/sects
 fi
 grep -q '^__DATA_CONST,__mod_init_func 0x00000009$' $t/sects
 

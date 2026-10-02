@@ -344,81 +344,41 @@ impl SectionMap {
 }
 
 /// The flags an output section carries, from the flags ld-prime reads
-/// its first member as having (see input_section_flags). In a final
-/// image ld-prime keeps only the section types it lays out as such -
-/// zero fill (S_GB_ZEROFILL is plain zero fill there), strings and
-/// literals, initializer and terminator lists, the thread-local kinds,
-/// DOF, if bare, and non-lazy symbol pointers, a GOT of the input's
-/// whose slots it names in the indirect symbol table (see
-/// indirect_symtab) - and makes the rest regular: coalesced data, and
-/// the lazy pointers, stubs, interposing tuples and init offsets only
-/// it makes in an image. It marks code (a regular or coalesced section
-/// of pure instructions) as having some instructions, drops every
-/// other input attribute - no_dead_strip, live_support,
-/// strip_static_syms and no_toc direct the linker, not dyld, and
+/// its first member as having (see input_section_flags). A final image
+/// keeps only the section types its readers act on - zero fill
+/// (S_GB_ZEROFILL is plain zero fill there), strings and literals,
+/// initializer and terminator lists, the thread-local kinds, DOF, if
+/// bare, and non-lazy symbol pointers, a GOT of the input's whose slots
+/// the indirect symbol table names (see indirect_symtab) - and makes
+/// the rest regular: coalesced data, and the lazy pointers, stubs,
+/// interposing tuples and init offsets only the linker makes in an
+/// image. Of the attributes it keeps only that code (a regular or
+/// coalesced section of pure instructions) is instructions, which
+/// debuggers and disassemblers read: no_dead_strip, live_support,
+/// strip_static_syms and no_toc direct the linker, and
 /// some_instructions alone is but the assembler's note that it
-/// emitted an instruction into the section - and marks just the ObjC
-/// list sections the runtime scans, and the class references while in
-/// __DATA, as no-dead-strip. Its rules for the Objective-C runtime's
-/// sections hold for the standard sections of their names (`standard`,
-/// see is_standard_section), in __DATA: an input's
-/// __DATA_CONST,__objc_classlist or __DATA_CONST,__objc_selrefs is data
-/// like any other. A -r output is input to another link, so ld-prime
-/// copies the type and attributes verbatim - but mold makes __DATA,__got
-/// regular data there, its relocations kept: a __got of non-lazy
-/// pointers needs the indirect symbol table to name its slots, and an
-/// object that has one is refused as input (ld-prime writes one,
-/// dropping the relocations), while a regular __got is GOT slots to
-/// either linker all the same. __eh_frame carries the compiler's fixed
-/// flags in both.
-fn output_section_flags(
-    segname: &[u8],
-    sectname: &[u8],
-    input: u32,
-    standard: bool,
-    relocatable: bool,
-) -> u32 {
-    if segname == b"__TEXT" && sectname == b"__eh_frame" {
-        return S_COALESCED | S_ATTR_NO_TOC | S_ATTR_STRIP_STATIC_SYMS | S_ATTR_LIVE_SUPPORT;
-    }
-    // Superclass and protocol references of the literal-pointer type
-    // come out with the flags of the standard section of their name.
-    let input = match standard_section_flags(segname, sectname) {
-        Some(table)
-            if input & SECTION_TYPE == S_LITERAL_POINTERS
-                && is_class_or_protocol_ref_name(sectname) =>
-        {
-            table
-        }
-        _ => input,
-    };
+/// emitted an instruction into the section. A -r output is input to
+/// another link, so ld-prime copies the type and attributes verbatim,
+/// but for superclass and protocol references of the literal-pointer
+/// type, which take the flags of the standard section of their name -
+/// and mold makes __DATA,__got regular data there, its relocations
+/// kept: a __got of non-lazy pointers needs the indirect symbol table
+/// to name its slots, and an object that has one is refused as input
+/// (ld-prime writes one, dropping the relocations), while a regular
+/// __got is GOT slots to either linker all the same.
+fn output_section_flags(segname: &[u8], sectname: &[u8], input: u32, relocatable: bool) -> u32 {
     if relocatable {
         if (segname, sectname) == (b"__DATA", b"__got") {
             return input & !SECTION_TYPE;
         }
-        return input;
-    }
-    // The two reference lists the runtime may still write keep the
-    // flags they came with (coalesced, no-dead-strip) while in __DATA
-    // of a final image, and the protocol list its coalesced type.
-    if standard && segname == b"__DATA" {
-        match sectname {
-            b"__objc_protorefs" | b"__objc_superrefs" => {
-                return input & (SECTION_TYPE | S_ATTR_NO_DEAD_STRIP);
+        return match standard_section_flags(segname, sectname) {
+            Some(table)
+                if input & SECTION_TYPE == S_LITERAL_POINTERS
+                    && is_class_or_protocol_ref_name(sectname) =>
+            {
+                table
             }
-            b"__objc_protolist" => return input & SECTION_TYPE,
-            _ => {}
-        }
-    }
-    // ld-prime knows __objc_selrefs by name: its selector references
-    // stay literal pointers whatever their type - but those typed so,
-    // which it makes plain data once constant (in the shared region),
-    // as it does the class references.
-    if standard && sectname == b"__objc_selrefs" {
-        return if segname == b"__DATA_CONST" && input & SECTION_TYPE == S_LITERAL_POINTERS {
-            S_REGULAR
-        } else {
-            S_LITERAL_POINTERS | S_ATTR_NO_DEAD_STRIP
+            _ => input,
         };
     }
     let ty = match input & SECTION_TYPE {
@@ -437,25 +397,9 @@ fn output_section_flags(
         S_DTRACE_DOF if input == S_DTRACE_DOF => S_DTRACE_DOF,
         _ => S_REGULAR,
     };
-    let mut attrs = 0;
-    if input & S_ATTR_PURE_INSTRUCTIONS != 0
-        && matches!(input & SECTION_TYPE, S_REGULAR | S_COALESCED)
-    {
-        attrs = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
-    }
-    if standard
-        && (matches!(
-            sectname,
-            b"__objc_classlist"
-                | b"__objc_catlist"
-                | b"__objc_catlist2"
-                | b"__objc_nlclslist"
-                | b"__objc_nlcatlist"
-        ) || (segname == b"__DATA" && sectname == b"__objc_classrefs"))
-    {
-        attrs |= S_ATTR_NO_DEAD_STRIP;
-    }
-    ty | attrs
+    let is_code = input & S_ATTR_PURE_INSTRUCTIONS != 0
+        && matches!(input & SECTION_TYPE, S_REGULAR | S_COALESCED);
+    if is_code { ty | S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS } else { ty }
 }
 
 /// The flags ld-prime reads a section of an input object as having,
@@ -475,7 +419,7 @@ fn output_section_flags(
 /// check_sections); but neither is ever split into strings or
 /// literals. Superclass and protocol references keep the
 /// literal-pointer type, whose references all merge (see
-/// has_unnamed_subsecs), though the output has the table's flags. Its
+/// has_unnamed_subsecs), though a -r output has the table's flags. Its
 /// own flags otherwise.
 pub(crate) fn canonical_section_flags(segname: &[u8], sectname: &[u8], flags: u32) -> u32 {
     if (segname, sectname) == (b"__TEXT", b"__constructor") {
@@ -556,7 +500,6 @@ fn standard_section_flags(segname: &[u8], sectname: &[u8]) -> Option<u32> {
         (b"__TEXT", b"__literal4") => S_4BYTE_LITERALS,
         (b"__TEXT", b"__literal8") => S_8BYTE_LITERALS,
         (b"__TEXT", b"__literal16") => S_16BYTE_LITERALS,
-        (b"__TEXT", b"__eh_frame") => output_section_flags(segname, sectname, 0, true, false),
         (b"__TEXT", b"__const" | b"__ustring" | b"__gcc_except_tab" | b"__objc_methlist") => {
             S_REGULAR
         }
@@ -698,9 +641,7 @@ fn place_tail_blobs<E: Target>(ctx: &mut Context<E>) {
     sects.dedup();
     for sect in sects {
         let map = SectionMap::final_link(ctx);
-        let ((seg, out), flags_name) =
-            output_section_for(&ctx.args, map, b"__DATA", sect, 0).unwrap();
-        let flags = output_section_flags(flags_name.0, flags_name.1, 0, true, false);
+        let ((seg, out), _) = output_section_for(&ctx.args, map, b"__DATA", sect, 0).unwrap();
         // Each record at its own alignment (a pointer's, but for the
         // lazy-load flag words), the tail at the first one's; laid out
         // from where the tail will start, so that the offsets within
@@ -720,7 +661,7 @@ fn place_tail_blobs<E: Target>(ctx: &mut Context<E>) {
             end += size;
         }
         let size = end - start;
-        let id = tail_section(ctx, (seg, out), flags, first, Tail::DataBlobs, size);
+        let id = tail_section(ctx, (seg, out), S_REGULAR, first, Tail::DataBlobs, size);
         let osec = ctx.output_section_mut(id);
         osec.hdr.p2align = blobs.iter().map(|b| b.2).fold(osec.hdr.p2align, u32::max);
         for (isec, off) in offs {
@@ -971,9 +912,7 @@ fn first_member_flags<E: Target>(
     if ctx.args.is_kext() && input & SECTION_TYPE == S_NON_LAZY_SYMBOL_POINTERS {
         input &= !SECTION_TYPE;
     }
-    let standard = is_standard_section(seg, sect, hdr.flags);
-    let (seg, sect) = flags_name;
-    output_section_flags(seg, sect, input, standard, relocatable)
+    output_section_flags(flags_name.0, flags_name.1, input, relocatable)
 }
 
 /// Adds an empty output section named `seg`,`sect` with `flags`.
@@ -1190,17 +1129,15 @@ fn add_objc_stubs<E: Target>(ctx: &mut Context<E>) {
         ctx.objc_stubs.methname = Some(id);
     }
     if selrefs_size > 0 {
-        let (name, flags_name) =
+        let (name, _) =
             output_section_for(&ctx.args, map, b"__DATA", b"__objc_selrefs", S_LITERAL_POINTERS)
                 .unwrap();
-        let flags =
-            output_section_flags(flags_name.0, flags_name.1, S_LITERAL_POINTERS, true, false);
         // A slot keeps the alignment of the inputs it took over.
         let p2align = (ctx.objc_stubs.absorbed.iter())
             .map(|&(synth, _)| ctx.isecs[synth as usize].p2align as u32)
             .fold(3, u32::max);
         let tail = Tail::ObjcSelrefs;
-        let id = tail_section(ctx, name, flags, p2align, tail, selrefs_size);
+        let id = tail_section(ctx, name, S_REGULAR, p2align, tail, selrefs_size);
         ctx.objc_stubs.selrefs = Some(id);
         let tail_off = ctx.output_section(id).tail_off;
         for i in 0..ctx.objc_stubs.absorbed.len() {
@@ -1427,7 +1364,6 @@ fn lay_out_eh_frame<E: Target>(ctx: &mut Context<E>) {
         fde.output_offset = off;
         off += fde.data.len() as u32;
     }
-    ctx.eh_frame.hdr.flags = output_section_flags(b"__TEXT", b"__eh_frame", 0, true, false);
     ctx.eh_frame.hdr.size = off as u64;
     ctx.chunks.push(ChunkId::EhFrame);
 }
