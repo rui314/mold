@@ -2,12 +2,12 @@
 source "$(dirname "$0")"/common.inc
 
 # -add_linker_option gives an auto-link option as if an object had one:
-# a final link loads what it names, and a -r output carries it with the
-# objects' (libraries first, each kind sorted). ld-prime reads the words
-# of every one in a row, as an object's, before any object's, and warns
-# "in command line". An option with a space is split there only if its
-# first word names a framework (has "framework" in it); any other is
-# ignored with a warning as it is read.
+# a final link loads what it names, and a -r output carries it before
+# the objects', each only once. ld-prime reads the words of every one
+# in a row, as an object's, before any object's, and warns "in command
+# line". An option with a space is split there only if its first word
+# names a framework (has "framework" in it); any other is ignored with
+# a warning as it is read.
 cat <<EOF | $CC -o $t/foo.o -c -xc -
 int foo(void) { return 3; }
 EOF
@@ -27,7 +27,7 @@ $mold -r -arch $ARCH -o $t/r.o $t/a.o $t/b.o -add_linker_option -lzzz \
 [ ! -s $t/log ]
 otool -l $t/r.o | grep -A4 LC_LINKER_OPTION | awk '$1 == "string" { $1 = $2 = ""; print }' |
   tr '\n' '|' > $t/opts
-[ "$(cat $t/opts)" = '  -lbbb|  -lzzz|  -needed_framework|  Baz|  -framework|  Foo Bar|' ]
+[ "$(cat $t/opts)" = '  -lzzz|  -framework|  Foo Bar|  -needed_framework|  Baz|  -lbbb|' ]
 
 $mold -r -arch $ARCH -o $t/r.o $t/a.o -add_linker_option '-lfoo -lbar' \
   -add_linker_option bogus -add_linker_option '-weak-lfoo' -add_linker_option -framework 2> $t/log

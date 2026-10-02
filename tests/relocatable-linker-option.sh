@@ -47,18 +47,17 @@ grep -A5 LC_BUILD_VERSION $t/lc | grep "sdk $(otool -l $t/a.o | grep ' sdk ' | a
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/r.o
 $t/exe | grep '^1\.'
 
-# ld-prime rewrites the options it carries: one per library, the
-# libraries first, each kind sorted by name. The first naming says
-# whether one loads lazily and any whether it is needed; -hidden-l and
-# -force_load say nothing, and a file goes by its path. A framework
-# goes by its name less any ",suffix".
+# The options go through as they are, in input order and each only
+# once, so that the final link reads them as it would the inputs'.
+# (ld-prime rewrites them: one per library, the libraries first, each
+# kind sorted by name, losing -force_load and a framework's ",suffix".)
 cat <<EOF2 | $CC -o $t/d.o -c -x assembler -
 .linker_option "-lzzz"
 .linker_option "-needed-lfoo"
 .linker_option "-lfoo"
 .linker_option "-hidden-lbar"
 .linker_option "-lazy-lqux"
-.linker_option "-needed-lqux"
+.linker_option "-lzzz"
 .linker_option "-framework", "Foo"
 .linker_option "-needed_framework", "Foo"
 .linker_option "-framework", "Bar,_debug"
@@ -66,16 +65,32 @@ cat <<EOF2 | $CC -o $t/d.o -c -x assembler -
 .linker_option "-needed_library", "/p/liby.dylib"
 EOF2
 $mold -r -arch $ARCH -o $t/r2.o $t/d.o
-otool -l $t/r2.o | awk '$2 == "LC_LINKER_OPTION" { n++ } /^ *string/ { s[n] = s[n] $3 " " }
+otool -l $t/r2.o | awk '$2 == "LC_LINKER_OPTION" { n++ }
+  /^ *string/ { s[n] = s[n] (s[n] == "" ? "" : " ") $3 }
   END { for (i = 1; i <= n; i++) print s[i] }' > $t/lc2
 cat > $t/lc2.expected <<EOF2
--l/p/libx.a 
--needed-l/p/liby.dylib 
--lbar 
--needed-lfoo 
--lazy-lqux 
--lzzz 
--framework Bar 
--needed_framework Foo 
+-lzzz
+-needed-lfoo
+-lfoo
+-hidden-lbar
+-lazy-lqux
+-framework Foo
+-needed_framework Foo
+-framework Bar,_debug
+-force_load /p/libx.a
+-needed_library /p/liby.dylib
 EOF2
 diff $t/lc2.expected $t/lc2
+
+# So a -force_load carried through has the final link load an archive
+# member nothing refers to.
+echo 'int forced = 42;' | $CC -o $t/forced.o -c -xc -
+rm -f $t/libforced.a
+ar rcs $t/libforced.a $t/forced.o
+cat <<EOF2 | $CC -o $t/e.o -c -x assembler -
+.linker_option "-force_load", "$t/libforced.a"
+EOF2
+echo 'int main() { return 0; }' | $CC -o $t/main2.o -c -xc -
+$mold -r -arch $ARCH -o $t/r3.o $t/main2.o $t/e.o
+$CC --ld-path=$mold -o $t/exe3 $t/r3.o
+nm $t/exe3 | grep -q ' D _forced$'

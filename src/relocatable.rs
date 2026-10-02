@@ -18,7 +18,6 @@
 
 use hashbrown::{HashMap, HashSet};
 use rayon::prelude::*;
-use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU16, AtomicU32, Ordering};
 
 use crate::chunks::symtab::{SymtabSection, local_symbol_name, par_push_entries};
@@ -89,57 +88,20 @@ fn optimization_hints<E: Target>(ctx: &Context<E>) -> Option<Vec<u8>> {
 }
 
 /// The auto-link options (LC_LINKER_OPTION) a -r output carries for the
-/// final link to act on, as ld-prime rewrites those of its inputs (read
-/// by passes::read_linker_options): one per library or framework, the
-/// libraries first, each kind sorted by name. A framework goes by its
-/// name less any ",suffix", and a library a -force_load, -needed_library
-/// or -lazy_library names goes by its path, as -l<path>. The first
-/// naming says whether the library loads lazily, and any whether it is
-/// needed; -hidden-l and -force_load say nothing of it.
-fn relocatable_linker_options<E: Target>(ctx: &Context<E>) -> Vec<Vec<Vec<u8>>> {
+/// final link to act on (see passes::read_linker_options): those of
+/// -add_linker_option and of its inputs as they are, in that order, each
+/// only once - what a link of the inputs would see. (ld-prime rewrites
+/// them, one per library, which loses -force_load, -weak_framework and
+/// a framework's ",suffix".)
+fn relocatable_linker_options<E: Target>(ctx: &Context<E>) -> Vec<&[Vec<u8>]> {
     if ctx.args.ignore_auto_link {
         return Vec::new();
     }
-    // (framework, name) -> (lazy, needed)
-    let mut libs: BTreeMap<(bool, &[u8]), (bool, bool)> = BTreeMap::new();
     let objs = ctx.objs.iter().filter(|obj| obj.is_alive).flat_map(|obj| &obj.linker_options);
-    for opt in ctx.cmdline_linker_options.iter().flatten().chain(objs) {
-        let (framework, name, kind) = match &opt[..] {
-            [flag, name] if flag.ends_with(b"framework") => {
-                let base = name.split(|&c| c == b',').next().unwrap();
-                (true, base, flag.strip_suffix(b"framework").unwrap())
-            }
-            [flag, path] => (false, &path[..], flag.strip_suffix(b"library").unwrap_or(b"")),
-            [lib] => {
-                let (kind, name) = [&b"-needed-l"[..], b"-lazy-l", b"-hidden-l", b"-l"]
-                    .into_iter()
-                    .find_map(|kind| Some((kind, lib.strip_prefix(kind)?)))
-                    .unwrap();
-                (false, name, kind)
-            }
-            _ => unreachable!(),
-        };
-        let (lazy, needed) = (kind.starts_with(b"-lazy"), kind.starts_with(b"-needed"));
-        libs.entry((framework, name))
-            .and_modify(|(_, all_needed)| *all_needed |= needed)
-            .or_insert((lazy, needed));
-    }
-    libs.into_iter()
-        .map(|((framework, name), (lazy, needed))| {
-            let kind = if lazy {
-                "lazy"
-            } else if needed {
-                "needed"
-            } else {
-                ""
-            };
-            match (framework, kind) {
-                (true, "") => vec![b"-framework".to_vec(), name.to_vec()],
-                (true, _) => vec![format!("-{kind}_framework").into_bytes(), name.to_vec()],
-                (false, "") => vec![[b"-l", name].concat()],
-                (false, _) => vec![[format!("-{kind}-l").as_bytes(), name].concat()],
-            }
-        })
+    let mut seen = HashSet::new();
+    (ctx.cmdline_linker_options.iter().flatten().chain(objs))
+        .filter(|opt| seen.insert(*opt))
+        .map(Vec::as_slice)
         .collect()
 }
 
