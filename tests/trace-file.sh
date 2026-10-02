@@ -31,16 +31,30 @@ $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-weak_library,$t/libw.dylib $t/libl.a $
   -Wl,-trace_symbols_file,$t/trace-syms
 uuid=$(dwarfdump --uuid $t/exe | awk '{ print $2 }')
 
-grep -Eqx "\{\"uuid\":\"$uuid\",\"name\":\"exe\",\"arch\":\"$ARCH\",\"dynamic\":\[\"$dir/libw.dylib\",\"/[^\"]*/libSystem.B.tbd\"\],\"weak\":\[\"$dir/libw.dylib\"\],\"archives\":\[\"$dir/libl.a\"\]\}" $t/trace
-grep -qxF "{\"uuid\":\"$uuid\",\"name\":\"$t/exe\",\"arch\":\"$ARCH\",\"dynamic\":[\"/usr/lib/libSystem.B.dylib\"],\"weak\":[\"@rpath/libw.dylib\"]}" $t/trace-sc
+jq -e --arg uuid $uuid --arg arch $ARCH --arg dir $dir '
+  . == {uuid: $uuid, name: "exe", arch: $arch,
+        dynamic: ["\($dir)/libw.dylib", .dynamic[1]], weak: ["\($dir)/libw.dylib"],
+        archives: ["\($dir)/libl.a"]}
+  and (.dynamic[1] | endswith("/libSystem.B.tbd"))' $t/trace > /dev/null
+jq -e --arg uuid $uuid --arg arch $ARCH --arg t $t '
+  . == {uuid: $uuid, name: "\($t)/exe", arch: $arch,
+        dynamic: ["/usr/lib/libSystem.B.dylib"], weak: ["@rpath/libw.dylib"]}' \
+  $t/trace-sc > /dev/null
 
-grep -qF "{ \"version\":\"2\", \"minor-version\":1, \"name\":\"exe\", \"uuid\":\"$uuid\", \"arch\":\"$ARCH\", \"platforms\": [ { \"name\" : \"macOS\", \"min-version\" : { \"major\": " $t/trace-syms
-grep -qF "\"exports\": [ ], \"linked-dylibs\":[ { \"path\": \"$dir/libw.dylib\"" $t/trace-syms
-grep -qF "{ \"path\": \"$dir/libw.dylib\", \"install-name\": \"@rpath/libw.dylib\", \"arch\": \"$ARCH\", \"attributes\": [\"weak\" ], \"imported-symbols\": [ \"_w1\" ] }, { \"path\": " $t/trace-syms
 # (The compiler driver adds libclang_rt's archive, of which it loads
 # nothing here.)
-grep -qF "\"archives\": [ \"$dir/libl.a\" ], \"unused-archives\": [ " $t/trace-syms
-grep -qF "/libclang_rt.osx.a\", \"$dir/libl.a\", \"$dir/libz.a\" ],\"linked-archives\":[{ \"arch\": \"$ARCH\", \"path\": \"$dir/libl.a\",\"imported-symbols\":[\"_l1\"]}] }" $t/trace-syms
+jq -e --arg uuid $uuid --arg arch $ARCH --arg dir $dir '
+  .version == "2" and ."minor-version" == 1 and .name == "exe" and .uuid == $uuid
+  and .arch == $arch and .platforms[0].name == "macOS"
+  and (.platforms[0]."min-version".major | test("^[0-9]+$"))
+  and .exports == [] and (."linked-dylibs" | length) == 2
+  and ."linked-dylibs"[0] == {path: "\($dir)/libw.dylib", "install-name": "@rpath/libw.dylib",
+                              arch: $arch, attributes: ["weak"], "imported-symbols": ["_w1"]}
+  and .archives == ["\($dir)/libl.a"]
+  and (."unused-archives"[-3] | endswith("/libclang_rt.osx.a"))
+  and ."unused-archives"[-2:] == ["\($dir)/libl.a", "\($dir)/libz.a"]
+  and ."linked-archives" == [{arch: $arch, path: "\($dir)/libl.a", "imported-symbols": ["_l1"]}]
+' $t/trace-syms > /dev/null
 
 # The records are appended.
 $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-weak_library,$t/libw.dylib $t/libl.a \

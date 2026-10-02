@@ -12,10 +12,10 @@ rm -rf $t/trace $t/syms
 LD_TRACE_DEPENDENTS=1 LD_TRACE_FILE=$t/trace LD_TRACE_SYMBOLS_DIR=$t/syms/sub \
   $CC --ld-path=$mold -o $t/exe $t/a.o
 uuid=$(dwarfdump --uuid $t/exe | awk '{ print $2 }')
-grep -q "^{\"uuid\":\"$uuid\",\"name\":\"exe\"," $t/trace
+jq -e --arg uuid $uuid '.uuid == $uuid and .name == "exe"' $t/trace > /dev/null
 ls $t/syms/sub > $t/log
 grep -Eqx "[0-9]+\.[0-9]+\.$ARCH\.[0-9]{16}\.json" $t/log
-grep -q "\"name\":\"exe\", \"uuid\":\"$uuid\"" $t/syms/sub/*.json
+jq -e --arg uuid $uuid '.uuid == $uuid and .name == "exe"' $t/syms/sub/*.json > /dev/null
 
 # Without $LD_TRACE_DEPENDENTS, there is no trace.
 rm -f $t/trace2

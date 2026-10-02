@@ -67,13 +67,7 @@ echo '{"version": 1}' > $t/apis4.json
 not $mold -arch $ARCH -o $t/exe4 $t/a.o -sdk_imports_api_list $t/apis4.json 2> $t/log
 grep -q "invalid list at $t/apis4.json" $t/log
 
-# The report is laid out as ld-prime lays it out, the libraries in the
-# order of the image's load commands.
-head -2 $t/imports.json > $t/head.txt
-printf '{\n  "version": 1,\n' | cmp - $t/head.txt
-grep -Eq '^  "platform": "macOS",  "deploymentVersion": "[0-9.]+",  "sdkVersion": "[0-9.]+",  "inputs": \[$' $t/imports.json
-grep -q '^          "installName": "/usr/lib/libSystem.B.dylib",$' $t/imports.json
-grep -q '^            "_puts",\?$' $t/imports.json
+# The libraries are in the order of the image's load commands.
 python3 - $t/imports.json $t/exe <<'EOF2'
 import json, subprocess, sys
 d = json.load(open(sys.argv[1]))
@@ -82,5 +76,3 @@ loads = subprocess.run(['otool', '-L', sys.argv[2]], capture_output=True, text=T
 order = [l.split(' (')[0].strip() for l in loads.splitlines()[1:]]
 assert names == [n for n in order if n in names], (names, order)
 EOF2
-tail -3 $t/imports3.json > $t/tail.txt
-printf '\n  ]\n}\n' | cmp - $t/tail.txt

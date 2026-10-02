@@ -5,6 +5,8 @@ use std::borrow::Cow;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use serde_json::{Value, json};
+
 use crate::chunks::ChunkId;
 use crate::context::Context;
 use crate::input_files::{DylibFile, FileId, MergedFile, NameSource};
@@ -13,31 +15,14 @@ use crate::symbol::SymbolId;
 use crate::target::Target;
 use crate::util::path_bytes;
 
-fn json_string(s: &str) -> String {
-    use std::fmt::Write;
-    let mut out = String::from("\"");
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\x00'..='\x1f' => {
-                let _ = write!(out, "\\u{:04x}", c as u32);
-            }
-            _ => out.push(c),
-        }
-    }
-    out.push('"');
-    out
-}
-
 /// Xcode's version-1 API import report. Despite its name, sdkImports
 /// includes imports from non-SDK dylibs too, grouped by install name in
 /// the order of the image's load commands - those an
 /// -sdk_imports_api_list lists only, if there is one, whose version the
 /// report records. An image with none to report has no input in the
-/// report. The JSON is laid out as ld-prime lays it out, but each
-/// library's symbols are listed once, by name: ld-prime lists one a
-/// time for each reference to it (its stub, its GOT slot, ...).
+/// report. Each library's symbols are listed once, by name: ld-prime
+/// lists one a time for each reference to it (its stub, its GOT slot,
+/// ...).
 pub fn write_sdk_imports<E: Target>(ctx: &Context<E>) {
     use crate::macho::{format_version, platform_name};
     let Some(path) = &ctx.args.sdk_imports else { return };
@@ -58,41 +43,36 @@ pub fn write_sdk_imports<E: Target>(ctx: &Context<E>) {
     }
 
     // JSON is text: a path or install name outside UTF-8 is spelled lossily.
-    let output = json_string(&ctx.args.output.to_string_lossy());
-    let mut libraries = Vec::new();
-    for ((_, name), mut symbols) in imports {
-        symbols.sort_unstable();
-        symbols.dedup();
-        let symbols: Vec<String> =
-            symbols.into_iter().map(|s| format!("            {}", json_string(s))).collect();
-        libraries.push(format!(
-            "        {{\n          \"installName\": {},\n          \"symbols\": [\n{}\n          \
-             ]\n        }}",
-            json_string(&crate::util::display(name)),
-            symbols.join(",\n")
-        ));
-    }
+    let output = ctx.args.output.to_string_lossy();
+    let libraries: Vec<Value> = (imports.into_iter())
+        .map(|((_, name), mut symbols)| {
+            symbols.sort_unstable();
+            symbols.dedup();
+            json!({ "installName": crate::util::display(name), "symbols": symbols })
+        })
+        .collect();
     let inputs = match libraries.is_empty() {
-        true => String::new(),
-        false => format!(
-            "    {{\n      \"path\": {output},\n      \"sdkImports\": [\n{}\n      ]\n    }}",
-            libraries.join(",\n")
-        ),
+        true => Vec::new(),
+        false => vec![json!({ "path": output, "sdkImports": libraries })],
     };
-    let report = format!(
-        "{{\n  \"version\": 1,\n  \"output\": {output},\n  \"arch\": {},\n  \"linker\": {},\n  \
-         \"apiListVersion\": {},\n  \"platform\": {},  \"deploymentVersion\": {},  \
-         \"sdkVersion\": {},  \"inputs\": [\n{inputs}\n  ]\n}}\n",
-        json_string(E::NAME),
-        json_string(concat!("mold-macho-", env!("CARGO_PKG_VERSION"))),
-        api_list.map_or(0, |list| list.version),
-        json_string(&platform_name(ctx.args.platform)),
-        json_string(&format_version(ctx.args.platform_minos)),
-        json_string(&format_version(ctx.args.platform_sdk)),
-    );
-    if std::fs::write(path, report).is_err() {
+    let report = json!({
+        "version": 1,
+        "output": output,
+        "arch": E::NAME,
+        "linker": concat!("mold-macho-", env!("CARGO_PKG_VERSION")),
+        "apiListVersion": api_list.map_or(0, |list| list.version),
+        "platform": platform_name(ctx.args.platform),
+        "deploymentVersion": format_version(ctx.args.platform_minos),
+        "sdkVersion": format_version(ctx.args.platform_sdk),
+        "inputs": inputs,
+    });
+    let Ok(file) = std::fs::File::create(path) else {
         crate::warn!("can't open SDK imports file for writing at '{}'", path.display());
-    }
+        return;
+    };
+    let mut out = std::io::BufWriter::new(file);
+    let _ = serde_json::to_writer_pretty(&mut out, &report);
+    let _ = out.write_all(b"\n");
 }
 
 /// Writes the -dependency_info file: Xcode's incremental build system
@@ -271,8 +251,7 @@ fn dependency_paths<'a>(paths: impl Iterator<Item = &'a Path>) -> Vec<Vec<u8>> {
 /// loaded from each archive define, with the archives one isn't loaded
 /// from. A library dyld loads lazily is in that one alone. Without a
 /// UUID (-no_uuid) ld-prime writes no trace but that last, which then
-/// lacks its "uuid" (and has a stray comma, that mold leaves out). A
-/// file it can't write fails the link.
+/// lacks its "uuid". A file it can't write fails the link.
 pub fn write_trace_files<E: Target>(ctx: &Context<E>) {
     let args = &ctx.args;
     if args.trace_file.is_none()
@@ -324,11 +303,16 @@ fn trace_symbols_dir_file<E: Target>(dir: &Path) -> Option<PathBuf> {
     Some(PathBuf::from(path))
 }
 
-fn append_trace(path: &Path, record: &str) {
+/// Appends a record, in a single write, as other links may be appending
+/// theirs to the same file.
+fn append_trace(path: &Path, record: &Value) {
     let file = std::fs::OpenOptions::new().append(true).create(true).open(path);
     match file {
         Ok(mut file) => {
-            let _ = file.write_all(format!("{record}\n").as_bytes());
+            let mut line = Vec::new();
+            let _ = serde_json::to_writer(&mut line, record);
+            line.push(b'\n');
+            let _ = file.write_all(&line);
         }
         Err(e) => crate::error!(
             "Could not open or create trace file (errno={}): {}",
@@ -393,24 +377,25 @@ impl<'a> TraceInputs<'a> {
         Self { dylibs, lazy, archives, unused_archives }
     }
 
+    /// The archives a member loads from.
+    fn archive_paths(&self) -> Vec<&str> {
+        self.archives.iter().map(|(path, _)| path.as_str()).collect()
+    }
+
     /// The record of -trace_file, or with `shared_cache` of
     /// -trace_file_shared_cache.
-    fn dylibs_json<E: Target>(&self, ctx: &Context<E>, uuid: &str, shared_cache: bool) -> String {
+    fn dylibs_json<E: Target>(&self, ctx: &Context<E>, uuid: &str, shared_cache: bool) -> Value {
         let name = match ctx.args.output_type {
             MH_DYLIB if shared_cache => {
-                crate::util::display(ctx.args.output_install_name()).to_string()
+                crate::util::display(ctx.args.output_install_name()).into_owned()
             }
             _ if shared_cache => ctx.args.output.to_string_lossy().into_owned(),
             _ => output_leaf(ctx),
         };
-        let mut out = format!(
-            "{{\"uuid\":\"{uuid}\",\"name\":{},\"arch\":\"{}\"",
-            json_string(&name),
-            E::NAME
-        );
+        let mut record = json!({ "uuid": uuid, "name": name, "arch": E::NAME });
         let id = |d: &DylibFile| match shared_cache {
-            true => json_string(&crate::util::display(&d.install_name)),
-            false => json_string(&trace_path(&d.path)),
+            true => crate::util::display(&d.install_name).into_owned(),
+            false => trace_path(&d.path),
         };
         let weak = |d: &DylibFile| d.is_weak || d.is_weak_asserted;
         // The list a dylib is in, but for "weak", which takes the weak
@@ -428,117 +413,84 @@ impl<'a> TraceInputs<'a> {
                 .map(|(_, d)| id(d))
                 .collect();
             if !items.is_empty() {
-                out.push_str(&format!(",\"{key}\":[{}]", items.join(",")));
+                record[key] = json!(items);
             }
         }
         if !shared_cache && !self.archives.is_empty() {
-            let items: Vec<String> =
-                self.archives.iter().map(|(path, _)| json_string(path)).collect();
-            out.push_str(&format!(",\"archives\":[{}]", items.join(",")));
+            record["archives"] = json!(self.archive_paths());
         }
-        out.push('}');
-        out
+        record
     }
 
     /// The record of -trace_symbols_file.
-    fn symbols_json<E: Target>(&self, ctx: &Context<E>, uuid: Option<&str>) -> String {
-        use std::fmt::Write;
+    fn symbols_json<E: Target>(&self, ctx: &Context<E>, uuid: Option<&str>) -> Value {
         let args = &ctx.args;
-        let mut out = format!(
-            "{{ \"version\":\"2\", \"minor-version\":1, \"name\":{}",
-            json_string(&output_leaf(ctx))
-        );
-        if args.output_type == MH_DYLIB {
-            let eligible = if args.shared_region { "yes" } else { "no" };
-            let _ = write!(
-                out,
-                ", \"install-name\":{}, \"shared-cache-eligible\":\"{eligible}\"",
-                json_string(&crate::util::display(args.output_install_name()))
-            );
-        }
-        if let Some(uuid) = uuid {
-            let _ = write!(out, ", \"uuid\":\"{uuid}\"");
-        }
-        let version = args.platform_minos;
-        let _ = write!(
-            out,
-            ", \"arch\":\"{}\", \"platforms\": [ {{ \"name\" : \"{}\", \"min-version\" : {{ \"major\": \"{}\", \"minor\": \"{}\" }} }} ]",
-            E::NAME,
-            crate::macho::platform_name(args.platform),
-            version >> 16,
-            (version >> 8) & 0xff
-        );
-        let spaced = |items: &[&str]| -> String {
-            items.iter().map(|s| format!(" {}", json_string(s))).collect::<Vec<_>>().join(",")
-        };
-        let _ = write!(out, ", \"exports\": [{} ]", spaced(&own_exports(ctx)));
-
         let imports = dylib_imports(ctx);
-        let list = |syms: &[&str]| -> String {
-            let syms: Vec<String> = syms.iter().map(|s| json_string(s)).collect();
-            format!("[ {} ]", syms.join(", "))
-        };
-        let mut entries = Vec::new();
-        for &(i, d) in &self.dylibs {
-            let mut attrs = Vec::new();
-            if d.is_reexported {
-                attrs.push("\"re-export\"");
-            }
-            if d.is_weak || d.is_weak_asserted {
-                attrs.push("\"weak\"");
-            }
-            if d.is_upward {
-                attrs.push("\"upward\"");
-            }
-            if d.delay_init.is_some() {
-                attrs.push("\"delay-init\"");
-            }
-            let mut entry = format!(
-                " {{ \"path\": {}, \"install-name\": {}, \"arch\": \"{}\", \"attributes\": [{} ], \"imported-symbols\": {}",
-                json_string(&trace_path(&d.path)),
-                json_string(&crate::util::display(&d.install_name)),
-                E::NAME,
-                attrs.join(", "),
-                list(&imports[i])
-            );
-            if d.is_reexported {
-                let mut exports: Vec<&str> = d.exports.iter().copied().collect();
-                exports.sort_unstable();
-                let _ = write!(entry, ",  \"exported-symbols\": {}", list(&exports));
-            }
-            entry.push_str(" }");
-            entries.push(entry);
-        }
-        for &(i, d) in &self.lazy {
-            entries.push(format!(
-                " {{ \"arch\": \"{}\", \"path\": {}, \"install-name\": {}, \"attributes\": [ \"lazy-load\" ], \"imported-symbols\": {} }}",
-                E::NAME,
-                json_string(&trace_path(&d.path)),
-                json_string(&crate::util::display(&d.install_name)),
-                list(&imports[i])
-            ));
-        }
-        let _ = write!(out, ", \"linked-dylibs\":[{} ]", entries.join(","));
-
-        let archives: Vec<&str> = self.archives.iter().map(|(path, _)| path.as_str()).collect();
-        let unused: Vec<&str> = self.unused_archives.iter().map(String::as_str).collect();
-        let _ = write!(out, ", \"archives\": [{} ]", spaced(&archives));
-        let _ = write!(out, ", \"unused-archives\": [{} ]", spaced(&unused));
-        let linked: Vec<String> = self
-            .archives
-            .iter()
-            .map(|(path, syms)| {
-                let syms: Vec<String> = syms.iter().map(|s| json_string(s)).collect();
-                format!(
-                    "{{ \"arch\": \"{}\", \"path\": {},\"imported-symbols\":[{}]}}",
-                    E::NAME,
-                    json_string(path),
-                    syms.join(",")
-                )
+        let mut dylibs: Vec<Value> = (self.dylibs.iter())
+            .map(|&(i, d)| {
+                let attrs = [
+                    (d.is_reexported, "re-export"),
+                    (d.is_weak || d.is_weak_asserted, "weak"),
+                    (d.is_upward, "upward"),
+                    (d.delay_init.is_some(), "delay-init"),
+                ];
+                let attrs: Vec<&str> = attrs.iter().filter(|a| a.0).map(|a| a.1).collect();
+                let mut entry = json!({
+                    "path": trace_path(&d.path),
+                    "install-name": crate::util::display(&d.install_name),
+                    "arch": E::NAME,
+                    "attributes": attrs,
+                    "imported-symbols": imports[i],
+                });
+                if d.is_reexported {
+                    let mut exports: Vec<&str> = d.exports.iter().copied().collect();
+                    exports.sort_unstable();
+                    entry["exported-symbols"] = json!(exports);
+                }
+                entry
             })
             .collect();
-        let _ = write!(out, ",\"linked-archives\":[{}] }}", linked.join(","));
-        out
+        dylibs.extend(self.lazy.iter().map(|&(i, d)| {
+            json!({
+                "path": trace_path(&d.path),
+                "install-name": crate::util::display(&d.install_name),
+                "arch": E::NAME,
+                "attributes": ["lazy-load"],
+                "imported-symbols": imports[i],
+            })
+        }));
+        let archives: Vec<Value> = (self.archives.iter())
+            .map(|(path, syms)| json!({ "path": path, "arch": E::NAME, "imported-symbols": syms }))
+            .collect();
+
+        let version = args.platform_minos;
+        let mut record = json!({
+            "version": "2",
+            "minor-version": 1,
+            "name": output_leaf(ctx),
+            "arch": E::NAME,
+            "platforms": [{
+                "name": crate::macho::platform_name(args.platform),
+                "min-version": {
+                    "major": (version >> 16).to_string(),
+                    "minor": ((version >> 8) & 0xff).to_string(),
+                },
+            }],
+            "exports": own_exports(ctx),
+            "linked-dylibs": dylibs,
+            "archives": self.archive_paths(),
+            "unused-archives": self.unused_archives,
+            "linked-archives": archives,
+        });
+        if args.output_type == MH_DYLIB {
+            let eligible = if args.shared_region { "yes" } else { "no" };
+            record["install-name"] = json!(crate::util::display(args.output_install_name()));
+            record["shared-cache-eligible"] = json!(eligible);
+        }
+        if let Some(uuid) = uuid {
+            record["uuid"] = json!(uuid);
+        }
+        record
     }
 }
 
