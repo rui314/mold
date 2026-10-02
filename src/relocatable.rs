@@ -146,21 +146,6 @@ fn relocatable_linker_options<E: Target>(ctx: &Context<E>) -> Vec<Vec<Vec<u8>>> 
         .collect()
 }
 
-/// The __compact_unwind pointer fields an input set by a 4-byte
-/// relocation, as a bit per field (1 << offset / 8) by record
-/// (subsection and function offset): each keeps a 4-byte relocation,
-/// as in ld-prime's output, its value fitting (the addresses of a -r
-/// output start at zero).
-fn narrow_unwind_fields<E: Target>(ctx: &Context<E>) -> HashMap<(u32, u32), u8> {
-    let mut fields: HashMap<(u32, u32), u8> = HashMap::new();
-    for obj in &ctx.objs {
-        for &(isec, off, bit) in &obj.unwind_ptr32 {
-            *fields.entry((isec, off)).or_default() |= bit;
-        }
-    }
-    fields
-}
-
 /// Writes the -r output, returning its size.
 pub fn link<E: Target>(ctx: &mut Context<E>) -> u64 {
     // The sections the output synthesizes: the merged __objc_imageinfo,
@@ -621,28 +606,15 @@ fn compact_unwind_records<E: Target>(ctx: &Context<E>) -> Vec<usize> {
 }
 
 /// __LD,__compact_unwind, if any unwind record survives: one 32-byte
-/// entry per record.
+/// entry per record, aligned for its pointers.
 fn compact_unwind_section<E: Target>(ctx: &Context<E>) -> Option<SyntheticSection> {
     let records = compact_unwind_records(ctx);
     if records.is_empty() {
         return None;
     }
-    // Each record keeps the alignment of the section it came from, as
-    // any subsection does to ld-prime, so the section takes the largest.
-    let p2align = records
-        .par_iter()
-        .filter_map(|&i| {
-            let obj = &ctx.objs[ctx.isecs[ctx.unwind_records[i].isec as usize].file as usize];
-            obj.sect_hdrs
-                .iter()
-                .find(|s| s.segname_is(b"__LD") && s.sectname_is(b"__compact_unwind"))
-        })
-        .map(|s| s.p2align)
-        .max()
-        .unwrap_or(3);
     let size = 32 * records.len() as u64;
     let kind = SyntheticKind::CompactUnwind(records);
-    Some(SyntheticSection::new(b"__LD", b"__compact_unwind", S_ATTR_DEBUG, p2align, size, kind))
+    Some(SyntheticSection::new(b"__LD", b"__compact_unwind", S_ATTR_DEBUG, 3, size, kind))
 }
 
 /// A record of __TEXT,__eh_frame: an input CIE or FDE.
@@ -705,13 +677,14 @@ fn eh_frame_section<E: Target>(ctx: &Context<E>) -> Option<SyntheticSection> {
 /// __LD,__compact_unwind's contents, re-synthesized so unwind info
 /// survives the merge: one 32-byte entry per record - the function, its
 /// length and encoding, the personality and the LSDA - its pointer
-/// fields set by UNSIGNED relocations. Each entry is made on all cores.
+/// fields set by 8-byte UNSIGNED relocations. Each entry is made on all
+/// cores.
 fn compact_unwind_contents<E: Target>(
     targets: &RelocTargets<E>,
     records: &[usize],
 ) -> (Vec<u8>, Vec<MachRel>) {
     let ctx = targets.ctx;
-    let narrow_fields = narrow_unwind_fields(ctx);
+    let len = 3 << 25;
     let mut data = vec![0u8; 32 * records.len()];
     let relocs: Vec<MachRel> = data
         .par_chunks_mut(32)
@@ -720,21 +693,17 @@ fn compact_unwind_contents<E: Target>(
         .flat_map_iter(|(i, (entry, &r))| {
             let rec = &ctx.unwind_records[r];
             let at = 32 * i as u32;
-            // A field's relocation: r_length 2 (4 bytes) or 3 (8 bytes).
-            let narrow = narrow_fields.get(&(rec.isec, rec.input_offset)).copied().unwrap_or(0);
-            let len = |field: u32| if narrow & (1 << (field / 8)) != 0 { 2 << 25 } else { 3 << 25 };
-            let (func, bits) =
-                targets.pointer_to(rec.isec as usize, rec.input_offset as u64, len(0));
+            let (func, bits) = targets.pointer_to(rec.isec as usize, rec.input_offset as u64, len);
             entry[..8].copy_from_slice(&func.to_le_bytes());
             entry[8..12].copy_from_slice(&rec.code_len.to_le_bytes());
             entry[12..16].copy_from_slice(&rec.encoding.to_le_bytes());
             let func = MachRel { r_address: at, bits };
             let personality = rec.personality().map(|p| MachRel {
                 r_address: at + 16,
-                bits: targets.personality(p) | len(16) | (1 << 27),
+                bits: targets.personality(p) | len | (1 << 27),
             });
             let lsda = rec.lsda().map(|(lsda, off)| {
-                let (lsda, bits) = targets.pointer_to(ctx.resolve_isec(lsda), off as u64, len(24));
+                let (lsda, bits) = targets.pointer_to(ctx.resolve_isec(lsda), off as u64, len);
                 entry[24..].copy_from_slice(&lsda.to_le_bytes());
                 MachRel { r_address: at + 24, bits }
             });

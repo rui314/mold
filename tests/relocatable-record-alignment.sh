@@ -41,10 +41,9 @@ align $t/exe __mod_term_func
 align $t/exe __cfstring
 $t/exe
 
-# __LD,__compact_unwind keeps its inputs' alignment instead: each
-# record is aligned as the section it came from, so the output takes
-# the largest of the surviving records', 2^0 from a 2^0 input. A
-# coalesced-away weak copy's record doesn't count.
+# __LD,__compact_unwind is aligned for its records' pointers, whatever
+# the inputs' alignment, and a later link reads the same unwind info
+# from it. (ld-prime keeps the largest of the inputs' alignments.)
 rec() {
   cat <<EOF
 .text
@@ -64,17 +63,10 @@ EOF
 }
 rec f '' | $CC -o $t/b.o -c -xassembler -
 rec g '.p2align 2' | $CC -o $t/c.o -c -xassembler -
-rec w '' '.weak_definition _w' | $CC -o $t/d.o -c -xassembler -
-rec w '.p2align 4' '.weak_definition _w' | $CC -o $t/e.o -c -xassembler -
-cu_align() {
-  otool -l $1 | grep -A5 'sectname __compact_unwind$' | grep -q "align 2^$2 "
-}
-
-$mold -r -arch $ARCH -o $t/r2.o $t/b.o
-cu_align $t/r2.o 0
-$mold -r -arch $ARCH -o $t/r3.o $t/b.o $t/c.o
-cu_align $t/r3.o 2
-$mold -r -arch $ARCH -o $t/r4.o $t/d.o $t/e.o
-cu_align $t/r4.o 0
-$mold -r -arch $ARCH -o $t/r5.o $t/e.o $t/d.o
-cu_align $t/r5.o 4
+$mold -r -arch $ARCH -o $t/r2.o $t/b.o $t/c.o
+otool -l $t/r2.o | grep -A5 'sectname __compact_unwind$' | grep -q 'align 2^3 '
+$CC --ld-path=$mold -o $t/exe2 $t/main.o $t/b.o $t/c.o
+$CC --ld-path=$mold -o $t/exe3 $t/main.o $t/r2.o
+otool -s __TEXT __unwind_info $t/exe2 | tail -n +2 > $t/unwind2
+otool -s __TEXT __unwind_info $t/exe3 | tail -n +2 > $t/unwind3
+diff $t/unwind2 $t/unwind3
