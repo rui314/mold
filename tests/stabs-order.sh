@@ -8,7 +8,8 @@ source "$(dirname "$0")"/common.inc
 # address, mold in symbol-table order, and neither dsymutil nor lldb
 # cares: both map a unit's notes by name. A global's N_GSYM carries no
 # section or address (the debugger looks it up by name), and a
-# tentative definition gets one in the first object that declares it.
+# tentative definition gets one in each object that declares it.
+# (ld-prime notes it in the first only.)
 cat <<EOF | $CC -o $t/a.o -c -g -xc -
 static int s1 = 1;
 int g1 = 2;
@@ -38,9 +39,9 @@ awk '$2 == "-" { print $5, $6; exit }' $t/nm | grep -q '^SO /'
 # image, the functions with their sizes from the N_FUN pairs.
 dsymutil --dump-debug-map $t/exe > $t/map
 [ "$(awk '/filename:/ { print "--" } /sym:/ { print $4 }' $t/map | tr -d , | tr '\n' ' ')" = \
-  '-- _c1 _f1 _f2 _g1 _gz _main _s1 _s2 _sz -- _f3 ' ]
+  '-- _c1 _f1 _f2 _g1 _gz _main _s1 _s2 _sz -- _f3 _gz ' ]
 sed -n 's/.*sym: \([^,]*\),.*binAddr: 0x\([0-9A-F]*\),.*/\1 \2/p' $t/map > $t/map-addrs
-[ "$(wc -l < $t/map-addrs)" -eq 10 ]
+[ "$(wc -l < $t/map-addrs)" -eq 11 ]
 nm -p $t/exe | awk '{ a = toupper($1); sub(/^0+/, "", a); print $3, a }' > $t/addrs
 not grep -vxFf $t/addrs $t/map-addrs
 not grep -E 'sym: _(f1|f2|f3|main),.*size: 0x0 ' $t/map

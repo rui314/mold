@@ -374,10 +374,9 @@ pub fn plan_stabs<E: Target>(ctx: &Context<E>) -> Vec<StabPlan> {
         return Vec::new();
     }
     let cwd = std::env::current_dir().unwrap_or_default();
-    let commons = common_stab_owners(ctx);
     (0..ctx.objs.len())
         .into_par_iter()
-        .map(|obj_idx| plan_object_stabs(ctx, obj_idx, &cwd, &commons))
+        .map(|obj_idx| plan_object_stabs(ctx, obj_idx, &cwd))
         .collect()
 }
 
@@ -387,18 +386,13 @@ pub fn plan_stabs<E: Target>(ctx: &Context<E>) -> Vec<StabPlan> {
 /// already carries such a run (a -r output: ld64 does not merge DWARF,
 /// it writes these notes) has it copied through (see
 /// copy_object_stabs).
-fn plan_object_stabs<E: Target>(
-    ctx: &Context<E>,
-    obj_idx: usize,
-    cwd: &Path,
-    commons: &hashbrown::HashMap<SymbolId, usize>,
-) -> StabPlan {
+fn plan_object_stabs<E: Target>(ctx: &Context<E>, obj_idx: usize, cwd: &Path) -> StabPlan {
     let obj = &ctx.objs[obj_idx];
     if !obj.is_alive {
         return StabPlan::default();
     }
     if obj.nlists.iter().any(|n| n.n_type == N_OSO) {
-        return copy_object_stabs(ctx, obj_idx, commons);
+        return copy_object_stabs(ctx, obj_idx);
     }
     if !obj.has_debug_info {
         return StabPlan::default();
@@ -412,11 +406,11 @@ fn plan_object_stabs<E: Target>(
     let aliases = objc_list_aliases(ctx, obj);
     for (i, (nlist, &sym_id)) in obj.nlists.iter().zip(&obj.symbols).enumerate() {
         let sym = &ctx.symbols[sym_id];
-        // A tentative definition gets its note in the first object that
+        // A tentative definition gets its note in each object that
         // declares it. A global with an assembler-local name (Swift's
         // l_OBJC_PROTOCOL_SYMREF_$_*, weak private externals) gets none,
         // as no local of that name does.
-        let common = nlist.is_common() && commons.get(&sym_id) == Some(&obj_idx);
+        let common = nlist.is_common() && is_still_common(ctx, sym_id);
         if nlist.is_stab()
             || (!common && !matches!(sym.file(), Some(FileId::Obj(o)) if o as usize == obj_idx))
             || !keep_local_symbol(sym.name())
@@ -451,11 +445,7 @@ fn plan_object_stabs<E: Target>(
 /// does (see copy_global_stab). A unit left with no notes - all of
 /// whose code is dead, or that never had any - goes, N_SO and N_OSO
 /// entries and all.
-fn copy_object_stabs<E: Target>(
-    ctx: &Context<E>,
-    obj_idx: usize,
-    commons: &hashbrown::HashMap<SymbolId, usize>,
-) -> StabPlan {
+fn copy_object_stabs<E: Target>(ctx: &Context<E>, obj_idx: usize) -> StabPlan {
     let obj = &ctx.objs[obj_idx];
     let mut out = Vec::new();
     // Entries whose n_value is an address in the object (n_sect
@@ -513,7 +503,7 @@ fn copy_object_stabs<E: Target>(
             ent.n_value = 0;
         }
         if nlist.n_type == N_GSYM {
-            let stab = copy_global_stab(ctx, obj_idx, name, ent, &locals, commons);
+            let stab = copy_global_stab(ctx, obj_idx, name, ent, &locals);
             noted |= stab.is_some();
             out.extend(stab);
             continue;
@@ -545,10 +535,8 @@ fn copy_object_stabs<E: Target>(
 
 /// An N_GSYM copied from an earlier -r output, which ld-prime takes by
 /// the symbol it names: kept, with no address, if the object still
-/// defines the symbol, and dropped if another file's definition won. A
-/// tentative definition, which the -r link passed on, is noted in the
-/// one object that notes it in a unit with DWARF (see
-/// common_stab_owners), not in each that declares it.
+/// defines the symbol, or it is still a tentative definition, which the
+/// -r link passed on, and dropped if another file's definition won.
 /// A symbol that is one of the object's locals - a private external
 /// the -r link demoted - gets an N_STSYM of its address instead, as it
 /// would have had in a unit with DWARF.
@@ -558,7 +546,6 @@ fn copy_global_stab<E: Target>(
     name: &'static [u8],
     ent: NList,
     locals: &hashbrown::HashMap<&[u8], (SymbolId, &NList)>,
-    commons: &hashbrown::HashMap<SymbolId, usize>,
 ) -> Option<Stab> {
     let obj = &ctx.objs[obj_idx];
     if let Some(&(id, nlist)) = locals.get(name) {
@@ -572,16 +559,11 @@ fn copy_global_stab<E: Target>(
         return Some(Stab { name, ent, value_of: Some(id), name_of: Some(id) });
     }
     let id = ctx.symbols.get(name)?;
-    match ctx.symbols[id].file() {
-        Some(FileId::Obj(o))
-            if o as usize == obj_idx
-                || (ctx.is_internal(o as usize) && commons.get(&id) == Some(&obj_idx)) =>
-        {
-            let ent = NList { n_sect: 0, n_value: 0, ..ent };
-            Some(Stab { name, ent, value_of: None, name_of: Some(id) })
-        }
-        _ => None,
-    }
+    let own = matches!(ctx.symbols[id].file(), Some(FileId::Obj(o)) if o as usize == obj_idx);
+    (own || is_still_common(ctx, id)).then(|| {
+        let ent = NList { n_sect: 0, n_value: 0, ..ent };
+        Stab { name, ent, value_of: None, name_of: Some(id) }
+    })
 }
 
 /// The live subsection holding an object's symbol or note at
@@ -766,43 +748,12 @@ pub(crate) fn has_stabs(hdr: &MachSection) -> bool {
         || is_unnamed_objc_list(hdr))
 }
 
-/// The object whose stabs note each tentative definition that no real
-/// one overrode: the first live object with notes - DWARF, or stabs of
-/// an earlier -r link's - that declares it.
-fn common_stab_owners<E: Target>(
-    ctx: &Context<E>,
-) -> hashbrown::HashMap<crate::symbol::SymbolId, usize> {
-    let per_obj: Vec<Vec<crate::symbol::SymbolId>> = ctx
-        .objs
-        .par_iter()
-        .map(|obj| {
-            if !obj.is_alive
-                || !(obj.has_debug_info || obj.nlists.iter().any(|n| n.n_type == N_OSO))
-            {
-                return Vec::new();
-            }
-            let r = obj.global_range();
-            obj.nlists[r.clone()]
-                .iter()
-                .zip(&obj.symbols[r])
-                .filter(|&(nlist, &id)| {
-                    let sym = &ctx.symbols[id];
-                    !nlist.is_stab()
-                        && nlist.is_common()
-                        && (sym.is_common()
-                            || matches!(sym.file(), Some(FileId::Obj(o)) if ctx.is_internal(o as usize)))
-                })
-                .map(|(_, &id)| id)
-                .collect()
-        })
-        .collect();
-    let mut owners = hashbrown::HashMap::new();
-    for (obj_idx, ids) in per_obj.into_iter().enumerate() {
-        for id in ids {
-            owners.entry(id).or_insert(obj_idx);
-        }
-    }
-    owners
+/// Whether a symbol is still a tentative definition, which no real one
+/// replaced: a -r output passes it on as one, and a final image gives it
+/// storage of the linker's own.
+fn is_still_common<E: Target>(ctx: &Context<E>, id: SymbolId) -> bool {
+    let sym = &ctx.symbols[id];
+    sym.is_common() || matches!(sym.file(), Some(FileId::Obj(o)) if ctx.is_internal(o as usize))
 }
 
 /// An N_SO with an empty name: it closes an object's stabs.
