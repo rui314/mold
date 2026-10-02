@@ -100,3 +100,50 @@ EOF
 echo 'int x = 1;' | $CC -o $t/c.o -c -xc -
 $CC --ld-path=$mold -shared -o $t/c.dylib $t/c.o -Wl,-map,$t/map3
 grep -q $'^0x[0-9A-F]*\t0x00000000\t\\[  0\\] __TEXT,__text$' $t/map3
+
+# ld-prime lists the rows at one address as the label naming a
+# subsection with bytes, then those naming empty ones, then the other
+# labels, by their subsections' order (the end labels of the one
+# before first). An object without subsections has one subsection per
+# section, whose size ld-prime splits among its labels only when
+# nothing comes between them: else the first label keeps it all.
+cat <<'EOF' | $CC -o $t/d.o -c -xassembler -
+.data
+.globl _d0, _d_end1, _d_end2
+_d0: .quad 0
+_d_end1:
+_d_end2:
+EOF
+printf '.data\n.globl _e\n_e:\n' | $CC -o $t/e.o -c -xassembler -
+cat <<'EOF' | $CC -o $t/f.o -c -xassembler -
+.data
+.globl _f1, _f2, _f3
+_f1:
+_f2: .quad 1
+_f3: .quad 2
+EOF
+cat <<'EOF' | $CC -o $t/g.o -c -xassembler -
+.data
+.globl _g
+_g: .quad 3
+.subsections_via_symbols
+EOF
+$CC --ld-path=$mold -shared -o $t/d.dylib $t/d.o $t/e.o $t/f.o $t/g.o -Wl,-map,$t/map4
+grep -E '\] (_d_end.|_[efg].?)$' $t/map4 | cut -f2- > $t/rows4
+diff - $t/rows4 <<EOF
+0x00000010	[  3] _f2
+0x00000000	[  2] _e
+0x00000000	[  1] _d_end2
+0x00000000	[  1] _d_end1
+0x00000000	[  3] _f1
+0x00000000	[  3] _f3
+0x00000008	[  4] _g
+EOF
+
+$CC --ld-path=$mold -shared -o $t/e.dylib $t/d.o $t/g.o -Wl,-map,$t/map5
+grep -E '\] (_d_end.|_g)$' $t/map5 | cut -f2- > $t/rows5
+diff - $t/rows5 <<EOF
+0x00000008	[  2] _g
+0x00000000	[  1] _d_end2
+0x00000000	[  1] _d_end1
+EOF

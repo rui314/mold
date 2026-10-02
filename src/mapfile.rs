@@ -851,7 +851,7 @@ pub fn print_map<E: Target>(ctx: &Context<E>) {
     entries.extend(unnamed_entries(ctx, &files, &first_labels));
     entries.extend(eh_frame_entries(ctx, &files, &entries[linker_symbols..]));
     entries.extend(synthetic_entries(ctx, &files));
-    let mut entries = sort_entries(ctx, entries, linker_symbols, &named.ids, &named.leading);
+    let mut entries = sort_entries(entries, linker_symbols, &named.slots);
     insert_literal_aliases(&mut entries, literal_aliases);
     if ctx.args.output_type == MH_EXECUTE && !ctx.args.preload {
         let addr = ctx.mach_header.hdr.addr;
@@ -861,40 +861,51 @@ pub fn print_map<E: Target>(ctx: &Context<E>) {
 }
 
 /// The rows of the defined symbols (see symbol_entries) but the
-/// literals' labels, with their symbols, and where each row of an
-/// object without subsections that leads the one naming its subsection
-/// goes among those (see symbol_entries).
+/// literals' labels, with their symbols, and where each goes among the
+/// rows at its address.
 struct NamedEntries<'a> {
     entries: Vec<MapEntry<'a>>,
     ids: Vec<SymbolId>,
-    leading: Vec<Option<u32>>,
+    slots: Vec<Slot>,
+}
+
+/// Where the row of a defined symbol goes among the rows at its address
+/// (see sort_entries), as ld-prime lists them: after the linker's, the
+/// labels of an empty output section; then the label that names a
+/// subsection with bytes; then those that name empty ones, in layout
+/// order (see layout_order); then the others, by their subsections'
+/// layout order and within one in the order ld-prime keeps them - the
+/// symbol table's, but in an object without subsections the best first
+/// at each place.
+#[derive(Clone, Copy)]
+enum Slot {
+    EmptySection,
+    Named,
+    NamedEmpty(u32),
+    Alias(u32, u32),
 }
 
 /// Sorts the map's rows by address: the linker's symbols first of those
-/// at one place (the first `linker_symbols` rows), then the labels of
-/// an object without subsections that lead the one naming their
-/// subsection (`leading`), then the row with the size, then the labels
-/// of no size that alias it, in the symbol table's order (see
-/// symtab::put_subsec_names_last); `ids` are the symbols of the rows
-/// after the linker's.
-fn sort_entries<'a, E: Target>(
-    ctx: &Context<E>,
+/// at one place (the first `linker_symbols` rows), then the defined
+/// symbols' (the next `slots.len()`) by their slots and the others'
+/// as names of subsections, the ones with bytes first.
+fn sort_entries<'a>(
     entries: Vec<MapEntry<'a>>,
     linker_symbols: usize,
-    ids: &[SymbolId],
-    leading: &[Option<u32>],
+    slots: &[Slot],
 ) -> Vec<MapEntry<'a>> {
-    let indices = &ctx.symtab.output_sym_indices;
     let place = |i: usize, e: &MapEntry| {
-        let j = i.wrapping_sub(linker_symbols);
-        match (ids.get(j), leading.get(j).copied().flatten()) {
-            _ if i < linker_symbols => (e.addr, 0, 0),
-            (_, Some(n)) => (e.addr, 1, n as u64),
-            _ if e.size > 0 => (e.addr, 2, e.size),
-            (Some(&id), _) => {
-                (e.addr, 3, indices.get(id as usize).copied().unwrap_or(u32::MAX) as u64)
-            }
-            (None, _) => (e.addr, 3, 0),
+        let slot = match slots.get(i.wrapping_sub(linker_symbols)) {
+            _ if i < linker_symbols => return (e.addr, 0, 0, 0),
+            Some(&slot) => slot,
+            None if e.size > 0 => Slot::Named,
+            None => Slot::NamedEmpty(0),
+        };
+        match slot {
+            Slot::EmptySection => (e.addr, 1, 0, 0),
+            Slot::Named => (e.addr, 2, 0, 0),
+            Slot::NamedEmpty(pos) => (e.addr, 3, pos, 0),
+            Slot::Alias(pos, n) => (e.addr, 4, pos, n),
         }
     };
     let mut order: Vec<usize> = (0..entries.len()).collect();
@@ -944,7 +955,7 @@ pub fn print_relocatable_map<E: Target>(
     entries.extend(unnamed_entries(ctx, &files, &first_labels));
     let synthetic = relocatable_record_entries(ctx, &files, &entries[linker_symbols..], records);
     entries.extend(synthetic);
-    let mut entries = sort_entries(ctx, entries, linker_symbols, &named.ids, &named.leading);
+    let mut entries = sort_entries(entries, linker_symbols, &named.slots);
     insert_literal_aliases(&mut entries, literal_aliases);
     write_map(ctx, path, &files, &sections, &entries, &[]);
 }
@@ -1183,6 +1194,10 @@ fn naming_rank<E: Target>(
 /// See naming_rank: the rank of nlist `k` of an object, named `name`.
 type LabelRank = (u8, &'static str, std::cmp::Reverse<u32>);
 
+/// A label of symbol_entries by its place - its subsection and the
+/// offset in it - and rank, with its row's index.
+type PlacedLabel = ((usize, u64, LabelRank), usize);
+
 fn label_rank(obj: &crate::input_files::ObjectFile, k: u32, name: &'static str) -> LabelRank {
     let rank = crate::input_files::subsec_name_rank(&obj.nlists[k as usize], name);
     (rank, name, std::cmp::Reverse(k))
@@ -1217,9 +1232,11 @@ fn defining_nlists<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<SymbolId, 
 /// of a weak definition another file's won names nothing. In an object
 /// without subsections, the worst of the labels at a place names its
 /// subsection, and ld-prime lists the others before it, the best first
-/// (`_main`, then the ltmp0 that names __text). Also returns where in
-/// its subsection the first symbol is, by subsection, and the rows of
-/// the labeled literals (see literal_labels).
+/// (`_main`, then the ltmp0 that names __text) - unless another
+/// subsection's row shares the first label's address (see
+/// shared_starts). Also returns where in its subsection the first
+/// symbol is, by subsection, and the rows of the labeled literals (see
+/// literal_labels).
 fn symbol_entries<'a, E: Target>(
     ctx: &'a Context<E>,
     files: &MapFiles,
@@ -1275,49 +1292,11 @@ fn symbol_entries<'a, E: Target>(
     }
     drop_shadowed_ltmps(ctx, &mut syms, |&(sym, _)| sym);
 
-    // Sizes: sort the symbols by place, the best last of those at one,
-    // and measure to the next place.
-    let key = |sym: SymbolId| {
-        let isec = ctx.resolve_isec(ctx.symbols[sym].input_section().unwrap() as usize);
-        (isec, ctx.symbols[sym].value, naming_rank(ctx, &nlists, sym))
-    };
-    let is_alias = |sym: SymbolId| {
-        nlists.get(&sym).is_some_and(|&(_, alt)| alt)
-            || is_coalesced_away(ctx, ctx.symbols[sym].input_section().unwrap() as usize)
-    };
-    let mut order: Vec<(_, usize)> =
-        (0..syms.len()).filter(|&i| !is_alias(syms[i].0)).map(|i| (key(syms[i].0), i)).collect();
-    order.sort();
-    let places: Vec<_> = order.chunk_by(|(a, _), (b, _)| (a.0, a.1) == (b.0, b.1)).collect();
-    let mut sizes = vec![0u64; syms.len()];
-    let mut leading = vec![None; syms.len()];
-    for (i, place) in places.iter().enumerate() {
-        let (isec, value, _) = place[0].0;
-        let end = match places.get(i + 1).map(|next| next[0].0) {
-            Some((next_isec, next_value, _)) if next_isec == isec => next_value,
-            _ => ctx.isecs[isec].size as u64,
-        };
-        let size = end.saturating_sub(value);
-        // The labels of an empty output section (an arm64 assembler's
-        // ltmpN of an empty __text) go before the next section's.
-        let osec = ctx.isecs[isec].output_section();
-        if osec.is_some_and(|id| ctx.chunk_header(id).size == 0) {
-            for &(_, idx) in place.iter() {
-                leading[idx] = Some(0);
-            }
-        } else if ctx.objs[ctx.isecs[isec].file as usize].subsections_via_symbols {
-            sizes[place.last().unwrap().1] = size;
-        } else {
-            sizes[place[0].1] = size;
-            for (n, &(_, idx)) in place[1..].iter().rev().enumerate() {
-                leading[idx] = Some(n as u32 + 1);
-            }
-        }
-    }
-
+    let (sizes, slots) = size_labels(ctx, &nlists, &syms);
     let mut first_labels: hashbrown::HashMap<usize, u64> = hashbrown::HashMap::new();
     for &(sym, _) in &syms {
-        let (isec, value, _) = key(sym);
+        let isec = ctx.resolve_isec(ctx.symbols[sym].input_section().unwrap() as usize);
+        let value = ctx.symbols[sym].value;
         let first = first_labels.entry(isec).or_insert(value);
         *first = (*first).min(value);
     }
@@ -1333,7 +1312,136 @@ fn symbol_entries<'a, E: Target>(
         .collect();
     let ids = syms.iter().map(|&(sym, _)| sym).collect();
     let literals = literal_labels(ctx, files, &nlists, literal_syms, &mut first_labels);
-    (NamedEntries { entries, ids, leading }, first_labels, literals)
+    (NamedEntries { entries, ids, slots }, first_labels, literals)
+}
+
+/// The sizes of the rows of symbol_entries, of symbols `syms`, and
+/// their slots (see Slot).
+fn size_labels<E: Target>(
+    ctx: &Context<E>,
+    nlists: &hashbrown::HashMap<SymbolId, (u32, bool)>,
+    syms: &[(SymbolId, usize)],
+) -> (Vec<u64>, Vec<Slot>) {
+    use crate::chunks::symtab::is_coalesced_away;
+    // Sort the symbols by place, the best last of those at one, and
+    // measure to the next place.
+    let key = |sym: SymbolId| {
+        let isec = ctx.resolve_isec(ctx.symbols[sym].input_section().unwrap() as usize);
+        (isec, ctx.symbols[sym].value, naming_rank(ctx, nlists, sym))
+    };
+    let is_alias = |sym: SymbolId| {
+        nlists.get(&sym).is_some_and(|&(_, alt)| alt)
+            || is_coalesced_away(ctx, ctx.symbols[sym].input_section().unwrap() as usize)
+    };
+    let mut order: Vec<(_, usize)> =
+        (0..syms.len()).filter(|&i| !is_alias(syms[i].0)).map(|i| (key(syms[i].0), i)).collect();
+    order.sort();
+    let places: Vec<_> = order.chunk_by(|(a, _), (b, _)| (a.0, a.1) == (b.0, b.1)).collect();
+    let layout = layout_order(ctx);
+    let symtab_index = |sym: SymbolId| {
+        ctx.symtab.output_sym_indices.get(sym as usize).copied().unwrap_or(u32::MAX)
+    };
+    let shared = shared_starts(ctx, syms, &places);
+    let mut sizes = vec![0u64; syms.len()];
+    let mut slots: Vec<Slot> =
+        syms.iter().map(|&(sym, _)| Slot::Alias(layout[key(sym).0], symtab_index(sym))).collect();
+    // A label's place among those of its subsection, the best first, in
+    // an object without subsections.
+    let mut seq = 0;
+    for (i, place) in places.iter().enumerate() {
+        let (isec, value, _) = place[0].0;
+        let end = match places.get(i + 1).map(|next| next[0].0) {
+            Some((next_isec, next_value, _)) if next_isec == isec => next_value,
+            _ => ctx.isecs[isec].size as u64,
+        };
+        let size = end.saturating_sub(value);
+        // The labels of an empty output section (an arm64 assembler's
+        // ltmpN of an empty __text) go before the next section's.
+        let osec = ctx.isecs[isec].output_section();
+        if osec.is_some_and(|id| ctx.chunk_header(id).size == 0) {
+            for &(_, idx) in place.iter() {
+                slots[idx] = Slot::EmptySection;
+            }
+            continue;
+        }
+        let best = place.last().unwrap().1;
+        let first = i == 0 || places[i - 1][0].0.0 != isec;
+        if first {
+            let pos = layout[isec];
+            slots[best] =
+                if ctx.isecs[isec].size == 0 { Slot::NamedEmpty(pos) } else { Slot::Named };
+            seq = 0;
+        }
+        if ctx.objs[ctx.isecs[isec].file as usize].subsections_via_symbols {
+            sizes[best] = size;
+            if size > 0 {
+                slots[best] = Slot::Named;
+            }
+            continue;
+        }
+        for &(_, idx) in place.iter().rev().filter(|&&(_, idx)| !first || idx != best) {
+            slots[idx] = Slot::Alias(layout[isec], seq);
+            seq += 1;
+        }
+        if !shared.contains(&isec) {
+            sizes[place[0].1] = size;
+        } else if first {
+            sizes[best] = ctx.isecs[isec].size as u64 - value;
+        }
+    }
+
+    (sizes, slots)
+}
+
+/// Each subsection's place in the layout, by output section address
+/// and then member order (u32::MAX for one no output section lists).
+fn layout_order<E: Target>(ctx: &Context<E>) -> Vec<u32> {
+    let mut osecs: Vec<_> = ctx.output_sections.iter().collect();
+    osecs.sort_by_key(|osec| osec.hdr.addr);
+    let mut pos = vec![u32::MAX; ctx.isecs.len()];
+    for (n, &id) in osecs.iter().flat_map(|osec| &osec.members).enumerate() {
+        pos[id as usize] = n as u32;
+    }
+    pos
+}
+
+/// The subsections of objects without subsections at whose first label
+/// another subsection's row is: a label at the end of the one before,
+/// or of an empty one. ld-prime then lists that row between the first
+/// label and the others, as it lists any (see Slot), and splits the
+/// subsection's size among its labels only when they are listed
+/// together: the first keeps it all.
+fn shared_starts<E: Target>(
+    ctx: &Context<E>,
+    syms: &[(SymbolId, usize)],
+    places: &[&[PlacedLabel]],
+) -> hashbrown::HashSet<usize> {
+    let in_empty_section = |isec: usize| {
+        let osec = ctx.isecs[isec].output_section();
+        osec.is_some_and(|id| ctx.chunk_header(id).size == 0)
+    };
+    let mut starts = hashbrown::HashMap::new();
+    for (i, place) in places.iter().enumerate() {
+        let ((isec, _, _), idx) = place[0];
+        let first = i == 0 || places[i - 1][0].0.0 != isec;
+        if first
+            && !ctx.objs[ctx.isecs[isec].file as usize].subsections_via_symbols
+            && ctx.isecs[isec].size > 0
+            && !in_empty_section(isec)
+        {
+            starts.insert(ctx.sym_addr(syms[idx].0), isec);
+        }
+    }
+    if starts.is_empty() {
+        return hashbrown::HashSet::new();
+    }
+    syms.iter()
+        .filter_map(|&(sym, _)| {
+            let isec = ctx.resolve_isec(ctx.symbols[sym].input_section()? as usize);
+            let owner = *starts.get(&ctx.sym_addr(sym))?;
+            (owner != isec && !in_empty_section(isec)).then_some(owner)
+        })
+        .collect()
 }
 
 /// Whether a subsection is a literal - a C string or a 4-, 8- or 16-byte
