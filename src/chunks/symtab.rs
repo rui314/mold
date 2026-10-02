@@ -446,9 +446,7 @@ fn plan_object_stabs<E: Target>(
 /// The stabs of an object that carries its own (an earlier -r output's),
 /// copied through: the address-bearing entries rebased to their
 /// subsections' output addresses, and those of dead subsections or ones
-/// coalesced away dropped, as are those of sections whose symbols
-/// ld-prime notes in no object (see has_stabs): a method list the -r
-/// link left alone and this one rewrote in the relative form. An N_GSYM
+/// coalesced away dropped. An N_GSYM
 /// names its symbol instead, with no address, and goes as the symbol
 /// does (see copy_global_stab). A unit left with no notes - all of
 /// whose code is dead, or that never had any - goes, N_SO and N_OSO
@@ -521,9 +519,7 @@ fn copy_object_stabs<E: Target>(
             continue;
         }
         if addressed(nlist) {
-            let noted_at = noted_subsec(ctx, obj, nlist.n_sect, nlist.n_value)
-                .filter(|&(isec, _)| has_stabs(ctx.hdr_of(&ctx.isecs[isec])));
-            let Some((isec, off)) = noted_at else {
+            let Some((isec, off)) = noted_subsec(ctx, obj, nlist.n_sect, nlist.n_value) else {
                 // Dead code: drop the note, and a function's size
                 // entry with it.
                 skip_size = nlist.n_type == N_FUN;
@@ -555,9 +551,7 @@ fn copy_object_stabs<E: Target>(
 /// common_stab_owners), not in each that declares it.
 /// A symbol that is one of the object's locals - a private external
 /// the -r link demoted - gets an N_STSYM of its address instead, as it
-/// would have had in a unit with DWARF, unless its section is one whose
-/// symbols ld-prime notes in no object (Swift's protocol method lists,
-/// rewritten in the relative form).
+/// would have had in a unit with DWARF.
 fn copy_global_stab<E: Target>(
     ctx: &Context<E>,
     obj_idx: usize,
@@ -572,9 +566,6 @@ fn copy_global_stab<E: Target>(
             0
         } else {
             let (isec, _) = noted_subsec(ctx, obj, nlist.n_sect, nlist.n_value)?;
-            if !has_stabs(ctx.hdr_of(&ctx.isecs[isec])) {
-                return None;
-            }
             ctx.isec_n_sect(&ctx.isecs[isec])
         };
         let ent = NList { n_type: N_STSYM, n_sect, ..ent };
@@ -700,10 +691,11 @@ pub(crate) fn object_stabs_opening<E: Target>(
     out
 }
 
-/// A symbol's debug notes, if it gets any. A symbol without a section
-/// has no address to note, but ld-prime notes an absolute one all the
-/// same: an external by name, a local with its value (in no section).
-/// A -r output keeps a common undefined; it is noted by name too.
+/// A symbol's debug notes, if it gets any: every symbol of a live
+/// subsection gets them, but a symbol without a section has no address
+/// to note. A -r output keeps a common undefined; it is noted by name.
+/// (ld-prime notes an absolute symbol too, and no symbol of the sections
+/// it splits by content: see has_stabs.)
 fn symbol_stabs<E: Target>(
     ctx: &Context<E>,
     obj: &ObjectFile,
@@ -714,13 +706,7 @@ fn symbol_stabs<E: Target>(
     let sym = &ctx.symbols[sym_id];
     let global = SymbolStabs { sym: sym_id, size: 0, n_sect: 0, n_type: N_GSYM };
     let Some(isec) = sym.input_section().map(|i| i as usize) else {
-        return if common || (nlist.n_type() == N_ABS && nlist.is_extern()) {
-            Some(global)
-        } else if nlist.n_type() == N_ABS {
-            Some(SymbolStabs { n_type: N_STSYM, ..global })
-        } else {
-            None
-        };
+        return common.then_some(global);
     };
     // The symbol has moved to the survivor if its subsection was
     // coalesced away; its own is the one to look at.
@@ -729,7 +715,7 @@ fn symbol_stabs<E: Target>(
     }
     let isec = &ctx.isecs[ctx.resolve_isec(isec)];
     let hdr = ctx.hdr_of(isec);
-    if !isec.is_alive() || !has_stabs(hdr) {
+    if !isec.is_alive() {
         return None;
     }
     let n_sect = ctx.isec_n_sect(isec);
@@ -744,7 +730,9 @@ fn symbol_stabs<E: Target>(
     })
 }
 
-/// Whether ld-prime notes the symbols of an input section. It notes
+/// Whether ld-prime notes the symbols of an input section, which
+/// mergeable libraries' records go by (a symbol table notes them all).
+/// It notes
 /// none in those whose contents it splits into subsections of its own:
 /// literals (C strings by the section type, as the 4-, 8- and 16-byte
 /// ones, and UTF-16 strings in __TEXT,__ustring, even in an object
