@@ -53,13 +53,13 @@ fi
 # and a pointer holds its final address. Only -pie keeps a dynamic
 # symbol table, for the local relocations that slide the image; without
 # it nothing slides the image, and __mh_execute_header is absolute
-# (N_ABS), though ld-prime keeps its section number, 1.
+# (N_ABS), in no section. (ld-prime keeps its section number, 1.)
 for cmd in LC_DYLD_INFO LC_DYLD_INFO_ONLY LC_DYLD_CHAINED_FIXUPS LC_DYLD_EXPORTS_TRIE LC_DYSYMTAB; do
   not grep -q "cmd $cmd\$" $t/lc
 done
 nm -m $t/exe > $t/nm
 grep -q '(absolute) .*__mh_execute_header' $t/nm
-nm -x $t/exe | grep -Eq '^[0-9a-f]+ 03 01 0010 [0-9a-f]+ __mh_execute_header$'
+nm -x $t/exe | grep -Eq '^[0-9a-f]+ 03 00 0010 [0-9a-f]+ __mh_execute_header$'
 
 $mold -arch $ARCH -static -pie -e __start $t/a.o $t/b.o -o $t/exe2
 otool -l $t/exe2 > $t/lc2

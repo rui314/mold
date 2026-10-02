@@ -1130,11 +1130,11 @@ fn global_entry<E: Target>(
         }
         // A synthesized symbol with no section (__mh_execute_header)
         // sits in the first section: the mach header. Nothing slides
-        // a -static image without -pie, and there it is absolute, but
-        // ld-prime keeps the section number.
+        // a -static image without -pie, and there it is absolute, in no
+        // section. (ld-prime keeps the section number.)
         (Some(FileId::Obj(o)), None) if ctx.is_internal(o as usize) => {
             if ctx.args.static_link && !ctx.args.pie {
-                (N_ABS | N_EXT, 1, REFERENCED_DYNAMICALLY)
+                (N_ABS | N_EXT, 0, REFERENCED_DYNAMICALLY)
             } else {
                 (N_SECT | N_EXT, 1, REFERENCED_DYNAMICALLY)
             }
