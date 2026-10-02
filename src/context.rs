@@ -128,7 +128,7 @@ pub struct Context<E: Target> {
     /// the same file by path, or another with its install name - by
     /// priority, with the dylib's index and the path they name it by:
     /// ld-prime checks the dylib's version again for each (see
-    /// passes::check_input_versions), and -map lists each as a file.
+    /// passes::check_input_versions).
     pub dylib_renamings: Vec<(u32, usize, &'static std::path::Path)>,
     /// Files already loaded, so a library named twice (command line
     /// plus auto-link) is read once.
@@ -160,9 +160,6 @@ pub struct Context<E: Target> {
     /// code its own dead stripping of an LTO link removed did (see
     /// Context::strips_dead_code).
     pub unbound_imports: Vec<crate::symbol::SymbolId>,
-    /// The names of the mach header that only code dead stripping
-    /// removed referred to (see mapfile::dead_entries).
-    pub dead_header_names: Vec<crate::symbol::SymbolId>,
     /// Auto-link options already acted on.
     pub processed_linker_options: std::collections::HashSet<Vec<Vec<u8>>>,
     /// -add_linker_option's auto-link options, once read as an
@@ -181,10 +178,6 @@ pub struct Context<E: Target> {
     /// defines too, as ld-prime reports it once it has found no
     /// duplicate symbol (see passes::check_common_conflicts).
     pub common_conflict: Option<crate::error::Message>,
-    /// The dylibs named on the command line that -dead_strip_dylibs
-    /// dropped, which ld-prime's -map still lists: their positions
-    /// among the inputs and paths.
-    pub stripped_dylibs: Vec<(u32, std::path::PathBuf)>,
     /// The files -dylib_file names for re-exported libraries that are
     /// no libraries, to load as inputs (see collect_indirect_files).
     pub indirect_files: Vec<&'static crate::mapped_file::MappedFile>,
@@ -250,12 +243,8 @@ pub struct Context<E: Target> {
     pub strtab: StrtabSection,
     pub code_signature: CodeSignatureSection,
     /// Sequence number of the next dylib named on the command line or
-    /// by an auto-link option, or archive an auto-link option names;
-    /// orders their load commands, and -map's auto-linked files.
+    /// by an auto-link option; orders their load commands.
     pub dylib_load_seq: u32,
-    /// The archives auto-link options named, with their sequence
-    /// numbers (see dylib_load_seq).
-    pub autolinked_archives: hashbrown::HashMap<std::path::PathBuf, u32>,
     /// Objective-C data records the linker synthesized (see
     /// merge_objc_categories) and the table of bundle_hook, each placed
     /// as the tail of the output section it names.
@@ -282,14 +271,6 @@ pub struct Context<E: Target> {
     /// image re-exports whole exports already (see
     /// passes::warn_redundant_reexports).
     pub redundant_reexports: Vec<SymbolId>,
-    /// The property lists category merging writes, which ld-prime's
-    /// -map lists as unnamed subsections of its own.
-    pub objc_property_lists: Vec<u32>,
-    /// For each class_ro_t list pointer category merging set where the
-    /// class had no list of the kind, the object defining the class:
-    /// ld-prime's -map lists a dead pointer-sized subsection of it for
-    /// each.
-    pub objc_filled_ro_fields: Vec<u32>,
     /// section$start/end and segment$start/end symbols to resolve
     /// after layout.
     pub boundary_syms: Vec<BoundarySym>,
@@ -357,7 +338,6 @@ impl<E: Target> Context<E> {
             merged_lto_obj: None,
             bitcode_duplicates: Vec::new(),
             unbound_imports: Vec::new(),
-            dead_header_names: Vec::new(),
             visited_files: std::collections::HashSet::new(),
             reexport_files: Vec::new(),
             missing_files: Default::default(),
@@ -367,7 +347,6 @@ impl<E: Target> Context<E> {
             autolink_misses: Vec::new(),
             possible_files: Vec::new(),
             common_conflict: None,
-            stripped_dylibs: Vec::new(),
             indirect_files: Vec::new(),
             merged_dependencies: Vec::new(),
             merged_libraries: Vec::new(),
@@ -419,11 +398,8 @@ impl<E: Target> Context<E> {
             folded_subsec_names: hashbrown::HashMap::new(),
             dof_sections: Vec::new(),
             dylib_load_seq: 0,
-            autolinked_archives: hashbrown::HashMap::new(),
             indirect_aliases: Vec::new(),
             redundant_reexports: Vec::new(),
-            objc_property_lists: Vec::new(),
-            objc_filled_ro_fields: Vec::new(),
             boundary_syms: Vec::new(),
             why_load: std::collections::HashMap::new(),
             force_loaded: std::collections::HashSet::new(),

@@ -4,8 +4,8 @@
 //! between two segments that -segaddr puts 4 GiB apart can't be made
 //! directly. ld-prime sends a branch between such segments through a
 //! "shim": the target's __stubs entry, which jumps through a __got slot
-//! dyld rebases to the target (named "_f.stub" and "_f.got" in -map,
-//! the slot shared with a GOT load's), in any image dyld loads - not a
+//! dyld rebases to the target (the slot shared with a GOT load's), in
+//! any image dyld loads - not a
 //! -static or -preload one, where the branch is a fixup error. It keeps
 //! a GOT load between them a load from the slot rather than relaxing it
 //! to an adrp+add that could not reach, in any image. A branch from the

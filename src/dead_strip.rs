@@ -38,19 +38,10 @@ pub fn strip_dead_code<E: Target>(ctx: &mut Context<E>) {
             })
             .collect()
     };
-    // The map lists the names of the mach header that only stripped code
-    // used among what -dead_strip removed.
-    let header_names: Vec<SymbolId> = HEADER_NAMES
-        .iter()
-        .filter_map(|name| ctx.symbols.get(name))
-        .filter(|&id| ctx.symbols[id].is_used() && ctx.symbols[id].is_defined())
-        .collect();
     dead_strip(ctx);
     mark_live_references(ctx);
     let unused = imports.into_iter().filter(|&id| !ctx.symbols[id].is_used());
     ctx.unbound_imports.extend(unused.collect::<Vec<_>>());
-    ctx.dead_header_names =
-        header_names.into_iter().filter(|&id| !ctx.symbols[id].is_used()).collect();
 }
 
 /// Removes subsections that are not reachable from the roots: the entry
@@ -585,7 +576,7 @@ enum Node {
 
 /// The names of the mach header, which ld-prime's boundary-file defines
 /// as nodes that reference the start of __TEXT (itself a node there).
-pub const HEADER_NAMES: [&[u8]; 5] = [
+const HEADER_NAMES: [&[u8]; 5] = [
     b"__mh_execute_header",
     b"__mh_dylib_header",
     b"__mh_bundle_header",

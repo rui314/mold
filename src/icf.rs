@@ -288,7 +288,7 @@ fn subsec_names<E: Target>(
 
 /// The symbols naming the subsections of folded functions, each with
 /// whether ld-prime drops it. It gives a folded function an alias of its
-/// own, of no size, named as the function was (file 0's in -map), but one
+/// own, of no size, named as the function was, but one
 /// named as the function it folded into is listed in the symbol table
 /// only if it is the first function of its scope, local or private
 /// extern, to fold into that one, and of another scope than that one's.

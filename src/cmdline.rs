@@ -655,10 +655,9 @@ pub struct Args {
     pub why_live: Glob,
     /// Whether the link notes the files of the private libraries a
     /// dylib re-exports and merges (DylibFile::merged_files), which
-    /// gathering costs: -map and -why_live list them, and the
-    /// diagnostics of tentative definitions a dylib defines too, and of
-    /// re-exports a library the image re-exports whole makes redundant,
-    /// name them.
+    /// gathering costs: -why_live lists them, and the diagnostics of
+    /// tentative definitions a dylib defines too, and of re-exports a
+    /// library the image re-exports whole makes redundant, name them.
     pub merged_files: bool,
     /// -alias/-alias_list: (existing, new) symbol aliases to define.
     pub aliases: Vec<(Vec<u8>, Vec<u8>)>,
@@ -3540,8 +3539,7 @@ fn notes_merged_files(args: &Args) -> bool {
         || args.inputs.iter().any(|input| {
             matches!(input, InputArg::Library(LibraryKind::Reexport | LibraryKind::NoMerge, _))
         });
-    args.map.is_some()
-        || !args.why_live.is_empty()
+    !args.why_live.is_empty()
         || args.warn_commons
         || args.commons == CommonsMode::Error
         || (lists_reexports && reexports_library)

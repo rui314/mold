@@ -376,21 +376,11 @@ struct PendingObject {
     priority: u32,
 }
 
-/// Notes when dylib `idx`, which file `mf` (an auto-link option's or
-/// not) named, was named: its first naming orders its load command
-/// (see dylib_order_key) and -map's auto-linked files, and with it the
-/// libraries its exports moved to (see add_moved_dylibs), the parse
-/// having made those from `first` on. An auto-link option naming a
-/// library that merged into another, whose install name an $ld$previous
-/// directive gives it (libswift_Builtin_float before macOS 15), puts
-/// the file named in -map there too.
-fn note_naming<E: Target>(
-    ctx: &mut Context<E>,
-    first: usize,
-    idx: usize,
-    mf: &MappedFile,
-    autolinked: bool,
-) {
+/// Notes when dylib `idx` was named: its first naming orders its load
+/// command (see dylib_order_key), and with it the libraries its exports
+/// moved to (see add_moved_dylibs), the parse having made those from
+/// `first` on.
+fn note_naming<E: Target>(ctx: &mut Context<E>, first: usize, idx: usize) {
     let seq = ctx.dylib_load_seq;
     ctx.dylib_load_seq += 1;
     for d in &mut ctx.dylibs[first..] {
@@ -401,8 +391,6 @@ fn note_naming<E: Target>(
     let dylib = &mut ctx.dylibs[idx];
     if dylib.load_order == u32::MAX {
         dylib.load_order = seq;
-    } else if autolinked && dylib.path != mf.name {
-        dylib.named_files.push((seq, mf.name.clone()));
     }
 }
 
@@ -417,9 +405,9 @@ fn note_naming<E: Target>(
 /// CoreFoundation strongly, while an auto-link option, a hint, changes
 /// nothing. -needed_* covers the named library only; the ones its stub
 /// re-exports get a load command only if something binds to them.
-fn name_dylib<E: Target>(ctx: &mut Context<E>, idx: usize, mf: &MappedFile, rc: ReaderContext) {
+fn name_dylib<E: Target>(ctx: &mut Context<E>, idx: usize, rc: ReaderContext) {
     if ctx.dylibs[idx].is_implicit {
-        ctx.dylibs[idx].named_at = Some((ctx.next_priority(), mf.name.clone()));
+        ctx.dylibs[idx].named_at = Some(ctx.next_priority());
     }
     let lazy = rc.lazy && ctx.args.lazy_load;
     let dylib = &mut ctx.dylibs[idx];
@@ -666,11 +654,11 @@ fn collect_file<E: Target>(
                     let path = ctx.dylibs[idx].path.clone();
                     input_files::untrace_file(ctx, path_bytes(&path));
                 }
-                name_dylib(ctx, idx, mf, rc);
+                name_dylib(ctx, idx, rc);
             } else if !rc.autolinked {
                 ctx.dylib_renamings.push((ctx.priority_counter, idx, &mf.name));
             }
-            note_naming(ctx, first, idx, mf, rc.autolinked);
+            note_naming(ctx, first, idx);
         }
         FileType::Archive => {
             // Every member is parsed eagerly; whether it is *live* -
@@ -686,10 +674,6 @@ fn collect_file<E: Target>(
                 && !mf.name.file_name().is_some_and(|f| f.as_bytes().starts_with(b"libclang_rt"));
             if rc.force_load {
                 ctx.force_loaded.insert(mf.name.clone());
-            }
-            if rc.autolinked {
-                ctx.autolinked_archives.insert(mf.name.clone(), ctx.dylib_load_seq);
-                ctx.dylib_load_seq += 1;
             }
             for member in crate::archive_file::read_archive_members(mf) {
                 input_files::trace_file(ctx, path_bytes(&member.name));
@@ -1887,7 +1871,7 @@ pub fn dylib_ranks(dylibs: &[input_files::DylibFile]) -> Vec<u64> {
     for (i, d) in dylibs.iter().enumerate().filter(|(_, d)| !d.is_implicit) {
         // A library first loaded as a re-export takes the place of its
         // naming.
-        let priority = d.named_at.as_ref().map_or(d.priority, |(p, _)| *p) as u64;
+        let priority = d.named_at.unwrap_or(d.priority) as u64;
         ranks[i] = phase(if d.is_autolinked { 2 } else { 0 }) | priority;
     }
     for autolinked in [false, true] {
@@ -3347,7 +3331,7 @@ pub fn check_input_versions<E: Target>(ctx: &Context<E>, checked: &CheckedInputs
         .map(|&(priority, idx, _)| (priority, &ctx.dylibs[idx]));
     let mut dylibs: Vec<(u32, error::Message, bool)> = ctx.dylibs[checked.dylibs..]
         .iter()
-        .map(|d| (d.named_at.as_ref().map_or(d.priority, |(priority, _)| *priority), d))
+        .map(|d| (d.named_at.unwrap_or(d.priority), d))
         .chain(renamings)
         .filter_map(|(priority, d)| Some((priority, newer(d)?, false)))
         .chain(
@@ -5334,9 +5318,6 @@ pub fn dead_strip_dylibs<E: Target>(ctx: &mut Context<E>) {
             remap[i] = ctx.dylibs.len();
             ctx.dylibs.push(dylib);
             moved_keys.push(moved_key);
-        } else if !dylib.is_implicit && !dylib.is_autolinked {
-            let (priority, path) = dylib.named_at.unwrap_or((dylib.priority, dylib.path));
-            ctx.stripped_dylibs.push((priority, path));
         }
     }
     for (i, &twin) in twins.iter().enumerate() {
@@ -5757,8 +5738,8 @@ pub fn create_lazy_loads<E: Target>(ctx: &mut Context<E>) {
 
 /// ld-prime keeps __dyld_lazy_load alive, in any link that names a
 /// lazy dylib, by a reference from an empty subsection it appends to
-/// __text: it has an entry of its own in __unwind_info (encoding 0),
-/// and in -map. Returns the subsection.
+/// __text: it has an entry of its own in __unwind_info (encoding 0).
+/// Returns the subsection.
 fn add_keep_alive_subsec<E: Target>(ctx: &mut Context<E>) -> u32 {
     let flags = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
     let (file, shndx) = ctx.add_synthetic_section(MachSection {
@@ -7545,8 +7526,8 @@ fn look_up_stub_binder<E: Target>(ctx: &mut Context<E>) -> Option<crate::symbol:
 
 /// ld-prime makes dyld_stub_binder an initial undefine of an image with
 /// lazy binding, stubs or not, which may stay undefined: the library
-/// exporting it (libSystem's libdyld) counts as used then, and -map
-/// lists it. Nothing refers to the symbol until a stub does.
+/// exporting it (libSystem's libdyld) counts as used then. Nothing
+/// refers to the symbol until a stub does.
 pub fn resolve_stub_binder<E: Target>(ctx: &mut Context<E>) {
     // Legacy LINKEDIT binds no dyld_stub_binder: its stub helper
     // entries jump to dyld_stub_binding_helper, which crt1.o, dylib1.o

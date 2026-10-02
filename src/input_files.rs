@@ -163,9 +163,6 @@ pub struct ObjectFile {
     /// The __compact_unwind pointer fields a 4-byte relocation set (see
     /// StagedObject::unwind_ptr32), by global subsection.
     pub unwind_ptr32: Vec<(u32, u32, u8)>,
-    /// The labels of __compact_unwind records (see
-    /// StagedObject::unwind_labels), by global subsection.
-    pub unwind_labels: Vec<(u32, u32, u32)>,
     /// For a bitcode input, the lto_module handle: the object is a
     /// placeholder that only claims symbols until LTO compiles it.
     pub lto_module: Option<usize>,
@@ -213,7 +210,6 @@ impl ObjectFile {
             objc_image_info: None,
             has_debug_info: false,
             unwind_ptr32: Vec::new(),
-            unwind_labels: Vec::new(),
             lto_module: None,
             nlists: std::borrow::Cow::Owned(Vec::new()),
             first_global: None,
@@ -266,7 +262,7 @@ pub fn is_private_label(name: &[u8]) -> bool {
 /// Whether a section is one ld-prime reads as a list of records -
 /// CFStrings, UTF-16 strings, selector and class references, Objective-C
 /// class and category lists - whose subsections no local symbol names:
-/// they are "anon" in its diagnostics and -map. The UTF-16 strings of
+/// they are "anon" in its diagnostics. The UTF-16 strings of
 /// an object without subsections (`split` false) are one subsection,
 /// named by its labels.
 pub fn is_record_list(hdr: &MachSection, split: bool) -> bool {
@@ -483,10 +479,9 @@ pub struct DylibFile {
     /// delay_init::create_delay_init).
     pub delay_init: Option<Vec<u8>>,
     /// For a library loaded as a public re-export that the command line
-    /// or an auto-link option names later, where it is named: its
-    /// position among the inputs and the path given, by which ld-prime's
-    /// -map lists it.
-    pub named_at: Option<(u32, PathBuf)>,
+    /// or an auto-link option names later, its position among the
+    /// inputs where it is named.
+    pub named_at: Option<u32>,
     /// Loaded through an object's LC_LINKER_OPTION rather than the
     /// command line: a hint, so ld64 gives it a load command only if
     /// something binds to it.
@@ -515,8 +510,9 @@ pub struct DylibFile {
     /// The install names of the private libraries this dylib re-exports,
     /// whose exports are merged into its own.
     pub merged_reexports: Vec<Vec<u8>>,
-    /// With -map, those libraries as the files ld-prime reads them from,
-    /// to which it attributes the symbols they define.
+    /// Those libraries as the files ld-prime reads them from, to which
+    /// it attributes the symbols they define, when asked for (see
+    /// Args::merged_files).
     pub merged_files: Vec<MergedFile>,
     /// The public libraries it re-exports, directly or through private
     /// ones, which are dylibs of the link of their own (see
@@ -527,9 +523,6 @@ pub struct DylibFile {
     /// with the index of the dylib that stands for the library it binds
     /// to instead (see add_moved_dylibs).
     pub moved_exports: hashbrown::HashMap<&'static [u8], usize>,
-    /// The files of libraries auto-link options named that merged into
-    /// this one, with their naming sequence numbers (see note_naming).
-    pub named_files: Vec<(u32, PathBuf)>,
     /// Whose install name it has: its own or an older library's.
     pub name_source: NameSource,
 }
@@ -565,7 +558,6 @@ pub struct ReexportEdge {
 /// with its exports.
 #[derive(Debug)]
 pub struct MergedFile {
-    pub install_name: Vec<u8>,
     pub path: PathBuf,
     pub exports: Vec<&'static [u8]>,
 }
@@ -817,11 +809,6 @@ pub struct StagedObject {
     /// records: x86-64 takes those as well as 8-byte ones, and a -r
     /// output keeps them 4 bytes, as ld-prime does.
     pub unwind_ptr32: Vec<(u32, u32, u8)>,
-    /// In a -r link, the labels at the start of __compact_unwind
-    /// records - an arm64 assembler's ltmpN at the section's -, as
-    /// (subsection, function offset, nlist) of their records: one names
-    /// its record in the map, of which ld-prime makes a subsection.
-    pub unwind_labels: Vec<(u32, u32, u32)>,
     pub objc_image_info: Option<u32>,
     pub has_debug_info: bool,
     /// LC_DATA_IN_CODE entries: (file offset in the object, length,
@@ -1182,7 +1169,6 @@ pub fn stage_object<E: Target>(
         pointer_without_target: None,
         class_without_data: None,
         unwind_ptr32: Vec::new(),
-        unwind_labels: Vec::new(),
         objc_image_info,
         has_debug_info,
         dice: cmds.dice,
@@ -1224,7 +1210,7 @@ pub fn stage_object<E: Target>(
         };
         match obj.read_section_relocs::<E>(i, record_at) {
             Some(rels) if rels.iter().all(|rel| obj.check_reloc_target(rel, &bare)) => {
-                obj.parse_compact_unwind(i, &rels, relocatable)
+                obj.parse_compact_unwind(i, &rels)
             }
             _ => relocs_ok = false,
         }
@@ -1885,9 +1871,6 @@ impl StagedObject {
         for (isec, _, _) in &mut self.unwind_ptr32 {
             *isec += isec_base as u32;
         }
-        for (isec, _, _) in &mut self.unwind_labels {
-            *isec += isec_base as u32;
-        }
         for rec in &mut self.unwind {
             rec.isec += isec_base as u32;
             if rec.lsda_isec != UNWIND_NONE {
@@ -1935,7 +1918,6 @@ impl StagedObject {
             objc_image_info: self.objc_image_info,
             has_debug_info: self.has_debug_info,
             unwind_ptr32: self.unwind_ptr32,
-            unwind_labels: self.unwind_labels,
             nlists: self.nlists,
             first_global: self.first_global,
             symbols,
@@ -2270,7 +2252,6 @@ pub fn parse_bitcode<E: Target>(
         objc_image_info: None,
         has_debug_info: false,
         unwind_ptr32: Vec::new(),
-        unwind_labels: Vec::new(),
         nlists: std::borrow::Cow::Owned(nlists),
         first_global: None,
         symbols: syms,
@@ -2383,12 +2364,7 @@ impl StagedObject {
     /// regenerates the encoding from it, a -r output copies the record
     /// as it came, like ld64). Object files usually don't contain such
     /// records, but `ld -r` output does.
-    fn parse_compact_unwind(
-        &mut self,
-        sect: usize,
-        rels: &[crate::input_sections::Reloc],
-        labels: bool,
-    ) {
+    fn parse_compact_unwind(&mut self, sect: usize, rels: &[crate::input_sections::Reloc]) {
         use crate::input_sections::RelocTarget;
 
         const ENTRY_SIZE: usize = 32;
@@ -2503,34 +2479,9 @@ impl StagedObject {
             }
         }
 
-        if labels {
-            self.label_unwind_records(sect, &records);
-        }
-
         // A record no relocation gave a function describes nothing.
         records.retain(|rec| rec.isec != u32::MAX);
         self.unwind.extend(records);
-    }
-
-    /// Notes the labels at the start of records of __compact_unwind
-    /// (section `sect`) in unwind_labels.
-    fn label_unwind_records(&mut self, sect: usize, records: &[UnwindRecord]) {
-        let hdr = &self.sect_hdrs[sect];
-        for (k, nlist) in self.nlists.iter().enumerate() {
-            let off = nlist.n_value.wrapping_sub(hdr.addr);
-            if nlist.is_stab()
-                || nlist.n_type() != N_SECT
-                || nlist.n_sect as usize != sect + 1
-                || off >= hdr.size
-                || off % 32 != 0
-            {
-                continue;
-            }
-            let rec = &records[off as usize / 32];
-            if rec.isec != u32::MAX {
-                self.unwind_labels.push((rec.isec, rec.input_offset, k as u32));
-            }
-        }
     }
 
     /// Gathers each subsection's unwind records into one run, the range
@@ -3602,7 +3553,7 @@ pub fn without_fat_arch(name: &[u8]) -> Vec<u8> {
 /// from its file when one exists, as ld-prime does, and from its
 /// document otherwise; a private one inlined is merged from its
 /// document. Returns the install names of the private libraries merged,
-/// with -map or -why_live the files they are, and the exports of theirs
+/// with -why_live the files they are, and the exports of theirs
 /// that $ld$previous directives move to older libraries.
 /// Notes the file of a library loaded as another's re-export for the
 /// -dependency_info file, which names it.
@@ -3672,10 +3623,9 @@ fn load_reexports<E: Target>(
     let mut visited = std::collections::HashSet::new();
     let mut merged = Vec::new();
     let mut merged_files = Vec::new();
-    let map = ctx.args.merged_files;
-    let mut record = |install_name: &[u8], path: &Path, exports: Vec<&'static [u8]>| {
-        let (install_name, path) = (install_name.to_vec(), path.to_path_buf());
-        merged_files.push(MergedFile { install_name, path, exports });
+    let notes = ctx.args.merged_files;
+    let mut record = |path: &Path, exports: Vec<&'static [u8]>| {
+        merged_files.push(MergedFile { path: path.to_path_buf(), exports });
     };
     let all_exports = |tbd: &tapi::TbdFile| -> Vec<&'static [u8]> {
         let all = [&tbd.exports, &tbd.weak_exports, &tbd.tlv_exports];
@@ -3701,8 +3651,8 @@ fn load_reexports<E: Target>(
                 walk.exports.extend(loaded.exports.iter().copied());
                 walk.tlv_exports.extend(loaded.tlv_exports.iter().copied());
                 walk.weak_exports.extend(loaded.weak_exports.iter().copied());
-                if map {
-                    record(&name, &loaded.path, loaded.exports.iter().copied().collect());
+                if notes {
+                    record(&loaded.path, loaded.exports.iter().copied().collect());
                 }
                 merged.push(name);
             }
@@ -3735,10 +3685,10 @@ fn load_reexports<E: Target>(
                 continue;
             }
             walk.moved.extend(interpret_ld_symbols(ctx, &mut doc).moved);
-            if map {
+            if notes {
                 let found = resolve_dylib_ref(ctx, &name, &loader_dir, &loader_rpaths, true);
                 let path = found.map_or(Path::new(crate::util::os_str(&name)), |mf| &mf.name);
-                record(&name, path, all_exports(&doc));
+                record(path, all_exports(&doc));
             }
             walk.merge_tbd(doc, &loader_dir, &loader_rpaths, hops);
             merged.push(name);
@@ -3777,8 +3727,8 @@ fn load_reexports<E: Target>(
                 }
                 merged.push(dep_tbd.install_name.to_vec());
                 walk.moved.extend(interpret_ld_symbols(ctx, &mut dep_tbd).moved);
-                if map {
-                    record(dep_tbd.install_name, &dep.name, all_exports(&dep_tbd));
+                if notes {
+                    record(&dep.name, all_exports(&dep_tbd));
                 }
                 walk.merge_tbd(dep_tbd, &dir_of(&dep.name), &[], hops);
             }
@@ -3805,8 +3755,8 @@ fn load_reexports<E: Target>(
                 check_dylib_platform(ctx, binary);
                 let mut dylib = read_dylib_binary(binary);
                 walk.moved.extend(interpret_binary_ld_symbols(ctx, &mut dylib).moved);
-                if map {
-                    record(&found.install_name, &dep.name, dylib.exports.clone());
+                if notes {
+                    record(&dep.name, dylib.exports.clone());
                 }
                 walk.merge_binary(dylib, &found.install_name, &dir_of(&dep.name), hops);
                 merged.push(found.install_name);
@@ -3850,7 +3800,7 @@ impl ReexportRef {
 }
 
 /// What load_reexports found: the install names of the private
-/// libraries merged, with -map or -why_live the files they are, the
+/// libraries merged, with -why_live the files they are, the
 /// exports of theirs that move to older libraries, and the public
 /// libraries loaded as dylibs of their own.
 struct LoadedReexports {
@@ -4159,7 +4109,6 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
             merged_files: loaded.merged_files,
             reexported: loaded.edges,
             moved_exports,
-            named_files: Vec::new(),
             name_source,
         },
     )
@@ -4368,7 +4317,6 @@ pub fn parse_bundle_loader<E: Target>(ctx: &mut Context<E>, mf: &'static MappedF
             merged_files: Vec::new(),
             reexported: Vec::new(),
             moved_exports: hashbrown::HashMap::new(),
-            named_files: Vec::new(),
             name_source: NameSource::Own,
         },
     )
@@ -5110,7 +5058,6 @@ fn register_tbd<E: Target>(
             merged_files: loaded.merged_files,
             reexported: loaded.edges,
             moved_exports,
-            named_files: Vec::new(),
             name_source,
         },
     )
@@ -5169,7 +5116,6 @@ fn add_moved_dylibs<E: Target>(
                     merged_files: Vec::new(),
                     reexported: Vec::new(),
                     moved_exports: hashbrown::HashMap::new(),
-                    named_files: Vec::new(),
                     name_source: NameSource::Moved,
                 };
                 let idx = add_dylib(ctx, dylib);
@@ -5222,7 +5168,6 @@ pub fn add_merged_dependency<E: Target>(ctx: &mut Context<E>, dep: crate::mergea
         merged_files: Vec::new(),
         reexported: Vec::new(),
         moved_exports: hashbrown::HashMap::new(),
-        named_files: Vec::new(),
         name_source: NameSource::Own,
     };
     let idx = add_dylib(ctx, dylib);

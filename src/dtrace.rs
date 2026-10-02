@@ -84,7 +84,7 @@ fn provider_of(name: &[u8]) -> &[u8] {
 
 /// A provider's DOF section, as the link makes it: the subsection with
 /// the DOF, which refers to each site's subsection (in site order), and
-/// the name ld-prime gives that subsection in -map and -why_live.
+/// the name ld-prime gives that subsection in -why_live.
 #[derive(Debug)]
 pub struct DofSection {
     pub isec: u32,
