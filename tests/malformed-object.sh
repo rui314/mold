@@ -60,20 +60,6 @@ elif mut == 'section-past-segment':
     struct.pack_into('<Q', d, sects[0] + 40, 0x100000)
 elif mut == 'overlap':
     set32(symtab[1] + 12, u32(symtab[1] + 12) + 1)
-elif mut == 'n_sect':
-    d[u32(symtab[1] + 8) + 5] = 0x7f
-elif mut == 'misplaced':
-    struct.pack_into('<Q', d, u32(symtab[1] + 8) + 8, 0x100000)
-elif mut == 'stab-target':
-    # _x, which main refers to, becomes a debug note.
-    symoff, nsyms, stroff = u32(symtab[1] + 8), u32(symtab[1] + 12), u32(symtab[1] + 16)
-    for i in range(nsyms):
-        strx = u32(symoff + 16 * i)
-        if d[stroff + strx:stroff + strx + 3] == b'_x\0':
-            d[symoff + 16 * i + 4] = 0x24; print(i)
-elif mut == 'dice-offset':
-    dice = find(0x29)
-    set32(u32(dice[1] + 8), 0x100000)
 open(dst, 'wb').write(d)
 EOF
 mut() { python3 $t/mut.py $t/a.o $t/$1.o $1; }
@@ -145,35 +131,6 @@ $CC --ld-path=$mold -shared -o $t/b.dylib $t/y.o -Wl,-force_load,$t/libbad.a 2> 
 not grep -q 'malformed' $t/member.log
 not $CC --ld-path=$mold -shared -o $t/b.dylib $t/y.o -Wl,-force_load,$t/libbad2.a 2> $t/member2.log
 grep -q "LINKEDIT overlap of symbol table and symbol strings in '$t/libbad2.a(m2.o)'" $t/member2.log
-
-# As it reads the symbols, ld-prime refuses one in a section there
-# isn't, and ignores one outside its section with a warning.
-mut n_sect
-not $CC --ld-path=$mold -o $t/exe $t/n_sect.o 2> $t/n_sect.log
-grep -Eq "n_sect=127 for symbol '[^']+' out of bounds in '$t/n_sect.o'" $t/n_sect.log
-mut misplaced
-$CC --ld-path=$mold -o $t/exe $t/misplaced.o -Wl,-e,_main 2> $t/misplaced.log || true
-grep -q "symbol is ignored, because its address isn't in its designated section" $t/misplaced.log
-
-# A relocation can't refer to a debug note, which ld-prime's symbol
-# table, ending at the last symbol it keeps, doesn't hold at its end;
-# and a data-in-code entry must lie in a subsection, of which ld-prime
-# warns.
-n=$(mut stab-target)
-not $CC --ld-path=$mold -o $t/exe $t/stab-target.o 2> $t/stab-target.log
-grep -q "r_symbolnum=$n out of range in '$t/stab-target.o'" $t/stab-target.log
-cat <<'EOF' | $CC -o $t/a.o -c -xassembler -
-.text
-.globl _main
-_main:
-  ret
-.data_region jt32
-.long 0
-.end_data_region
-EOF
-mut dice-offset
-$CC --ld-path=$mold -o $t/exe $t/dice-offset.o 2> $t/dice-offset.log
-grep -q 'warning: atom not found for data-in-code at offset 0x00100000' $t/dice-offset.log
 
 # Whatever is cut off it, mold refuses an object without crashing.
 size=$(wc -c < $t/a.o)

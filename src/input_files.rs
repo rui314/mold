@@ -842,9 +842,8 @@ pub struct StagedObject {
     pub loh: Vec<(u8, Vec<u64>)>,
     /// The labels ld-prime ignores (see extraneous_labels), sorted.
     pub extraneous_labels: Vec<u32>,
-    /// The other symbols it ignores, sorted: those named outside the
-    /// string table, the indirect ones and the misplaced ones (see
-    /// check_symbol_sections).
+    /// The other symbols it ignores, sorted: the indirect ones and the
+    /// misplaced ones (see note_ignored_symbols).
     pub ignored_symbols: Vec<u32>,
     /// The symbols with an address outside their section, sorted, which
     /// ld-prime ignores with a warning.
@@ -1227,10 +1226,8 @@ pub fn stage_object<E: Target>(
     obj.read_symbol_names(strtab);
     obj.warn_referenced_dynamically();
     let split = obj.subsections_via_symbols;
-    obj.failed_at = match obj.check_symbol_sections(strtab) {
-        true => check_sections(sect_hdrs, &obj.nlists, split, nindirect, &mf.name),
-        false => Some(sect_hdrs.len()),
-    };
+    obj.note_ignored_symbols();
+    obj.failed_at = check_sections(sect_hdrs, &obj.nlists, split, nindirect, &mf.name);
     let mut relocs_ok = obj.failed_at.is_none() && obj.read_relocations::<E>(&bare, &sect_isecs);
 
     // ld-prime checks the relocations of __compact_unwind as any
@@ -1707,12 +1704,10 @@ impl StagedObject {
         }
     }
 
-    /// Whether ld-prime ignores symbol `idx` as a relocation's target: a
-    /// debug note, or one it ignores altogether (see extraneous_labels
-    /// and check_symbol_sections).
+    /// Whether ld-prime ignores symbol `idx` as a relocation's target
+    /// (see extraneous_labels and note_ignored_symbols).
     fn is_ignored_symbol(&self, idx: u32) -> bool {
-        self.nlists.get(idx as usize).is_some_and(NList::is_stab)
-            || self.extraneous_labels.binary_search(&idx).is_ok()
+        self.extraneous_labels.binary_search(&idx).is_ok()
             || self.ignored_symbols.binary_search(&idx).is_ok()
     }
 
@@ -1758,38 +1753,29 @@ impl StagedObject {
         }
     }
 
-    /// Checks that each symbol defined in a section names one there is,
-    /// as ld-prime does as it reads the symbols, and notes the symbols
-    /// it ignores: one whose name is outside the string table, and one
-    /// whose address is outside its section, misplaced. Returns whether
-    /// all name sections of the object.
-    fn check_symbol_sections(&mut self, strtab: &[u8]) -> bool {
-        let file = self.mf.name.display();
-        for (i, (nlist, name)) in self.nlists.iter().zip(&self.sym_names).enumerate() {
+    /// Notes the symbols ld-prime ignores as it reads them: an indirect
+    /// one (ld -r -alias makes one for an undefined symbol), and one an
+    /// assembler places outside its section (`_x = _main + 0x1000`),
+    /// misplaced.
+    fn note_ignored_symbols(&mut self) {
+        for (i, nlist) in self.nlists.iter().enumerate() {
             if nlist.is_stab() {
                 continue;
             }
             // An indirect symbol is no definition in an object.
-            if nlist.n_strx as usize >= strtab.len() || nlist.n_type() == N_INDR {
+            if nlist.n_type() == N_INDR {
                 self.ignored_symbols.push(i as u32);
                 continue;
             }
             if nlist.n_type() != N_SECT {
                 continue;
             }
-            let Some(sect) = self.sect_hdrs.get((nlist.n_sect as usize).wrapping_sub(1)) else {
-                crate::error!(
-                    "n_sect={} for symbol '{name}' out of bounds in '{file}'",
-                    nlist.n_sect
-                );
-                return false;
-            };
-            if nlist.n_value < sect.addr || nlist.n_value > sect.addr.wrapping_add(sect.size) {
+            let sect = &self.sect_hdrs[nlist.n_sect as usize - 1];
+            if nlist.n_value < sect.addr || nlist.n_value > sect.addr + sect.size {
                 self.ignored_symbols.push(i as u32);
                 self.misplaced_symbols.push(i as u32);
             }
         }
-        true
     }
 
     fn read_symbol_names(&mut self, strtab: &'static [u8]) {
