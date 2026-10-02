@@ -38,8 +38,8 @@ grep -aqx "  sectname $sect" $t/lc
 grep -aqx "   segname $seg" $t/lc
 grep -aq $'\t__DATA\t'"$sect"'$' $t/map
 grep -aq $'\t'"$seg"$'\t__s$' $t/map
-grep -aqx "symbol '_x', use default mapping to __DATA/$sect" $t/trace
-grep -aqx "symbol '_y', use default mapping to $seg/__s" $t/trace
+grep -aqx "symbol '_x', mapped to __DATA/$sect" $t/trace
+grep -aqx "symbol '_y', mapped to $seg/__s" $t/trace
 
 $mold -r -arch $ARCH -o $t/r.o $t/a.o
 otool -l $t/r.o > $t/lc-r

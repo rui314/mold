@@ -487,6 +487,14 @@ fn dylib_imports<E: Target>(ctx: &Context<E>) -> Vec<Vec<&'static [u8]>> {
     imports
 }
 
+/// Whether a symbol names a row of the map: any named one but the
+/// assembler's temporary labels (L...) and the compiler's local
+/// linker-private ones (l..., an arm64 assembler's ltmpN too).
+pub(crate) fn is_map_symbol(sym: &crate::symbol::Symbol) -> bool {
+    let name = sym.name();
+    !name.is_empty() && (sym.is_extern() || !matches!(name[0], b'L' | b'l'))
+}
+
 /// A line of the map's symbol list: a subsection's address and size,
 /// the number of the file it came from, and its name (the bytes of a
 /// literal, whatever they are).

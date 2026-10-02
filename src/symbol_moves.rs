@@ -33,16 +33,6 @@ pub enum MoveOption {
     Dirty,
 }
 
-impl MoveOption {
-    pub(crate) fn name(self) -> &'static str {
-        match self {
-            MoveOption::Rw => "-move_to_rw_segment",
-            MoveOption::Ro => "-move_to_ro_segment",
-            MoveOption::Dirty => "-dirty_data_list",
-        }
-    }
-}
-
 /// Where a symbol move sends a subsection.
 #[derive(Clone, Copy)]
 pub struct Move {
@@ -82,14 +72,14 @@ struct Subsec<'a> {
 }
 
 /// Where ld-prime comes to a subsection in its walk over the files'
-/// subsections, which orders its warnings and its -trace_symbol_layout
-/// lines: file by file, an object's subsections of its sections, then
-/// of its common symbols (mold makes their subsections after every
-/// input's), then of its absolute symbols; after the objects, the files
-/// ld-prime makes itself, each with its subsections in the order made -
-/// the -alias names of the command line's (in the options' order), the
-/// Objective-C one's relative method lists, then the thread-local
-/// variables' descriptors. (A file and a subsection, or an -alias.)
+/// subsections, which orders its warnings: file by file, an object's
+/// subsections of its sections, then of its common symbols (mold makes
+/// their subsections after every input's), then of its absolute
+/// symbols; after the objects, the files ld-prime makes itself, each
+/// with its subsections in the order made - the -alias names of the
+/// command line's (in the options' order), the Objective-C one's
+/// relative method lists, then the thread-local variables'
+/// descriptors. (A file and a subsection, or an -alias.)
 type Place = (u32, u64);
 
 const ALIASES_FILE: u32 = u32::MAX - 2;

@@ -157,14 +157,11 @@ nm -m $t/exe11 > $t/nm11
 grep -q '(__DATA_DIRTY,__data) external _real1$' $t/nm11
 grep -q '(__BAZ,__data) external _real2$' $t/nm11
 grep -q '(__BAR,__text) external _rfunc$' $t/nm11
-# -trace_symbol_layout reports the aliases after the objects' symbols.
-tail -4 $t/trace11 > $t/trace11b
-cat <<EOF | diff - $t/trace11b
-symbol '_al1', -dirty_data_list mapped it to __DATA_DIRTY/__data
-symbol '_al2', -move_to_rw_segment mapped it to __BAZ/__data
-symbol '_al3', use default mapping to __DATA/__data
-symbol '_alf', -move_to_ro_segment mapped it to __BAR/__text
-EOF
+# -trace_symbol_layout reports the aliases where their bases went.
+grep -qx "symbol '_al1', mapped to __DATA_DIRTY/__data" $t/trace11
+grep -qx "symbol '_al2', mapped to __BAZ/__data" $t/trace11
+grep -qx "symbol '_al3', mapped to __DATA/__data" $t/trace11
+grep -qx "symbol '_alf', mapped to __BAR/__text" $t/trace11
 
 # The Objective-C records the linker rewrites move as the input's would:
 # the class data category merging rebuilt, and the method lists in the
@@ -205,7 +202,7 @@ $CC --ld-path=$mold -o $t/exe9 $t/d.o -framework Foundation -Wl,-objc_relative_m
 grep -q "warning: cannot move symbol '__OBJC_CLASS_RO_\$_A' (.*/d.o) to segment '__FOO' because symbol is not code (is objc-const)" $t/log9
 nm -m $t/exe9 > $t/nm9
 grep -q '(__FOO,__objc_methlist) non-external __OBJC_\$_CLASS_METHODS_A$' $t/nm9
-grep -q "^symbol '__OBJC_\$_CLASS_METHODS_A', -move_to_ro_segment mapped it to __FOO/__objc_methlist$" $t/trace9
+grep -q "^symbol '__OBJC_\$_CLASS_METHODS_A', mapped to __FOO/__objc_methlist$" $t/trace9
 [ "$($t/exe9)" = '1 2 3' ]
 
 # Only a final link lays out segments: ld-prime refuses the two options

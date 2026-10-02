@@ -1738,15 +1738,6 @@ fn ro_rewritable<E: Target>(ctx: &Context<E>, class: &DefinedClass) -> bool {
         && long_enough(class.meta_ro)
 }
 
-/// Whether `name` is one category merging gives a list it makes (see
-/// MergedListWriter::write): a method or protocol list named after the
-/// class and its categories.
-pub(crate) fn is_merged_list_name(name: &[u8]) -> bool {
-    [&b"__OBJC_$_INSTANCE_METHODS_"[..], b"__OBJC_$_CLASS_METHODS_", b"__OBJC_CLASS_PROTOCOLS_$_"]
-        .iter()
-        .any(|prefix| name.strip_prefix(*prefix).is_some_and(|rest| rest.ends_with(b")")))
-}
-
 /// What the names of a class's merged lists end in: the class's name
 /// and its categories', "Foo(A|B)".
 fn merged_list_suffix(class_name: &[u8], cat_names: &[&[u8]]) -> Vec<u8> {
@@ -1776,7 +1767,7 @@ impl MergedListWriter {
     /// Writes a class's merged lists and returns references to them.
     /// ld64 names the method and protocol lists after the class and its
     /// categories, __OBJC_$_INSTANCE_METHODS_Foo(A|B), `suffix` being
-    /// "Foo(A|B)" (see is_merged_list_name).
+    /// "Foo(A|B)".
     fn write<E: Target>(
         &mut self,
         ctx: &mut Context<E>,

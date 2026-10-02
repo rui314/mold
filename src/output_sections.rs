@@ -236,71 +236,24 @@ fn output_section_for(
     sectname: &[u8],
     flags: u32,
 ) -> Option<(SectionName, SectionName)> {
-    output_section_traced(args, map, segname, sectname, flags, &mut |_, _| {})
-}
-
-/// output_section_for, telling `note` of each step that moved the
-/// section, with the name it gave, by the option -trace_symbol_layout
-/// names for it (see trace_symbol_layout).
-fn output_section_traced(
-    args: &crate::cmdline::Args,
-    map: SectionMap,
-    segname: &[u8],
-    sectname: &[u8],
-    flags: u32,
-    note: &mut dyn FnMut(&'static str, SectionName),
-) -> Option<(SectionName, SectionName)> {
     if segname == b"__LLVM" {
         return None;
     }
-    let input = (static_name(segname), static_name(sectname));
-    let name = map.zero_fill_name(input, flags);
-    let mut step = (name != input).then_some("-merge_zero_fill_sections");
+    let name = map.zero_fill_name((static_name(segname), static_name(sectname)), flags);
     if map.relocatable {
-        step.inspect(|&how| note(how, name));
         return Some((renamed(args, name), name));
     }
     if name == (b"__DATA", b"__objc_clsrolist") {
         return None;
     }
-    let moved = map.builtin_name(name, flags);
-    if moved != name {
-        step.inspect(|&how| note(how, name));
-        step = Some(if moved.0 == b"__TEXT_EXEC" { "-text_exec" } else { "-data_const" });
-    }
-    let name = moved;
-    let out = traced_renames(args, step, name, map.renamed_section(args, name), note);
+    let name = map.builtin_name(name, flags);
+    let out = map.renamed(args, name);
     Some(match merged_name(name) {
         Some(merged) if out == name && is_standard_section(segname, sectname, flags) => {
             (renamed(args, merged), merged)
         }
         _ => (out, name),
     })
-}
-
-/// The name -rename_segment gives a section that -rename_section (or a
-/// rename of ld-prime's own) took from `name` to `section`, telling
-/// `note` of the renames as ld-prime does: as one step, -rename_section's
-/// unless -rename_segment applied - ld-prime counts its renames of
-/// legacy names and of the interposing tuples as -rename_section's.
-/// The `step` that put the section at `name`, a move, comes first, in
-/// the segment -rename_section gave it if -rename_segment then moves it
-/// on: ld-prime renames the segment in place before it tells of it.
-fn traced_renames(
-    args: &crate::cmdline::Args,
-    step: Option<&'static str>,
-    name: SectionName,
-    section: SectionName,
-    note: &mut dyn FnMut(&'static str, SectionName),
-) -> SectionName {
-    let out = (renamed_segment(args, section.0), section.1);
-    if let Some(how) = step {
-        note(how, if out.0 != section.0 { (section.0, name.1) } else { name });
-    }
-    if out != name {
-        note(if out.0 != section.0 { "-rename_segment" } else { "-rename_section" }, out);
-    }
-    out
 }
 
 /// Whether a final image copies an input section into no output
@@ -962,7 +915,6 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     let moves = crate::symbol_moves::find_moves(ctx);
     let lto_ranks = lto_layout_ranks(ctx);
     assign_input_sections(ctx, text, &moves, lto_ranks.as_deref());
-    trace_symbol_layout(ctx, &moves);
     place_replacing_blobs(ctx, text, &moves);
 
     // A final image always has a __text section, empty if no code
@@ -1004,6 +956,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     rename_synthetic_sections(ctx);
     merge_same_name_sections(ctx);
     add_boundary_sections(ctx);
+    trace_symbol_layout(ctx);
 
     sort_chunks(ctx, lto_ranks.as_deref());
     create_segments(ctx);
@@ -1146,21 +1099,12 @@ fn assign_input_sections<E: Target>(
 }
 
 /// -trace_symbol_layout prints, or -trace_symbol_layout_file writes,
-/// how a final link maps the section of each subsection a symbol names
-/// to its output section, as ld-prime does: "symbol '_x', use default
-/// mapping to __TEXT/__text", or a line for each step that moved it - a
-/// symbol move (see symbol_moves) or one of ld-prime's (see
-/// output_section_traced), then the renames: "symbol '_y', -data_const
-/// mapped it to __DATA_CONST/__const". The subsections come in the
-/// order ld-prime comes to them (see traced_subsec_symbols), then those
-/// it makes itself: the Objective-C stubs, the DOFs of DTrace probes
-/// (named as -map names them), the -alias names, the lists category
-/// merging makes (see objc::is_merged_list_name), the method lists it
-/// rewrites in the relative form, __dyld_private and the thread-local
-/// variables' descriptors. ld-prime warns about a file it can't write,
-/// ending the warning with a blank line, and reports nothing then. A -r
-/// link reports nothing.
-fn trace_symbol_layout<E: Target>(ctx: &Context<E>, moves: &hashbrown::HashMap<u32, Move>) {
+/// the output section each symbol the map lists (see
+/// mapfile::is_map_symbol) went to, in symbol order: "symbol '_x',
+/// mapped to __TEXT/__text". A file that can't be
+/// written is a warning, ending with a blank line as ld-prime's does,
+/// and the trace goes nowhere then. A -r link reports nothing.
+fn trace_symbol_layout<E: Target>(ctx: &Context<E>) {
     let args = &ctx.args;
     if args.relocatable {
         return;
@@ -1180,145 +1124,19 @@ fn trace_symbol_layout<E: Target>(ctx: &Context<E>, moves: &hashbrown::HashMap<u
         None if args.trace_symbol_layout => Box::new(std::io::stdout().lock()),
         None => return,
     };
-    let map = SectionMap::new(ctx);
-    let mut write = |name: &[u8], steps: Vec<(&str, SectionName)>, out_name: SectionName| {
-        let name = raw(name);
-        if steps.is_empty() {
-            let (seg, sect) = (raw(out_name.0), raw(out_name.1));
-            let line = format_args!("symbol '{name}', use default mapping to {seg}/{sect}\n");
-            let _ = out.write_all(&crate::error::render(line));
-        }
-        for (how, (seg, sect)) in steps {
-            let (seg, sect) = (raw(seg), raw(sect));
-            let line = format_args!("symbol '{name}', {how} mapped it to {seg}/{sect}\n");
-            let _ = out.write_all(&crate::error::render(line));
-        }
-    };
-
-    // The subsections of the inputs, and the linker's: the method lists
-    // it rewrites and the descriptors.
-    let mut method_lists = Vec::new();
-    let mut descriptors = Vec::new();
-    for (place, id) in traced_subsec_symbols(ctx) {
-        let Some(isec) = ctx.symbols[id].input_section() else { continue };
-        let isec = ctx.resolve_isec(isec as usize);
-        if crate::mapfile::is_rewritten_method_list(ctx, isec) {
-            method_lists.push(id);
-        } else if place == u32::MAX {
-            descriptors.push(id);
-        } else {
-            let (steps, to) = subsec_mapping(ctx, map, isec, moves.get(&(isec as u32)).copied());
-            write(ctx.symbols[id].name(), steps, to);
-        }
-    }
-    let mut steps = Vec::new();
-    let mut stubs: SectionName = (b"__TEXT", b"__objc_stubs");
-    if args.text_exec {
-        stubs.0 = b"__TEXT_EXEC";
-    }
-    let step = args.text_exec.then_some("-text_exec");
-    let section = map.renamed_section(args, stubs);
-    let to = traced_renames(args, step, stubs, section, &mut |how, to| steps.push((how, to)));
-    for &(sym, _) in &ctx.objc_stubs.symbols {
-        write(ctx.symbols[sym].name(), steps.clone(), to);
-    }
-    for dof in &ctx.dof_sections {
-        let (steps, to) = subsec_mapping(ctx, map, dof.isec as usize, None);
-        write(&dof.subsec_name, steps, to);
-    }
-    // An -alias name maps as its base's subsection (see symbol_moves), as
-    // does a method list, which a symbol move may take too.
-    let aliases = crate::symbol_moves::object_aliases(ctx);
-    let aliases =
-        aliases.filter_map(|(base, alias)| Some((alias, ctx.symbols[base].input_section()?)));
-    let aliases = aliases.map(|(id, isec)| (ctx.symbols[id].name(), isec));
-    let merged = (ctx.extra_local_syms.iter().copied())
-        .filter(|&(name, _)| crate::objc::is_merged_list_name(name));
-    let lists = (method_lists.into_iter())
-        .map(|id| (ctx.symbols[id].name(), ctx.symbols[id].input_section().unwrap()));
-    for (name, isec) in aliases.chain(merged).chain(lists) {
-        let isec = ctx.resolve_isec(isec as usize);
-        let (steps, to) = subsec_mapping(ctx, map, isec, moves.get(&(isec as u32)).copied());
-        write(name, steps, to);
-    }
-    let private = ctx.stub_helper.dyld_private_isec;
-    if private != u32::MAX {
-        let (steps, to) = subsec_mapping(ctx, map, private as usize, None);
-        write(b"__dyld_private", steps, to);
-    }
-    for id in descriptors {
-        let isec = ctx.resolve_isec(ctx.symbols[id].input_section().unwrap() as usize);
-        let (steps, to) = subsec_mapping(ctx, map, isec, None);
-        write(ctx.symbols[id].name(), steps, to);
-    }
-}
-
-/// The symbols -trace_symbol_layout reports, of the subsections of the
-/// inputs they name as the map does (see mapfile::names_its_subsec) - a
-/// common symbol of the object whose tentative definition won -, in the
-/// order ld-prime comes to them, with where that is: an input
-/// subsection's index, or u32::MAX for a thread-local variable's
-/// descriptor, which ld-prime makes anew after every input's
-/// subsection. Of the symbols at one place, the last in the object's
-/// symbol table comes first.
-fn traced_subsec_symbols<E: Target>(ctx: &Context<E>) -> Vec<(u32, crate::symbol::SymbolId)> {
-    let commons = common_owners(ctx);
-    let mut syms = Vec::new();
-    for (i, obj) in ctx.objs.iter().enumerate() {
-        if !obj.is_alive || ctx.is_internal(i) {
+    for sym in &ctx.symbols.syms {
+        let Some(isec) = sym.input_section() else { continue };
+        if !crate::mapfile::is_map_symbol(sym) {
             continue;
         }
-        for (k, (nlist, &id)) in obj.nlists.iter().zip(&obj.symbols).enumerate() {
-            let sym = &ctx.symbols[id];
-            let Some(isec) = sym.input_section() else { continue };
-            let place = if nlist.is_common() {
-                if commons.get(&isec) != Some(&(i as u32)) {
-                    continue;
-                }
-                isec
-            } else if !nlist.is_stab()
-                && nlist.n_type() == N_SECT
-                && sym.file() == Some(FileId::Obj(i as u32))
-                && crate::mapfile::names_its_subsec(ctx, id)
-            {
-                match ctx.hdr_of(&ctx.isecs[isec as usize]).section_type() {
-                    S_THREAD_LOCAL_VARIABLES => u32::MAX,
-                    _ => isec,
-                }
-            } else {
-                continue;
-            };
-            syms.push(((place, sym.value, std::cmp::Reverse(k)), id));
-        }
+        let Some(chunk) = ctx.isecs[ctx.resolve_isec(isec as usize)].output_section() else {
+            continue;
+        };
+        let hdr = ctx.chunk_header(chunk);
+        let line = [b"symbol '", sym.name(), b"', mapped to ", hdr.segname, b"/", hdr.sectname];
+        let _ = out.write_all(&line.concat());
+        let _ = out.write_all(b"\n");
     }
-    syms.sort_by_key(|&(key, _)| key);
-    syms.into_iter().map(|((place, ..), id)| (place, id)).collect()
-}
-
-/// The steps -trace_symbol_layout reports for the subsection `isec`,
-/// which `moved` may move (see trace_symbol_layout), and its output
-/// section's name.
-fn subsec_mapping<E: Target>(
-    ctx: &Context<E>,
-    map: SectionMap,
-    isec: usize,
-    moved: Option<Move>,
-) -> (Vec<(&'static str, SectionName)>, SectionName) {
-    let hdr = ctx.hdr_of(&ctx.isecs[isec]);
-    let (seg, sect, flags) = (hdr.segname(), hdr.sectname(), hdr.flags);
-    let mut steps = Vec::new();
-    let mut note = |how, to| steps.push((how, to));
-    let to = match moved.and_then(|m| Some((m, map.moved_name(m, seg, sect, flags)?.0))) {
-        Some((m, name)) => {
-            let section = section_renamed(&ctx.args, name);
-            traced_renames(&ctx.args, Some(m.option.name()), name, section, &mut note)
-        }
-        None => match output_section_traced(&ctx.args, map, seg, sect, flags, &mut note) {
-            Some((to, _)) => to,
-            None => (static_name(seg), static_name(sect)),
-        },
-    };
-    (steps, to)
 }
 
 /// The flags of a new output section, `out`, from those of its first

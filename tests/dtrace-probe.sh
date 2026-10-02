@@ -52,9 +52,5 @@ otool -l $t/exe | grep -A1 '^  sectname' | grep -v -- '--' | paste - - |
 tail -2 $t/sects | head -1 | grep -q __dof_myapp
 tail -1 $t/sects | grep -q __unwind_info
 
-# -map lists the DOF as the linker's, and -trace_symbol_layout names it
-# so too.
+# -map lists the DOF as the linker's.
 grep -q '\[  0\] l__dtrace_dof_for_provider_myapp$' $t/map
-$CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-trace_symbol_layout > $t/trace
-grep -q "^symbol 'l__dtrace_dof_for_provider_myapp', use default mapping to __TEXT/__dof_myapp$" \
-  $t/trace
