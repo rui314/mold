@@ -1,6 +1,6 @@
-//! The symbol table in __LINKEDIT: the symbols it lists, in ld-prime's
-//! order, with the debug notes (stabs) of each object, and the writer
-//! that emits it together with the string table.
+//! The symbol table in __LINKEDIT: the symbols it lists, with the debug
+//! notes (stabs) of each object, and the writer that emits it together
+//! with the string table.
 
 use rayon::prelude::*;
 use std::os::unix::ffi::OsStrExt;
@@ -23,8 +23,8 @@ use crate::util::{leak_bytes, path_bytes};
 pub struct SymtabSection {
     pub hdr: ChunkHeader,
     /// The entries but the debug notes: those before the notes - the
-    /// plain locals, N_AST paths and the notes' opening N_SO - then the
-    /// externals and imports, which follow the notes in the table.
+    /// plain locals and N_AST paths - then the externals and imports,
+    /// which follow the notes in the table.
     pub entries: Vec<(NList, Option<SymbolId>)>,
     /// The string table's total size (bytes, padded to 8). The bytes
     /// themselves are not materialized here: copy_symtab writes each

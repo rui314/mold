@@ -814,8 +814,8 @@ impl<'a, E: Target> RelocTargets<'a, E> {
     }
 
     /// The symbol index of an unwind record's or a CIE's personality
-    /// routine, which the output's symbol table names (see
-    /// referenced_syms).
+    /// routine, which the output's symbol table names: its object lists
+    /// it (see undefined_symbols).
     fn personality(&self, p: SymbolId) -> u32 {
         let Some(symnum) = self.symtab.index_of(p) else {
             fatal!("-r: unwind personality lost: {}", self.ctx.symbols[p]);
@@ -1055,9 +1055,9 @@ fn sym_addr<E: Target>(ctx: &Context<E>, id: SymbolId) -> u64 {
 
 /// Builds a -r output's symbol table: the local symbols (see
 /// local_symbols), then the -add_ast_path entries, as in a final image,
-/// then the stabs, then the defined
-/// externals and the undefined symbols. The strings are laid out as a
-/// final image's (see layout_strings).
+/// then the stabs, then the defined externals and the undefined
+/// symbols. The strings are laid out as a final image's (see
+/// layout_strings).
 fn build_symtab<E: Target>(ctx: &Context<E>) -> RSymtab {
     let t = ctx.timer("r-symtab-locals");
     let locals = local_symbols(ctx);
@@ -1242,7 +1242,7 @@ fn undefined_symbols<E: Target>(ctx: &Context<E>) -> Vec<(NList, SymbolId)> {
 /// Under -x, or where -non_global_symbols_strip_list or
 /// -non_global_symbols_no_strip_list strips a name, the symbol stays,
 /// as a relocation may name it, under a name made up for it, l<n>
-/// numbered in the table's order, and the notes of its unit name it so.
+/// numbered in the table's order; the notes of its unit keep its own.
 fn local_symbols<E: Target>(ctx: &Context<E>) -> Vec<Local> {
     let per_obj: Vec<Vec<Local>> =
         (0..ctx.objs.len()).into_par_iter().map(|i| object_locals(ctx, i)).collect();
