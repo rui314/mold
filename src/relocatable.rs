@@ -1100,7 +1100,7 @@ fn build_symtab<E: Target>(ctx: &Context<E>) -> RSymtab {
     par_push_entries(&mut names, &mut table.entries, &externals, |&(ent, id)| {
         (ctx.symbols[id].name(), ent, None)
     });
-    let strtab_end = crate::chunks::symtab::layout_strings(&mut table.entries, &names, stabs_start);
+    let strtab_end = crate::chunks::symtab::layout_strings(&mut table.entries, &names);
     table.names = names;
 
     // Each symbol's index in the table, for the relocations, and its

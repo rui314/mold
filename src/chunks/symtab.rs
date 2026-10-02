@@ -1208,12 +1208,11 @@ pub fn create_output_symtab<E: Target>(
     debug_assert_eq!(data.entries.len(), total);
     drop(t);
 
-    // The string table, in ld-prime's layout: the externals' names, the
-    // locals', then each object's notes' in a block of its own. No note
-    // is among the entries, so none shares a string there.
+    // The string table: the entries' names, then each object's notes'
+    // in a block of its own.
     let t = ctx.timer("symtab-strings");
     add_indirect_target_names(ctx, &data.entries, &mut names, stabs_start..stabs_start + nglobals);
-    let strtab_end = layout_strings(&mut data.entries, &names, stabs_start);
+    let strtab_end = layout_strings(&mut data.entries, &names);
     data.names = names;
 
     // Each symbol's index, for the indirect symbol table, and its string,
@@ -1630,41 +1629,29 @@ impl SymtabBlock<'_> {
     }
 }
 
-/// Lays out a symbol table's strings as ld-prime does and sets every
-/// entry's n_strx: the defined and undefined externals' names, [nlocal,
-/// len), then the local symbols', each entry with a copy of its own -
-/// two locals of one name get two - but that an empty name is offset 1,
+/// Lays out a symbol table's strings and sets every entry's n_strx:
+/// each entry's name in entry order, with a copy of its own - two
+/// locals of one name get two - but that an empty name is offset 1,
 /// after the table's leading " ". The debug notes' follow (see
 /// SymtabSection::set_stabs). Returns where the strings end.
-pub fn layout_strings(
-    entries: &mut [(NList, Option<SymbolId>)],
-    names: &[&[u8]],
-    nlocal: usize,
-) -> usize {
-    // The externals' strings come first, then the locals', each block
-    // of entries at its prefix-summed offset.
+pub fn layout_strings(entries: &mut [(NList, Option<SymbolId>)], names: &[&[u8]]) -> usize {
+    // Each block of entries at its prefix-summed offset.
     const CHUNK: usize = 1 << 16;
-    let (locals, externs) = entries.split_at_mut(nlocal);
-    let (local_names, extern_names) = names.split_at(nlocal);
-    let chunks = || extern_names.par_chunks(CHUNK).chain(local_names.par_chunks(CHUNK));
     let size = |name: &&[u8]| if name.is_empty() { 0 } else { name.len() as u32 + 1 };
-    let sums: Vec<u32> = chunks().map(|c| c.iter().map(size).sum()).collect();
+    let sums: Vec<u32> = names.par_chunks(CHUNK).map(|c| c.iter().map(size).sum()).collect();
     let mut bases = Vec::with_capacity(sums.len());
     let mut total = 2u32;
     for sum in sums {
         bases.push(total);
         total += sum;
     }
-    externs
-        .par_chunks_mut(CHUNK)
-        .chain(locals.par_chunks_mut(CHUNK))
-        .zip(chunks())
-        .zip(bases)
-        .for_each(|((ents, names), mut off)| {
+    entries.par_chunks_mut(CHUNK).zip(names.par_chunks(CHUNK)).zip(bases).for_each(
+        |((ents, names), mut off)| {
             for ((ent, _), name) in ents.iter_mut().zip(names) {
                 ent.n_strx = if name.is_empty() { 1 } else { off };
                 off += size(name);
             }
-        });
+        },
+    );
     total as usize
 }
