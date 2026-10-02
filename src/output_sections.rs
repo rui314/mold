@@ -256,13 +256,6 @@ fn output_section_for(
     })
 }
 
-/// Whether a final image copies an input section into no output
-/// section, as the link consumes it: the __LLVM segment's sections and
-/// __objc_clsrolist (see output_section_for).
-pub(crate) fn is_consumed_in_image(segname: &[u8], sectname: &[u8]) -> bool {
-    segname == b"__LLVM" || (segname == b"__DATA" && sectname == b"__objc_clsrolist")
-}
-
 /// The section a final link merges a __TEXT section into, like ld64:
 /// __StaticInit joins __text, and the literal pools join __const.
 fn merged_name(name: (&[u8], &[u8])) -> Option<SectionName> {

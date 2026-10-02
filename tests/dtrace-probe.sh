@@ -53,4 +53,5 @@ tail -2 $t/sects | head -1 | grep -q __dof_myapp
 tail -1 $t/sects | grep -q __unwind_info
 
 # -map lists the DOF as the linker's.
-grep -q '\[  0\] l__dtrace_dof_for_provider_myapp$' $t/map
+dof=$(grep $'\t__TEXT\t__dof_myapp$' $t/map | cut -f1)
+grep -q "^$dof"$'\t0x[0-9A-F]*\t\\[  0\\] ' $t/map

@@ -25,12 +25,12 @@ cat <<EOF | $CC -o $t/e.o -c -xc -
 int baz(int x) { return x * 7; }
 EOF
 
-# ld-prime leaves the ThinLTO objects nameless: the map lists them after
-# the dylibs, ahead of the merged modules' /tmp/lto.o, and their debug
-# stabs name no file, with modification time 0.
+# ld-prime leaves the ThinLTO objects nameless: the map lists them ahead
+# of the merged modules' /tmp/lto.o, and their debug stabs name no file,
+# with modification time 0.
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o $t/c.o $t/d.o -Wl,-map,$t/map
 $t/exe | grep -q '^8 0$'
-sed -n '/^# Object files:/,/^# Sections:/p' $t/map | grep '^\[' > $t/files
+sed -n '/^# Object files:/,/^# Sections:/p' $t/map | grep '^\[' | grep -v '\.tbd$' > $t/files
 [ "$(tail -3 $t/files | sed 's/^\[ *[0-9]*\] //')" = "$(printf '\n\n/tmp/lto.o')" ]
 nm -ap $t/exe | grep -q '^0000000000000000 - .. 0001   OSO $'
 # That N_OSO's string is the string table's first byte, a space.

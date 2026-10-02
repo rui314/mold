@@ -1,85 +1,79 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# Under -dead_strip, ld-prime's -map lists every subsection of the input
-# files that the output doesn't have, whatever took it out, by file and
-# in the order they were in it. A tentative definition (a common symbol)
-# is a subsection of its file's, of the size it gives, listed after the
-# file's others: all are dead but the one whose symbol the output
-# defines (here b.o's larger _aa), and a real definition (c.o's _zz)
-# takes the place of all.
+# Under -dead_strip, -map lists the subsections of the input files that
+# dead stripping removed, file by file in the order they were in it,
+# named and sized as live ones are. A subsection that gave way to an
+# identical one - a C string equal to another file's, a weak definition
+# another file's won - is no dead one, nor is a tentative definition (a
+# common symbol). (ld-prime lists those too, and every label of a C
+# string apart.)
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .text
 .globl _main
 .p2align 2
 _main:
   ret
-.comm _zz,4,2
-.comm _aa,16,3
 .data
+.p2align 3
+.globl _d1, _d2
 _d1: .quad 1
+_d2: .quad l_.s1
+.cstring
+l_.dead: .asciz "deadstr"
+l_.s1: .asciz "dup"
+.comm _zz,4,2
 .subsections_via_symbols
 EOF
 
 cat <<EOF | $CC -o $t/b.o -c -xassembler -
-.comm _aa,32,3
-.comm _zz,2,1
+.data
+.p2align 3
+.globl _dead_b, _wk
+.weak_definition _wk
+_dead_b: .quad 1, 2
+_wk: .quad 3
 .subsections_via_symbols
 EOF
 
 cat <<EOF | $CC -o $t/c.o -c -xassembler -
 .data
-.globl _zz
-_zz: .long 7
+.p2align 3
+.globl _wk, _zz, _dead_c
+.weak_definition _wk
+_wk: .quad 4
+_zz: .long 5
+_dead_c: .long 6
 .subsections_via_symbols
 EOF
 
-# Coalescing leaves subsections out too: a C string equal to another
-# file's, a weak definition another file's won. ld-prime makes a C
-# string a subsection per label at its start, merging all but one into
-# that one.
 cat <<EOF | $CC -o $t/d.o -c -xassembler -
-.cstring
-l_.a:
-l_.b: .asciz "two labels"
-l_.c: .asciz "dup"
 .data
 .p2align 3
-.globl _p, _wk
-.weak_definition _wk
-_p: .quad l_.a
-.quad l_.c
-_wk: .quad 1
+.globl _p2, _dead_d
+_p2: .quad l_.s2
+_dead_d: .quad 0
+.cstring
+l_.s2: .asciz "dup"
 .subsections_via_symbols
 EOF
 
-cat <<EOF | $CC -o $t/e.o -c -xassembler -
-.cstring
-l_.c: .asciz "dup"
-.data
-.p2align 3
-.globl _p2, _wk
-.weak_definition _wk
-_p2: .quad l_.c
-_wk: .quad 2
-.subsections_via_symbols
-EOF
-
-$CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o $t/c.o $t/d.o $t/e.o -Wl,-dead_strip \
-  -Wl,-u,_aa -Wl,-u,_p -Wl,-u,_p2 -Wl,-u,_wk -Wl,-map,$t/map
+$CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o $t/c.o $t/d.o -Wl,-dead_strip \
+  -Wl,-u,_d2 -Wl,-u,_wk -Wl,-u,_zz -Wl,-u,_p2 -Wl,-map,$t/map
+$t/exe || true
 
 sed -n '/^# Dead Stripped Symbols:/,$p' $t/map | grep -v '^#' > $t/dead
-cat > $t/expected <<EOF
+diff - $t/dead <<EOF
 <<dead>>	0x00000008	[  1] _d1
-<<dead>>	0x00000010	[  1] _aa
-<<dead>>	0x00000004	[  1] _zz
-<<dead>>	0x00000002	[  2] _zz
-<<dead>>	0x00000004	[  3] _zz
-<<dead>>	0x0000000B	[  4] literal string: two labels
-<<dead>>	0x00000004	[  5] literal string: dup
-<<dead>>	0x00000008	[  5] _wk
+<<dead>>	0x00000008	[  1] anon
+<<dead>>	0x00000010	[  2] _dead_b
+<<dead>>	0x00000004	[  3] _dead_c
+<<dead>>	0x00000008	[  4] _dead_d
 EOF
-diff $t/expected $t/dead
 
-# The labels of a string count once each: the live one is listed too.
-grep -Eq $'^0x[0-9A-F]+\t0x0000000B\t\\[  4\\] literal string: two labels$' $t/map
+# The ones that stay are listed live, a's string for both.
+grep -q $'\t0x00000008\t\\[  1\\] _d2$' $t/map
+grep -q $'\t0x00000008\t\\[  2\\] _wk$' $t/map
+grep -q $'\t0x00000004\t\\[  3\\] _zz$' $t/map
+grep -q $'\t0x00000008\t\\[  4\\] _p2$' $t/map
+[ "$(grep -c $'\t0x00000004\t\\[  1\\] anon$' $t/map)" -eq 1 ]

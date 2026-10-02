@@ -18,7 +18,7 @@ link() {
 }
 
 link -o $t/exe -L$t/d -L$t/c -lfoo.o -map $t/map 2> /dev/null
-grep -A4 '^# Object files:' $t/map | tail -1 | grep -q "\] $t/c/foo.o$"
+grep -qx "\[  2\] $t/c/foo.o" $t/map
 nm $t/exe | grep -q ' T _foo$'
 
 link -o $t/exe2 -L$t/c -upward-lfoo.o 2> /dev/null

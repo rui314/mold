@@ -37,19 +37,20 @@ grep -qx 1 $t/log3
 otool -X -s __DATA __data $t/exe2 | cut -f2 | tr -d ' \n' > $t/log4
 grep -qx 11111111424242422222222241414141 $t/log4
 
-# The map lists the second option's file where it stands, the first's
-# contents as the linker's.
+# The map lists the options' contents as the linker's, in the objects'
+# section (ld-prime makes each option a file of its own), and the
+# objects alone as files.
 grep -q '^\[  1\] .*/a.o$' $t/map2
-grep -q '^\[  2\] .*/d2$' $t/map2
-grep -q '^\[  3\] .*/b.o$' $t/map2
-grep -q $'\t0x00000004\t\[  2\] l<sect-create>__DATA,__data$' $t/map2
-grep -q $'\t0x00000004\t\[  0\] l<sect-create>__DATA,__data$' $t/map2
+grep -q '^\[  2\] .*/b.o$' $t/map2
+[ "$(grep -c $'\t0x00000004\t\\[  0\\] anon$' $t/map2)" = 2 ]
 
-# An empty section's file is "(null)" in the map, as ld-prime has it.
+# An option's section of its own is a row of the linker's, named after
+# it; an empty one has none.
 $mold -arch $ARCH -o $t/exe3 $t/a.o -sectcreate __NEW __x $t/d1 \
   -add_empty_section __NEW __e -lSystem -syslibroot "$(xcrun --show-sdk-path)" -map $t/map3
-grep -q '^\[  2\] (null)$' $t/map3
-grep -q $'\t0x00000000\t\[  2\] l<sect-create>__NEW,__e$' $t/map3
+grep -q $'\t0x00000004\t\\[  0\\] __NEW,__x$' $t/map3
+grep -q $'\t0x00000000\t__NEW\t__e$' $t/map3
+not grep -q '\] __NEW,__e$' $t/map3
 
 # Code in __text: one __text, the contents after main's.
 $mold -arch $ARCH -o $t/exe4 $t/a.o -sectcreate __TEXT __text $t/d1 \

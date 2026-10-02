@@ -30,7 +30,6 @@ use crate::fatal;
 use crate::input_files::FileId;
 use crate::input_sections::{InputSection, NO_REPLACEMENT, Reloc, RelocTarget};
 use crate::macho::*;
-use crate::mapfile::RelocatableRecord;
 use crate::output_file;
 use crate::symbol::SymbolId;
 use crate::target::Target;
@@ -523,9 +522,13 @@ pub fn link<E: Target>(ctx: &mut Context<E>) -> u64 {
     // -dependency_info and fails the build if the file is missing.
     crate::mapfile::write_dependency_info(ctx);
     if ctx.args.map.is_some() {
-        let headers: Vec<&ChunkHeader> =
-            sects.iter().map(|&s| sect_hdr(ctx, &synthetic, s)).collect();
-        crate::mapfile::print_relocatable_map(ctx, &headers, &synthetic_records(&synthetic));
+        let sections: Vec<crate::mapfile::MapSection> = (sects.iter())
+            .map(|&s| match s {
+                Sect::Merged(i) => (sect_hdr(ctx, &synthetic, s), Some(i)),
+                _ => (sect_hdr(ctx, &synthetic, s), None),
+            })
+            .collect();
+        crate::mapfile::print_map_of(ctx, &sections);
     }
     let t = ctx.timer("r-write");
     output_file::write(&ctx.args.output, &buf);
@@ -556,33 +559,6 @@ fn sectcreate_locals<E: Target>(ctx: &Context<E>) -> Vec<Local> {
             }
         })
         .collect()
-}
-
-/// The records of the sections the output makes itself, by address, as
-/// the map lists them.
-fn synthetic_records(synthetic: &[SyntheticSection]) -> Vec<(u64, RelocatableRecord)> {
-    let mut out = Vec::new();
-    for sec in synthetic {
-        let addr = sec.hdr.addr;
-        match &sec.kind {
-            SyntheticKind::ObjcImageInfo => out.push((addr, RelocatableRecord::ImageInfo)),
-            SyntheticKind::CompactUnwind(records) => {
-                for (j, &rec) in records.iter().enumerate() {
-                    out.push((addr + 32 * j as u64, RelocatableRecord::Unwind(rec)));
-                }
-            }
-            SyntheticKind::EhFrame(records) => {
-                for &(rec, off) in records {
-                    let record = match rec {
-                        EhRec::Cie(c) => RelocatableRecord::Cie(c),
-                        EhRec::Fde(f) => RelocatableRecord::Fde(f),
-                    };
-                    out.push((addr + off as u64, record));
-                }
-            }
-        }
-    }
-    out
 }
 
 /// A section of the -r output: merged from input subsections,

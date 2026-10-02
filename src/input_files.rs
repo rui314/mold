@@ -255,18 +255,6 @@ impl ObjectFile {
     }
 }
 
-/// Whether ld64 names no subsection after a label (its ignoreLabel): in
-/// a section of C strings or of 4-, 8- or 16-byte literals, which it
-/// splits into one subsection per literal, a private label (see
-/// is_private_label) names nothing, and the literal is known by its
-/// contents or size.
-pub fn is_ignored_literal_label(section_type: u32, name: &[u8]) -> bool {
-    matches!(
-        section_type,
-        S_CSTRING_LITERALS | S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS
-    ) && is_private_label(name)
-}
-
 /// Whether a label is one a compiler or assembler makes for itself: an
 /// assembler temporary (L...) or a linker-private label (l...) - the
 /// compiler's lCPI0_0 constant-pool and l_.str string labels, the arm64

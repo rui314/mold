@@ -1,79 +1,74 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-cat <<EOF | $CC -o $t/a.o -c -xc - -fcommon
+# -map writes ld64's map: the output and its architecture; the files,
+# [0] standing for the linker, then the objects in link order and the
+# dylibs; the sections, at their addresses and of their sizes; and the
+# symbols, tab-separated, a row for each symbol of a subsection at its
+# address, of the size up to the subsection's end, with the number of
+# the file it came from. A subsection no symbol names at its start is
+# "anon", and what the linker makes is file 0's, named after its
+# section.
+cat <<EOF | $CC -o $t/a.o -c -xc -
 #include <stdio.h>
-int common_sym;
-void hello() {
-  printf("Hello world\n");
-}
+void hello() { printf("Hello world\n"); }
 EOF
 
-cat <<EOF | $CC -o $t/b.o -c -xc - -fcommon
+cat <<EOF | $CC -o $t/b.o -c -xc -
 void hello();
-int common_sym;
-int main() {
-  hello();
-  return common_sym;
-}
+int data1 = 3;
+int main() { hello(); return data1 - 3; }
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o -Wl,-map,$t/map
+$t/exe | grep -q 'Hello world'
 
-# ld64's map: file 0 is "linker synthesized", and the input files follow
-# in command line order, dylibs included, then the libraries a dylib
-# re-exports that define a symbol the link uses (libSystem's
-# libsystem_c). Sections and symbols are tab-separated with a size
-# column.
-grep -Eq '^\[  0\] linker synthesized$' $t/map
-grep -Eq '^\[  1\] .*/a.o$' $t/map
-grep -Eq '^\[  2\] .*/b.o$' $t/map
-grep -Eq '^\[  3\] .*/libSystem.tbd$' $t/map
-grep -Eq '^\[  4\] .*/system/libsystem_c.tbd$' $t/map
-grep -Eq $'^0x[0-9A-Fa-f]+\t0x[0-9A-Fa-f]+\t__TEXT\t__text$' $t/map
-grep -Eq $'^0x[0-9A-Fa-f]+\t0x[0-9A-Fa-f]+\t\[  0\] __mh_execute_header$' $t/map
-grep -Eq $'^0x[0-9A-Fa-f]+\t0x[0-9A-Fa-f]+\t\[  1\] _hello$' $t/map
-grep -Eq $'^0x[0-9A-Fa-f]+\t0x[0-9A-Fa-f]+\t\[  2\] _main$' $t/map
+grep -qx "# Path: $t/exe" $t/map
+grep -qx "# Arch: $ARCH" $t/map
+sed -n '/^# Object files:/,/^# Sections:/p' $t/map | grep '^\[' > $t/files
+[ "$(sed -n 1p $t/files)" = '[  0] linker synthesized' ]
+[ "$(sed -n 2p $t/files)" = "[  1] $t/a.o" ]
+[ "$(sed -n 3p $t/files)" = "[  2] $t/b.o" ]
+grep -Eq '^\[  3\] /.*/libSystem.tbd$' $t/files
+[ "$(wc -l < $t/files)" -eq 4 ]
+
+# Every section of the image, in order.
+otool -l $t/exe | awk '
+  $1 == "sectname" { s = $2 }
+  $1 == "segname" && s != "" { g = $2 }
+  $1 == "addr" && s != "" { a = $2 }
+  $1 == "size" && s != "" { print a, $2, g, s; s = "" }' |
+  while read -r addr size seg sect; do
+    printf '0x%08X\t0x%08X\t%s\t%s\n' $addr $size $seg $sect
+  done > $t/sects
+sed -n '/^# Sections:/,/^# Symbols:/p' $t/map | grep '^0x' | diff $t/sects -
+
+# The executable's header is the linker's, and comes first.
+sed -n '/^# Symbols:/,$p' $t/map | grep '^0x' > $t/syms
+[ "$(head -1 $t/syms)" = $'0x100000000\t0x00000000\t[  0] __mh_execute_header' ]
+
+# A symbol's row is at its address, of its subsection's size: here each
+# object's whole __text or __data.
+row() {
+  local addr=$(nm $t/exe | awk -v s=$1 '$3 == s { print $1 }')
+  local size=$(otool -l $2 | awk -v s=$3 '$1 == "sectname" { f = ($2 == s) } f && $1 == "size" { print $2; exit }')
+  printf '0x%08X\t0x%08X\t[  %d] %s\n' 0x$addr $size $4 $1
+}
+grep -qxF "$(row _hello $t/a.o __text 1)" $t/syms
+grep -qxF "$(row _main $t/b.o __text 2)" $t/syms
+grep -qxF "$(row _data1 $t/b.o __data 2)" $t/syms
+
+# The C string is anon, a.o's; the stubs and the unwind info are the
+# linker's.
+grep -qx $'0x[0-9A-F]*\t0x0000000D\t\\[  1\\] anon' $t/syms
+stubs=$(grep $'\t__TEXT\t__stubs$' $t/map | cut -f1,2)
+grep -qx "$stubs"$'\t\\[  0\\] __TEXT,__stubs' $t/syms
+grep -qx $'0x[0-9A-F]*\t0x[0-9A-F]*\t\\[  0\\] __TEXT,__unwind_info' $t/syms
 not grep -q ltmp $t/map
 
-# The linker's own subsections are file 0's, but for a symbol's stub or
-# GOT slot, which counts as the file defining the symbol. A C string is
-# known by its contents, and a common symbol belongs to the first object
-# that declared it at its size.
-grep -Fq $'\t[  4] _printf.stub' $t/map
-grep -Fq $'\t[  1] literal string: Hello world\\n' $t/map
-grep -Fq $'\t[  0] compact unwind info' $t/map
-grep -Fq $'\t[  1] _common_sym' $t/map
-
-# So does a common symbol's GOT slot, whichever object's tentative
-# definition won: the one of the largest size, here the second's.
-if [ $ARCH = arm64 ]; then
-  cat <<'EOF' | $CC -o $t/d.o -c -xassembler -
-.globl _main
-.p2align 2
-_main:
-  ret
-.section __TEXT,__const
-.p2align 2
-  .long _big_common@GOT - .
-.comm _big_common, 4, 2
-EOF
-else
-  cat <<'EOF' | $CC -o $t/d.o -c -xassembler -
-.globl _main
-_main:
-  addq _big_common@GOTPCREL(%rip), %rax
-  ret
-.comm _big_common, 4, 2
-EOF
-fi
-echo '.comm _big_common, 16, 4' | $CC -o $t/e.o -c -xassembler -
-$CC --ld-path=$mold -o $t/exe3 $t/d.o $t/e.o -Wl,-map,$t/map3
-grep -Fq $'\t[  2] _big_common.got' $t/map3
-grep -Eq $'\t\\[  2\\] _big_common$' $t/map3
-
-# With -dead_strip, removed subsections are reported in their own
-# section, after a blank line, with "<<dead>>" in the address column.
+# With -dead_strip, the subsections the output dropped are listed after
+# a blank line, of the files they came from, with "<<dead>>" for an
+# address; a live one is not.
 cat <<EOF | $CC -o $t/c.o -c -xc -
 void unused_func() {}
 const char *unused_str() { return "gone"; }
@@ -82,6 +77,15 @@ int main() { hello2(); }
 EOF
 $CC --ld-path=$mold -o $t/exe2 $t/c.o -Wl,-dead_strip -Wl,-map,$t/map2
 [ "$(grep -B1 '^# Dead Stripped Symbols:$' $t/map2 | head -1)" = '' ]
-grep -Eq $'^<<dead>>\t0x[0-9A-Fa-f]+\t\[  1\] _unused_func$' $t/map2
-grep -Fq $'<<dead>>\t0x00000005\t[  1] literal string: gone' $t/map2
-grep -Eq $'\t\[  1\] _hello2$' $t/map2
+sed -n '/^# Dead Stripped Symbols:/,$p' $t/map2 > $t/dead2
+grep -qx $'<<dead>>\t0x000000[0-9A-F][0-9A-F]\t\\[  1\\] _unused_func' $t/dead2
+grep -qx $'<<dead>>\t0x000000[0-9A-F][0-9A-F]\t\\[  1\\] _unused_str' $t/dead2
+grep -qx $'<<dead>>\t0x00000005\t\\[  1\\] anon' $t/dead2
+not grep -q '_hello2\|_main' $t/dead2
+grep -q $'\t\\[  1\\] _hello2$' $t/map2
+
+# Without -dead_strip there is no such list, and a dylib has no header
+# row.
+$CC --ld-path=$mold -shared -o $t/c.dylib $t/c.o -Wl,-map,$t/map3
+not grep -q 'Dead Stripped\|__mh_' $t/map3
+grep -q $'\t\\[  1\\] _unused_func$' $t/map3

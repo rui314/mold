@@ -42,16 +42,15 @@ int call1(void), call2(void), call3(void);
 int main() { return call1() + call2() + call3() != 21; }
 EOF
 
-$CC --ld-path=$mold -o $t/exe $t/main.o $t/r.o -Wl,-deduplicate -Wl,-map,$t/map
+$CC --ld-path=$mold -o $t/exe $t/main.o $t/r.o -Wl,-deduplicate
 $t/exe
-[ "$(grep -c 'FDE for: _helper$' $t/map)" = 3 ]
-objdump --macho --unwind-info $t/exe > $t/unwind
 addr=$(nm $t/exe | awk '/ _helper$/ { print $1 }')
+[ "$(dwarfdump --eh-frame $t/exe | grep -c " FDE .* pc=$(echo $addr | sed 's/^0*//')\\.")" = 3 ]
+objdump --macho --unwind-info $t/exe > $t/unwind
 off=$(printf '0x%08x' $((0x$addr - 0x100000000)))
 [ "$(grep -c "function offset=$off" $t/unwind)" = 3 ]
 
 # Separate objects keep the survivor's FDE alone.
-$CC --ld-path=$mold -o $t/exe2 $t/main.o $t/a1.o $t/a2.o $t/a3.o -Wl,-deduplicate \
-  -Wl,-map,$t/map2
+$CC --ld-path=$mold -o $t/exe2 $t/main.o $t/a1.o $t/a2.o $t/a3.o -Wl,-deduplicate
 $t/exe2
-[ "$(grep -c 'FDE for: _helper$' $t/map2)" = 1 ]
+[ "$(dwarfdump --eh-frame $t/exe2 | grep -c ' FDE ')" = 1 ]

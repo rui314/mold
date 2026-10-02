@@ -38,10 +38,9 @@ extension NSString { @objc public func swB() -> Int { return 2 } }
 EOF2
 swiftc -parse-as-library -module-name E -emit-object -o $t/ext.o $t/ext.swift
 $CC --ld-path=$mold -shared -o $t/d.dylib $t/ext.o -framework Foundation \
-  -L$(xcrun --show-sdk-path)/usr/lib/swift -Wl,-map,$t/map
+  -L$(xcrun --show-sdk-path)/usr/lib/swift
 nm -m $t/d.dylib > $t/syms
 not grep -q _objc_categories $t/syms
-not grep -aq _objc_categories $t/map
 otool -ov $t/d.dylib | sed -n '/__objc_catlist/,/Contents of/p' > $t/log2
 grep -E '^[0-9a-f]+ ' $t/log2 | awk '{ print $NF }' | tr '\n' ' ' > $t/order2
 [ "$(cat $t/order2)" = '__CATEGORY_NSString_$_E __CATEGORY_NSData_$_E ' ]

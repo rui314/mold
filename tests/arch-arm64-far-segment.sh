@@ -41,14 +41,13 @@ EOF
 $CC -o $t/a.o -c $t/a.s
 
 $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-segaddr,__FAR,0x300000000 \
-  -Wl,-segprot,__FAR,rx,rx -Wl,-map,$t/map
+  -Wl,-segprot,__FAR,rx,rx
 $t/exe || [ $? = 82 ]
-grep -q '_far\.stub$' $t/map
-grep -q '_far_local\.stub$' $t/map
-grep -q '_far\.got$' $t/map
 otool -tv $t/exe | grep -A8 '^_main:' > $t/main
 grep -Eq 'ldr[[:space:]]+x8, \[x8\]' $t/main
-otool -Iv $t/exe | grep -A3 '__TEXT,__stubs' | grep -q LOCAL
+otool -Iv $t/exe > $t/indirect
+grep -q 'Indirect symbols for (__TEXT,__stubs) 2 entries' $t/indirect
+grep -A3 '__TEXT,__stubs' $t/indirect | grep -q LOCAL
 
 # 4 GiB from __TEXT, less than a page past its base: no stub, and so
 # out of reach.

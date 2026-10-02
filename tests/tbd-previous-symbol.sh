@@ -38,9 +38,8 @@ grep -Fq '_foo (from libold)' $t/log2
 grep -Fq '_bar (from libfoo)' $t/log2
 grep -Fq '_x$y (from libold2)' $t/log2
 
-# -map counts the stubs of moved exports as the defining file's.
-num=$(grep 'libfoo.tbd$' $t/map | sed 's/^\[ *\([0-9]*\)\].*/\1/')
-grep -Eq "\[ *$num\] _foo.stub" $t/map
+# -map lists the file once.
+[ "$(grep -c 'libfoo.tbd$' $t/map)" -eq 1 ]
 
 # Not so for a target past the range.
 $CC --ld-path=$mold -mmacos-version-min=14.0 -o $t/exe2 $t/a.o $t/libfoo.tbd 2> /dev/null

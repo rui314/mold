@@ -5,12 +5,13 @@ use std::borrow::Cow;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use rayon::prelude::*;
 use serde_json::{Value, json};
 
-use crate::chunks::ChunkId;
+use crate::chunks::{ChunkHeader, ChunkId, OutputSectionId};
 use crate::context::Context;
 use crate::error::RawPath;
-use crate::input_files::{DylibFile, FileId, MergedFile, NameSource};
+use crate::input_files::{DylibFile, FileId, NameSource};
 use crate::macho::*;
 use crate::symbol::SymbolId;
 use crate::target::Target;
@@ -487,484 +488,218 @@ fn dylib_imports<E: Target>(ctx: &Context<E>) -> Vec<Vec<&'static [u8]>> {
     imports
 }
 
-/// Whether a symbol names a row of the map: any named one but the
-/// assembler's temporary labels (L...) and the compiler's local
-/// linker-private ones (l..., an arm64 assembler's ltmpN too).
+/// Whether a symbol names a row of the map: any named one but a local
+/// label a compiler or assembler makes for itself (see
+/// input_files::is_private_label).
 pub(crate) fn is_map_symbol(sym: &crate::symbol::Symbol) -> bool {
     let name = sym.name();
-    !name.is_empty() && (sym.is_extern() || !matches!(name[0], b'L' | b'l'))
+    !name.is_empty() && (sym.is_extern() || !crate::input_files::is_private_label(name))
 }
 
-/// A line of the map's symbol list: a subsection's address and size,
-/// the number of the file it came from, and its name (the bytes of a
-/// literal, whatever they are).
-struct MapEntry<'a> {
+/// A row of the map's symbol list: the address and size of a
+/// subsection, or of the part of one a symbol names, the number of the
+/// file it came from (see MapFiles), and its name.
+struct Row<'a> {
     addr: u64,
     size: u64,
     file: usize,
     name: Cow<'a, [u8]>,
 }
 
-fn name(s: &[u8]) -> Cow<'_, [u8]> {
-    Cow::Borrowed(s)
-}
+/// A section of the map: its header, and the output section whose
+/// members it holds, if the inputs make it.
+pub type MapSection<'a> = (&'a ChunkHeader, Option<OutputSectionId>);
 
-/// The files of the link as ld-prime's map numbers them, in the order
-/// it loads them: from 1 in command line order - objects, the archive
-/// members that were loaded, where their archive was named, and dylibs,
-/// used or not (-dead_strip_dylibs or not), once for each input naming
-/// one, by another path (libc.tbd, an alias of libSystem.tbd) or not
-/// (the symbols bound to it are the first one's) -, then by install name the
-/// libraries loaded because a dylib re-exports them that something
-/// binds to, and last the files auto-link options named that something
-/// binds to or loads from, in the order ld-prime acts on the options -
-/// dylibs, and archives' members -, and those their dylibs re-export.
-/// A re-exported library named too is listed where it is named, by the
-/// path given. The re-exported libraries include the private ones a
-/// dylib merges (libSystem's libsystem_c), which ld-prime reads from
-/// files of their own and credits with the symbols they define; an
-/// auto-linked dylib all of whose bound symbols such a library defines
-/// is no file of the link's (libswiftDarwin, which merges
-/// libswift_Builtin_float). Number 0 stands for the linker, which makes
-/// the stubs, the unwind info, the hook for the classes of mergeable
-/// libraries and such. A bitcode file is listed as any
-/// object, and the object LTO compiled last of all; ld-prime credits
-/// each of the latter's symbols to the bitcode file it came from, when
-/// it can tell (see lto::origins).
+/// A symbol the map lists, by place: (subsection, offset, name).
+type Label = (u32, u64, &'static [u8]);
+
+/// The files of the map, numbered from 1: the live objects in link
+/// order (an archive's member as "lib.a(foo.o)", the object LTO
+/// compiled as itself), then the dylibs, each once. Number 0 stands
+/// for the linker, which makes the stubs, the unwind info and such,
+/// and the subsections of its own object.
 struct MapFiles<'a> {
     paths: Vec<&'a Path>,
-    /// The number of each object (0 for the internal one) and dylib.
+    /// The number of each object, 0 for one not listed.
     objs: Vec<usize>,
-    dylibs: Vec<usize>,
-    /// The number of the file each -sectcreate or -add_empty_section
-    /// option stands for: ld-prime makes each a file of its own, named
-    /// by the option's path ("(null)" for an empty section), in its
-    /// place on the command line - but the first, whose section it
-    /// takes for its own (file 0).
-    sectcreate: Vec<usize>,
-    /// The number of the merged library each symbol a dylib provides
-    /// through one comes from.
-    merged: hashbrown::HashMap<SymbolId, usize>,
-    /// The object whose tentative definition each common symbol's
-    /// subsection stands for, by subsection.
-    commons: hashbrown::HashMap<u32, u32>,
-    /// The objects LTO compiled, and the bitcode file each of their
-    /// symbols comes from, by name.
-    lto_objs: std::ops::Range<usize>,
-    lto_origins: hashbrown::HashMap<&'static [u8], Option<usize>>,
 }
 
 impl<'a> MapFiles<'a> {
     fn new<E: Target>(ctx: &'a Context<E>) -> Self {
-        enum File<'a> {
-            Obj(usize),
-            Dylib(usize),
-            Merged(&'a MergedFile),
-            Named(&'a Path),
-            SectCreate(usize),
-        }
-        // A dylib that stands for a library exports moved to is no file:
-        // its symbols count as the file's that moved them, which an
-        // auto-linked one stands for where nothing binds to that.
-        let is_moved = |dylib: &DylibFile| dylib.name_source == NameSource::Moved;
-        let (provided, merged_only) = merged_providers(ctx);
-
-        let mut named: Vec<(u32, File)> = Vec::new();
-        let mut autolinked: Vec<((u32, u32), File)> = Vec::new();
+        let mut paths = Vec::new();
+        let mut objs = vec![0; ctx.objs.len()];
         for (i, obj) in ctx.objs.iter().enumerate() {
-            if !obj.is_alive || ctx.is_internal(i) || ctx.is_bundle_hook(i) || ctx.is_lto_obj(i) {
-                continue;
-            }
-            match obj.mf.parent.and_then(|ar| ctx.autolinked_archives.get(&ar.name)) {
-                Some(&seq) => autolinked.push(((seq, obj.priority), File::Obj(i))),
-                None => named.push((obj.priority, File::Obj(i))),
+            if obj.is_alive && !ctx.is_internal(i) && !ctx.is_bundle_hook(i) {
+                paths.push(obj.mf.name.as_path());
+                objs[i] = paths.len();
             }
         }
-        for input in &ctx.lto_inputs {
-            named.push((ctx.objs[input.obj].priority, File::Obj(input.obj)));
-        }
-        for (i, dylib) in ctx.dylibs.iter().enumerate() {
-            if dylib.is_autolinked && !merged_only[i] {
-                autolinked.push(((dylib.load_order, is_moved(dylib) as u32), File::Dylib(i)));
-            } else if !dylib.is_autolinked && !dylib.is_implicit {
-                let priority = dylib.named_at.as_ref().map_or(dylib.priority, |&(p, _)| p);
-                named.push((priority, File::Dylib(i)));
-            }
-        }
-        for (priority, path) in &ctx.stripped_dylibs {
-            named.push((*priority, File::Named(path)));
-        }
-        for &(priority, _, path) in &ctx.dylib_renamings {
-            named.push((priority, File::Named(path)));
-        }
-        for (i, &priority) in ctx.sectcreate_priority.iter().enumerate().skip(1) {
-            named.push((priority, File::SectCreate(i)));
-        }
-
-        let mut implicit: Vec<(&[u8], File)> = Vec::new();
-        for (i, dylib) in ctx.dylibs.iter().enumerate() {
-            if dylib.is_implicit && !dylib.is_autolinked && !is_moved(dylib) {
-                implicit.push((&dylib.install_name, File::Dylib(i)));
-            }
-        }
-        // A merged library goes with the dylib that merged it, but where
-        // an auto-link option named it, if one did.
-        let mut seen: hashbrown::HashSet<&[u8]> = hashbrown::HashSet::new();
-        for &(_, d, file) in &provided {
-            let dylib = &ctx.dylibs[d];
-            if implicit.iter().any(|(name, _)| *name == file.install_name)
-                || !seen.insert(&file.install_name)
-            {
-                continue;
-            }
-            if dylib.is_autolinked {
-                let named = dylib.named_files.iter().find(|(_, path)| *path == file.path);
-                let seq = named.map_or(u32::MAX, |&(seq, _)| seq);
-                autolinked.push(((seq, 0), File::Merged(file)));
-            } else {
-                implicit.push((&file.install_name, File::Merged(file)));
-            }
-        }
-        named.sort_by_key(|(priority, _)| *priority);
-        implicit.sort_by_key(|(name, _)| *name);
-        autolinked.sort_by_key(|(key, _)| *key);
-
-        let mut files = Self {
-            paths: Vec::new(),
-            objs: vec![0; ctx.objs.len()],
-            dylibs: vec![0; ctx.dylibs.len()],
-            sectcreate: vec![0; ctx.args.sectcreate.len()],
-            merged: hashbrown::HashMap::new(),
-            commons: crate::output_sections::common_owners(ctx),
-            lto_objs: ctx.lto_objs.clone(),
-            lto_origins: crate::lto::origins(&ctx.lto_inputs),
-        };
-        let mut merged_numbers: hashbrown::HashMap<&[u8], usize> = hashbrown::HashMap::new();
-        let named = named.into_iter().map(|(_, file)| file);
-        let implicit = implicit.into_iter().map(|(_, file)| file);
-        let autolinked = autolinked.into_iter().map(|(_, file)| file);
-        let lto = ctx.lto_objs.clone().map(File::Obj);
-        for file in named.chain(implicit).chain(autolinked).chain(lto) {
-            let number = files.paths.len() + 1;
-            match file {
-                File::Obj(i) => {
-                    files.objs[i] = number;
-                    files.paths.push(&ctx.objs[i].mf.name);
-                }
-                File::Dylib(i) => {
-                    let dylib = &ctx.dylibs[i];
-                    if is_moved(dylib) && files.paths.contains(&dylib.path.as_path()) {
-                        continue;
-                    }
-                    files.dylibs[i] = number;
-                    files.paths.push(dylib.named_at.as_ref().map_or(&dylib.path, |(_, path)| path));
-                }
-                File::Named(path) => files.paths.push(path),
-                File::SectCreate(i) => {
-                    files.sectcreate[i] = number;
-                    let path = ctx.args.sectcreate[i].path.as_deref();
-                    files.paths.push(path.unwrap_or(Path::new("(null)")));
-                }
-                File::Merged(file) => {
-                    merged_numbers.insert(&file.install_name, number);
-                    files.paths.push(&file.path);
-                }
-            }
-        }
-        for (sym, _, file) in provided {
-            if let Some(&number) = merged_numbers.get(file.install_name.as_slice()) {
-                files.merged.insert(sym, number);
-            }
-        }
-        for (i, dylib) in ctx.dylibs.iter().enumerate().filter(|(_, d)| is_moved(d)) {
-            let path = files.paths.iter().position(|&p| *p == dylib.path);
-            files.dylibs[i] = path.map_or(0, |p| p + 1);
-        }
-        files
-    }
-
-    /// The number of the file that defines a symbol: of a common
-    /// symbol, the object whose tentative definition won.
-    fn of_symbol<E: Target>(&self, ctx: &Context<E>, sym: SymbolId) -> usize {
-        if let Some(&number) = self.merged.get(&sym) {
-            return number;
-        }
-        let sym = &ctx.symbols[sym];
-        match sym.file() {
-            Some(FileId::Obj(i)) => match sym.input_section().and_then(|i| self.commons.get(&i)) {
-                Some(&owner) => self.objs[owner as usize],
-                None => self.of_object(i as usize, sym.name()),
-            },
-            Some(FileId::Dylib(i)) => self.dylibs.get(i as usize).copied().unwrap_or(0),
-            None => 0,
-        }
-    }
-
-    /// The number of the file a symbol of an object comes from: the
-    /// object's own, or for the object LTO compiled, the bitcode file's.
-    fn of_object(&self, obj: usize, name: &[u8]) -> usize {
-        match self.lto_origins.get(name) {
-            Some(&Some(origin)) if self.lto_objs.contains(&obj) => self.objs[origin],
-            _ => self.objs[obj],
-        }
+        // (A dylib that stands for a library exports moved to is no
+        // file of its own.)
+        let dylibs = ctx.dylibs.iter().filter(|dylib| dylib.name_source != NameSource::Moved);
+        paths.extend(dylibs.map(|dylib| dylib.path.as_path()));
+        Self { paths, objs }
     }
 }
 
-/// The merged library that provides each symbol bound to a dylib that
-/// merged some, as (symbol, dylib, library), and of each dylib whether
-/// all symbols bound to it are such.
-fn merged_providers<E: Target>(
-    ctx: &Context<E>,
-) -> (Vec<(SymbolId, usize, &MergedFile)>, Vec<bool>) {
-    let mut providers: Vec<Option<hashbrown::HashMap<&[u8], &MergedFile>>> =
-        (0..ctx.dylibs.len()).map(|_| None).collect();
-    let mut provided = Vec::new();
-    let mut bound = vec![(false, false); ctx.dylibs.len()];
-    for i in 0..ctx.symbols.syms.len() as SymbolId {
-        let sym = &ctx.symbols[i];
-        let Some(FileId::Dylib(d)) = sym.file() else { continue };
-        let d = d as usize;
-        let Some(dylib) = ctx.dylibs.get(d) else { continue };
-        if dylib.merged_files.is_empty() {
-            bound[d].1 = true;
-            continue;
-        }
-        let by_name = providers[d].get_or_insert_with(|| {
-            let mut map = hashbrown::HashMap::new();
-            for file in &dylib.merged_files {
-                for &name in &file.exports {
-                    map.entry(name).or_insert(file);
-                }
-            }
-            map
-        });
-        match by_name.get(sym.name()) {
-            Some(&file) => {
-                provided.push((i, d, file));
-                bound[d].0 = true;
-            }
-            None => bound[d].1 = true,
-        }
-    }
-    let merged_only = bound.into_iter().map(|(merged, own)| merged && !own).collect();
-    (provided, merged_only)
-}
-
-/// A line of the map's section list.
-struct MapSection<'a> {
-    addr: u64,
-    size: u64,
-    segname: &'a [u8],
-    sectname: &'a [u8],
-}
-
-impl<'a> MapSection<'a> {
-    fn of(hdr: &'a crate::chunks::ChunkHeader) -> Self {
-        Self { addr: hdr.addr, size: hdr.size, segname: hdr.segname, sectname: hdr.sectname }
-    }
-}
-
+/// Writes the -map file of a final image, if asked for (see
+/// print_map_of).
 pub fn print_map<E: Target>(ctx: &Context<E>) {
-    let Some(path) = &ctx.args.map else { return };
-    let mut sections = Vec::new();
-    for seg in &ctx.segments {
-        for &id in &seg.chunks {
-            let hdr = ctx.chunk_header(id);
-            if hdr.is_sect {
-                sections.push(MapSection::of(hdr));
-            }
-        }
-        // ld-prime models a static executable's stack as a zero-fill
-        // section holding one linker-made subsection, which its
-        // segment's load command doesn't list.
-        if seg.name == b"__UNIXSTACK" {
-            let (addr, size) = (seg.cmd.vmaddr, seg.cmd.vmsize);
-            sections.push(MapSection { addr, size, segname: b"__UNIXSTACK", sectname: b"__stack" });
+    if ctx.args.map.is_none() {
+        return;
+    }
+    let mut sections: Vec<MapSection> = Vec::new();
+    for &id in ctx.segments.iter().flat_map(|seg| &seg.chunks) {
+        let hdr = ctx.chunk_header(id);
+        if hdr.is_sect {
+            let osec = match id {
+                ChunkId::Output(osec) => Some(osec),
+                _ => None,
+            };
+            sections.push((hdr, osec));
         }
     }
+    print_map_of(ctx, &sections);
+}
 
-    // The linker's symbols go first of those at one place, and an
-    // executable's header first of all.
+/// Writes the -map file, if asked for, of an output of `sections`: the
+/// output and its architecture, its files (see MapFiles), its sections
+/// and its symbols, and under -dead_strip, the subsections it dropped.
+/// Each subsection has a row for each symbol of it the map lists (see
+/// subsec_rows); each section the linker makes, and the part of one
+/// past its subsections that the linker makes, one row of the
+/// linker's, named after the section; and each branch island one, as
+/// the symbol table names it. A -r link calls this with the sections
+/// it writes.
+pub fn print_map_of<E: Target>(ctx: &Context<E>, sections: &[MapSection]) {
+    let Some(path) = &ctx.args.map else { return };
     let files = MapFiles::new(ctx);
-    let mut entries = linker_symbol_entries(ctx, &files);
-    let (named, first_labels, literal_aliases) = symbol_entries(ctx, &files);
-    let linker_symbols = entries.len();
-    entries.extend(named.entries);
-    entries.extend(unnamed_entries(ctx, &files, &first_labels));
-    entries.extend(eh_frame_entries(ctx, &files, &entries[linker_symbols..]));
-    entries.extend(synthetic_entries(ctx, &files));
-    let mut entries = sort_entries(entries, linker_symbols, &named.slots);
-    insert_literal_aliases(&mut entries, literal_aliases);
-    if ctx.args.output_type == MH_EXECUTE && !ctx.args.preload {
+    let labels = subsec_labels(ctx);
+    let section_name = |hdr: &ChunkHeader| Cow::Owned([hdr.segname, b",", hdr.sectname].concat());
+
+    let mut rows = Vec::new();
+    if ctx.args.output_type == MH_EXECUTE && !ctx.args.preload && !ctx.args.relocatable {
         let addr = ctx.mach_header.hdr.addr;
-        entries.insert(0, MapEntry { addr, size: 0, file: 0, name: name(b"__mh_execute_header") });
+        rows.push(Row { addr, size: 0, file: 0, name: Cow::Borrowed(b"__mh_execute_header") });
     }
-    write_map(ctx, path, &files, &sections, &entries, &dead_entries(ctx, &files));
-}
-
-/// The rows of the defined symbols (see symbol_entries) but the
-/// literals' labels, with their symbols, and where each goes among the
-/// rows at its address.
-struct NamedEntries<'a> {
-    entries: Vec<MapEntry<'a>>,
-    slots: Vec<Slot>,
-}
-
-/// Where the row of a defined symbol goes among the rows at its address
-/// (see sort_entries), as ld-prime lists them: after the linker's, the
-/// labels of an empty output section; then the label that names a
-/// subsection with bytes; then those that name empty ones, in layout
-/// order (see layout_order); then the others, by their subsections'
-/// layout order and within one in the order ld-prime keeps them - the
-/// symbol table's, but in an object without subsections the best first
-/// at each place.
-#[derive(Clone, Copy)]
-enum Slot {
-    EmptySection,
-    Named,
-    NamedEmpty(u32),
-    Alias(u32, u32),
-}
-
-/// Sorts the map's rows by address: the linker's symbols first of those
-/// at one place (the first `linker_symbols` rows), then the defined
-/// symbols' (the next `slots.len()`) by their slots and the others'
-/// as names of subsections, the ones with bytes first.
-fn sort_entries<'a>(
-    entries: Vec<MapEntry<'a>>,
-    linker_symbols: usize,
-    slots: &[Slot],
-) -> Vec<MapEntry<'a>> {
-    let place = |i: usize, e: &MapEntry| {
-        let slot = match slots.get(i.wrapping_sub(linker_symbols)) {
-            _ if i < linker_symbols => return (e.addr, 0, 0, 0),
-            Some(&slot) => slot,
-            None if e.size > 0 => Slot::Named,
-            None => Slot::NamedEmpty(0),
+    for &(hdr, osec) in sections {
+        let Some(osec) = osec else {
+            if hdr.size > 0 {
+                rows.push(Row { addr: hdr.addr, size: hdr.size, file: 0, name: section_name(hdr) });
+            }
+            continue;
         };
-        match slot {
-            Slot::EmptySection => (e.addr, 1, 0, 0),
-            Slot::Named => (e.addr, 2, 0, 0),
-            Slot::NamedEmpty(pos) => (e.addr, 3, pos, 0),
-            Slot::Alias(pos, n) => (e.addr, 4, pos, n),
+        let osec = ctx.output_section(osec);
+        let members: Vec<Vec<Row>> = (osec.members.par_iter())
+            .fold(Vec::new, |mut rows, &id| {
+                let addr = ctx.isec_addr(id as usize);
+                subsec_rows(ctx, &files, &labels, id as usize, addr, &mut rows);
+                rows
+            })
+            .collect();
+        rows.extend(members.into_iter().flatten());
+        // What the linker adds after the members: a tail, and a section
+        // of its own of the same name.
+        let end = hdr.joined.map_or(hdr.size, |(_, off)| off);
+        if osec.tail != crate::chunks::output_section::Tail::None {
+            let (addr, size) = (hdr.addr + osec.tail_off, end - osec.tail_off);
+            rows.push(Row { addr, size, file: 0, name: section_name(hdr) });
         }
-    };
-    let mut order: Vec<usize> = (0..entries.len()).collect();
-    order.sort_by_key(|&i| place(i, &entries[i]));
-    let mut entries: Vec<Option<MapEntry>> = entries.into_iter().map(Some).collect();
-    order.into_iter().filter_map(|i| entries[i].take()).collect()
-}
-
-/// Puts the rows of each labeled literal (see literal_labels) after the
-/// others at its address in `entries`, sorted by address.
-fn insert_literal_aliases<'a>(entries: &mut Vec<MapEntry<'a>>, aliases: Vec<MapEntry<'a>>) {
-    for alias in aliases {
-        let at = entries.partition_point(|e| e.addr <= alias.addr);
-        entries.insert(at, alias);
+        if let Some((joined, off)) = hdr.joined {
+            let size = ctx.chunk_header(joined).size;
+            rows.push(Row { addr: hdr.addr + off, size, file: 0, name: section_name(hdr) });
+        }
     }
+    for (addr, _, name) in crate::thunks::island_symbols(ctx) {
+        rows.push(Row { addr, size: E::THUNK_SIZE, file: 0, name: Cow::Borrowed(name) });
+    }
+    rows.par_sort_by_key(|row| row.addr);
+    let dead = dead_rows(ctx, &files, &labels);
+    write_map(ctx, path, &files, sections, &rows, &dead);
 }
 
-/// A record of a section a -r output makes itself, as its map lists it.
-pub enum RelocatableRecord {
-    /// A record of __LD,__compact_unwind: unwind record `i`'s.
-    Unwind(usize),
-    /// A record of __TEXT,__eh_frame: CIE or FDE `i`.
-    Cie(usize),
-    Fde(usize),
-    /// The merged __objc_imageinfo.
-    ImageInfo,
+/// The symbols the map lists (see is_map_symbol), sorted by place: a
+/// symbol of a subsection merged into an identical one is at the
+/// survivor's place, after the survivor's own.
+fn subsec_labels<E: Target>(ctx: &Context<E>) -> Vec<Label> {
+    let mut labels: Vec<_> = (ctx.symbols.syms.par_iter())
+        .filter_map(|sym| {
+            let own = sym.input_section()? as usize;
+            let isec = ctx.resolve_isec(own);
+            is_map_symbol(sym).then_some(((isec as u32, sym.value, isec != own), sym.name()))
+        })
+        .collect();
+    labels.par_sort_by_key(|&(place, _)| place);
+    labels.into_iter().map(|((isec, value, _), name)| (isec, value, name)).collect()
 }
 
-/// -map for a -r link, which ld-prime writes as for a final image: of
-/// the output's `sections`, at the addresses they have from zero, and
-/// the subsections in them - the inputs', and the records of the
-/// sections the output makes itself (`records`, by address). A record
-/// of __compact_unwind is its object's, named by its label, if it has
-/// one; the __objc_imageinfo is the linker's, as in an image.
-pub fn print_relocatable_map<E: Target>(
-    ctx: &Context<E>,
-    sections: &[&crate::chunks::ChunkHeader],
-    records: &[(u64, RelocatableRecord)],
-) {
-    let Some(path) = &ctx.args.map else { return };
-    let sections: Vec<MapSection> = sections.iter().map(|hdr| MapSection::of(hdr)).collect();
-    let files = MapFiles::new(ctx);
-    let mut entries = linker_symbol_entries(ctx, &files);
-    let linker_symbols = entries.len();
-    let (named, first_labels, literal_aliases) = symbol_entries(ctx, &files);
-    entries.extend(named.entries);
-    entries.extend(unnamed_entries(ctx, &files, &first_labels));
-    let synthetic = relocatable_record_entries(ctx, &files, &entries[linker_symbols..], records);
-    entries.extend(synthetic);
-    let mut entries = sort_entries(entries, linker_symbols, &named.slots);
-    insert_literal_aliases(&mut entries, literal_aliases);
-    write_map(ctx, path, &files, &sections, &entries, &[]);
-}
-
-/// The map's entries of the records of the sections a -r output makes
-/// itself (see print_relocatable_map), whose FDEs are named after the
-/// `named` symbols.
-fn relocatable_record_entries<E: Target>(
+/// Appends the rows of subsection `id` at `addr` to `rows`: one for
+/// each of its `labels`, the first at a place sized to the next place
+/// or the subsection's end, the others there of no size; and an "anon"
+/// one for the bytes before the first, if any.
+fn subsec_rows<E: Target>(
     ctx: &Context<E>,
     files: &MapFiles,
-    named: &[MapEntry],
-    records: &[(u64, RelocatableRecord)],
-) -> Vec<MapEntry<'static>> {
-    let fde_names = FdeNames::new(named);
-    let labels = unwind_labels(ctx);
-    let mut entries = Vec::new();
-    for &(addr, ref record) in records {
-        let (size, obj, name) = match *record {
-            RelocatableRecord::Unwind(i) => {
-                let rec = &ctx.unwind_records[i];
-                let label = labels.get(&(rec.isec, rec.input_offset)).copied();
-                let obj = ctx.isecs[rec.isec as usize].file as usize;
-                (32, Some(obj), Cow::Borrowed(label.unwrap_or(b"anon")))
-            }
-            RelocatableRecord::Cie(i) => {
-                let cie = &ctx.cies[i];
-                (cie.data.len() as u64, Some(cie.obj as usize), name(b"CFI"))
-            }
-            RelocatableRecord::Fde(i) => {
-                let fde = &ctx.fdes[i];
-                let func = ctx.isec_addr(fde.isec as usize) + fde.func_offset as u64;
-                (fde.data.len() as u64, Some(fde.obj as usize), fde_names.name(func))
-            }
-            RelocatableRecord::ImageInfo => (8, None, name(b"anon")),
-        };
-        let file = obj.map_or(0, |obj| files.objs[obj]);
-        entries.push(MapEntry { addr, size, file, name });
+    labels: &[Label],
+    id: usize,
+    addr: u64,
+    rows: &mut Vec<Row>,
+) {
+    let isec = &ctx.isecs[id];
+    let (size, file) = (isec.size as u64, files.objs[isec.file as usize]);
+    let start = labels.partition_point(|l| (l.0 as usize) < id);
+    let len = labels[start..].partition_point(|l| l.0 as usize == id);
+    let labels = &labels[start..start + len];
+    let first = labels.first().map_or(size, |l| l.1);
+    if first > 0 {
+        rows.push(Row { addr, size: first, file, name: Cow::Borrowed(b"anon") });
     }
-    entries
-}
-
-/// The label of each __compact_unwind record that has one, by the
-/// record's subsection and function offset (see
-/// ObjectFile::unwind_labels).
-fn unwind_labels<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<(u32, u32), &'static [u8]> {
-    let mut labels = hashbrown::HashMap::new();
-    for obj in ctx.objs.iter().filter(|obj| obj.is_alive) {
-        for &(isec, off, k) in &obj.unwind_labels {
-            let name = ctx.symbols[obj.symbols[k as usize]].name();
-            if !name.is_empty() && !name.starts_with(b"L") {
-                labels.entry((isec, off)).or_insert(name);
-            }
+    let mut places = labels.chunk_by(|a, b| a.1 == b.1).peekable();
+    while let Some(place) = places.next() {
+        let value = place[0].1;
+        let end = places.peek().map_or(size, |next| next[0].1);
+        for (j, &(_, _, name)) in place.iter().enumerate() {
+            let size = if j == 0 { end.saturating_sub(value) } else { 0 };
+            rows.push(Row { addr: addr + value, size, file, name: Cow::Borrowed(name) });
         }
     }
-    labels
 }
 
-/// Writes the map: the output and its architecture, the files of the
-/// link (see MapFiles), the `sections`, the `entries` - the
-/// subsections, in the order given - and the `dead` ones -dead_strip
-/// took out.
+/// The rows of the dead-stripped list: under -dead_strip, the
+/// subsections of the listed objects that the output doesn't have,
+/// but those merged into an identical one, by object, as the live
+/// ones' (see subsec_rows).
+fn dead_rows<E: Target>(ctx: &Context<E>, files: &MapFiles, labels: &[Label]) -> Vec<Row<'static>> {
+    if !ctx.args.dead_strip {
+        return Vec::new();
+    }
+    let objs: Vec<Vec<Row>> = (0..ctx.objs.len())
+        .into_par_iter()
+        .filter(|&i| files.objs[i] != 0)
+        .map(|i| {
+            let mut rows = Vec::new();
+            for &id in &ctx.objs[i].subsecs {
+                let isec = &ctx.isecs[id];
+                if !isec.is_alive() && isec.replacement == crate::input_sections::NO_REPLACEMENT {
+                    subsec_rows(ctx, files, labels, id as usize, 0, &mut rows);
+                }
+            }
+            rows
+        })
+        .collect();
+    objs.into_iter().flatten().collect()
+}
+
+/// Writes the map: the output and its architecture, the `files`, the
+/// `sections`, the `rows` of the subsections and those of the `dead`
+/// ones.
 fn write_map<E: Target>(
     ctx: &Context<E>,
     path: &Path,
     files: &MapFiles,
     sections: &[MapSection],
-    entries: &[MapEntry],
-    dead: &[MapEntry],
+    rows: &[Row],
+    dead: &[Row],
 ) {
     let Ok(file) = std::fs::File::create(path) else {
         crate::warn!("could not write map file: {}", path.raw());
@@ -989,1213 +724,30 @@ fn write_map<E: Target>(
 
     let _ = writeln!(out, "# Sections:");
     let _ = writeln!(out, "# Address\tSize    \tSegment\tSection");
-    for sec in sections {
-        let _ = write!(out, "0x{:08X}\t0x{:08X}\t", sec.addr, sec.size);
-        let _ = out.write_all(&[sec.segname, b"\t", sec.sectname].concat());
+    for (hdr, _) in sections {
+        let _ = write!(out, "0x{:08X}\t0x{:08X}\t", hdr.addr, hdr.size);
+        let _ = out.write_all(&[hdr.segname, b"\t", hdr.sectname].concat());
         let _ = writeln!(out);
     }
 
     let _ = writeln!(out, "# Symbols:");
     let _ = writeln!(out, "# Address\tSize    \tFile  Name");
-    for e in entries {
-        let _ = write!(out, "0x{:08X}\t0x{:08X}\t[{:3}] ", e.addr, e.size, e.file);
-        let _ = out.write_all(&e.name);
+    for row in rows {
+        let _ = write!(out, "0x{:08X}\t0x{:08X}\t[{:3}] ", row.addr, row.size, row.file);
+        let _ = out.write_all(&row.name);
         let _ = writeln!(out);
     }
 
-    // Symbols removed by -dead_strip appear in their own section
-    // with "<<dead>>" in the address column, the way ld64 reports
-    // them; sizes are the subsection extents they would have had.
+    // The subsections -dead_strip removed come in a list of their own,
+    // with "<<dead>>" in the address column, as in ld64's map.
     if !dead.is_empty() {
         let _ = writeln!(out);
         let _ = writeln!(out, "# Dead Stripped Symbols:");
         let _ = writeln!(out, "#        \tSize    \tFile  Name");
-        for e in dead {
-            let _ = write!(out, "<<dead>>\t0x{:08X}\t[{:3}] ", e.size, e.file);
-            let _ = out.write_all(&e.name);
+        for row in dead {
+            let _ = write!(out, "<<dead>>\t0x{:08X}\t[{:3}] ", row.size, row.file);
+            let _ = out.write_all(&row.name);
             let _ = writeln!(out);
         }
     }
-}
-
-/// Whether a symbol names its subsection in the map, as ld-prime names
-/// subsections. An assembler temporary (L...) doesn't, nor does a
-/// linker-private label (l...) of a fixed-size literal, such as the
-/// compiler's lCPI0_0 constant-pool labels: the literal is known by its
-/// size, as a C string is by its contents whatever labels it. The
-/// entries of the sections ld-prime reads as lists of records -
-/// CFStrings, UTF-16 strings, selector and class references,
-/// Objective-C class and category lists - are named by no local symbol:
-/// they are "anon", as unnamed subsections are. (An ltmpN label may be
-/// shadowed besides; see drop_shadowed_ltmps.)
-fn is_named<E: Target>(ctx: &Context<E>, sym: &crate::symbol::Symbol) -> bool {
-    let isec = &ctx.isecs[ctx.resolve_isec(sym.input_section().unwrap() as usize)];
-    let split = ctx.objs[isec.file as usize].subsections_via_symbols;
-    names_subsec(ctx.hdr_of(isec), split, sym.is_extern(), sym.name())
-}
-
-/// is_named for a label of a section with header `hdr`, of an object
-/// with subsections or not (`split`).
-fn names_subsec(hdr: &MachSection, split: bool, is_extern: bool, name: &[u8]) -> bool {
-    if name.is_empty()
-        || hdr.section_type() == S_CSTRING_LITERALS
-        || crate::input_files::is_ignored_literal_label(hdr.section_type(), name)
-    {
-        return false;
-    }
-    is_extern || (!crate::input_files::is_record_list(hdr, split) && !name.starts_with(b"L"))
-}
-
-/// Drops from the map's named symbols each ltmpN label another of them
-/// shares a place with. An arm64 assembler puts the label where each
-/// section starts; where symbols split the sections, a subsection there
-/// takes the label's name only if it has no other, as ld-prime ranks
-/// the labels a subsection may be named after. (Without subsections,
-/// the label, the worst, names the section's first subsection; see
-/// symbol_entries.)
-fn drop_shadowed_ltmps<E: Target, T>(
-    ctx: &Context<E>,
-    syms: &mut Vec<T>,
-    id: impl Fn(&T) -> SymbolId,
-) {
-    let is_ltmp = |sym: SymbolId| {
-        let sym = &ctx.symbols[sym];
-        matches!(sym.file(), Some(FileId::Obj(obj)) if ctx.objs[obj as usize].subsections_via_symbols)
-            && sym.name().starts_with(b"ltmp")
-    };
-    let place = |sym: SymbolId| (ctx.symbols[sym].input_section(), ctx.symbols[sym].value);
-    let ltmps: hashbrown::HashSet<_> =
-        syms.iter().map(&id).filter(|&sym| is_ltmp(sym)).map(place).collect();
-    if ltmps.is_empty() {
-        return;
-    }
-    let shadowed: hashbrown::HashSet<_> = syms
-        .iter()
-        .map(&id)
-        .filter(|&sym| !is_ltmp(sym))
-        .map(place)
-        .filter(|at| ltmps.contains(at))
-        .collect();
-    syms.retain(|t| !is_ltmp(id(t)) || !shadowed.contains(&place(id(t))));
-}
-
-/// How a symbol ranks to name its subsection among the symbols at its
-/// place, lowest first: as ld-prime ranks the labels at a subsection's
-/// start (see subsec_name_rank) - _zb names the subsection of `_zb: _ab:
-/// lc:`, _loc5 that of a weak definition _wd it labels too. (In an
-/// object without subsections, the worst names it in the map's live
-/// part; see symbol_entries.)
-fn naming_rank<E: Target>(
-    ctx: &Context<E>,
-    nlists: &hashbrown::HashMap<SymbolId, (u32, bool)>,
-    sym: SymbolId,
-) -> LabelRank {
-    match (nlists.get(&sym), ctx.symbols[sym].file()) {
-        (Some(&(k, _)), Some(FileId::Obj(obj))) => {
-            label_rank(&ctx.objs[obj as usize], k, ctx.symbols[sym].name())
-        }
-        _ => (0, &b""[..], std::cmp::Reverse(0)),
-    }
-}
-
-/// See naming_rank: the rank of nlist `k` of an object, named `name`.
-type LabelRank = (u8, &'static [u8], std::cmp::Reverse<u32>);
-
-/// A label of symbol_entries by its place - its subsection and the
-/// offset in it - and rank, with its row's index.
-type PlacedLabel = ((usize, u64, LabelRank), usize);
-
-fn label_rank(obj: &crate::input_files::ObjectFile, k: u32, name: &'static [u8]) -> LabelRank {
-    let rank = crate::input_files::subsec_name_rank(&obj.nlists[k as usize], name);
-    (rank, name, std::cmp::Reverse(k))
-}
-
-/// The nlist of each defined symbol in its object's symbol table: its
-/// index, and whether it is an alternate entry point (N_ALT_ENTRY).
-fn defining_nlists<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<SymbolId, (u32, bool)> {
-    let mut nlists = hashbrown::HashMap::new();
-    for (i, obj) in ctx.objs.iter().enumerate().filter(|(_, obj)| obj.is_alive) {
-        for (k, (nlist, &sym)) in obj.nlists.iter().zip(&obj.symbols).enumerate() {
-            if ctx.symbols[sym].file() == Some(FileId::Obj(i as u32)) {
-                nlists.entry(sym).or_insert((k as u32, nlist.n_desc & N_ALT_ENTRY != 0));
-            }
-        }
-    }
-    nlists
-}
-
-/// Defined symbols with their addresses, sizes and owning objects. A
-/// symbol's size is the span to the next symbol in its subsection (or
-/// the subsection's end) - the size of the subsection ld64 splits off
-/// at it; of several at one place, the one naming the subsection has
-/// the size (see naming_rank) and the others are aliases of none, as is
-/// an alternate entry point (Swift's type metadata inside its full
-/// metadata). ld-prime counts a thread-local variable's descriptor,
-/// which it rewrites, as its own, and a common symbol as the object's
-/// whose tentative definition won. It credits itself with a subsection
-/// it rewrote (a method list in the relative form), with the alias it
-/// makes of a function folded into an identical one (-deduplicate),
-/// which has no size, and with the names -alias gives; an ltmpN label
-/// of a weak definition another file's won names nothing. In an object
-/// without subsections, the worst of the labels at a place names its
-/// subsection, and ld-prime lists the others before it, the best first
-/// (`_main`, then the ltmp0 that names __text) - unless another
-/// subsection's row shares the first label's address (see
-/// shared_starts). Also returns where in its subsection the first
-/// symbol is, by subsection, and the rows of the labeled literals (see
-/// literal_labels).
-fn symbol_entries<'a, E: Target>(
-    ctx: &'a Context<E>,
-    files: &MapFiles,
-) -> (NamedEntries<'a>, hashbrown::HashMap<usize, u64>, Vec<MapEntry<'a>>) {
-    use crate::chunks::symtab::is_coalesced_away;
-    let nlists = defining_nlists(ctx);
-    // The names -alias gives that no object defines itself.
-    let aliases: hashbrown::HashSet<&[u8]> =
-        ctx.args.aliases.iter().map(|(_, alias)| alias.as_slice()).collect();
-    let is_alias_name = |obj: u32, id: SymbolId| {
-        aliases.contains(ctx.symbols[id].name())
-            && !nlists
-                .get(&id)
-                .is_some_and(|&(k, _)| ctx.objs[obj as usize].nlists[k as usize].n_type() == N_SECT)
-    };
-    let mut syms: Vec<(SymbolId, usize)> = Vec::new();
-    let mut literal_syms: Vec<SymbolId> = Vec::new();
-    for i in 0..ctx.symbols.syms.len() as SymbolId {
-        let sym = &ctx.symbols[i];
-        let (Some(FileId::Obj(obj)), Some(own)) = (sym.file(), sym.input_section()) else {
-            continue;
-        };
-        let isec = ctx.resolve_isec(own as usize);
-        if !ctx.isecs[isec].is_alive() {
-            continue;
-        }
-        if isec == own as usize && is_literal(ctx, isec) {
-            literal_syms.push(i);
-            continue;
-        }
-        if !is_named(ctx, sym) {
-            continue;
-        }
-        // Of the name of the function a folded one folded into, ld-prime
-        // lists one of each scope (see icf::folded_subsec_names).
-        let folded = is_coalesced_away(ctx, own as usize);
-        if folded
-            && (sym.name().starts_with(b"ltmp") || ctx.folded_subsec_names.get(&i) == Some(&true))
-        {
-            continue;
-        }
-        // The alias ld-prime makes of a folded function is its own, but
-        // the function's other labels stay their file's.
-        let file = match files.commons.get(&(isec as u32)) {
-            _ if folded && ctx.folded_subsec_names.contains_key(&i) => 0,
-            _ if !aliases.is_empty() && is_alias_name(obj, i) => 0,
-            _ if ctx.hdr_of(&ctx.isecs[isec]).section_type() == S_THREAD_LOCAL_VARIABLES => 0,
-            Some(&owner) => files.objs[owner as usize],
-            None if is_rewritten_method_list(ctx, isec) => 0,
-            None => files.of_object(obj as usize, sym.name()),
-        };
-        syms.push((i, file));
-    }
-    drop_shadowed_ltmps(ctx, &mut syms, |&(sym, _)| sym);
-
-    let (sizes, slots) = size_labels(ctx, &nlists, &syms);
-    let mut first_labels: hashbrown::HashMap<usize, u64> = hashbrown::HashMap::new();
-    for &(sym, _) in &syms {
-        let isec = ctx.resolve_isec(ctx.symbols[sym].input_section().unwrap() as usize);
-        let value = ctx.symbols[sym].value;
-        let first = first_labels.entry(isec).or_insert(value);
-        *first = (*first).min(value);
-    }
-    let entries: Vec<MapEntry> = syms
-        .iter()
-        .zip(sizes)
-        .map(|(&(sym, file), size)| MapEntry {
-            addr: ctx.sym_addr(sym),
-            size,
-            file,
-            name: name(ctx.symbols[sym].name()),
-        })
-        .collect();
-    let literals = literal_labels(ctx, files, &nlists, literal_syms, &mut first_labels);
-    (NamedEntries { entries, slots }, first_labels, literals)
-}
-
-/// The sizes of the rows of symbol_entries, of symbols `syms`, and
-/// their slots (see Slot).
-fn size_labels<E: Target>(
-    ctx: &Context<E>,
-    nlists: &hashbrown::HashMap<SymbolId, (u32, bool)>,
-    syms: &[(SymbolId, usize)],
-) -> (Vec<u64>, Vec<Slot>) {
-    use crate::chunks::symtab::is_coalesced_away;
-    // Sort the symbols by place, the best last of those at one, and
-    // measure to the next place.
-    let key = |sym: SymbolId| {
-        let isec = ctx.resolve_isec(ctx.symbols[sym].input_section().unwrap() as usize);
-        (isec, ctx.symbols[sym].value, naming_rank(ctx, nlists, sym))
-    };
-    let is_alias = |sym: SymbolId| {
-        nlists.get(&sym).is_some_and(|&(_, alt)| alt)
-            || is_coalesced_away(ctx, ctx.symbols[sym].input_section().unwrap() as usize)
-    };
-    let mut order: Vec<(_, usize)> =
-        (0..syms.len()).filter(|&i| !is_alias(syms[i].0)).map(|i| (key(syms[i].0), i)).collect();
-    order.sort();
-    let places: Vec<_> = order.chunk_by(|(a, _), (b, _)| (a.0, a.1) == (b.0, b.1)).collect();
-    let layout = layout_order(ctx);
-    let symtab_index = |sym: SymbolId| {
-        ctx.symtab.output_sym_indices.get(sym as usize).copied().unwrap_or(u32::MAX)
-    };
-    let shared = shared_starts(ctx, syms, &places);
-    let mut sizes = vec![0u64; syms.len()];
-    let mut slots: Vec<Slot> =
-        syms.iter().map(|&(sym, _)| Slot::Alias(layout[key(sym).0], symtab_index(sym))).collect();
-    // A label's place among those of its subsection, the best first, in
-    // an object without subsections.
-    let mut seq = 0;
-    for (i, place) in places.iter().enumerate() {
-        let (isec, value, _) = place[0].0;
-        let end = match places.get(i + 1).map(|next| next[0].0) {
-            Some((next_isec, next_value, _)) if next_isec == isec => next_value,
-            _ => ctx.isecs[isec].size as u64,
-        };
-        let size = end.saturating_sub(value);
-        // The labels of an empty output section (an arm64 assembler's
-        // ltmpN of an empty __text) go before the next section's.
-        let osec = ctx.isecs[isec].output_section();
-        if osec.is_some_and(|id| ctx.chunk_header(id).size == 0) {
-            for &(_, idx) in place.iter() {
-                slots[idx] = Slot::EmptySection;
-            }
-            continue;
-        }
-        let best = place.last().unwrap().1;
-        let first = i == 0 || places[i - 1][0].0.0 != isec;
-        if first {
-            let pos = layout[isec];
-            slots[best] =
-                if ctx.isecs[isec].size == 0 { Slot::NamedEmpty(pos) } else { Slot::Named };
-            seq = 0;
-        }
-        if ctx.objs[ctx.isecs[isec].file as usize].subsections_via_symbols {
-            sizes[best] = size;
-            if size > 0 {
-                slots[best] = Slot::Named;
-            }
-            continue;
-        }
-        for &(_, idx) in place.iter().rev().filter(|&&(_, idx)| !first || idx != best) {
-            slots[idx] = Slot::Alias(layout[isec], seq);
-            seq += 1;
-        }
-        if !shared.contains(&isec) {
-            sizes[place[0].1] = size;
-        } else if first {
-            sizes[best] = ctx.isecs[isec].size as u64 - value;
-        }
-    }
-
-    (sizes, slots)
-}
-
-/// Each subsection's place in the layout, by output section address
-/// and then member order (u32::MAX for one no output section lists).
-fn layout_order<E: Target>(ctx: &Context<E>) -> Vec<u32> {
-    let mut osecs: Vec<_> = ctx.output_sections.iter().collect();
-    osecs.sort_by_key(|osec| osec.hdr.addr);
-    let mut pos = vec![u32::MAX; ctx.isecs.len()];
-    for (n, &id) in osecs.iter().flat_map(|osec| &osec.members).enumerate() {
-        pos[id as usize] = n as u32;
-    }
-    pos
-}
-
-/// The subsections of objects without subsections at whose first label
-/// another subsection's row is: a label at the end of the one before,
-/// or of an empty one. ld-prime then lists that row between the first
-/// label and the others, as it lists any (see Slot), and splits the
-/// subsection's size among its labels only when they are listed
-/// together: the first keeps it all.
-fn shared_starts<E: Target>(
-    ctx: &Context<E>,
-    syms: &[(SymbolId, usize)],
-    places: &[&[PlacedLabel]],
-) -> hashbrown::HashSet<usize> {
-    let in_empty_section = |isec: usize| {
-        let osec = ctx.isecs[isec].output_section();
-        osec.is_some_and(|id| ctx.chunk_header(id).size == 0)
-    };
-    let mut starts = hashbrown::HashMap::new();
-    for (i, place) in places.iter().enumerate() {
-        let ((isec, _, _), idx) = place[0];
-        let first = i == 0 || places[i - 1][0].0.0 != isec;
-        if first
-            && !ctx.objs[ctx.isecs[isec].file as usize].subsections_via_symbols
-            && ctx.isecs[isec].size > 0
-            && !in_empty_section(isec)
-        {
-            starts.insert(ctx.sym_addr(syms[idx].0), isec);
-        }
-    }
-    if starts.is_empty() {
-        return hashbrown::HashSet::new();
-    }
-    syms.iter()
-        .filter_map(|&(sym, _)| {
-            let isec = ctx.resolve_isec(ctx.symbols[sym].input_section()? as usize);
-            let owner = *starts.get(&ctx.sym_addr(sym))?;
-            (owner != isec && !in_empty_section(isec)).then_some(owner)
-        })
-        .collect()
-}
-
-/// Whether a subsection is a literal - a C string or a 4-, 8- or 16-byte
-/// literal -, whose labels ld-prime lists its own way (see
-/// literal_labels).
-fn is_literal<E: Target>(ctx: &Context<E>, isec: usize) -> bool {
-    matches!(
-        ctx.hdr_of(&ctx.isecs[isec]).section_type(),
-        S_CSTRING_LITERALS | S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS
-    )
-}
-
-/// The rows of the labels of literals (see is_literal), in order: of a
-/// literal's labels, the best (see naming_rank) names the literal -
-/// unless it is linker-private (lCPI0_0), which leaves the literal
-/// known by its size, as a C string always is by its contents - and
-/// each other label, linker-private or not, has a row of no size after
-/// it, the better first. The literal's size goes with the first row,
-/// but in an object without subsections with the last, the worst
-/// label's, which names the subsection there (an arm64 assembler's
-/// ltmpN, which an object with subsections doesn't list). A C string's
-/// other labels are subsections of their own (see CstringAliases):
-/// only its live aliases are listed here. Notes the literals in
-/// `first_labels`.
-fn literal_labels<'a, E: Target>(
-    ctx: &'a Context<E>,
-    files: &MapFiles,
-    nlists: &hashbrown::HashMap<SymbolId, (u32, bool)>,
-    syms: Vec<SymbolId>,
-    first_labels: &mut hashbrown::HashMap<usize, u64>,
-) -> Vec<MapEntry<'a>> {
-    use crate::input_files::is_private_label;
-    let is_cstring =
-        |isec: usize| ctx.hdr_of(&ctx.isecs[isec]).section_type() == S_CSTRING_LITERALS;
-    let is_listed = |id: SymbolId| {
-        let isec = ctx.symbols[id].input_section().unwrap() as usize;
-        let split = ctx.objs[ctx.isecs[isec].file as usize].subsections_via_symbols;
-        let name = ctx.symbols[id].name();
-        !name.is_empty()
-            && match is_cstring(isec) {
-                true => !name.starts_with(b"ltmp"),
-                false => !name.starts_with(b"L") && !(split && name.starts_with(b"ltmp")),
-            }
-    };
-    let mut labels: Vec<(usize, u64, std::cmp::Reverse<LabelRank>, SymbolId)> = (syms.into_iter())
-        .filter(|&id| is_listed(id))
-        .map(|id| {
-            let (sym, rank) = (&ctx.symbols[id], naming_rank(ctx, nlists, id));
-            (sym.input_section().unwrap() as usize, sym.value, std::cmp::Reverse(rank), id)
-        })
-        .collect();
-    labels.sort_unstable();
-    let aliases = CstringAliases::default();
-    let mut rows = Vec::new();
-    for place in labels.chunk_by(|a, b| (a.0, a.1) == (b.0, b.1)) {
-        let (isec, value, _, best) = place[0];
-        let obj = ctx.isecs[isec].file as usize;
-        let row = |id: SymbolId| {
-            let file = files.of_object(obj, ctx.symbols[id].name());
-            MapEntry { addr: ctx.sym_addr(id), size: 0, file, name: name(ctx.symbols[id].name()) }
-        };
-        let listed = |&id: &SymbolId| !is_cstring(isec) || aliases.is_live(ctx, obj, id);
-        let others: Vec<SymbolId> = place[1..].iter().map(|&(.., id)| id).filter(listed).collect();
-        // A C string without aliases is listed as any literal no
-        // symbol names (see unnamed_entries).
-        if is_cstring(isec) && others.is_empty() {
-            continue;
-        }
-        let first = rows.len();
-        match literal_name(ctx, &ctx.isecs[isec]) {
-            Some(literal) if is_cstring(isec) || is_private_label(ctx.symbols[best].name()) => {
-                let addr = ctx.sym_addr(best);
-                rows.push(MapEntry { addr, size: 0, file: files.objs[obj], name: literal });
-            }
-            _ => rows.push(row(best)),
-        }
-        rows.extend(others.into_iter().map(row));
-        let named = if ctx.objs[obj].subsections_via_symbols { first } else { rows.len() - 1 };
-        rows[named].size = ctx.isecs[isec].size as u64 - value;
-        first_labels.insert(isec, value);
-    }
-    rows
-}
-
-/// The labels of C strings ld-prime keeps: it makes a subsection of each
-/// label at a string's start, the best (see naming_rank) the string's
-/// own; each other linker-private one is a copy of the string, merged
-/// into it, and each other one an alias of no size, which -dead_strip
-/// keeps in an object with subsections only if something live refers
-/// to it (or it is global). The symbols live code refers to are found
-/// once one is asked about.
-#[derive(Default)]
-struct CstringAliases {
-    referenced: std::sync::OnceLock<hashbrown::HashSet<SymbolId>>,
-}
-
-impl CstringAliases {
-    /// Whether the label `sym` of object `obj`, not the best of a C
-    /// string's, is an alias that stays live.
-    fn is_live<E: Target>(&self, ctx: &Context<E>, obj: usize, sym: SymbolId) -> bool {
-        if crate::input_files::is_private_label(ctx.symbols[sym].name()) {
-            return false;
-        }
-        if !ctx.args.dead_strip
-            || !ctx.objs[obj].subsections_via_symbols
-            || ctx.symbols[sym].is_extern()
-        {
-            return true;
-        }
-        let referenced = self.referenced.get_or_init(|| {
-            (ctx.isecs.iter().filter(|isec| isec.is_alive()))
-                .flat_map(|isec| {
-                    let relocs = crate::input_files::isec_relocs_of(&ctx.objs, isec);
-                    relocs.iter().filter_map(|rel| ctx.reloc_target_sym(isec.file as usize, rel))
-                })
-                .collect()
-        });
-        referenced.contains(&sym)
-    }
-}
-
-/// Whether a subsection is an Objective-C method list the linker
-/// rewrote in the relative form.
-pub(crate) fn is_rewritten_method_list<E: Target>(ctx: &Context<E>, isec: usize) -> bool {
-    let isec = &ctx.isecs[isec];
-    ctx.is_internal(isec.file as usize) && ctx.hdr_of(isec).sectname() == b"__objc_methlist"
-}
-
-/// What ld-prime calls a literal no symbol names, wherever it ends up
-/// (fixed-size literals go to __const): a C string by its contents
-/// ("literal string: " and the string's bytes, its newlines, tabs,
-/// carriage returns and quotes escaped) - named or not -, a fixed-size
-/// literal by its size.
-fn literal_name<E: Target>(
-    ctx: &Context<E>,
-    isec: &crate::input_sections::InputSection,
-) -> Option<Cow<'static, [u8]>> {
-    match ctx.hdr_of(isec).section_type() {
-        S_CSTRING_LITERALS => {
-            let mut name = b"literal string: ".to_vec();
-            escape_literal(&mut name, isec.data());
-            Some(Cow::Owned(name))
-        }
-        S_4BYTE_LITERALS => Some(Cow::Borrowed(b"4-byte-literal")),
-        S_8BYTE_LITERALS => Some(Cow::Borrowed(b"8-byte-literal")),
-        S_16BYTE_LITERALS => Some(Cow::Borrowed(b"16-byte-literal")),
-        _ => None,
-    }
-}
-
-fn escape_literal(out: &mut Vec<u8>, data: &[u8]) {
-    let s = data.strip_suffix(b"\0").unwrap_or(data);
-    for &c in s {
-        match c {
-            b'\n' => out.extend_from_slice(b"\\n"),
-            b'\t' => out.extend_from_slice(b"\\t"),
-            b'\r' => out.extend_from_slice(b"\\r"),
-            b'"' => out.extend_from_slice(b"\\\""),
-            _ => out.push(c),
-        }
-    }
-}
-
-/// The rows of the start of subsection `id` no symbol names, its first
-/// `len` bytes, by offset in it: a literal by what it is, any other
-/// "anon" - one per record of a section of fixed-size records, which
-/// ld-prime splits into a subsection per record (an __objc_classlist
-/// listing two classes is two).
-fn unnamed_rows<E: Target>(
-    ctx: &Context<E>,
-    id: usize,
-    len: u64,
-) -> impl Iterator<Item = (u64, u64, Cow<'static, [u8]>)> {
-    let isec = &ctx.isecs[id];
-    let literal = literal_name(ctx, isec);
-    let record = match literal {
-        Some(_) => None,
-        None => crate::input_files::record_size(ctx.hdr_of(isec)),
-    };
-    let step = record.unwrap_or(len).max(1);
-    (0..len).step_by(step as usize).map(move |off| {
-        let name = literal.clone().unwrap_or(Cow::Borrowed(b"anon"));
-        (off, step.min(len - off), name)
-    })
-}
-
-/// The subsections of the input files no symbol names, up to the first
-/// symbol in one (`first_labels` has where it is, by subsection). The
-/// selector names of Objective-C stubs are file 0's: ld-prime makes
-/// them itself, and an input's copy merges into its own.
-fn unnamed_entries<'a, E: Target>(
-    ctx: &'a Context<E>,
-    files: &MapFiles,
-    first_labels: &hashbrown::HashMap<usize, u64>,
-) -> Vec<MapEntry<'a>> {
-    let stub_names = stub_name_isecs(ctx);
-    let mut entries = Vec::new();
-    for osec in &ctx.output_sections {
-        for &id in &osec.members {
-            let id = id as usize;
-            let isec = &ctx.isecs[id];
-            if ctx.is_internal(isec.file as usize) {
-                continue;
-            }
-            let file = if stub_names.contains(&id) { 0 } else { files.objs[isec.file as usize] };
-            let len = first_labels.get(&id).copied().unwrap_or(isec.size as u64);
-            let addr = ctx.isec_addr(id);
-            for (off, size, name) in unnamed_rows(ctx, id, len) {
-                entries.push(MapEntry { addr: addr + off, size, file, name });
-            }
-        }
-    }
-    // The selector names synthesized for Objective-C stubs.
-    for (i, (_, sel)) in ctx.objc_stubs.symbols.iter().enumerate() {
-        if ctx.objc_stubs.name_isec[i] == u32::MAX {
-            let name = Cow::Owned([b"literal string: ", *sel].concat());
-            let size = sel.len() as u64 + 1;
-            entries.push(MapEntry { addr: ctx.objc_methname_addr(i), size, file: 0, name });
-        }
-    }
-    entries.extend(objc_list_entries(ctx, files));
-    entries
-}
-
-/// The input C strings Objective-C stubs take their selector names
-/// from, which the map credits to file 0.
-fn stub_name_isecs<E: Target>(ctx: &Context<E>) -> hashbrown::HashSet<usize> {
-    (ctx.objc_stubs.name_isec.iter())
-        .filter(|&&isec| isec != u32::MAX)
-        .map(|&isec| ctx.resolve_isec(isec as usize))
-        .collect()
-}
-
-/// The entries of the Objective-C lists the linker writes itself: a
-/// category list rebuilt without the categories merged into their
-/// classes lists the others, each its category's file's, as ld-prime
-/// keeps those entries; an __objc_nlclslist entry for a class that a
-/// category's +load made non-lazy is file 0's, as is a merged property
-/// list, which no symbol names.
-fn objc_list_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Vec<MapEntry<'a>> {
-    use crate::objc::{DataField, ObjcRef};
-    let mut entries: Vec<MapEntry> = (ctx.objc_property_lists.iter())
-        .map(|&isec| {
-            let (addr, size) = (ctx.isec_addr(isec as usize), ctx.isecs[isec as usize].size as u64);
-            MapEntry { addr, size, file: 0, name: name(b"anon") }
-        })
-        .collect();
-    for blob in &ctx.data_blobs {
-        let of_categories = matches!(blob.sect, b"__objc_catlist" | b"__objc_nlcatlist");
-        if !of_categories && blob.sect != b"__objc_nlclslist" {
-            continue;
-        }
-        let addr = ctx.isec_addr(blob.isec as usize);
-        for (i, field) in blob.fields.iter().enumerate() {
-            let file = match field {
-                DataField::Ptr(ObjcRef::Isec(isec, _)) if of_categories => {
-                    let file = ctx.isecs[*isec as usize].file as usize;
-                    if ctx.is_internal(file) { 0 } else { files.objs[file] }
-                }
-                DataField::Ptr(ObjcRef::Sym(sym, _)) if of_categories => files.of_symbol(ctx, *sym),
-                _ => 0,
-            };
-            let addr = addr + i as u64 * 8;
-            entries.push(MapEntry { addr, size: 8, file, name: name(b"anon") });
-        }
-    }
-    entries
-}
-
-/// The records of the __eh_frame the linker writes, each credited to
-/// the object it came from: a CIE is "CFI", an FDE "FDE for: " and the
-/// name of the function's subsection.
-fn eh_frame_entries<'a, E: Target>(
-    ctx: &'a Context<E>,
-    files: &MapFiles,
-    named: &[MapEntry<'a>],
-) -> Vec<MapEntry<'a>> {
-    if !ctx.has_chunk(ChunkId::EhFrame) {
-        return Vec::new();
-    }
-    let fde_names = FdeNames::new(named);
-    let base = ctx.eh_frame.hdr.addr;
-    let mut entries = Vec::new();
-    for cie in ctx.cies.iter().filter(|cie| cie.is_alive) {
-        let addr = base + cie.output_offset as u64;
-        let (size, file) = (cie.data.len() as u64, files.objs[cie.obj as usize]);
-        entries.push(MapEntry { addr, size, file, name: name(b"CFI") });
-    }
-    for fde in &ctx.fdes {
-        let func = ctx.isec_addr(fde.isec as usize) + fde.func_offset as u64;
-        let addr = base + fde.output_offset as u64;
-        let (size, file) = (fde.data.len() as u64, files.objs[fde.obj as usize]);
-        entries.push(MapEntry { addr, size, file, name: fde_names.name(func) });
-    }
-    entries
-}
-
-/// How the map names an FDE: "FDE for: " and the name of the
-/// subsection of its function, which of the `named` symbols at its
-/// place is listed first (has the size).
-struct FdeNames<'a> {
-    /// The name of the subsection at each address, with its size.
-    names: hashbrown::HashMap<u64, (u64, &'a [u8])>,
-}
-
-impl<'a> FdeNames<'a> {
-    fn new(named: &'a [MapEntry<'_>]) -> Self {
-        let mut names: hashbrown::HashMap<u64, (u64, &[u8])> = hashbrown::HashMap::new();
-        for e in named {
-            let best = names.entry(e.addr).or_insert((e.size, &e.name));
-            if e.size < best.0 {
-                *best = (e.size, &e.name);
-            }
-        }
-        Self { names }
-    }
-
-    fn name(&self, func: u64) -> Cow<'static, [u8]> {
-        let func = self.names.get(&func).map_or(&b"anon"[..], |&(_, name)| name);
-        let mut name = b"FDE for: ".to_vec();
-        name.extend_from_slice(func);
-        Cow::Owned(name)
-    }
-}
-
-/// The symbols the linker defines, as ld-prime lists them once
-/// something refers to them, file 0's and of no size: ___dso_handle and
-/// the header's name for the kind of image (a dylib's
-/// __mh_dylib_header) - the lazy-load helpers pass ___dso_handle to
-/// __dyld_lazy_load -, and the bounds of sections
-/// (section$start$__TEXT$__text), but not of segments. An executable's
-/// __mh_execute_header comes first whether or not anything does. Each
-/// -sectcreate or -add_empty_section option's input section is listed
-/// (see sectcreate_entries); the empty section a boundary symbol makes
-/// is named by the section's name alone.
-fn linker_symbol_entries<'a, E: Target>(
-    ctx: &'a Context<E>,
-    files: &MapFiles,
-) -> Vec<MapEntry<'a>> {
-    let headers: [&[u8]; 4] =
-        [b"___dso_handle", b"__mh_dylib_header", b"__mh_bundle_header", b"__mh_dylinker_header"];
-    let mut ids: Vec<SymbolId> = headers
-        .iter()
-        .filter_map(|&name| ctx.symbols.get(name))
-        .filter(|&id| {
-            let sym = &ctx.symbols[id];
-            let is_ours = matches!(sym.file(), Some(FileId::Obj(obj)) if ctx.is_internal(obj as usize))
-                && sym.input_section().is_none();
-            let lazy_load = sym.name() == b"___dso_handle" && !ctx.lazy_helpers.helpers.is_empty();
-            is_ours && (sym.is_used() || lazy_load)
-        })
-        .collect();
-    ids.extend(ctx.boundary_syms.iter().filter(|(.., sect)| sect.is_some()).map(|&(id, ..)| id));
-    let mut entries: Vec<MapEntry> = ids
-        .into_iter()
-        .map(|id| MapEntry {
-            addr: ctx.sym_addr(id),
-            size: 0,
-            file: 0,
-            name: name(ctx.symbols[id].name()),
-        })
-        .collect();
-    entries.extend(sectcreate_entries(ctx, files));
-    for sec in ctx.sectcreate_sections.iter().filter(|sec| !sec.from_option) {
-        let hdr = &sec.hdr;
-        let name = [hdr.segname, b",", hdr.sectname].concat();
-        entries.push(MapEntry { addr: hdr.addr, size: 0, file: 0, name: Cow::Owned(name) });
-    }
-    entries
-}
-
-/// The input sections of -sectcreate and -add_empty_section, each
-/// named "l<sect-create>" and its section's name as the option spelled
-/// it, of the file the option stands for - empty ones at one address
-/// in section and file order.
-fn sectcreate_entries<E: Target>(ctx: &Context<E>, files: &MapFiles) -> Vec<MapEntry<'static>> {
-    let mut inputs: Vec<(u64, u8, u32, usize)> = (ctx.sectcreate_inputs.iter().enumerate())
-        .map(|(i, input)| {
-            let (addr, n_sect) = input.place(ctx);
-            (addr, n_sect, crate::chunks::sectcreate::file_priority(ctx, i), i)
-        })
-        .collect();
-    inputs.sort_unstable();
-    (inputs.into_iter())
-        .map(|(addr, .., i)| {
-            let sc = &ctx.args.sectcreate[i];
-            let name = [b"l<sect-create>", &sc.segname[..], b",", &sc.sectname[..]].concat();
-            let (size, file) = (ctx.sectcreate_inputs[i].size, files.sectcreate[i]);
-            MapEntry { addr, size, file, name: Cow::Owned(name) }
-        })
-        .collect()
-}
-
-/// The subsections the linker makes, file 0's but for the stubs and
-/// pointers it makes for a symbol: a stub, a GOT slot or a lazy pointer
-/// counts as the file that defines the symbol, and takes its name with
-/// ".stub", ".got" or ".lazy_ptr" after it. The stub helper's entries
-/// are anonymous.
-fn synthetic_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Vec<MapEntry<'a>> {
-    let mut entries = Vec::new();
-    let slot = |sym: SymbolId, addr: u64, size: u64, suffix: &[u8]| MapEntry {
-        addr,
-        size,
-        file: files.of_symbol(ctx, sym),
-        name: Cow::Owned([ctx.symbols[sym].name(), suffix].concat()),
-    };
-    let anon = |addr: u64, size: u64| MapEntry { addr, size, file: 0, name: name(b"anon") };
-
-    let stubs = &ctx.stubs;
-    for (i, &sym) in stubs.symbols.iter().enumerate() {
-        entries.push(slot(sym, stubs.hdr.addr + i as u64 * E::STUB_SIZE, E::STUB_SIZE, b".stub"));
-    }
-    for (i, &sym) in ctx.got.got_syms.iter().enumerate() {
-        entries.push(slot(sym, ctx.got.slot_addr(i), 8, b".got"));
-    }
-    for (i, &stub) in stubs.lazy.iter().enumerate() {
-        let sym = stubs.symbols[stub as usize];
-        entries.push(slot(sym, ctx.lazy_ptrs.hdr.addr + i as u64 * 8, 8, b".lazy_ptr"));
-    }
-    if !stubs.lazy.is_empty() {
-        let helper = ctx.stub_helper.hdr.addr;
-        let header = ctx.stub_helper_header_size();
-        if header > 0 {
-            entries.push(anon(helper, header));
-        }
-        for i in 0..stubs.lazy.len() as u64 {
-            let addr = helper + header + i * E::STUB_HELPER_ENTRY_SIZE;
-            entries.push(anon(addr, E::STUB_HELPER_ENTRY_SIZE - ctx.stub_helper_entry_padding()));
-        }
-    }
-
-    let objc_stubs = &ctx.objc_stubs;
-    for (i, &(sym, _)) in objc_stubs.symbols.iter().enumerate() {
-        let addr = objc_stubs.hdr.addr + i as u64 * ctx.objc_stub_size();
-        let name = name(ctx.symbols[sym].name());
-        entries.push(MapEntry { addr, size: ctx.objc_stub_size(), file: 0, name });
-    }
-    if objc_stubs.selrefs.is_some() {
-        for i in 0..objc_stubs.symbols.len() + objc_stubs.extra_selrefs.len() {
-            entries.push(anon(ctx.objc_selref_addr(i), 8));
-        }
-    }
-
-    // The lazy-load helpers are file 0's, as is the empty subsection
-    // that keeps __dyld_lazy_load alive, and each slot its symbol's
-    // file's.
-    if ctx.lazy_helpers.keep_alive != u32::MAX {
-        entries.push(anon(ctx.isec_addr(ctx.lazy_helpers.keep_alive as usize), 0));
-    }
-    for (i, helper) in ctx.lazy_helpers.helpers.iter().enumerate() {
-        let (addr, size) = (ctx.lazy_helper_addr(i), E::lazy_helper_size(helper.kind) as u64);
-        entries.push(MapEntry { addr, size, file: 0, name: name(helper.name) });
-    }
-    for (i, &(sym, slot)) in ctx.lazy_load_got.slots.iter().enumerate() {
-        let (addr, file) = (ctx.lazy_load_got.slot_addr(i as u32), files.of_symbol(ctx, sym));
-        entries.push(MapEntry { addr, size: 8, file, name: name(slot) });
-    }
-    // The delay-init stubs and load helpers count as their symbols'
-    // files, the dlopen helpers and their C strings as file 0.
-    let delay = &ctx.delay_init;
-    for (i, stub) in delay.stubs.iter().enumerate() {
-        let (addr, file) = (ctx.delay_stub_addr(i), files.of_symbol(ctx, stub.sym));
-        entries.push(MapEntry { addr, size: E::DELAY_STUB_SIZE, file, name: name(stub.name) });
-    }
-    for (i, h) in delay.helpers.iter().enumerate() {
-        let (addr, size) = (ctx.delay_helper_addr(i), E::delay_helper_size(h.kind) as u64);
-        let file = files.of_symbol(ctx, h.sym);
-        entries.push(MapEntry { addr, size, file, name: name(h.name) });
-    }
-    for (i, d) in delay.dlopens.iter().enumerate() {
-        let (addr, size) = (ctx.dlopen_helper_addr(i), E::DLOPEN_HELPER_SIZE as u64);
-        entries.push(MapEntry { addr, size, file: 0, name: name(d.name) });
-        let string = &ctx.isecs[d.string as usize];
-        let mut label = b"literal string: ".to_vec();
-        escape_literal(&mut label, string.data());
-        let (addr, size) = (ctx.isec_addr(d.string as usize), string.size as u64);
-        entries.push(MapEntry { addr, size, file: 0, name: Cow::Owned(label) });
-    }
-    for &(sym, isec) in &ctx.extra_local_syms {
-        let size = ctx.isecs[isec as usize].size as u64;
-        let addr = ctx.isec_addr(isec as usize);
-        entries.push(MapEntry { addr, size, file: 0, name: name(sym) });
-    }
-    // The branch islands, as the symbol table names them.
-    for (addr, _, island) in crate::thunks::island_symbols(ctx) {
-        let name = Cow::Borrowed(island);
-        entries.push(MapEntry { addr, size: E::THUNK_SIZE, file: 0, name });
-    }
-    // The DOF of each provider of DTrace probes, which the symbol table
-    // doesn't name.
-    for dof in &ctx.dof_sections {
-        let (addr, size) = (ctx.isec_addr(dof.isec as usize), ctx.isecs[dof.isec].size as u64);
-        entries.push(MapEntry { addr, size, file: 0, name: name(&dof.subsec_name) });
-    }
-    if ctx.chunks.contains(&ChunkId::UnwindInfo) {
-        let hdr = &ctx.unwind_info.hdr;
-        let name = name(b"compact unwind info");
-        entries.push(MapEntry { addr: hdr.addr, size: hdr.size, file: 0, name });
-    }
-    let init_offsets = &ctx.init_offsets;
-    for i in 0..init_offsets.init_funcs.len() as u64 {
-        let addr = init_offsets.hdr.addr + i * 4;
-        entries.push(MapEntry { addr, size: 4, file: 0, name: name(b"init-offset") });
-    }
-    if ctx.has_chunk(ChunkId::ObjcImageInfo) {
-        entries.push(anon(ctx.objc_imageinfo.hdr.addr, ctx.objc_imageinfo.hdr.size));
-    }
-    if let Some(stack) = ctx.segments.iter().find(|seg| seg.name == b"__UNIXSTACK") {
-        let (addr, size) = (stack.cmd.vmaddr, stack.cmd.vmsize);
-        entries.push(MapEntry { addr, size, file: 0, name: name(b"l__unixstack") });
-    }
-    entries
-}
-
-/// The subsections of the input files that the output doesn't have,
-/// which ld-prime lists under -dead_strip, whatever took them out: dead
-/// stripping, coalescing - a literal or an Objective-C reference equal
-/// to another file's, a weak definition another file's won, a function
-/// folded into an identical one, a tentative definition (a common
-/// symbol) a larger or a real one took the place of - or an
-/// Objective-C rewrite (a method list in the relative form, a category
-/// merged into its class). They come by the file they came from, in
-/// the order they were in it, its tentative definitions last; the
-/// sizes are the subsections', as for the live ones (see
-/// dead_entries_of).
-fn dead_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Vec<MapEntry<'a>> {
-    use rayon::prelude::*;
-    if !ctx.args.dead_strip {
-        return Vec::new();
-    }
-    let gone = GoneSubsecs::new(ctx);
-    let mut dead: Vec<(usize, DeadKey, MapEntry)> = (0..ctx.objs.len())
-        .into_par_iter()
-        .filter(|&i| ctx.objs[i].is_alive && !ctx.is_internal(i))
-        .flat_map_iter(|i| {
-            let file = files.objs[i];
-            dead_entries_of(ctx, &gone, &files.commons, i, file).into_iter().map(
-                move |(key, mut entry)| {
-                    // What LTO compiled goes by the bitcode file it is
-                    // credited to (see MapFiles::of_object).
-                    if ctx.is_lto_obj(i) {
-                        entry.file = files.of_object(i, &entry.name);
-                    }
-                    (entry.file, key, entry)
-                },
-            )
-        })
-        .collect();
-    // A class category merging gave a list of a kind it had none of
-    // has, after its file's other dead rows, one for each such list.
-    for (i, &obj) in ctx.objc_filled_ro_fields.iter().enumerate() {
-        let file = files.objs[obj as usize];
-        let entry = MapEntry { addr: 0, size: 8, file, name: name(b"anon") };
-        dead.push((file, (u64::MAX, u32::MAX, i as u32), entry));
-    }
-    dead.sort_by_key(|&(file, key, _)| (file, key));
-    let mut dead: Vec<MapEntry> = dead.into_iter().map(|(_, _, entry)| entry).collect();
-    dead.extend(dead_header_entries(ctx));
-    dead
-}
-
-/// The linker's own symbols dead stripping removed, last among the dead:
-/// the names of the mach header only stripped code used, and - when
-/// nothing kept refers to the header in an image whose header is no
-/// root - the start of __TEXT they name.
-fn dead_header_entries<E: Target>(ctx: &Context<E>) -> Vec<MapEntry<'static>> {
-    let header_root = ctx.args.output_type == MH_EXECUTE && !ctx.args.preload;
-    let mut names: Vec<&'static [u8]> = ctx
-        .dead_header_names
-        .iter()
-        .map(|&id| ctx.symbols[id].name())
-        .filter(|&n| !(header_root && n == b"__mh_execute_header"))
-        .collect();
-    names.sort();
-    let header_live = crate::dead_strip::HEADER_NAMES.iter().any(|n| {
-        ctx.symbols.get(n).is_some_and(|id| {
-            let sym = &ctx.symbols[id];
-            sym.is_used()
-                && matches!(sym.file(), Some(FileId::Obj(o)) if ctx.is_internal(o as usize))
-        })
-    });
-    if !names.is_empty() && !header_root && !header_live {
-        names.insert(0, b"segment$start$__TEXT");
-    }
-    names.into_iter().map(|n| MapEntry { addr: 0, size: 0, file: 0, name: name(n) }).collect()
-}
-
-/// Where a dead row was in its file: its address in the object, the
-/// subsection and the row's place among those of the subsection.
-type DeadKey = (u64, u32, u32);
-
-/// Which input subsections the output doesn't have (see dead_entries):
-/// those dead stripping or an Objective-C rewrite took out and those
-/// another took the place of, but for a class's ro data the merged
-/// record stands for (ld-prime rewrites it in place) - a category list
-/// rebuilt in its place is gone all the same, its merged entries dead
-/// (see is_kept_category_entry); and the C strings objc stubs take
-/// their selector names from, for which ld-prime makes its own.
-/// ld-prime makes no subsections of a section the link consumes, or of
-/// one -remove_swift_reflection_metadata_sections drops as it reads it,
-/// nor keeps a C string's alias that lost its place (see
-/// CstringAliases).
-struct GoneSubsecs {
-    /// The records the Objective-C passes wrote for input ones.
-    rewritten: hashbrown::HashSet<u32>,
-    stub_names: hashbrown::HashSet<usize>,
-    cstring_aliases: CstringAliases,
-}
-
-impl GoneSubsecs {
-    fn new<E: Target>(ctx: &Context<E>) -> Self {
-        let rewritten = ctx.data_blobs.iter().map(|blob| blob.isec).collect();
-        let cstring_aliases = CstringAliases::default();
-        Self { rewritten, stub_names: stub_name_isecs(ctx), cstring_aliases }
-    }
-
-    fn contains<E: Target>(&self, ctx: &Context<E>, id: usize) -> bool {
-        let isec = &ctx.isecs[id];
-        let hdr = ctx.hdr_of(isec);
-        if crate::output_sections::is_consumed_in_image(hdr.segname(), hdr.sectname())
-            || (ctx.args.remove_swift_reflection_metadata_sections
-                && crate::passes::is_swift_reflection_section(hdr))
-        {
-            return false;
-        }
-        if isec.replacement != crate::input_sections::NO_REPLACEMENT {
-            let list = matches!(hdr.sectname(), b"__objc_catlist" | b"__objc_nlcatlist");
-            return list || !self.rewritten.contains(&isec.replacement);
-        }
-        !isec.is_alive() || self.stub_names.contains(&id)
-    }
-}
-
-/// A label of a gone subsection (see dead_entries_of).
-struct DeadLabel {
-    isec: usize,
-    off: u64,
-    /// How the label ranks to name the subsection, the best first.
-    rank: std::cmp::Reverse<LabelRank>,
-    name: &'static [u8],
-    /// An alternate entry point (N_ALT_ENTRY), an alias of none.
-    alt: bool,
-}
-
-/// The labels naming the gone subsections of an object (see
-/// dead_entries_of), by subsection, the alternate entry points last,
-/// and by place, the one naming the subsection first; and the labels at
-/// the start of each C string, the best first, with their symbols (see
-/// CstringAliases). An ltmpN label of an empty section names nothing
-/// (ld-prime makes no subsection of the section), nor does one of a
-/// literal in an object with subsections.
-fn gone_labels<E: Target>(
-    ctx: &Context<E>,
-    gone: &GoneSubsecs,
-    obj: &crate::input_files::ObjectFile,
-) -> (Vec<DeadLabel>, hashbrown::HashMap<usize, Vec<CstringLabel>>) {
-    let split = obj.subsections_via_symbols;
-    let is_ltmp = |name: &[u8]| split && name.starts_with(b"ltmp");
-    let mut labels = Vec::new();
-    let mut cstring_labels: hashbrown::HashMap<usize, Vec<CstringLabel>> =
-        hashbrown::HashMap::new();
-    for (k, nlist) in obj.nlists.iter().enumerate() {
-        if nlist.is_stab() || nlist.n_type() != N_SECT {
-            continue;
-        }
-        let Some((isec, off)) = crate::input_files::find_symbol_subsec(
-            &ctx.isecs,
-            &obj.subsecs,
-            nlist.n_sect,
-            nlist.n_value,
-        ) else {
-            continue;
-        };
-        let name = ctx.symbols[obj.symbols[k]].name();
-        let hdr = ctx.hdr_of(&ctx.isecs[isec]);
-        let rank = std::cmp::Reverse(label_rank(obj, k as u32, name));
-        if hdr.section_type() == S_CSTRING_LITERALS {
-            if off == 0 && !name.is_empty() && !is_ltmp(name) {
-                let label = (rank, name, obj.symbols[k]);
-                cstring_labels.entry(isec).or_default().push(label);
-            }
-            continue;
-        }
-        // A literal's labels are as in the live part (see literal_labels).
-        let listed = match hdr.section_type() {
-            S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS => {
-                !name.is_empty() && !name.starts_with(b"L") && !is_ltmp(name)
-            }
-            _ => names_subsec(hdr, split, nlist.is_extern(), name),
-        };
-        if !gone.contains(ctx, isec) || !listed || (is_ltmp(name) && hdr.size == 0) {
-            continue;
-        }
-        let alt = nlist.n_desc & N_ALT_ENTRY != 0;
-        labels.push(DeadLabel { isec, off, rank, name, alt });
-    }
-    labels.sort_unstable_by_key(|l| (l.isec, l.alt, l.off, l.rank));
-    for labels in cstring_labels.values_mut() {
-        labels.sort_unstable();
-    }
-    (labels, cstring_labels)
-}
-
-/// A label at a C string's start: its rank (the best first), name and
-/// symbol.
-type CstringLabel = (std::cmp::Reverse<LabelRank>, &'static [u8], SymbolId);
-
-/// The dead subsections of object `obj_idx` (see dead_entries), the
-/// `file`th of the map, keyed by where they were. A subsection is named
-/// by the best of the labels at its start, as ld-prime ranks them (see
-/// subsec_name_rank), which has the subsection's size - but a literal
-/// by what it is if that label is linker-private, and a C string always
-/// (see literal_labels); the others are aliases of none, but for
-/// linker-private ones (l...), which the list leaves out. ld-prime
-/// makes a subsection of each label at a C string's start (see
-/// CstringAliases): the copies are always dead, merged into the
-/// string, and so is every alias of a gone string or one no live code
-/// refers to. (An arm64 assembler's ltmpN label of a string in an
-/// object without subsections makes a copy that stays when another
-/// label not linker-private names the string, which is then twice in
-/// ld-prime's output; mold doesn't copy it.)
-fn dead_entries_of<'a, E: Target>(
-    ctx: &'a Context<E>,
-    gone: &GoneSubsecs,
-    commons: &hashbrown::HashMap<u32, u32>,
-    obj_idx: usize,
-    file: usize,
-) -> Vec<(DeadKey, MapEntry<'a>)> {
-    let obj = &ctx.objs[obj_idx];
-    let (labels, cstring_labels) = gone_labels(ctx, gone, obj);
-    let mut rows: Vec<(usize, u64, u64, Cow<'a, [u8]>)> = Vec::new();
-    let mut first_label: hashbrown::HashMap<usize, u64> = hashbrown::HashMap::new();
-    for (i, l) in labels.iter().enumerate() {
-        let first = first_label.entry(l.isec).or_insert(l.off);
-        *first = (*first).min(l.off);
-        let prev = i.checked_sub(1).map(|p| (labels[p].isec, labels[p].off));
-        let is_alias = l.alt || prev == Some((l.isec, l.off));
-        if is_alias && l.name.starts_with(b"l") {
-            continue;
-        }
-        let size = match is_alias {
-            true => 0,
-            false => {
-                let next = labels[i + 1..]
-                    .iter()
-                    .take_while(|next| next.isec == l.isec && !next.alt)
-                    .find(|next| next.off != l.off)
-                    .map_or(ctx.isecs[l.isec].size as u64, |next| next.off);
-                next - l.off
-            }
-        };
-        let isec = &ctx.isecs[l.isec];
-        let name = match literal_name(ctx, isec) {
-            Some(literal)
-                if !is_alias
-                    && (ctx.hdr_of(isec).section_type() == S_CSTRING_LITERALS
-                        || crate::input_files::is_private_label(l.name)) =>
-            {
-                literal
-            }
-            _ => Cow::Borrowed(l.name),
-        };
-        rows.push((l.isec, l.off, size, name));
-    }
-
-    // The unnamed rows, from a gone subsection's start up to its first
-    // label, and the C strings' extra subsections.
-    for &id in &obj.subsecs {
-        let id = id as usize;
-        if gone.contains(ctx, id) {
-            let len = first_label.get(&id).copied().unwrap_or(ctx.isecs[id].size as u64);
-            for (off, size, name) in unnamed_rows(ctx, id, len) {
-                if !is_kept_category_entry(ctx, id, off) {
-                    rows.push((id, off, size, name));
-                }
-            }
-        }
-        if let Some(labels) = cstring_labels.get(&id) {
-            let name = literal_name(ctx, &ctx.isecs[id]).unwrap();
-            let aliases = &gone.cstring_aliases;
-            let gone = gone.contains(ctx, id);
-            let named = crate::input_files::is_private_label(labels[0].1);
-            for &(_, label, sym) in &labels[1..] {
-                if crate::input_files::is_private_label(label) {
-                    if gone || named || !label.starts_with(b"ltmp") {
-                        rows.push((id, 0, ctx.isecs[id].size as u64, name.clone()));
-                    }
-                } else if gone || !aliases.is_live(ctx, obj_idx, sym) {
-                    rows.push((id, 0, 0, Cow::Borrowed(label)));
-                }
-            }
-        }
-    }
-
-    let mut entries: Vec<(DeadKey, MapEntry)> = rows
-        .into_iter()
-        .enumerate()
-        .map(|(seq, (isec, off, size, name))| {
-            let key = (u64::from(ctx.isecs[isec].input_addr) + off, isec as u32, seq as u32);
-            (key, MapEntry { addr: 0, size, file, name })
-        })
-        .collect();
-    entries.extend(dead_commons(ctx, commons, obj_idx, file));
-    entries
-}
-
-/// An object's tentative definitions that the output lacks, after its
-/// other subsections (see dead_entries_of): all but the one whose common
-/// symbol the output has (see MapFiles::commons), of the sizes they
-/// give.
-fn dead_commons<'a, E: Target>(
-    ctx: &'a Context<E>,
-    commons: &hashbrown::HashMap<u32, u32>,
-    obj_idx: usize,
-    file: usize,
-) -> Vec<(DeadKey, MapEntry<'a>)> {
-    let obj = &ctx.objs[obj_idx];
-    let r = obj.global_range();
-    let mut entries = Vec::new();
-    for (k, (nlist, &sym)) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]).enumerate() {
-        let won = || {
-            ctx.symbols[sym].input_section().is_some_and(|isec| {
-                commons.get(&isec) == Some(&(obj_idx as u32)) && ctx.isecs[isec as usize].is_alive()
-            })
-        };
-        if nlist.is_common() && !won() {
-            let name = Cow::Borrowed(ctx.symbols[sym].name());
-            let entry = MapEntry { addr: 0, size: nlist.n_value, file, name };
-            entries.push(((u64::MAX, u32::MAX, k as u32), entry));
-        }
-    }
-    entries
-}
-
-/// Whether the 8-byte record at `off` of a category list the
-/// Objective-C passes rebuilt names a category that wasn't merged into
-/// its class, which the rebuilt list keeps (see objc_list_entries).
-fn is_kept_category_entry<E: Target>(ctx: &Context<E>, id: usize, off: u64) -> bool {
-    if !matches!(ctx.hdr_of(&ctx.isecs[id]).sectname(), b"__objc_catlist" | b"__objc_nlcatlist") {
-        return false;
-    }
-    let obj = &ctx.objs[ctx.isecs[id].file as usize];
-    let rel = ctx.isec_relocs(id).iter().find(|r| u64::from(r.offset) == off && r.size == 8);
-    let target = rel.and_then(|rel| match rel.target() {
-        crate::input_sections::RelocTarget::Section(isec) => Some(isec),
-        crate::input_sections::RelocTarget::Sym(idx) => {
-            ctx.symbols[obj.symbols[idx as usize]].input_section()
-        }
-    });
-    target.is_some_and(|isec| ctx.isecs[ctx.resolve_isec(isec as usize)].is_alive())
 }

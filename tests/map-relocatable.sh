@@ -3,10 +3,8 @@ source "$(dirname "$0")"/common.inc
 
 # A -r link writes a map as a final link does: of the output's
 # sections, at the addresses they have from zero, and of their
-# subsections. Those of the sections it makes itself are its objects':
-# each record of __compact_unwind, named by the label at it if any (an
-# arm64 assembler's ltmpN at the section's start), and of __eh_frame, a
-# CIE "CFI" and an FDE "FDE for: " and its function's name.
+# subsections. The sections it makes itself, __compact_unwind and
+# __eh_frame, are the linker's rows.
 cat <<EOF | $CC -o $t/a.o -c -xc -
 #include <stdio.h>
 static int sfn(void) { return 3; }
@@ -30,18 +28,14 @@ grep -q $'^0x[0-9A-F]*\t0x[0-9A-F]*\t__LD\t__compact_unwind$' $t/map
 grep -q $'^0x00000000\t0x[0-9A-F]*\t\[  1\] _str$' $t/map
 grep -q $'\t\[  1\] _sfn$' $t/map
 grep -q $'\t\[  2\] _baz$' $t/map
-grep -q $'\t0x00000006\t\[  1\] literal string: hello$' $t/map
+grep -q $'\t0x00000006\t\[  1\] anon$' $t/map
 grep -q $'\t0x00000004\t\[  2\] _bar$' $t/map
 not grep -q __mh_execute_header $t/map
-
-if [ $ARCH = arm64 ]; then
-  grep -Eq $'\t0x00000020\t\\[  1\\] ltmp[0-9]+$' $t/map
-  grep -Eq $'\t0x00000020\t\\[  2\\] ltmp[0-9]+$' $t/map
-  grep -q $'\t0x00000020\t\[  1\] anon$' $t/map
-else
-  grep -q $'\t0x00000020\t\[  2\] anon$' $t/map
-  grep -q $'\t\[  1\] CFI$' $t/map
-  grep -q $'\t\[  2\] FDE for: _baz$' $t/map
+unwind=$(grep $'\t__LD\t__compact_unwind$' $t/map | cut -f1,2)
+grep -qx "$unwind"$'\t\\[  0\\] __LD,__compact_unwind' $t/map
+if [ $ARCH = x86_64 ]; then
+  eh=$(grep $'\t__TEXT\t__eh_frame$' $t/map | cut -f1,2)
+  grep -qx "$eh"$'\t\\[  0\\] __TEXT,__eh_frame' $t/map
 fi
 
 # They are written before the output, which may not be writable.

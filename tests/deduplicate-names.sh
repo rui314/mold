@@ -5,8 +5,9 @@
 # it folded into, but of that copy's own name ld-prime lists one of each
 # scope: identical local functions of one name in several objects (an
 # inline function's .cold.1 part, a static helper) leave it there once,
-# and once besides a private extern of the name. In -map the names that
-# stay are the linker's own, file 0's.
+# and once besides a private extern of the name. -map lists every
+# folded function's name as a row of no size at the copy it folded
+# into.
 if [ $ARCH = arm64 ]; then
   body() { echo "mov w0, #$1"; echo ret; }
   jump() { echo "b $1"; }
@@ -44,8 +45,10 @@ $t/exe
 nm $t/exe > $t/nm
 [ "$(grep -c ' _helper$' $t/nm)" = 1 ]
 [ "$(grep -c ' _other$' $t/nm)" = 1 ]
-grep -q '\[  0\] _other$' $t/map
-[ "$(grep -c '_helper$' $t/map)" = 1 ]
+grep -E '\] (_helper|_other)$' $t/map > $t/rows
+[ "$(wc -l < $t/rows)" -eq 3 ]
+[ "$(cut -f1 $t/rows | sort -u | wc -l)" -eq 1 ]
+[ "$(cut -f2 $t/rows | grep -vc 0x00000000)" = 1 ]
 
 $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/a1.o $t/a2.o $t/a3.o -Wl,-no_deduplicate
 [ "$(nm $t/exe2 | grep -c ' _helper$')" = 2 ]
@@ -66,8 +69,8 @@ nm -m $t/exe4 > $t/nm4
 grep -q 'non-external (was a private external) _helper$' $t/nm4
 grep -q ' _other$' $t/nm4
 
-# A folded function's other labels keep their file in -map; only the
-# alias named as the function was is the linker's.
+# A folded function's other labels, an alternate entry here, go with
+# it in -map.
 {
   echo '.subsections_via_symbols'
   echo '.text'
@@ -89,5 +92,7 @@ EOF
 $CC --ld-path=$mold -o $t/exe5 $t/main5.o $t/a1.o $t/a5.o -Wl,-deduplicate \
   -Wl,-map,$t/map5
 $t/exe5
-grep -q '\[  3\] _y5$' $t/map5
-grep -q '\[  0\] _x5$' $t/map5
+grep -E '\] (_helper|_x5|_y5)$' $t/map5 > $t/rows5
+[ "$(wc -l < $t/rows5)" -eq 3 ]
+[ "$(cut -f1 $t/rows5 | sort -u | wc -l)" -eq 1 ]
+[ "$(cut -f2 $t/rows5 | grep -vc 0x00000000)" = 1 ]
