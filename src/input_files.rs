@@ -2184,9 +2184,6 @@ pub struct Cie {
     pub lsda_enc: Option<u8>,
     pub output_offset: u32,
     pub is_alive: bool,
-    /// Whether an FDE of the input points at it, whether or not the
-    /// FDE is kept (see Context::keeps_lone_cie).
-    pub has_fdes: bool,
 }
 
 #[cfg(target_pointer_width = "64")]
@@ -2287,14 +2284,12 @@ impl StagedObject {
                     lsda_enc,
                     output_offset: 0,
                     is_alive: false,
-                    has_fdes: false,
                 });
             } else {
                 let cie_addr = (input_addr + 4).wrapping_sub(id);
                 let Some(cie) = self.cies.iter().position(|c| c.input_addr == cie_addr) else {
                     fatal!("{}: __eh_frame: bad FDE pointer", mf.name.raw());
                 };
-                self.cies[cie].has_fdes = true;
                 fdes.push((input_addr, rec, cie as u32));
             }
             pos += rec.len();

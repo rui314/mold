@@ -1,11 +1,12 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# ld-prime carries a CIE no FDE points at into __eh_frame like any
-# other record, in its place among them and with a GOT slot for
-# its personality to point at, in a final image unless -dead_strip
-# drops it, and in a -r output. A CIE whose FDEs all go - here _g's,
-# which has a compact unwind record - goes with them.
+# A CIE goes to __eh_frame only with an FDE that points at it, ahead of
+# the FDE: a CIE no FDE points at is dropped, with no GOT slot for its
+# personality, and so is one whose FDEs all go - here _g's, which has a
+# compact unwind record - in a final image. A -r output keeps _g's FDE
+# for the next link. (ld-prime keeps a lone CIE, in its place among the
+# records, unless -dead_strip.)
 if [ $ARCH = arm64 ]; then
   ret=ret ra=30 sp='0x0c, 31, 0' got='@GOT - .'
 else
@@ -81,13 +82,14 @@ EOF2
 
 $CC --ld-path=$mold -o $t/exe $t/a.o
 eh_frame $t/exe > $t/records
-slot=$(dyld_info -fixups $t/exe | awk '$NF ~ /___gcc_personality_v0$/ { print tolower($3) }')
-[ "$(cat $t/records)" = "CIE FDE CIE $slot " ]
+[ "$(cat $t/records)" = 'CIE FDE ' ]
+dyld_info -fixups $t/exe > $t/fixups
+not grep -q ___gcc_personality_v0 $t/fixups
 
 $CC --ld-path=$mold -o $t/exe2 $t/a.o -Wl,-dead_strip
 eh_frame $t/exe2 > $t/records2
 [ "$(cat $t/records2)" = 'CIE FDE ' ]
 
 $mold -r -arch $ARCH -o $t/b.o $t/a.o
-eh_frame $t/b.o | sed 's/0x[0-9a-f]* //' > $t/records3
-[ "$(cat $t/records3)" = 'CIE FDE CIE CIE FDE ' ]
+eh_frame $t/b.o > $t/records3
+[ "$(cat $t/records3)" = 'CIE FDE CIE FDE ' ]

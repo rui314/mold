@@ -1,10 +1,11 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# ld-prime lays __eh_frame out as its inputs have it: object by object,
-# the CIEs and FDEs of each in their order there, so the CIE of an
-# object follows the FDEs of the one before it. (A DW_CFA_nop, which
-# compact unwind can't express, gives each function an FDE.)
+# __eh_frame holds the CIEs the kept FDEs use and then the FDEs, as
+# mold's EhFrameSection lays them out: every FDE's CIE pointer, a
+# backward offset, leads to a CIE before it. (ld-prime lays the records
+# out object by object in their input order.) A DW_CFA_nop, which
+# compact unwind can't express, gives each function an FDE.
 for i in 1 2; do
   cat <<EOF | $CC -o $t/$i.o -c -xassembler -
 .text
@@ -22,17 +23,31 @@ echo 'void f1(void), f2(void); int main() { f1(); f2(); }' | $CC -o $t/a.o -c -x
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/1.o $t/2.o
 $t/exe
 
-python3 - $t/exe > $t/records <<'EOF'
-import struct, subprocess, sys
+objdump --macho --unwind-info $t/exe > $t/unwind
+python3 - $t/exe $t/unwind $ARCH > $t/records <<'EOF'
+import re, struct, subprocess, sys
 out = subprocess.run(['otool', '-l', sys.argv[1]], capture_output=True, text=True).stdout.splitlines()
 for i, l in enumerate(out):
     if l.strip() == 'sectname __eh_frame':
         size = int(out[i + 3].split()[1], 16); off = int(out[i + 4].split()[1])
 d = open(sys.argv[1], 'rb').read()[off:off + size]
 pos = 0
+cies, fdes = set(), set()
 while pos < len(d):
     length, id = struct.unpack_from('<II', d, pos)
-    print('FDE' if id else 'CIE', end=' ')
+    if id:
+        assert pos + 4 - id in cies, (pos, id, cies)
+        fdes.add(pos)
+        print('FDE', end=' ')
+    else:
+        cies.add(pos)
+        print('CIE', end=' ')
     pos += 4 + length
+# __unwind_info points each function at an FDE of its own (DWARF mode
+# with the FDE's offset).
+mode = 3 if sys.argv[3] == 'arm64' else 4
+encs = [int(m, 16) for m in re.findall(r'encoding\[\d+\]: (0x[0-9a-f]+)', open(sys.argv[2]).read())]
+offs = {e & 0xffffff for e in encs if (e >> 24) & 0xf == mode}
+assert offs == fdes, (offs, fdes)
 EOF
-[ "$(cat $t/records)" = 'CIE FDE CIE FDE ' ]
+[ "$(cat $t/records)" = 'CIE CIE FDE FDE ' ]

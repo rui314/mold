@@ -1,11 +1,11 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# A -r link may put copies of one local function, each with its own FDE,
-# in one object, all of one name. When -deduplicate folds them together,
-# ld-prime keeps every copy's FDE and unwind record, all at the
-# survivor's address and the records all pointing at the last FDE; it
-# drops them for copies of other names, or in other objects.
+# When -deduplicate folds copies of a function, each with its own FDE,
+# together, the survivor keeps its FDE and the copies' go: whether the
+# copies are in objects of their own or in one a -r link made, all of
+# one name. (ld-prime keeps every copy's FDE in the latter case, each
+# with an __unwind_info entry at the survivor's address.)
 if [ $ARCH = arm64 ]; then
   prologue() { echo 'stp x29, x30, [sp, #-16]!'; echo '.cfi_def_cfa_offset 16'; }
   body() { echo 'mov w0, #7'; echo 'ldp x29, x30, [sp], #16'; echo ret; }
@@ -45,12 +45,11 @@ EOF
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/r.o -Wl,-deduplicate
 $t/exe
 addr=$(nm $t/exe | awk '/ _helper$/ { print $1 }')
-[ "$(dwarfdump --eh-frame $t/exe | grep -c " FDE .* pc=$(echo $addr | sed 's/^0*//')\\.")" = 3 ]
+[ "$(dwarfdump --eh-frame $t/exe | grep -c " FDE .* pc=$(echo $addr | sed 's/^0*//')\\.")" = 1 ]
 objdump --macho --unwind-info $t/exe > $t/unwind
 off=$(printf '0x%08x' $((0x$addr - 0x100000000)))
-[ "$(grep -c "function offset=$off" $t/unwind)" = 3 ]
+[ "$(grep -c "function offset=$off" $t/unwind)" = 1 ]
 
-# Separate objects keep the survivor's FDE alone.
 $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/a1.o $t/a2.o $t/a3.o -Wl,-deduplicate
 $t/exe2
 [ "$(dwarfdump --eh-frame $t/exe2 | grep -c ' FDE ')" = 1 ]

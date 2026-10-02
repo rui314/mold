@@ -1427,31 +1427,30 @@ fn merge_objc_image_info<E: Target>(ctx: &mut Context<E>) {
     ctx.chunks.push(ChunkId::ObjcImageInfo);
 }
 
-/// Lays out __eh_frame, the surviving DWARF unwind records, in input
-/// order. Their offsets are needed before layout, because the
-/// __unwind_info encoding embeds each FDE's offset.
+/// Lays out __eh_frame, the surviving DWARF unwind records: the CIEs
+/// the kept FDEs use, then the FDEs, as mold's EhFrameSection does (an
+/// FDE's CIE pointer is a backward offset). Their offsets are needed
+/// before layout, because the __unwind_info encoding embeds each FDE's
+/// offset.
 fn lay_out_eh_frame<E: Target>(ctx: &mut Context<E>) {
-    // FDEs of folded copies duplicate their leader's; drop them (see
-    // kept_fdes), and remap the unwind records' FDE indices around the
-    // removals as the dead-strip pass does (a record left pointing past
-    // the shortened table crashed the encoder).
+    // FDEs of folded copies duplicate their leader's; drop them, and
+    // remap the unwind records' FDE indices around the removals as the
+    // dead-strip pass does (a record left pointing past the shortened
+    // table crashed the encoder).
     let mut fde_map = vec![usize::MAX; ctx.fdes.len()];
     let mut kept_fdes = Vec::new();
-    let fdes = std::mem::take(&mut ctx.fdes);
-    let keep = kept_fdes_of(ctx, &fdes);
-    for (i, (fde, keep)) in fdes.into_iter().zip(keep).enumerate() {
-        if keep {
+    for (i, fde) in std::mem::take(&mut ctx.fdes).into_iter().enumerate() {
+        if ctx.isecs[fde.isec as usize].replacement == crate::input_sections::NO_REPLACEMENT {
             fde_map[i] = kept_fdes.len();
             kept_fdes.push(fde);
         }
     }
     ctx.fdes = kept_fdes;
-    let map = &fde_map;
     ctx.unwind_records.retain_mut(|rec| {
         if rec.fde_idx == crate::input_files::UNWIND_NONE {
             return true;
         }
-        let mapped = map[rec.fde_idx as usize];
+        let mapped = fde_map[rec.fde_idx as usize];
         if mapped == usize::MAX {
             // A folded copy's record; its leader has its own.
             return false;
@@ -1459,123 +1458,25 @@ fn lay_out_eh_frame<E: Target>(ctx: &mut Context<E>) {
         rec.fde_idx = mapped as u32;
         true
     });
-    share_folded_fdes(ctx);
+    if ctx.fdes.is_empty() {
+        return;
+    }
 
     for fde in &ctx.fdes {
         ctx.cies[fde.cie as usize].is_alive = true;
     }
-    for i in 0..ctx.cies.len() {
-        if ctx.keeps_lone_cie(&ctx.cies[i]) {
-            ctx.cies[i].is_alive = true;
-        }
-    }
-    if ctx.fdes.is_empty() && !ctx.cies.iter().any(|cie| cie.is_alive) {
-        return;
-    }
-    ctx.eh_frame.hdr.flags = output_section_flags(b"__TEXT", b"__eh_frame", 0, true, false);
-    ctx.eh_frame.hdr.size = assign_eh_frame_offsets(ctx) as u64;
-    ctx.chunks.push(ChunkId::EhFrame);
-}
-
-/// Which of `fdes` ld-prime keeps: those of the functions -deduplicate
-/// did not fold, and of a folded one, only if it folded into one of its
-/// own object with its name (two copies of one local function that a -r
-/// link put together), as if the FDE were the other's, which it then
-/// covers, keeping the copy's unwind record with it (see
-/// share_folded_fdes). The names cost a pass over the object's symbols,
-/// made once for all its folded functions.
-fn kept_fdes_of<E: Target>(ctx: &Context<E>, fdes: &[crate::input_files::Fde]) -> Vec<bool> {
-    use crate::input_sections::NO_REPLACEMENT;
-    let mut keep: Vec<bool> =
-        fdes.iter().map(|fde| ctx.isecs[fde.isec as usize].replacement == NO_REPLACEMENT).collect();
-    // The folded functions whose leaders are of their own objects, by
-    // object: (object, FDE index, function, leader).
-    let mut own: Vec<(u32, usize, usize, usize)> = (fdes.iter().enumerate())
-        .filter_map(|(i, fde)| {
-            let isec = fde.isec as usize;
-            let leader = ctx.isecs[isec].replacement as usize;
-            let file = ctx.isecs[isec].file;
-            (!keep[i]
-                && crate::chunks::symtab::is_coalesced_away(ctx, isec)
-                && ctx.isecs[leader].file == file)
-                .then_some((file, i, isec, leader))
-        })
-        .collect();
-    own.sort_unstable();
-    let named_alike: Vec<usize> = own
-        .par_chunk_by(|a, b| a.0 == b.0)
-        .flat_map_iter(|run| {
-            let ids: Vec<usize> =
-                run.iter().flat_map(|&(_, _, isec, leader)| [isec, leader]).collect();
-            let names = ctx.subsec_labels(run[0].0 as usize, &ids);
-            let same = |pair: &[Option<&[u8]>]| pair[0].is_some() && pair[0] == pair[1];
-            let named = run.iter().zip(names.chunks(2)).filter(|(_, pair)| same(pair));
-            named.map(|(e, _)| e.1).collect::<Vec<_>>()
-        })
-        .collect();
-    for i in named_alike {
-        keep[i] = true;
-    }
-    keep
-}
-
-/// Points the unwind records of a function and of the copies folded
-/// into it that kept their FDEs (see kept_fdes_of) at the last of
-/// those FDEs, as ld-prime does: __unwind_info lists one entry for each
-/// at the function's address, all of them with that FDE.
-fn share_folded_fdes<E: Target>(ctx: &mut Context<E>) {
-    use crate::input_sections::NO_REPLACEMENT;
-    let key = |rec: &crate::input_files::UnwindRecord| {
-        (ctx.resolve_isec(rec.isec as usize), rec.input_offset)
-    };
-    let mut last: hashbrown::HashMap<(usize, u32), u32> = (ctx.unwind_records.iter())
-        .filter(|rec| {
-            rec.fde().is_some() && ctx.isecs[rec.isec as usize].replacement != NO_REPLACEMENT
-        })
-        .map(|rec| (key(rec), 0))
-        .collect();
-    if last.is_empty() {
-        return;
-    }
-    for rec in ctx.unwind_records.iter().filter(|rec| rec.fde().is_some()) {
-        if let Some(fde) = last.get_mut(&key(rec)) {
-            *fde = (*fde).max(rec.fde_idx);
-        }
-    }
-    let shared: Vec<Option<u32>> =
-        ctx.unwind_records.iter().map(|rec| last.get(&key(rec)).copied()).collect();
-    for (rec, fde) in ctx.unwind_records.iter_mut().zip(shared) {
-        if let Some(fde) = fde.filter(|_| rec.fde().is_some()) {
-            rec.fde_idx = fde;
-        }
-    }
-}
-
-/// Gives the live CIEs and the FDEs their offsets in __eh_frame and
-/// returns its size. ld-prime lays the records out as the inputs have
-/// them: object by object, the CIEs and FDEs of each in the order of
-/// its __eh_frame (which both lists keep).
-fn assign_eh_frame_offsets<E: Target>(ctx: &mut Context<E>) -> u32 {
-    debug_assert!(ctx.cies.is_sorted_by_key(|cie| (cie.obj, cie.input_addr)));
-    debug_assert!(ctx.fdes.is_sorted_by_key(|fde| (fde.obj, fde.input_addr)));
     let mut off = 0;
-    let mut fdes = ctx.fdes.iter_mut().peekable();
     for cie in ctx.cies.iter_mut().filter(|cie| cie.is_alive) {
-        let before_cie = |fde: &&mut crate::input_files::Fde| {
-            (fde.obj, fde.input_addr) < (cie.obj, cie.input_addr)
-        };
-        while let Some(fde) = fdes.next_if(before_cie) {
-            fde.output_offset = off;
-            off += fde.data.len() as u32;
-        }
         cie.output_offset = off;
         off += cie.data.len() as u32;
     }
-    for fde in fdes {
+    for fde in &mut ctx.fdes {
         fde.output_offset = off;
         off += fde.data.len() as u32;
     }
-    off
+    ctx.eh_frame.hdr.flags = output_section_flags(b"__TEXT", b"__eh_frame", 0, true, false);
+    ctx.eh_frame.hdr.size = off as u64;
+    ctx.chunks.push(ChunkId::EhFrame);
 }
 
 /// Warns, as ld-prime does, if __unwind_info points a function at an

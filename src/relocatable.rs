@@ -837,39 +837,20 @@ impl EhRec {
 
 /// __TEXT,__eh_frame's records and their offsets there: every input
 /// FDE whose function survives (a coalesced-away weak copy's goes with
-/// it), the CIEs they point at and those no FDE does, laid out per
-/// object in input order, as ld64 carries them. The loader kept the
-/// FDEs of compactly-encoded functions for this.
+/// it), its CIE just before the first FDE that points at it (the
+/// pointer is a backward offset). The loader kept the FDEs of
+/// compactly-encoded functions for this.
 fn eh_frame_records<E: Target>(ctx: &Context<E>) -> Vec<(EhRec, u32)> {
-    let mut per_obj: HashMap<u32, Vec<(u32, EhRec)>> = HashMap::new();
-    for (c, cie) in ctx.cies.iter().enumerate() {
-        if ctx.keeps_lone_cie(cie) {
-            per_obj.entry(cie.obj).or_default().push((cie.input_addr, EhRec::Cie(c)));
-        }
-    }
-    let mut cies_used: HashSet<usize> = HashSet::new();
+    let mut cies_used: HashSet<u32> = HashSet::new();
+    let mut records = Vec::new();
+    let mut off = 0u32;
     for (f, fde) in ctx.fdes.iter().enumerate() {
         let isec = &ctx.isecs[fde.isec as usize];
         if !isec.is_alive() || isec.replacement != NO_REPLACEMENT {
             continue;
         }
-        per_obj.entry(fde.obj).or_default().push((fde.input_addr, EhRec::Fde(f)));
-        if cies_used.insert(fde.cie as usize) {
-            let cie = &ctx.cies[fde.cie as usize];
-            per_obj
-                .entry(cie.obj)
-                .or_default()
-                .push((cie.input_addr, EhRec::Cie(fde.cie as usize)));
-        }
-    }
-    let mut objs: Vec<u32> = per_obj.keys().copied().collect();
-    objs.sort_unstable();
-    let mut records = Vec::new();
-    let mut off = 0u32;
-    for obj in objs {
-        let mut recs = per_obj.remove(&obj).unwrap();
-        recs.sort_by_key(|r| r.0);
-        for (_, r) in recs {
+        let cie = cies_used.insert(fde.cie).then_some(EhRec::Cie(fde.cie as usize));
+        for r in cie.into_iter().chain([EhRec::Fde(f)]) {
             records.push((r, off));
             off += r.data(ctx).len() as u32;
         }
