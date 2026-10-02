@@ -1,11 +1,11 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# ld-prime keeps an undefined symbol in a -r output only if a
-# relocation of the output refers to it - an unwind personality's
-# included - or the command line makes it an initial undefine (-u): a
-# stray .globl, or a weak, lazy or no-dead-strip reference nothing
-# uses, goes.
+# A -r output keeps every undefined symbol its inputs list, and those
+# -u names, as a link of the inputs would see them: a stray .globl, a
+# weak, lazy or no-dead-strip reference nothing relocates too. A final
+# link ignores those. (ld-prime keeps only those a relocation, an
+# unwind personality or -u names.)
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .globl _g2
 .weak_reference _g4
@@ -21,9 +21,19 @@ _d:
 EOF
 $mold -r -arch $ARCH -o $t/r.o $t/a.o -u _g8
 nm -m $t/r.o > $t/log
-grep -q '(undefined) external _g3$' $t/log
-grep -q '(undefined) external _g8$' $t/log
-not grep -q '_g[2467]$' $t/log
+for s in _g2 _g3 _g6 _g7 _g8; do
+  grep -q "(undefined) external $s\$" $t/log
+done
+grep -q '(undefined) weak external _g4$' $t/log
+
+cat <<EOF | $CC -o $t/main.o -c -xc -
+long g3;
+int main() { return 0; }
+EOF
+$CC --ld-path=$mold -o $t/exe $t/main.o $t/r.o
+$t/exe
+$CC -o $t/exe2 $t/main.o $t/r.o
+$t/exe2
 
 cat <<EOF | $CXX -o $t/b.o -c -xc++ -
 int f();

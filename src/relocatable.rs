@@ -20,7 +20,7 @@ use hashbrown::{HashMap, HashSet};
 use rayon::prelude::*;
 use std::cmp::Reverse;
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU16, AtomicU32, Ordering};
 
 use crate::chunks::symtab::{SymtabSection, local_symbol_name, par_push_entries};
 use crate::chunks::{ChunkHeader, OutputSectionId};
@@ -33,7 +33,7 @@ use crate::macho::*;
 use crate::output_file;
 use crate::symbol::SymbolId;
 use crate::target::Target;
-use crate::util::{align_to, encode_uleb, leak_bytes, name_sort_key};
+use crate::util::{align_to, encode_uleb, leak_bytes};
 
 /// N_NO_DEAD_STRIP for a symbol from this input section: ld-prime
 /// marks every symbol of a no_dead_strip section, local or global, so
@@ -48,39 +48,6 @@ fn section_desc<E: Target>(ctx: &Context<E>, isec: usize) -> u16 {
     } else {
         0
     }
-}
-
-/// Which symbols the relocations of the live input sections that `pred`
-/// takes refer to by name, by symbol.
-fn reloc_syms<E: Target>(ctx: &Context<E>, pred: impl Fn(&Reloc) -> bool + Sync) -> Vec<bool> {
-    let syms: Vec<AtomicBool> =
-        (0..ctx.symbols.syms.len()).into_par_iter().map(|_| AtomicBool::new(false)).collect();
-    ctx.isecs
-        .par_iter()
-        .filter(|isec| isec.is_alive() && !ctx.is_internal(isec.file as usize))
-        .for_each(|isec| {
-            for rel in crate::input_files::isec_relocs_of(&ctx.objs, isec) {
-                if let RelocTarget::Sym(idx) = rel.target()
-                    && pred(rel)
-                {
-                    let id = ctx.objs[isec.file as usize].symbols[idx as usize];
-                    syms[id as usize].store(true, Ordering::Relaxed);
-                }
-            }
-        });
-    syms.into_iter().map(AtomicBool::into_inner).collect()
-}
-
-/// The symbols the output's relocations refer to by name, by symbol:
-/// those a live input section's refer to, and the personality routines
-/// of the unwind records (__compact_unwind) and CIEs (__eh_frame).
-fn referenced_syms<E: Target>(ctx: &Context<E>) -> Vec<bool> {
-    let mut syms = reloc_syms(ctx, |_| true);
-    let unwind = ctx.unwind_records.iter().filter_map(|rec| rec.personality());
-    for p in unwind.chain(ctx.cies.iter().filter_map(|cie| cie.personality)) {
-        syms[p as usize] = true;
-    }
-    syms
 }
 
 /// The payload of the output's LC_LINKER_OPTIMIZATION_HINT, or None
@@ -1225,11 +1192,10 @@ fn sym_addr<E: Target>(ctx: &Context<E>, id: SymbolId) -> u64 {
 /// Builds a -r output's symbol table: the local symbols (see
 /// local_symbols), then the -add_ast_path entries, as in a final image,
 /// then the stabs, opened by an N_SO of their own, then the defined
-/// externals and the undefined symbols, each by name. The strings are
-/// laid out as a final image's (see layout_strings).
+/// externals and the undefined symbols. The strings are laid out as a
+/// final image's (see layout_strings).
 fn build_symtab<E: Target>(ctx: &Context<E>) -> RSymtab {
     let t = ctx.timer("r-symtab-locals");
-    let referenced = referenced_syms(ctx);
     let locals = local_symbols(ctx);
     drop(t);
 
@@ -1248,7 +1214,7 @@ fn build_symtab<E: Target>(ctx: &Context<E>) -> RSymtab {
     // The defined externals, then the undefined and tentative symbols.
     let t = ctx.timer("r-symtab-externals");
     let mut externals = defined_externals(ctx);
-    externals.extend(undefined_symbols(ctx, &referenced));
+    externals.extend(undefined_symbols(ctx));
     drop(t);
 
     // The entries, each made on all cores straight into its slot, and
@@ -1302,20 +1268,14 @@ fn build_symtab<E: Target>(ctx: &Context<E>) -> RSymtab {
     RSymtab { table, index_of_sym: index_of_sym.into_iter().map(AtomicU32::into_inner).collect() }
 }
 
-/// The symbols `pred` takes, sorted by name on all cores, ties by index.
-/// Each is sorted with its name's sort key (see name_sort_key), which
-/// settles most comparisons on one integer.
-fn symbols_by_name<E: Target>(ctx: &Context<E>, pred: impl Fn(usize) -> bool + Sync) -> Vec<usize> {
-    let mut syms: Vec<_> = (0..ctx.symbols.syms.len())
-        .into_par_iter()
-        .filter(|&i| pred(i))
-        .map(|i| (name_sort_key(ctx.symbols[i].name()), i))
-        .collect();
-    syms.par_sort_unstable();
-    syms.into_par_iter().map(|(_, i)| i).collect()
+/// The symbols `pred` takes, in symbol order, found on all cores. The
+/// order is the inputs': nothing reads an object's symbol order (a -r
+/// output has no LC_DYSYMTAB to sort externals by name for).
+fn symbols_where<E: Target>(ctx: &Context<E>, pred: impl Fn(usize) -> bool + Sync) -> Vec<usize> {
+    (0..ctx.symbols.syms.len()).into_par_iter().filter(|&i| pred(i)).collect()
 }
 
-/// A -r output's defined externals, sorted by name, with their entries.
+/// A -r output's defined externals, with their entries.
 fn defined_externals<E: Target>(ctx: &Context<E>) -> Vec<(NList, SymbolId)> {
     // The n_desc flags a defined global carries in its object, which the
     // next link needs as much as this one did. N_ALT_ENTRY is the
@@ -1340,7 +1300,7 @@ fn defined_externals<E: Target>(ctx: &Context<E>) -> Vec<(NList, SymbolId)> {
     });
 
     let keep_pext = ctx.args.keep_private_externs;
-    let globals = symbols_by_name(ctx, |i| {
+    let globals = symbols_where(ctx, |i| {
         let sym = &ctx.symbols[i];
         sym.is_extern()
             && (keep_pext || !sym.is_private_extern())
@@ -1385,25 +1345,17 @@ fn defined_externals<E: Target>(ctx: &Context<E>) -> Vec<(NList, SymbolId)> {
         .collect()
 }
 
-/// A -r output's undefined and tentative symbols, sorted by name, with
-/// their entries. ld-prime keeps an undefined one only if a relocation
-/// refers to it (`referenced`) or the command line makes it an initial
-/// undefine (-u): a stray `.globl`, a weak or lazy reference nothing
-/// uses, goes. A DTrace symbol stays whatever refers to it, with no
-/// n_desc flags: the final link reads a provider's stability and
-/// typedefs from symbols nothing relocates. A tentative definition that
-/// is a private external stays one (N_PEXT), -keep_private_externs or
-/// not: a -r link allocates no commons, and so has none to demote.
-fn undefined_symbols<E: Target>(ctx: &Context<E>, referenced: &[bool]) -> Vec<(NList, SymbolId)> {
-    let forced: HashSet<&[u8]> = ctx.args.forced_undefined.iter().map(Vec::as_slice).collect();
-    let undefs = symbols_by_name(ctx, |i| {
+/// A -r output's undefined and tentative symbols, with their entries:
+/// every one a live object lists or -u names, which is what a link of
+/// the objects would see. (ld-prime keeps only those a relocation, an
+/// unwind personality or -u names, and DTrace's; a final link ignores
+/// the others.) A tentative definition that is a private external stays
+/// one (N_PEXT), -keep_private_externs or not: a -r link allocates no
+/// commons, and so has none to demote.
+fn undefined_symbols<E: Target>(ctx: &Context<E>) -> Vec<(NList, SymbolId)> {
+    let undefs = symbols_where(ctx, |i| {
         let sym = &ctx.symbols[i];
-        sym.is_used()
-            && (sym.is_common()
-                || !sym.is_defined()
-                    && (referenced[i]
-                        || forced.contains(sym.name())
-                        || crate::dtrace::is_dtrace_symbol(sym.name())))
+        sym.is_used() && (sym.is_common() || !sym.is_defined())
     });
     undefs
         .par_iter()
@@ -1418,7 +1370,7 @@ fn undefined_symbols<E: Target>(ctx: &Context<E>, referenced: &[bool]) -> Vec<(N
                 if sym.is_private_extern() {
                     n_type |= N_PEXT;
                 }
-            } else if sym.is_weak_ref() && !crate::dtrace::is_dtrace_symbol(sym.name()) {
+            } else if sym.is_weak_ref() {
                 n_desc |= N_WEAK_REF;
             }
             (NList { n_strx: 0, n_type, n_sect: 0, n_desc, n_value }, i as u32)
