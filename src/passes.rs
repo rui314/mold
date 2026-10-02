@@ -1949,11 +1949,18 @@ pub fn create_internal_file<E: Target>(ctx: &mut Context<E>) {
 /// dylib > common), breaking ties by input order. A liveness walk then marks
 /// the archive members whose definitions are actually referenced, and
 /// a second round restricted to live files settles the final owners.
+/// A member the walk loads may bring tentative definitions, which want
+/// what defines them as data (see definition_rank), so the first round
+/// and the walk repeat until none comes in.
 pub fn resolve_symbols<E: Target>(ctx: &mut Context<E>) {
     intern_command_line_symbols(ctx);
-    clear_claims(ctx);
-    do_resolve(ctx, false);
-    mark_live_objects(ctx);
+    loop {
+        clear_claims(ctx);
+        let tentative = do_resolve(ctx, false);
+        if !mark_live_objects(ctx, &tentative) {
+            break;
+        }
+    }
     clear_claims(ctx);
     do_resolve(ctx, true);
     claim_locals(ctx);
@@ -2089,14 +2096,17 @@ fn clear_claims<E: Target>(ctx: &mut Context<E>) {
 /// `only_alive` just the live ones - like mold's resolve_symbols_pass:
 /// definitions race for each symbol by rank and the winners claim it,
 /// common symbols merge, and dylib exports claim what the objects
-/// leave undefined.
-fn do_resolve<E: Target>(ctx: &mut Context<E>, only_alive: bool) {
+/// leave undefined. Returns the symbols a live object has a tentative
+/// definition of.
+fn do_resolve<E: Target>(ctx: &mut Context<E>, only_alive: bool) -> Tentative {
     use std::sync::atomic::Ordering;
 
     let refs = collect_references(ctx, only_alive);
-    let best = race_definitions(ctx, only_alive);
-    claim_definitions(ctx, only_alive, &best);
-    merge_common_symbols(ctx, &best);
+    let commons = live_common_symbols(ctx);
+    let tentative: Tentative = commons.iter().map(|c| c.0).collect();
+    let best = race_definitions(ctx, only_alive, &tentative);
+    claim_definitions(ctx, only_alive, &best, &tentative);
+    merge_common_symbols(ctx, &commons, &best);
 
     // Record the references seen this round. A symbol is a weak import
     // only if every reference to it is weak: one strong reference
@@ -2121,14 +2131,18 @@ fn do_resolve<E: Target>(ctx: &mut Context<E>, only_alive: bool) {
     // A relocatable link keeps every reference undefined rather than
     // binding it to a dylib.
     if !ctx.args.relocatable {
-        claim_dylib_exports(ctx, &refs.used, &best);
+        claim_dylib_exports(ctx, &refs.used, &best, &tentative);
     }
 
     // Record the final usage set for downstream passes.
     for (i, u) in refs.used.iter().enumerate() {
         ctx.symbols.syms[i].set_is_used(u.load(Ordering::Relaxed));
     }
+    tentative
 }
+
+/// The symbols of which a live object has a tentative definition.
+type Tentative = hashbrown::HashSet<SymbolId>;
 
 /// Which symbols the objects considered in a round reference, and how.
 struct References {
@@ -2204,21 +2218,37 @@ fn collect_references<E: Target>(ctx: &Context<E>, only_alive: bool) -> Referenc
 /// A lazy archive member from an archive that an auto-link option named,
 /// one of `autolink_priority` or later, comes after the libraries the
 /// command line's dylibs re-export (see dylib_ranks).
+///
+/// A lazy member's tentative definition ranks as its definitions do: a
+/// reference loads the member for it like for any other. But when a
+/// live file has a tentative definition of the symbol (`tentative`),
+/// only a member that defines it as data - in a section not of pure
+/// instructions, what ld-prime takes, like ld64, for a "data
+/// definition" - overrides that: neither a member's code nor its
+/// tentative definition competes, nor, but under -commons use_dylibs,
+/// a dylib (see claim_dylib_exports).
 fn definition_rank(
     isecs: &[InputSection],
     obj: &crate::input_files::ObjectFile,
     nlist: &NList,
+    tentative: bool,
     autolink_priority: u32,
 ) -> Option<u64> {
     if nlist.is_stab() || !nlist.is_extern() {
         return None;
     }
     let is_weak = nlist.n_desc & N_WEAK_DEF != 0;
+    let is_code = || {
+        let hdr = (nlist.n_sect as usize).checked_sub(1).and_then(|i| obj.sect_hdrs.get(i));
+        hdr.is_some_and(|hdr| hdr.flags & S_ATTR_PURE_INSTRUCTIONS != 0)
+    };
     let class: u64 = match nlist.n_type() {
         N_SECT | N_ABS if obj.is_alive && !is_weak => 0,
         N_SECT | N_ABS if obj.is_alive => 1,
+        N_SECT if tentative && is_code() => return None,
         N_SECT | N_ABS => 2,
         N_UNDF if nlist.is_common() && obj.is_alive => 3,
+        N_UNDF if nlist.is_common() && !tentative => 2,
         _ => return None,
     };
     let mut weak_term = 0u64;
@@ -2256,6 +2286,7 @@ fn weak_definition_rank(isec: &InputSection, nlist: &NList, hidden: bool) -> u64
 fn race_definitions<E: Target>(
     ctx: &Context<E>,
     only_alive: bool,
+    tentative: &Tentative,
 ) -> Vec<std::sync::atomic::AtomicU64> {
     use std::sync::atomic::{AtomicU64, Ordering};
     let best: Vec<AtomicU64> =
@@ -2263,12 +2294,24 @@ fn race_definitions<E: Target>(
     ctx.objs.par_iter().filter(|obj| !only_alive || obj.is_alive).for_each(|obj| {
         let r = obj.global_range();
         for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
-            if let Some(rank) = definition_rank(&ctx.isecs, obj, nlist, ctx.autolink_priority) {
+            let tentative = overrides_tentative(obj, sym_id, tentative);
+            let rank = definition_rank(&ctx.isecs, obj, nlist, tentative, ctx.autolink_priority);
+            if let Some(rank) = rank {
                 best[sym_id as usize].fetch_min(rank, Ordering::Relaxed);
             }
         }
     });
     best
+}
+
+/// Whether a definition in `obj` would override a live file's
+/// tentative definition (see definition_rank).
+fn overrides_tentative(
+    obj: &crate::input_files::ObjectFile,
+    sym_id: SymbolId,
+    tentative: &Tentative,
+) -> bool {
+    !obj.is_alive && !tentative.is_empty() && tentative.contains(&sym_id)
 }
 
 /// Each object writes the symbols whose race it won. Ranks are unique
@@ -2278,6 +2321,7 @@ fn claim_definitions<E: Target>(
     ctx: &mut Context<E>,
     only_alive: bool,
     best: &[std::sync::atomic::AtomicU64],
+    tentative: &Tentative,
 ) {
     use std::sync::atomic::Ordering;
     struct SymsPtr(*mut crate::symbol::Symbol);
@@ -2291,7 +2335,9 @@ fn claim_definitions<E: Target>(
         |(obj_idx, obj)| {
             let r = obj.global_range();
             for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
-                let Some(rank) = definition_rank(isecs, obj, nlist, autolink_priority) else {
+                let tentative = overrides_tentative(obj, sym_id, tentative);
+                let rank = definition_rank(isecs, obj, nlist, tentative, autolink_priority);
+                let Some(rank) = rank else {
                     continue;
                 };
                 let won = best[sym_id as usize].load(Ordering::Relaxed);
@@ -2342,6 +2388,14 @@ fn claim_definitions<E: Target>(
                             }
                         }
                     }
+                    N_UNDF if !obj.is_alive => {
+                        // A lazy member's tentative definition claims
+                        // the symbol for the member, for the liveness
+                        // walk to load it.
+                        sym.set_file(FileId::Obj((obj_idx) as u32));
+                        sym.set_input_section(None);
+                        sym.value = 0;
+                    }
                     N_UNDF => {
                         // A common symbol takes a tentative claim.
                         sym.clear_file();
@@ -2356,15 +2410,10 @@ fn claim_definitions<E: Target>(
     );
 }
 
-/// Common symbols merge as ld-prime merges them, from every common
-/// claim once the class-3 winners are known: the largest tentative
-/// definition wins whole - its size, its alignment, whatever the
-/// others', and whether it is a private external - and of those of one
-/// size the first claimed (the winner's to start with).
-fn merge_common_symbols<E: Target>(ctx: &mut Context<E>, best: &[std::sync::atomic::AtomicU64]) {
-    use std::sync::atomic::Ordering;
-    let commons: Vec<(crate::symbol::SymbolId, u64, u8, bool)> = ctx
-        .objs
+/// The tentative definitions of live objects, in input order: (symbol,
+/// size, log2 of the alignment, whether a private external).
+fn live_common_symbols<E: Target>(ctx: &Context<E>) -> Vec<(SymbolId, u64, u8, bool)> {
+    ctx.objs
         .par_iter()
         .filter(|obj| obj.is_alive)
         .flat_map_iter(|obj| {
@@ -2374,7 +2423,6 @@ fn merge_common_symbols<E: Target>(ctx: &mut Context<E>, best: &[std::sync::atom
                     && nlist.is_extern()
                     && nlist.n_type() == N_UNDF
                     && nlist.is_common()
-                    && best[sym_id as usize].load(Ordering::Relaxed) >> 40 == 3
                 {
                     let p2align = ((nlist.n_desc >> 8) & 0xf) as u8;
                     let pext = nlist.n_type & N_PEXT != 0 || obj.hidden;
@@ -2384,8 +2432,24 @@ fn merge_common_symbols<E: Target>(ctx: &mut Context<E>, best: &[std::sync::atom
                 }
             })
         })
-        .collect();
-    for (sym_id, size, p2align, pext) in commons {
+        .collect()
+}
+
+/// Common symbols merge as ld-prime merges them, from every common
+/// claim once the class-3 winners are known: the largest tentative
+/// definition wins whole - its size, its alignment, whatever the
+/// others', and whether it is a private external - and of those of one
+/// size the first claimed (the winner's to start with).
+fn merge_common_symbols<E: Target>(
+    ctx: &mut Context<E>,
+    commons: &[(SymbolId, u64, u8, bool)],
+    best: &[std::sync::atomic::AtomicU64],
+) {
+    use std::sync::atomic::Ordering;
+    for &(sym_id, size, p2align, pext) in commons {
+        if best[sym_id as usize].load(Ordering::Relaxed) >> 40 != 3 {
+            continue;
+        }
         let sym = &mut ctx.symbols[sym_id];
         if size > sym.value {
             sym.value = size;
@@ -2402,21 +2466,24 @@ fn claim_dylib_exports<E: Target>(
     ctx: &mut Context<E>,
     used: &[std::sync::atomic::AtomicBool],
     best: &[std::sync::atomic::AtomicU64],
+    tentative: &Tentative,
 ) {
     use std::sync::atomic::Ordering;
     let dylibs = &ctx.dylibs;
     let providers = merged_providers(dylibs);
     let ranks = dylib_ranks(dylibs);
     let order = dylib_search_order(&ranks, 0);
-    // A tentative definition (a common symbol) beats a dylib's but
-    // under -commons use_dylibs.
+    // A live tentative definition (a common symbol) beats a dylib's
+    // but under -commons use_dylibs, even where it is an archive
+    // member's that would override it.
     let use_dylibs = ctx.args.commons == crate::cmdline::CommonsMode::UseDylibs;
     ctx.symbols.syms.par_iter_mut().enumerate().for_each(|(i, sym)| {
         if !used[i].load(Ordering::Relaxed) {
             return;
         }
         let won = best[i].load(Ordering::Relaxed);
-        if (sym.is_common() && !use_dylibs) || won >> 40 < 2 {
+        let has_tentative = !tentative.is_empty() && tentative.contains(&(i as SymbolId));
+        if (has_tentative && !use_dylibs) || won >> 40 < 2 {
             return;
         }
         // A DTrace symbol binds to no dylib, whatever exports one (see
@@ -2450,8 +2517,12 @@ fn claim_dylib_exports<E: Target>(
 }
 
 /// Marks archive members whose definitions live code references,
-/// walking owner links to a fixed point.
-fn mark_live_objects<E: Target>(ctx: &mut Context<E>) {
+/// walking owner links to a fixed point. A tentative definition loads
+/// the member that overrides it, if any (see definition_rank), but only
+/// one of the `tentative` symbols, which the round ranked for: one that
+/// a member this walk loads brings waits for the next round. Returns
+/// whether there was such a one.
+fn mark_live_objects<E: Target>(ctx: &mut Context<E>, tentative: &Tentative) -> bool {
     // Resolution runs in rounds (auto-linking, LTO), and a file live
     // after one stays so, with the -why_load reason it was loaded for.
     let mut queue: Vec<usize> = (0..ctx.objs.len()).filter(|&i| ctx.objs[i].is_alive).collect();
@@ -2478,6 +2549,7 @@ fn mark_live_objects<E: Target>(ctx: &mut Context<E>) {
     // Once bitcode is live, the archive members that define a runtime
     // routine LTO may call are too (see LTO_RUNTIME_ROUTINES).
     let mut softloaded = false;
+    let mut new_tentative = false;
     loop {
         while let Some(obj_idx) = queue.pop() {
             for i in 0..ctx.objs[obj_idx].nlists.len() {
@@ -2486,6 +2558,10 @@ fn mark_live_objects<E: Target>(ctx: &mut Context<E>) {
                     continue;
                 }
                 let sym_id = ctx.objs[obj_idx].symbols[i];
+                if nlist.is_common() && !tentative.contains(&sym_id) {
+                    new_tentative = true;
+                    continue;
+                }
                 load_owner(ctx, sym_id, &mut queue);
             }
         }
@@ -2499,6 +2575,7 @@ fn mark_live_objects<E: Target>(ctx: &mut Context<E>) {
             }
         }
     }
+    new_tentative
 }
 
 /// Makes live the archive member that defines a symbol something live
