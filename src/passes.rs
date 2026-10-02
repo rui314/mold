@@ -612,7 +612,6 @@ fn collect_file<E: Target>(
         return;
     }
     match get_file_type(mf) {
-        FileType::Object if let Err(why) = check_object(mf) => refuse_malformed(mf, &why),
         FileType::Object => {
             let priority = ctx.next_priority();
             out.push(PendingObject { mf, alive: true, hidden: rc.hidden, priority });
@@ -639,9 +638,7 @@ fn collect_file<E: Target>(
         }
         FileType::Dylib if rc.merge => merge_dylib(ctx, mf, out),
         FileType::Tapi | FileType::Dylib if refuses_client(ctx, mf, rc) => {}
-        FileType::Dylib if let Err(why) = crate::malformed::check_image(mf.data()) => {
-            refuse_image(mf, &why);
-        }
+        FileType::Dylib if !input_files::has_uuid(mf.data()) => refuse_without_uuid(mf),
         FileType::Tapi | FileType::Dylib => {
             let first = ctx.dylibs.len();
             let idx = if get_file_type(mf) == FileType::Tapi {
@@ -698,16 +695,6 @@ fn collect_file<E: Target>(
             }
             for member in crate::archive_file::read_archive_members(mf) {
                 input_files::trace_file(ctx, path_bytes(&member.name));
-                // A member whose load commands are no Mach-O file's is
-                // no object of the link's, which ld-prime passes over.
-                if get_file_type(member) == FileType::Object
-                    && let Err(why) = check_object(member)
-                {
-                    if let crate::malformed::Malformed::Layout(_) = why {
-                        refuse_malformed(member, &why);
-                    }
-                    continue;
-                }
                 let alive = rc.force_load
                     || all_load
                     || (ctx.args.load_objc && input_files::has_objc_sections(member));
@@ -758,38 +745,20 @@ fn name_again<E: Target>(
     }
 }
 
-/// Checks an object's layout as ld-prime does before it reads the
-/// object (see malformed::check_object).
-fn check_object(mf: &MappedFile) -> Result<(), crate::malformed::Malformed> {
-    let data = mf.data();
-    crate::malformed::check_object(data, MachHeader::read_from(data).cputype)
-}
-
-/// Refuses an image the link reads (see malformed::check_image), by the
-/// path of its file.
-fn refuse_image(mf: &MappedFile, why: &str) {
+/// Refuses an image the link reads that has no LC_UUID (see
+/// input_files::has_uuid), by the path of its file.
+fn refuse_without_uuid(mf: &MappedFile) {
     let name = input_files::trace_name(path_bytes(&mf.name));
-    error!("{why} in '{name}' in '{name}'");
+    error!("missing LC_UUID load command in '{name}' in '{name}'");
 }
 
-/// Refuses a malformed object, naming it twice as ld-prime does.
-fn refuse_malformed(mf: &MappedFile, why: &crate::malformed::Malformed) {
-    let name = mf.name.display();
-    error!("{} in '{name}' in '{name}'", why.message());
-}
-
-/// Refuses a file the link can't take, by what it is: ld-prime knows a
-/// 64-bit Mach-O file by its magic number, and refuses one a few bytes
-/// short of its header too.
+/// Refuses a file the link can't take, by what it is.
 fn refuse_file(mf: &MappedFile) {
     let name = input_files::trace_name(path_bytes(&mf.name));
-    let data = mf.data();
-    if crate::filetype::get_macho_filetype(data).is_some() {
+    if crate::filetype::get_macho_filetype(mf.data()).is_some() {
         error!(
             "unsupported mach-o filetype (only MH_OBJECT and MH_DYLIB can be linked) in '{name}'"
         );
-    } else if data.len() >= 28 && data[..4] == MH_MAGIC_64.to_le_bytes() {
-        error!("buffer too small in '{name}' in '{name}'");
     } else {
         error!("unknown file type in '{name}'");
     }
@@ -1495,9 +1464,9 @@ fn load_bundle_loader<E: Target>(
     match exe.filter(|exe| crate::filetype::get_macho_filetype(exe.data()) == Some(MH_EXECUTE)) {
         Some(exe) => {
             input_files::trace_file(ctx, path_bytes(&mf.name));
-            match crate::malformed::check_image(exe.data()) {
-                Ok(()) => _ = input_files::parse_bundle_loader(ctx, exe),
-                Err(why) => refuse_image(exe, &why),
+            match input_files::has_uuid(exe.data()) {
+                true => _ = input_files::parse_bundle_loader(ctx, exe),
+                false => refuse_without_uuid(exe),
             }
         }
         None => collect_file(ctx, mf, rc, out),

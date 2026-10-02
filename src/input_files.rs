@@ -1027,9 +1027,14 @@ impl LoadCommands {
                     // Auto-link requests: the object names libraries it
                     // needs, as NUL-terminated strings after a count -
                     // an option and its argument, if it takes one, and
-                    // no more, as ld-prime sees it (see
-                    // malformed::check_object).
+                    // no more, as ld-prime sees it.
                     let count = u32::from_le_bytes(data[off + 8..off + 12].try_into().unwrap());
+                    if !(1..=2).contains(&count) {
+                        let file = mf.name.display();
+                        fatal!(
+                            "LC_LINKER_OPTION has count={count}, only 1 or 2 is valid in '{file}' in '{file}'"
+                        );
+                    }
                     let mut strs = Vec::with_capacity(count as usize);
                     let mut p = off + 12;
                     for _ in 0..count {
@@ -1052,10 +1057,20 @@ impl LoadCommands {
                     }
                 }
                 LC_LINKER_OPTIMIZATION_HINT => {
+                    // A stream of ULEB128 triples-and-more: kind, argument
+                    // count, then that many instruction addresses.
                     let cmd = LinkEditDataCommand::read_from(&data[off..]);
-                    let (start, size) = (cmd.dataoff as usize, cmd.datasize as usize);
-                    if let Some(payload) = data.get(start..start.saturating_add(size)) {
-                        cmds.loh = read_loh(payload);
+                    let payload =
+                        &data[cmd.dataoff as usize..(cmd.dataoff + cmd.datasize) as usize];
+                    let mut pos = 0;
+                    while pos < payload.len() {
+                        let kind = read_uleb_at(payload, &mut pos);
+                        if kind == 0 {
+                            break;
+                        }
+                        let count = read_uleb_at(payload, &mut pos);
+                        let addrs = (0..count).map(|_| read_uleb_at(payload, &mut pos)).collect();
+                        cmds.loh.push((kind as u8, addrs));
                     }
                 }
                 _ => {}
@@ -1064,28 +1079,6 @@ impl LoadCommands {
         }
         cmds
     }
-}
-
-/// Reads an object's linker optimization hints: a stream of ULEB128
-/// numbers - a kind, an argument count, then that many instruction
-/// addresses -, ended by a kind of 0 or the end. ld-prime doesn't look
-/// at them before it reads them, and takes those of a table outside the
-/// file or cut short to be none (as many as there are whole).
-fn read_loh(payload: &[u8]) -> Vec<(u8, Vec<u64>)> {
-    let mut loh = Vec::new();
-    let mut pos = 0;
-    let mut next = || try_read_uleb(payload, &mut pos);
-    while let Some(kind) = next() {
-        if kind == 0 {
-            break;
-        }
-        let Some(count) = next() else { break };
-        let Some(addrs) = (0..count).map(|_| next()).collect::<Option<Vec<u64>>>() else {
-            break;
-        };
-        loh.push((kind as u8, addrs));
-    }
-    loh
 }
 
 /// Reads an object's symbol table: its nlists and string table. The
@@ -1101,10 +1094,7 @@ fn read_symtab(
     let Some(cmd) = cmd else {
         return (std::borrow::Cow::Borrowed(&[]), &[]);
     };
-    // A count of 2^28 symbols is a table of no size: ld-prime takes its
-    // size in 32 bits (see malformed::check_object).
-    let off = cmd.symoff as usize;
-    let n = (cmd.nsyms as u64 * size_of::<NList>() as u64) as u32 as usize / size_of::<NList>();
+    let (off, n) = (cmd.symoff as usize, cmd.nsyms as usize);
     let nlists = match nlists_slice(data, off, n) {
         Some(s) => std::borrow::Cow::Borrowed(s),
         None => std::borrow::Cow::Owned(read_array(data, off, n)),
@@ -2675,25 +2665,6 @@ pub struct Fde {
 // (whose FdeRecord derives even more and is 16 bytes).
 #[cfg(target_pointer_width = "64")]
 const _: () = assert!(std::mem::size_of::<Fde>() == 56);
-
-/// Reads a ULEB128 number at `pos`, if one ends before the end of
-/// `data` and fits in 64 bits.
-pub fn try_read_uleb(data: &[u8], pos: &mut usize) -> Option<u64> {
-    let mut val = 0u64;
-    let mut shift = 0;
-    loop {
-        let byte = *data.get(*pos)?;
-        *pos += 1;
-        if shift >= 64 {
-            return None;
-        }
-        val |= ((byte & 0x7f) as u64) << shift;
-        if byte & 0x80 == 0 {
-            return Some(val);
-        }
-        shift += 7;
-    }
-}
 
 pub fn read_uleb_at(data: &[u8], pos: &mut usize) -> u64 {
     let mut val = 0;
@@ -4471,6 +4442,22 @@ pub fn is_mergeable(mf: &MappedFile) -> bool {
     for _ in 0..hdr.ncmds {
         let lc = LoadCommand::read_from(&data[off..]);
         if lc.cmd == LC_ATOM_INFO {
+            return true;
+        }
+        off += lc.cmdsize as usize;
+    }
+    false
+}
+
+/// Whether an image - a dylib, an executable - has an LC_UUID. ld
+/// -no_uuid makes one without, which dyld refuses to load and ld-prime
+/// to link with.
+pub fn has_uuid(data: &[u8]) -> bool {
+    let hdr = MachHeader::read_from(data);
+    let mut off = size_of::<MachHeader>();
+    for _ in 0..hdr.ncmds {
+        let lc = LoadCommand::read_from(&data[off..]);
+        if lc.cmd == LC_UUID {
             return true;
         }
         off += lc.cmdsize as usize;

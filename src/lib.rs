@@ -21,7 +21,6 @@ pub(crate) mod lto;
 pub mod macho;
 mod macho_consts;
 pub(crate) mod make_mergeable;
-pub(crate) mod malformed;
 pub(crate) mod mapfile;
 pub(crate) mod mapped_file;
 pub(crate) mod mergeable;

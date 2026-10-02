@@ -97,20 +97,6 @@ grep -qF "; " $t/line
 grep -qF "file is empty in '$t/empty.o'" $t/line
 [ "$(grep -v '^+' $t/log | grep -c 'error')" = 2 ]
 
-# An object cut short is refused for what runs past its end: the mach
-# header, the load commands, the symbol table or its strings.
-size=$(wc -c < $t/a.o)
-symoff=$(otool -l $t/a.o | awk '$1 == "symoff" { print $2 }')
-shorten() { head -c $1 $t/a.o > $t/cut.o; try -Wl,$t/cut.o; }
-shorten 28
-grep -qF "buffer too small in '$t/cut.o' in '$t/cut.o'" $t/log
-shorten 40
-grep -qF "mh.sizeofcmds extends beyond buffer size in '$t/cut.o' in '$t/cut.o'" $t/log
-shorten $((symoff + 8))
-grep -qF "LINKEDIT content 'symbol table' extends beyond end of segment in '$t/cut.o'" $t/log
-shorten $((size - 1))
-grep -qF "LINKEDIT content 'symbol strings' extends beyond end of segment in '$t/cut.o'" $t/log
-
 # A file it can't link it words by what the file is.
 echo 'int x;' > $t/x.c
 try -Wl,$t/x.c
