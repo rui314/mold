@@ -916,15 +916,6 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     let lto_ranks = lto_layout_ranks(ctx);
     assign_input_sections(ctx, text, &moves, lto_ranks.as_deref());
     place_replacing_blobs(ctx, text, &moves);
-
-    // A final image always has a __text section, empty if no code
-    // reached it (a dylib of only data; ld-prime writes one of size 0,
-    // byte-aligned).
-    if !ctx.args.relocatable && find_output_section(ctx, text).is_none() {
-        let flags = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
-        let id = add_output_section(ctx, text.0, text.1, flags);
-        ctx.output_section_mut(id).rank_name = Some((b"__TEXT", b"__text"));
-    }
     place_sectcreate_inputs(ctx);
 
     set_section_alignments(ctx);
@@ -1274,8 +1265,9 @@ fn finish_section_alignments<E: Target>(ctx: &mut Context<E>, text: SectionName)
     // commands take: ld64 aligns its __text to 4 KiB, on any target and
     // whatever the inputs or -sectalign ask, and leaves no room between
     // the load commands and it (see chunks::header_pad).
-    if ctx.args.is_dylinker() {
-        let id = find_output_section(ctx, text).unwrap();
+    if ctx.args.is_dylinker()
+        && let Some(id) = find_output_section(ctx, text)
+    {
         ctx.output_sections[id.index()].hdr.p2align = 12;
     }
 }
@@ -2152,12 +2144,7 @@ pub(crate) fn header_segment<E: Target>(ctx: &Context<E>) -> &'static [u8] {
     if ctx.args.static_link { renamed_segment(&ctx.args, b"__TEXT") } else { b"__TEXT" }
 }
 
-/// The __text section a final image always has (see text_section_name).
-pub(crate) fn text_section<E: Target>(ctx: &Context<E>) -> Option<OutputSectionId> {
-    find_output_section(ctx, text_section_name(ctx))
-}
-
-/// The name of the __text section a final image always has: it moves
+/// The name of a final image's __text section: it moves
 /// with -text_exec like the code, and -rename_section and
 /// -rename_segment rename it like any section - but -rename_segment
 /// __TEXT leaves it with the mach header.

@@ -4,9 +4,9 @@ source "$(dirname "$0")"/common.inc
 # ld-prime applies -rename_section and -rename_segment to the sections
 # it synthesizes as to the input ones: the stubs, the GOT (by its
 # __DATA_CONST name), __init_offsets and -sectcreate's - but not
-# __unwind_info, which stays in __TEXT. The __text section a final
-# image always has is renamed by -rename_section; -rename_segment
-# __TEXT leaves an empty one with a dynamic image's mach header.
+# __unwind_info, which stays in __TEXT. -rename_segment __TEXT takes
+# __text along but leaves a dynamic image's mach header in __TEXT.
+# (ld-prime also leaves an empty __TEXT,__text there.)
 cat <<EOF | $CC -o $t/a.o -c -xc -
 #include <stdio.h>
 const char *const msg = "hello";
@@ -51,4 +51,4 @@ not grep -q '__TEXT,' <(sects $t/exe3)
 
 $CC --ld-path=$mold -o $t/exe4 $t/b.o -Wl,-rename_segment,__TEXT,__TTT
 grep -qx '__TTT,__text' <(sects $t/exe4)
-grep -qx '__TEXT,__text' <(sects $t/exe4)
+otool -l $t/exe4 | grep -q 'segname __TEXT$'

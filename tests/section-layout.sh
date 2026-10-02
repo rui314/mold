@@ -91,11 +91,11 @@ $CC --ld-path=$mold -o $t/exe4 $t/f.o
 [ "$(align $t/exe4 __thread_data)" = 2^4 ]
 [ "$(align $t/exe4 __thread_bss)" = 2^4 ]
 
-# A dylib with no code still has an (empty) __text section, and its
-# function starts and export trie load commands.
+# A dylib with no code still has its function starts and export trie
+# load commands. (ld-prime also writes an empty __text section.)
 echo 'int data = 1;' | $CC -o $t/g.o -c -xc -
 $CC --ld-path=$mold -dynamiclib -o $t/libdata.dylib $t/g.o -Wl,-exported_symbols_list,/dev/null
 otool -l $t/libdata.dylib > $t/lc
-grep -q 'sectname __text' $t/lc
+not grep -q 'sectname __text' $t/lc
 grep -q LC_FUNCTION_STARTS $t/lc
 grep -q LC_DYLD_EXPORTS_TRIE $t/lc
