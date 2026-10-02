@@ -50,8 +50,9 @@ nm -m $t/exe-r | grep -q ',__objc_superrefs) non-external _sup_a$'
 [ "$(size $t/exe-r __objc_superrefs)" = 0x0000000000000018 ]
 
 # Of the literal-pointer type, such references are taken for class
-# references: all of one target merge, whatever labels them, and no
-# label survives. The output has the standard section's flags.
+# references: all of one target merge, whatever labels them, and the
+# labels name the merged one. (ld-prime lists none of them.) A -r
+# output has the standard section's flags.
 for n in 1 2; do
   cat <<EOF | $CC -o $t/b$n.o -c -xassembler -
 .section __DATA,__objc_superrefs,literal_pointers,no_dead_strip
@@ -67,7 +68,8 @@ $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/b1.o $t/b2.o $t/c.o
 $t/exe2
 [ "$(size $t/exe2 __objc_superrefs)" = 0x0000000000000010 ]
 nm -m $t/exe2 > $t/nm2
-not grep -q '_sup_a[12]' $t/nm2
+grep -q ',__objc_superrefs) non-external _sup_a1$' $t/nm2
+grep -q ',__objc_superrefs) non-external _sup_a2$' $t/nm2
 $mold -r -arch $ARCH -o $t/r2.o $t/b1.o $t/b2.o
 otool -l $t/r2.o | grep -A8 'sectname __objc_superrefs' | grep -q 'flags 0x10000000'
 $CC --ld-path=$mold -o $t/exe2-r $t/main.o $t/r2.o $t/c.o

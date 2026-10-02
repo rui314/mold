@@ -13,7 +13,7 @@
 
 use std::os::unix::ffi::OsStrExt;
 
-use crate::chunks::symtab::keep_local_symbol_in;
+use crate::chunks::symtab::keep_local_symbol;
 use crate::cmdline::SymbolMove;
 use crate::context::Context;
 use crate::error::raw;
@@ -314,7 +314,7 @@ fn rewritten_records<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32, boo
 
 /// The subsection ld-prime names by the symbol `id` of object `obj`,
 /// whose entry is `nlist`: a definition the link kept, external or
-/// local but no assembler label (see symtab::keep_local_symbol_in), in
+/// local but no assembler label (see symtab::keep_local_symbol), in
 /// a section or absolute; or a common symbol, if the object's tentative
 /// definition is the one its subsection stands for (see common_owners).
 /// A method list ld-prime rewrote in the relative form (see
@@ -340,9 +340,8 @@ fn subsec_named<'a, E: Target>(
     {
         return None;
     }
-    let demoted = nlist.n_type & N_PEXT != 0;
     let isec = sym.input_section();
-    if !nlist.is_extern() && !keep_local_symbol_in(ctx, sym.name(), isec, demoted, false) {
+    if !nlist.is_extern() && !keep_local_symbol(sym.name()) {
         return None;
     }
     let Some(isec) = isec else {

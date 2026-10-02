@@ -77,6 +77,8 @@ grep -Eq ' GSYM __OBJC_PROTOCOL_REFERENCE_\$_P$' $t/stabs
 for s in _kept _cstr _mystr _lit8 _term; do
   grep -Eq " GSYM $s\$" $t/stabs
 done
+# The reader demotes a global labeling UTF-16 strings to a local.
+grep -Eq ' STSYM _ustr$' $t/stabs
 not grep -Eq ' (STSYM|GSYM) l_(pext|ext)$' $t/stabs
 dsymutil -o $t/exe.dSYM $t/exe > $t/dsym.log 2>&1
 not grep -qi warning $t/dsym.log

@@ -11,7 +11,8 @@ command -v swiftc >/dev/null || skip
 # are rewritten in relative form like any other, and a selector no
 # code references gets a selector reference in the __objc_selrefs
 # tail. __objc_catlist2 follows __objc_catlist, and its entries' label
-# (_objc_categories_stubs) is not emitted, as for the other lists.
+# (_objc_categories_stubs) is listed as a local, as for the other
+# lists.
 cat <<EOF > $t/base.swift
 import Foundation
 open class Base: NSObject {
@@ -47,7 +48,7 @@ grep -q ' catCM$' $t/selrefs
 otool -l $t/exe | grep 'sectname __objc_' > $t/sects
 [ "$(grep -A1 __objc_catlist2 $t/sects | tail -1 | awk '{print $2}')" = __objc_imageinfo ]
 nm $t/exe > $t/nm
-not grep -q _objc_categories_stubs $t/nm
+grep -q ' s _objc_categories_stubs$' $t/nm
 
 # The same in a -r output.
 $mold -r -arch $ARCH -o $t/r.o $t/a.o

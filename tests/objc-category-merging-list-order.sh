@@ -26,8 +26,9 @@ otool -ov $t/c.dylib | sed -n '/__objc_catlist/,/Contents of/p' > $t/log
 grep -E '^[0-9a-f]+ ' $t/log | awk '{ print $NF }' | tr '\n' ' ' > $t/order
 [ "$(cat $t/order)" = '__OBJC_$_CATEGORY_NSString_$_A1 __OBJC_$_CATEGORY_NSData_$_D1 __OBJC_$_CATEGORY_NSArray_$_R1 ' ]
 
-# Swift labels its category list _objc_categories, which names no
-# symbol in the output, the list rebuilt or not.
+# Swift labels its category list _objc_categories, which the symbol
+# table lists as a local at the list, rebuilt or not. (ld-prime lists
+# no name of a list entry.)
 command -v swiftc >/dev/null || exit 0
 [ "$ARCH" = "$(uname -m)" ] || exit 0
 cat <<EOF2 > $t/ext.swift
@@ -40,7 +41,7 @@ swiftc -parse-as-library -module-name E -emit-object -o $t/ext.o $t/ext.swift
 $CC --ld-path=$mold -shared -o $t/d.dylib $t/ext.o -framework Foundation \
   -L$(xcrun --show-sdk-path)/usr/lib/swift
 nm -m $t/d.dylib > $t/syms
-not grep -q _objc_categories $t/syms
+grep -q '(__DATA_CONST,__objc_catlist) non-external _objc_categories$' $t/syms
 otool -ov $t/d.dylib | sed -n '/__objc_catlist/,/Contents of/p' > $t/log2
 grep -E '^[0-9a-f]+ ' $t/log2 | awk '{ print $NF }' | tr '\n' ' ' > $t/order2
 [ "$(cat $t/order2)" = '__CATEGORY_NSString_$_E __CATEGORY_NSData_$_E ' ]

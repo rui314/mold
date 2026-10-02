@@ -1,14 +1,14 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# ld-prime names no entry of __objc_classlist and the other class and
-# category lists, nor of __objc_clsrolist: of the symbols naming an
-# entry it takes one for the name of its subsection, which is lost - an
-# external (global or private external) one if any, else the greatest
-# name - and keeps the others as aliases, but for the arm64
-# assembler's ltmpN labels. So clang's l_OBJC_LABEL_CLASS_$ alone
-# vanishes. A -r output keeps every label: each marked a subsection's
-# start in its input, and a later link splits the output at them.
+# An image's symbol table lists every name of an entry of
+# __objc_classlist and the other class and category lists but an
+# assembler temporary (clang's l_OBJC_LABEL_CLASS_$), as locals: the
+# reader demotes the externals. (ld-prime names no entry: of the symbols
+# naming one it takes one for the name of its subsection, which is
+# lost, and keeps the others as aliases.) A -r output keeps every label:
+# each marked a subsection's start in its input, and a later link
+# splits the output at them.
 entry() {
   cat <<EOF | $CC -o $t/$1.o -c -xassembler -
 .section __DATA,__objc_const
@@ -42,9 +42,10 @@ echo 'int main() { return 0; }' | $CC -o $t/main.o -c -xc -
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/a.o $t/b.o $t/c.o $t/d.o
 $t/exe
 nm -m $t/exe > $t/nm
-grep -q '(__DATA_CONST,__objc_classlist) non-external _loc_b$' $t/nm
-grep -q '(__DATA_CONST,__objc_classlist) non-external _aaa_d$' $t/nm
-not grep -q '_pe_\|_loc_c\|_zzz_d' $t/nm
+for s in _pe_a _loc_b _pe_b _loc_c _aaa_d _zzz_d; do
+  grep -q "(__DATA_CONST,__objc_classlist) non-external $s\$" $t/nm
+done
+not grep -q l_OBJC_LABEL_CLASS_ $t/nm
 
 $mold -r -arch $ARCH -o $t/r.o $t/a.o $t/b.o $t/c.o $t/d.o
 nm -m $t/r.o > $t/nm-r

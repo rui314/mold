@@ -6253,54 +6253,6 @@ pub(crate) fn is_unnamed_objc_list(hdr: &MachSection) -> bool {
         .any(|name| hdr.sectname_is(name.as_bytes()))
 }
 
-/// The symbols of an object, by index, that name an entry of an
-/// Objective-C list ld-prime names no symbol for (see
-/// is_unnamed_objc_list) and survive all the same. ld-prime takes one
-/// of an entry's symbols for the name of its subsection, which is lost,
-/// and keeps the others as aliases: an external one (a global or a
-/// private external, both demoted by then, see
-/// demote_unnamed_subsec_names) is the name, else the greatest name;
-/// the arm64 assembler's ltmpN labels don't count. So an entry one
-/// label names has no symbol in the output (clang's
-/// l_OBJC_LABEL_CLASS_$, Swift's _objc_classes_...), but where a
-/// private external names it too, the label stays and the private
-/// external goes.
-pub(crate) fn objc_list_aliases<E: Target>(
-    ctx: &Context<E>,
-    obj: &crate::input_files::ObjectFile,
-) -> hashbrown::HashSet<usize> {
-    let mut aliases = hashbrown::HashSet::new();
-    let lists: Vec<bool> = obj.sect_hdrs.iter().map(is_unnamed_objc_list).collect();
-    if !lists.contains(&true) {
-        return aliases;
-    }
-    // (place, is external, name, index), sorted so that each place's
-    // name comes last.
-    type ListSymbol<'a> = ((u8, u64), bool, &'a [u8], usize);
-    let mut syms: Vec<ListSymbol> = obj
-        .nlists
-        .iter()
-        .zip(&obj.symbols)
-        .enumerate()
-        .filter_map(|(i, (nlist, &id))| {
-            if nlist.is_stab() || nlist.n_type() != N_SECT || !lists[nlist.n_sect as usize - 1] {
-                return None;
-            }
-            let name = ctx.symbols[id].name();
-            let place = (nlist.n_sect, nlist.n_value);
-            let external = nlist.n_type & (N_EXT | N_PEXT) != 0;
-            (!name.starts_with(b"ltmp")).then_some((place, external, name, i))
-        })
-        .collect();
-    syms.sort_unstable();
-    for w in syms.windows(2) {
-        if w[0].0 == w[1].0 {
-            aliases.insert(w[0].3);
-        }
-    }
-    aliases
-}
-
 /// Whether ld-prime splits a section into subsections by content and
 /// names none of them: CFStrings, selector and class references,
 /// UTF-16 literals and Objective-C constant literals (@42, @[...],

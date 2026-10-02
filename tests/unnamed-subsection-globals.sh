@@ -4,8 +4,9 @@ source "$(dirname "$0")"/common.inc
 # ld-prime splits UTF-16 literals, selector references and the like
 # into subsections by content and names none of them, so an external
 # symbol that labels one defines nothing: the object's own references
-# reach it, but no output lists it, another object's reference to it
-# is undefined, and another definition of the name is no duplicate.
+# reach it, an output lists it as a local at most, another object's
+# reference to it is undefined, and another definition of the name is
+# no duplicate. (ld-prime lists it nowhere.)
 if [ $ARCH = arm64 ]; then
   cat > $t/a.s <<'EOF'
 .text
@@ -79,7 +80,8 @@ $CC -c -o $t/c.o $t/c.s
 $CC --ld-path=$mold -o $t/exe1 $t/a.o
 $t/exe1
 nm -m $t/exe1 > $t/log1
-not grep -q '_ustr\|_selref' $t/log1
+grep -q '(__TEXT,__ustring) non-external _ustr$' $t/log1
+not grep -q ') external _ustr\|) external _selref' $t/log1
 
 not $CC --ld-path=$mold -o $t/exe2 $t/a.o $t/b.o 2> $t/log2
 grep -q '_ustr' $t/log2

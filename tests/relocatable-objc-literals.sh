@@ -4,9 +4,10 @@ source "$(dirname "$0")"/common.inc
 # ld-prime splits the Objective-C constant literals (__objc_intobj,
 # __objc_doubleobj, __objc_arraydata, __objc_arrayobj, __objc_dictobj
 # ...), __cfstring and __ustring into subsections by content, and names
-# none of them: their labels, linker-private or not (clang's
-# __unnamed_array_storage), are in no image's symbol table. A -r output
-# keeps them all, labels and all, for the final link to merge.
+# none of them. An image's symbol table lists their labels all the
+# same, but for the assembler temporaries (clang's
+# __unnamed_array_storage, not l__unnamed_cfstring_). A -r output keeps
+# them all, labels and all, for the final link to merge.
 cat <<EOF | $CC -o $t/a.o -c -xobjective-c -fno-objc-arc -
 #import <Foundation/Foundation.h>
 id num(void) { return @42; }
@@ -39,8 +40,8 @@ EOF
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/r.o -framework Foundation
 $t/exe | grep -q '^42 2.5 a,1 v cfstr 3$'
 nm $t/exe > $t/nm1
-not grep -q __unnamed_array_storage $t/nm1
+grep -q ' s __unnamed_array_storage$' $t/nm1
 $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/a.o -framework Foundation
 $t/exe2 | grep -q '^42 2.5 a,1 v cfstr 3$'
 nm $t/exe2 > $t/nm2
-not grep -q __unnamed_array_storage $t/nm2
+grep -q ' s __unnamed_array_storage$' $t/nm2
