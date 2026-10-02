@@ -150,12 +150,6 @@ pub struct Context<E: Target> {
     /// The symbols two bitcode files define, found before LTO and
     /// reported after it (see passes::find_bitcode_duplicates).
     pub bitcode_duplicates: Vec<crate::passes::Duplicate>,
-    /// The imports no live code refers to that ld-prime lists in the
-    /// symbol table all the same, unbound: those only bitcode did
-    /// before LTO (see passes::keep_bitcode_imports), and those only
-    /// code its own dead stripping of an LTO link removed did (see
-    /// Context::strips_dead_code).
-    pub unbound_imports: Vec<crate::symbol::SymbolId>,
     /// Auto-link options already acted on.
     pub processed_linker_options: std::collections::HashSet<Vec<Vec<u8>>>,
     /// -add_linker_option's auto-link options, once read as an
@@ -187,10 +181,6 @@ pub struct Context<E: Target> {
     /// The hook for the classes of the mergeable libraries merged or
     /// re-exported, and the classes it is for.
     pub bundle_hook: crate::bundle_hook::BundleHook,
-    /// The symbols the merged mergeable dylibs import, which ld-prime
-    /// lists whether or not anything refers to them (see
-    /// chunks::symtab's live_refs).
-    pub merged_imports: Vec<&'static [u8]>,
     /// Unwind records from all objects' __compact_unwind sections.
     pub unwind_records: Vec<crate::input_files::UnwindRecord>,
     /// DWARF CIEs and FDEs from all objects' __eh_frame sections.
@@ -328,7 +318,6 @@ impl<E: Target> Context<E> {
             lto_inputs: Vec::new(),
             merged_lto_obj: None,
             bitcode_duplicates: Vec::new(),
-            unbound_imports: Vec::new(),
             visited_files: std::collections::HashSet::new(),
             reexport_files: Vec::new(),
             missing_files: Default::default(),
@@ -342,7 +331,6 @@ impl<E: Target> Context<E> {
             merged_dependencies: Vec::new(),
             merged_libraries: Vec::new(),
             bundle_hook: Default::default(),
-            merged_imports: Vec::new(),
             unwind_records: Vec::new(),
             cies: Vec::new(),
             fdes: Vec::new(),

@@ -768,7 +768,6 @@ fn merge_dylib<E: Target>(
     let priority = ctx.next_priority();
     out.push(PendingObject { mf: synth, alive: true, hidden: false, priority });
     let deps = record.dependencies(&mf.name);
-    ctx.merged_imports.extend(deps.iter().flat_map(|d| d.exports.iter().copied()));
     ctx.merged_dependencies.extend(deps);
     let lib =
         MergedLibrary { install_name: record.own.install_name, minos: record.minos, obj: synth };
@@ -2905,9 +2904,8 @@ fn retire_bitcode_placeholders<E: Target>(ctx: &mut Context<E>) {
 }
 
 /// Keeps the imports bitcode referred to that the code LTO compiled
-/// doesn't: ld-prime resolved them before LTO, and lists them in the
-/// symbol table, unbound, keeping their dylibs too - unless -dead_strip
-/// drops what no live code refers to.
+/// doesn't: ld-prime resolved them before LTO, and keeps their dylibs
+/// - unless -dead_strip drops what no live code refers to.
 pub fn keep_bitcode_imports<E: Target>(ctx: &mut Context<E>) {
     if ctx.args.dead_strip {
         return;
@@ -2924,7 +2922,6 @@ pub fn keep_bitcode_imports<E: Target>(ctx: &mut Context<E>) {
             if ctx.dylibs[dylib as usize].is_weak {
                 sym.set_is_weak_ref(true);
             }
-            ctx.unbound_imports.push(id);
         }
     }
 }

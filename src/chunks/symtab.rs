@@ -5,13 +5,12 @@
 use rayon::prelude::*;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::input_files::{FileId, ObjectFile};
 use crate::macho::*;
-use crate::objc::{DataField, ObjcRef};
 use crate::passes::{has_unnamed_subsecs, is_unnamed_objc_list};
 use crate::symbol::SymbolId;
 use crate::target::Target;
@@ -884,8 +883,8 @@ pub fn create_output_symtab<E: Target>(
     let mut data = SymtabSection::new();
 
     let t = ctx.timer("symtab-classify");
-    let live_ref = live_refs(ctx);
-    let classes = classify_symbols(ctx, &live_ref);
+    let indexed = indexed_imports(ctx);
+    let classes = classify_symbols(ctx, &indexed);
     drop(t);
 
     // Local symbols, then the debugger's notes: N_AST paths and stabs.
@@ -968,24 +967,12 @@ pub fn create_output_symtab<E: Target>(
     data
 }
 
-/// Which symbols live code or data refers to, by symbol. An import is
-/// listed only while one does: after -dead_strip, ld-prime drops the
-/// imports only stripped functions used. A reference is a relocation
-/// from a live subsection or a stub or GOT slot (unwind personalities,
-/// the selector stubs' _objc_msgSend and dyld_stub_binder have slots).
-fn live_refs<E: Target>(ctx: &Context<E>) -> Vec<AtomicBool> {
-    let live_ref: Vec<AtomicBool> =
-        (0..ctx.symbols.syms.len()).map(|_| AtomicBool::new(false)).collect();
-    ctx.isecs
-        .par_iter()
-        .filter(|isec| isec.is_alive() && isec.replacement == crate::input_sections::NO_REPLACEMENT)
-        .for_each(|isec| {
-            for rel in crate::input_files::isec_relocs_of(&ctx.objs, isec) {
-                if let Some(id) = ctx.reloc_target_sym(isec.file as usize, rel) {
-                    live_ref[id as usize].store(true, Ordering::Relaxed);
-                }
-            }
-        });
+/// The imports the image points at by their symbol table index, by
+/// symbol: those of the stubs, GOT slots and lazy pointers (the
+/// indirect symbol table) and the N_INDR aliases' targets. These are
+/// listed whether or not live code uses them.
+fn indexed_imports<E: Target>(ctx: &Context<E>) -> Vec<bool> {
+    let mut indexed = vec![false; ctx.symbols.syms.len()];
     let slots = ctx
         .stubs
         .symbols
@@ -993,76 +980,12 @@ fn live_refs<E: Target>(ctx: &Context<E>) -> Vec<AtomicBool> {
         .chain(&ctx.got.got_syms)
         .copied()
         .chain(ctx.objc_stubs.msgsend_sym)
-        .chain(ctx.stub_helper.dyld_stub_binder);
+        .chain(ctx.stub_helper.dyld_stub_binder)
+        .chain(ctx.indirect_aliases.iter().map(|&(_, target)| target));
     for id in slots {
-        live_ref[id as usize].store(true, Ordering::Relaxed);
+        indexed[id as usize] = true;
     }
-    // The pointer fields of synthesized records (merged category
-    // lists, the class registrations) refer to symbols too.
-    for blob in &ctx.data_blobs {
-        for field in &blob.fields {
-            if let DataField::Ptr(ObjcRef::Sym(id, _)) = field {
-                live_ref[*id as usize].store(true, Ordering::Relaxed);
-            }
-        }
-    }
-    // So does __init_offsets to an initializer dyld binds, which it
-    // can't hold: the link fails, printing the layout.
-    for &func in &ctx.init_offsets.init_funcs {
-        if let crate::chunks::init_offsets::InitFunc::Imported(id) = func {
-            live_ref[id as usize].store(true, Ordering::Relaxed);
-        }
-    }
-    // -u names an import the program must keep whether or not
-    // anything refers to it, and an -alias of an import re-exports
-    // it by name (the N_INDR entry points at the import's).
-    for name in &ctx.args.forced_undefined {
-        if let Some(id) = ctx.symbols.get(name) {
-            live_ref[id as usize].store(true, Ordering::Relaxed);
-        }
-    }
-    // A runtime routine LTO might have called, bound to a dylib, stays
-    // as an import too, unless -dead_strip strips it after LTO.
-    if !ctx.args.dead_strip && crate::passes::softloads_runtime_routines(ctx) {
-        for name in crate::passes::LTO_RUNTIME_ROUTINES {
-            if let Some(id) = ctx.symbols.get(name)
-                && ctx.symbols[id].is_imported()
-            {
-                live_ref[id as usize].store(true, Ordering::Relaxed);
-            }
-        }
-    }
-    for &(_, target) in &ctx.indirect_aliases {
-        live_ref[target as usize].store(true, Ordering::Relaxed);
-    }
-    // So does one only bitcode or code stripped unasked used (see
-    // Context::unbound_imports).
-    for &id in &ctx.unbound_imports {
-        live_ref[id as usize].store(true, Ordering::Relaxed);
-    }
-    // A merged mergeable dylib's imports, entries of their own in its
-    // record, are as live as its code unless -dead_strip finds nothing
-    // that refers to one (its stub helper's dyld_stub_binder, say).
-    if !ctx.args.dead_strip {
-        for name in &ctx.merged_imports {
-            if let Some(id) = ctx.symbols.get(name) {
-                live_ref[id as usize].store(true, Ordering::Relaxed);
-            }
-        }
-    }
-    // So does a tentative definition that -commons use_dylibs replaced
-    // with a dylib's definition.
-    if ctx.args.commons == crate::cmdline::CommonsMode::UseDylibs {
-        ctx.objs.par_iter().filter(|obj| obj.is_alive).for_each(|obj| {
-            let r = obj.global_range();
-            for (nlist, &id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
-                if nlist.is_common() && ctx.symbols[id].is_imported() {
-                    live_ref[id as usize].store(true, Ordering::Relaxed);
-                }
-            }
-        });
-    }
-    live_ref
+    indexed
 }
 
 /// Where a symbol goes in the symbol table besides the defined globals
@@ -1077,14 +1000,19 @@ enum SymbolClass {
 
 /// Classifies every symbol (see SymbolClass) in one parallel pass,
 /// instead of a full scan over millions of slots for each class. An
-/// import is listed if `live_ref` says live code or data refers to it.
-fn classify_symbols<E: Target>(ctx: &Context<E>, live_ref: &[AtomicBool]) -> Vec<SymbolClass> {
+/// import is listed if live code or data uses it (dead stripping
+/// refreshes which do, see dead_strip::mark_live_references) or the
+/// image points at it by index (`indexed`), as mold-rust lists the
+/// imports it uses. (ld-prime also lists, unbound, the imports only
+/// bitcode or code its own dead stripping removed referred to, and the
+/// imports of a merged mergeable library.)
+fn classify_symbols<E: Target>(ctx: &Context<E>, indexed: &[bool]) -> Vec<SymbolClass> {
     (0..ctx.symbols.syms.len())
         .into_par_iter()
         .map(|i| {
             let sym = &ctx.symbols[i];
             if matches!(sym.file(), Some(FileId::Dylib(_))) {
-                return if live_ref[i].load(Ordering::Relaxed) {
+                return if sym.is_used() || indexed[i] {
                     SymbolClass::Undef
                 } else {
                     SymbolClass::No

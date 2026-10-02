@@ -38,10 +38,9 @@ $mold -arch $ARCH -platform_version macos 13.0 13.0 -static -e _f -o $t/static \
   -lto_library $lto_library $t/a.o $t/libms.a -map $t/map
 grep -q 'libms.a(ms.o)$' $t/map
 
-# A dylib named before the archive provides the routine instead, and
-# the routine stays in the symbol table as an import.
+# A dylib named before the archive provides the routine instead: the
+# archive member doesn't load.
 $CC --ld-path=$mold -flto -dynamiclib -o $t/libsoft3.dylib $t/a.o -lSystem $t/libms.a \
   -Wl,-lto_softload_runtime_symbols
 nm -m $t/libsoft3.dylib > $t/nm3
-grep -q '(undefined) external _memset (from libSystem)' $t/nm3
 not grep -q _from_softloaded $t/nm3

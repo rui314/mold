@@ -7,8 +7,9 @@ source "$(dirname "$0")"/common.inc
 # strips what the walk didn't reach. So native code nothing live calls
 # is gone, and with it its references - to an undefined symbol, which
 # is then no error, or to a hidden bitcode function, which LTO need not
-# keep. An import only stripped code used stays in the symbol table,
-# unbound, which -dead_strip drops; the map lists nothing stripped.
+# keep. An import only stripped code used is gone from the symbol
+# table too (ld-prime lists it, unbound, unless -dead_strip); the map
+# lists nothing stripped.
 cat <<EOF | $CC -O1 -flto=thin -c -xc - -o $t/a.o
 int used_native(int);
 int main(int argc, char **argv) { return used_native(argc) == 3 ? 0 : 1; }
@@ -28,8 +29,7 @@ EOF
 $CC --ld-path=$mold -flto -o $t/exe $t/a.o $t/b.o -Wl,-map,$t/map
 $t/exe
 nm -m $t/exe > $t/nm
-not grep -q -e _dead_native -e _helper -e _nowhere -e _exported_native $t/nm
-grep -q '(undefined) external _getpid (from libSystem)' $t/nm
+not grep -q -e _dead_native -e _helper -e _nowhere -e _exported_native -e _getpid $t/nm
 dyld_info -fixups $t/exe > $t/fixups
 not grep -q _getpid $t/fixups
 not grep -q 'Dead Stripped' $t/map

@@ -1,11 +1,11 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# ld-prime resolves bitcode's references before LTO, and lists the
-# imports among them in the symbol table even if the code LTO compiled
-# no longer refers to them, unbound - with ThinLTO and merged modules
-# alike - unless -dead_strip drops what no live code refers to. One no
-# dylib defines is no error then.
+# A reference only bitcode made, which the code LTO compiled no longer
+# makes - with ThinLTO and merged modules alike - binds nothing and is
+# in no symbol table, and one no dylib defines is no error. (ld-prime
+# resolves bitcode's references before LTO and lists the imports among
+# them, unbound, unless -dead_strip.)
 cat <<EOF > $t/a.c
 #include <unistd.h>
 int nowhere(int);
@@ -17,8 +17,7 @@ for lto in thin full; do
   $CC --ld-path=$mold -flto=$lto -o $t/exe-$lto $t/a-$lto.o
   $t/exe-$lto
   nm -m $t/exe-$lto > $t/nm-$lto
-  grep -q '(undefined) external _getpid (from libSystem)' $t/nm-$lto
-  not grep -q _nowhere $t/nm-$lto
+  not grep -q -e _getpid -e _nowhere $t/nm-$lto
   dyld_info -fixups $t/exe-$lto > $t/fixups-$lto
   not grep -q _getpid $t/fixups-$lto
 

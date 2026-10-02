@@ -24,24 +24,10 @@ use crate::symbol::{Symbol, SymbolId};
 use crate::target::Target;
 
 /// Strips dead code (see Context::strips_dead_code) and refreshes which
-/// symbols live code uses. An import only stripped code used stays in
-/// the symbol table if -dead_strip didn't ask for the strip.
+/// symbols live code uses.
 pub fn strip_dead_code<E: Target>(ctx: &mut Context<E>) {
-    let imports: Vec<SymbolId> = if ctx.args.dead_strip {
-        Vec::new()
-    } else {
-        (0..ctx.symbols.syms.len() as SymbolId)
-            .into_par_iter()
-            .filter(|&id| {
-                let sym = &ctx.symbols[id];
-                sym.is_used() && matches!(sym.file(), Some(FileId::Dylib(_)))
-            })
-            .collect()
-    };
     dead_strip(ctx);
     mark_live_references(ctx);
-    let unused = imports.into_iter().filter(|&id| !ctx.symbols[id].is_used());
-    ctx.unbound_imports.extend(unused.collect::<Vec<_>>());
 }
 
 /// Removes subsections that are not reachable from the roots: the entry
