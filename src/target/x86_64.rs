@@ -163,10 +163,11 @@ fn rip32_displacement(
     kind: &str,
     p: u64,
     t: u64,
-    name: &str,
+    name: &[u8],
 ) -> u32 {
     let disp = t.wrapping_sub(p + 4).wrapping_sub(reloc_bias(r.r_type) as u64) as i64;
     if i32::try_from(disp).is_err() {
+        let name = crate::error::raw(name);
         let msg = format_args!(
             "32-bit RIP-relative reference out of range (displacement={disp}, max is +/-2GB), \
              from 0x{p:08X} to 0x{t:08X} ('{name}')"
@@ -841,7 +842,7 @@ impl Target for X86_64 {
                         "x86_64_was_rip_got_load_load_got"
                     };
                     let t = g.wrapping_add_signed(a);
-                    write32(loc, rip32_displacement(ctx, isec_id, r, kind, p, t, ""));
+                    write32(loc, rip32_displacement(ctx, isec_id, r, kind, p, t, b""));
                 }
                 // A local thread-local's TLV load relaxes just like a
                 // GOT load: the movq of the descriptor's GOT slot
@@ -855,7 +856,7 @@ impl Target for X86_64 {
                     let g = ctx.sym_got_addr(ctx.reloc_target_sym(obj, r).unwrap());
                     let kind = "x86_64_was_rip_tlv_load_got";
                     let t = g.wrapping_add_signed(a);
-                    write32(loc, rip32_displacement(ctx, isec_id, r, kind, p, t, ""));
+                    write32(loc, rip32_displacement(ctx, isec_id, r, kind, p, t, b""));
                 }
                 _ => fatal!("unsupported relocation type: {}", r.r_type),
             }

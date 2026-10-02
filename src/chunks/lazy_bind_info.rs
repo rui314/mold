@@ -64,7 +64,7 @@ pub fn build<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<u32>) {
         }
         let flags = if sym.is_weak_ref() { BIND_SYMBOL_FLAGS_WEAK_IMPORT } else { 0 };
         buf.push(BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM | flags);
-        buf.extend_from_slice(sym.name().as_bytes());
+        buf.extend_from_slice(sym.name());
         buf.push(0);
         buf.push(BIND_OPCODE_DO_BIND);
         buf.push(BIND_OPCODE_DONE);

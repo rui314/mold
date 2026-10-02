@@ -150,18 +150,18 @@ pub fn push_ast_paths<E: Target>(
 /// a hash of the module to the statics it promotes to global scope, so
 /// that the debugger sees the name the source gave it. (The map keeps
 /// the whole name.)
-pub fn local_symbol_name(name: &str) -> &str {
-    // Not str::find, which sets a searcher up for each name.
+pub fn local_symbol_name(name: &[u8]) -> &[u8] {
+    // A Finder made once, not one for each name.
     static LLVM: std::sync::LazyLock<memchr::memmem::Finder<'static>> =
         std::sync::LazyLock::new(|| memchr::memmem::Finder::new(".llvm."));
-    LLVM.find(name.as_bytes()).map_or(name, |i| &name[..i])
+    LLVM.find(name).map_or(name, |i| &name[..i])
 }
 
 /// Returns true if a local symbol should appear in the output symbol
 /// table. Assembler temporaries, which begin with 'l' or 'L', are
 /// dropped.
-fn keep_local_symbol(name: &str) -> bool {
-    !name.is_empty() && !name.starts_with('l') && !name.starts_with('L')
+fn keep_local_symbol(name: &[u8]) -> bool {
+    !name.is_empty() && !name.starts_with(b"l") && !name.starts_with(b"L")
 }
 
 /// Returns true if a non-external local symbol defined in `isec`
@@ -179,7 +179,7 @@ fn keep_local_symbol(name: &str) -> bool {
 /// literal-pointer type (see has_unnamed_subsecs).
 pub(crate) fn keep_local_symbol_in<E: Target>(
     ctx: &Context<E>,
-    name: &str,
+    name: &[u8],
     isec: Option<u32>,
     demoted: bool,
     list_alias: bool,
@@ -327,7 +327,7 @@ impl SymbolStabs {
     fn name<E: Target>(&self, ctx: &Context<E>) -> &'static [u8] {
         let sym = &ctx.symbols[self.sym];
         let local = !sym.is_extern() || sym.is_private_extern();
-        if local { local_symbol_name(sym.name()) } else { sym.name() }.as_bytes()
+        if local { local_symbol_name(sym.name()) } else { sym.name() }
     }
 
     fn stabs<E: Target>(&self, ctx: &Context<E>) -> impl Iterator<Item = Stab> {
@@ -475,7 +475,7 @@ fn copy_object_stabs<E: Target>(
     // The object's own local symbols by name, for the notes that
     // name them.
     let r = obj.local_range();
-    let locals: hashbrown::HashMap<&str, (SymbolId, &NList)> = obj.nlists[r.clone()]
+    let locals: hashbrown::HashMap<&[u8], (SymbolId, &NList)> = obj.nlists[r.clone()]
         .iter()
         .zip(&obj.symbols[r])
         .filter(|(n, _)| !n.is_stab())
@@ -544,7 +544,7 @@ fn copy_object_stabs<E: Target>(
             }
             _ => None,
         };
-        out.push(Stab { name: name.as_bytes(), ent, value_of: None, name_of });
+        out.push(Stab { name, ent, value_of: None, name_of });
     }
     StabPlan { len: out.len(), fixed: out, ..Default::default() }
 }
@@ -563,9 +563,9 @@ fn copy_object_stabs<E: Target>(
 fn copy_global_stab<E: Target>(
     ctx: &Context<E>,
     obj_idx: usize,
-    name: &'static str,
+    name: &'static [u8],
     ent: NList,
-    locals: &hashbrown::HashMap<&str, (SymbolId, &NList)>,
+    locals: &hashbrown::HashMap<&[u8], (SymbolId, &NList)>,
     commons: &hashbrown::HashMap<SymbolId, usize>,
 ) -> Option<Stab> {
     let obj = &ctx.objs[obj_idx];
@@ -580,7 +580,7 @@ fn copy_global_stab<E: Target>(
             ctx.isec_n_sect(&ctx.isecs[isec])
         };
         let ent = NList { n_type: N_STSYM, n_sect, ..ent };
-        return Some(Stab { name: name.as_bytes(), ent, value_of: Some(id), name_of: Some(id) });
+        return Some(Stab { name, ent, value_of: Some(id), name_of: Some(id) });
     }
     let id = ctx.symbols.get(name)?;
     match ctx.symbols[id].file() {
@@ -589,7 +589,7 @@ fn copy_global_stab<E: Target>(
                 || (ctx.is_internal(o as usize) && commons.get(&id) == Some(&obj_idx)) =>
         {
             let ent = NList { n_sect: 0, n_value: 0, ..ent };
-            Some(Stab { name: name.as_bytes(), ent, value_of: None, name_of: Some(id) })
+            Some(Stab { name, ent, value_of: None, name_of: Some(id) })
         }
         _ => None,
     }
@@ -876,7 +876,7 @@ fn plan_local_symbols<E: Target>(
         } else {
             (RANK_PEXT, ent)
         };
-        let name = local_symbol_name(sym.name()).as_bytes();
+        let name = local_symbol_name(sym.name());
         ents.push((ctx.sym_addr(i as u32), rank, name, ent, id));
     }
 
@@ -905,7 +905,7 @@ fn linker_locals<E: Target>(ctx: &Context<E>) -> Vec<LocalEnt> {
         if sec.is_alive() && sec.output_section().is_some() {
             let addr = ctx.isec_addr(isec as usize);
             let ent = local_nlist(ctx.isec_n_sect(sec), addr);
-            ents.push((addr, RANK_LOCAL, name.as_bytes(), ent, None));
+            ents.push((addr, RANK_LOCAL, name, ent, None));
         }
     }
     // The selector stubs, each a non-external symbol with N_PEXT
@@ -915,7 +915,7 @@ fn linker_locals<E: Target>(ctx: &Context<E>) -> Vec<LocalEnt> {
     for (i, &(sym, _)) in ctx.objc_stubs.symbols.iter().enumerate() {
         let addr = hdr.addr + i as u64 * ctx.objc_stub_size();
         let ent = NList { n_type: N_PEXT | N_SECT, ..local_nlist(hdr.n_sect, addr) };
-        ents.push((addr, RANK_PEXT, ctx.symbols[sym].name().as_bytes(), ent, None));
+        ents.push((addr, RANK_PEXT, ctx.symbols[sym].name(), ent, None));
     }
     // The lazy-load helpers - a call helper, like a selector stub,
     // with N_PEXT set - and slots.
@@ -927,12 +927,12 @@ fn linker_locals<E: Target>(ctx: &Context<E>) -> Vec<LocalEnt> {
             _ => (RANK_LOCAL, N_SECT),
         };
         let ent = NList { n_type, ..local_nlist(hdr.n_sect, addr) };
-        ents.push((addr, rank, h.name.as_bytes(), ent, None));
+        ents.push((addr, rank, h.name, ent, None));
     }
     let hdr = &ctx.lazy_load_got.hdr;
     for (i, &(_, name)) in ctx.lazy_load_got.slots.iter().enumerate() {
         let addr = hdr.addr + i as u64 * 8;
-        ents.push((addr, RANK_LOCAL, name.as_bytes(), local_nlist(hdr.n_sect, addr), None));
+        ents.push((addr, RANK_LOCAL, name, local_nlist(hdr.n_sect, addr), None));
     }
     // The delay-init stubs, like selector stubs with N_PEXT set, and
     // the helpers. (The dlopen helpers' flags are extra_local_syms.)
@@ -940,16 +940,16 @@ fn linker_locals<E: Target>(ctx: &Context<E>) -> Vec<LocalEnt> {
     for (i, stub) in delay.stubs.iter().enumerate() {
         let addr = ctx.delay_stub_addr(i);
         let ent = NList { n_type: N_PEXT | N_SECT, ..local_nlist(delay.stubs_hdr.n_sect, addr) };
-        ents.push((addr, RANK_PEXT, stub.name.as_bytes(), ent, None));
+        ents.push((addr, RANK_PEXT, stub.name, ent, None));
     }
     let n_sect = delay.helper_hdr.n_sect;
     for (i, h) in delay.helpers.iter().enumerate() {
         let addr = ctx.delay_helper_addr(i);
-        ents.push((addr, RANK_LOCAL, h.name.as_bytes(), local_nlist(n_sect, addr), None));
+        ents.push((addr, RANK_LOCAL, h.name, local_nlist(n_sect, addr), None));
     }
     for (i, d) in delay.dlopens.iter().enumerate() {
         let addr = ctx.dlopen_helper_addr(i);
-        ents.push((addr, RANK_LOCAL, d.name.as_bytes(), local_nlist(n_sect, addr), None));
+        ents.push((addr, RANK_LOCAL, d.name, local_nlist(n_sect, addr), None));
     }
     // The range-extension thunks' entries, named as ld-prime names
     // its branch islands.
@@ -1003,7 +1003,7 @@ fn object_locals<E: Target>(ctx: &Context<E>, obj: &ObjectFile) -> Vec<LocalEnt>
         {
             continue;
         }
-        if is_listed_out(ctx, sym.name().as_bytes()) {
+        if is_listed_out(ctx, sym.name()) {
             continue;
         }
         // An absolute symbol (N_ABS, as `.set x, 5` makes) is kept too,
@@ -1011,7 +1011,7 @@ fn object_locals<E: Target>(ctx: &Context<E>, obj: &ObjectFile) -> Vec<LocalEnt>
         let Some(isec) = sym.input_section().map(|i| i as usize) else {
             if nlist.n_type() == N_ABS {
                 let ent = NList { n_type: N_ABS, ..local_nlist(0, 0) };
-                let name = local_symbol_name(sym.name()).as_bytes();
+                let name = local_symbol_name(sym.name());
                 out.push((sym.value, RANK_LOCAL, name, ent, Some(sym_id)));
             }
             continue;
@@ -1026,7 +1026,7 @@ fn object_locals<E: Target>(ctx: &Context<E>, obj: &ObjectFile) -> Vec<LocalEnt>
             continue;
         }
         let ent = local_nlist(ctx.isec_n_sect(&ctx.isecs[kept]), 0);
-        let name = local_symbol_name(sym.name()).as_bytes();
+        let name = local_symbol_name(sym.name());
         out.push((ctx.sym_addr(sym_id), RANK_LOCAL, name, ent, Some(sym_id)));
     }
     out
@@ -1443,7 +1443,7 @@ fn global_entry<E: Target>(
         n_desc |= REFERENCED_DYNAMICALLY;
     }
     let ent = NList { n_strx: 0, n_type, n_sect, n_desc, n_value: 0 };
-    (sym.name().as_bytes(), ent, Some(i))
+    (sym.name(), ent, Some(i))
 }
 
 /// An import's entry and its name. The library ordinal lives in the
@@ -1459,7 +1459,7 @@ fn import_entry<E: Target>(ctx: &Context<E>, i: usize) -> (&'static [u8], NList,
         n_desc |= N_WEAK_REF;
     }
     let ent = NList { n_strx: 0, n_type: N_UNDF | N_EXT, n_sect: 0, n_desc, n_value: 0 };
-    (sym.name().as_bytes(), ent, None)
+    (sym.name(), ent, None)
 }
 
 /// Gives each alias of an imported symbol (see make_indirect_aliases),
@@ -1481,10 +1481,9 @@ fn add_indirect_target_names<E: Target>(
     for i in globals {
         if let Some(id) = entries[i].1
             && let Some(&target) = targets.get(&id)
-            && names[i] != ctx.symbols[target].name().as_bytes()
+            && names[i] != ctx.symbols[target].name()
         {
-            names[i] =
-                leak_bytes([names[i], b"\0", ctx.symbols[target].name().as_bytes()].concat());
+            names[i] = leak_bytes([names[i], b"\0", ctx.symbols[target].name()].concat());
         }
     }
 }

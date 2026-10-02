@@ -92,13 +92,14 @@ fn check_adrp(ctx: &Context<Arm64>, isec: usize, rels: &[Reloc], i: usize, p: u6
         }
         ARM64_RELOC_GOT_LOAD_PAGE21 => match (lo12(ARM64_RELOC_GOT_LOAD_PAGEOFF12), relaxed()) {
             (true, true) => ("arm64_was_adrp_ldr_got_elide_got", ctx.fixup_target_name(obj, r)),
-            (true, false) => ("arm64_was_adrp_ldr_got_load_got", ""),
+            (true, false) => ("arm64_was_adrp_ldr_got_load_got", &b""[..]),
             (false, true) => ("arm64_was_adrp_got_elide_got", ctx.fixup_target_name(obj, r)),
-            (false, false) => ("arm64_was_adrp_got_use_got", ""),
+            (false, false) => ("arm64_was_adrp_got_use_got", &b""[..]),
         },
         _ if relaxed() => ("arm64_was_adrp_tlv_elide_got", ctx.fixup_target_name(obj, r)),
-        _ => ("arm64_was_adrp_tlv_load_got", ""),
+        _ => ("arm64_was_adrp_tlv_load_got", &b""[..]),
     };
+    let name = crate::error::raw(name);
     let msg = format_args!("ADRP out of range, from 0x{p:08X} to 0x{t:08X} ('{name}')");
     ctx.fixup_error(isec, r.offset, kind, msg);
 }
@@ -168,9 +169,10 @@ fn report_ldst_alignment(
     isec: usize,
     r: &Reloc,
     kind: &str,
-    target: &str,
+    target: &[u8],
     size: u32,
 ) {
+    let target = crate::error::raw(target);
     let msg = format_args!(
         "target '{target}' not {size}-byte aligned, which is required by LDR/STR instruction"
     );
@@ -1631,9 +1633,10 @@ impl Target for Arm64 {
                                 let kind = if a != 0 { "arm64_b26_addend" } else { "arm64_b26" };
                                 // A shim is a stub, named ''.
                                 let name = match shim {
-                                    Some(_) => "",
+                                    Some(_) => b"",
                                     None => ctx.branch_target_name(obj, r),
                                 };
+                                let name = crate::error::raw(name);
                                 let msg = format_args!(
                                     "B/BL out of range (displacement={val}, max is +/-128MB), \
                                      from 0x{p:08X} to 0x{t:08X} ('{name}')"
@@ -1660,7 +1663,7 @@ impl Target for Arm64 {
                         let t = ctx.sym_got_addr(id);
                         if let Err(size) = write_add_ldst(loc, t.wrapping_add_signed(a)) {
                             let kind = "arm64_was_ld12_tlv_load_got";
-                            report_ldst_alignment(ctx, isec_id, r, kind, "", size);
+                            report_ldst_alignment(ctx, isec_id, r, kind, b"", size);
                         }
                     } else {
                         // ld-prime relaxes an ldr of either width.
@@ -1742,7 +1745,7 @@ impl Target for Arm64 {
                         let g = ctx.sym_got_addr(id);
                         if let Err(size) = write_add_ldst(loc, g.wrapping_add_signed(a)) {
                             let kind = "arm64_was_ld12_got_load_got";
-                            report_ldst_alignment(ctx, isec_id, r, kind, "", size);
+                            report_ldst_alignment(ctx, isec_id, r, kind, b"", size);
                         }
                     } else {
                         let insn = read32(loc);

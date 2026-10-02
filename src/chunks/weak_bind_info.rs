@@ -91,7 +91,7 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     let mut buf = Vec::new();
     for id in overrides {
         buf.push(BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM | BIND_SYMBOL_FLAGS_NON_WEAK_DEFINITION);
-        buf.extend_from_slice(ctx.symbols[id].name().as_bytes());
+        buf.extend_from_slice(ctx.symbols[id].name());
         buf.push(0);
     }
     let binds: Vec<_> = binds.into_iter().map(|(id, addr)| (addr, id, 0)).collect();

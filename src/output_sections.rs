@@ -1180,7 +1180,8 @@ fn trace_symbol_layout<E: Target>(ctx: &Context<E>, moves: &hashbrown::HashMap<u
         None => return,
     };
     let map = SectionMap::new(ctx);
-    let mut write = |name: &str, steps: Vec<(&str, SectionName)>, out_name: SectionName| {
+    let mut write = |name: &[u8], steps: Vec<(&str, SectionName)>, out_name: SectionName| {
+        let name = raw(name);
         if steps.is_empty() {
             let (seg, sect) = (raw(out_name.0), raw(out_name.1));
             let line = format_args!("symbol '{name}', use default mapping to {seg}/{sect}\n");
@@ -1242,7 +1243,7 @@ fn trace_symbol_layout<E: Target>(ctx: &Context<E>, moves: &hashbrown::HashMap<u
     let private = ctx.stub_helper.dyld_private_isec;
     if private != u32::MAX {
         let (steps, to) = subsec_mapping(ctx, map, private as usize, None);
-        write("__dyld_private", steps, to);
+        write(b"__dyld_private", steps, to);
     }
     for id in descriptors {
         let isec = ctx.resolve_isec(ctx.symbols[id].input_section().unwrap() as usize);
@@ -1650,7 +1651,7 @@ fn lay_out_objc_method_lists<E: Target>(
     if ctx.objc_methlist.lists.is_empty() {
         return;
     }
-    let mut name_of: hashbrown::HashMap<u32, &'static str> = hashbrown::HashMap::new();
+    let mut name_of: hashbrown::HashMap<u32, &'static [u8]> = hashbrown::HashMap::new();
     let syms = ctx.symbols.syms.iter().filter_map(|sym| Some((sym.name(), sym.input_section()?)));
     // (The lists category merging builds are named as extra locals.)
     for (name, isec) in syms.chain(ctx.extra_local_syms.iter().copied()) {
@@ -1661,7 +1662,7 @@ fn lay_out_objc_method_lists<E: Target>(
         }
     }
     let mut order: Vec<u32> = ctx.objc_methlist.lists.iter().map(|l| l.isec).collect();
-    order.sort_by_key(|&isec| (name_of.get(&isec).copied().unwrap_or(""), isec));
+    order.sort_by_key(|&isec| (name_of.get(&isec).copied().unwrap_or_default(), isec));
 
     // The lists of each section, by the section: None for
     // __TEXT,__objc_methlist. (Of the symbol moves, only
@@ -1925,7 +1926,7 @@ fn kept_fdes_of<E: Target>(ctx: &Context<E>, fdes: &[crate::input_files::Fde]) -
             let ids: Vec<usize> =
                 run.iter().flat_map(|&(_, _, isec, leader)| [isec, leader]).collect();
             let names = ctx.subsec_labels(run[0].0 as usize, &ids);
-            let same = |pair: &[Option<&str>]| pair[0].is_some() && pair[0] == pair[1];
+            let same = |pair: &[Option<&[u8]>]| pair[0].is_some() && pair[0] == pair[1];
             let named = run.iter().zip(names.chunks(2)).filter(|(_, pair)| same(pair));
             named.map(|(e, _)| e.1).collect::<Vec<_>>()
         })
@@ -2163,7 +2164,7 @@ fn member_rank_name(hdr: &MachSection, flags_name: SectionName) -> Option<Sectio
 fn section_first_seen<E: Target>(ctx: &Context<E>, lto_ranks: Option<&[u32]>) -> Vec<u64> {
     let mut first_seen: Vec<u64> = vec![u64::MAX; ctx.output_sections.len()];
     let stub_sels: hashbrown::HashSet<&[u8]> =
-        ctx.objc_stubs.symbols.iter().map(|(_, sel)| sel.as_bytes()).collect();
+        ctx.objc_stubs.symbols.iter().map(|&(_, sel)| sel).collect();
     for (i, isec) in ctx.isecs.iter().enumerate() {
         if ctx.is_internal(isec.file as usize) || is_stub_selector_name(ctx, isec, &stub_sels) {
             continue;
@@ -2528,7 +2529,7 @@ fn add_boundary_sections<E: Target>(ctx: &mut Context<E>) {
 /// does: just before __LINKEDIT and at its address, in the order of
 /// the symbols' names.
 fn add_boundary_segments<E: Target>(ctx: &mut Context<E>) {
-    let mut syms: Vec<(&str, &'static [u8])> = ctx
+    let mut syms: Vec<(&[u8], &'static [u8])> = ctx
         .boundary_syms
         .iter()
         .filter(|(_, _, seg, sect)| sect.is_none() && !ctx.segments.iter().any(|s| s.name == *seg))
@@ -2931,11 +2932,11 @@ fn order_file_ranks<E: Target>(ctx: &Context<E>) -> Option<Vec<u64>> {
     // A line naming an object and a symbol again is dropped, as
     // ld-prime drops it: it finds no other subsection, nor is it
     // reported.
-    let mut rank_of: std::collections::HashMap<&str, Vec<(Option<&str>, u64)>> =
+    let mut rank_of: std::collections::HashMap<&[u8], Vec<(Option<&str>, u64)>> =
         std::collections::HashMap::new();
     let mut repeated = vec![false; entries.len()];
     for (i, entry) in entries.iter().enumerate() {
-        let lines = rank_of.entry(&entry.name).or_default();
+        let lines = rank_of.entry(entry.name.as_bytes()).or_default();
         let file = entry.file.as_deref();
         if file.is_some() && lines.iter().any(|&(f, _)| f == file) {
             repeated[i] = true;
@@ -2996,15 +2997,16 @@ fn report_order_file_statistics<E: Target>(
     named: &[Vec<(crate::symbol::SymbolId, usize)>],
 ) {
     let mut once = hashbrown::HashSet::new();
-    let ambiguous: hashbrown::HashSet<&str> = entries
+    let ambiguous: hashbrown::HashSet<&[u8]> = entries
         .iter()
-        .filter(|e| e.file.is_none() && !once.insert(e.name.as_str()))
-        .map(|e| e.name.as_str())
+        .filter(|e| e.file.is_none() && !once.insert(e.name.as_bytes()))
+        .map(|e| e.name.as_bytes())
         .collect();
     for syms in named {
         for &(sym, _) in syms {
             let name = ctx.symbols[sym].name();
             if ambiguous.contains(name) {
+                let name = raw(name);
                 crate::warn!(
                     "position of '{name}' ambiguous, entry specified multiple times in the order file"
                 );
@@ -3013,7 +3015,7 @@ fn report_order_file_statistics<E: Target>(
     }
     for (entry, syms) in entries.iter().zip(named) {
         if entry.file.is_none()
-            && !ambiguous.contains(entry.name.as_str())
+            && !ambiguous.contains(entry.name.as_bytes())
             && syms.iter().any(|&(_, obj)| obj != syms[0].1)
         {
             crate::warn!(

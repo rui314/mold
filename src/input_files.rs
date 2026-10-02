@@ -259,7 +259,7 @@ impl ObjectFile {
 /// splits into one subsection per literal, a private label (see
 /// is_private_label) names nothing, and the literal is known by its
 /// contents or size.
-pub fn is_ignored_literal_label(section_type: u32, name: &str) -> bool {
+pub fn is_ignored_literal_label(section_type: u32, name: &[u8]) -> bool {
     matches!(
         section_type,
         S_CSTRING_LITERALS | S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS
@@ -270,8 +270,8 @@ pub fn is_ignored_literal_label(section_type: u32, name: &str) -> bool {
 /// assembler temporary (L...) or a linker-private label (l...) - the
 /// compiler's lCPI0_0 constant-pool and l_.str string labels, the arm64
 /// assembler's ltmpN.
-pub fn is_private_label(name: &str) -> bool {
-    name.starts_with('L') || name.starts_with('l')
+pub fn is_private_label(name: &[u8]) -> bool {
+    name.starts_with(b"L") || name.starts_with(b"l")
 }
 
 /// Whether a section is one ld-prime reads as a list of records -
@@ -298,8 +298,8 @@ pub fn is_record_list(hdr: &MachSection, split: bool) -> bool {
 /// subsection in a diagnostic: an exported one before a private extern,
 /// a local, a weak definition and an ltmpN label; among equals, the
 /// greatest name.
-pub fn subsec_name_rank(nlist: &NList, name: &str) -> u8 {
-    if name.starts_with("ltmp") {
+pub fn subsec_name_rank(nlist: &NList, name: &[u8]) -> u8 {
+    if name.starts_with(b"ltmp") {
         0
     } else if nlist.n_desc & N_WEAK_DEF != 0 {
         1
@@ -315,8 +315,9 @@ pub fn subsec_name_rank(nlist: &NList, name: &str) -> u8 {
 /// Reports a relocation record ld-prime rejects, in its words.
 /// `subsec` is the name of the subsection holding it, and `bounds` the
 /// subsection's place in the section.
-fn report_bad_reloc(file: &Path, nsects: usize, bad: &BadReloc, subsec: &str, bounds: (u32, u32)) {
+fn report_bad_reloc(file: &Path, nsects: usize, bad: &BadReloc, subsec: &[u8], bounds: (u32, u32)) {
     let r = &bad.rel;
+    let subsec = crate::error::raw(subsec);
     let fields = || {
         format!(
             "r_address=0x{:X}, r_type={}, r_extern={}, r_pcrel={}, r_length={}",
@@ -512,16 +513,16 @@ pub struct DylibFile {
     /// auto-linked libraries were named (u32::MAX for implicit ones,
     /// which follow, sorted by install name).
     pub load_order: u32,
-    pub exports: hashbrown::HashSet<&'static str>,
+    pub exports: hashbrown::HashSet<&'static [u8]>,
     /// Exports that are weak definitions: binding to one sets
     /// MH_BINDS_TO_WEAK on the client image.
-    pub weak_exports: hashbrown::HashSet<&'static str>,
+    pub weak_exports: hashbrown::HashSet<&'static [u8]>,
     /// Whether the library itself, not one it re-exports, exports weak
     /// definitions, which ld-prime says keep it from being delayed
     /// (see passes::name_dylib).
     pub has_weak_defs: bool,
     /// The subset of exports that are thread-local variables.
-    pub tlv_exports: hashbrown::HashSet<&'static str>,
+    pub tlv_exports: hashbrown::HashSet<&'static [u8]>,
     /// The install names of the private libraries this dylib re-exports,
     /// whose exports are merged into its own.
     pub merged_reexports: Vec<Vec<u8>>,
@@ -536,7 +537,7 @@ pub struct DylibFile {
     /// directives move to older libraries for the link's target, each
     /// with the index of the dylib that stands for the library it binds
     /// to instead (see add_moved_dylibs).
-    pub moved_exports: hashbrown::HashMap<&'static str, usize>,
+    pub moved_exports: hashbrown::HashMap<&'static [u8], usize>,
     /// The files of libraries auto-link options named that merged into
     /// this one, with their naming sequence numbers (see note_naming).
     pub named_files: Vec<(u32, PathBuf)>,
@@ -577,7 +578,7 @@ pub struct ReexportEdge {
 pub struct MergedFile {
     pub install_name: Vec<u8>,
     pub path: PathBuf,
-    pub exports: Vec<&'static str>,
+    pub exports: Vec<&'static [u8]>,
 }
 
 /// Returns true for sections that don't become part of the output image.
@@ -802,7 +803,7 @@ pub struct StagedObject {
     /// locals-then-externals (see first_global_of).
     pub first_global: Option<u32>,
     /// Each nlist's name, interned at integration.
-    pub sym_names: Vec<&'static str>,
+    pub sym_names: Vec<&'static [u8]>,
     /// xxh3 of each extern non-stab name (0 otherwise), computed here
     /// so the serial intern path never hashes.
     pub sym_hashes: Vec<u64>,
@@ -821,7 +822,7 @@ pub struct StagedObject {
     pub pointer_without_target: Option<&'static str>,
     /// The first class of the object's class list without class data,
     /// which ld-prime refuses: see class_without_data.
-    pub class_without_data: Option<&'static str>,
+    pub class_without_data: Option<&'static [u8]>,
     /// The __compact_unwind pointer fields a 4-byte relocation set, as
     /// (subsection, function offset, 1 << field offset / 8) of their
     /// records: x86-64 takes those as well as 8-byte ones, and a -r
@@ -938,7 +939,7 @@ fn bare_sections(
             && nlist.n_type() == N_SECT
             && let Some(b) = bare.get_mut((nlist.n_sect as usize).wrapping_sub(1))
             && *b
-            && !(split_ok && symbol_name(strtab, nlist).starts_with("ltmp"))
+            && !(split_ok && symbol_name(strtab, nlist).starts_with(b"ltmp"))
             && !is_at_record_end(record_ends, nlist)
         {
             *b = false;
@@ -975,7 +976,7 @@ fn extraneous_labels(
         .filter(|&i| {
             let nlist = &nlists[i as usize];
             is_at_record_end(record_ends, nlist)
-                && !(split_ok && symbol_name(strtab, nlist).starts_with("ltmp"))
+                && !(split_ok && symbol_name(strtab, nlist).starts_with(b"ltmp"))
         })
         .collect()
 }
@@ -1099,7 +1100,7 @@ fn read_symtab(
         Some(s) => std::borrow::Cow::Borrowed(s),
         None => std::borrow::Cow::Owned(read_array(data, off, n)),
     };
-    let strtab = validate_strtab(&data[cmd.stroff as usize..(cmd.stroff + cmd.strsize) as usize]);
+    let strtab = &data[cmd.stroff as usize..(cmd.stroff + cmd.strsize) as usize];
     (nlists, strtab)
 }
 
@@ -1290,7 +1291,7 @@ impl StagedObject {
             }
             let sect = nlist.n_sect as usize - 1;
             if sect_hdrs.get(sect).is_none_or(|h| h.addr != nlist.n_value)
-                || symbol_name(strtab, nlist).starts_with("ltmp")
+                || symbol_name(strtab, nlist).starts_with(b"ltmp")
             {
                 continue;
             }
@@ -1629,7 +1630,7 @@ impl StagedObject {
     /// The name ld-prime gives the subsection at `addr` in section
     /// `n_sect` in a diagnostic: that of a symbol there, ranked by
     /// subsec_name_rank, or none.
-    fn subsec_name(&self, n_sect: usize, addr: u64) -> &'static str {
+    fn subsec_name(&self, n_sect: usize, addr: u64) -> &'static [u8] {
         self.nlists
             .iter()
             .zip(&self.sym_names)
@@ -1641,7 +1642,7 @@ impl StagedObject {
             })
             .map(|(n, &name)| (subsec_name_rank(n, name), name))
             .max()
-            .map_or("", |(_, name)| name)
+            .map_or(b"", |(_, name)| name)
     }
 
     /// Reports a relocation whose target ld-prime ignores, returning
@@ -1738,6 +1739,7 @@ impl StagedObject {
                 && nlist.n_type() == N_SECT
                 && nlist.n_desc & (REFERENCED_DYNAMICALLY | N_WEAK_DEF) == REFERENCED_DYNAMICALLY
             {
+                let name = crate::error::raw(name);
                 crate::warn!("REFERENCED_DYNAMICALLY flag on symbol '{name}' is deprecated");
             }
         }
@@ -2239,7 +2241,7 @@ pub fn parse_bitcode<E: Target>(
     // resolution pass handles bitcode like any object.
     let mut defined = Vec::new();
     for ls in lsyms {
-        let name: &'static str = String::leak(ls.name);
+        let name = ls.name;
         if ls.is_defined {
             defined.push(name);
         }
@@ -2325,36 +2327,12 @@ fn is_bitcode_subtype_mismatch<E: Target>(arch: &str) -> bool {
     }
 }
 
-/// Extracts one NUL-terminated name from a string table already
-/// validated as UTF-8 by validate_strtab. The NUL scan goes through
-/// libc's memchr, which is vectorized; a per-name from_utf8 was a
-/// quarter of all staging time on big links.
-fn symbol_name(strtab: &'static [u8], nlist: &NList) -> &'static str {
-    let off = nlist.n_strx as usize;
-    if off >= strtab.len() {
-        return "";
-    }
-    let rest = &strtab[off..];
-    // SAFETY: memchr reads within `rest`; the result is bounded by
-    // its length.
-    let len = unsafe {
-        let p = libc::memchr(rest.as_ptr().cast(), 0, rest.len());
-        if p.is_null() { rest.len() } else { (p as usize) - (rest.as_ptr() as usize) }
-    };
-    // SAFETY: the whole table was checked as UTF-8 up front; any
-    // slice of it on a codepoint boundary is valid, and a NUL
-    // boundary always is.
-    unsafe { std::str::from_utf8_unchecked(&rest[..len]) }
-}
-
-/// Checks a whole string table as UTF-8 once - vastly cheaper than
-/// validating millions of short names one by one. Returns an empty
-/// table (degrading names to "") for the pathological non-UTF-8 case.
-fn validate_strtab(strtab: &'static [u8]) -> &'static [u8] {
-    match std::str::from_utf8(strtab) {
-        Ok(_) => strtab,
-        Err(e) => &strtab[..e.valid_up_to()],
-    }
+/// Extracts one NUL-terminated name from a string table: its bytes, any
+/// but NUL, as ld-prime takes a symbol name, UTF-8 or not. The NUL scan
+/// goes through memchr, which is vectorized.
+fn symbol_name(strtab: &'static [u8], nlist: &NList) -> &'static [u8] {
+    let rest = strtab.get(nlist.n_strx as usize..).unwrap_or_default();
+    memchr::memchr(0, rest).map_or(rest, |len| &rest[..len])
 }
 
 /// Sentinel for an absent index in `UnwindRecord` (no personality, no
@@ -3061,7 +3039,7 @@ impl StagedObject {
     /// in) has no relocation, whatever its bytes: ld-prime refuses it as
     /// it reads the object ("null objc class data"). A class the list
     /// names in another object is not looked at.
-    fn class_without_data(&self) -> Option<&'static str> {
+    fn class_without_data(&self) -> Option<&'static [u8]> {
         use crate::input_sections::RelocTarget;
         let lists = self.isecs.iter().filter(|isec| {
             let hdr = &self.sect_hdrs[isec.shndx as usize];
@@ -3686,9 +3664,9 @@ fn load_reexports<E: Target>(
     reexports: Vec<ReexportRef>,
     parent: ReexportParent,
     documents: Vec<tapi::TbdFile>,
-    exports: &mut hashbrown::HashSet<&'static str>,
-    tlv_exports: &mut hashbrown::HashSet<&'static str>,
-    weak_exports: &mut hashbrown::HashSet<&'static str>,
+    exports: &mut hashbrown::HashSet<&'static [u8]>,
+    tlv_exports: &mut hashbrown::HashSet<&'static [u8]>,
+    weak_exports: &mut hashbrown::HashSet<&'static [u8]>,
 ) -> LoadedReexports {
     trace_reexports(ctx, &parent, reexports.iter().map(|r| r.name.as_slice()));
     let parent = parent.path;
@@ -3705,11 +3683,11 @@ fn load_reexports<E: Target>(
     let mut merged = Vec::new();
     let mut merged_files = Vec::new();
     let map = ctx.args.merged_files;
-    let mut record = |install_name: &[u8], path: &Path, exports: Vec<&'static str>| {
+    let mut record = |install_name: &[u8], path: &Path, exports: Vec<&'static [u8]>| {
         let (install_name, path) = (install_name.to_vec(), path.to_path_buf());
         merged_files.push(MergedFile { install_name, path, exports });
     };
-    let all_exports = |tbd: &tapi::TbdFile| -> Vec<&'static str> {
+    let all_exports = |tbd: &tapi::TbdFile| -> Vec<&'static [u8]> {
         let all = [&tbd.exports, &tbd.weak_exports, &tbd.tlv_exports];
         all.into_iter().flatten().copied().collect()
     };
@@ -3740,7 +3718,7 @@ fn load_reexports<E: Target>(
             }
             continue;
         }
-        let inline = walk.pool.iter().position(|d| d.install_name.as_bytes() == name);
+        let inline = walk.pool.iter().position(|d| d.install_name == name);
         let on_disk = if inline.is_some() && !public {
             None
         } else {
@@ -3807,10 +3785,10 @@ fn load_reexports<E: Target>(
                     edges.push(edge(idx));
                     continue;
                 }
-                merged.push(dep_tbd.install_name.as_bytes().to_vec());
+                merged.push(dep_tbd.install_name.to_vec());
                 walk.moved.extend(interpret_ld_symbols(ctx, &mut dep_tbd).moved);
                 if map {
-                    record(dep_tbd.install_name.as_bytes(), &dep.name, all_exports(&dep_tbd));
+                    record(dep_tbd.install_name, &dep.name, all_exports(&dep_tbd));
                 }
                 walk.merge_tbd(dep_tbd, &dir_of(&dep.name), &[], hops);
             }
@@ -3901,9 +3879,9 @@ struct LoadedReexports {
 struct ReexportWalk<'a> {
     queue: Vec<ReexportRef>,
     pool: Vec<tapi::TbdFile>,
-    exports: &'a mut hashbrown::HashSet<&'static str>,
-    tlv_exports: &'a mut hashbrown::HashSet<&'static str>,
-    weak_exports: &'a mut hashbrown::HashSet<&'static str>,
+    exports: &'a mut hashbrown::HashSet<&'static [u8]>,
+    tlv_exports: &'a mut hashbrown::HashSet<&'static [u8]>,
+    weak_exports: &'a mut hashbrown::HashSet<&'static [u8]>,
     moved: Vec<MovedExport>,
 }
 
@@ -3925,8 +3903,8 @@ impl ReexportWalk<'_> {
         self.weak_exports.extend(tbd.weak_exports.iter().copied());
         self.exports.extend(tbd.weak_exports);
         self.pool.extend(tbd.documents);
-        let names = tbd.reexports.into_iter().map(|name| name.as_bytes().to_vec()).collect();
-        let name = tbd.install_name.as_bytes();
+        let names = tbd.reexports.into_iter().map(<[u8]>::to_vec).collect();
+        let name = tbd.install_name;
         self.queue.extend(ReexportRef::of(names, name, loader_dir, loader_rpaths, hops));
     }
 
@@ -3953,9 +3931,9 @@ pub struct DylibIdentity {
 impl DylibIdentity {
     fn of_tbd(tbd: &tapi::TbdFile) -> Self {
         Self {
-            install_name: tbd.install_name.as_bytes().to_vec(),
-            umbrella: tbd.parent_umbrella.map(|u| u.as_bytes().to_vec()),
-            clients: tbd.allowable_clients.iter().map(|c| c.as_bytes().to_vec()).collect(),
+            install_name: tbd.install_name.to_vec(),
+            umbrella: tbd.parent_umbrella.map(<[u8]>::to_vec),
+            clients: tbd.allowable_clients.iter().map(|c| c.to_vec()).collect(),
         }
     }
 
@@ -4011,7 +3989,7 @@ pub fn dylib_identity<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> D
 /// link uses and neither an object nor a dylib loaded so far defines
 /// (SwiftUI, auto-linked before SwiftUICore, re-exports all of it).
 pub fn provides_undefined<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> bool {
-    let names: Vec<&'static str> = match crate::filetype::get_file_type(mf) {
+    let names: Vec<&'static [u8]> = match crate::filetype::get_file_type(mf) {
         crate::filetype::FileType::Tapi => {
             let tbd = read_tbd(ctx, mf).unwrap_or_default();
             [tbd.exports, tbd.weak_exports, tbd.tlv_exports].concat()
@@ -4132,10 +4110,10 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
         rpaths,
         ..
     } = dylib;
-    let mut exports: hashbrown::HashSet<&'static str> = exports.into_iter().collect();
-    let mut weak_exports: hashbrown::HashSet<&'static str> = weak_exports.into_iter().collect();
+    let mut exports: hashbrown::HashSet<&'static [u8]> = exports.into_iter().collect();
+    let mut weak_exports: hashbrown::HashSet<&'static [u8]> = weak_exports.into_iter().collect();
     let has_weak_defs = !weak_exports.is_empty();
-    let mut tlv_exports: hashbrown::HashSet<&'static str> = tlv_exports.into_iter().collect();
+    let mut tlv_exports: hashbrown::HashSet<&'static [u8]> = tlv_exports.into_iter().collect();
 
     // Each re-exported library keeps the referencing dylib's directory
     // and rpaths, since @loader_path and @rpath in an install name are
@@ -4254,7 +4232,7 @@ fn find_export_trie(data: &[u8], hdr: &MachHeader) -> Option<(usize, usize)> {
 
 /// The names in an export trie: what a stripped executable or dylib
 /// exports.
-fn export_trie_names(data: &[u8], off: usize, size: usize) -> Vec<&'static str> {
+fn export_trie_names(data: &[u8], off: usize, size: usize) -> Vec<&'static [u8]> {
     export_trie_entries(data, off, size).into_iter().map(|(name, _)| name).collect()
 }
 
@@ -4264,7 +4242,7 @@ fn export_trie_names(data: &[u8], off: usize, size: usize) -> Vec<&'static str> 
 /// externals (Lottie.xcframework's ships 16 of 1846, the rest stripped),
 /// so a linker that reads just the symbol table finds nothing to
 /// resolve against. ld64 reads the trie.
-fn export_trie_entries(data: &[u8], off: usize, size: usize) -> Vec<(&'static str, u64)> {
+fn export_trie_entries(data: &[u8], off: usize, size: usize) -> Vec<(&'static [u8], u64)> {
     let trie = &data[off..(off + size).min(data.len())];
     let mut names = Vec::new();
     let mut stack: Vec<(usize, Vec<u8>)> = vec![(0, Vec::new())];
@@ -4291,12 +4269,7 @@ fn export_trie_entries(data: &[u8], off: usize, size: usize) -> Vec<(&'static st
         if terminal > 0 {
             let mut p = pos;
             let flags = read_uleb(&mut p);
-            // Individual edge labels need not end at UTF-8 boundaries.
-            // Decode only after assembling the complete symbol name.
-            names.push((
-                String::leak(String::from_utf8_lossy(&prefix).into_owned()) as &'static str,
-                flags,
-            ));
+            names.push((crate::util::leak_bytes(prefix.clone()), flags));
             pos += terminal;
         }
         let Some(&nchildren) = trie.get(pos) else { continue };
@@ -4348,15 +4321,14 @@ pub fn parse_bundle_loader<E: Target>(ctx: &mut Context<E>, mf: &'static MappedF
         off += lc.cmdsize as usize;
     }
 
-    let mut exports: hashbrown::HashSet<&'static str> = hashbrown::HashSet::new();
-    let mut tlv_exports: hashbrown::HashSet<&'static str> = hashbrown::HashSet::new();
+    let mut exports: hashbrown::HashSet<&'static [u8]> = hashbrown::HashSet::new();
+    let mut tlv_exports: hashbrown::HashSet<&'static [u8]> = hashbrown::HashSet::new();
     if let (Some(sym), Some(dysym)) = (symtab_cmd, dysymtab_cmd) {
         let nlists: Vec<NList> = read_array(data, sym.symoff as usize, sym.nsyms as usize);
         let strtab = &data[sym.stroff as usize..(sym.stroff + sym.strsize) as usize];
         // SAFETY: input files are leaked, so the string table lives for
         // the rest of the process.
-        let strtab: &'static [u8] =
-            validate_strtab(unsafe { std::mem::transmute::<&[u8], &'static [u8]>(strtab) });
+        let strtab: &'static [u8] = unsafe { std::mem::transmute::<&[u8], &'static [u8]>(strtab) };
         let tlv_sects = thread_local_section_ordinals(data, &hdr);
         let range = dysym.iextdefsym as usize..(dysym.iextdefsym + dysym.nextdefsym) as usize;
         for nlist in &nlists[range] {
@@ -4422,10 +4394,10 @@ struct DylibBinary {
     install_name: Vec<u8>,
     current_version: u32,
     compatibility_version: u32,
-    exports: Vec<&'static str>,
-    weak_exports: Vec<&'static str>,
-    tlv_exports: Vec<&'static str>,
-    ld_symbols: Vec<&'static str>,
+    exports: Vec<&'static [u8]>,
+    weak_exports: Vec<&'static [u8]>,
+    tlv_exports: Vec<&'static [u8]>,
+    ld_symbols: Vec<&'static [u8]>,
     reexports: Vec<Vec<u8>>,
     rpaths: Vec<PathBuf>,
 }
@@ -4505,8 +4477,8 @@ fn read_dylib_binary(mf: &'static MappedFile) -> DylibBinary {
         off += lc.cmdsize as usize;
     }
 
-    let mut add = |name: &'static str, weak: bool, tlv: bool| {
-        if name.starts_with("$ld$") {
+    let mut add = |name: &'static [u8], weak: bool, tlv: bool| {
+        if name.starts_with(b"$ld$") {
             dylib.ld_symbols.push(name);
             return;
         }
@@ -4523,8 +4495,7 @@ fn read_dylib_binary(mf: &'static MappedFile) -> DylibBinary {
         let strtab = &data[sym.stroff as usize..(sym.stroff + sym.strsize) as usize];
         // SAFETY: input files are leaked, so the string table lives for
         // the rest of the process.
-        let strtab: &'static [u8] =
-            validate_strtab(unsafe { std::mem::transmute::<&[u8], &'static [u8]>(strtab) });
+        let strtab: &'static [u8] = unsafe { std::mem::transmute::<&[u8], &'static [u8]>(strtab) };
         // A TLV export is recognizable by its section: n_sect names a
         // S_THREAD_LOCAL_VARIABLES section (the __thread_vars
         // descriptors).
@@ -4698,8 +4669,8 @@ fn find_by_leaf<E: Target>(
 /// install name, at the directive's version or else the defining
 /// library's.
 struct MovedExport {
-    name: &'static str,
-    install_name: &'static str,
+    name: &'static [u8],
+    install_name: &'static [u8],
     current_version: u32,
     compatibility_version: u32,
 }
@@ -4733,24 +4704,24 @@ struct LdDirectives {
 /// $ld$compatibility_version directive by name; a library's
 /// $ld$previous beats its $ld$install_name.
 struct LdSymbols {
-    added: Vec<&'static str>,
-    hidden: hashbrown::HashSet<&'static str>,
+    added: Vec<&'static [u8]>,
+    hidden: hashbrown::HashSet<&'static [u8]>,
     /// The install name an $ld$install_name directive gives.
-    install_name: Option<&'static str>,
+    install_name: Option<&'static [u8]>,
     /// The install name a whole-library $ld$previous directive gives,
     /// with the version it gives, if any.
-    previous: Option<(&'static str, Option<u32>)>,
+    previous: Option<(&'static [u8], Option<u32>)>,
     /// The $ld$compatibility_version directive that applies: its name
     /// and version.
-    compatibility_version: Option<(&'static str, u32)>,
+    compatibility_version: Option<(&'static [u8], u32)>,
     /// The exports that move: each with the install name it moves to
     /// and the version the directive gives, if any.
-    moved: Vec<(&'static str, &'static str, Option<u32>)>,
+    moved: Vec<(&'static [u8], &'static [u8], Option<u32>)>,
 }
 
 impl LdSymbols {
     /// Reads the directives among `names`, which may hold other names.
-    fn read<E: Target>(ctx: &Context<E>, names: &[&'static str]) -> Self {
+    fn read<E: Target>(ctx: &Context<E>, names: &[&'static [u8]]) -> Self {
         use hashbrown::hash_map::Entry;
         let minos = ctx.args.platform_minos;
         let mut ld = Self {
@@ -4763,10 +4734,10 @@ impl LdSymbols {
         };
         // Where each moved export is in `ld.moved`: SwiftUICore moves
         // some 15,000 for a macOS 13 target.
-        let mut moved_at: hashbrown::HashMap<&str, usize> = hashbrown::HashMap::new();
+        let mut moved_at: hashbrown::HashMap<&[u8], usize> = hashbrown::HashMap::new();
         for &name in names {
-            let Some(rest) = name.strip_prefix("$ld$") else { continue };
-            if let Some(rest) = rest.strip_prefix("previous$") {
+            let Some(rest) = name.strip_prefix(b"$ld$") else { continue };
+            if let Some(rest) = rest.strip_prefix(b"previous$") {
                 let Some(p) = PreviousDirective::parse(rest) else { continue };
                 if p.platform != ctx.args.platform || minos < p.lo || p.hi <= minos {
                     continue;
@@ -4791,8 +4762,9 @@ impl LdSymbols {
                 continue;
             }
             // $ld$<action>$os<version>$<arg>, for the target's version.
-            let Some((action, rest)) = rest.split_once('$') else { continue };
-            let Some((version, arg)) = rest.strip_prefix("os").and_then(|r| r.split_once('$'))
+            let Some((action, rest)) = crate::util::split_once(rest, b'$') else { continue };
+            let Some((version, arg)) =
+                rest.strip_prefix(b"os").and_then(|r| crate::util::split_once(r, b'$'))
             else {
                 continue;
             };
@@ -4800,12 +4772,12 @@ impl LdSymbols {
                 continue;
             }
             match action {
-                "add" => ld.added.push(arg),
-                "hide" => _ = ld.hidden.insert(arg),
-                "install_name" if ld.install_name.is_none_or(|last| last < arg) => {
+                b"add" => ld.added.push(arg),
+                b"hide" => _ = ld.hidden.insert(arg),
+                b"install_name" if ld.install_name.is_none_or(|last| last < arg) => {
                     ld.install_name = Some(arg);
                 }
-                "compatibility_version"
+                b"compatibility_version"
                     if ld.compatibility_version.is_none_or(|(first, _)| name < first) =>
                 {
                     ld.compatibility_version = Some((name, directive_version(arg).unwrap_or(0)));
@@ -4818,12 +4790,12 @@ impl LdSymbols {
 
     /// Whether the library keeps an export: it is no directive and not
     /// hidden.
-    fn keeps(&self, name: &str) -> bool {
-        !name.starts_with("$ld$") && !self.hidden.contains(name)
+    fn keeps(&self, name: &[u8]) -> bool {
+        !name.starts_with(b"$ld$") && !self.hidden.contains(name)
     }
 
     /// The install name the library takes from a directive, if any.
-    fn renamed_install_name(&self) -> Option<&'static str> {
+    fn renamed_install_name(&self) -> Option<&'static [u8]> {
         self.previous.map(|(name, _)| name).or(self.install_name)
     }
 
@@ -4858,7 +4830,7 @@ fn interpret_ld_symbols<E: Target>(ctx: &Context<E>, tbd: &mut tapi::TbdFile) ->
     tbd.weak_exports.retain(|n| ld.keeps(n));
     tbd.exports.extend(&ld.added);
     if let Some(name) = ld.renamed_install_name() {
-        tbd.install_name = name.to_string();
+        tbd.install_name = name;
     }
     if let Some((_, version)) = ld.compatibility_version {
         tbd.compatibility_version = version;
@@ -4879,9 +4851,9 @@ fn interpret_binary_ld_symbols<E: Target>(
     dylib: &mut DylibBinary,
 ) -> LdDirectives {
     for name in &dylib.ld_symbols {
-        let kind = name["$ld$".len()..].split('$').next().unwrap();
-        if !matches!(kind, "previous" | "add" | "hide" | "install_name" | "weak") {
-            crate::warn!("unknown link constraint kind: {kind}");
+        let kind = name[b"$ld$".len()..].split(|&c| c == b'$').next().unwrap();
+        if !matches!(kind, b"previous" | b"add" | b"hide" | b"install_name" | b"weak") {
+            crate::warn!("unknown link constraint kind: {}", crate::error::raw(kind));
         }
     }
     let ld = LdSymbols::read(ctx, &dylib.ld_symbols);
@@ -4890,7 +4862,7 @@ fn interpret_binary_ld_symbols<E: Target>(
     dylib.tlv_exports.retain(|n| ld.keeps(n));
     dylib.exports.extend(&ld.added);
     if let Some(name) = ld.renamed_install_name() {
-        dylib.install_name = name.as_bytes().to_vec();
+        dylib.install_name = name.to_vec();
     }
     if let Some(version) = ld.renamed_version() {
         dylib.current_version = version;
@@ -4904,24 +4876,24 @@ fn interpret_binary_ld_symbols<E: Target>(
 /// symbol - which may itself contain '$', as Swift's do - less a final
 /// '$'. A field it can't read makes it ignore the directive.
 struct PreviousDirective {
-    install_name: &'static str,
+    install_name: &'static [u8],
     version: Option<u32>,
     platform: u32,
     lo: u32,
     hi: u32,
-    sym: &'static str,
+    sym: &'static [u8],
 }
 
 impl PreviousDirective {
-    fn parse(rest: &'static str) -> Option<Self> {
-        let mut f = rest.splitn(6, '$');
+    fn parse(rest: &'static [u8]) -> Option<Self> {
+        let mut f = rest.splitn(6, |&c| c == b'$');
         let (install_name, compat, platform) = (f.next()?, f.next()?, f.next()?);
         let (lo, hi) = (f.next()?, f.next()?);
-        let sym = f.next().unwrap_or("");
-        let version = |s: &str| if s.is_empty() { Some(0) } else { previous_version(s) };
+        let sym = f.next().unwrap_or_default();
+        let version = |s: &[u8]| if s.is_empty() { Some(0) } else { previous_version(s) };
         if install_name.is_empty()
             || platform.is_empty()
-            || !platform.bytes().all(|c| c.is_ascii_digit())
+            || !platform.iter().all(u8::is_ascii_digit)
         {
             return None;
         }
@@ -4931,18 +4903,19 @@ impl PreviousDirective {
             platform: strtoul32(platform)?,
             lo: version(lo)?,
             hi: version(hi)?,
-            sym: sym.strip_suffix('$').unwrap_or(sym),
+            sym: sym.strip_suffix(b"$").unwrap_or(sym),
         })
     }
 }
 
 /// A number of a directive's version, as strtoul reads one into 32
 /// bits: digits only, none for 0.
-fn strtoul32(s: &str) -> Option<u32> {
-    if !s.bytes().all(|c| c.is_ascii_digit()) {
+fn strtoul32(s: &[u8]) -> Option<u32> {
+    if !s.iter().all(u8::is_ascii_digit) {
         return None;
     }
-    Some(if s.is_empty() { 0 } else { s.parse::<u64>().map_or(u32::MAX, |n| n as u32) })
+    let n = s.iter().try_fold(0u64, |n, &c| n.checked_mul(10)?.checked_add(u64::from(c - b'0')));
+    Some(n.map_or(u32::MAX, |n| n as u32))
 }
 
 /// A version in an $ld$previous directive, as ld-prime reads one, packed
@@ -4950,13 +4923,13 @@ fn strtoul32(s: &str) -> Option<u32> {
 /// fourth and fifth must be 0, the first below 65536 and the others
 /// below 256. An empty number is 0, but not as the last of the first
 /// four ("1..2" is 1.0.2, "1." no version).
-fn previous_version(s: &str) -> Option<u32> {
-    let count = s.split('.').count();
+fn previous_version(s: &[u8]) -> Option<u32> {
+    let count = s.split(|&c| c == b'.').count();
     if count > 5 {
         return None;
     }
     let mut nums = [0; 5];
-    for (i, part) in s.split('.').enumerate() {
+    for (i, part) in s.split(|&c| c == b'.').enumerate() {
         if part.is_empty() && i + 1 == count && i < 4 {
             return None;
         }
@@ -4970,14 +4943,15 @@ fn previous_version(s: &str) -> Option<u32> {
 /// $ld$compatibility_version one, as ld-prime reads it: the first three
 /// numbers of those separated by dots (empty ones skipped), the first
 /// below 65536 and the others below 256.
-fn directive_version(s: &str) -> Option<u32> {
+fn directive_version(s: &[u8]) -> Option<u32> {
     let mut version = 0;
-    for (i, part) in s.split('.').filter(|p| !p.is_empty()).take(3).enumerate() {
-        let n = if part.bytes().all(|c| c.is_ascii_digit()) {
-            part.parse::<u32>().ok()?
-        } else {
+    for (i, part) in s.split(|&c| c == b'.').filter(|p| !p.is_empty()).take(3).enumerate() {
+        if !part.iter().all(u8::is_ascii_digit) {
             return None;
-        };
+        }
+        let n = part
+            .iter()
+            .try_fold(0u32, |n, &c| n.checked_mul(10)?.checked_add(u32::from(c - b'0')))?;
         if n > if i == 0 { 0xffff } else { 0xff } {
             return None;
         }
@@ -5015,7 +4989,7 @@ pub fn load_tbd<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> Option<
 pub fn exported_classes<E: Target>(
     ctx: &Context<E>,
     mf: &'static MappedFile,
-) -> Option<(Vec<u8>, Vec<&'static str>)> {
+) -> Option<(Vec<u8>, Vec<&'static [u8]>)> {
     use crate::filetype::{FileType, get_file_type};
     let mf = match get_file_type(mf) {
         FileType::Fat => fat_slice::<E>(&ctx.args, mf)?,
@@ -5026,7 +5000,7 @@ pub fn exported_classes<E: Target>(
             let tbd = read_tbd(ctx, mf)?;
             let ld = LdSymbols::read(ctx, &tbd.exports);
             let exports = [tbd.exports, tbd.weak_exports, tbd.tlv_exports].concat();
-            (tbd.install_name.into_bytes(), ld, exports)
+            (tbd.install_name.to_vec(), ld, exports)
         }
         FileType::Dylib
             if foreign_arch::<E>(&ctx.args, mf).is_none()
@@ -5039,7 +5013,7 @@ pub fn exported_classes<E: Target>(
     };
     let own = exports.into_iter().filter(|name| ld.keeps(name)).chain(ld.added.iter().copied());
     // A binary names its exports in its symbol table and export trie.
-    let mut classes: Vec<&str> = own.filter(|name| is_class_export(name)).collect();
+    let mut classes: Vec<&[u8]> = own.filter(|name| is_class_export(name)).collect();
     classes.sort_unstable();
     classes.dedup();
     Some((install_name, classes))
@@ -5052,10 +5026,10 @@ pub fn exported_classes<E: Target>(
 /// or not). A Swift class's other symbols (its nominal type descriptor,
 /// metaclass or accessor), and an Objective-C class's exception type or
 /// instance variables, don't count.
-fn is_class_export(name: &str) -> bool {
-    name.starts_with("_OBJC_CLASS_$_")
-        || name.starts_with("_OBJC_METACLASS_$_")
-        || (name.starts_with("_$s") && name.ends_with("CN"))
+fn is_class_export(name: &[u8]) -> bool {
+    name.starts_with(b"_OBJC_CLASS_$_")
+        || name.starts_with(b"_OBJC_METACLASS_$_")
+        || (name.starts_with(b"_$s") && name.ends_with(b"CN"))
 }
 
 pub fn parse_dylib<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFile) -> Option<usize> {
@@ -5084,16 +5058,16 @@ fn register_tbd<E: Target>(
     documents: Vec<tapi::TbdFile>,
 ) -> usize {
     let directives = interpret_ld_symbols(ctx, &mut tbd);
-    let mut exports: hashbrown::HashSet<&'static str> = tbd.exports.into_iter().collect();
-    let mut weak_exports: hashbrown::HashSet<&'static str> =
+    let mut exports: hashbrown::HashSet<&'static [u8]> = tbd.exports.into_iter().collect();
+    let mut weak_exports: hashbrown::HashSet<&'static [u8]> =
         tbd.weak_exports.iter().copied().collect();
     let has_weak_defs = !weak_exports.is_empty();
     exports.extend(tbd.weak_exports);
-    let mut tlv_exports: hashbrown::HashSet<&'static str> = tbd.tlv_exports.into_iter().collect();
+    let mut tlv_exports: hashbrown::HashSet<&'static [u8]> = tbd.tlv_exports.into_iter().collect();
     exports.extend(tlv_exports.iter().copied());
 
-    let names = tbd.reexports.into_iter().map(|name| name.as_bytes().to_vec()).collect();
-    let name = tbd.install_name.as_bytes();
+    let names = tbd.reexports.into_iter().map(<[u8]>::to_vec).collect();
+    let name = tbd.install_name;
     let reexports = ReexportRef::of(names, name, &dir_of(path), &[], 0);
     let parent = ReexportParent { install_name: name, path, platforms: tbd.platforms.len() };
     let loaded = load_reexports(
@@ -5115,7 +5089,7 @@ fn register_tbd<E: Target>(
         ctx,
         DylibFile {
             path: path.to_path_buf(),
-            install_name: tbd.install_name.into_bytes(),
+            install_name: tbd.install_name.to_vec(),
             current_version: tbd.current_version,
             compatibility_version: tbd.compatibility_version,
             minos: tbd.minos,
@@ -5163,10 +5137,10 @@ fn add_moved_dylibs<E: Target>(
     ctx: &mut Context<E>,
     path: &Path,
     moved: Vec<MovedExport>,
-    exports: &hashbrown::HashSet<&'static str>,
-) -> hashbrown::HashMap<&'static str, usize> {
+    exports: &hashbrown::HashSet<&'static [u8]>,
+) -> hashbrown::HashMap<&'static [u8], usize> {
     let mut moved_exports = hashbrown::HashMap::new();
-    let mut targets: Vec<(&str, usize)> = Vec::new();
+    let mut targets: Vec<(&[u8], usize)> = Vec::new();
     for export in moved.into_iter().filter(|e| exports.contains(e.name)) {
         let idx = match targets.iter().find(|(name, _)| *name == export.install_name) {
             Some(&(_, idx)) => idx,
@@ -5174,7 +5148,7 @@ fn add_moved_dylibs<E: Target>(
                 let priority = ctx.next_priority();
                 let dylib = DylibFile {
                     path: path.to_path_buf(),
-                    install_name: export.install_name.as_bytes().to_vec(),
+                    install_name: export.install_name.to_vec(),
                     current_version: export.current_version,
                     compatibility_version: export.compatibility_version,
                     minos: 0,
@@ -5224,7 +5198,7 @@ fn add_moved_dylibs<E: Target>(
 pub fn add_merged_dependency<E: Target>(ctx: &mut Context<E>, dep: crate::mergeable::Dependency) {
     let before = ctx.dylibs.len();
     let priority = ctx.next_priority();
-    let weak_exports: hashbrown::HashSet<&'static str> = dep.weak_exports.into_iter().collect();
+    let weak_exports: hashbrown::HashSet<&'static [u8]> = dep.weak_exports.into_iter().collect();
     let dylib = DylibFile {
         path: dep.path,
         install_name: dep.info.install_name,

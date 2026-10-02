@@ -34,7 +34,7 @@ static ARM64_OBJECT: &[u8] = include_bytes!("../c/bundle-hook-arm64.o");
 static X86_64_OBJECT: &[u8] = include_bytes!("../c/bundle-hook-x86_64.o");
 
 /// The table the hook reads, which mold defines.
-const TABLE_SYMBOL: &str = "___mold_bundle_hook_table";
+const TABLE_SYMBOL: &[u8] = b"___mold_bundle_hook_table";
 
 /// The classes the hook is for, by library.
 #[derive(Default)]
@@ -209,7 +209,7 @@ fn listed_classes<E: Target>(ctx: &Context<E>, of: impl Fn(usize) -> bool) -> Ve
 fn exports_class<E: Target>(ctx: &Context<E>, cls: ObjcRef) -> bool {
     let ObjcRef::Sym(id, 0) = cls else { return false };
     let sym = &ctx.symbols[id];
-    let name = sym.name().as_bytes();
+    let name = sym.name();
     sym.is_extern()
         && !sym.is_private_extern()
         && !ctx.args.no_exported_symbols

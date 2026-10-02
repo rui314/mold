@@ -27,7 +27,7 @@ use crate::symbol::SymbolId;
 use crate::tapi;
 use crate::target::RelocClass;
 use crate::target::Target;
-use crate::util::{align_to, page_align, path_bytes};
+use crate::util::{align_to, page_align, path_bytes, split_once};
 
 /// The default library search path: ld64's /usr/lib and /usr/local/lib,
 /// and between them ld-prime's /usr/lib/swift, which it searches for
@@ -860,14 +860,14 @@ fn warn_about_sections(staged: &[input_files::StagedObject]) {
         for &i in &obj.misplaced_symbols {
             crate::warn!(
                 "{} symbol is ignored, because its address isn't in its designated section",
-                obj.sym_names[i as usize]
+                raw(obj.sym_names[i as usize])
             );
         }
         for &i in &obj.extraneous_labels {
             let nlist = &obj.nlists[i as usize];
             crate::warn!(
                 "ignoring extranenous label '{}' at end of section '{}'",
-                obj.sym_names[i as usize],
+                raw(obj.sym_names[i as usize]),
                 raw(obj.sect_hdrs[nlist.n_sect as usize - 1].sectname())
             );
         }
@@ -875,6 +875,7 @@ fn warn_about_sections(staged: &[input_files::StagedObject]) {
             error!("{what} has no target in '{}'", resolved_file_name(obj.mf));
         } else if let Some(class) = obj.class_without_data {
             // (Named by the path it was given, not resolved.)
+            let class = raw(class);
             error!("null objc class data for '{class}' in '{}'", obj.mf.name.display());
         }
     }
@@ -913,7 +914,7 @@ fn load_pending<E: Target>(ctx: &mut Context<E>, pending: Vec<PendingObject>) {
     // Each object's extern (name, hash) list is filtered in parallel -
     // a debug link scans millions of nlists here - then concatenated in
     // object order into the batch the sharded intern resolves at once.
-    let per_obj: Vec<Vec<(&'static str, u64)>> = staged
+    let per_obj: Vec<Vec<(&'static [u8], u64)>> = staged
         .par_iter()
         .map(|st| {
             let r = st.global_range();
@@ -927,7 +928,7 @@ fn load_pending<E: Target>(ctx: &mut Context<E>, pending: Vec<PendingObject>) {
         })
         .collect();
     let counts: Vec<usize> = per_obj.iter().map(Vec::len).collect();
-    let mut batch: Vec<(&'static str, u64)> = Vec::with_capacity(counts.iter().sum());
+    let mut batch: Vec<(&'static [u8], u64)> = Vec::with_capacity(counts.iter().sum());
     for v in per_obj {
         batch.extend(v);
     }
@@ -1096,7 +1097,7 @@ fn prefetch_stubs<E: Target>(ctx: &Context<E>, stubs: &[&'static MappedFile]) {
                 if tbd.document(name).is_some() {
                     continue;
                 }
-                if let Some(dep) = crate::input_files::find_reexport(ctx, name.as_bytes())
+                if let Some(dep) = crate::input_files::find_reexport(ctx, name)
                     && get_file_type(dep) == FileType::Tapi
                     && seen.insert(dep.name.as_path())
                 {
@@ -1820,7 +1821,7 @@ fn providing_dylib(
     dylibs: &[input_files::DylibFile],
     providers: &[Vec<usize>],
     mut idx: usize,
-    name: &str,
+    name: &[u8],
 ) -> usize {
     for _ in 0..dylibs.len() {
         match providers[idx].iter().find(|&&p| dylibs[p].exports.contains(name)) {
@@ -1971,24 +1972,26 @@ pub fn resolve_symbols<E: Target>(ctx: &mut Context<E>) {
 /// extension's entry point, _NSExtensionMain, lives in Foundation and
 /// nothing in the extension references it.
 fn intern_command_line_symbols<E: Target>(ctx: &mut Context<E>) {
-    let mut named: Vec<String> = ctx.args.forced_undefined.clone();
+    let mut named: Vec<&[u8]> = ctx.args.forced_undefined.iter().map(Vec::as_slice).collect();
     // Not for -r, whose output type is still the executable default: the
     // relocatable output would carry a spurious undefined _main.
     if ctx.args.has_entry_point() {
-        named.push(ctx.args.entry.clone());
+        named.push(ctx.args.entry.as_slice());
     }
     // -alias bases too: Xcode aliases an app extension's debug dylib
     // entry point to Foundation's _NSExtensionMain.
-    named.extend(ctx.args.aliases.iter().map(|(existing, _)| existing.clone()));
+    named.extend(ctx.args.aliases.iter().map(|(existing, _)| existing.as_slice()));
     // So are the runtime routines LTO may come to call, so that a
     // library can provide them.
     if may_softload_runtime_routines(ctx) {
-        named.extend(LTO_RUNTIME_ROUTINES.iter().map(|name| name.to_string()));
+        named.extend(LTO_RUNTIME_ROUTINES);
     }
-    for name in named {
-        if ctx.symbols.get(&name).is_none() {
-            ctx.symbols.intern(String::leak(name));
-        }
+    let new: Vec<&'static [u8]> = (named.into_iter())
+        .filter(|name| ctx.symbols.get(name).is_none())
+        .map(|name| crate::util::leak_bytes(name.to_vec()))
+        .collect();
+    for name in new {
+        ctx.symbols.intern(name);
     }
 }
 
@@ -2000,15 +2003,15 @@ fn intern_command_line_symbols<E: Target>(ctx: &mut Context<E>) {
 /// lto_runtime_lib_symbols_list is longer and lacks _strcpy): these are
 /// the names of compiler-rt's builtins, libm and libc it was found to
 /// load, for x86-64 and arm64 alike.
-pub const LTO_RUNTIME_ROUTINES: [&str; 8] = [
-    "___divsi3",
-    "___gtdf2",
-    "___ltdf2",
-    "___muldi3",
-    "___udivdi3",
-    "___udivsi3",
-    "_memset",
-    "_strcpy",
+pub const LTO_RUNTIME_ROUTINES: [&[u8]; 8] = [
+    b"___divsi3",
+    b"___gtdf2",
+    b"___ltdf2",
+    b"___muldi3",
+    b"___udivdi3",
+    b"___udivsi3",
+    b"_memset",
+    b"_strcpy",
 ];
 
 /// Whether the link softloads LTO_RUNTIME_ROUTINES: once bitcode is in
@@ -2530,9 +2533,9 @@ fn mark_live_objects<E: Target>(ctx: &mut Context<E>, tentative: &Tentative) -> 
     // The entry point and -u symbols are roots too. A dylib or bundle
     // has no entry point: an archive member that defines _main stays
     // out of one (Lua's lua.o out of Hammerspoon's LuaSkin).
-    let mut root_syms: Vec<&str> =
-        ctx.args.has_entry_point().then_some(ctx.args.entry.as_str()).into_iter().collect();
-    root_syms.extend(ctx.args.forced_undefined.iter().map(String::as_str));
+    let mut root_syms: Vec<&[u8]> =
+        ctx.args.has_entry_point().then_some(ctx.args.entry.as_slice()).into_iter().collect();
+    root_syms.extend(ctx.args.forced_undefined.iter().map(Vec::as_slice));
     for name in root_syms {
         if let Some(id) = ctx.symbols.get(name)
             && let Some(FileId::Obj(owner)) = ctx.symbols[id].file()
@@ -2642,7 +2645,7 @@ unsafe fn create_lto_codegen<E: Target>(
     ctx: &Context<E>,
     plugin: &crate::lto::Plugin,
     modules: &[&crate::lto::BitcodeModule],
-    roots: &[&str],
+    roots: &[&[u8]],
 ) -> *mut std::ffi::c_void {
     // SAFETY: libLTO calls with handles created by the same library.
     unsafe {
@@ -2679,7 +2682,7 @@ unsafe fn create_lto_codegen<E: Target>(
 /// but a ThinLTO module is compiled on its own, so a reference to or
 /// from one does. A native common counts: when a bitcode definition
 /// wins, the common's code addresses that definition's storage.
-fn lto_roots<E: Target>(ctx: &Context<E>) -> Vec<&str> {
+fn lto_roots<E: Target>(ctx: &Context<E>) -> Vec<&[u8]> {
     use std::sync::atomic::{AtomicU8, Ordering};
 
     // Who refers to each symbol: a ThinLTO module or a module to merge
@@ -2741,9 +2744,9 @@ fn lto_roots<E: Target>(ctx: &Context<E>) -> Vec<&str> {
         if native_refs[i].load(Ordering::Relaxed)
             || flags[i].load(Ordering::Relaxed) & outside != 0
             || exported(i as SymbolId)
-            || (ctx.args.has_entry_point() && name == ctx.args.entry)
-            || ctx.args.forced_undefined.iter().any(|n| n == name)
-            || ctx.args.aliases.iter().any(|(existing, _)| existing == name)
+            || (ctx.args.has_entry_point() && name == ctx.args.entry.as_slice())
+            || ctx.args.forced_undefined.iter().any(|n| n.as_slice() == name)
+            || ctx.args.aliases.iter().any(|(existing, _)| existing.as_slice() == name)
         {
             roots.push(name);
         }
@@ -2842,7 +2845,7 @@ fn thin_lto<E: Target>(
     ctx: &Context<E>,
     plugin: &crate::lto::Plugin,
     modules: &[&crate::lto::BitcodeModule],
-    roots: &[&str],
+    roots: &[&[u8]],
 ) -> Vec<LtoObject> {
     let thin_modules: Vec<crate::lto::ThinModule> = modules
         .iter()
@@ -2903,7 +2906,7 @@ fn merged_lto<E: Target>(
     ctx: &Context<E>,
     plugin: &crate::lto::Plugin,
     modules: &[&crate::lto::BitcodeModule],
-    roots: &[&str],
+    roots: &[&[u8]],
 ) -> LtoObject {
     // SAFETY: libLTO calls with handles created by the same library.
     let data = unsafe {
@@ -3207,13 +3210,15 @@ pub fn check_initializers<E: Target>(ctx: &Context<E>) {
     let inits = initializers(ctx);
     if args.no_inits {
         if !inits.is_empty() {
-            let list: String =
-                inits.iter().map(|(name, file)| format!("{name} in {file}\n")).collect();
-            error!("Static initializers:\n{list}");
+            let list: Vec<u8> = (inits.iter())
+                .flat_map(|(name, file)| error::render(format_args!("{} in {file}\n", raw(name))))
+                .collect();
+            error!("Static initializers:\n{}", raw(&list));
         }
         return;
     }
     for (name, file) in inits {
+        let name = raw(name);
         crate::warn!(
             "static initializer '{name}' found in '{file}'. Use -no_inits to make this an \
              error.  Use -no_warn_inits to suppress warning"
@@ -3223,7 +3228,7 @@ pub fn check_initializers<E: Target>(ctx: &Context<E>) {
 
 /// The functions the inputs' __mod_init_func sections point at, by
 /// name, with the files that hold the pointers.
-fn initializers<E: Target>(ctx: &Context<E>) -> Vec<(&str, String)> {
+fn initializers<E: Target>(ctx: &Context<E>) -> Vec<(&[u8], String)> {
     let mut vec = Vec::new();
     for (i, isec) in ctx.isecs.iter().enumerate() {
         if !isec.is_alive() || ctx.hdr_of(isec).section_type() != S_MOD_INIT_FUNC_POINTERS {
@@ -3239,7 +3244,7 @@ fn initializers<E: Target>(ctx: &Context<E>) -> Vec<(&str, String)> {
                         .iter()
                         .map(|&id| &ctx.symbols[id])
                         .find(|s| s.input_section() == Some(target) && s.value == rel.addend as u64)
-                        .map_or("", |s| s.name())
+                        .map_or(&b""[..], |s| s.name())
                 }
             };
             vec.push((name, resolved_file_name(obj.mf)));
@@ -3602,7 +3607,7 @@ pub fn check_removed_swift_metadata_refs<E: Target>(ctx: &Context<E>) {
         crate::target::LazyRef::Unsupported(kind) => kind,
         _ => "branch",
     };
-    let target = ctx.fixup_target_name(isec.file as usize, rel);
+    let target = raw(ctx.fixup_target_name(isec.file as usize, rel));
     ctx.fixup_error(i, rel.offset, kind, format_args!("target '{target}' does not have address"));
 }
 
@@ -3675,7 +3680,7 @@ fn mark_labeled_literals<E: Target>(ctx: &Context<E>) {
             let hdr = ctx.hdr_of(isec);
             let labeled = match hdr.section_type() {
                 S_CSTRING_LITERALS | S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS => {
-                    !sym.name().starts_with(['l', 'L'])
+                    !sym.name().starts_with(b"l") && !sym.name().starts_with(b"L")
                 }
                 S_LITERAL_POINTERS => false,
                 _ => is_class_or_protocol_ref(hdr),
@@ -3903,7 +3908,7 @@ pub fn auto_hide_weak_defs<E: Target>(ctx: &mut Context<E>) {
             && sym.is_weak_def()
             && sym.is_extern()
             && matches!(sym.file(), Some(FileId::Obj(_)))
-            && !exported.is_some_and(|exported| exported.find(sym.name().as_bytes()) != -1)
+            && !exported.is_some_and(|exported| exported.find(sym.name()) != -1)
         {
             sym.set_is_private_extern(true);
         }
@@ -3939,7 +3944,7 @@ pub fn handle_exported_symbols_list<E: Target>(ctx: &mut Context<E>) {
     ctx.symbols.syms.par_iter_mut().for_each(|sym| {
         if matches!(sym.file(), Some(FileId::Obj(_)))
             && sym.is_extern()
-            && exported.find(sym.name().as_bytes()) == -1
+            && exported.find(sym.name()) == -1
         {
             sym.set_is_private_extern(true);
         }
@@ -3954,7 +3959,7 @@ pub fn handle_unexported_symbols_list<E: Target>(ctx: &mut Context<E>) {
     ctx.symbols.syms.par_iter_mut().for_each(|sym| {
         if matches!(sym.file(), Some(FileId::Obj(_)))
             && sym.is_extern()
-            && unexported.find(sym.name().as_bytes()) != -1
+            && unexported.find(sym.name()) != -1
         {
             sym.set_is_private_extern(true);
         }
@@ -3971,7 +3976,7 @@ pub fn force_symbol_weakness<E: Target>(ctx: &mut Context<E>) {
     if weak.is_empty() && not_weak.is_empty() {
         return;
     }
-    let mut hidden: Vec<(&str, bool)> = ctx
+    let mut hidden: Vec<(&[u8], bool)> = ctx
         .symbols
         .syms
         .par_iter_mut()
@@ -3980,9 +3985,9 @@ pub fn force_symbol_weakness<E: Target>(ctx: &mut Context<E>) {
                 return None;
             }
             let name = sym.name();
-            let force = if weak.find(name.as_bytes()) != -1 {
+            let force = if weak.find(name) != -1 {
                 true
-            } else if not_weak.find(name.as_bytes()) != -1 {
+            } else if not_weak.find(name) != -1 {
                 false
             } else {
                 return None;
@@ -4000,7 +4005,7 @@ pub fn force_symbol_weakness<E: Target>(ctx: &mut Context<E>) {
     hidden.par_sort_unstable();
     for (name, weak) in hidden {
         let kind = if weak { "weak" } else { "not-weak" };
-        crate::warn!("cannot force to be {kind}, non-external symbol {name}");
+        crate::warn!("cannot force to be {kind}, non-external symbol {}", raw(name));
     }
 }
 
@@ -4295,7 +4300,7 @@ pub fn check_poisoned_symbols<E: Target>(ctx: &Context<E>) {
                         && (i == 0 || !E::completes_page_pair(&rels[i - 1], rel, data))
                 })
                 .filter_map(move |(_, rel)| ctx.reloc_target_sym(file, rel))
-                .filter(|&id| poisoned.find(ctx.symbols[id].name().as_bytes()) != -1)
+                .filter(|&id| poisoned.find(ctx.symbols[id].name()) != -1)
                 .map(move |id| (id, isec))
         })
         .collect();
@@ -4304,18 +4309,19 @@ pub fn check_poisoned_symbols<E: Target>(ctx: &Context<E>) {
     }
     // (A stable sort keeps each symbol's references in object order.)
     refs.sort_by_key(|&(id, _)| ctx.symbols[id].name());
-    let mut msg = "Use of poisoned symbols:\n".to_string();
+    let mut msg = b"Use of poisoned symbols:\n".to_vec();
     for group in refs.chunk_by(|a, b| a.0 == b.0) {
-        msg += &format!("  {}, referenced from:\n", ctx.symbols[group[0].0]);
+        let sym = &ctx.symbols[group[0].0];
+        msg.extend(error::render(format_args!("  {sym}, referenced from:\n")));
         for &(_, isec) in group {
             let file = resolved_file_name(ctx.objs[ctx.isecs[isec].file as usize].mf);
             let leaf = file.rsplit('/').next().unwrap_or(&file);
             let subsec = ctx.subsec_name(isec);
             let subsec = crate::util::demangle::display_name(&subsec);
-            msg += &format!("      {subsec} in {leaf}\n");
+            msg.extend(error::render(format_args!("      {subsec} in {leaf}\n")));
         }
     }
-    error!("{msg}");
+    error!("{}", raw(&msg));
 }
 
 /// The tentative definitions (common symbols) left after resolution
@@ -4364,7 +4370,7 @@ fn common_conflicts<E: Target>(ctx: &Context<E>) -> Vec<(SymbolId, String, Vec<S
 fn defining_file<E: Target>(
     ctx: &Context<E>,
     dylib: &input_files::DylibFile,
-    name: &str,
+    name: &[u8],
 ) -> PathBuf {
     let merged = dylib.merged_files.iter().find(|file| file.exports.contains(&name));
     let file = match (merged, dylib.is_implicit) {
@@ -4387,12 +4393,12 @@ pub fn check_common_conflicts<E: Target>(ctx: &mut Context<E>) {
         return;
     }
     for (id, obj, dylibs) in common_conflicts(ctx) {
-        let name = ctx.symbols[id].name();
+        let name = raw(ctx.symbols[id].name());
         if !warn {
-            ctx.common_conflict = Some(format!(
+            ctx.common_conflict = Some(error::render(format_args!(
                 "common symbol '{name}' ({obj}) conflicts with definition from dylib '{name}' ({})",
                 dylibs[0]
-            ));
+            )));
             return;
         }
         for dylib in dylibs {
@@ -4407,7 +4413,7 @@ pub fn check_common_conflicts<E: Target>(ctx: &mut Context<E>) {
 /// dylib defines too, once ld-prime has found no duplicate symbol.
 pub fn report_common_conflict<E: Target>(ctx: &Context<E>) {
     if let Some(msg) = &ctx.common_conflict {
-        error!("{msg}");
+        error!("{}", raw(msg));
     }
 }
 
@@ -4461,7 +4467,7 @@ pub fn check_weak_imports<E: Target>(ctx: &Context<E>) {
     let (mut weak_found, mut mismatch_found) = (false, false);
     for (obj, refs) in ctx.objs.iter().zip(refs) {
         for (id, weak) in refs {
-            let name = ctx.symbols[id].name();
+            let name = raw(ctx.symbols[id].name());
             if weak && ctx.args.no_weak_imports {
                 crate::error::notice(format_args!(
                     "weak import of symbol '{name}' not supported because of option: -no_weak_imports"
@@ -4496,7 +4502,7 @@ pub fn check_weak_exports<E: Target>(ctx: &Context<E>) {
     if !ctx.args.warn_weak_exports && !ctx.args.no_weak_exports {
         return;
     }
-    let mut found: Vec<(&str, bool)> = (0..ctx.symbols.syms.len() as u32)
+    let mut found: Vec<(&[u8], bool)> = (0..ctx.symbols.syms.len() as u32)
         .into_par_iter()
         .filter_map(|id| {
             let defined_here = matches!(ctx.symbols[id].file(), Some(FileId::Obj(_)));
@@ -4512,6 +4518,7 @@ pub fn check_weak_exports<E: Target>(ctx: &Context<E>) {
     found.par_sort_unstable();
     if ctx.args.warn_weak_exports {
         for (name, overrides) in &found {
+            let name = raw(name);
             match overrides {
                 true => crate::warn!("overrides weak external symbol: {name}"),
                 false => crate::warn!("weak external symbol: {name}"),
@@ -4543,7 +4550,7 @@ pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
         return;
     }
     // ld-prime reports them by name.
-    undef.par_sort_unstable_by_key(|&i| ctx.symbols.syms[i].name().as_bytes());
+    undef.par_sort_unstable_by_key(|&i| ctx.symbols.syms[i].name());
     let referenced = referenced_symbols(ctx);
     // A name the command line insists on must resolve: ld-prime reports
     // one even under -undefined dynamic_lookup or -U, as wanted by its
@@ -4554,7 +4561,7 @@ pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
     // itself counts as defined. The lazy dylibs' __dyld_lazy_load is
     // none: ld-prime wants it from its "<lazy-load-undefs>", as an
     // ordinary reference, which a kext's dynamic lookup lets stay.
-    let lazy_load = ctx.symbols.get("__dyld_lazy_load").filter(|_| ctx.args.lazy_load);
+    let lazy_load = ctx.symbols.get(b"__dyld_lazy_load").filter(|_| ctx.args.lazy_load);
     let mut initial: hashbrown::HashMap<crate::symbol::SymbolId, &str> = hashbrown::HashMap::new();
     let entry = ctx.args.has_entry_point().then_some(&ctx.args.entry);
     for name in ctx.args.forced_undefined.iter().chain(entry) {
@@ -4568,7 +4575,7 @@ pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
     for (base, alias) in &ctx.args.aliases {
         let live = !ctx.strips_dead_code()
             || (crate::dead_strip::keeps_export(ctx, alias)
-                && ctx.args.unexported_symbols.find(alias.as_bytes()) == -1);
+                && ctx.args.unexported_symbols.find(alias) == -1);
         if let Some(id) = ctx.symbols.get(base) {
             let place = if live { "command-line-aliases-file" } else { "<initial-undefines>" };
             initial.entry(id).or_insert(place);
@@ -4612,7 +4619,7 @@ pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
             // -undefined or -U say.
             let allowed = !ctx.args.static_link
                 && (ctx.args.undefined_dynamic_lookup
-                    || ctx.args.allowed_undefined.iter().any(|n| n == sym.name()))
+                    || ctx.args.allowed_undefined.iter().any(|n| n.as_slice() == sym.name()))
                 && !initial.contains_key(&(i as crate::symbol::SymbolId));
             if allowed {
                 let sym = &mut ctx.symbols[i];
@@ -4717,7 +4724,9 @@ pub fn print_dependencies<E: Target>(ctx: &Context<E>) {
                 }
                 _ => continue,
             };
-            println!("{}\t{}\tu\t{}", file_display(obj), provider, sym.name());
+            let line =
+                format_args!("{}\t{}\tu\t{}\n", file_display(obj), provider, raw(sym.name()));
+            let _ = std::io::Write::write_all(&mut std::io::stdout(), &error::render(line));
         }
     }
 }
@@ -4789,7 +4798,8 @@ pub fn print_why_load<E: Target>(ctx: &Context<E>, explained: &[bool]) -> Vec<bo
     for (idx, obj) in members() {
         if let Some(name) = ctx.why_load.get(&idx) {
             crate::error::notice(format_args!(
-                "'{name}' caused load of {}",
+                "'{}' caused load of {}",
+                raw(name),
                 resolved_file_name(obj.mf)
             ));
         }
@@ -4994,7 +5004,7 @@ pub fn check_weak_assertions<E: Target>(ctx: &Context<E>) {
             })
         })
         .collect();
-    let mut by_sym: std::collections::BTreeMap<&str, (SymbolId, std::collections::BTreeSet<u32>)> =
+    let mut by_sym: std::collections::BTreeMap<&[u8], (SymbolId, std::collections::BTreeSet<u32>)> =
         Default::default();
     for (id, file) in refs {
         by_sym.entry(ctx.symbols[id].name()).or_insert((id, Default::default())).1.insert(file);
@@ -5013,26 +5023,29 @@ pub fn check_weak_assertions<E: Target>(ctx: &Context<E>) {
         format!(
             "Found non-weak-imported symbol(s) preventing {install_name} from being weak-linked:"
         )
-    };
+    }
+    .into_bytes();
     for (name, (id, files)) in &by_sym {
         if !std::ptr::eq(asserted(*id).unwrap(), dylib) {
             continue;
         }
+        let name = raw(name);
         if dylib.is_lazy {
-            msg += &format!("\n  \"{name}\"");
+            msg.extend(error::render(format_args!("\n  \"{name}\"")));
             continue;
         }
-        msg += &format!("\n  \"{name}\" imported from:");
+        msg.extend(error::render(format_args!("\n  \"{name}\" imported from:")));
         for &file in files {
-            msg += &format!("\n      {}", leaf_file_name(ctx.objs[file as usize].mf));
+            let file = leaf_file_name(ctx.objs[file as usize].mf);
+            msg.extend(error::render(format_args!("\n      {file}")));
         }
         if dylib.delay_init.is_some() {
-            msg += "\n      deferred-dylib-file";
+            msg.extend_from_slice(b"\n      deferred-dylib-file");
         } else if ctx.sym_aux(*id).got_idx != NO_IDX {
-            msg += "\n      stubs-got-file";
+            msg.extend_from_slice(b"\n      stubs-got-file");
         }
     }
-    error!("{msg}");
+    error!("{}", raw(&msg));
 }
 
 /// A file's name as ld-prime gives it in a few diagnostics: its leaf
@@ -5222,7 +5235,7 @@ fn moved_dylib_keys<E: Target>(ctx: &Context<E>) -> Vec<Option<MovedDylibKey>> {
     keys
 }
 
-type MovedDylibKey = ((u8, u32), Vec<u8>, &'static str);
+type MovedDylibKey = ((u8, u32), Vec<u8>, &'static [u8]);
 
 /// Gives the dylibs their ordinals (and so their load commands) in
 /// ld-prime's order (see dylib_order_key), and returns them in that
@@ -5712,7 +5725,7 @@ pub fn create_lazy_loads<E: Target>(ctx: &mut Context<E>) {
         return;
     }
     // (The keep-alive subsection's reference, as ld-prime names it.)
-    if let Some(id) = ctx.symbols.get("__dyld_lazy_load")
+    if let Some(id) = ctx.symbols.get(b"__dyld_lazy_load")
         && ctx.is_lazy_import(id)
     {
         error!("keepAlive use of '__dyld_lazy_load' in 'anon' cannot be lazy loaded.");
@@ -5726,7 +5739,7 @@ pub fn create_lazy_loads<E: Target>(ctx: &mut Context<E>) {
 
     // The helpers call __dyld_lazy_load through its stub.
     if !ctx.lazy_helpers.helpers.is_empty()
-        && let Some(id) = ctx.symbols.get("__dyld_lazy_load")
+        && let Some(id) = ctx.symbols.get(b"__dyld_lazy_load")
     {
         add_stub(ctx, id);
         if ctx.args.lazy_binding {
@@ -5801,11 +5814,14 @@ fn lazy_uses<E: Target>(ctx: &Context<E>) -> Vec<LazyUseSite> {
             let sec = &ctx.isecs[isec as usize];
             let split = ctx.objs[sec.file as usize].subsections_via_symbols;
             let subsec = if input_files::is_record_list(ctx.hdr_of(sec), split) {
-                "anon".into()
+                b"anon"[..].into()
             } else {
                 ctx.subsec_name(isec as usize)
             };
-            errors.push(format!("{kind} use of '{sym}' in '{subsec}' cannot be lazy loaded."));
+            let subsec = raw(&subsec);
+            errors.push(error::render(format_args!(
+                "{kind} use of '{sym}' in '{subsec}' cannot be lazy loaded."
+            )));
         }
     }
     // A stub or GOT slot another pass made for one (an unwind
@@ -5815,7 +5831,9 @@ fn lazy_uses<E: Target>(ctx: &Context<E>) -> Vec<LazyUseSite> {
     for &id in ctx.stubs.symbols.iter().chain(&ctx.got.got_syms) {
         if ctx.is_lazy_import(id) {
             let sym = &ctx.symbols[id];
-            errors.push(format!("ptr64 use of '{sym}' in 'anon' cannot be lazy loaded."));
+            errors.push(error::render(format_args!(
+                "ptr64 use of '{sym}' in 'anon' cannot be lazy loaded."
+            )));
         }
     }
     crate::error::errors_together(&errors);
@@ -5863,8 +5881,8 @@ fn create_lazy_load_slots<E: Target>(
         let isec = add_data_word(ctx, 4);
         let install_name = &ctx.dylibs[d].install_name;
         let leaf = install_name.rsplit(|&c| c == b'/').next().unwrap_or(install_name);
-        let name = format!("_lazyLoadFlag${}", String::from_utf8_lossy(leaf));
-        ctx.extra_local_syms.push((String::leak(name), isec));
+        let name = crate::util::leak_bytes([b"_lazyLoadFlag$", leaf].concat());
+        ctx.extra_local_syms.push((name, isec));
         flags[d] = isec;
     }
     let private = ctx.stub_helper.dyld_private_isec;
@@ -5884,7 +5902,7 @@ fn create_lazy_load_slots<E: Target>(
             if !own {
                 ctx.sym_aux_mut(id).lazy_got_idx = slots.len() as u32;
             }
-            let name: &str = String::leak(format!("{}$lazyGOT", ctx.symbols[id].name()));
+            let name = crate::util::leak_bytes([ctx.symbols[id].name(), b"$lazyGOT"].concat());
             slots.push((id, name));
         }
         let syms: Vec<_> = list.into_iter().map(|(id, _)| id).collect();
@@ -5932,20 +5950,24 @@ fn create_lazy_helpers<E: Target>(
         let i = *index.entry((id, kind)).or_insert_with(|| {
             let sym = ctx.symbols[id].name();
             let name = match kind {
-                LazyUse::Call => format!("{sym}$lazyLoadStub"),
-                LazyUse::Cmp => format!("{sym}$lazyGOT$cmpHelper"),
+                LazyUse::Call => [sym, b"$lazyLoadStub"].concat(),
+                LazyUse::Cmp => [sym, b"$lazyGOT$cmpHelper"].concat(),
                 LazyUse::Load { reg, site: None } => {
-                    format!("{sym}$lazyGOT$loadHelper_{}", E::lazy_register_name(reg))
+                    [sym, b"$lazyGOT$loadHelper_", E::lazy_register_name(reg).as_bytes()].concat()
                 }
-                LazyUse::Load { reg, site: Some(_) } => format!(
-                    "{sym}$lazyGOT$loadHelper_{}$for${}+{offset}",
-                    E::lazy_register_name(reg),
-                    ctx.subsec_name(isec as usize)
-                ),
+                LazyUse::Load { reg, site: Some(_) } => [
+                    sym,
+                    b"$lazyGOT$loadHelper_",
+                    E::lazy_register_name(reg).as_bytes(),
+                    b"$for$",
+                    &ctx.subsec_name(isec as usize),
+                    format!("+{offset}").as_bytes(),
+                ]
+                .concat(),
             };
             let Some(FileId::Dylib(d)) = ctx.symbols[id].file() else { unreachable!() };
             let (flag, slot) = (flags[d as usize], slots[&lazy_slot::<E>(id, how)]);
-            let name = String::leak(name);
+            let name = crate::util::leak_bytes(name);
             helpers.push(LazyHelper { sym: id, kind, name, flag, slot, offset: 0 });
             helpers.len() - 1
         });
@@ -6071,7 +6093,7 @@ pub fn create_symbol_reexports<E: Target>(ctx: &mut Context<E>) {
         .iter()
         .enumerate()
         .filter(|(_, sym)| {
-            let name = sym.name().as_bytes();
+            let name = sym.name();
             matches!(sym.file(), Some(FileId::Dylib(_)))
                 && (ctx.args.reexported_symbols.find(name) != -1
                     || exported.is_some_and(|exported| exported.find(name) != -1))
@@ -6097,7 +6119,7 @@ pub fn create_symbol_reexports<E: Target>(ctx: &mut Context<E>) {
         sym.set_file(FileId::Obj(internal));
         sym.set_is_extern(true);
         ctx.indirect_aliases.push((alias, target));
-        ctx.args.forced_undefined.push(name.to_string());
+        ctx.args.forced_undefined.push(name.to_vec());
     }
 }
 
@@ -6107,7 +6129,7 @@ pub fn create_symbol_reexports<E: Target>(ctx: &mut Context<E>) {
 /// the link has turned out to be sound. It groups the warnings by file;
 /// here the files come in path order and each one's symbols by name.
 pub fn warn_redundant_reexports<E: Target>(ctx: &Context<E>) {
-    let mut found: Vec<(PathBuf, &str)> = (ctx.redundant_reexports.iter())
+    let mut found: Vec<(PathBuf, &[u8])> = (ctx.redundant_reexports.iter())
         .filter_map(|&id| {
             let Some(FileId::Dylib(d)) = ctx.symbols[id].file() else { return None };
             let name = ctx.symbols[id].name();
@@ -6116,6 +6138,7 @@ pub fn warn_redundant_reexports<E: Target>(ctx: &Context<E>) {
         .collect();
     found.sort();
     for (file, name) in found {
+        let name = raw(name);
         crate::warn!(
             "explicit re-export for symbol '{name}' is redundant because it is already re-exported from dylib '{}'",
             file.display()
@@ -6130,7 +6153,7 @@ pub fn add_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
     // A -preload image's mach header is in no segment, and nothing
     // names it.
     if ctx.args.output_type == MH_EXECUTE && !ctx.args.preload {
-        let id = ctx.symbols.intern("__mh_execute_header");
+        let id = ctx.symbols.intern(b"__mh_execute_header");
         let sym = &mut ctx.symbols[id];
         if !sym.is_defined() {
             sym.set_file(FileId::Obj(internal));
@@ -6143,9 +6166,9 @@ pub fn add_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
     // for its kind, which ld-prime defines as it does ___dso_handle
     // below, out of the symbol table.
     let header_name = match ctx.args.output_type {
-        MH_DYLIB => Some("__mh_dylib_header"),
-        MH_BUNDLE => Some("__mh_bundle_header"),
-        MH_DYLINKER => Some("__mh_dylinker_header"),
+        MH_DYLIB => Some(&b"__mh_dylib_header"[..]),
+        MH_BUNDLE => Some(&b"__mh_bundle_header"[..]),
+        MH_DYLINKER => Some(&b"__mh_dylinker_header"[..]),
         _ => None,
     };
     if let Some(name) = header_name {
@@ -6155,7 +6178,7 @@ pub fn add_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
     // ___dso_handle identifies the image; C++ static destructors pass it
     // to __cxa_atexit. It resolves to the mach header but is never
     // exported.
-    define_header_alias(ctx, "___dso_handle", internal, header_addr);
+    define_header_alias(ctx, b"___dso_handle", internal, header_addr);
 
     // -alias gives an existing definition a second name: the new
     // symbol shares the original's subsection and offset, so it lands
@@ -6174,11 +6197,11 @@ pub fn add_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
         if ctx.strips_dead_code()
             && !referenced
             && !(crate::dead_strip::keeps_export(ctx, new)
-                && ctx.args.unexported_symbols.find(new.as_bytes()) == -1)
+                && ctx.args.unexported_symbols.find(new) == -1)
         {
             continue;
         }
-        let dst = ctx.symbols.intern(String::leak(new.clone()));
+        let dst = ctx.symbols.intern(crate::util::leak_bytes(new.clone()));
         if ctx.symbols[src].is_imported() {
             // An alias of a dylib symbol is an indirect symbol
             // (N_INDR) whose export trie entry re-exports the dylib's
@@ -6220,13 +6243,12 @@ pub fn add_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
         if !sym.is_used() || sym.is_defined() {
             continue;
         }
-        let parsed = if let Some(rest) = sym.name().strip_prefix("section$") {
-            rest.split_once('$').and_then(|(which, rest)| {
-                rest.split_once('$')
-                    .map(|(seg, sect)| (which == "start", seg.as_bytes(), Some(sect.as_bytes())))
+        let parsed = if let Some(rest) = sym.name().strip_prefix(b"section$") {
+            split_once(rest, b'$').and_then(|(which, rest)| {
+                split_once(rest, b'$').map(|(seg, sect)| (which == b"start", seg, Some(sect)))
             })
-        } else if let Some(rest) = sym.name().strip_prefix("segment$") {
-            rest.split_once('$').map(|(which, seg)| (which == "start", seg.as_bytes(), None))
+        } else if let Some(rest) = sym.name().strip_prefix(b"segment$") {
+            split_once(rest, b'$').map(|(which, seg)| (which == b"start", seg, None))
         } else {
             None
         };
@@ -6244,7 +6266,7 @@ pub fn add_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
 /// symbol of the internal object, which the symbol table leaves out.
 fn define_header_alias<E: Target>(
     ctx: &mut Context<E>,
-    name: &'static str,
+    name: &'static [u8],
     internal: u32,
     addr: u64,
 ) {
@@ -6289,7 +6311,7 @@ pub fn fix_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
     // ld-prime.
     if ctx.args.preload
         && let Some(text) = ctx.segments.iter().find(|s| s.name == b"__TEXT")
-        && let Some(id) = ctx.symbols.get("___dso_handle")
+        && let Some(id) = ctx.symbols.get(b"___dso_handle")
         && ctx.symbols[id].input_section().is_none()
     {
         ctx.symbols[id].value = text.cmd.vmaddr;
@@ -6358,7 +6380,8 @@ pub(crate) fn objc_list_aliases<E: Target>(
     }
     // (place, is external, name, index), sorted so that each place's
     // name comes last.
-    let mut syms: Vec<((u8, u64), bool, &str, usize)> = obj
+    type ListSymbol<'a> = ((u8, u64), bool, &'a [u8], usize);
+    let mut syms: Vec<ListSymbol> = obj
         .nlists
         .iter()
         .zip(&obj.symbols)
@@ -6370,7 +6393,7 @@ pub(crate) fn objc_list_aliases<E: Target>(
             let name = ctx.symbols[id].name();
             let place = (nlist.n_sect, nlist.n_value);
             let external = nlist.n_type & (N_EXT | N_PEXT) != 0;
-            (!name.starts_with("ltmp")).then_some((place, external, name, i))
+            (!name.starts_with(b"ltmp")).then_some((place, external, name, i))
         })
         .collect();
     syms.sort_unstable();
@@ -6569,8 +6592,9 @@ fn report_text_relocs<E: Target>(ctx: &Context<E>) {
         let rel = &ctx.isec_relocs(id as usize)[i as usize];
         let target = ctx.text_reloc_target_name(isec.file as usize, rel);
         crate::error::notice(format_args!(
-            "  text-relocation in {} to '{target}'",
-            ctx.subsec_ref(id as usize, rel.offset)
+            "  text-relocation in {} to '{}'",
+            raw(&ctx.subsec_ref(id as usize, rel.offset)),
+            raw(&target)
         ));
     }
     if report_32bit_pointer(ctx, osec.is_some())
@@ -6608,7 +6632,7 @@ fn report_32bit_pointer<E: Target>(ctx: &Context<E>, text_relocs: bool) -> bool 
         found.iter().min_by_key(|p| addr(p))
     };
     let Some(&(isec, off)) = pick else { return false };
-    error!("32-bit pointer used in 64-bit code in {}", ctx.subsec_ref(isec as usize, off));
+    error!("32-bit pointer used in 64-bit code in {}", raw(&ctx.subsec_ref(isec as usize, off)));
     true
 }
 
@@ -7444,7 +7468,7 @@ pub(crate) fn ensure_stub_binder<E: Target>(ctx: &mut Context<E>) {
     ctx.stub_helper.dyld_stub_binder = Some(id);
     let isec = add_data_word(ctx, 8);
     ctx.stub_helper.dyld_private_isec = isec;
-    ctx.extra_local_syms.push(("__dyld_private", isec));
+    ctx.extra_local_syms.push((b"__dyld_private", isec));
 }
 
 /// Synthesizes a zero word of `size` bytes, aligned to its size, in
@@ -7483,7 +7507,7 @@ pub(crate) fn add_data_word<E: Target>(ctx: &mut Context<E>, size: u32) -> u32 {
 /// Binds dyld_stub_binder to the first loaded dylib that exports it,
 /// unless something in the link defines it.
 fn bind_stub_binder<E: Target>(ctx: &mut Context<E>) -> Option<crate::symbol::SymbolId> {
-    let name = "dyld_stub_binder";
+    let name: &[u8] = b"dyld_stub_binder";
     let dylib = ctx.dylibs.iter().position(|d| d.exports.contains(name))?;
     let id = ctx.symbols.intern(name);
     let sym = &mut ctx.symbols[id];
@@ -7499,7 +7523,7 @@ fn bind_stub_binder<E: Target>(ctx: &mut Context<E>) -> Option<crate::symbol::Sy
 /// Makes dyld_stub_binder a symbol dyld looks up, if the image may look
 /// it up so.
 fn look_up_stub_binder<E: Target>(ctx: &mut Context<E>) -> Option<crate::symbol::SymbolId> {
-    let name = "dyld_stub_binder";
+    let name: &[u8] = b"dyld_stub_binder";
     let args = &ctx.args;
     if !args.undefined_dynamic_lookup && !args.allowed_undefined.iter().any(|n| n == name) {
         return None;
@@ -7524,7 +7548,7 @@ pub fn resolve_stub_binder<E: Target>(ctx: &mut Context<E>) {
     // entries jump to dyld_stub_binding_helper, which crt1.o, dylib1.o
     // or bundle1.o defines; no dylib exports it.
     if ctx.args.legacy_linkedit {
-        let id = ctx.symbols.get("dyld_stub_binding_helper");
+        let id = ctx.symbols.get(b"dyld_stub_binding_helper");
         let id = id.filter(|&id| ctx.symbols[id].input_section().is_some());
         ctx.stub_helper.binding_helper = id;
     } else if ctx.args.lazy_binding {

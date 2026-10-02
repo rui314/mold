@@ -380,7 +380,7 @@ impl<'a, E: Target> Builder<'a, E> {
         let (content_type, _) = self.content_type(ctx.hdr_of(&ctx.isecs[id as usize]));
         let mut entry = OutEntry::new(0, kind::ANON, content_type);
         entry.no_dead_strip = true;
-        for name in ["___dso_handle", "__dyld_lazy_load"] {
+        for name in [&b"___dso_handle"[..], b"__dyld_lazy_load"] {
             if let Some(sym) = ctx.symbols.get(name) {
                 entry.fixups.push(OutFixup::new(0, To::Sym(sym), fk::KEEP_ALIVE, 0));
             }
@@ -492,7 +492,7 @@ impl<'a, E: Target> Builder<'a, E> {
         let (scope, kind) = linkage(ctx, &obj.nlists[label], sym_id);
         let kind = if kind == kind::WEAK_DEF { kind::WEAK_DEF_ALIAS } else { kind::ALIAS };
         let mut alias = OutEntry::new(scope, kind, CT_NONE);
-        alias.name = Some(ctx.symbols[sym_id].name().as_bytes());
+        alias.name = Some(ctx.symbols[sym_id].name());
         let idx = self.push_entry(alias, None);
         self.folded.push((idx, id));
         self.sym_entry.insert(sym_id, To::Entry(idx));
@@ -554,7 +554,7 @@ impl<'a, E: Target> Builder<'a, E> {
             let (scope, kind) = linkage(ctx, &obj.nlists[i], sym_id);
             let kind = if kind == kind::WEAK_DEF { kind::WEAK_DEF_ALIAS } else { kind::ALIAS };
             let mut alias = OutEntry::new(scope, kind, CT_NONE);
-            alias.name = Some(sym.name().as_bytes());
+            alias.name = Some(sym.name());
             alias.dds_if_refs_live = true;
             alias.no_dead_strip = obj.nlists[i].n_desc & N_NO_DEAD_STRIP != 0;
             alias.debug = debug;
@@ -581,7 +581,7 @@ impl<'a, E: Target> Builder<'a, E> {
             }
             let (scope, _) = linkage(ctx, n, sym_id);
             let mut entry = OutEntry::new(scope, kind::ABSOLUTE, CT_DATA);
-            entry.name = Some(sym.name().as_bytes());
+            entry.name = Some(sym.name());
             entry.size = 8;
             entry.p2align = 3;
             entry.content = Content::Pool(Box::leak(Box::new(sym.value.to_le_bytes())));
@@ -610,7 +610,7 @@ impl<'a, E: Target> Builder<'a, E> {
             let isec = &ctx.isecs[isec];
             let scope = if sym.is_private_extern() { scope::HIDDEN } else { scope::GLOBAL };
             let mut entry = OutEntry::new(scope, kind::TENTATIVE_DEF, CT_COMMON);
-            entry.name = Some(sym.name().as_bytes());
+            entry.name = Some(sym.name());
             entry.size = isec.size;
             entry.p2align = isec.p2align;
             entry.debug = debug;
@@ -1024,7 +1024,7 @@ impl<'a, E: Target> Builder<'a, E> {
                     && n.n_value == addr
             });
             if let Some((_, &id)) = label {
-                entry.name = Some(ctx.symbols[id].name().as_bytes());
+                entry.name = Some(ctx.symbols[id].name());
                 entry.scope = 0;
                 entry.kind = kind::REGULAR;
             }
@@ -1160,7 +1160,7 @@ impl<'a, E: Target> Builder<'a, E> {
         let mut syms: Vec<(SymbolId, Option<u8>)> =
             syms.into_iter().map(|id| (id, dep_index(id))).collect();
         syms.sort_by_key(|&(id, dep)| match dep {
-            None => (0, 0, ""),
+            None => (0, 0, &b""[..]),
             Some(dep) => (1, dep, ctx.symbols[id].name()),
         });
         syms
@@ -1293,7 +1293,7 @@ fn named_entry<E: Target>(
     let (scope, kind) = linkage(ctx, &obj.nlists[i], obj.symbols[i]);
     let name = ctx.symbols[obj.symbols[i]].name();
     let mut entry = OutEntry::new(scope, kind, content_type);
-    entry.name = Some(name.as_bytes());
+    entry.name = Some(name);
     entry.cold = obj.nlists[i].n_desc & N_COLD_FUNC != 0;
     entry.no_dead_strip = obj.nlists[i].n_desc & N_NO_DEAD_STRIP != 0;
     if !crate::input_files::is_private_label(name) && crate::chunks::symtab::has_stabs(hdr) {
@@ -1313,14 +1313,14 @@ fn undefine_entries<E: Target>(ctx: &Context<E>, id: SymbolId) -> Vec<OutEntry> 
         kind::UNDEFINE
     };
     let mut entry = OutEntry::new(scope::GLOBAL, kind, CT_NONE);
-    if sym.name() == "___dso_handle" {
+    if sym.name() == b"___dso_handle" {
         entry.name = Some(b"segment$start$__TEXT");
         let mut alias = OutEntry::new(scope::HIDDEN, kind::ALIAS, CT_NONE);
         alias.name = Some(b"___dso_handle");
         alias.fixups.push(OutFixup::new(0, To::Prev, fk::ALIAS_OF, 0));
         return vec![entry, alias];
     }
-    entry.name = Some(sym.name().as_bytes());
+    entry.name = Some(sym.name());
     vec![entry]
 }
 
@@ -1332,7 +1332,7 @@ fn import_entry<E: Target>(ctx: &Context<E>, id: SymbolId, dylib: u8) -> OutEntr
     let weak_def = ctx.dylibs[d as usize].weak_exports.contains(sym.name());
     let kind = if weak_def { kind::DYLIB_EXPORT_WEAK_DEF } else { kind::DYLIB_EXPORT };
     let mut entry = OutEntry::new(scope::GLOBAL, kind, CT_NONE);
-    entry.name = Some(sym.name().as_bytes());
+    entry.name = Some(sym.name());
     entry.import = if sym.is_weak_ref() { 1 } else { 2 };
     entry.dylib = Some(dylib);
     entry

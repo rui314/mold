@@ -19,7 +19,7 @@ pub struct LazyLoadGotSection {
     pub hdr: ChunkHeader,
     /// Each slot's symbol, and the slot's local symbol
     /// (_foo$lazyGOT).
-    pub slots: Vec<(SymbolId, &'static str)>,
+    pub slots: Vec<(SymbolId, &'static [u8])>,
 }
 
 impl LazyLoadGotSection {

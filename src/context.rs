@@ -180,7 +180,7 @@ pub struct Context<E: Target> {
     /// Under -commons error, the first tentative definition a dylib
     /// defines too, as ld-prime reports it once it has found no
     /// duplicate symbol (see passes::check_common_conflicts).
-    pub common_conflict: Option<String>,
+    pub common_conflict: Option<crate::error::Message>,
     /// The dylibs named on the command line that -dead_strip_dylibs
     /// dropped, which ld-prime's -map still lists: their positions
     /// among the inputs and paths.
@@ -201,7 +201,7 @@ pub struct Context<E: Target> {
     /// The symbols the merged mergeable dylibs import, which ld-prime
     /// lists whether or not anything refers to them (see
     /// chunks::symtab's live_refs).
-    pub merged_imports: Vec<&'static str>,
+    pub merged_imports: Vec<&'static [u8]>,
     /// Unwind records from all objects' __compact_unwind sections.
     pub unwind_records: Vec<crate::input_files::UnwindRecord>,
     /// DWARF CIEs and FDEs from all objects' __eh_frame sections.
@@ -263,7 +263,7 @@ pub struct Context<E: Target> {
     /// Local symbols the linker names itself, on synthesized data:
     /// ld64's __OBJC_$_INSTANCE_METHODS_Foo(A|B) on a merged method
     /// list, and the like. (name, subsection).
-    pub extra_local_syms: Vec<(&'static str, u32)>,
+    pub extra_local_syms: Vec<(&'static [u8], u32)>,
     /// The first object (in input order) that claimed a common symbol:
     /// the synthesized __common section takes its place in the section
     /// order from it, as ld64's does.
@@ -295,7 +295,7 @@ pub struct Context<E: Target> {
     pub boundary_syms: Vec<BoundarySym>,
     /// For -why_load: the symbol that made each object live, refreshed
     /// each resolution round.
-    pub why_load: std::collections::HashMap<usize, &'static str>,
+    pub why_load: std::collections::HashMap<usize, &'static [u8]>,
     /// For -why_load: the archives -force_load or -force-l loads whole.
     pub force_loaded: std::collections::HashSet<std::path::PathBuf>,
     /// For -t: every input file as it is loaded, by the path it was
@@ -863,7 +863,7 @@ impl<E: Target> Context<E> {
     /// fixup for the slot (it stays zero), and so do we.
     pub fn is_swift_force_load_ref(&self, id: SymbolId) -> bool {
         let sym = &self.symbols[id];
-        sym.is_imported() && sym.is_weak_ref() && sym.name().starts_with("__swift_FORCE_LOAD_$_")
+        sym.is_imported() && sym.is_weak_ref() && sym.name().starts_with(b"__swift_FORCE_LOAD_$_")
     }
 
     /// True for a definition the image exports that dyld binds the
@@ -889,7 +889,7 @@ impl<E: Target> Context<E> {
         let listed = !args.relocatable
             && !args.without_dyld()
             && !args.is_dylinker()
-            && args.interposable.as_ref().is_some_and(|g| g.find(sym.name().as_bytes()) != -1);
+            && args.interposable.as_ref().is_some_and(|g| g.find(sym.name()) != -1);
         (flat || listed)
             && matches!(sym.file(), Some(FileId::Obj(_)))
             && sym.input_section().is_some()
@@ -1030,8 +1030,8 @@ impl<E: Target> Context<E> {
             && matches!(sym.file(), Some(FileId::Obj(_)))
             && sym.is_extern()
             && !sym.is_private_extern()
-            && (sym.name().starts_with("_OBJC_CLASS_$_")
-                || sym.name().starts_with("_OBJC_METACLASS_$_"))
+            && (sym.name().starts_with(b"_OBJC_CLASS_$_")
+                || sym.name().starts_with(b"_OBJC_METACLASS_$_"))
     }
 
     /// True if `id` has a branch shim (see branch_shims): a stub of a
@@ -1113,7 +1113,7 @@ impl<E: Target> Context<E> {
     /// assembler makes for itself (see input_files::is_private_label)
     /// name none, and but for an ltmpN, one takes the literal's bytes
     /// from a symbol beside it, leaving it unnamed (see subsec_ordinal).
-    pub fn subsec_label(&self, id: usize) -> Option<&'static str> {
+    pub fn subsec_label(&self, id: usize) -> Option<&'static [u8]> {
         let isec = &self.isecs[id];
         let obj = &self.objs[isec.file as usize];
         self.subsec_label_index(id).map(|i| self.symbols[obj.symbols[i]].name())
@@ -1131,7 +1131,7 @@ impl<E: Target> Context<E> {
 
     /// subsec_label of each of `ids`, subsections of object `file`,
     /// found in one pass over the object's symbols rather than one each.
-    pub fn subsec_labels(&self, file: usize, ids: &[usize]) -> Vec<Option<&'static str>> {
+    pub fn subsec_labels(&self, file: usize, ids: &[usize]) -> Vec<Option<&'static [u8]>> {
         let obj = &self.objs[file];
         let mut at_start: hashbrown::HashMap<(u32, u64), Vec<usize>> =
             ids.iter().map(|&id| (label_key(&self.isecs[id]), Vec::new())).collect();
@@ -1163,7 +1163,7 @@ impl<E: Target> Context<E> {
         if merged
             && labels
                 .clone()
-                .any(|(_, _, name)| is_private_label(name) && !name.starts_with("ltmp"))
+                .any(|(_, _, name)| is_private_label(name) && !name.starts_with(b"ltmp"))
         {
             return None;
         }
@@ -1176,10 +1176,10 @@ impl<E: Target> Context<E> {
     /// The name ld-prime gives subsection `id` in a diagnostic: its
     /// label, or else "anon-N" for the object's Nth subsection (see
     /// subsec_ordinal).
-    pub fn subsec_name(&self, id: usize) -> std::borrow::Cow<'static, str> {
+    pub fn subsec_name(&self, id: usize) -> std::borrow::Cow<'static, [u8]> {
         match self.subsec_label(id) {
             Some(name) => name.into(),
-            None => format!("anon-{}", self.subsec_ordinal(id)).into(),
+            None => format!("anon-{}", self.subsec_ordinal(id)).into_bytes().into(),
         }
     }
 
@@ -1216,7 +1216,7 @@ impl<E: Target> Context<E> {
             .filter(|(n, _)| !n.is_stab() && n.n_type() == crate::macho::N_SECT && n.n_sect != 0)
             .filter_map(|(n, &sym)| {
                 let name = self.symbols[sym].name();
-                let order = if name.starts_with("ltmp") {
+                let order = if name.starts_with(b"ltmp") {
                     2
                 } else {
                     crate::input_files::is_private_label(name) as u8
@@ -1317,12 +1317,12 @@ impl<E: Target> Context<E> {
     /// `obj`: by its symbol, or else by the label of the subsection it
     /// points into, if that has one - as for a label an assembler made for
     /// itself on a literal (see literal_label_target).
-    pub fn fixup_target_name(&self, obj: usize, rel: &Reloc) -> &'static str {
+    pub fn fixup_target_name(&self, obj: usize, rel: &Reloc) -> &'static [u8] {
         match self.literal_label_target(obj, rel) {
-            Some(isec) => self.subsec_label(isec).unwrap_or(""),
+            Some(isec) => self.subsec_label(isec).unwrap_or_default(),
             None => match rel.target() {
                 RelocTarget::Sym(idx) => self.symbols[self.objs[obj].symbols[idx as usize]].name(),
-                RelocTarget::Section(idx) => self.subsec_label(idx as usize).unwrap_or(""),
+                RelocTarget::Section(idx) => self.subsec_label(idx as usize).unwrap_or_default(),
             },
         }
     }
@@ -1332,13 +1332,13 @@ impl<E: Target> Context<E> {
     /// dyld may interpose; see branch_target_addr) goes to a subsection
     /// of ld-prime's "stubs-got-file", which has no name, as a GOT slot
     /// hasn't. Any other target is named as by fixup_target_name.
-    pub fn branch_target_name(&self, obj: usize, rel: &Reloc) -> &'static str {
+    pub fn branch_target_name(&self, obj: usize, rel: &Reloc) -> &'static [u8] {
         match self.reloc_target_sym(obj, rel) {
             Some(id)
                 if self.sym_aux(id).stub_idx != crate::symbol::NO_IDX
                     && (self.symbols[id].is_imported() || self.is_interposable(id)) =>
             {
-                ""
+                b""
             }
             _ => self.fixup_target_name(obj, rel),
         }
@@ -1356,14 +1356,15 @@ impl<E: Target> Context<E> {
         &self,
         obj: usize,
         rel: &Reloc,
-    ) -> std::borrow::Cow<'static, str> {
+    ) -> std::borrow::Cow<'static, [u8]> {
         if let Some(class) = self.folded_classref_target(obj, rel) {
-            return format!("anon-{}", self.stubs_got_ordinal(class)).into();
+            return format!("anon-{}", self.stubs_got_ordinal(class)).into_bytes().into();
         }
         if let Some(isec) = self.reloc_target_isec(obj, rel)
             && self.hdr_of(&self.isecs[isec]).sectname() == b"__objc_classrefs"
         {
-            return format!("anon-{}", self.subsec_ordinal(self.resolve_isec(isec))).into();
+            let ordinal = self.subsec_ordinal(self.resolve_isec(isec));
+            return format!("anon-{ordinal}").into_bytes().into();
         }
         match self.literal_label_target(obj, rel) {
             Some(isec) => self.subsec_name(isec),
@@ -1480,6 +1481,7 @@ impl<E: Target> Context<E> {
         let path = crate::passes::resolved_file_name(obj.mf);
         let file = path.rsplit_once('/').map_or(path.as_str(), |(_, leaf)| leaf);
         let name = self.subsec_name(isec);
+        let name = crate::error::raw(&name);
         let osec = self.chunk_header(sec.output_section().unwrap());
         let at = osec.fileoff + sec.offset as u64 + offset as u64;
         if offset == 0 {
@@ -1539,13 +1541,14 @@ impl<E: Target> Context<E> {
     /// Names the place `offset` bytes into subsection `isec` as
     /// ld-prime's other diagnostics do: "'NAME'+0xOFF (path)", with the
     /// object's full path.
-    pub fn subsec_ref(&self, isec: usize, offset: u32) -> String {
+    pub fn subsec_ref(&self, isec: usize, offset: u32) -> crate::error::Message {
         let path = crate::passes::resolved_file_name(self.objs[self.isecs[isec].file as usize].mf);
         let name = self.subsec_name(isec);
+        let name = crate::error::raw(&name);
         if offset == 0 {
-            format!("'{name}' ({path})")
+            crate::error::render(format_args!("'{name}' ({path})"))
         } else {
-            format!("'{name}'+0x{offset:X} ({path})")
+            crate::error::render(format_args!("'{name}'+0x{offset:X} ({path})"))
         }
     }
 }

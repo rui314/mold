@@ -297,7 +297,7 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> Option<ChainedFixups
     buf[12..16].copy_from_slice(&(symbols_offset as u32).to_le_bytes());
     buf.push(0);
     for &(sym, _) in &dynsyms {
-        buf.extend_from_slice(ctx.symbols[sym].name().as_bytes());
+        buf.extend_from_slice(ctx.symbols[sym].name());
         buf.push(0);
     }
     pad(&mut buf, 8);
@@ -637,7 +637,7 @@ pub fn warn_small_pointer_subsec<E: Target>(ctx: &Context<E>, id: u32) {
     crate::warn!(
         "alignment ({}) of atom {} is too small and may result in unaligned pointers ",
         1 << ctx.isecs[id].p2align,
-        subsec_location(ctx, id, None)
+        crate::error::raw(&subsec_location(ctx, id, None))
     );
 }
 
@@ -696,7 +696,8 @@ pub fn report_unaligned_chain_pointer<E: Target>(ctx: &Context<E>) -> bool {
     let Some(&(id, addr)) = ctx.chained_fixups.unaligned.lock().unwrap().first() else {
         return false;
     };
-    crate::error!("pointer not aligned in {}", subsec_location(ctx, id, Some(addr)));
+    let place = subsec_location(ctx, id, Some(addr));
+    crate::error!("pointer not aligned in {}", crate::error::raw(&place));
     true
 }
 
@@ -715,6 +716,7 @@ pub fn report_unaligned_pointers<E: Target>(ctx: &Context<E>) {
             continue;
         }
         let place = subsec_location(ctx, id, Some(addr));
+        let place = crate::error::raw(&place);
         if ctx.args.unaligned_pointers == Treatment::Error {
             crate::error!("pointer not aligned in {place}");
             return;
@@ -736,7 +738,11 @@ fn offset_in_segment<E: Target>(ctx: &Context<E>, addr: u64) -> u64 {
 /// of the subsection, +0xoffset of `addr` in it (if not its start), and
 /// its file's real path in parentheses. A subsection is named by a
 /// symbol at its start, an exported one first.
-fn subsec_location<E: Target>(ctx: &Context<E>, isec: u32, addr: Option<u64>) -> String {
+fn subsec_location<E: Target>(
+    ctx: &Context<E>,
+    isec: u32,
+    addr: Option<u64>,
+) -> crate::error::Message {
     let off = addr.map_or(0, |addr| addr - ctx.isec_addr(isec as usize));
     ctx.subsec_ref(isec as usize, off as u32)
 }

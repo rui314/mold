@@ -48,7 +48,7 @@ impl<E: Target> Builder<'_, E> {
         for list in &ctx.objc_methlist.lists {
             let isec = &ctx.isecs[list.isec];
             let mut entry = OutEntry::new(0, kind::REGULAR, CT_METHOD_LIST);
-            entry.name = names.get(&list.isec).map(|&(s, _)| s.as_bytes());
+            entry.name = names.get(&list.isec).map(|&(s, _)| s);
             entry.size = isec.size;
             entry.p2align = 3;
             entry.content = self.isec_content(isec, ctx.hdr_of(isec));
@@ -95,14 +95,14 @@ impl<E: Target> Builder<'_, E> {
 
     /// The entry of a record category merging wrote (the entries of its
     /// records, if it is a list), named as the record it replaced.
-    fn add_data_blob_entry(&mut self, isec: u32, name: Option<(&'static str, u16)>) {
+    fn add_data_blob_entry(&mut self, isec: u32, name: Option<(&'static [u8], u16)>) {
         let ctx = self.ctx;
         let hdr = ctx.hdr_of(&ctx.isecs[isec]);
         let content_type = standard_content_type(hdr).unwrap_or(CT_DATA);
         let mut entry = match name {
             Some((name, debug)) => {
                 let mut entry = OutEntry::new(0, kind::REGULAR, content_type);
-                entry.name = Some(name.as_bytes());
+                entry.name = Some(name);
                 if crate::chunks::symtab::has_stabs(hdr) {
                     entry.debug = debug;
                 }
@@ -140,12 +140,12 @@ impl<E: Target> Builder<'_, E> {
     /// symbols moved to (a rewritten method list keeps its name), and
     /// those it named itself (a merged list); each with the debug notes
     /// of the object of the symbol.
-    fn synthetic_names(&self) -> HashMap<u32, (&'static str, u16)> {
+    fn synthetic_names(&self) -> HashMap<u32, (&'static [u8], u16)> {
         let ctx = self.ctx;
         let made: HashSet<u32> = (ctx.objc_methlist.lists.iter().map(|l| l.isec))
             .chain(ctx.data_blobs.iter().map(|b| b.isec))
             .collect();
-        let mut names: HashMap<u32, (&'static str, u16)> = HashMap::new();
+        let mut names: HashMap<u32, (&'static [u8], u16)> = HashMap::new();
         if made.is_empty() {
             return names;
         }

@@ -29,20 +29,22 @@ use hashbrown::HashMap;
 use rayon::prelude::*;
 
 use crate::context::Context;
+use crate::error::{Message, raw, render};
 use crate::input_sections::{InputSection, NO_REPLACEMENT, Reloc, RelocTarget};
 use crate::macho::*;
 use crate::symbol::SymbolId;
 use crate::target::{RelocClass, Target};
+use crate::util::split_once;
 
 /// The prefix of the names of the symbols a `dtrace -h` header makes
 /// code refer to. ld-prime takes every undefined symbol whose name
 /// starts with it for one of them, whatever follows.
-const PREFIX: &str = "___dtrace_";
-const PROBE_PREFIX: &str = "___dtrace_probe$";
-const IS_ENABLED_PREFIX: &str = "___dtrace_isenabled$";
+const PREFIX: &[u8] = b"___dtrace_";
+const PROBE_PREFIX: &[u8] = b"___dtrace_probe$";
+const IS_ENABLED_PREFIX: &[u8] = b"___dtrace_isenabled$";
 
 /// Whether an undefined symbol of this name is a DTrace symbol.
-pub fn is_dtrace_symbol(name: &str) -> bool {
+pub fn is_dtrace_symbol(name: &[u8]) -> bool {
     name.starts_with(PREFIX)
 }
 
@@ -58,7 +60,7 @@ pub enum SiteKind {
 /// The kind of site a call of DTrace symbol `name` makes, or None for a
 /// provider's other symbols (its stability and typedefs, or any other
 /// name with the prefix), which no code may call.
-fn site_kind_of(name: &str) -> Option<SiteKind> {
+fn site_kind_of(name: &[u8]) -> Option<SiteKind> {
     if name.starts_with(PROBE_PREFIX) {
         Some(SiteKind::Probe)
     } else if name.starts_with(IS_ENABLED_PREFIX) {
@@ -71,13 +73,13 @@ fn site_kind_of(name: &str) -> Option<SiteKind> {
 /// The provider a DTrace symbol belongs to: for a probe or an is-enabled
 /// test the field after the prefix, for another symbol the one after
 /// its first `$`; empty if the `$` that ends it is missing.
-fn provider_of(name: &str) -> &str {
+fn provider_of(name: &[u8]) -> &[u8] {
     let rest = match site_kind_of(name) {
         Some(SiteKind::Probe) => &name[PROBE_PREFIX.len()..],
         Some(SiteKind::IsEnabled) => &name[IS_ENABLED_PREFIX.len()..],
-        None => name.split_once('$').map_or("", |(_, rest)| rest),
+        None => split_once(name, b'$').map_or(&[][..], |(_, rest)| rest),
     };
-    rest.split_once('$').map_or("", |(provider, _)| provider)
+    split_once(rest, b'$').map_or(&[][..], |(provider, _)| provider)
 }
 
 /// A provider's DOF section, as the link makes it: the subsection with
@@ -87,7 +89,7 @@ fn provider_of(name: &str) -> &str {
 pub struct DofSection {
     pub isec: u32,
     pub sites: Vec<u32>,
-    pub subsec_name: String,
+    pub subsec_name: Vec<u8>,
 }
 
 /// Whether a branch to symbol `sym` from subsection `isec` is a probe
@@ -136,22 +138,25 @@ pub fn create_dof_sections<E: Target>(ctx: &mut Context<E>) {
         return;
     };
     let names = subsec_names(ctx, &sites);
-    let infos: Vec<&str> = (syms.iter())
+    let infos: Vec<&[u8]> = (syms.iter())
         .map(|&id| ctx.symbols[id].name())
         .filter(|&name| site_kind_of(name).is_none())
         .collect();
     let mut taken: Vec<Vec<u8>> = Vec::new();
     for (provider, sites) in sites_by_provider(ctx, &sites) {
-        let mut types: Vec<&str> =
+        let mut types: Vec<&[u8]> =
             infos.iter().copied().filter(|&name| provider_of(name) == provider).collect();
         types.sort_unstable();
-        let probes: Vec<&str> = sites.iter().map(|s| ctx.symbols[s.sym].name()).collect();
-        let functions: Vec<&str> = sites.iter().map(|s| names[&s.isec]).collect();
+        let probes: Vec<&[u8]> = sites.iter().map(|s| ctx.symbols[s.sym].name()).collect();
+        let functions: Vec<&[u8]> = sites.iter().map(|s| names[&s.isec]).collect();
         let dof = match build_dof(&types, &probes, &functions) {
             Ok(dof) => dof,
             // libdtrace's message, then ld-prime's.
             Err(msg) => {
-                crate::error::notice(format_args!("{}", msg.strip_suffix('\n').unwrap_or(&msg)));
+                crate::error::notice(format_args!(
+                    "{}",
+                    raw(msg.strip_suffix(b"\n").unwrap_or(&msg))
+                ));
                 crate::error!("error creating dtrace DOF section");
                 return;
             }
@@ -220,9 +225,9 @@ fn collect_sites<E: Target>(ctx: &Context<E>) -> Option<Vec<Site>> {
 fn sites_by_provider<'a, E: Target>(
     ctx: &Context<E>,
     sites: &'a [Site],
-) -> Vec<(&'static str, Vec<&'a Site>)> {
-    let mut providers: Vec<(&'static str, Vec<&Site>)> = Vec::new();
-    let mut index: HashMap<&str, usize> = HashMap::new();
+) -> Vec<(&'static [u8], Vec<&'a Site>)> {
+    let mut providers: Vec<(&'static [u8], Vec<&Site>)> = Vec::new();
+    let mut index: HashMap<&[u8], usize> = HashMap::new();
     let probes = sites.iter().filter(|s| s.kind == SiteKind::Probe);
     let tests = sites.iter().filter(|s| s.kind == SiteKind::IsEnabled);
     for site in probes.chain(tests) {
@@ -243,14 +248,14 @@ fn sites_by_provider<'a, E: Target>(
 /// goes by as the function it is in: its label (see
 /// Context::subsec_label), or "" if it has none. Each object's symbols
 /// are looked through once.
-fn subsec_names<E: Target>(ctx: &Context<E>, sites: &[Site]) -> HashMap<u32, &'static str> {
+fn subsec_names<E: Target>(ctx: &Context<E>, sites: &[Site]) -> HashMap<u32, &'static [u8]> {
     let mut starts: HashMap<u32, HashMap<(u32, u64), u32>> = HashMap::new();
     for site in sites {
         let isec = &ctx.isecs[site.isec as usize];
         let at = (isec.shndx + 1, isec.input_addr as u64);
         starts.entry(isec.file).or_default().insert(at, site.isec);
     }
-    let mut best: HashMap<u32, (u8, &'static str, usize)> = HashMap::new();
+    let mut best: HashMap<u32, (u8, &'static [u8], usize)> = HashMap::new();
     for (&file, starts) in &starts {
         let obj = &ctx.objs[file as usize];
         for (i, (nlist, &id)) in obj.nlists.iter().zip(&obj.symbols).enumerate() {
@@ -265,15 +270,15 @@ fn subsec_names<E: Target>(ctx: &Context<E>, sites: &[Site]) -> HashMap<u32, &'s
             best.entry(isec).and_modify(|b| *b = (*b).max(key)).or_insert(key);
         }
     }
-    sites.iter().map(|s| (s.isec, best.get(&s.isec).map_or("", |b| b.1))).collect()
+    sites.iter().map(|s| (s.isec, best.get(&s.isec).map_or(&[][..], |b| b.1))).collect()
 }
 
 /// The name of a provider's DOF section: "__dof_" and the provider, cut
 /// to 15 bytes. If an earlier provider's has that name, ld-prime
 /// replaces its last byte with '0', then '1', and so on, until it
 /// finds one free.
-fn section_name(provider: &str, taken: &[Vec<u8>]) -> Vec<u8> {
-    let mut name = format!("__dof_{provider}").into_bytes();
+fn section_name(provider: &[u8], taken: &[Vec<u8>]) -> Vec<u8> {
+    let mut name = [b"__dof_", provider].concat();
     name.truncate(15);
     if taken.contains(&name) {
         *name.last_mut().unwrap() = b'0';
@@ -291,7 +296,7 @@ fn section_name(provider: &str, taken: &[Vec<u8>]) -> Vec<u8> {
 /// site, as ld-prime's fixups are.
 fn add_dof_section<E: Target>(
     ctx: &mut Context<E>,
-    provider: &str,
+    provider: &[u8],
     name: &[u8],
     dof: Dof,
     sites: &[&Site],
@@ -342,7 +347,7 @@ fn add_dof_section<E: Target>(
     ctx.dof_sections.push(DofSection {
         isec: id,
         sites: sites.iter().map(|s| s.isec).collect(),
-        subsec_name: format!("l__dtrace_dof_for_provider_{provider}"),
+        subsec_name: [b"l__dtrace_dof_for_provider_", provider].concat(),
     });
 }
 
@@ -371,20 +376,21 @@ pub struct Dof {
 /// make it: `type_names` are the provider's other symbols, sorted and
 /// without duplicates, and `probe_names` and `functions` the symbol and
 /// the name of the subsection of each site, in the order of the site's
-/// slots. Fails with the text libdtrace prints.
+/// slots. Fails with the text libdtrace prints. The names are bytes, as
+/// any symbol's, which libdtrace takes as they are.
 pub fn build_dof(
-    type_names: &[&str],
-    probe_names: &[&str],
-    functions: &[&str],
-) -> Result<Dof, String> {
+    type_names: &[&[u8]],
+    probe_names: &[&[u8]],
+    functions: &[&[u8]],
+) -> Result<Dof, Message> {
     let (stability, typedefs) = check_type_names(type_names)?;
     // The script declares each probe with the arguments the symbol of
     // its first site gives.
     let mut declared = hashbrown::HashSet::new();
-    let decls: Vec<&str> = (probe_names.iter().copied())
+    let decls: Vec<&[u8]> = (probe_names.iter().copied())
         .filter(|name| {
             let f = fields(name);
-            f[0] == "___dtrace_probe" && declared.insert(f.get(2).copied())
+            f[0] == b"___dtrace_probe" && declared.insert(f.get(2).copied())
         })
         .collect();
     let provider = compile(stability, typedefs, &decls)?;
@@ -394,78 +400,94 @@ pub fn build_dof(
 
 /// The `$`-separated fields of a name as libdtrace reads them: a `$` at
 /// the end starts no field.
-fn fields(name: &str) -> Vec<&str> {
-    name.strip_suffix('$').unwrap_or(name).split('$').collect()
+fn fields(name: &[u8]) -> Vec<&[u8]> {
+    name.strip_suffix(b"$").unwrap_or(name).split(|&c| c == b'$').collect()
 }
 
 /// The stability and the typedefs symbol of a provider among its other
 /// symbols, which must be one of each.
-fn check_type_names<'a>(names: &[&'a str]) -> Result<(&'a str, &'a str), String> {
-    let mut stability: Option<&str> = None;
-    let mut typedefs: Option<&str> = None;
+fn check_type_names<'a>(names: &[&'a [u8]]) -> Result<(&'a [u8], &'a [u8]), Message> {
+    let mut stability: Option<&[u8]> = None;
+    let mut typedefs: Option<&[u8]> = None;
     for &name in names {
-        if name.starts_with("___dtrace_stability") {
+        if name.starts_with(b"___dtrace_stability") {
             match stability {
                 Some(first) if first != name => {
-                    return Err(format!(
+                    let (first, name) = (raw(first), raw(name));
+                    return Err(render(format_args!(
                         "error: Found conflicting dtrace stability info:\n{first}\n{name}\n"
-                    ));
+                    )));
                 }
                 _ => stability = Some(name),
             }
-        } else if name.starts_with("___dtrace_typedefs") {
+        } else if name.starts_with(b"___dtrace_typedefs") {
             match typedefs {
                 Some(first) if first != name => return Err(conflicting_typedefs(first, name)),
                 _ => typedefs = Some(name),
             }
         } else {
-            return Err(format!("error: Found unhandled dtrace typename prefix: {name}\n"));
+            let name = raw(name);
+            return Err(render(format_args!(
+                "error: Found unhandled dtrace typename prefix: {name}\n"
+            )));
         }
     }
     let Some(stability) = stability else {
-        return Err("error: Must have a valid dtrace stability entry\n".into());
+        return Err(b"error: Must have a valid dtrace stability entry\n".to_vec());
     };
     let Some(typedefs) = typedefs else {
-        return Err("error: Must have a a valid dtrace typedefs entry\n".into());
+        return Err(b"error: Must have a a valid dtrace typedefs entry\n".to_vec());
     };
     Ok((stability, typedefs))
 }
 
 /// libdtrace's message for two typedefs symbols of one provider.
-fn conflicting_typedefs(first: &str, name: &str) -> String {
-    let version = |name| fields(name).get(2).copied().unwrap_or("");
-    if version(first) == version(name) {
-        return format!("error: Found conflicting dtrace typedefs info:\n{first}\n{name}\n");
+fn conflicting_typedefs(first: &[u8], name: &[u8]) -> Message {
+    let version = |name| raw(fields(name).get(2).copied().unwrap_or_default());
+    if fields(first).get(2) == fields(name).get(2) {
+        let (first, name) = (raw(first), raw(name));
+        return render(format_args!(
+            "error: Found conflicting dtrace typedefs info:\n{first}\n{name}\n"
+        ));
     }
-    format!(
+    render(format_args!(
         "error: Found dtrace typedefs generated by different versions of dtrace:\n\
-         {first} ({})\n{name} ({})\n\
+         {} ({})\n{} ({})\n\
          Please try regenerating all dtrace created header files with the same version of \
          dtrace before rebuilding your project.\n",
+        raw(first),
         version(first),
+        raw(name),
         version(name)
-    )
+    ))
 }
 
 /// A string of bytes in hex, two digits each, as `dtrace -h` encodes
 /// the argument types and typedef names in the symbol names. libdtrace
 /// reads each pair as strtol does, so a pair ends at a non-digit and an
 /// odd digit at the end is dropped.
-fn unhex(hex: &str) -> String {
+fn unhex(hex: &[u8]) -> Vec<u8> {
     let digit = |c: u8| (c as char).to_digit(16);
-    let bytes: Vec<u8> = (hex.as_bytes().as_chunks::<2>().0.iter())
+    (hex.as_chunks::<2>().0.iter())
         .map(|&[hi, lo]| match (digit(hi), digit(lo)) {
             (Some(hi), Some(lo)) => (hi * 16 + lo) as u8,
             (Some(hi), None) => hi as u8,
             _ => 0,
         })
-        .collect();
-    String::from_utf8_lossy(&bytes).into_owned()
+        .collect()
 }
 
 /// A probe's name as DTrace spells it: each "__" a "-", from the left.
-fn hyphenate(name: &str) -> String {
-    name.replace("__", "-")
+fn hyphenate(name: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(name.len());
+    let mut rest = name;
+    while let Some(i) = memchr::memmem::find(rest, b"__") {
+        out.extend_from_slice(&rest[..i]);
+        out.push(b'-');
+        rest = &rest[i + 2..];
+    }
+    out.extend_from_slice(rest);
+    out
 }
 
 /// D's stability levels and dependency classes, as libdtrace spells
@@ -485,9 +507,9 @@ const DEFAULT_ATTRIBUTES: [u32; 5] = [0x0101_0000; 5];
 /// the DOF holds them), and the D compiler's names for the types of each
 /// probe's arguments, by the probe's name as its symbols spell it.
 struct Provider {
-    name: String,
+    name: Vec<u8>,
     attributes: [u32; 5],
-    args: HashMap<String, Vec<String>>,
+    args: HashMap<Vec<u8>, Vec<String>>,
 }
 
 /// Rebuilds a provider's D script from its stability and typedefs
@@ -496,56 +518,62 @@ struct Provider {
 /// an int: the real type is gone), its probes with the types their
 /// symbols give, and the attributes. Fails with libdtrace's message,
 /// which prints the script, if it doesn't compile.
-fn compile(stability: &str, typedefs: &str, decls: &[&str]) -> Result<Provider, String> {
+fn compile(stability: &[u8], typedefs: &[u8], decls: &[&[u8]]) -> Result<Provider, Message> {
     let (text, user_types) = typedef_lines(typedefs);
-    let mut script = format!("\n{text}");
+    let mut script = [b"\n", &text[..]].concat();
     let mut ok = user_types.is_some();
     let user_types = user_types.unwrap_or_default();
 
     let st = fields(stability);
-    let name = st.get(1).copied().unwrap_or("").to_string();
-    script += &format!("provider {name} {{\n");
+    let name = st.get(1).copied().unwrap_or_default().to_vec();
+    script.extend(render(format_args!("provider {} {{\n", raw(&name))));
     // The digit at the end would be taken for a process ID.
-    ok &= is_identifier(&name) && !name.ends_with(|c: char| c.is_ascii_digit());
+    ok &= is_identifier(&name) && !name.last().is_some_and(u8::is_ascii_digit);
     let mut args = HashMap::new();
     for decl in decls {
         let f = fields(decl);
-        if f.get(3) != Some(&"v1") {
-            script += "Unhandled probe encoding version\n";
+        if f.get(3) != Some(&&b"v1"[..]) {
+            script.extend_from_slice(b"Unhandled probe encoding version\n");
             ok = false;
             continue;
         }
-        let types: Vec<String> = f[4..].iter().map(|hex| unhex(hex)).collect();
-        script += &format!("\tprobe {}({});\n", f[2], types.join(","));
+        let types: Vec<Vec<u8>> = f[4..].iter().map(|hex| unhex(hex)).collect();
+        let (probe, types_text) = (raw(f[2]), types.join(&b','));
+        script.extend(render(format_args!("\tprobe {probe}({});\n", raw(&types_text))));
         match types.iter().map(|t| d_type_name(t, &user_types)).collect() {
             Some(names) => {
-                args.insert(f[2].to_string(), names);
+                args.insert(f[2].to_vec(), names);
             }
             None => ok = false,
         }
     }
-    script += "};\n\n";
+    script.extend_from_slice(b"};\n\n");
 
     let (text, attributes) = stability_pragmas(&st, &name);
-    script += &text;
-    script.push('\n');
+    script.extend(text);
+    script.push(b'\n');
     match attributes {
         Some(attributes) if ok => Ok(Provider { name, attributes, args }),
-        _ => Err(format!("error: Could not compile reconstructed dtrace script:\n{script}")),
+        _ => {
+            Err([&b"error: Could not compile reconstructed dtrace script:\n"[..], &script].concat())
+        }
     }
 }
 
 /// The typedefs of a provider's script, from its typedefs symbol, and
 /// their names, None if they don't compile: each name in the symbol a
 /// typedef of int, then an empty line.
-fn typedef_lines(typedefs: &str) -> (String, Option<Vec<String>>) {
+fn typedef_lines(typedefs: &[u8]) -> (Vec<u8>, Option<Vec<Vec<u8>>>) {
     let fields = fields(typedefs);
-    if !matches!(fields.get(2), Some(&"v1" | &"v2")) {
-        return ("Unhandled typedefs encoding version\n".to_string(), None);
+    if !matches!(fields.get(2).copied(), Some(b"v1" | b"v2")) {
+        return (b"Unhandled typedefs encoding version\n".to_vec(), None);
     }
-    let names: Vec<String> = fields[3..].iter().map(|hex| unhex(hex)).collect();
-    let mut text: String = names.iter().map(|name| format!("typedef int {name};\n")).collect();
-    text.push('\n');
+    let names: Vec<Vec<u8>> = fields[3..].iter().map(|hex| unhex(hex)).collect();
+    let mut text: Vec<u8> = names
+        .iter()
+        .flat_map(|name| render(format_args!("typedef int {};\n", raw(name))))
+        .collect();
+    text.push(b'\n');
     let ok = names.iter().all(|name| is_identifier(name));
     (text, ok.then_some(names))
 }
@@ -556,16 +584,17 @@ fn typedef_lines(typedefs: &str) -> (String, Option<Vec<String>>) {
 /// a level and a class for the provider, module, function, name and
 /// args. Without exactly those 29 bytes libdtrace writes a comment and
 /// D's defaults hold; with another version, nothing compiles.
-fn stability_pragmas(fields: &[&str], provider: &str) -> (String, Option<[u32; 5]>) {
-    if fields.len() != 4 || fields[2] != "v1" {
-        return ("Unhandled stability encoding version\n".to_string(), None);
+fn stability_pragmas(fields: &[&[u8]], provider: &[u8]) -> (Vec<u8>, Option<[u32; 5]>) {
+    if fields.len() != 4 || fields[2] != b"v1" {
+        return (b"Unhandled stability encoding version\n".to_vec(), None);
     }
-    let digits = fields[3].as_bytes();
+    let digits = fields[3];
     if digits.len() != 29 {
-        let comment = "/* Error decoding v1 stability string */\n".to_string();
+        let comment = b"/* Error decoding v1 stability string */\n".to_vec();
         return (comment, Some(DEFAULT_ATTRIBUTES));
     }
-    let mut text = String::new();
+    let provider = raw(provider);
+    let mut text = Vec::new();
     let mut attributes = Some([0; 5]);
     let what = ["provider", "module", "function", "name", "args"];
     for (k, what) in what.iter().enumerate() {
@@ -574,12 +603,12 @@ fn stability_pragmas(fields: &[&str], provider: &str) -> (String, Option<[u32; 5
         let data = STABILITY_LEVELS.get(d(2));
         let class = DEPENDENCY_CLASSES.get(d(4));
         let spell = |s: Option<&&'static str>| *s.unwrap_or(&"ERROR!");
-        text += &format!(
+        text.extend(render(format_args!(
             "#pragma D attributes {}/{}/{} provider {provider} {what}\n",
             spell(name),
             spell(data),
             spell(class)
-        );
+        )));
         match (name, data, class, &mut attributes) {
             (Some(_), Some(_), Some(_), Some(attrs)) => {
                 attrs[k] = (d(0) << 24 | d(2) << 16 | d(4) << 8) as u32;
@@ -587,15 +616,15 @@ fn stability_pragmas(fields: &[&str], provider: &str) -> (String, Option<[u32; 5
             _ => attributes = None,
         }
     }
-    text.push('\n');
+    text.push(b'\n');
     (text, attributes)
 }
 
 /// Whether a name is a C identifier.
-fn is_identifier(name: &str) -> bool {
-    let mut bytes = name.bytes();
-    bytes.next().is_some_and(|c| c.is_ascii_alphabetic() || c == b'_')
-        && bytes.all(|c| c.is_ascii_alphanumeric() || c == b'_')
+fn is_identifier(name: &[u8]) -> bool {
+    let mut bytes = name.iter();
+    bytes.next().is_some_and(|&c| c.is_ascii_alphabetic() || c == b'_')
+        && bytes.all(|&c| c.is_ascii_alphanumeric() || c == b'_')
 }
 
 /// The typedefs D predefines for an LP64 target, and the types they
@@ -667,17 +696,18 @@ const C_POINTER_TYPES: [&str; 3] = ["void", "char", "int"];
 /// declaration, which prints as a struct; a pointer to what is, through
 /// typedefs, void, char or int is that one's pointer, and any other
 /// pointer is named after the type it points to; a function pointer is
-/// int (*)().
-fn d_type_name(spelled: &str, user_types: &[String]) -> Option<String> {
-    let tokens = type_tokens(spelled)?;
+/// int (*)(). A spelling with a byte no type has, UTF-8 or not, is
+/// none.
+fn d_type_name(spelled: &[u8], user_types: &[Vec<u8>]) -> Option<String> {
+    let tokens = type_tokens(std::str::from_utf8(spelled).ok()?)?;
     let (base, resolved, rest) = match tokens.as_slice() {
-        ["struct" | "union" | "enum", tag, rest @ ..] if is_identifier(tag) => {
+        ["struct" | "union" | "enum", tag, rest @ ..] if is_identifier(tag.as_bytes()) => {
             (format!("struct {tag}"), None, rest)
         }
         _ => {
-            let n = tokens.iter().take_while(|t| is_identifier(t)).count();
+            let n = tokens.iter().take_while(|t| is_identifier(t.as_bytes())).count();
             let base = specifiers_name(&tokens[..n])?;
-            let resolved = if user_types.contains(&base) {
+            let resolved = if user_types.iter().any(|t| t == base.as_bytes()) {
                 "int"
             } else if let Some(&(_, t)) = D_TYPEDEFS.iter().find(|(name, _)| *name == base) {
                 t
@@ -771,7 +801,7 @@ fn specifiers_name(specifiers: &[&str]) -> Option<String> {
 /// for the types of its arguments, and the functions it has sites in,
 /// newest first.
 struct Probe {
-    name: String,
+    name: Vec<u8>,
     args: Vec<String>,
     instances: Vec<Instance>,
 }
@@ -794,24 +824,25 @@ struct Instance {
 /// no site is an error. Returns the probes in the DOF's order, by name.
 fn register(
     provider: &Provider,
-    probe_names: &[&str],
-    functions: &[&str],
-) -> Result<Vec<Probe>, String> {
+    probe_names: &[&[u8]],
+    functions: &[&[u8]],
+) -> Result<Vec<Probe>, Message> {
     let mut probes: Vec<Probe> = Vec::new();
-    let mut index: HashMap<String, usize> = HashMap::new();
+    let mut index: HashMap<Vec<u8>, usize> = HashMap::new();
     for (i, (&symbol, &function)) in probe_names.iter().zip(functions).enumerate() {
-        let field = fields(symbol).get(2).copied().unwrap_or("");
+        let field = fields(symbol).get(2).copied().unwrap_or_default();
         let name = hyphenate(field);
         let Some(args) = provider.args.get(field) else {
-            return Err(format!(
-                "error: probe {name} doesn't exist\nerror: Could not register probes\n"
-            ));
+            return Err(render(format_args!(
+                "error: probe {} doesn't exist\nerror: Could not register probes\n",
+                raw(&name)
+            )));
         };
         let k = *index.entry(name.clone()).or_insert_with(|| {
             probes.push(Probe { name, args: args.clone(), instances: Vec::new() });
             probes.len() - 1
         });
-        let function = function.strip_prefix('_').unwrap_or(function).as_bytes();
+        let function = function.strip_prefix(b"_").unwrap_or(function);
         let instances = &mut probes[k].instances;
         let inst = match instances.iter().position(|inst| inst.function == function) {
             Some(j) => &mut instances[j],
@@ -821,7 +852,7 @@ fn register(
                 &mut instances[0]
             }
         };
-        if symbol.starts_with("___dtrace_isenabled") {
+        if symbol.starts_with(b"___dtrace_isenabled") {
             inst.tests.push(i as u32);
         } else {
             inst.sites.push(i as u32);
@@ -874,7 +905,7 @@ impl StringTable {
 fn write_dof(provider: &Provider, probes: &[Probe], nsites: usize) -> Dof {
     let mut strtab = StringTable(vec![0]);
     let tables = ProbeTables::new(probes, &mut strtab);
-    let name = strtab.add(provider.name.as_bytes());
+    let name = strtab.add(&provider.name);
     let (sites, tests) = (tables.sites.clone(), tables.tests.clone());
     let (bytes, offsets) = lay_out_dof(tables.sections(provider, name), &strtab.0);
     let mut slots = vec![0; nsites];
@@ -912,7 +943,7 @@ impl ProbeTables {
             tests: Vec::new(),
         };
         for probe in probes {
-            let name = strtab.add(probe.name.as_bytes());
+            let name = strtab.add(&probe.name);
             let nargv = strtab.0.len() as u32;
             for arg in &probe.args {
                 strtab.add(arg.as_bytes());
@@ -1021,8 +1052,13 @@ fn put_u64s(out: &mut Vec<u8>, vals: &[u64]) {
 mod tests {
     use super::*;
 
-    const STAB: &str = "___dtrace_stability$stab$v1$5_5_4_1_1_0_1_1_0_5_6_5_7_3_2";
-    const TYPEDEFS: &str = "___dtrace_typedefs$stab$v2";
+    const STAB: &[u8] = b"___dtrace_stability$stab$v1$5_5_4_1_1_0_1_1_0_5_6_5_7_3_2";
+    const TYPEDEFS: &[u8] = b"___dtrace_typedefs$stab$v2";
+
+    /// Names as the symbols spell them.
+    fn names<'a>(names: &[&'a str]) -> Vec<&'a [u8]> {
+        names.iter().map(|name| name.as_bytes()).collect()
+    }
 
     fn bytes(hex: &[&str]) -> Vec<u8> {
         let hex = hex.concat();
@@ -1031,24 +1067,25 @@ mod tests {
 
     #[test]
     fn symbol_kinds_and_providers() {
-        assert_eq!(site_kind_of("___dtrace_probe$p$x$v1"), Some(SiteKind::Probe));
-        assert_eq!(site_kind_of("___dtrace_isenabled$p$x$v1"), Some(SiteKind::IsEnabled));
-        assert_eq!(site_kind_of("___dtrace_probe"), None);
-        assert_eq!(provider_of("___dtrace_probe$myapp$x$v1"), "myapp");
-        assert_eq!(provider_of("___dtrace_isenabled$myapp$x$v1"), "myapp");
-        assert_eq!(provider_of(STAB), "stab");
-        assert_eq!(provider_of("___dtrace_probe$noprovider"), "");
-        assert_eq!(provider_of("___dtrace_foo"), "");
-        assert!(is_dtrace_symbol("___dtrace_"));
-        assert!(!is_dtrace_symbol("___dtrace"));
-        assert!(!is_dtrace_symbol("__dtrace_x"));
+        assert_eq!(site_kind_of(b"___dtrace_probe$p$x$v1"), Some(SiteKind::Probe));
+        assert_eq!(site_kind_of(b"___dtrace_isenabled$p$x$v1"), Some(SiteKind::IsEnabled));
+        assert_eq!(site_kind_of(b"___dtrace_probe"), None);
+        assert_eq!(provider_of(b"___dtrace_probe$myapp$x$v1"), b"myapp");
+        assert_eq!(provider_of(b"___dtrace_isenabled$myapp$x$v1"), b"myapp");
+        assert_eq!(provider_of(STAB), b"stab");
+        assert_eq!(provider_of(b"___dtrace_probe$noprovider"), b"");
+        assert_eq!(provider_of(b"___dtrace_foo"), b"");
+        assert!(is_dtrace_symbol(b"___dtrace_"));
+        assert!(!is_dtrace_symbol(b"___dtrace"));
+        assert!(!is_dtrace_symbol(b"__dtrace_x"));
     }
 
     /// A probe with an argument, its provider's attributes set: 7
     /// sections, its one site's slot at 0x154.
     #[test]
     fn dof_of_one_site() {
-        let dof = build_dof(&[STAB, TYPEDEFS], &["___dtrace_probe$stab$x$v1$696e74"], &["_main"]);
+        let probe = names(&["___dtrace_probe$stab$x$v1$696e74"]);
+        let dof = build_dof(&[STAB, TYPEDEFS], &probe, &[b"_main"]);
         let dof = dof.unwrap();
         let expected = bytes(&[
             "7f444f4602010302080800000000000000000000400000002000000007000000",
@@ -1085,7 +1122,7 @@ mod tests {
             "___dtrace_probe$myapp$noargs$v1",
             "___dtrace_isenabled$myapp$request__done$v1",
         ];
-        let dof = build_dof(&types, &probes, &["_main"; 4]).unwrap();
+        let dof = build_dof(&names(&types), &names(&probes), &[&b"_main"[..]; 4]).unwrap();
         let expected = bytes(&[
             "7f444f4602010302080800000000000000000000400000002000000008000000",
             "4000000000000000ba02000000000000ba020000000000000000000000000000",
@@ -1118,7 +1155,7 @@ mod tests {
     /// DOFs have them.
     #[test]
     fn d_type_names() {
-        let user = ["myint_t".to_string(), "foo_t".to_string()];
+        let user = [b"myint_t".to_vec(), b"foo_t".to_vec()];
         let cases = [
             ("unsigned", "unsigned"),
             ("signed", "signed"),
@@ -1161,10 +1198,10 @@ mod tests {
             ("int [4]", "int [4]"),
         ];
         for (spelled, name) in cases {
-            assert_eq!(d_type_name(spelled, &user).as_deref(), Some(name), "{spelled}");
+            assert_eq!(d_type_name(spelled.as_bytes(), &user).as_deref(), Some(name), "{spelled}");
         }
         for spelled in ["bar_t", "unsigned myint_t", "long char", "int int", "*", "int @"] {
-            assert_eq!(d_type_name(spelled, &user), None, "{spelled}");
+            assert_eq!(d_type_name(spelled.as_bytes(), &user), None, "{spelled}");
         }
     }
 
@@ -1174,8 +1211,8 @@ mod tests {
     #[test]
     fn instances() {
         let long = format!("_{}", "x".repeat(130));
-        let probes = ["___dtrace_probe$stab$x$v1"; 5];
-        let functions = ["_fa", "_fb", "_fa", &long, &long];
+        let probes = [&b"___dtrace_probe$stab$x$v1"[..]; 5];
+        let functions = names(&["_fa", "_fb", "_fa", &long, &long]);
         let provider = compile(STAB, TYPEDEFS, &probes[..1]).unwrap();
         let probes = register(&provider, &probes, &functions).unwrap();
         let names: Vec<&[u8]> = probes[0].instances.iter().map(|i| &i.function[..]).collect();
@@ -1196,7 +1233,7 @@ mod tests {
         ];
         let mut taken: Vec<Vec<u8>> = Vec::new();
         for p in providers {
-            let name = section_name(p, &taken);
+            let name = section_name(p.as_bytes(), &taken);
             taken.push(name);
         }
         let names: Vec<&str> = taken.iter().map(|n| std::str::from_utf8(n).unwrap()).collect();
@@ -1213,28 +1250,29 @@ mod tests {
 
     #[test]
     fn errors() {
-        let probe = ["___dtrace_probe$stab$x$v1"];
-        let err = |types: &[&str], probes: &[&str]| {
-            build_dof(types, probes, &vec!["_main"; probes.len()]).unwrap_err()
+        let probe: [&[u8]; 1] = [b"___dtrace_probe$stab$x$v1"];
+        let err = |types: &[&[u8]], probes: &[&[u8]]| {
+            let msg = build_dof(types, probes, &vec![&b"_main"[..]; probes.len()]).unwrap_err();
+            String::from_utf8(msg).unwrap()
         };
         assert_eq!(err(&[TYPEDEFS], &probe), "error: Must have a valid dtrace stability entry\n");
         assert_eq!(err(&[STAB], &probe), "error: Must have a a valid dtrace typedefs entry\n");
         assert_eq!(
-            err(&["___dtrace_foo$stab$", STAB, TYPEDEFS], &probe),
+            err(&[b"___dtrace_foo$stab$", STAB, TYPEDEFS], &probe),
             "error: Found unhandled dtrace typename prefix: ___dtrace_foo$stab$\n"
         );
         assert_eq!(
-            err(&[STAB, TYPEDEFS], &["___dtrace_isenabled$stab$a__b$v1"]),
+            err(&[STAB, TYPEDEFS], &[b"___dtrace_isenabled$stab$a__b$v1"]),
             "error: probe a-b doesn't exist\nerror: Could not register probes\n"
         );
-        let td1 = "___dtrace_typedefs$stab$v1";
+        let td1 = b"___dtrace_typedefs$stab$v1";
         let msg = err(&[STAB, td1, TYPEDEFS], &probe);
         assert!(
             msg.contains("\n___dtrace_typedefs$stab$v1 (v1)\n___dtrace_typedefs$stab$v2 (v2)\n")
         );
 
         // A D script that doesn't compile is printed.
-        let msg = err(&[STAB, TYPEDEFS], &["___dtrace_probe$stab$x$v1$666f6f5f74"]);
+        let msg = err(&[STAB, TYPEDEFS], &[b"___dtrace_probe$stab$x$v1$666f6f5f74"]);
         assert!(msg.starts_with(
             "error: Could not compile reconstructed dtrace script:\n\n\nprovider stab {\n\
              \tprobe x(foo_t);\n};\n\n\
@@ -1243,7 +1281,7 @@ mod tests {
         assert!(msg.ends_with("STANDARD/EXTERNAL/PLATFORM provider stab args\n\n\n"));
 
         // A stability string of another length leaves D's defaults.
-        let short = "___dtrace_stability$stab$v1$1_1_0";
-        assert!(build_dof(&[short, TYPEDEFS], &probe, &["_main"]).is_ok());
+        let short = b"___dtrace_stability$stab$v1$1_1_0";
+        assert!(build_dof(&[short, TYPEDEFS], &probe, &[b"_main"]).is_ok());
     }
 }

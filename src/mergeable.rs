@@ -256,8 +256,8 @@ pub struct MergeableRecord {
 pub struct Dependency {
     pub path: std::path::PathBuf,
     pub info: DylibInfo,
-    pub exports: Vec<&'static str>,
-    pub weak_exports: Vec<&'static str>,
+    pub exports: Vec<&'static [u8]>,
+    pub weak_exports: Vec<&'static [u8]>,
 }
 
 /// A mergeable dylib merged into the image: its install name, the OS
@@ -275,14 +275,6 @@ pub(crate) const FLAG_HAS_OBJC_INFO: u64 = 1 << 26;
 pub(crate) const FLAG_SIGNED_CLASS_RO: u64 = 1 << 28;
 pub(crate) const FLAG_CATEGORY_CLASS_PROPERTIES: u64 = 1 << 29;
 pub(crate) const FLAG_HAS_SWIFT_OR_OBJC: u64 = 1 << 30;
-
-/// A symbol name as the linker keeps one.
-fn symbol_str(name: &'static [u8]) -> &'static str {
-    match std::str::from_utf8(name) {
-        Ok(s) => s,
-        Err(_) => String::from_utf8_lossy(name).into_owned().leak(),
-    }
-}
 
 fn read16(data: &[u8], off: usize) -> u16 {
     u16::from_le_bytes(data[off..off + 2].try_into().unwrap())
@@ -434,7 +426,6 @@ impl MergeableRecord {
             .collect();
         for entry in &self.entries {
             let (Some(dylib), Some(name)) = (entry.dylib, entry.name) else { continue };
-            let name = symbol_str(name);
             deps[dylib].exports.push(name);
             if entry.kind == kind::DYLIB_EXPORT_WEAK_DEF {
                 deps[dylib].weak_exports.push(name);
@@ -1518,7 +1509,7 @@ impl<E: Target> Synth<'_, E> {
     /// a tentative definition's N_GSYM, last.
     fn symbol_stabs(&self, i: usize, strtab: &mut Strtab) -> Option<(u64, Vec<NList>)> {
         let sym = &self.symbols[self.sym_of[i]?];
-        if crate::input_files::is_private_label(symbol_str_lossy(&sym.name)) {
+        if crate::input_files::is_private_label(&sym.name) {
             return None;
         }
         let entry =
@@ -1747,11 +1738,6 @@ struct SymbolTable {
     /// The locals and the debug notes.
     nlocal: usize,
     nextdef: usize,
-}
-
-/// A name as the linker's labels are checked (see symbol_str).
-fn symbol_str_lossy(name: &[u8]) -> &str {
-    std::str::from_utf8(name).unwrap_or("")
 }
 
 /// Whether ld-prime notes the symbols of a section.

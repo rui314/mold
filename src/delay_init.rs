@@ -15,6 +15,7 @@ use crate::input_files::{self, FileId};
 use crate::macho::*;
 use crate::symbol::{NO_IDX, SymbolId};
 use crate::target::{LazyRef, Target};
+use crate::util::leak_bytes;
 
 /// A reference to a delay-init dylib's symbol: the subsection, the
 /// relocation's offset in it, the symbol, and how it refers to it.
@@ -46,7 +47,7 @@ pub fn create_delay_init<E: Target>(ctx: &mut Context<E>) {
     create_delay_helpers(ctx, &uses, &dlopen_of);
 
     // The dlopen helpers call _dlopen through its stub.
-    if let Some(id) = ctx.symbols.get("_dlopen") {
+    if let Some(id) = ctx.symbols.get(b"_dlopen") {
         crate::passes::add_stub(ctx, id);
         if ctx.args.lazy_binding {
             crate::passes::ensure_stub_binder(ctx);
@@ -84,21 +85,25 @@ fn delay_uses<E: Target>(ctx: &Context<E>) -> Vec<DelayUseSite> {
         let sec = &ctx.isecs[isec as usize];
         let hdr = ctx.hdr_of(sec);
         if hdr.sectname() == b"__objc_classrefs"
-            && let Some(class) = sym.name().strip_prefix("_OBJC_CLASS_$_")
+            && let Some(class) = sym.name().strip_prefix(b"_OBJC_CLASS_$_")
         {
             let file = crate::passes::resolved_file_name(ctx.objs[sec.file as usize].mf);
-            errors.push(format!(
+            let class = crate::error::raw(class);
+            errors.push(crate::error::render(format_args!(
                 "use of ObjC class '{class}' in '{file}' cannot be delayed when targeting an older OS versions"
-            ));
+            )));
             continue;
         }
         let split = ctx.objs[sec.file as usize].subsections_via_symbols;
         let subsec = if input_files::is_record_list(hdr, split) {
-            "anon".into()
+            b"anon"[..].into()
         } else {
             ctx.subsec_name(isec as usize)
         };
-        errors.push(format!("{kind} use of '{sym}' in '{subsec}' cannot be delayed."));
+        let subsec = crate::error::raw(&subsec);
+        errors.push(crate::error::render(format_args!(
+            "{kind} use of '{sym}' in '{subsec}' cannot be delayed."
+        )));
     }
     crate::error::errors_together(&errors);
     crate::error::checkpoint();
@@ -136,9 +141,8 @@ fn create_dlopen_helpers<E: Target>(
     let mut dlopen_of = hashbrown::HashMap::new();
     for (i, install_name) in names.into_iter().enumerate() {
         let leaf = install_name.rsplit(|&c| c == b'/').next().unwrap_or(&install_name);
-        let leaf = String::from_utf8_lossy(leaf);
-        let name: &str = String::leak(format!("_dlopenHelper${leaf}"));
-        let flag_name: &str = String::leak(format!("_dlopenHelperFlag${leaf}"));
+        let name = leak_bytes([b"_dlopenHelper$", leaf].concat());
+        let flag_name = leak_bytes([b"_dlopenHelperFlag$", leaf].concat());
         let flag = crate::passes::add_data_word(ctx, 4);
         ctx.extra_local_syms.push((flag_name, flag));
         let string = add_cstring(ctx, &install_name);
@@ -243,7 +247,7 @@ fn create_delay_stubs<E: Target>(
         };
         ctx.sym_aux_mut(id).delay_stub_idx = i as u32;
         let dlopen = dlopen_of[dlopen_name(ctx, id)];
-        let name = String::leak(format!("{}$delayInitStub", ctx.symbols[id].name()));
+        let name = leak_bytes([ctx.symbols[id].name(), b"$delayInitStub"].concat());
         ctx.delay_init.stubs.push(DelayStub { sym: id, name, dlopen, got });
     }
 }
@@ -273,17 +277,21 @@ fn create_delay_helpers<E: Target>(
         let i = *index.entry((id, kind)).or_insert_with(|| {
             let sym = ctx.symbols[id].name();
             let name = match kind {
-                DelayUse::Cmp => format!("{sym}$cmpHelper"),
+                DelayUse::Cmp => [sym, b"$cmpHelper"].concat(),
                 DelayUse::Load { reg, site: None } => {
-                    format!("{sym}$loadHelper_{}", E::lazy_register_name(reg))
+                    [sym, b"$loadHelper_", E::lazy_register_name(reg).as_bytes()].concat()
                 }
-                DelayUse::Load { reg, site: Some(_) } => format!(
-                    "{sym}$loadHelper_{}$for${}+{offset}",
-                    E::lazy_register_name(reg),
-                    ctx.subsec_name(isec as usize)
-                ),
+                DelayUse::Load { reg, site: Some(_) } => [
+                    sym,
+                    b"$loadHelper_",
+                    E::lazy_register_name(reg).as_bytes(),
+                    b"$for$",
+                    &ctx.subsec_name(isec as usize),
+                    format!("+{offset}").as_bytes(),
+                ]
+                .concat(),
             };
-            let name = String::leak(name);
+            let name = leak_bytes(name);
             let dlopen = dlopen_of[dlopen_name(ctx, id)];
             helpers.push(DelayHelper { sym: id, kind, name, dlopen, offset: 0 });
             helpers.len() - 1

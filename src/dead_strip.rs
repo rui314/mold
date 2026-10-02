@@ -226,7 +226,7 @@ fn collect_root_set<E: Target>(
     // bind lazily, whether any stub needs it or not.
     if ctx.args.legacy_linkedit
         && ctx.args.lazy_binding
-        && let Some(id) = ctx.symbols.get("dyld_stub_binding_helper")
+        && let Some(id) = ctx.symbols.get(b"dyld_stub_binding_helper")
         && let Some(isec) = ctx.symbols[id].input_section()
     {
         enqueue(isec as usize);
@@ -302,7 +302,7 @@ pub fn exported_before_lto<E: Target>(ctx: &Context<E>, sym: &Symbol, hidable: b
     if !sym.is_extern() || !matches!(sym.file(), Some(FileId::Obj(_))) {
         return false;
     }
-    let name = sym.name().as_bytes();
+    let name = sym.name();
     if let Some(exported) = &ctx.args.exported_symbols {
         return exported.find(name) != -1;
     }
@@ -316,11 +316,10 @@ pub fn exported_before_lto<E: Target>(ctx: &Context<E>, sym: &Symbol, hidable: b
 /// dylib or bundle, and of an executable those an export list names, or
 /// all its globals with -export_dynamic (but not a -preload image's,
 /// which ld-prime still strips).
-pub fn keeps_export<E: Target>(ctx: &Context<E>, name: &str) -> bool {
+pub fn keeps_export<E: Target>(ctx: &Context<E>, name: &[u8]) -> bool {
     ctx.args.output_type != MH_EXECUTE
         || (ctx.args.export_dynamic && !ctx.args.preload)
-        || (ctx.args.exported_symbols.as_ref())
-            .is_some_and(|exported| exported.find(name.as_bytes()) != -1)
+        || (ctx.args.exported_symbols.as_ref()).is_some_and(|exported| exported.find(name) != -1)
 }
 
 /// Calls `f` with each subsection that subsection `id` references:
@@ -578,21 +577,21 @@ enum Node {
     Isec(usize),
     Label(SymbolId),
     Import(SymbolId),
-    Boundary(&'static str),
+    Boundary(&'static [u8]),
     Dof(usize),
     Dtrace(SymbolId),
 }
 
 /// The names of the mach header, which ld-prime's boundary-file defines
 /// as nodes that reference the start of __TEXT (itself a node there).
-pub const HEADER_NAMES: [&str; 5] = [
-    "__mh_execute_header",
-    "__mh_dylib_header",
-    "__mh_bundle_header",
-    "__mh_dylinker_header",
-    "___dso_handle",
+pub const HEADER_NAMES: [&[u8]; 5] = [
+    b"__mh_execute_header",
+    b"__mh_dylib_header",
+    b"__mh_bundle_header",
+    b"__mh_dylinker_header",
+    b"___dso_handle",
 ];
-const TEXT_START: &str = "segment$start$__TEXT";
+const TEXT_START: &[u8] = b"segment$start$__TEXT";
 
 /// A step of the walk: a node, what it references, how many of those
 /// have been followed, and whether reports are off (see walk_from).
@@ -627,7 +626,7 @@ struct WhyLive<'a, E: Target> {
     labels: HashMap<usize, Vec<SymbolId>>,
     /// The label and import nodes reached so far.
     live_syms: HashSet<SymbolId>,
-    live_boundaries: HashSet<&'static str>,
+    live_boundaries: HashSet<&'static [u8]>,
     /// The file each import a dylib merged from a library it re-exports
     /// comes from (libSystem's from its libsystem_* stubs).
     providers: HashMap<SymbolId, &'a std::path::Path>,
@@ -640,7 +639,7 @@ impl<'a, E: Target> WhyLive<'a, E> {
         let mut labels: HashMap<usize, Vec<SymbolId>> = HashMap::new();
         // A name at the start: an extern one first, an assembler label
         // last.
-        let rank = |sym: &Symbol| (sym.name().starts_with("ltmp"), !sym.is_extern());
+        let rank = |sym: &Symbol| (sym.name().starts_with(b"ltmp"), !sym.is_extern());
         for (id, sym) in ctx.symbols.syms.iter().enumerate() {
             let id = id as SymbolId;
             let Some(isec) = sym.input_section().map(|i| redirects[i as usize]) else {
@@ -664,7 +663,7 @@ impl<'a, E: Target> WhyLive<'a, E> {
             syms.retain(|&id| Some(id) != names[isec]);
             syms.sort_by_key(|&id| (ctx.symbols[id].value, rank(&ctx.symbols[id]).0));
         }
-        let mut by_name: HashMap<&str, &std::path::Path> = HashMap::new();
+        let mut by_name: HashMap<&[u8], &std::path::Path> = HashMap::new();
         for dylib in &ctx.dylibs {
             for file in &dylib.merged_files {
                 for &name in &file.exports {
@@ -836,17 +835,17 @@ impl<'a, E: Target> WhyLive<'a, E> {
     /// Prints the chain that reaches a node if the node matches.
     fn report(&self, node: Node, stack: &[Frame], why: Option<Root>) {
         let Some(name) = self.name(node, false) else { return };
-        if self.ctx.args.why_live.find(name.as_bytes()) == -1 {
+        if self.ctx.args.why_live.find(name) == -1 {
             return;
         }
-        crate::error::notice(format_args!("{}", raw(&self.describe(node, name.as_bytes()))));
+        crate::error::notice(format_args!("{}", raw(&self.describe(node, name))));
         if let Some(why) = why {
             crate::error::notice(format_args!("  {}", why.name()));
         }
         for (depth, frame) in stack.iter().rev().enumerate() {
             let referrer = frame.node;
             let name = match self.name(referrer, true) {
-                Some(name) => name.as_bytes().to_vec(),
+                Some(name) => name.to_vec(),
                 None => self.section_name(referrer),
             };
             crate::error::notice(format_args!(
@@ -861,12 +860,12 @@ impl<'a, E: Target> WhyLive<'a, E> {
     /// A node's name, if it has one, as a match or in a chain: an
     /// initializer pointer is a "mod-init-ptr" there, and an assembler
     /// label that is a node of its own "none". Literals have none.
-    fn name(&self, node: Node, in_chain: bool) -> Option<&str> {
+    fn name(&self, node: Node, in_chain: bool) -> Option<&[u8]> {
         let ctx = self.ctx;
         match node {
             Node::Label(sym) => {
                 let name = ctx.symbols[sym].name();
-                Some(if in_chain && name.starts_with("ltmp") { "none" } else { name })
+                Some(if in_chain && name.starts_with(b"ltmp") { b"none" } else { name })
             }
             Node::Import(sym) | Node::Dtrace(sym) => Some(ctx.symbols[sym].name()),
             Node::Boundary(name) => Some(name),
@@ -874,7 +873,7 @@ impl<'a, E: Target> WhyLive<'a, E> {
             Node::Isec(id) => {
                 let hdr = ctx.hdr_of(&ctx.isecs[id]);
                 if in_chain && hdr.section_type() == S_MOD_INIT_FUNC_POINTERS {
-                    return Some("mod-init-ptr");
+                    return Some(b"mod-init-ptr");
                 }
                 if is_literal_section(hdr) {
                     return None;

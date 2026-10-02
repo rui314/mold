@@ -20,7 +20,7 @@ use crate::target::Target;
 pub struct DelayStub {
     pub sym: SymbolId,
     /// The stub's local symbol.
-    pub name: &'static str,
+    pub name: &'static [u8],
     /// The dlopen helper of the symbol's dylib (an index into
     /// DelayInit::dlopens), and the stub's __got slot.
     pub dlopen: u32,
@@ -74,7 +74,7 @@ pub struct DelayHelper {
     pub sym: SymbolId,
     pub kind: DelayUse,
     /// The helper's local symbol, as ld-prime names it.
-    pub name: &'static str,
+    pub name: &'static [u8],
     pub dlopen: u32,
     /// Where the helper lies in __delay_helper.
     pub offset: u32,
@@ -88,8 +88,8 @@ pub struct DelayHelper {
 pub struct DlopenHelper {
     pub install_name: Vec<u8>,
     /// The helper's local symbol and its flag's.
-    pub name: &'static str,
-    pub flag_name: &'static str,
+    pub name: &'static [u8],
+    pub flag_name: &'static [u8],
     /// The subsections of the flag and of the install name's C string
     /// in __cstring.
     pub flag: u32,

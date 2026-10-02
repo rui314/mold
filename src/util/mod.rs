@@ -45,18 +45,17 @@ pub fn sign_extend(value: u64, n: u32) -> i64 {
     ((value << (64 - n)) as i64) >> (64 - n)
 }
 
-/// A sort key that orders strings like the strings themselves but
+/// A sort key that orders byte strings like the strings themselves but
 /// settles most comparisons on one integer: the first eight bytes,
 /// big-endian, zero-padded. Symbol names cannot contain NULs, so
 /// (prefix, name) order equals plain name order. Mach-O sorts its
 /// global symbols and export-trie input by name (ELF mold never
 /// name-sorts), and mangled names share long prefixes, which makes
-/// plain str comparison the sort's bottleneck.
-pub fn name_sort_key(name: &str) -> (u64, &str) {
-    let b = name.as_bytes();
+/// plain slice comparison the sort's bottleneck.
+pub fn name_sort_key(name: &[u8]) -> (u64, &[u8]) {
     let mut p = [0u8; 8];
-    let n = b.len().min(8);
-    p[..n].copy_from_slice(&b[..n]);
+    let n = name.len().min(8);
+    p[..n].copy_from_slice(&name[..n]);
     (u64::from_be_bytes(p), name)
 }
 
@@ -97,6 +96,13 @@ pub fn os_str(bytes: &[u8]) -> &std::ffi::OsStr {
 /// hold them.
 pub fn path_bytes(path: &std::path::Path) -> &[u8] {
     std::os::unix::ffi::OsStrExt::as_bytes(path.as_os_str())
+}
+
+/// Splits a byte string at the first `sep`, as str::split_once does a
+/// string.
+pub fn split_once(bytes: &[u8], sep: u8) -> Option<(&[u8], &[u8])> {
+    let i = memchr::memchr(sep, bytes)?;
+    Some((&bytes[..i], &bytes[i + 1..]))
 }
 
 /// Leaks a byte string for the rest of the process's lifetime: names

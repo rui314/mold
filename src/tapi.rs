@@ -20,28 +20,30 @@ use crate::fatal;
 use crate::macho::*;
 use crate::mapped_file::MappedFile;
 
+/// A stub's names are text, as TAPI reads only UTF-8, but the linker
+/// takes them as the bytes they are, as it does any other name.
 #[derive(Debug, Default, Clone)]
 pub struct TbdFile {
-    pub install_name: String,
+    pub install_name: &'static [u8],
     pub current_version: u32,
     /// The compatibility version (1.0.0 when the stub gives none), for
     /// the client's LC_LOAD_DYLIB.
     pub compatibility_version: u32,
-    pub exports: Vec<&'static str>,
-    pub weak_exports: Vec<&'static str>,
+    pub exports: Vec<&'static [u8]>,
+    pub weak_exports: Vec<&'static [u8]>,
     /// Exports that are thread-local variables (listed separately in
     /// .tbd files; a TLV can only be referenced through TLV
     /// relocations).
-    pub tlv_exports: Vec<&'static str>,
+    pub tlv_exports: Vec<&'static [u8]>,
     /// The umbrella the library belongs to (parent-umbrella), and the
     /// clients it lets link it directly (allowable-clients).
-    pub parent_umbrella: Option<&'static str>,
-    pub allowable_clients: Vec<&'static str>,
+    pub parent_umbrella: Option<&'static [u8]>,
+    pub allowable_clients: Vec<&'static [u8]>,
     /// Install names of the libraries this one re-exports: documents
     /// inlined in the same file and libraries in files of their own
     /// alike. An inlined document no document lists is not one: ld-prime
     /// leaves its symbols undefined.
-    pub reexports: Vec<&'static str>,
+    pub reexports: Vec<&'static [u8]>,
     /// The file's other documents - the re-exported libraries tapi
     /// inlined - each parsed on its own. The linker decides per
     /// library whether it loads as a dylib in its own right (a public
@@ -58,7 +60,7 @@ pub struct TbdFile {
 
 impl TbdFile {
     /// The inlined document for a re-exported library, by install name.
-    pub fn document(&self, install_name: &str) -> Option<&Self> {
+    pub fn document(&self, install_name: &[u8]) -> Option<&Self> {
         self.documents.iter().find(|d| d.install_name == install_name)
     }
 }
@@ -87,12 +89,18 @@ fn integer(v: &Value) -> Option<i64> {
 /// exception type too. tapi has a class listed for its exception type
 /// alone (objc-eh-types, objc_eh_type) export all three: ld-prime links
 /// _OBJC_CLASS_$_Foo against such a stub.
-fn push_objc_class(exports: &mut Vec<&'static str>, name: &str, eh_type: bool) {
-    exports.push(String::leak(format!("_OBJC_CLASS_$_{name}")));
-    exports.push(String::leak(format!("_OBJC_METACLASS_$_{name}")));
+fn push_objc_class(exports: &mut Vec<&'static [u8]>, name: &str, eh_type: bool) {
+    exports.push(leak_name("_OBJC_CLASS_$_", name));
+    exports.push(leak_name("_OBJC_METACLASS_$_", name));
     if eh_type {
-        exports.push(String::leak(format!("_OBJC_EHTYPE_$_{name}")));
+        exports.push(leak_name("_OBJC_EHTYPE_$_", name));
     }
+}
+
+/// A symbol name a stub spells as a prefix and a name, which the link
+/// keeps to its end.
+fn leak_name(prefix: &str, name: &str) -> &'static [u8] {
+    crate::util::leak_bytes([prefix.as_bytes(), name.as_bytes()].concat())
 }
 
 /// Parses a TBD v5 file: JSON with a "main_library" object and, for
@@ -139,9 +147,9 @@ fn parse_json(
             for group in list(lib, key).iter().filter(|g| applies(g, target)) {
                 for section in ["data", "text"] {
                     let Some(kinds) = group.get(section) else { continue };
-                    tbd.exports.extend(strs(kinds, "global"));
-                    tbd.weak_exports.extend(strs(kinds, "weak"));
-                    tbd.tlv_exports.extend(strs(kinds, "thread_local"));
+                    tbd.exports.extend(strs(kinds, "global").map(str::as_bytes));
+                    tbd.weak_exports.extend(strs(kinds, "weak").map(str::as_bytes));
+                    tbd.tlv_exports.extend(strs(kinds, "thread_local").map(str::as_bytes));
                     for name in strs(kinds, "objc_class") {
                         push_objc_class(&mut tbd.exports, name, false);
                     }
@@ -149,7 +157,7 @@ fn parse_json(
                         push_objc_class(&mut tbd.exports, name, true);
                     }
                     for name in strs(kinds, "objc_ivar") {
-                        tbd.exports.push(String::leak(format!("_OBJC_IVAR_$_{name}")));
+                        tbd.exports.push(leak_name("_OBJC_IVAR_$_", name));
                     }
                 }
             }
@@ -173,7 +181,7 @@ fn parse_json(
         // of their lists, whatever its targets.
         let first = |key: &str, field: &str| list(lib, key).first()?.get(field)?.as_str();
         if let Some(s) = first("install_names", "name") {
-            tbd.install_name = s.to_string();
+            tbd.install_name = s.as_bytes();
         }
         if let Some(s) = first("current_versions", "version") {
             tbd.current_version = packed_version(s).unwrap();
@@ -190,17 +198,18 @@ fn parse_json(
         }
         for group in list(lib, "parent_umbrellas") {
             if applies(group, target) {
-                tbd.parent_umbrella = group.get("umbrella").and_then(Value::as_str);
+                tbd.parent_umbrella =
+                    group.get("umbrella").and_then(Value::as_str).map(str::as_bytes);
             }
         }
         for group in list(lib, "allowable_clients") {
             if applies(group, target) {
-                tbd.allowable_clients.extend(strs(group, "clients"));
+                tbd.allowable_clients.extend(strs(group, "clients").map(str::as_bytes));
             }
         }
         add_symbols(&mut tbd, lib);
         for group in list(lib, "reexported_libraries").iter().filter(|g| applies(g, target)) {
-            for name in strs(group, "names") {
+            for name in strs(group, "names").map(str::as_bytes) {
                 if !tbd.reexports.contains(&name) {
                     tbd.reexports.push(name);
                 }
@@ -472,7 +481,7 @@ pub fn parse(mf: &MappedFile, arch: &'static str, platform: u32) -> Option<TbdFi
                 active = doc_active && yaml_matches(fields[i..end].iter(), target);
             }
             if field.key == "install-name" {
-                tbd.install_name = unquote(field.value).to_string();
+                tbd.install_name = unquote(field.value).as_bytes();
             }
             if !active || section == "undefineds" {
                 continue;
@@ -488,17 +497,19 @@ pub fn parse(mf: &MappedFile, arch: &'static str, platform: u32) -> Option<TbdFi
                 // Version 4 lists them per target group ("umbrella:",
                 // "clients:"), older versions directly.
                 "parent-umbrella" | "umbrella" if !field.value.is_empty() => {
-                    tbd.parent_umbrella = Some(unquote(field.value));
+                    tbd.parent_umbrella = Some(unquote(field.value).as_bytes());
                 }
                 // Version 1 spells it allowed-clients.
                 "allowable-clients" | "allowed-clients" | "clients" => {
-                    tbd.allowable_clients.extend(field.items())
+                    tbd.allowable_clients.extend(field.items().map(str::as_bytes))
                 }
-                "symbols" => tbd.exports.extend(field.items()),
-                "weak-symbols" | "weak-def-symbols" => tbd.weak_exports.extend(field.items()),
-                "thread-local-symbols" => tbd.tlv_exports.extend(field.items()),
+                "symbols" => tbd.exports.extend(field.items().map(str::as_bytes)),
+                "weak-symbols" | "weak-def-symbols" => {
+                    tbd.weak_exports.extend(field.items().map(str::as_bytes))
+                }
+                "thread-local-symbols" => tbd.tlv_exports.extend(field.items().map(str::as_bytes)),
                 "libraries" | "re-exports" => {
-                    for name in field.items() {
+                    for name in field.items().map(str::as_bytes) {
                         if !tbd.reexports.contains(&name) {
                             tbd.reexports.push(name);
                         }
@@ -516,7 +527,7 @@ pub fn parse(mf: &MappedFile, arch: &'static str, platform: u32) -> Option<TbdFi
                 }
                 "objc-ivars" => {
                     for item in field.items() {
-                        tbd.exports.push(String::leak(format!("_OBJC_IVAR_$_{item}")));
+                        tbd.exports.push(leak_name("_OBJC_IVAR_$_", item));
                     }
                 }
                 _ => {}
@@ -1196,6 +1207,11 @@ fn select_arch<'a>(arch: &'a str, available: impl Iterator<Item = &'a str>) -> &
 mod tests {
     use super::*;
 
+    /// A stub's names as text, to compare.
+    fn strs<'a>(names: &[&'a [u8]]) -> Vec<&'a str> {
+        names.iter().map(|name| std::str::from_utf8(name).unwrap()).collect()
+    }
+
     fn mapped(text: &'static str) -> &'static MappedFile {
         Box::leak(Box::new(MappedFile {
             name: std::path::PathBuf::from("test.tbd"),
@@ -1247,12 +1263,12 @@ reexported-libraries:
 "#,
         );
         let arm = parse_cached(mf, "arm64", PLATFORM_MACOS).unwrap();
-        assert_eq!(arm.exports, ["_arm", "_OBJC_CLASS_$_Arm", "_OBJC_METACLASS_$_Arm"]);
-        assert_eq!(arm.weak_exports, ["_weak_arm"]);
-        assert_eq!(arm.tlv_exports, ["_tls_arm"]);
-        assert_eq!(arm.reexports, ["/arm"]);
+        assert_eq!(strs(&arm.exports), ["_arm", "_OBJC_CLASS_$_Arm", "_OBJC_METACLASS_$_Arm"]);
+        assert_eq!(strs(&arm.weak_exports), ["_weak_arm"]);
+        assert_eq!(strs(&arm.tlv_exports), ["_tls_arm"]);
+        assert_eq!(strs(&arm.reexports), ["/arm"]);
         let x86 = parse_cached(mf, "x86_64", PLATFORM_MACOS).unwrap();
-        assert_eq!(x86.exports, ["_x86"]);
+        assert_eq!(strs(&x86.exports), ["_x86"]);
         assert!(x86.weak_exports.is_empty());
         assert!(x86.tlv_exports.is_empty());
         assert!(x86.reexports.is_empty());
@@ -1280,9 +1296,9 @@ exports:
 "#,
         );
         let tbd = parse(mf, "arm64", PLATFORM_MACOS).unwrap();
-        assert_eq!(tbd.exports, ["_arm"]);
+        assert_eq!(strs(&tbd.exports), ["_arm"]);
         assert!(tbd.reexports.is_empty());
-        assert_eq!(tbd.document("/inline").unwrap().exports, ["_fallback"]);
+        assert_eq!(strs(&tbd.document(b"/inline").unwrap().exports), ["_fallback"]);
     }
 
     #[test]
@@ -1299,8 +1315,8 @@ exports:
     symbols: [ _x86 ]
 "#,
         );
-        assert_eq!(parse(mf, "arm64", PLATFORM_MACOS).unwrap().exports, ["_arm"]);
-        assert_eq!(parse(mf, "x86_64", PLATFORM_MACOS).unwrap().exports, ["_x86"]);
+        assert_eq!(strs(&parse(mf, "arm64", PLATFORM_MACOS).unwrap().exports), ["_arm"]);
+        assert_eq!(strs(&parse(mf, "x86_64", PLATFORM_MACOS).unwrap().exports), ["_x86"]);
     }
 
     #[test]
@@ -1321,16 +1337,16 @@ exports:
             "exported_symbols":[{"text":{"global":["_inline"]}}]}]}"#,
         );
         let arm = parse(mf, "arm64", PLATFORM_MACOS).unwrap();
-        assert_eq!(arm.exports, ["_both"]);
-        assert_eq!(arm.weak_exports, ["_weak"]);
-        assert_eq!(arm.tlv_exports, ["_tls"]);
-        assert_eq!(arm.reexports, ["/arm"]);
-        assert_eq!(arm.document("/inline").unwrap().exports, ["_inline"]);
+        assert_eq!(strs(&arm.exports), ["_both"]);
+        assert_eq!(strs(&arm.weak_exports), ["_weak"]);
+        assert_eq!(strs(&arm.tlv_exports), ["_tls"]);
+        assert_eq!(strs(&arm.reexports), ["/arm"]);
+        assert_eq!(strs(&arm.document(b"/inline").unwrap().exports), ["_inline"]);
         let x86 = parse(mf, "x86_64", PLATFORM_MACOS).unwrap();
-        assert_eq!(x86.exports, ["_both"]);
+        assert_eq!(strs(&x86.exports), ["_both"]);
         assert!(x86.weak_exports.is_empty());
         assert!(x86.tlv_exports.is_empty());
-        assert_eq!(x86.reexports, ["/x86"]);
+        assert_eq!(strs(&x86.reexports), ["/x86"]);
         assert!(x86.documents.is_empty());
     }
 }

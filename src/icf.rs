@@ -235,7 +235,7 @@ fn mark_swift_functions<E: Target>(
 ) {
     // Only a function whose address is taken needs to be one; most
     // subsections Swift names so are its metadata, of other sections.
-    let is_swift = |name: &str| name.starts_with("_$s") && !name.ends_with("To");
+    let is_swift = |name: &[u8]| name.starts_with(b"_$s") && !name.ends_with(b"To");
     let wanted =
         |isec: usize| ctx.isecs[isec].is_address_taken() && is_text_function(ctx, &ctx.isecs[isec]);
     for (isec, sym) in subsec_names(ctx, i, obj, wanted) {
@@ -257,7 +257,7 @@ fn start_labels<'a, E: Target>(
     i: usize,
     obj: &'a ObjectFile,
     wanted: impl Fn(usize) -> bool + 'a,
-) -> impl Iterator<Item = (u32, u8, &'static str, SymbolId)> + 'a {
+) -> impl Iterator<Item = (u32, u8, &'static [u8], SymbolId)> + 'a {
     obj.nlists.iter().zip(&obj.symbols).filter_map(move |(nlist, &id)| {
         if nlist.is_stab() || nlist.n_type() != N_SECT {
             return None;
@@ -353,7 +353,7 @@ fn kept_sections<E: Target>(ctx: &Context<E>) -> Vec<bool> {
         ctx.symbols.syms.par_iter().for_each(|sym| {
             if matches!(sym.file(), Some(FileId::Obj(_)))
                 && let Some(isec) = sym.input_section()
-                && keep.find(sym.name().as_bytes()) != -1
+                && keep.find(sym.name()) != -1
             {
                 kept[isec as usize].store(true, Ordering::Relaxed);
             }

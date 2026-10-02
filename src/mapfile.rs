@@ -27,12 +27,12 @@ pub fn write_sdk_imports<E: Target>(ctx: &Context<E>) {
     use crate::macho::{format_version, platform_name};
     let Some(path) = &ctx.args.sdk_imports else { return };
     let api_list = ctx.args.sdk_imports_api_list.as_ref();
-    let mut imports = std::collections::BTreeMap::<(i32, &[u8]), Vec<&str>>::new();
+    let mut imports = std::collections::BTreeMap::<(i32, &[u8]), Vec<&[u8]>>::new();
     for sym in &ctx.symbols.syms {
         if !sym.is_imported() || !sym.is_used() {
             continue;
         }
-        if api_list.is_some_and(|list| !list.apis.contains(sym.name().as_bytes())) {
+        if api_list.is_some_and(|list| !list.apis.contains(sym.name())) {
             continue;
         }
         let Some(FileId::Dylib(idx)) = sym.file() else { continue };
@@ -42,13 +42,14 @@ pub fn write_sdk_imports<E: Target>(ctx: &Context<E>) {
         imports.entry(key).or_default().push(sym.name());
     }
 
-    // JSON is text: a path or install name outside UTF-8 is spelled lossily.
+    // JSON is text: a path, install name or symbol name outside UTF-8 is
+    // spelled lossily.
     let output = ctx.args.output.to_string_lossy();
     let libraries: Vec<Value> = (imports.into_iter())
         .map(|((_, name), mut symbols)| {
             symbols.sort_unstable();
             symbols.dedup();
-            json!({ "installName": crate::util::display(name), "symbols": symbols })
+            json!({ "installName": crate::util::display(name), "symbols": json_names(&symbols) })
         })
         .collect();
     let inputs = match libraries.is_empty() {
@@ -329,7 +330,7 @@ fn append_trace(path: &Path, record: &Value) {
 struct TraceInputs<'a> {
     dylibs: Vec<(usize, &'a DylibFile)>,
     lazy: Vec<(usize, &'a DylibFile)>,
-    archives: Vec<(String, Vec<&'a str>)>,
+    archives: Vec<(String, Vec<&'a [u8]>)>,
     unused_archives: Vec<String>,
 }
 
@@ -342,7 +343,7 @@ impl<'a> TraceInputs<'a> {
 
         // By archive: whether a member loads, whether one doesn't, and
         // the global symbols the loaded ones define.
-        let mut members: hashbrown::HashMap<&Path, (bool, bool, Vec<&str>)> =
+        let mut members: hashbrown::HashMap<&Path, (bool, bool, Vec<&[u8]>)> =
             hashbrown::HashMap::new();
         for obj in &ctx.objs {
             let Some(archive) = obj.mf.parent else { continue };
@@ -440,12 +441,12 @@ impl<'a> TraceInputs<'a> {
                     "install-name": crate::util::display(&d.install_name),
                     "arch": E::NAME,
                     "attributes": attrs,
-                    "imported-symbols": imports[i],
+                    "imported-symbols": json_names(&imports[i]),
                 });
                 if d.is_reexported {
-                    let mut exports: Vec<&str> = d.exports.iter().copied().collect();
+                    let mut exports: Vec<&[u8]> = d.exports.iter().copied().collect();
                     exports.sort_unstable();
-                    entry["exported-symbols"] = json!(exports);
+                    entry["exported-symbols"] = json!(json_names(&exports));
                 }
                 entry
             })
@@ -456,11 +457,13 @@ impl<'a> TraceInputs<'a> {
                 "install-name": crate::util::display(&d.install_name),
                 "arch": E::NAME,
                 "attributes": ["lazy-load"],
-                "imported-symbols": imports[i],
+                "imported-symbols": json_names(&imports[i]),
             })
         }));
         let archives: Vec<Value> = (self.archives.iter())
-            .map(|(path, syms)| json!({ "path": path, "arch": E::NAME, "imported-symbols": syms }))
+            .map(|(path, syms)| {
+                json!({ "path": path, "arch": E::NAME, "imported-symbols": json_names(syms) })
+            })
             .collect();
 
         let version = args.platform_minos;
@@ -476,7 +479,7 @@ impl<'a> TraceInputs<'a> {
                     "minor": ((version >> 8) & 0xff).to_string(),
                 },
             }],
-            "exports": own_exports(ctx),
+            "exports": json_names(&own_exports(ctx)),
             "linked-dylibs": dylibs,
             "archives": self.archive_paths(),
             "unused-archives": self.unused_archives,
@@ -492,6 +495,13 @@ impl<'a> TraceInputs<'a> {
         }
         record
     }
+}
+
+/// Symbol names as JSON strings, which are text: a name with a byte
+/// that isn't UTF-8 is spelled with U+FFFD in its place (ld-prime writes
+/// the byte, which leaves the JSON malformed).
+fn json_names<'a>(names: &[&'a [u8]]) -> Vec<Cow<'a, str>> {
+    names.iter().map(|name| String::from_utf8_lossy(name)).collect()
 }
 
 /// The output's name in the traces: its leaf name, a dylib's install
@@ -512,11 +522,11 @@ fn trace_path(path: &Path) -> String {
 
 /// The symbols a dylib output exports of its own definitions, sorted:
 /// what its export trie lists but for re-exports.
-fn own_exports<E: Target>(ctx: &Context<E>) -> Vec<&'static str> {
+fn own_exports<E: Target>(ctx: &Context<E>) -> Vec<&'static [u8]> {
     if ctx.args.output_type != MH_DYLIB {
         return Vec::new();
     }
-    let mut names: Vec<&str> = (0..ctx.symbols.syms.len() as SymbolId)
+    let mut names: Vec<&[u8]> = (0..ctx.symbols.syms.len() as SymbolId)
         .filter(|&id| {
             let sym = &ctx.symbols[id];
             matches!(sym.file(), Some(FileId::Obj(obj)) if !ctx.is_internal(obj as usize))
@@ -534,8 +544,8 @@ fn own_exports<E: Target>(ctx: &Context<E>) -> Vec<&'static str> {
 }
 
 /// The symbols the output imports from each dylib, sorted, by dylib.
-fn dylib_imports<E: Target>(ctx: &Context<E>) -> Vec<Vec<&'static str>> {
-    let mut imports: Vec<Vec<&str>> = vec![Vec::new(); ctx.dylibs.len()];
+fn dylib_imports<E: Target>(ctx: &Context<E>) -> Vec<Vec<&'static [u8]>> {
+    let mut imports: Vec<Vec<&[u8]>> = vec![Vec::new(); ctx.dylibs.len()];
     for sym in &ctx.symbols.syms {
         if let Some(FileId::Dylib(i)) = sym.file()
             && sym.is_imported()
@@ -562,8 +572,8 @@ struct MapEntry<'a> {
     name: Cow<'a, [u8]>,
 }
 
-fn name(s: &str) -> Cow<'_, [u8]> {
-    Cow::Borrowed(s.as_bytes())
+fn name(s: &[u8]) -> Cow<'_, [u8]> {
+    Cow::Borrowed(s)
 }
 
 /// The files of the link as ld-prime's map numbers them, in the order
@@ -608,7 +618,7 @@ struct MapFiles<'a> {
     /// The objects LTO compiled, and the bitcode file each of their
     /// symbols comes from, by name.
     lto_objs: std::ops::Range<usize>,
-    lto_origins: hashbrown::HashMap<&'static str, Option<usize>>,
+    lto_origins: hashbrown::HashMap<&'static [u8], Option<usize>>,
 }
 
 impl<'a> MapFiles<'a> {
@@ -759,7 +769,7 @@ impl<'a> MapFiles<'a> {
 
     /// The number of the file a symbol of an object comes from: the
     /// object's own, or for the object LTO compiled, the bitcode file's.
-    fn of_object(&self, obj: usize, name: &str) -> usize {
+    fn of_object(&self, obj: usize, name: &[u8]) -> usize {
         match self.lto_origins.get(name) {
             Some(&Some(origin)) if self.lto_objs.contains(&obj) => self.objs[origin],
             _ => self.objs[obj],
@@ -773,7 +783,7 @@ impl<'a> MapFiles<'a> {
 fn merged_providers<E: Target>(
     ctx: &Context<E>,
 ) -> (Vec<(SymbolId, usize, &MergedFile)>, Vec<bool>) {
-    let mut providers: Vec<Option<hashbrown::HashMap<&str, &MergedFile>>> =
+    let mut providers: Vec<Option<hashbrown::HashMap<&[u8], &MergedFile>>> =
         (0..ctx.dylibs.len()).map(|_| None).collect();
     let mut provided = Vec::new();
     let mut bound = vec![(false, false); ctx.dylibs.len()];
@@ -855,7 +865,7 @@ pub fn print_map<E: Target>(ctx: &Context<E>) {
     insert_literal_aliases(&mut entries, literal_aliases);
     if ctx.args.output_type == MH_EXECUTE && !ctx.args.preload {
         let addr = ctx.mach_header.hdr.addr;
-        entries.insert(0, MapEntry { addr, size: 0, file: 0, name: name("__mh_execute_header") });
+        entries.insert(0, MapEntry { addr, size: 0, file: 0, name: name(b"__mh_execute_header") });
     }
     write_map(ctx, path, &files, &sections, &entries, &dead_entries(ctx, &files));
 }
@@ -978,18 +988,18 @@ fn relocatable_record_entries<E: Target>(
                 let rec = &ctx.unwind_records[i];
                 let label = labels.get(&(rec.isec, rec.input_offset)).copied();
                 let obj = ctx.isecs[rec.isec as usize].file as usize;
-                (32, Some(obj), Cow::Borrowed(label.unwrap_or("anon").as_bytes()))
+                (32, Some(obj), Cow::Borrowed(label.unwrap_or(b"anon")))
             }
             RelocatableRecord::Cie(i) => {
                 let cie = &ctx.cies[i];
-                (cie.data.len() as u64, Some(cie.obj as usize), name("CFI"))
+                (cie.data.len() as u64, Some(cie.obj as usize), name(b"CFI"))
             }
             RelocatableRecord::Fde(i) => {
                 let fde = &ctx.fdes[i];
                 let func = ctx.isec_addr(fde.isec as usize) + fde.func_offset as u64;
                 (fde.data.len() as u64, Some(fde.obj as usize), fde_names.name(func))
             }
-            RelocatableRecord::ImageInfo => (8, None, name("anon")),
+            RelocatableRecord::ImageInfo => (8, None, name(b"anon")),
         };
         let file = obj.map_or(0, |obj| files.objs[obj]);
         entries.push(MapEntry { addr, size, file, name });
@@ -1000,12 +1010,12 @@ fn relocatable_record_entries<E: Target>(
 /// The label of each __compact_unwind record that has one, by the
 /// record's subsection and function offset (see
 /// ObjectFile::unwind_labels).
-fn unwind_labels<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<(u32, u32), &'static str> {
+fn unwind_labels<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<(u32, u32), &'static [u8]> {
     let mut labels = hashbrown::HashMap::new();
     for obj in ctx.objs.iter().filter(|obj| obj.is_alive) {
         for &(isec, off, k) in &obj.unwind_labels {
             let name = ctx.symbols[obj.symbols[k as usize]].name();
-            if !name.is_empty() && !name.starts_with('L') {
+            if !name.is_empty() && !name.starts_with(b"L") {
                 labels.entry((isec, off)).or_insert(name);
             }
         }
@@ -1095,14 +1105,14 @@ fn is_named<E: Target>(ctx: &Context<E>, sym: &crate::symbol::Symbol) -> bool {
 
 /// is_named for a label of a section with header `hdr`, of an object
 /// with subsections or not (`split`).
-fn names_subsec(hdr: &MachSection, split: bool, is_extern: bool, name: &str) -> bool {
+fn names_subsec(hdr: &MachSection, split: bool, is_extern: bool, name: &[u8]) -> bool {
     if name.is_empty()
         || hdr.section_type() == S_CSTRING_LITERALS
         || crate::input_files::is_ignored_literal_label(hdr.section_type(), name)
     {
         return false;
     }
-    is_extern || (!crate::input_files::is_record_list(hdr, split) && !name.starts_with('L'))
+    is_extern || (!crate::input_files::is_record_list(hdr, split) && !name.starts_with(b"L"))
 }
 
 /// Whether a defined symbol of an object names its subsection in the
@@ -1120,7 +1130,7 @@ pub(crate) fn names_its_subsec<E: Target>(ctx: &Context<E>, id: SymbolId) -> boo
     {
         return false;
     }
-    if !sym.name().starts_with("ltmp") {
+    if !sym.name().starts_with(b"ltmp") {
         return true;
     }
     let mut at: Vec<SymbolId> = ctx.objs[obj as usize]
@@ -1154,7 +1164,7 @@ fn drop_shadowed_ltmps<E: Target, T>(
     let is_ltmp = |sym: SymbolId| {
         let sym = &ctx.symbols[sym];
         matches!(sym.file(), Some(FileId::Obj(obj)) if ctx.objs[obj as usize].subsections_via_symbols)
-            && sym.name().starts_with("ltmp")
+            && sym.name().starts_with(b"ltmp")
     };
     let place = |sym: SymbolId| (ctx.symbols[sym].input_section(), ctx.symbols[sym].value);
     let ltmps: hashbrown::HashSet<_> =
@@ -1187,18 +1197,18 @@ fn naming_rank<E: Target>(
         (Some(&(k, _)), Some(FileId::Obj(obj))) => {
             label_rank(&ctx.objs[obj as usize], k, ctx.symbols[sym].name())
         }
-        _ => (0, "", std::cmp::Reverse(0)),
+        _ => (0, &b""[..], std::cmp::Reverse(0)),
     }
 }
 
 /// See naming_rank: the rank of nlist `k` of an object, named `name`.
-type LabelRank = (u8, &'static str, std::cmp::Reverse<u32>);
+type LabelRank = (u8, &'static [u8], std::cmp::Reverse<u32>);
 
 /// A label of symbol_entries by its place - its subsection and the
 /// offset in it - and rank, with its row's index.
 type PlacedLabel = ((usize, u64, LabelRank), usize);
 
-fn label_rank(obj: &crate::input_files::ObjectFile, k: u32, name: &'static str) -> LabelRank {
+fn label_rank(obj: &crate::input_files::ObjectFile, k: u32, name: &'static [u8]) -> LabelRank {
     let rank = crate::input_files::subsec_name_rank(&obj.nlists[k as usize], name);
     (rank, name, std::cmp::Reverse(k))
 }
@@ -1244,8 +1254,8 @@ fn symbol_entries<'a, E: Target>(
     use crate::chunks::symtab::is_coalesced_away;
     let nlists = defining_nlists(ctx);
     // The names -alias gives that no object defines itself.
-    let aliases: hashbrown::HashSet<&str> =
-        ctx.args.aliases.iter().map(|(_, alias)| alias.as_str()).collect();
+    let aliases: hashbrown::HashSet<&[u8]> =
+        ctx.args.aliases.iter().map(|(_, alias)| alias.as_slice()).collect();
     let is_alias_name = |obj: u32, id: SymbolId| {
         aliases.contains(ctx.symbols[id].name())
             && !nlists
@@ -1274,7 +1284,7 @@ fn symbol_entries<'a, E: Target>(
         // lists one of each scope (see icf::folded_subsec_names).
         let folded = is_coalesced_away(ctx, own as usize);
         if folded
-            && (sym.name().starts_with("ltmp") || ctx.folded_subsec_names.get(&i) == Some(&true))
+            && (sym.name().starts_with(b"ltmp") || ctx.folded_subsec_names.get(&i) == Some(&true))
         {
             continue;
         }
@@ -1482,8 +1492,8 @@ fn literal_labels<'a, E: Target>(
         let name = ctx.symbols[id].name();
         !name.is_empty()
             && match is_cstring(isec) {
-                true => !name.starts_with("ltmp"),
-                false => !name.starts_with('L') && !(split && name.starts_with("ltmp")),
+                true => !name.starts_with(b"ltmp"),
+                false => !name.starts_with(b"L") && !(split && name.starts_with(b"ltmp")),
             }
     };
     let mut labels: Vec<(usize, u64, std::cmp::Reverse<LabelRank>, SymbolId)> = (syms.into_iter())
@@ -1657,7 +1667,7 @@ fn unnamed_entries<'a, E: Target>(
     // The selector names synthesized for Objective-C stubs.
     for (i, (_, sel)) in ctx.objc_stubs.symbols.iter().enumerate() {
         if ctx.objc_stubs.name_isec[i] == u32::MAX {
-            let name = Cow::Owned(format!("literal string: {sel}").into_bytes());
+            let name = Cow::Owned([b"literal string: ", *sel].concat());
             let size = sel.len() as u64 + 1;
             entries.push(MapEntry { addr: ctx.objc_methname_addr(i), size, file: 0, name });
         }
@@ -1686,7 +1696,7 @@ fn objc_list_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Ve
     let mut entries: Vec<MapEntry> = (ctx.objc_property_lists.iter())
         .map(|&isec| {
             let (addr, size) = (ctx.isec_addr(isec as usize), ctx.isecs[isec as usize].size as u64);
-            MapEntry { addr, size, file: 0, name: name("anon") }
+            MapEntry { addr, size, file: 0, name: name(b"anon") }
         })
         .collect();
     for blob in &ctx.data_blobs {
@@ -1705,7 +1715,7 @@ fn objc_list_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Ve
                 _ => 0,
             };
             let addr = addr + i as u64 * 8;
-            entries.push(MapEntry { addr, size: 8, file, name: name("anon") });
+            entries.push(MapEntry { addr, size: 8, file, name: name(b"anon") });
         }
     }
     entries
@@ -1728,7 +1738,7 @@ fn eh_frame_entries<'a, E: Target>(
     for cie in ctx.cies.iter().filter(|cie| cie.is_alive) {
         let addr = base + cie.output_offset as u64;
         let (size, file) = (cie.data.len() as u64, files.objs[cie.obj as usize]);
-        entries.push(MapEntry { addr, size, file, name: name("CFI") });
+        entries.push(MapEntry { addr, size, file, name: name(b"CFI") });
     }
     for fde in &ctx.fdes {
         let func = ctx.isec_addr(fde.isec as usize) + fde.func_offset as u64;
@@ -1781,8 +1791,8 @@ fn linker_symbol_entries<'a, E: Target>(
     ctx: &'a Context<E>,
     files: &MapFiles,
 ) -> Vec<MapEntry<'a>> {
-    let headers =
-        ["___dso_handle", "__mh_dylib_header", "__mh_bundle_header", "__mh_dylinker_header"];
+    let headers: [&[u8]; 4] =
+        [b"___dso_handle", b"__mh_dylib_header", b"__mh_bundle_header", b"__mh_dylinker_header"];
     let mut ids: Vec<SymbolId> = headers
         .iter()
         .filter_map(|&name| ctx.symbols.get(name))
@@ -1790,7 +1800,7 @@ fn linker_symbol_entries<'a, E: Target>(
             let sym = &ctx.symbols[id];
             let is_ours = matches!(sym.file(), Some(FileId::Obj(obj)) if ctx.is_internal(obj as usize))
                 && sym.input_section().is_none();
-            let lazy_load = sym.name() == "___dso_handle" && !ctx.lazy_helpers.helpers.is_empty();
+            let lazy_load = sym.name() == b"___dso_handle" && !ctx.lazy_helpers.helpers.is_empty();
             is_ours && (sym.is_used() || lazy_load)
         })
         .collect();
@@ -1862,24 +1872,24 @@ fn sectcreate_entries<E: Target>(ctx: &Context<E>, files: &MapFiles) -> Vec<MapE
 /// are anonymous.
 fn synthetic_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Vec<MapEntry<'a>> {
     let mut entries = Vec::new();
-    let slot = |sym: SymbolId, addr: u64, size: u64, suffix: &str| MapEntry {
+    let slot = |sym: SymbolId, addr: u64, size: u64, suffix: &[u8]| MapEntry {
         addr,
         size,
         file: files.of_symbol(ctx, sym),
-        name: Cow::Owned(format!("{}{suffix}", ctx.symbols[sym].name()).into_bytes()),
+        name: Cow::Owned([ctx.symbols[sym].name(), suffix].concat()),
     };
-    let anon = |addr: u64, size: u64| MapEntry { addr, size, file: 0, name: name("anon") };
+    let anon = |addr: u64, size: u64| MapEntry { addr, size, file: 0, name: name(b"anon") };
 
     let stubs = &ctx.stubs;
     for (i, &sym) in stubs.symbols.iter().enumerate() {
-        entries.push(slot(sym, stubs.hdr.addr + i as u64 * E::STUB_SIZE, E::STUB_SIZE, ".stub"));
+        entries.push(slot(sym, stubs.hdr.addr + i as u64 * E::STUB_SIZE, E::STUB_SIZE, b".stub"));
     }
     for (i, &sym) in ctx.got.got_syms.iter().enumerate() {
-        entries.push(slot(sym, ctx.got.slot_addr(i), 8, ".got"));
+        entries.push(slot(sym, ctx.got.slot_addr(i), 8, b".got"));
     }
     for (i, &stub) in stubs.lazy.iter().enumerate() {
         let sym = stubs.symbols[stub as usize];
-        entries.push(slot(sym, ctx.lazy_ptrs.hdr.addr + i as u64 * 8, 8, ".lazy_ptr"));
+        entries.push(slot(sym, ctx.lazy_ptrs.hdr.addr + i as u64 * 8, 8, b".lazy_ptr"));
     }
     if !stubs.lazy.is_empty() {
         let helper = ctx.stub_helper.hdr.addr;
@@ -1958,20 +1968,20 @@ fn synthetic_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Ve
     }
     if ctx.chunks.contains(&ChunkId::UnwindInfo) {
         let hdr = &ctx.unwind_info.hdr;
-        let name = name("compact unwind info");
+        let name = name(b"compact unwind info");
         entries.push(MapEntry { addr: hdr.addr, size: hdr.size, file: 0, name });
     }
     let init_offsets = &ctx.init_offsets;
     for i in 0..init_offsets.init_funcs.len() as u64 {
         let addr = init_offsets.hdr.addr + i * 4;
-        entries.push(MapEntry { addr, size: 4, file: 0, name: name("init-offset") });
+        entries.push(MapEntry { addr, size: 4, file: 0, name: name(b"init-offset") });
     }
     if ctx.has_chunk(ChunkId::ObjcImageInfo) {
         entries.push(anon(ctx.objc_imageinfo.hdr.addr, ctx.objc_imageinfo.hdr.size));
     }
     if let Some(stack) = ctx.segments.iter().find(|seg| seg.name == b"__UNIXSTACK") {
         let (addr, size) = (stack.cmd.vmaddr, stack.cmd.vmsize);
-        entries.push(MapEntry { addr, size, file: 0, name: name("l__unixstack") });
+        entries.push(MapEntry { addr, size, file: 0, name: name(b"l__unixstack") });
     }
     entries
 }
@@ -2002,10 +2012,8 @@ fn dead_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Vec<Map
                 move |(key, mut entry)| {
                     // What LTO compiled goes by the bitcode file it is
                     // credited to (see MapFiles::of_object).
-                    if ctx.is_lto_obj(i)
-                        && let Ok(name) = std::str::from_utf8(&entry.name)
-                    {
-                        entry.file = files.of_object(i, name);
+                    if ctx.is_lto_obj(i) {
+                        entry.file = files.of_object(i, &entry.name);
                     }
                     (entry.file, key, entry)
                 },
@@ -2016,7 +2024,7 @@ fn dead_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Vec<Map
     // has, after its file's other dead rows, one for each such list.
     for (i, &obj) in ctx.objc_filled_ro_fields.iter().enumerate() {
         let file = files.objs[obj as usize];
-        let entry = MapEntry { addr: 0, size: 8, file, name: name("anon") };
+        let entry = MapEntry { addr: 0, size: 8, file, name: name(b"anon") };
         dead.push((file, (u64::MAX, u32::MAX, i as u32), entry));
     }
     dead.sort_by_key(|&(file, key, _)| (file, key));
@@ -2031,11 +2039,11 @@ fn dead_entries<'a, E: Target>(ctx: &'a Context<E>, files: &MapFiles) -> Vec<Map
 /// root - the start of __TEXT they name.
 fn dead_header_entries<E: Target>(ctx: &Context<E>) -> Vec<MapEntry<'static>> {
     let header_root = ctx.args.output_type == MH_EXECUTE && !ctx.args.preload;
-    let mut names: Vec<&'static str> = ctx
+    let mut names: Vec<&'static [u8]> = ctx
         .dead_header_names
         .iter()
         .map(|&id| ctx.symbols[id].name())
-        .filter(|&n| !(header_root && n == "__mh_execute_header"))
+        .filter(|&n| !(header_root && n == b"__mh_execute_header"))
         .collect();
     names.sort();
     let header_live = crate::dead_strip::HEADER_NAMES.iter().any(|n| {
@@ -2046,7 +2054,7 @@ fn dead_header_entries<E: Target>(ctx: &Context<E>) -> Vec<MapEntry<'static>> {
         })
     });
     if !names.is_empty() && !header_root && !header_live {
-        names.insert(0, "segment$start$__TEXT");
+        names.insert(0, b"segment$start$__TEXT");
     }
     names.into_iter().map(|n| MapEntry { addr: 0, size: 0, file: 0, name: name(n) }).collect()
 }
@@ -2103,7 +2111,7 @@ struct DeadLabel {
     off: u64,
     /// How the label ranks to name the subsection, the best first.
     rank: std::cmp::Reverse<LabelRank>,
-    name: &'static str,
+    name: &'static [u8],
     /// An alternate entry point (N_ALT_ENTRY), an alias of none.
     alt: bool,
 }
@@ -2121,7 +2129,7 @@ fn gone_labels<E: Target>(
     obj: &crate::input_files::ObjectFile,
 ) -> (Vec<DeadLabel>, hashbrown::HashMap<usize, Vec<CstringLabel>>) {
     let split = obj.subsections_via_symbols;
-    let is_ltmp = |name: &str| split && name.starts_with("ltmp");
+    let is_ltmp = |name: &[u8]| split && name.starts_with(b"ltmp");
     let mut labels = Vec::new();
     let mut cstring_labels: hashbrown::HashMap<usize, Vec<CstringLabel>> =
         hashbrown::HashMap::new();
@@ -2150,7 +2158,7 @@ fn gone_labels<E: Target>(
         // A literal's labels are as in the live part (see literal_labels).
         let listed = match hdr.section_type() {
             S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS => {
-                !name.is_empty() && !name.starts_with('L') && !is_ltmp(name)
+                !name.is_empty() && !name.starts_with(b"L") && !is_ltmp(name)
             }
             _ => names_subsec(hdr, split, nlist.is_extern(), name),
         };
@@ -2169,7 +2177,7 @@ fn gone_labels<E: Target>(
 
 /// A label at a C string's start: its rank (the best first), name and
 /// symbol.
-type CstringLabel = (std::cmp::Reverse<LabelRank>, &'static str, SymbolId);
+type CstringLabel = (std::cmp::Reverse<LabelRank>, &'static [u8], SymbolId);
 
 /// The dead subsections of object `obj_idx` (see dead_entries), the
 /// `file`th of the map, keyed by where they were. A subsection is named
@@ -2201,7 +2209,7 @@ fn dead_entries_of<'a, E: Target>(
         *first = (*first).min(l.off);
         let prev = i.checked_sub(1).map(|p| (labels[p].isec, labels[p].off));
         let is_alias = l.alt || prev == Some((l.isec, l.off));
-        if is_alias && l.name.starts_with('l') {
+        if is_alias && l.name.starts_with(b"l") {
             continue;
         }
         let size = match is_alias {
@@ -2224,7 +2232,7 @@ fn dead_entries_of<'a, E: Target>(
             {
                 literal
             }
-            _ => Cow::Borrowed(l.name.as_bytes()),
+            _ => Cow::Borrowed(l.name),
         };
         rows.push((l.isec, l.off, size, name));
     }
@@ -2248,11 +2256,11 @@ fn dead_entries_of<'a, E: Target>(
             let named = crate::input_files::is_private_label(labels[0].1);
             for &(_, label, sym) in &labels[1..] {
                 if crate::input_files::is_private_label(label) {
-                    if gone || named || !label.starts_with("ltmp") {
+                    if gone || named || !label.starts_with(b"ltmp") {
                         rows.push((id, 0, ctx.isecs[id].size as u64, name.clone()));
                     }
                 } else if gone || !aliases.is_live(ctx, obj_idx, sym) {
-                    rows.push((id, 0, 0, Cow::Borrowed(label.as_bytes())));
+                    rows.push((id, 0, 0, Cow::Borrowed(label)));
                 }
             }
         }
@@ -2290,7 +2298,7 @@ fn dead_commons<'a, E: Target>(
             })
         };
         if nlist.is_common() && !won() {
-            let name = Cow::Borrowed(ctx.symbols[sym].name().as_bytes());
+            let name = Cow::Borrowed(ctx.symbols[sym].name());
             let entry = MapEntry { addr: 0, size: nlist.n_value, file, name };
             entries.push(((u64::MAX, u32::MAX, k as u32), entry));
         }

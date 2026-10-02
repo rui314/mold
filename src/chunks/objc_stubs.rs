@@ -17,7 +17,7 @@ pub struct ObjcStubsSection {
     /// _objc_msgSend$<selector> symbols, in entry order, with their
     /// selector names. Stub `i` loads slot `i` of the __objc_selrefs
     /// tail.
-    pub symbols: Vec<(SymbolId, String)>,
+    pub symbols: Vec<(SymbolId, &'static [u8])>,
     /// Selector references synthesized for method lists whose selector
     /// no input references: the __objc_methname subsection each points
     /// at. They follow the stubs' slots in the __objc_selrefs tail.

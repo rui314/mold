@@ -135,7 +135,7 @@ pub fn warn_large_subsecs<E: Target>(ctx: &Context<E>) {
                 crate::warn!(
                     "atom {} is larger than the max code size between branch island clusters, \
                      this may lead to unreachable branches",
-                    ctx.subsec_ref(isec as usize, 0)
+                    crate::error::raw(&ctx.subsec_ref(isec as usize, 0))
                 );
             }
         }
@@ -498,7 +498,7 @@ pub fn island_symbols<E: Target>(ctx: &Context<E>) -> Vec<(u64, u8, &'static [u8
             for (i, &sym) in thunk.syms.iter().enumerate() {
                 let addrs = &ctx.sym_aux(sym).thunk_addrs;
                 let n = addrs.iter().position(|&a| a == addr(i)).unwrap() + 1;
-                buf.extend_from_slice(ctx.symbols[sym].name().as_bytes());
+                buf.extend_from_slice(ctx.symbols[sym].name());
                 buf.extend_from_slice(b".island");
                 if n > 1 {
                     write!(buf, "{n}").unwrap();

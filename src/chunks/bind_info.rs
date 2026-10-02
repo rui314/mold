@@ -82,9 +82,9 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     // each library and symbol is set once.
     let ordinal = |id| ctx.sym_bind_ordinal(id);
     binds.sort_by(|a, b| {
-        (ordinal(a.1), ctx.symbols[a.1].name().as_bytes(), a.2, a.0).cmp(&(
+        (ordinal(a.1), ctx.symbols[a.1].name(), a.2, a.0).cmp(&(
             ordinal(b.1),
-            ctx.symbols[b.1].name().as_bytes(),
+            ctx.symbols[b.1].name(),
             b.2,
             b.0,
         ))
@@ -109,7 +109,7 @@ pub(crate) fn encode(ops: Vec<Op>, mut buf: Vec<u8>) -> Vec<u8> {
             }
             Op::Symbol(name, flags) => {
                 buf.push(BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM | flags);
-                buf.extend_from_slice(name.as_bytes());
+                buf.extend_from_slice(name);
                 buf.push(0);
             }
             Op::Type => buf.push(BIND_OPCODE_SET_TYPE_IMM | BIND_TYPE_POINTER),
@@ -151,7 +151,7 @@ pub(crate) fn encode(ops: Vec<Op>, mut buf: Vec<u8>) -> Vec<u8> {
 /// A bind opcode before encoding.
 pub(crate) enum Op {
     Dylib(i32),
-    Symbol(&'static str, u8),
+    Symbol(&'static [u8], u8),
     Type,
     SegOffset(usize, u64),
     AddAddr(u64),

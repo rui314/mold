@@ -296,12 +296,12 @@ fn objc_class_ro<E: Target>(ctx: &Context<E>, cls: (u32, u64)) -> Option<(u32, u
 }
 
 /// The C string a reference points at, if it is in the image.
-fn objc_cstring_at<E: Target>(ctx: &Context<E>, r: Option<ObjcRef>) -> Option<String> {
+fn objc_cstring_at<E: Target>(ctx: &Context<E>, r: Option<ObjcRef>) -> Option<&'static [u8]> {
     let (isec, off) = objc_ref_location(ctx, r?)?;
     let data = ctx.isecs[isec as usize].data();
     let bytes = data.get(off as usize..)?;
     let end = bytes.iter().position(|&b| b == 0)?;
-    Some(String::from_utf8_lossy(&bytes[..end]).into_owned())
+    Some(&bytes[..end])
 }
 
 /// A C string's bytes, up to its terminating NUL.
@@ -451,17 +451,17 @@ pub fn coalesce_objc_refs<E: Target>(ctx: &mut Context<E>) {
 /// bytewise, and their selector references in the same order.
 pub fn create_objc_msgsend_stubs<E: Target>(ctx: &mut Context<E>) {
     let internal = ctx.internal_obj.expect("internal object not created yet") as u32;
-    let mut stubs: Vec<(u32, String)> = Vec::new();
+    let mut stubs: Vec<(u32, &'static [u8])> = Vec::new();
     for i in 0..ctx.symbols.syms.len() {
         let sym = &ctx.symbols[i];
         if sym.is_defined() || !sym.is_used() {
             continue;
         }
-        if let Some(sel) = sym.name().strip_prefix("_objc_msgSend$") {
-            stubs.push((i as u32, sel.to_string()));
+        if let Some(sel) = sym.name().strip_prefix(b"_objc_msgSend$") {
+            stubs.push((i as u32, sel));
         }
     }
-    stubs.sort_by(|a, b| a.1.cmp(&b.1));
+    stubs.sort_by(|a, b| a.1.cmp(b.1));
     for (idx, &(i, _)) in stubs.iter().enumerate() {
         ctx.symbols[i].set_file(FileId::Obj(internal));
         ctx.sym_aux_mut(i).objc_stub_idx = idx as u32;
@@ -469,14 +469,15 @@ pub fn create_objc_msgsend_stubs<E: Target>(ctx: &mut Context<E>) {
     ctx.objc_stubs.symbols = stubs;
 
     if !ctx.objc_stubs.symbols.is_empty() {
-        let id = ctx.symbols.intern("_objc_msgSend");
+        let id = ctx.symbols.intern(b"_objc_msgSend");
         ctx.symbols[id].set_is_used(true);
         ctx.objc_stubs.msgsend_sym = Some(id);
 
         // The stub machinery itself references _objc_msgSend; resolve
         // it now, since regular resolution has already run.
         if !ctx.symbols[id].is_defined()
-            && let Some(dylib) = ctx.dylibs.iter().position(|d| d.exports.contains("_objc_msgSend"))
+            && let Some(dylib) =
+                ctx.dylibs.iter().position(|d| d.exports.contains(&b"_objc_msgSend"[..]))
         {
             let sym = &mut ctx.symbols[id];
             sym.set_file(FileId::Dylib((dylib) as u32));
@@ -532,7 +533,7 @@ pub fn scan_objc_stubs<E: Target>(ctx: &mut Context<E>) {
     let mut absorbed: Vec<(u32, u32)> = Vec::new();
     {
         let stub_of: hashbrown::HashMap<&[u8], u32> = (ctx.objc_stubs.symbols.iter().enumerate())
-            .map(|(i, (_, sel))| (sel.as_bytes(), i as u32))
+            .map(|(i, &(_, sel))| (sel, i as u32))
             .collect();
         for i in 0..ctx.isecs.len() {
             let isec = &ctx.isecs[i];
@@ -561,7 +562,7 @@ pub fn scan_objc_stubs<E: Target>(ctx: &mut Context<E>) {
 
     let stubs = &mut ctx.objc_stubs;
     for i in 0..stubs.symbols.len() {
-        let sel = stubs.symbols[i].1.as_bytes();
+        let sel = stubs.symbols[i].1;
         let name = name_of.get(sel).copied();
         stubs.name_isec.push(name.unwrap_or(u32::MAX));
         stubs.methname_offs.push(stubs.methname_data.len() as u64);
@@ -778,7 +779,7 @@ fn name_classref_targets<E: Target>(ctx: &mut Context<E>) {
                 continue;
             }
             let idx = *named.entry(class).or_insert_with(|| {
-                let mut sym = crate::symbol::Symbol::new("");
+                let mut sym = crate::symbol::Symbol::new(b"");
                 sym.set_file(FileId::Obj(obj_idx as u32));
                 sym.set_input_section(Some(class));
                 ctx.symbols.syms.push(sym);
@@ -1067,7 +1068,7 @@ impl SelrefFinder {
             }
         }
         let stub = (ctx.objc_stubs.symbols.iter().enumerate())
-            .map(|(i, (_, sel))| (sel.as_bytes().to_vec(), i))
+            .map(|(i, (_, sel))| (sel.to_vec(), i))
             .collect();
         Self { input, stub, extra: hashbrown::HashMap::new() }
     }
@@ -1192,8 +1193,8 @@ pub fn merge_objc_categories<E: Target>(ctx: &mut Context<E>) {
         // categories, and drop the lists they supersede.
         let class_name = objc_cstring_at(ctx, objc_pointer_at(ctx, class.ro.0, class.ro.1 + 24))
             .unwrap_or_default();
-        let cat_names: Vec<&str> = class.cats.iter().map(|&ci| cats[ci].name.as_str()).collect();
-        let merged = writer.write(ctx, lists, &format!("{class_name}({})", cat_names.join("|")));
+        let cat_names: Vec<&[u8]> = class.cats.iter().map(|&ci| cats[ci].name).collect();
+        let merged = writer.write(ctx, lists, &merged_list_suffix(class_name, &cat_names));
         drop_superseded_lists(ctx, &own, &merged, &cat_lists);
 
         // Point the class and its metaclass at new ro records holding
@@ -1291,7 +1292,7 @@ fn defined_classes<E: Target>(
 struct Category {
     /// Its category_t, a subsection of its own.
     isec: u32,
-    name: String,
+    name: &'static [u8],
     /// Listed in __objc_nlcatlist too, as a category with a +load is.
     nonlazy: bool,
     merged: bool,
@@ -1451,9 +1452,9 @@ fn merge_into_first_category<E: Target>(
     }
 
     let name = ctx.symbols[class.sym].name();
-    let class_name = name.strip_prefix("_OBJC_CLASS_$_").unwrap_or(name).to_string();
-    let cat_names: Vec<&str> = class_cats.iter().map(|&ci| cats[ci].name.as_str()).collect();
-    let merged = writer.write(ctx, lists, &format!("{class_name}({})", cat_names.join("|")));
+    let class_name = name.strip_prefix(b"_OBJC_CLASS_$_").unwrap_or(name);
+    let cat_names: Vec<&[u8]> = class_cats.iter().map(|&ci| cats[ci].name).collect();
+    let merged = writer.write(ctx, lists, &merged_list_suffix(class_name, &cat_names));
     let superseded: Vec<ListRefs> = cat_lists.iter().map(|c| c.of_kinds(&merged)).collect();
     drop_superseded_lists(ctx, &ListRefs::default(), &merged, &superseded);
 
@@ -1740,10 +1741,16 @@ fn ro_rewritable<E: Target>(ctx: &Context<E>, class: &DefinedClass) -> bool {
 /// Whether `name` is one category merging gives a list it makes (see
 /// MergedListWriter::write): a method or protocol list named after the
 /// class and its categories.
-pub(crate) fn is_merged_list_name(name: &str) -> bool {
-    ["__OBJC_$_INSTANCE_METHODS_", "__OBJC_$_CLASS_METHODS_", "__OBJC_CLASS_PROTOCOLS_$_"]
+pub(crate) fn is_merged_list_name(name: &[u8]) -> bool {
+    [&b"__OBJC_$_INSTANCE_METHODS_"[..], b"__OBJC_$_CLASS_METHODS_", b"__OBJC_CLASS_PROTOCOLS_$_"]
         .iter()
-        .any(|prefix| name.strip_prefix(prefix).is_some_and(|rest| rest.ends_with(')')))
+        .any(|prefix| name.strip_prefix(*prefix).is_some_and(|rest| rest.ends_with(b")")))
+}
+
+/// What the names of a class's merged lists end in: the class's name
+/// and its categories', "Foo(A|B)".
+fn merged_list_suffix(class_name: &[u8], cat_names: &[&[u8]]) -> Vec<u8> {
+    [class_name, b"(", &cat_names.join(&b'|'), b")"].concat()
 }
 
 /// Writes merged lists out: relative method lists after
@@ -1774,10 +1781,11 @@ impl MergedListWriter {
         &mut self,
         ctx: &mut Context<E>,
         lists: MergedLists,
-        suffix: &str,
+        suffix: &[u8],
     ) -> ListRefs {
         let name = |ctx: &mut Context<E>, prefix: &str, isec: u32| {
-            ctx.extra_local_syms.push((String::leak(format!("{prefix}{suffix}")), isec));
+            let name = crate::util::leak_bytes([prefix.as_bytes(), suffix].concat());
+            ctx.extra_local_syms.push((name, isec));
         };
         let mut refs = ListRefs::default();
         if let Some(methods) = lists.imethods {

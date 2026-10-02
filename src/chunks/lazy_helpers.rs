@@ -50,7 +50,7 @@ pub struct LazyHelper {
     pub sym: SymbolId,
     pub kind: LazyUse,
     /// The helper's local symbol, as ld-prime names it.
-    pub name: &'static str,
+    pub name: &'static [u8],
     /// The subsection of the flag word of the symbol's dylib, and the
     /// symbol's __lazy_load_got slot the helper goes through.
     pub flag: u32,

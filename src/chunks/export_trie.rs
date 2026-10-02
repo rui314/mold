@@ -42,7 +42,7 @@ enum Export {
     /// A symbol re-exported from a dylib under this name (an -alias of
     /// an imported symbol): the dylib's ordinal and the name it has
     /// there.
-    Reexport { ordinal: u32, name: &'static str },
+    Reexport { ordinal: u32, name: &'static [u8] },
 }
 
 impl Export {
@@ -65,8 +65,7 @@ impl Export {
 /// A node of the export trie under construction.
 #[derive(Default)]
 struct TrieNode {
-    /// Edges can split UTF-8 code points, so labels borrow bytes rather
-    /// than strings from the symbol names.
+    /// The edges, labeled with slices of the symbol names.
     children: Vec<(&'static [u8], Self)>,
     /// The exported symbol ending here, if any.
     export: Option<Export>,
@@ -87,7 +86,7 @@ struct TrieNode {
 /// construction parallelizes at every branching level - splitting on
 /// leading bytes alone is useless when every Mach-O symbol starts
 /// with '_'. Construction stays linear in the total name length.
-fn build_trie(names: &[(&'static str, Export)], depth: usize) -> TrieNode {
+fn build_trie(names: &[(&'static [u8], Export)], depth: usize) -> TrieNode {
     let mut node = TrieNode::default();
     let mut rest = names;
     if let Some(&(name, export)) = rest.first()
@@ -96,24 +95,19 @@ fn build_trie(names: &[(&'static str, Export)], depth: usize) -> TrieNode {
         node.export = Some(export);
         rest = &rest[1..];
     }
-    let mut groups: Vec<&[(&'static str, Export)]> = Vec::new();
+    let mut groups: Vec<&[(&'static [u8], Export)]> = Vec::new();
     while let Some(&(first, _)) = rest.first() {
-        let b = first.as_bytes()[depth];
-        let n = rest.iter().take_while(|(n, _)| n.as_bytes()[depth] == b).count();
+        let b = first[depth];
+        let n = rest.iter().take_while(|(n, _)| n[depth] == b).count();
         groups.push(&rest[..n]);
         rest = &rest[n..];
     }
-    let build_child = |group: &&[(&'static str, Export)]| {
+    let build_child = |group: &&[(&'static [u8], Export)]| {
         let first = group[0].0;
         let last = group[group.len() - 1].0;
-        let common = depth
-            + first
-                .bytes()
-                .skip(depth)
-                .zip(last.bytes().skip(depth))
-                .take_while(|(a, b)| a == b)
-                .count();
-        (&first.as_bytes()[depth..common], build_trie(group, common))
+        let common =
+            depth + first[depth..].iter().zip(&last[depth..]).take_while(|(a, b)| a == b).count();
+        (&first[depth..common], build_trie(group, common))
     };
     node.children = if names.len() >= 1024 {
         groups.par_iter().map(build_child).collect()
@@ -186,7 +180,7 @@ pub fn encode_export_trie<E: Target>(ctx: &Context<E>, sorted_globals: &[SymbolI
     // name - the same list the symbol table emits, with what the
     // export lists leave out already made private extern - so the
     // trie never sorts.
-    let exports: Vec<(&'static str, Export)> = sorted_globals
+    let exports: Vec<(&'static [u8], Export)> = sorted_globals
         .par_iter()
         .filter_map(|&id| {
             let sym = &ctx.symbols[id];
@@ -197,7 +191,7 @@ pub fn encode_export_trie<E: Target>(ctx: &Context<E>, sorted_globals: &[SymbolI
                     return None;
                 };
                 let ordinal = ctx.bind_ordinal(dylib) as u32;
-                let name = if same_name { "" } else { ctx.symbols[target].name() };
+                let name = if same_name { b"" } else { ctx.symbols[target].name() };
                 return Some((sym.name(), Export::Reexport { ordinal, name }));
             }
             // The kind bits tell a client linker (and dyld) that the
@@ -356,7 +350,7 @@ pub fn encode_export_trie<E: Target>(ctx: &Context<E>, sorted_globals: &[SymbolI
                     p += write_uleb_at(dst, p, export.terminal_size() as u64);
                     p += write_uleb_at(dst, p, EXPORT_SYMBOL_FLAGS_REEXPORT as u64);
                     p += write_uleb_at(dst, p, ordinal as u64);
-                    dst[p..p + name.len()].copy_from_slice(name.as_bytes());
+                    dst[p..p + name.len()].copy_from_slice(name);
                     p += name.len();
                     dst[p] = 0;
                     p += 1;

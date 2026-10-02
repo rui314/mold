@@ -54,7 +54,7 @@ impl SymbolFile {
 #[derive(Debug)]
 pub struct Symbol {
     /// The name, as a pointer and a u32 length rather than a 16-byte
-    /// &str - mold's name_ptr/name_len. Read through name().
+    /// slice - mold's name_ptr/name_len. Read through name().
     name_ptr: usize,
     name_len: u32,
     /// The owning file - the object or dylib that defines the symbol -
@@ -89,16 +89,13 @@ const _: () = assert!(std::mem::size_of::<Symbol>() == 40);
 pub const NONE: u32 = u32::MAX;
 
 impl Symbol {
+    /// The name, the bytes the string table holds: any but NUL, UTF-8
+    /// or not, as a symbol name is to ld-prime (and to mold).
     #[inline]
-    pub fn name(&self) -> &'static str {
+    pub fn name(&self) -> &'static [u8] {
         // SAFETY: name_ptr/name_len are exactly the bytes of the
-        // &'static str the symbol was created with.
-        unsafe {
-            std::str::from_utf8_unchecked(std::slice::from_raw_parts(
-                self.name_ptr as *const u8,
-                self.name_len as usize,
-            ))
-        }
+        // &'static [u8] the symbol was created with.
+        unsafe { std::slice::from_raw_parts(self.name_ptr as *const u8, self.name_len as usize) }
     }
 
     /// The file that owns the symbol: the object or dylib whose
@@ -263,7 +260,7 @@ impl Clone for Symbol {
 
 impl std::fmt::Display for Symbol {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&crate::util::demangle::display_name(self.name()))
+        crate::util::demangle::display_name(self.name()).fmt(f)
     }
 }
 
@@ -316,7 +313,7 @@ impl Default for SymAux {
 }
 
 impl Symbol {
-    pub(crate) fn new(name: &'static str) -> Self {
+    pub(crate) fn new(name: &'static [u8]) -> Self {
         Self {
             name_ptr: name.as_ptr() as usize,
             name_len: u32::try_from(name.len()).expect("symbol name is larger than 4 GiB"),
@@ -354,8 +351,8 @@ pub const NUM_SHARDS: usize = 64;
 /// The hash of a symbol table key, which the sharded table and its
 /// callers share. Computed once per name, at staging time when
 /// possible.
-pub fn hash_key(key: &str) -> u64 {
-    xxhash_rust::xxh3::xxh3_64(key.as_bytes())
+pub fn hash_key(key: &[u8]) -> u64 {
+    xxhash_rust::xxh3::xxh3_64(key)
 }
 
 fn shard_of(hash: u64) -> usize {
@@ -367,7 +364,7 @@ fn shard_of(hash: u64) -> usize {
 #[derive(Clone, Copy, Debug)]
 struct Key {
     hash: u64,
-    key: &'static str,
+    key: &'static [u8],
 }
 
 impl PartialEq for Key {
@@ -408,7 +405,7 @@ impl Default for SymbolTable {
 
 impl SymbolTable {
     /// Returns the symbol for a global name, creating it if needed.
-    pub fn intern(&mut self, name: &'static str) -> SymbolId {
+    pub fn intern(&mut self, name: &'static [u8]) -> SymbolId {
         let hash = hash_key(name);
         *self.shards[shard_of(hash)].entry(Key { hash, key: name }).or_insert_with(|| {
             self.syms.push(Symbol::new(name));
@@ -417,20 +414,20 @@ impl SymbolTable {
     }
 
     /// Returns the symbol for a global name if it exists.
-    pub fn get(&self, name: &str) -> Option<SymbolId> {
+    pub fn get(&self, name: &[u8]) -> Option<SymbolId> {
         let hash = hash_key(name);
         // SAFETY-free trick from mold: lookups build a key borrowing
         // the probe name; only inserts require 'static.
         let probe = Key {
             hash,
             // The key is only compared during this call.
-            key: unsafe { std::mem::transmute::<&str, &'static str>(name) },
+            key: unsafe { std::mem::transmute::<&[u8], &'static [u8]>(name) },
         };
         self.shards[shard_of(hash)].get(&probe).copied()
     }
 
     /// Creates an anonymous slot for a file-local symbol.
-    pub fn add_local(&mut self, name: &'static str) -> SymbolId {
+    pub fn add_local(&mut self, name: &'static [u8]) -> SymbolId {
         self.syms.push(Symbol::new(name));
         (self.syms.len() - 1) as u32
     }
@@ -441,7 +438,7 @@ impl SymbolTable {
     /// parallel, new symbols take contiguous id ranges per shard, and
     /// one serial scatter hands the ids back. Ids depend only on
     /// input order and the hash, so links stay deterministic.
-    pub fn gather(&mut self, batch: &[(&'static str, u64)]) -> Vec<SymbolId> {
+    pub fn gather(&mut self, batch: &[(&'static [u8], u64)]) -> Vec<SymbolId> {
         let mut bins: Vec<Vec<u32>> = vec![Vec::new(); NUM_SHARDS];
         for (i, &(_, hash)) in batch.iter().enumerate() {
             bins[shard_of(hash)].push(i as u32);
@@ -453,7 +450,7 @@ impl SymbolTable {
         }
         /// A shard's resolutions, and the names it saw for the first time
         /// with their hashes.
-        type ShardResult = (Vec<(u32, Resolved)>, Vec<(&'static str, u64)>);
+        type ShardResult = (Vec<(u32, Resolved)>, Vec<(&'static [u8], u64)>);
         let results: Vec<ShardResult> = self
             .shards
             .par_iter_mut()
@@ -462,7 +459,7 @@ impl SymbolTable {
                 // Names first seen in this batch, with their hash, so
                 // the insert pass below never re-hashes them; final ids
                 // are assigned once the shards' ranges are known.
-                let mut news: Vec<(&'static str, u64)> = Vec::new();
+                let mut news: Vec<(&'static [u8], u64)> = Vec::new();
                 let mut newmap: ShardMap = ShardMap::default();
                 let mut out = Vec::with_capacity(bin.len());
                 for i in bin {
@@ -587,7 +584,7 @@ mod tests {
     /// length must hold them whole.
     #[test]
     fn accepts_long_symbol_name() {
-        let name: &'static str = String::leak("x".repeat(65536));
+        let name: &'static [u8] = Vec::leak(vec![b'x'; 65536]);
         let symbol = Symbol::new(name);
         assert_eq!(symbol.name().len(), 65536);
         assert_eq!(symbol.name(), name);

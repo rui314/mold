@@ -288,7 +288,7 @@ pub struct Args {
     pub arch: Option<&'static str>,
     /// -e: the entry point, "_main" unless given ("start" for an image
     /// no dyld loads, and for dyld itself).
-    pub entry: String,
+    pub entry: Vec<u8>,
     /// The deployment target: -platform_version's platform (PLATFORM_*),
     /// minimum OS and SDK versions, else those of the first object
     /// file (see infer_platform). The platform is 0 (none) only in a
@@ -318,7 +318,7 @@ pub struct Args {
     /// and those an export list names without wildcards (ld64's "initial
     /// undefines"). One that stays undefined is an error even under
     /// -undefined dynamic_lookup.
-    pub forced_undefined: Vec<String>,
+    pub forced_undefined: Vec<Vec<u8>>,
     /// If set, only these symbols are exported (-exported_symbols_list
     /// or -exported_symbol).
     pub exported_symbols: Option<Glob>,
@@ -434,7 +434,7 @@ pub struct Args {
     pub init_offsets: bool,
     /// -init: the function the image runs before its other
     /// initializers (the last one given).
-    pub init: Option<String>,
+    pub init: Option<Vec<u8>>,
     /// -data_const / -no_data_const: whether read-only-after-fixup data
     /// sections (__const, __cfstring, the ObjC lists, __got ...) go in
     /// a __DATA_CONST segment. ld64's default is on but for a -static
@@ -544,7 +544,7 @@ pub struct Args {
     /// to be looked up in any loaded image at run time.
     pub undefined_dynamic_lookup: bool,
     /// -U: individual symbols allowed to stay undefined.
-    pub allowed_undefined: Vec<String>,
+    pub allowed_undefined: Vec<Vec<u8>>,
     /// -dead_strip_dylibs: drop load commands for dylibs nothing binds
     /// to.
     pub dead_strip_dylibs: bool,
@@ -660,7 +660,7 @@ pub struct Args {
     /// name them.
     pub merged_files: bool,
     /// -alias/-alias_list: (existing, new) symbol aliases to define.
-    pub aliases: Vec<(String, String)>,
+    pub aliases: Vec<(Vec<u8>, Vec<u8>)>,
     /// -sectalign: (segment, section, p2align), the alignment of an
     /// output section whatever its members ask for.
     pub sectalign: Vec<(Vec<u8>, Vec<u8>, u8)>,
@@ -866,7 +866,7 @@ impl Default for Args {
             final_output: None,
             keep_private_externs: false,
             arch: None,
-            entry: "_main".to_string(),
+            entry: b"_main".to_vec(),
             platform: 0,
             platform_minos: encode_version(0, 0, 0),
             platform_sdk: encode_version(0, 0, 0),
@@ -1336,7 +1336,7 @@ fn resolve_lazy_load(args: &mut Args) {
     }
     args.lazy_load = lazy_load;
     if lazy_load && !args.relocatable {
-        args.forced_undefined.push("__dyld_lazy_load".to_string());
+        args.forced_undefined.push(b"__dyld_lazy_load".to_vec());
     }
 }
 
@@ -1360,7 +1360,7 @@ fn resolve_delay_init(args: &mut Args) {
             display(lib)
         );
     }
-    args.forced_undefined.push("_dlopen".to_string());
+    args.forced_undefined.push(b"_dlopen".to_vec());
 }
 
 /// Takes the platform and minimum OS version an option names. The last
@@ -1597,8 +1597,10 @@ fn exact_name(entry: &str) -> Option<String> {
 /// Makes the names among a symbol list's entries initial undefines: an
 /// object need not mention them for them to pull in an archive member,
 /// and each must resolve. Patterns only match symbols already there.
-fn add_initial_undefines(undefs: &mut Vec<String>, entries: impl IntoIterator<Item: AsRef<str>>) {
-    undefs.extend(entries.into_iter().filter_map(|entry| exact_name(entry.as_ref())));
+fn add_initial_undefines(undefs: &mut Vec<Vec<u8>>, entries: impl IntoIterator<Item: AsRef<str>>) {
+    undefs.extend(
+        entries.into_iter().filter_map(|entry| exact_name(entry.as_ref())).map(String::into_bytes),
+    );
 }
 
 /// Adds a symbol list's entries to `glob` with `value`: the names they
@@ -2464,7 +2466,7 @@ fn parse_common_align(arg: &str, warnings: &mut OptionWarnings) -> u8 {
 /// an order file.
 fn read_alias_list(
     list: &Path,
-    aliases: &mut Vec<(String, String)>,
+    aliases: &mut Vec<(Vec<u8>, Vec<u8>)>,
     warnings: &mut OptionWarnings,
 ) {
     let contents = match std::fs::read_to_string(list) {
@@ -2482,7 +2484,9 @@ fn read_alias_list(
         }
         let mut it = line.split_whitespace();
         match (it.next(), it.next()) {
-            (Some(existing), Some(new)) => aliases.push((existing.to_string(), new.to_string())),
+            (Some(existing), Some(new)) => {
+                aliases.push((existing.as_bytes().to_vec(), new.as_bytes().to_vec()))
+            }
             _ => fatal!("malformed -alias_list line: {line}"),
         }
     }
@@ -2604,10 +2608,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-kernel" => args.kernel = true,
             b"-dynamic" => args.dynamic = true,
             b"-e" => {
-                args.entry = cur.next_text(name).to_string();
+                args.entry = cur.next_text(name).as_bytes().to_vec();
                 st.explicit_entry = true;
             }
-            b"-init" => args.init = Some(cur.next_text(name).to_string()),
+            b"-init" => args.init = Some(cur.next_text(name).as_bytes().to_vec()),
             b"-bundle_loader" => read_bundle_loader(&mut cur, &mut args, &mut st.warnings, name),
             b"-final_output" => args.final_output = Some(cur.next_bytes(name)),
             // (dyld's own LC_ID_DYLINKER names /usr/lib/dyld, whatever
@@ -2736,8 +2740,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
 
             // Symbols: which must be defined, which are exported, kept or
             // stripped, and how they bind.
-            b"-u" => args.forced_undefined.push(cur.next_text(name).to_string()),
-            b"-U" => args.allowed_undefined.push(cur.next_text(name).to_string()),
+            b"-u" => args.forced_undefined.push(cur.next_text(name).as_bytes().to_vec()),
+            b"-U" => args.allowed_undefined.push(cur.next_text(name).as_bytes().to_vec()),
             // ld-prime knows one treatment besides the default error:
             // dynamic_lookup, which suppress selects too. It deprecates
             // every other one (error, warning or anything else) and
@@ -2788,8 +2792,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-export_dynamic" => args.export_dynamic = true,
             b"-keep_private_externs" => args.keep_private_externs = true,
             b"-alias" => {
-                let existing = cur.next_text(name).to_string();
-                let new = cur.next_text(name).to_string();
+                let existing = cur.next_text(name).as_bytes().to_vec();
+                let new = cur.next_text(name).as_bytes().to_vec();
                 args.aliases.push((existing, new));
             }
             b"-alias_list" => {
@@ -3514,7 +3518,7 @@ fn resolve_defaults(target: &TargetTraits, args: &mut Args, st: &ParseState) {
         && args.platform_minos < encode_version(10, 8, 0);
     args.unixthread = args.static_link || args.is_dylinker() || old_x86_64_executable;
     if args.unixthread && !st.explicit_entry {
-        args.entry = "start".to_string();
+        args.entry = b"start".to_vec();
     }
 }
 
@@ -3856,7 +3860,10 @@ fn check_dynamic_lookup(args: &Args) {
     if dynamic_lookup && !args.allowed_undefined.is_empty() {
         crate::warn!("-U option is redundant when using -undefined dynamic_lookup");
     } else if args.has_entry_point() && args.allowed_undefined.contains(&args.entry) {
-        fatal!("{} is an entry point and can't be used with -U for dynamic lookup", args.entry);
+        fatal!(
+            "{} is an entry point and can't be used with -U for dynamic lookup",
+            crate::error::raw(&args.entry)
+        );
     }
     if args.shared_region
         && (dynamic_lookup || !args.allowed_undefined.is_empty())

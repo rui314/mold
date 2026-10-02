@@ -189,7 +189,7 @@ pub(crate) fn find_moves<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32,
         let what = if subsec.content == Content::Code { "code" } else { "not code" };
         let msg = crate::error::render(format_args!(
             "cannot move symbol '{}' ({file}) to segment '{}' because symbol is {what} (is {})",
-            ctx.symbols[id].name(),
+            raw(ctx.symbols[id].name()),
             raw(&list.segment),
             subsec.kind
         ));
@@ -206,8 +206,8 @@ pub(crate) fn find_moves<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32,
             }
             SymbolFile::Aliases(base) => (&b"command-line-aliases-file"[..], Some(base)),
         };
-        let base_name = base.map(|base| ctx.symbols[base].name().as_bytes());
-        let names = [Some(ctx.symbols[id].name().as_bytes()), base_name];
+        let base_name = base.map(|base| ctx.symbols[base].name());
+        let names = [Some(ctx.symbols[id].name()), base_name];
         let find = |lists: &[SymbolMove]| {
             lists.iter().enumerate().find_map(|(i, list)| {
                 let found = names.iter().flatten().map(|&name| match list.symbols.find(name) {

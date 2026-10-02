@@ -177,7 +177,7 @@ fn symbol_places<E: Target>(ctx: &Context<E>, index_of_sym: &[u32]) -> Places {
                 (true, true) => 1,
                 (false, _) => 2,
             };
-            let is_ltmp = !sym.is_extern() && sym.name().starts_with("ltmp");
+            let is_ltmp = !sym.is_extern() && sym.name().starts_with(b"ltmp");
             let rank = (is_ltmp, sym.is_weak_def(), scope, Reverse(sym.name()));
             Some(((isec, sym.value), rank, symnum))
         })
@@ -269,7 +269,7 @@ fn named_places<E: Target>(
         .filter(|&(nlist, &sym_id)| {
             !nlist.is_stab()
                 && nlist.n_type() == N_SECT
-                && !ctx.symbols[sym_id].name().starts_with("ltmp")
+                && !ctx.symbols[sym_id].name().starts_with(b"ltmp")
         })
         .map(|(nlist, _)| (nlist.n_sect, nlist.n_value))
         .collect()
@@ -1248,7 +1248,7 @@ impl<'a, E: Target> RelocTargets<'a, E> {
                 }
                 let sym = &ctx.symbols[sym_id];
                 let Some(t) = sym.input_section() else {
-                    fatal!("-r: cannot re-emit relocation against {}", sym.name());
+                    fatal!("-r: cannot re-emit relocation against {}", error::raw(sym.name()));
                 };
                 OutTarget::Section(ctx.resolve_isec(t as usize), sym.value as i64 + rel.addend)
             }
@@ -1655,7 +1655,7 @@ fn build_symtab<E: Target>(
     }
     let stabs_start = table.entries.len();
     par_push_entries(&mut names, &mut table.entries, &externals, |&(ent, id)| {
-        (ctx.symbols[id].name().as_bytes(), ent, None)
+        (ctx.symbols[id].name(), ent, None)
     });
     let strtab_end = crate::chunks::symtab::layout_strings(&mut table.entries, &names, stabs_start);
     table.names = names;
@@ -1795,7 +1795,7 @@ fn defined_externals<E: Target>(ctx: &Context<E>) -> Vec<(NList, SymbolId)> {
 /// is a private external stays one (N_PEXT), -keep_private_externs or
 /// not: a -r link allocates no commons, and so has none to demote.
 fn undefined_symbols<E: Target>(ctx: &Context<E>, referenced: &[bool]) -> Vec<(NList, SymbolId)> {
-    let forced: HashSet<&str> = ctx.args.forced_undefined.iter().map(String::as_str).collect();
+    let forced: HashSet<&[u8]> = ctx.args.forced_undefined.iter().map(Vec::as_slice).collect();
     let undefs = symbols_by_name(ctx, |i| {
         let sym = &ctx.symbols[i];
         sym.is_used()
@@ -2006,7 +2006,7 @@ impl<'a, E: Target> Locals<'a, E> {
         let h = ctx.hdr_of(t);
         h.segname_is(b"__DATA")
             && (h.sectname_is(b"__objc_superrefs") || h.sectname_is(b"__objc_protorefs"))
-            && ctx.symbols[sym_id].name().starts_with('l')
+            && ctx.symbols[sym_id].name().starts_with(b"l")
     }
 
     /// Whether a subsection is an entry of an __objc_*list section, which
@@ -2085,7 +2085,7 @@ impl<'a, E: Target> Locals<'a, E> {
             {
                 continue;
             }
-            if sym.name().starts_with("ltmp")
+            if sym.name().starts_with(b"ltmp")
                 && !whole
                 && !referenced[sym_id as usize]
                 && named_at.contains(&place)
@@ -2099,7 +2099,7 @@ impl<'a, E: Target> Locals<'a, E> {
             // its aliases.
             let section_desc = if aliases.contains(&i) { 0 } else { section_desc(ctx, input) };
             labels.push(Local {
-                name: local_symbol_name(sym.name()).as_bytes(),
+                name: local_symbol_name(sym.name()),
                 n_type: nlist.n_type,
                 n_desc: whole_desc(nlist.n_desc, whole) | section_desc,
                 n_sect: ctx.isec_n_sect(&ctx.isecs[isec]),
@@ -2107,7 +2107,7 @@ impl<'a, E: Target> Locals<'a, E> {
                 rename: self.rename(sym.name()),
                 sym: Some(sym_id),
                 at: (obj_idx as u32, nlist.n_sect, nlist.n_value),
-                rank: if sym.name().starts_with("ltmp") { Rank::Ltmp } else { Rank::Local },
+                rank: if sym.name().starts_with(b"ltmp") { Rank::Ltmp } else { Rank::Local },
             });
         }
         (labels, literal_labels)
@@ -2127,7 +2127,8 @@ impl<'a, E: Target> Locals<'a, E> {
         obj: &crate::input_files::ObjectFile,
     ) -> HashMap<(u8, u64), SymbolId> {
         let ctx = self.ctx;
-        let mut names: HashMap<(u8, u64), (bool, Reverse<&str>, SymbolId)> = HashMap::new();
+        type Name<'a> = (bool, Reverse<&'a [u8]>, SymbolId);
+        let mut names: HashMap<(u8, u64), Name> = HashMap::new();
         for i in obj.local_range() {
             let (nlist, sym_id) = (&obj.nlists[i], obj.symbols[i]);
             let sym = &ctx.symbols[sym_id];
@@ -2145,7 +2146,7 @@ impl<'a, E: Target> Locals<'a, E> {
                 continue;
             }
             if self.literals.get(ctx, isec, sym.value as i64).is_some() {
-                let name = (sym.name().starts_with("ltmp"), Reverse(sym.name()), sym_id);
+                let name = (sym.name().starts_with(b"ltmp"), Reverse(sym.name()), sym_id);
                 let place = (nlist.n_sect, nlist.n_value);
                 names.entry(place).and_modify(|best| *best = (*best).min(name)).or_insert(name);
             }
@@ -2203,7 +2204,7 @@ impl<'a, E: Target> Locals<'a, E> {
                 continue;
             }
             out.push(Local {
-                name: local_symbol_name(sym.name()).as_bytes(),
+                name: local_symbol_name(sym.name()),
                 n_type: N_PEXT | N_SECT,
                 n_desc: whole_desc(
                     nlist.n_desc & (N_ALT_ENTRY | N_NO_DEAD_STRIP | N_WEAK_DEF),
@@ -2234,7 +2235,7 @@ impl<'a, E: Target> Locals<'a, E> {
     ) -> Local {
         let sym = &self.ctx.symbols[sym_id];
         Local {
-            name: sym.name().as_bytes(),
+            name: sym.name(),
             n_type,
             n_desc: 0,
             n_sect: 0,
@@ -2251,9 +2252,9 @@ impl<'a, E: Target> Locals<'a, E> {
     /// strips the name, ld-prime keeps the symbol, which a relocation
     /// may name, by a name it makes up (l<nnn>, see finish), and the
     /// notes of its unit name it so.
-    fn rename(&self, name: &str) -> Rename {
+    fn rename(&self, name: &[u8]) -> Rename {
         let ctx = self.ctx;
-        match ctx.args.strip_locals || crate::chunks::symtab::is_listed_out(ctx, name.as_bytes()) {
+        match ctx.args.strip_locals || crate::chunks::symtab::is_listed_out(ctx, name) {
             true => Rename::Anon,
             false => Rename::None,
         }

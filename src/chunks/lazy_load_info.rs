@@ -91,7 +91,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
         };
         put(rec, &dylib.install_name);
         for (i, &id) in d.syms.iter().enumerate() {
-            let at = put(rec, ctx.symbols[id].name().as_bytes());
+            let at = put(rec, ctx.symbols[id].name());
             rec[24 + i * 4..28 + i * 4].copy_from_slice(&at.to_le_bytes());
         }
     }

@@ -411,8 +411,8 @@ pub struct ThinObject {
 pub unsafe fn compile_thin(
     plugin: &Plugin,
     modules: &[ThinModule],
-    preserve: &[&str],
-    cross: &[&str],
+    preserve: &[&[u8]],
+    cross: &[&[u8]],
     opts: &ThinOptions,
 ) -> Vec<ThinObject> {
     let c = |s: &[u8]| CString::new(s).unwrap_or_default();
@@ -579,7 +579,7 @@ pub struct BitcodeModule {
     pub handle: usize,
     /// The names the module defines, internal ones included (which the
     /// placeholder doesn't claim).
-    pub defined: Vec<&'static str>,
+    pub defined: Vec<&'static [u8]>,
     /// Whether clang built the module for ThinLTO (-flto=thin).
     pub is_thin: bool,
 }
@@ -592,9 +592,9 @@ pub struct LtoInput {
     /// The external symbols the file defines, other than weakly.
     pub strong_defs: Vec<crate::symbol::SymbolId>,
     /// The names the module defined, internal ones included.
-    pub defined: Vec<&'static str>,
+    pub defined: Vec<&'static [u8]>,
     /// The external symbols resolution gave the file's definitions.
-    pub won: Vec<&'static str>,
+    pub won: Vec<&'static [u8]>,
     /// The symbols the module referred to that a dylib defined, and
     /// which one.
     pub imports: Vec<(crate::symbol::SymbolId, u32)>,
@@ -606,7 +606,7 @@ pub struct LtoInput {
 /// and another name to the one file whose module defined it. A name
 /// that two did (static functions alike), or none (literals, or a
 /// static LTO renamed to keep it apart), stays the compiled object's.
-pub fn origins(inputs: &[LtoInput]) -> hashbrown::HashMap<&'static str, Option<usize>> {
+pub fn origins(inputs: &[LtoInput]) -> hashbrown::HashMap<&'static [u8], Option<usize>> {
     let mut map = hashbrown::HashMap::new();
     for input in inputs {
         for &name in &input.defined {
@@ -627,9 +627,10 @@ pub fn origins(inputs: &[LtoInput]) -> hashbrown::HashMap<&'static str, Option<u
     map
 }
 
-/// A parsed bitcode module's symbol, in linker terms.
+/// A parsed bitcode module's symbol, in linker terms. libLTO gives its
+/// name as a C string: bytes, UTF-8 or not.
 pub struct LtoSymbol {
-    pub name: String,
+    pub name: &'static [u8],
     pub is_defined: bool,
     pub is_weak_def: bool,
     pub is_extern: bool,
@@ -702,7 +703,7 @@ pub fn parse_module(plugin: &Plugin, data: &[u8], name: &Path) -> (usize, Vec<Lt
             let def = attr & LTO_SYMBOL_DEFINITION_MASK;
             let scope = attr & LTO_SYMBOL_SCOPE_MASK;
             syms.push(LtoSymbol {
-                name: cstr.to_string_lossy().into_owned(),
+                name: crate::util::leak_bytes(cstr.to_bytes().to_vec()),
                 is_defined: matches!(
                     def,
                     LTO_SYMBOL_DEFINITION_REGULAR
