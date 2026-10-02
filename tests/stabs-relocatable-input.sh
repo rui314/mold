@@ -36,8 +36,9 @@ grep -q '^0000000000000000 - 00 0000  GSYM _wg$' $t/stabs
 [ "$(grep -c ' GSYM _wg$' $t/stabs)" = 1 ]
 [ "$(grep -c ' FUN _wf$' $t/stabs)" = 1 ]
 
-# A unit left with no notes goes, N_SO and N_OSO entries and all: here
-# dead.o's only function is dead-stripped.
+# A unit left with no notes keeps its N_SO and N_OSO entries, and
+# dsymutil maps nothing from it: here dead.o's only function is
+# dead-stripped. (ld-prime drops the unit.)
 echo 'int live(void) { return 1; }' > $t/live.c
 echo 'int dead(void) { return 2; }' > $t/dead.c
 echo 'int live(void); int main(void) { return live() - 1; }' > $t/main.c
@@ -50,5 +51,8 @@ $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/r.o -Wl,-dead_strip
 $t/exe2
 nm -ap $t/exe2 > $t/stabs2
 grep -q ' OSO .*/live.o$' $t/stabs2
-not grep -q 'dead' $t/stabs2
-[ "$(grep -c ' SO $' $t/stabs2)" = 2 ]
+grep -q ' OSO .*/dead.o$' $t/stabs2
+not grep -q ' FUN _dead$' $t/stabs2
+[ "$(grep -c ' SO $' $t/stabs2)" = 3 ]
+dsymutil -o $t/exe2.dSYM $t/exe2 > $t/dsym.log 2>&1
+not grep -qi warning $t/dsym.log
