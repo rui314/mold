@@ -1104,9 +1104,8 @@ fn build_symtab<E: Target>(ctx: &Context<E>) -> RSymtab {
     table.names = names;
 
     // Each symbol's index in the table, for the relocations, and its
-    // string, for the notes naming it - but for the first local's,
-    // whose notes ld-prime gives a copy of their own, and a renamed
-    // private external's, whose notes keep its name.
+    // string, which the notes naming it share - but for a local whose
+    // name is hidden, whose notes keep its own name.
     let nsyms = ctx.symbols.syms.len();
     let index_of_sym: Vec<AtomicU32> =
         (0..nsyms).into_par_iter().map(|_| AtomicU32::new(u32::MAX)).collect();
@@ -1116,7 +1115,7 @@ fn build_symtab<E: Target>(ctx: &Context<E>) -> RSymtab {
     locals.par_iter().enumerate().for_each(|(i, l)| {
         if let Some(id) = l.sym {
             index_of_sym[id as usize].store(i as u32, Ordering::Relaxed);
-            if i != 0 && !(l.hidden && l.nlist.n_type & N_PEXT != 0) {
+            if !l.hidden {
                 strx_of[id as usize].store(entries[i].0.n_strx, Ordering::Relaxed);
             }
         }

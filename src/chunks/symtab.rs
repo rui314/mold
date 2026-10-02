@@ -216,8 +216,8 @@ fn names_relative_method_list<E: Target>(ctx: &Context<E>, id: crate::symbol::Sy
 }
 
 /// One stab entry: its name and nlist, the symbol whose final address
-/// fills in n_value, and the symbol the name is, if any - ld-prime
-/// points the entry at that symbol's own string.
+/// fills in n_value, and the symbol the name is, if any, whose string
+/// the entry shares.
 #[derive(Clone, Copy, Debug)]
 pub struct Stab {
     pub name: &'static [u8],
@@ -1217,8 +1217,7 @@ pub fn create_output_symtab<E: Target>(
     data.names = names;
 
     // Each symbol's index, for the indirect symbol table, and its string,
-    // for the notes naming it - but for the first local's, whose notes
-    // ld-prime gives a copy of their own.
+    // which the notes naming it share.
     let nsyms = ctx.symbols.syms.len();
     let entry_of: Vec<AtomicU32> =
         (0..nsyms).into_par_iter().map(|_| AtomicU32::new(u32::MAX)).collect();
@@ -1228,9 +1227,7 @@ pub fn create_output_symtab<E: Target>(
         if let (ent, Some(id)) = data.entries[i] {
             let index = if i < stabs_start { i } else { i + nstabs };
             entry_of[id as usize].store(index as u32, Ordering::Relaxed);
-            if index != 0 {
-                strx_of[id as usize].store(ent.n_strx, Ordering::Relaxed);
-            }
+            strx_of[id as usize].store(ent.n_strx, Ordering::Relaxed);
         }
     });
     undefs.par_iter().enumerate().for_each(|(k, &id)| {

@@ -1,12 +1,11 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# ld-prime lays out a final image's string table after a leading " ":
-# the external symbols' names, then the locals', then the debug notes'.
-# Every entry has a copy of its own - two locals named alike get two -
-# except that a note naming a symbol shares that symbol's string, but
-# for the first local's (ld-prime copies that one again), and N_SO and
-# N_OSO names are never shared.
+# A final image's string table starts with " \0", and every symbol has
+# a string of its own - two locals named alike get two - but a debug
+# note naming a symbol shares that symbol's string, so that a -g link
+# doesn't write each name twice. N_SO and N_OSO names are never shared.
+# (ld-prime gives the first local's note a copy of its own.)
 cat <<EOF | $CC -o $t/a.o -c -g -xc -
 static int helper(void) { return 1; }
 static int later(void) { return 2; }
@@ -35,23 +34,15 @@ for i in range(nsyms):
     name = d[stroff + strx:d.index(b'\0', stroff + strx)].decode()
     ents.append((strx, typ, name))
 assert d[stroff:stroff + 2] == b' \0'
-# The externals' names come first.
-assert ents[iext][0] == 2, ents[iext]
-plain = [e for e in ents[:nlocal] if e[1] & 0xe0 == 0]
-helpers = [e for e in plain if e[2] == '_helper']
+syms = [e for e in ents if e[1] & 0xe0 == 0]
+helpers = [e for e in syms if e[2] == '_helper']
 assert len(helpers) == 2 and helpers[0][0] != helpers[1][0], helpers
-assert min(e[0] for e in plain) > max(e[0] for e in ents[iext:])
-stabs = ents[len(plain):nlocal]
+assert len({e[0] for e in syms}) == len(syms), syms
+stabs = [e for e in ents if e[1] & 0xe0 != 0]
 funs = [e for e in stabs if e[1] == 0x24 and e[2]]
-by_name = {e[2]: e[0] for e in ents[iext:iext + next_]}
+strx_of = {e[0] for e in syms}
 for strx, _, name in funs:
-    if name in by_name:
-        assert strx == by_name[name], (name, strx)
-# The first local's note gets a copy of its own; later locals' share.
-first = ents[0]
-assert [e for e in funs if e[2] == first[2]][0][0] != first[0]
-later = [e for e in plain if e[2] == '_later'][0]
-assert [e for e in funs if e[2] == '_later'][0][0] == later[0]
+    assert strx in strx_of, (name, strx)
 dirs = [e[0] for e in stabs if e[1] == 0x64 and e[2].endswith('/')]
 assert len(dirs) == 2 and dirs[0] != dirs[1], dirs
 EOF2

@@ -6,7 +6,9 @@ source "$(dirname "$0")"/common.inc
 # -non_global_symbols_(no_)strip_list strips, by names it makes up:
 # l<nnn>, numbered in symbol table order. -x, which strip -x passes,
 # also drops the debug notes and the N_AST paths. Under a list the
-# notes stay.
+# notes stay, naming each symbol by its own name, which dsymutil looks
+# up in the object the notes name. (ld-prime's name a renamed local by
+# its new name.)
 cat <<EOF | $CC -g -o $t/a.o -c -xc -
 static int s1(void) { return 1; }
 static int s2(void) { return 2; }
@@ -33,9 +35,13 @@ echo _s1 > $t/strip.txt
 $mold -arch $ARCH -r -non_global_symbols_strip_list $t/strip.txt -o $t/r3.o $t/a.o
 nm -ap $t/r3.o > $t/log3
 grep -q ' t l001$' $t/log3
-grep -q ' FUN \(l001\|_s1\)$' $t/log3
+grep -q ' FUN _s1$' $t/log3
 grep -q ' t _s2$' $t/log3
 grep -q ' FUN _s2$' $t/log3
+echo 'int f(void); int main() { return f() != 15; }' | $CC -o $t/main.o -c -xc -
+$CC --ld-path=$mold -o $t/exe3 $t/main.o $t/r3.o
+$t/exe3
+dsymutil --dump-debug-map $t/exe3 | grep -q 'sym: _s1,'
 
 $mold -arch $ARCH -r -non_global_symbols_no_strip_list $t/strip.txt -o $t/r4.o $t/a.o
 nm -ap $t/r4.o > $t/log4
@@ -43,4 +49,4 @@ grep -q ' t _s1$' $t/log4
 not grep -q ' t _s2$' $t/log4
 not grep -q ' t _hid$' $t/log4
 grep -q ' FUN _hid$' $t/log4
-grep -q ' STSYM l[0-9][0-9][0-9]$' $t/log4
+grep -q ' STSYM _sd$' $t/log4
