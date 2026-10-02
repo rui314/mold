@@ -20,8 +20,6 @@ use std::cmp::Reverse;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, Ordering};
 
-use crate::chunks::output_section::OutputSection;
-use crate::chunks::sectcreate::{self, InputPlace};
 use crate::chunks::symtab::{SymtabSection, local_symbol_name, par_push_entries};
 use crate::chunks::{ChunkHeader, ChunkId, OutputSectionId};
 use crate::context::Context;
@@ -34,61 +32,6 @@ use crate::output_file;
 use crate::symbol::SymbolId;
 use crate::target::Target;
 use crate::util::{align_to, encode_uleb, leak_bytes, name_sort_key};
-
-/// ld64's section order in a -r output, measured with ld-prime 27037:
-/// __TEXT first, __LD last, and the other segments - __DATA and
-/// __DATA_CONST included - in the order their first section appears.
-/// In __TEXT the code sections come first, __text among them, in
-/// first-seen order, then __StaticInit, then everything else as first
-/// seen, and __gcc_except_tab and __eh_frame close the segment. __DATA
-/// has fixed ranks for the sections ld64 knows (__const, the
-/// Objective-C sections, the initializer lists, __data), unknown ones
-/// in first-seen order after them. The thread-local template and the
-/// zero-fill sections close every segment but __TEXT: an object's
-/// file image mirrors its address space. The first element ranks the
-/// segment.
-fn section_rank(segname: &[u8], sectname: &[u8], flags: u32) -> (u32, u32) {
-    let seg = match segname {
-        b"__TEXT" => 0,
-        b"__LD" => 2,
-        _ => 1,
-    };
-    let sect = match (segname, sectname) {
-        (b"__TEXT", b"__StaticInit") => 1,
-        // After __const and __cstring, whatever the input order.
-        (b"__TEXT", b"__gcc_except_tab") => 3,
-        (b"__TEXT", b"__eh_frame") => 4,
-        (b"__TEXT", _) if flags & S_ATTR_PURE_INSTRUCTIONS != 0 => 0,
-        (b"__TEXT", _) => 2,
-        (b"__DATA", b"__got") => 0,
-        (b"__DATA", b"__const") => 1,
-        (b"__DATA", b"__cfstring") => 2,
-        (b"__DATA", b"__objc_classlist") => 3,
-        (b"__DATA", b"__objc_nlclslist") => 4,
-        (b"__DATA", b"__objc_catlist") => 5,
-        (b"__DATA", b"__objc_catlist2") => 6,
-        (b"__DATA", b"__objc_nlcatlist") => 7,
-        (b"__DATA", b"__objc_protolist") => 8,
-        (b"__DATA", b"__objc_imageinfo") => 9,
-        (b"__DATA", b"__objc_const") => 10,
-        (b"__DATA", b"__objc_selrefs") => 11,
-        (b"__DATA", b"__objc_protorefs") => 12,
-        (b"__DATA", b"__objc_classrefs") => 13,
-        (b"__DATA", b"__objc_superrefs") => 14,
-        (b"__DATA", b"__objc_ivar") => 15,
-        (b"__DATA", b"__objc_data") => 16,
-        (b"__DATA", b"__mod_init_func") => 17,
-        (b"__DATA", b"__mod_term_func") => 18,
-        (b"__DATA", b"__data") => 19,
-        _ => match flags & SECTION_TYPE {
-            S_THREAD_LOCAL_REGULAR => 21,
-            S_THREAD_LOCAL_ZEROFILL => 22,
-            S_ZEROFILL => 23,
-            _ => 20,
-        },
-    };
-    (seg, sect)
-}
 
 /// N_NO_DEAD_STRIP for a symbol from this input section: ld-prime
 /// marks every symbol of a no_dead_strip section, local or global, so
@@ -404,9 +347,9 @@ pub fn link<E: Target>(ctx: &mut Context<E>) -> u64 {
             .flatten()
             .collect();
 
-    // Every section in ld64's order - the -sectcreate options' own
-    // ones too - laid out from address zero, and placed in the file
-    // after the load commands.
+    // Every section - the -sectcreate options' own ones too - laid out
+    // from address zero, and placed in the file after the load
+    // commands.
     let sects = sort_sections(ctx, &synthetic);
     let vmsize = assign_addresses(ctx, &mut synthetic, &sects);
     let cmds = LoadCommands::new(ctx, sects.len());
@@ -595,62 +538,18 @@ fn sect_hdr_mut<'a, E: Target>(
     }
 }
 
-/// Every output section in ld64's order: ranked (see section_rank),
-/// and first-seen within a rank - a merged section as created, in
-/// input order; one the -sectcreate options make with the file of its
-/// first contents (see SectCreateInput), before the first merged
-/// section of a later file; the synthetic ones after all. A section of
-/// the options ranks as an unknown one of its segment, and the
-/// segments only the options name come after the inputs' in
-/// command-line order.
+/// The sections of the output: the merged ones in creation order (that
+/// of their first members), the ones only -sectcreate makes, then the
+/// synthetic ones - but zero-fill sections last, as the contents are
+/// laid out in the file in address order (see assign_file_offsets). A
+/// later link orders the sections by its own rules.
 fn sort_sections<E: Target>(ctx: &Context<E>, synthetic: &[SyntheticSection]) -> Vec<Sect> {
-    let n = ctx.output_sections.len();
-    let merged = (0..n).map(|i| Sect::Merged(OutputSectionId::new(i as u32)));
+    let merged =
+        (0..ctx.output_sections.len()).map(|i| Sect::Merged(OutputSectionId::new(i as u32)));
     let own = (0..ctx.sectcreate_sections.len()).map(Sect::Created);
     let mut sects: Vec<Sect> =
         merged.chain(own).chain((0..synthetic.len()).map(Sect::Synthetic)).collect();
-    let mut segs_seen: Vec<&[u8]> = Vec::new();
-    for &s in &sects {
-        let seg = sect_hdr(ctx, synthetic, s).segname;
-        if !segs_seen.contains(&seg) {
-            segs_seen.push(seg);
-        }
-    }
-
-    // The first file of each section the -sectcreate options make, and
-    // of each merged section if there are any of the former.
-    let mut first_inputs = vec![u32::MAX; ctx.sectcreate_sections.len()];
-    for (i, input) in ctx.sectcreate_inputs.iter().enumerate() {
-        if let InputPlace::Section { section, .. } = input.place {
-            let first = &mut first_inputs[section as usize];
-            *first = (*first).min(sectcreate::file_priority(ctx, i));
-        }
-    }
-    let first_files: Vec<u32> = if first_inputs.is_empty() {
-        Vec::new()
-    } else {
-        let input = |id: &&u32| !ctx.is_internal(ctx.isecs[**id].file as usize);
-        let file_priority = |id: &u32| ctx.objs[ctx.isecs[*id].file as usize].priority;
-        let first = |o: &OutputSection| o.members.iter().filter(input).map(file_priority).min();
-        ctx.output_sections.iter().map(|o| first(o).unwrap_or(u32::MAX)).collect()
-    };
-    let seen = |s: Sect| match s {
-        Sect::Merged(i) => (2 * i.index() + 1, 0),
-        Sect::Created(i) => {
-            let p = first_inputs[i];
-            (2 * first_files.iter().position(|&first| first > p).unwrap_or(n), p)
-        }
-        Sect::Synthetic(_) => (2 * n + 1, 0),
-    };
-
-    sects.sort_by_key(|&s| {
-        let hdr = sect_hdr(ctx, synthetic, s);
-        let (seg_rank, sect_rank) = match s {
-            Sect::Created(_) => section_rank(hdr.segname, b"", 0),
-            _ => section_rank(hdr.segname, hdr.sectname, hdr.flags),
-        };
-        (seg_rank, segs_seen.iter().position(|&x| x == hdr.segname), sect_rank, seen(s))
-    });
+    sects.sort_by_key(|&s| sect_hdr(ctx, synthetic, s).is_zerofill());
     sects
 }
 
@@ -801,8 +700,8 @@ fn assign_file_offsets<E: Target>(
 
 /// A section the -r output synthesizes rather than merges from input
 /// subsections. Its size is known before layout, so it takes its place
-/// among the merged sections in ld64's order; its contents are built
-/// once addresses and symbols are assigned.
+/// after the merged sections; its contents are built once addresses
+/// and symbols are assigned.
 struct SyntheticSection {
     hdr: ChunkHeader,
     kind: SyntheticKind,

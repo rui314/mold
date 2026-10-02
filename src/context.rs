@@ -110,10 +110,6 @@ pub struct Context<E: Target> {
     pub sym_aux: Vec<crate::symbol::SymAux>,
     /// Input-order counter for resolution tie-breaking.
     pub priority_counter: u32,
-    /// The input-order priority of the file each -sectcreate or
-    /// -add_empty_section option stands for, from its place among the
-    /// inputs (see cmdline::SectCreate).
-    pub sectcreate_priority: Vec<u32>,
     /// The first priority of the files auto-link options brought in,
     /// which come after the libraries the command line names and the
     /// ones they re-export (see passes::dylib_ranks); u32::MAX before
@@ -323,7 +319,6 @@ impl<E: Target> Context<E> {
             internal_obj: None,
             sym_aux: Vec::new(),
             priority_counter: 0,
-            sectcreate_priority: Vec::new(),
             autolink_priority: u32::MAX,
             foreign_platform_dylibs: Vec::new(),
             dylib_renamings: Vec::new(),

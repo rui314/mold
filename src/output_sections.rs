@@ -1317,66 +1317,44 @@ fn lay_out_objc_method_lists<E: Target>(
 
 /// Lays out the input sections of -sectcreate, of a file's contents,
 /// and of -add_empty_section, empty, which gives tools a named anchor
-/// (its section$start/end addresses). Each is of a file of its own in
-/// the option's place among the inputs, but for the first option's,
-/// which comes last (see SectCreateInput). One that names an input
-/// section's output section - after -rename_section and
-/// -rename_segment - joins it among the other input sections in file
-/// order, byte-aligned, as a subsection of the internal object; the
-/// others make sections of their own, one of each name, in the
-/// command-line order of the options naming them (two options'
-/// interleaved, as ld-prime creates them: that orders them within a
-/// segment, and orders the segments only they make), their contents in
-/// file order.
-/// Runs while the output sections' members are in input order.
+/// (its section$start/end addresses), in command-line order. One that
+/// names an input section's output section - after -rename_section and
+/// -rename_segment - joins it after the input sections, byte-aligned,
+/// as a subsection of the internal object: programs read the data back
+/// with getsectiondata, which finds the first section of a name. The
+/// others make sections of their own, one of each name, their contents
+/// in command-line order.
 fn place_sectcreate_inputs<E: Target>(ctx: &mut Context<E>) {
+    debug_assert!(ctx.sectcreate_sections.is_empty());
     let map = SectionMap::final_link(ctx);
-    let names: Vec<SectionName> = (ctx.args.sectcreate.iter())
-        .map(|sc| map.renamed(&ctx.args, (static_name(&sc.segname), static_name(&sc.sectname))))
-        .collect();
-    let find_output_section = |ctx: &Context<E>, (seg, sect): SectionName| {
-        let pos = (ctx.output_sections.iter())
-            .position(|o| o.hdr.segname == seg && o.hdr.sectname == sect);
-        pos.map(|i| OutputSectionId::new(i as u32))
-    };
-    let find_own_section = |ctx: &Context<E>, (seg, sect): SectionName| {
-        (ctx.sectcreate_sections.iter())
-            .position(|s| s.hdr.segname == seg && s.hdr.sectname == sect)
-    };
-
-    // The options' own sections, empty yet.
-    for &name in &names {
-        if find_output_section(ctx, name).is_none() && find_own_section(ctx, name).is_none() {
-            ctx.sectcreate_sections.push(SectCreateSection::new(name.0, name.1, &[], true));
-        }
-    }
-
-    // The input sections, in file order.
-    let n = names.len();
-    let mut in_file_order: Vec<usize> = (0..n).collect();
-    in_file_order.sort_by_key(|&i| crate::chunks::sectcreate::file_priority(ctx, i));
-    let mut inputs: Vec<Option<SectCreateInput>> = (0..n).map(|_| None).collect();
-    let mut contents: Vec<Vec<u8>> = vec![Vec::new(); ctx.sectcreate_sections.len()];
-    for i in in_file_order {
-        let data: &'static [u8] = match &ctx.args.sectcreate[i].path {
+    let mut contents: Vec<Vec<u8>> = Vec::new();
+    for i in 0..ctx.args.sectcreate.len() {
+        let sc = &ctx.args.sectcreate[i];
+        let name = map.renamed(&ctx.args, (static_name(&sc.segname), static_name(&sc.sectname)));
+        let data: &'static [u8] = match &sc.path {
             Some(path) => Vec::leak(std::fs::read(path).unwrap_or_else(|e| {
                 let errno = crate::error::errno_text(&e);
                 fatal!("file cannot be open()ed, {errno} path={}", path.raw())
             })),
             None => &[],
         };
-        let place = match find_output_section(ctx, names[i]) {
+        let place = match find_output_section(ctx, name) {
             Some(osec) => InputPlace::Isec(add_sectcreate_isec(ctx, osec, i, data)),
             None => {
-                let section = find_own_section(ctx, names[i]).unwrap();
+                let own = (ctx.sectcreate_sections.iter())
+                    .position(|s| s.hdr.segname == name.0 && s.hdr.sectname == name.1);
+                let section = own.unwrap_or_else(|| {
+                    ctx.sectcreate_sections.push(SectCreateSection::new(name.0, name.1, &[], true));
+                    contents.push(Vec::new());
+                    contents.len() - 1
+                });
                 let offset = contents[section].len() as u64;
                 contents[section].extend_from_slice(data);
                 InputPlace::Section { section: section as u32, offset }
             }
         };
-        inputs[i] = Some(SectCreateInput { size: data.len() as u64, place });
+        ctx.sectcreate_inputs.push(SectCreateInput { size: data.len() as u64, place });
     }
-    ctx.sectcreate_inputs = inputs.into_iter().map(Option::unwrap).collect();
     for (sec, data) in ctx.sectcreate_sections.iter_mut().zip(contents) {
         sec.hdr.size = data.len() as u64;
         sec.contents = Vec::leak(data);
@@ -1384,8 +1362,8 @@ fn place_sectcreate_inputs<E: Target>(ctx: &mut Context<E>) {
 }
 
 /// Adds -sectcreate option `i`'s input section of `data` to output
-/// section `osec`, as a subsection of the internal object: before the
-/// first input subsection of a later file. Returns the subsection.
+/// section `osec`, after its members, as a subsection of the internal
+/// object. Returns the subsection.
 fn add_sectcreate_isec<E: Target>(
     ctx: &mut Context<E>,
     osec: OutputSectionId,
@@ -1416,14 +1394,7 @@ fn add_sectcreate_isec<E: Target>(
         unwind_offset: 0,
         nunwind: 0,
     });
-    let priority = crate::chunks::sectcreate::file_priority(ctx, i);
-    let later = |&m: &u32| {
-        let file = ctx.isecs[m].file as usize;
-        !ctx.is_internal(file) && ctx.objs[file].priority > priority
-    };
-    let members = &ctx.output_sections[osec.index()].members;
-    let at = members.iter().position(later).unwrap_or(members.len());
-    ctx.output_section_mut(osec).members.insert(at, id);
+    ctx.output_section_mut(osec).members.push(id);
     id
 }
 

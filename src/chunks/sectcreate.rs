@@ -32,13 +32,10 @@ impl SectCreateSection {
     }
 }
 
-/// The input section of a -sectcreate or -add_empty_section option.
-/// ld-prime makes each option a file of one section, which takes the
-/// option's place among the inputs - but the first option's section,
-/// which it takes for its own (file 0) and so places after every
-/// file's. It joins the output section of its name of the input
-/// sections, among them in file order, or a section of the options'
-/// own.
+/// The input section of a -sectcreate or -add_empty_section option. It
+/// joins the output section of its name of the input sections, after
+/// them, or a section of the options' own (see
+/// output_sections::place_sectcreate_inputs).
 #[derive(Debug)]
 pub struct SectCreateInput {
     pub size: u64,
@@ -53,12 +50,6 @@ pub enum InputPlace {
     Isec(u32),
     /// In `Context::sectcreate_sections[section]`, at `offset`.
     Section { section: u32, offset: u64 },
-}
-
-/// The input-order priority of the file of option `i`: the linker's
-/// own, after every file, for the first option.
-pub fn file_priority<E: Target>(ctx: &Context<E>, i: usize) -> u32 {
-    if i == 0 { u32::MAX } else { ctx.sectcreate_priority[i] }
 }
 
 impl SectCreateInput {

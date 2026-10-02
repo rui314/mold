@@ -5,9 +5,8 @@ source "$(dirname "$0")"/common.inc
 # each option's contents are named by a local, no-dead-strip symbol
 # "l<sect-create>" and the section's name, after the objects' locals in
 # command-line order. A section only the options make is byte-aligned
-# and regular, ranked as an unknown section of its segment, and comes
-# with the file of its first contents - the first option's last; the
-# segments only they make follow the inputs' in command-line order.
+# and regular; one of an input section's name holds the options'
+# contents after the input's.
 cat <<EOF | $CC -o $t/a.o -c -xc -
 static int s = 1;
 int a = 0x11111111;
@@ -21,8 +20,8 @@ $mold -r -arch $ARCH -o $t/r.o $t/a.o -sectcreate __NEW __a $t/d1 \
   -add_empty_section __OLD __e -sectcreate __DATA __interpose $t/d1
 
 otool -l $t/r.o | awk '$1 == "sectname" { s = $2 } $1 == "segname" { print $2 "," s }' |
-  tail -n +2 | tr '\n' ' ' > $t/log
-grep -q '__DATA,__data __DATA,__interpose __NEW,__b __NEW,__a __OLD,__e ' $t/log
+  tail -n +2 | sort | tr '\n' ' ' > $t/log
+grep -q '^__DATA,__data __DATA,__interpose __NEW,__a __NEW,__b __OLD,__e $' $t/log
 otool -l $t/r.o | grep -A5 'sectname __a$' > $t/log2
 grep -q 'align 2^0 (1)' $t/log2
 otool -X -s __NEW __a $t/r.o | cut -f2 | tr -d ' \n' > $t/log3

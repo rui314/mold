@@ -262,8 +262,6 @@ pub struct SectCreate {
     pub sectname: Vec<u8>,
     /// The file of the contents; None for an empty section.
     pub path: Option<PathBuf>,
-    /// How many inputs come before the option on the command line.
-    pub position: usize,
 }
 
 /// A -rename_section: (old_seg, old_sect, new_seg, new_sect).
@@ -2386,24 +2384,14 @@ fn read_sectcreate(cur: &mut ArgCursor, args: &mut Args, warnings: &mut OptionWa
     let sect = cur.next_arg(opt).as_bytes();
     let sect = sectcreate_name("section", sect, warnings);
     let file = cur.next_path(opt);
-    args.sectcreate.push(SectCreate {
-        segname: seg,
-        sectname: sect,
-        path: Some(file),
-        position: args.inputs.len(),
-    });
+    args.sectcreate.push(SectCreate { segname: seg, sectname: sect, path: Some(file) });
 }
 
 /// -add_empty_section <segment> <section>.
 fn read_add_empty_section(cur: &mut ArgCursor, args: &mut Args, opt: &str) {
     let seg = section_name(cur.next_arg(opt).as_bytes());
     let sect = section_name(cur.next_arg(opt).as_bytes());
-    args.sectcreate.push(SectCreate {
-        segname: seg,
-        sectname: sect,
-        path: None,
-        position: args.inputs.len(),
-    });
+    args.sectcreate.push(SectCreate { segname: seg, sectname: sect, path: None });
 }
 
 /// -sectalign <segment> <section> <align>. ld64 takes the largest power
