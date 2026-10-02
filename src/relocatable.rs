@@ -1107,9 +1107,8 @@ fn eh_frame_contents<E: Target>(
 /// order, keeping a pair - a SUBTRACTOR and its UNSIGNED, an arm64
 /// ADDEND and its PAGE21 or PAGEOFF12 - in order. A section of
 /// fixed-size records it splits into one subsection per record, so a
-/// subsection mold keeps whole (__objc_clsrolist's, see
-/// ObjectFile::pointer_without_target) has its records' relocations in
-/// ascending order, each record's descending.
+/// subsection mold keeps whole (__objc_clsrolist's) has its records'
+/// relocations in ascending order, each record's descending.
 fn section_relocs<E: Target>(
     targets: &RelocTargets<E>,
     chunk_idx: OutputSectionId,

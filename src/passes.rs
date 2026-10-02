@@ -792,20 +792,12 @@ fn add_merged_dependencies<E: Target>(ctx: &mut Context<E>) {
 
 /// ld-prime warns of some sections of every object it parses - archive
 /// members the link doesn't use included: it drops each __LD section it
-/// doesn't know, aligns the constants of a __DATA,__cfstring to a
-/// pointer whatever the section says, reads a __DATA,__objc_imageinfo record
-/// only if it has its 8 bytes and no more than their worth, and ignores
-/// a label at the end of a section of fixed-size records. It fails the
-/// link on an initializer,
-/// terminator or __objc_clsrolist pointer with no relocation. It warns
-/// of no section past the one where it gave up reading an object (see
-/// StagedObject::failed_at).
-/// Staging runs in parallel, so the diagnostics come here, in input
-/// order.
+/// doesn't know, and aligns the constants of a __DATA,__cfstring to a
+/// pointer whatever the section says. Staging runs in parallel, so the
+/// diagnostics come here, in input order.
 fn warn_about_sections(staged: &[input_files::StagedObject]) {
     for obj in staged {
-        let read = obj.failed_at.map_or(obj.sect_hdrs.len(), |i| obj.sect_hdrs.len().min(i + 1));
-        for (i, hdr) in obj.sect_hdrs[..read].iter().enumerate() {
+        for (i, hdr) in obj.sect_hdrs.iter().enumerate() {
             if input_files::is_unknown_ld_section(hdr) {
                 crate::warn!(
                     "unknown section: __LD/{} in {}",
@@ -821,37 +813,7 @@ fn warn_about_sections(staged: &[input_files::StagedObject]) {
                     "section __DATA/__cfstring is not pointer aligned in {}",
                     resolved_file_name(obj.mf)
                 );
-            } else if input_files::is_objc_image_info(hdr) && hdr.size > 8 {
-                crate::warn!(
-                    "section {}/{} has unexpectedly large size {} in {}",
-                    raw(hdr.segname()),
-                    raw(hdr.sectname()),
-                    hdr.size,
-                    resolved_file_name(obj.mf)
-                );
-            } else if input_files::is_objc_image_info(hdr) && hdr.size != 0 && hdr.size < 8 {
-                crate::warn!(
-                    "can't parse {}/{} section in {}",
-                    raw(hdr.segname()),
-                    raw(hdr.sectname()),
-                    resolved_file_name(obj.mf)
-                );
             }
-        }
-        for &i in &obj.extraneous_labels {
-            let nlist = &obj.nlists[i as usize];
-            crate::warn!(
-                "ignoring extranenous label '{}' at end of section '{}'",
-                raw(obj.sym_names[i as usize]),
-                raw(obj.sect_hdrs[nlist.n_sect as usize - 1].sectname())
-            );
-        }
-        if let Some(what) = obj.pointer_without_target {
-            error!("{what} has no target in '{}'", resolved_file_name(obj.mf));
-        } else if let Some(class) = obj.class_without_data {
-            // (Named by the path it was given, not resolved.)
-            let class = raw(class);
-            error!("null objc class data for '{class}' in '{}'", obj.mf.name.raw());
         }
     }
 }
@@ -877,10 +839,8 @@ fn load_pending<E: Target>(ctx: &mut Context<E>, pending: Vec<PendingObject>) {
         .collect();
     drop(t);
     warn_about_sections(&staged);
-    let checks: Vec<(bool, bool, input_files::UnwindCheck)> = staged
-        .par_iter()
-        .map(|obj| (obj.failed_at.is_none(), obj.alive, obj.check_unwind_sections()))
-        .collect();
+    let checks: Vec<(bool, input_files::UnwindCheck)> =
+        staged.par_iter().map(|obj| (obj.alive, obj.check_unwind_sections())).collect();
 
     // Intern every staged object's global names in one parallel batch
     // (mold's sharded symbol table), so the serial integration loop
@@ -920,30 +880,26 @@ fn load_pending<E: Target>(ctx: &mut Context<E>, pending: Vec<PendingObject>) {
 
 /// What ld-prime says of each object it has read - those of `ctx.objs`
 /// from `first` on - once it has split it into subsections, by what
-/// `checks` says of each: whether it read the object whole and the link
-/// loads it from the start, and its unwind info. It warns of the
-/// subsections of one it read whole (see small_pointer_subsecs), then of
-/// its unwind info, then of the auto-link options of one the link loads
-/// from the start (see warn_linker_options).
+/// `checks` says of each: whether the link loads it from the start, and
+/// its unwind info. It warns of the object's subsections (see
+/// small_pointer_subsecs), then of its unwind info, then of the
+/// auto-link options of one the link loads from the start (see
+/// warn_linker_options).
 fn warn_about_objects<E: Target>(
     ctx: &Context<E>,
     first: usize,
-    checks: Vec<(bool, bool, input_files::UnwindCheck)>,
+    checks: Vec<(bool, input_files::UnwindCheck)>,
 ) {
-    let small_subsecs: Vec<Vec<u32>> = checks
-        .par_iter()
-        .enumerate()
-        .map(|(i, &(read, ..))| match read {
-            true => chunks::chained_fixups::small_pointer_subsecs(ctx, first + i),
-            false => Vec::new(),
-        })
+    let small_subsecs: Vec<Vec<u32>> = (0..checks.len())
+        .into_par_iter()
+        .map(|i| chunks::chained_fixups::small_pointer_subsecs(ctx, first + i))
         .collect();
-    for (i, ((read, alive, unwind), subsecs)) in checks.into_iter().zip(small_subsecs).enumerate() {
+    for (i, ((alive, unwind), subsecs)) in checks.into_iter().zip(small_subsecs).enumerate() {
         for id in subsecs {
             chunks::chained_fixups::warn_small_pointer_subsec(ctx, id);
         }
         unwind.report();
-        if read && alive && !ctx.args.ignore_auto_link {
+        if alive && !ctx.args.ignore_auto_link {
             let obj = &ctx.objs[first + i];
             let file = || resolved_file_name(obj.mf);
             for msg in read_linker_options(&obj.linker_options, file).1 {

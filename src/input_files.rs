@@ -350,7 +350,8 @@ pub fn find_symbol_subsec(
         subsecs[..end].iter().rev().map(|&id| id as usize).find(|&id| isecs[id].shndx == shndx)?;
     let isec = &isecs[id];
     // A label may sit at a section's end, except in one of fixed-size
-    // records, where it names no record (see extraneous_labels).
+    // records, where it names no record: ld-prime ignores it, and a
+    // relocation to it fails as one to an undefined symbol.
     let end = isec.input_addr as u64 + isec.size as u64;
     (addr < end || (addr == end && !isec.is_record())).then(|| (id, addr - isec.input_addr as u64))
 }
@@ -581,107 +582,27 @@ pub(crate) fn record_size(hdr: &MachSection) -> Option<u64> {
     }
 }
 
-/// Reports the first section of an object ld-prime refuses to split into
-/// subsections, and returns its index if there is one: a section of
-/// fixed-size records that doesn't end on a record boundary, or else a
-/// non-empty one of the code or pointers only ld-prime makes (see
-/// is_linker_code_section and linker_pointer_content) - code it splits
-/// at symbols only in an object with MH_SUBSECTIONS_VIA_SYMBOLS
-/// (`split`). `nindirect` is the number of the object's indirect symbol
-/// table entries.
-fn check_sections(
-    hdrs: &[MachSection],
-    nlists: &[NList],
-    split: bool,
-    nindirect: u32,
-    file: &Path,
-) -> Option<usize> {
-    let has_symbol = |i: usize| {
-        nlists.iter().any(|n| !n.is_stab() && n.n_type() == N_SECT && n.n_sect as usize == i + 1)
-    };
-    for (i, hdr) in hdrs.iter().enumerate() {
-        if hdr.size != 0 && split && is_linker_code_section(hdr) && has_symbol(i) {
-            crate::error!("unknown symboled section type in '{}'", file.raw());
-            return Some(i);
-        }
-        if let Some(size) = record_size(hdr)
-            && !hdr.size.is_multiple_of(size)
-        {
-            crate::error!(
-                "section {}/{} size {} is not a multiple of {size} in '{}'",
-                raw(hdr.segname()),
-                raw(hdr.sectname()),
-                hdr.size,
-                file.raw()
-            );
-            return Some(i);
-        }
-        if hdr.size != 0
-            && let Some(content) = linker_pointer_content(hdr)
-        {
-            crate::error!(
-                "unknown fixed size section __DATA,{} with content type: {content} in '{}'",
-                raw(hdr.sectname()),
-                file.raw()
-            );
-            return Some(i);
+/// Fails the link on a section the linker can't read: one of fixed-size
+/// records (see record_size) that doesn't end on a record boundary, or,
+/// in an object with indirect symbols (`nindirect` table entries), one
+/// of lazy or non-lazy symbol pointers. The indirect symbol table names
+/// the targets of those slots, as 32-bit code wrote them with
+/// `.indirect_symbol`, and mold, reading only relocations, would leave
+/// the slots null.
+fn check_sections(hdrs: &[MachSection], nindirect: u32, file: &Path) {
+    for hdr in hdrs {
+        let partial = record_size(hdr).is_some_and(|size| !hdr.size.is_multiple_of(size));
+        let indirect = nindirect != 0
+            && matches!(hdr.section_type(), S_LAZY_SYMBOL_POINTERS | S_NON_LAZY_SYMBOL_POINTERS);
+        if partial || indirect {
+            let what = if partial {
+                "section size is not a multiple of the record size"
+            } else {
+                "indirect symbol pointers are not supported"
+            };
+            fatal!("{}:({},{}): {what}", file.raw(), raw(hdr.segname()), raw(hdr.sectname()));
         }
     }
-
-    // A non-lazy pointer section asked the linker to fill each slot with
-    // the address of the symbol the indirect symbol table names for it,
-    // as a 32-bit object's GOT did, and mold would leave the slots null.
-    // ld-prime refuses every such section of an object with indirect
-    // symbols, an empty one or one the table names no slot of too; in
-    // an object without, one is pointers its relocations fill.
-    if nindirect != 0 && hdrs.iter().any(|h| h.section_type() == S_NON_LAZY_SYMBOL_POINTERS) {
-        crate::error!(
-            "non-lazy pointers sections no longer supported for 64-bit architectures in '{}'",
-            file.raw()
-        );
-        return Some(hdrs.len());
-    }
-    None
-}
-
-/// The kind of pointers ld-prime reads a __DATA section as holding by
-/// its name and type if they are ones only it makes, which it knows no
-/// record size of: a 64-bit object has no business with the classic
-/// lazy pointers only dyld's lazy binder fills, nor with the signed or
-/// weak GOTs of an image (an input __got is GOT slots, see
-/// fold_input_got), nor with the slots of lazily loaded dylibs. A
-/// section of one of those names but of another type is data.
-fn linker_pointer_content(hdr: &MachSection) -> Option<&'static str> {
-    if hdr.segname() != b"__DATA" {
-        return None;
-    }
-    match (hdr.section_type(), hdr.sectname()) {
-        (S_LAZY_SYMBOL_POINTERS, b"__la_symbol_ptr") => Some("lazy-pointer"),
-        (S_NON_LAZY_SYMBOL_POINTERS, b"__auth_got") => Some("auth-got"),
-        (S_NON_LAZY_SYMBOL_POINTERS, b"__weak_got") => Some("weak-got"),
-        (S_NON_LAZY_SYMBOL_POINTERS, b"__weak_auth_got") => Some("weak-auth-got"),
-        (S_REGULAR, b"__lazy_load_got") => Some("lazy-load-GOT"),
-        _ => None,
-    }
-}
-
-/// Whether ld-prime reads a regular __TEXT section by its name as code
-/// of a kind only it makes - the lazy-binding helper, Objective-C stubs,
-/// lazy-load helpers, delay-init stubs and helpers - which it has no
-/// reader for in an object: it refuses one a symbol is in (an arm64
-/// assembler's ltmpN too) in an object it splits at symbols, "unknown
-/// symboled section type", and takes one without as data.
-fn is_linker_code_section(hdr: &MachSection) -> bool {
-    hdr.segname() == b"__TEXT"
-        && hdr.section_type() == S_REGULAR
-        && matches!(
-            hdr.sectname(),
-            b"__stub_helper"
-                | b"__objc_stubs"
-                | b"__lazy_helpers"
-                | b"__delay_stubs"
-                | b"__delay_helper"
-        )
 }
 
 /// Whether a section is an object's Objective-C image info, the record
@@ -740,13 +661,7 @@ pub struct StagedObject {
     /// An FDE describes a function in a section of data, which
     /// ld-prime refuses (see add_fdes).
     pub data_fde: bool,
-    /// The first pointer that has no relocation to name its target
-    /// where ld-prime requires one, as its refusal words it (unless it
-    /// stopped at a bad relocation first): see pointer_without_target.
-    pub pointer_without_target: Option<&'static str>,
-    /// The first class of the object's class list without class data,
-    /// which ld-prime refuses: see class_without_data.
-    pub class_without_data: Option<&'static [u8]>,
+
     /// The __compact_unwind pointer fields a 4-byte relocation set, as
     /// (subsection, function offset, 1 << field offset / 8) of their
     /// records: x86-64 takes those as well as 8-byte ones, and a -r
@@ -760,12 +675,6 @@ pub struct StagedObject {
     /// LC_LINKER_OPTIMIZATION_HINT entries: (kind, instruction
     /// addresses in the object's address space).
     pub loh: Vec<(u8, Vec<u64>)>,
-    /// The labels ld-prime ignores (see extraneous_labels), sorted.
-    pub extraneous_labels: Vec<u32>,
-    /// Where ld-prime gave up reading the object, if it did: at the
-    /// section check_sections refused. It reads (and warns of) no
-    /// section after it.
-    pub failed_at: Option<usize>,
 }
 
 /// The object's nlist_64 array as a slice of the mapped file, or None
@@ -838,7 +747,7 @@ fn first_global_of(nlists: &[NList], dysym: Option<&DysymtabCommand>) -> Option<
 /// in -r alike. An arm64 assembler's ltmpN label names a subsection only
 /// in an object without subsections, so it keeps an empty section there
 /// and nowhere else - but for one of fixed-size records, where no label
-/// at the end names anything (see extraneous_labels).
+/// at the end names anything.
 fn bare_sections(
     sect_hdrs: &[MachSection],
     nlists: &[NList],
@@ -872,26 +781,6 @@ fn is_at_record_end(record_ends: &[Option<u64>], nlist: &NList) -> bool {
     !nlist.is_stab()
         && nlist.n_type() == N_SECT
         && record_ends.get((nlist.n_sect as usize).wrapping_sub(1)) == Some(&Some(nlist.n_value))
-}
-
-/// The labels ld-prime ignores at the end of a section of fixed-size
-/// records, by nlist index: with a warning ("ignoring extranenous
-/// label"), but for the ltmpN label an arm64 assembler puts at an empty
-/// section's start in an object with subsections, which names nothing
-/// there anyway. A relocation can't refer to one.
-fn extraneous_labels(
-    nlists: &[NList],
-    strtab: &'static [u8],
-    split_ok: bool,
-    record_ends: &[Option<u64>],
-) -> Vec<u32> {
-    (0..nlists.len() as u32)
-        .filter(|&i| {
-            let nlist = &nlists[i as usize];
-            is_at_record_end(record_ends, nlist)
-                && !(split_ok && symbol_name(strtab, nlist).starts_with(b"ltmp"))
-        })
-        .collect()
 }
 
 /// The load commands of an object that staging reads: its section
@@ -1071,10 +960,10 @@ pub fn stage_object<E: Target>(
     let (nlists, strtab) = read_symtab(data, cmds.symtab.as_ref());
     let first_global = first_global_of(&nlists, cmds.dysymtab.as_ref());
     let nindirect = cmds.dysymtab.as_ref().map_or(0, |d| d.nindirectsyms);
+    check_sections(sect_hdrs, nindirect, &mf.name);
 
-    // ld-prime ignores a record shorter than its 8 bytes (with a warning
-    // unless empty, see warn_about_sections) and reads a longer one's
-    // first 8.
+    // ld-prime ignores a record shorter than its 8 bytes and reads a
+    // longer one's first 8.
     let objc_image_info =
         sect_hdrs.iter().find(|s| is_objc_image_info(s) && s.size >= 8).map(|s| {
             let off = s.offset as usize + 4;
@@ -1103,21 +992,15 @@ pub fn stage_object<E: Target>(
         cies: Vec::new(),
         fdes: Vec::new(),
         data_fde: false,
-        pointer_without_target: None,
-        class_without_data: None,
         unwind_ptr32: Vec::new(),
         objc_image_info,
         has_debug_info,
         dice: cmds.dice,
         loh: cmds.loh,
-        extraneous_labels: Vec::new(),
-        failed_at: None,
     };
 
     let split_ok = obj.subsections_via_symbols;
-    let record_ends = record_ends(sect_hdrs);
-    obj.extraneous_labels = extraneous_labels(&obj.nlists, strtab, split_ok, &record_ends);
-    let bare = bare_sections(sect_hdrs, &obj.nlists, strtab, split_ok, &record_ends);
+    let bare = bare_sections(sect_hdrs, &obj.nlists, strtab, split_ok, &record_ends(sect_hdrs));
     if !obj.subsections_via_symbols {
         obj.unweaken_whole_section_names(strtab, relocatable);
     }
@@ -1126,38 +1009,19 @@ pub fn stage_object<E: Target>(
     let sect_isecs = obj.initialize_sections(&bare, relocatable);
     obj.read_symbol_names(strtab);
     obj.warn_referenced_dynamically();
-    let split = obj.subsections_via_symbols;
-    obj.failed_at = check_sections(sect_hdrs, &obj.nlists, split, nindirect, &mf.name);
-    let mut relocs_ok = obj.failed_at.is_none();
-    if relocs_ok {
-        obj.read_relocations::<E>(&bare, &sect_isecs);
-    }
-    if relocs_ok
-        && let Some(i) = sect_hdrs
-            .iter()
-            .position(|s| s.segname() == b"__LD" && s.sectname() == b"__compact_unwind")
+    obj.read_relocations::<E>(&bare, &sect_isecs);
+    obj.check_init_pointers();
+    if let Some(i) =
+        sect_hdrs.iter().position(|s| s.segname() == b"__LD" && s.sectname() == b"__compact_unwind")
     {
         let rels = obj.read_section_relocs::<E>(i);
         obj.parse_compact_unwind(i, &rels);
     }
-    if relocs_ok && let Some((shndx, why)) = obj.bad_cfstring() {
-        crate::error!("{why} in '{}'", crate::passes::resolved_file_name(mf));
-        obj.failed_at = Some(shndx);
-        relocs_ok = false;
-    }
-    if !relocs_ok {
-        obj.failed_at.get_or_insert(sect_hdrs.len());
-    }
-    if relocs_ok
-        && kept_fdes != KeptFdes::None
+    if kept_fdes != KeptFdes::None
         && let Some(hdr) =
             sect_hdrs.iter().find(|s| s.segname() == b"__TEXT" && s.sectname() == b"__eh_frame")
     {
         obj.data_fde = obj.parse_eh_frame::<E>(hdr, kept_fdes == KeptFdes::All);
-    }
-    if relocs_ok {
-        obj.pointer_without_target = obj.pointer_without_target();
-        obj.class_without_data = obj.class_without_data();
     }
     // A DWARF-mode record whose FDE never turned up describes nothing.
     if kept_fdes != KeptFdes::None {
@@ -1492,24 +1356,6 @@ impl StagedObject {
                 raw(hdr.sectname())
             );
         }
-    }
-
-    /// The name ld-prime gives the subsection at `addr` in section
-    /// `n_sect` in a diagnostic: that of a symbol there, ranked by
-    /// subsec_name_rank, or none.
-    fn subsec_name(&self, n_sect: usize, addr: u64) -> &'static [u8] {
-        self.nlists
-            .iter()
-            .zip(&self.sym_names)
-            .filter(|(n, _)| {
-                !n.is_stab()
-                    && n.n_type() == N_SECT
-                    && n.n_sect as usize == n_sect
-                    && n.n_value == addr
-            })
-            .map(|(n, &name)| (subsec_name_rank(n, name), name))
-            .max()
-            .map_or(b"", |(_, name)| name)
     }
 
     /// The subsection at a section-relative relocation target, section
@@ -2728,94 +2574,25 @@ impl StagedObject {
         UnwindCheck { warnings, data_fde: self.data_fde.then_some(file) }
     }
 
-    /// The first CFString constant ld-prime refuses as it reads the
-    /// object, by its section and what is wrong: one of a
-    /// __DATA,__cfstring section's 32-byte records must have just two
-    /// relocations, one setting its class pointer at offset 0 and one
-    /// its string's at 16.
-    fn bad_cfstring(&self) -> Option<(usize, &'static str)> {
-        self.isecs.iter().find_map(|isec| {
-            let shndx = isec.shndx as usize;
-            let hdr = &self.sect_hdrs[shndx];
-            if isec.size == 0
-                || !hdr.sectname_is(b"__cfstring")
-                || !hdr.segname_is(b"__DATA")
-                || hdr.section_type() != S_REGULAR
+    /// Fails the link on an initializer or terminator pointer, a
+    /// subsection of its own, that has no relocation to name its
+    /// function (`.quad 0` makes one): mold would either copy its bytes,
+    /// an address nothing slides, or leave it out of __init_offsets.
+    fn check_init_pointers(&self) {
+        for isec in &self.isecs {
+            let hdr = &self.sect_hdrs[isec.shndx as usize];
+            if matches!(hdr.section_type(), S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS)
+                && isec.size != 0
+                && isec.nrels == 0
             {
-                return None;
+                fatal!(
+                    "{}:({},{}): initializer pointer without a relocation",
+                    self.mf.name.raw(),
+                    raw(hdr.segname()),
+                    raw(hdr.sectname())
+                );
             }
-            let rels = &self.relocs[isec.rel_offset as usize..][..isec.nrels as usize];
-            let at = |off| rels.iter().any(|r| r.offset == off);
-            let why = if rels.len() != 2 {
-                "cfstring constant does not have two fixups"
-            } else if !at(0) {
-                "cfstring constant isa not at offset 0 in cfstring object"
-            } else if !at(16) {
-                "cfstring constant string-data not at offset 16 in cfstring object"
-            } else {
-                return None;
-            };
-            Some((shndx, why))
-        })
-    }
-
-    /// The first pointer, a subsection of its own to ld-prime, that has
-    /// no relocation to name its target though ld-prime requires one: an
-    /// initializer or terminator pointer, which names a function and is
-    /// a subsection of mold's too, or an entry of __objc_clsrolist, which
-    /// lists the class_ro_t records of Swift's generic classes. mold
-    /// keeps that list whole: the compiler marks only the symbol at its
-    /// start no-dead-strip, and what it lists must stay for the method
-    /// lists to be rewritten (ld-prime reads it before dead stripping).
-    /// ld-prime's check of the list is preceded by an assertion that
-    /// trips on it instead.
-    fn pointer_without_target(&self) -> Option<&'static str> {
-        self.isecs.iter().find_map(|isec| {
-            let hdr = &self.sect_hdrs[isec.shndx as usize];
-            let rels = &self.relocs[isec.rel_offset as usize..][..isec.nrels as usize];
-            if matches!(hdr.section_type(), S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS) {
-                (isec.size != 0 && rels.is_empty()).then_some("initializer pointer")
-            } else if hdr.segname() == b"__DATA" && hdr.sectname() == b"__objc_clsrolist" {
-                let bare = |off| !rels.iter().any(|r| r.offset as u64 == off);
-                (0..isec.size as u64).step_by(8).any(bare).then_some("__objc_clsrolist pointer")
-            } else {
-                None
-            }
-        })
-    }
-
-    /// The name of the first class of the object's __objc_classlist,
-    /// in list order, whose data field (the class_ro_t pointer, 32 bytes
-    /// in) has no relocation, whatever its bytes: ld-prime refuses it as
-    /// it reads the object ("null objc class data"). A class the list
-    /// names in another object is not looked at.
-    fn class_without_data(&self) -> Option<&'static [u8]> {
-        use crate::input_sections::RelocTarget;
-        let lists = self.isecs.iter().filter(|isec| {
-            let hdr = &self.sect_hdrs[isec.shndx as usize];
-            hdr.segname() == b"__DATA" && hdr.sectname() == b"__objc_classlist"
-        });
-        let rels =
-            |isec: &InputSection| &self.relocs[isec.rel_offset as usize..][..isec.nrels as usize];
-        lists.flat_map(rels).find_map(|rel| {
-            let (addr, name) = match rel.target() {
-                RelocTarget::Sym(idx) => {
-                    let nlist = &self.nlists[idx as usize];
-                    if nlist.n_type() != N_SECT {
-                        return None;
-                    }
-                    (nlist.n_value, self.sym_names[idx as usize])
-                }
-                RelocTarget::Section(sub) => {
-                    let sub = &self.isecs[sub as usize];
-                    let addr = (sub.input_addr as u64).wrapping_add_signed(rel.addend);
-                    (addr, self.subsec_name(sub.shndx as usize + 1, addr))
-                }
-            };
-            let (class, off) = find_subsec(&self.isecs, &self.subsecs, addr)?;
-            let data = off + 32;
-            (!rels(&self.isecs[class]).iter().any(|r| r.offset as u64 == data)).then_some(name)
-        })
+        }
     }
 }
 

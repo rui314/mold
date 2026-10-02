@@ -6,8 +6,7 @@ source "$(dirname "$0")"/common.inc
 # symbol in the indirect symbol table (or INDIRECT_SYMBOL_LOCAL for a
 # pointer it fills in itself), moves it from __DATA to __DATA_CONST
 # as it does the GOT, and aligns each slot to a pointer. A kext's are
-# plain data, and the signed and weak GOTs, which only ld-prime makes,
-# are refused as input.
+# plain data.
 if [ $ARCH = arm64 ]; then
   cat <<EOF > $t/a.s
 .data
@@ -128,15 +127,3 @@ if $mold -v 2>&1 | grep -q mold-macho; then
   $CC --ld-path=$mold -o $t/exe3 $t/r.o $t/b.o
   $t/exe3 | cmp - $t/out
 fi
-
-cat <<EOF > $t/d.s
-.section __DATA,__auth_got,non_lazy_symbol_pointers
-.p2align 3
-.quad _bar
-.data
-.globl _bar
-_bar: .long 42
-EOF
-$CC -o $t/d.o -c $t/d.s
-not $CC --ld-path=$mold -o $t/exe4 $t/d.o $t/b.o 2> $t/log
-grep -q "unknown fixed size section __DATA,__auth_got with content type: auth-got in '.*d.o'" $t/log

@@ -19,8 +19,7 @@ mk main __DATA_CONST 0x40 '.long 7'
 mk data __DATA 0
 mk text __TEXT 0x40
 
-$CC --ld-path=$mold -o $t/exe $t/main.o $t/data.o 2> $t/log
-not grep -F 'unexpectedly large' $t/log
+$CC --ld-path=$mold -o $t/exe $t/main.o $t/data.o
 otool -l $t/exe > $t/load
 [ "$(grep -c 'sectname __objc_imageinfo' $t/load)" = 1 ]
 otool -s __DATA_CONST __objc_imageinfo $t/exe > $t/info
