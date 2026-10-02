@@ -775,10 +775,7 @@ fn merge_dylib<E: Target>(
     mf: &'static MappedFile,
     out: &mut Vec<PendingObject>,
 ) {
-    let record = match crate::mergeable::MergeableRecord::read(mf) {
-        Ok(record) => record,
-        Err(e) => return error!("{e} in '{}'", mf.name.raw()),
-    };
+    let record = crate::mergeable::MergeableRecord::read(mf);
     let obj = crate::mergeable::synthesize_object::<E>(&record, &mf.name);
     let synth = MappedFile::synthesized(mf.name.clone(), obj);
     if record.defines_classes() {

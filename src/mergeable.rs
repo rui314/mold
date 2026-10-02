@@ -293,47 +293,12 @@ fn sign_extend(val: u64, bits: u32) -> i64 {
     ((val << (64 - bits)) as i64) >> (64 - bits)
 }
 
-/// The largest content type ld-prime 27037 knows.
-const MAX_CONTENT_TYPE: u8 = 81;
-
-/// Checks the largest kinds the record's header says it uses against
-/// those ld-prime knows, as it does, in its words: the entry kind, the
-/// content type, the generic fixup kind, then the target's, which must
-/// be of one target's group (0x80 arm64, 0x100 x86-64) if any.
-fn check_kinds(blob: &[u8]) -> Result<(), String> {
-    let unknown = |what: &str, n: u16, max: u16| {
-        Err(format!("atom file uses unknown {what} ({n}).  Max supported is {max}"))
-    };
-    if blob[12] > kind::WEAK_DEF_ALIAS {
-        return unknown("atom kind", blob[12].into(), kind::WEAK_DEF_ALIAS.into());
-    }
-    if blob[13] > MAX_CONTENT_TYPE {
-        return unknown("atom content type", blob[13].into(), MAX_CONTENT_TYPE.into());
-    }
-    let generic = read16(blob, 14);
-    if generic > fk::PTR64_TO_GOT {
-        return unknown("fixup kind", generic, fk::PTR64_TO_GOT);
-    }
-    let target = read16(blob, 16);
-    let max = match target & 0x380 {
-        _ if target == 0 => return Ok(()),
-        0x80 => fk::ARM64_ADRP_LDR_GOT_NO_OPT,
-        0x100 => fk::X86_64_RIP1_GOT,
-        0 => return Err("unexpected generic fixup group".into()),
-        _ => return Err("unknown fixup group".into()),
-    };
-    if target > max {
-        return unknown("fixup kind", target, max);
-    }
-    Ok(())
-}
-
-/// Where a dylib's LC_ATOM_INFO data is in its file.
+/// Where a dylib's LC_ATOM_INFO data is in its file, if it has one.
 fn record_range(data: &[u8]) -> Option<(usize, usize)> {
     let hdr = MachHeader::read_from(data);
     let mut off = size_of::<MachHeader>();
     for _ in 0..hdr.ncmds {
-        let lc = LoadCommand::read_from(data.get(off..)?);
+        let lc = LoadCommand::read_from(&data[off..]);
         if lc.cmd == LC_ATOM_INFO {
             let cmd = LinkEditDataCommand::read_from(&data[off..]);
             return Some((cmd.dataoff as usize, cmd.datasize as usize));
@@ -344,47 +309,21 @@ fn record_range(data: &[u8]) -> Option<(usize, usize)> {
 }
 
 impl MergeableRecord {
-    /// Reads a dylib's LC_ATOM_INFO; an error says what is wrong with
-    /// it, in ld-prime's words where it has some.
-    pub fn read(mf: &'static MappedFile) -> Result<Self, String> {
+    /// Reads the record of a mergeable dylib (see
+    /// input_files::is_mergeable) as -make_mergeable wrote it: file
+    /// version 3, the entries right after the header. A broken one may
+    /// make it panic.
+    pub fn read(mf: &'static MappedFile) -> Self {
         let file = mf.data();
-        let (base, size) = record_range(file).ok_or("not built with -make_mergeable")?;
-        let blob = file.get(base..base + size).ok_or("atom payload goes beyond end of file")?;
-        if blob.len() < HEADER_SIZE {
-            return Err("file too small".into());
-        }
-        if &blob[..8] != MAGIC {
-            return Err("file magic wrong".into());
-        }
-        let version = read16(blob, 8);
-        if version != 3 {
-            return Err(format!(
-                "atom file version {version} is too new.  Max supported version of 3"
-            ));
-        }
-        if blob[10] != 2 {
-            return Err(format!(
-                "atom version {} is too new.  Max supported version of 2",
-                blob[10]
-            ));
-        }
-        if blob[11] != 2 {
-            return Err(format!(
-                "fixup version {} is too new.  Max supported version of 2",
-                blob[11]
-            ));
-        }
-        check_kinds(blob)?;
-        if read32(blob, 0x60) as usize != HEADER_SIZE {
-            return Err("atoms array must be located directly after the atom file structure".into());
-        }
+        let (base, size) = record_range(file).unwrap();
+        let blob = &file[base..base + size];
         let r = Reader { file, base, blob };
-        let symbols = r.symbol_names()?;
+        let symbols = r.symbol_names();
         let large_addends: Vec<i64> =
-            r.array(0x70, 8)?.chunks(8).map(|c| read64(c, 0) as i64).collect();
-        let fixups = r.fixups(&large_addends)?;
+            r.array(0x70, 8).chunks(8).map(|c| read64(c, 0) as i64).collect();
+        let fixups = r.fixups(&large_addends);
         let sections: Vec<CustomSection> = r
-            .array(0x78, SECTION_SIZE)?
+            .array(0x78, SECTION_SIZE)
             .chunks(SECTION_SIZE)
             .map(|c| CustomSection {
                 segname: c[8..24].try_into().unwrap(),
@@ -392,11 +331,11 @@ impl MergeableRecord {
                 flags: read32(c, 4),
             })
             .collect();
-        let (own, _) = r.dylib_info(read32(blob, 0xa8) as usize)?;
-        let dylibs = r.dylib_infos(read32(blob, 0xb0) as usize, read32(blob, 0xb4) as usize)?;
-        let debug_infos = r.debug_infos()?;
-        let entries = r.entries(&symbols, fixups.len(), sections.len(), dylibs.len())?;
-        Ok(Self {
+        let (own, _) = r.dylib_info(read32(blob, 0xa8) as usize);
+        let dylibs = r.dylib_infos(read32(blob, 0xb0) as usize, read32(blob, 0xb4) as usize);
+        let debug_infos = r.debug_infos();
+        let entries = r.entries(&symbols);
+        Self {
             cputype: read32(blob, 0x14),
             cpusubtype: read32(blob, 0x18),
             platform: read32(blob, 0x1c),
@@ -409,7 +348,7 @@ impl MergeableRecord {
             own,
             dylibs,
             debug_infos,
-        })
+        }
     }
 
     /// The dylibs the mergeable one links, each with the symbols its
@@ -442,7 +381,7 @@ impl MergeableRecord {
     }
 }
 
-/// Bounds-checked access to the record's tables.
+/// Access to the record's tables.
 struct Reader<'a> {
     file: &'static [u8],
     base: usize,
@@ -451,37 +390,32 @@ struct Reader<'a> {
 
 impl Reader<'_> {
     /// A table the header gives by offset and count at `field`.
-    fn array(&self, field: usize, elem: usize) -> Result<&[u8], String> {
+    fn array(&self, field: usize, elem: usize) -> &[u8] {
         let off = read32(self.blob, field) as usize;
         let count = read32(self.blob, field + 4) as usize;
-        self.blob
-            .get(off..off + count * elem)
-            .ok_or_else(|| "not enough space for array in parent buffer".to_string())
+        &self.blob[off..off + count * elem]
     }
 
-    /// A NUL-terminated string `rel` bytes from blob offset `at`, which
-    /// may reach back into the dylib around the blob.
-    fn string_at(&self, at: usize, rel: i64, len: usize) -> Result<&'static [u8], String> {
-        let start = (self.base + at) as i64 + rel;
-        usize::try_from(start)
-            .ok()
-            .and_then(|s| self.file.get(s..s + len))
-            .ok_or_else(|| "string beyond end of file".to_string())
+    /// The `len` bytes `rel` bytes from blob offset `at`, which may
+    /// reach back into the dylib around the blob.
+    fn string_at(&self, at: usize, rel: i64, len: usize) -> &'static [u8] {
+        let start = ((self.base + at) as i64 + rel) as usize;
+        &self.file[start..start + len]
     }
 
     /// A CStringRO_1: an offset from the record, then a length.
-    fn cstring(&self, at: usize) -> Result<Vec<u8>, String> {
+    fn cstring(&self, at: usize) -> Vec<u8> {
         let len = read64(self.blob, at + 8) as usize;
         if len == 0 {
-            return Ok(Vec::new());
+            return Vec::new();
         }
-        Ok(self.string_at(at, read64(self.blob, at) as i64, len)?.to_vec())
+        self.string_at(at, read64(self.blob, at) as i64, len).to_vec()
     }
 
-    fn symbol_names(&self) -> Result<Vec<&'static [u8]>, String> {
-        let table = self.array(0x88, 16)?;
+    fn symbol_names(&self) -> Vec<&'static [u8]> {
         let first = read32(self.blob, 0x88) as usize;
-        (0..table.len() / 16)
+        let count = read32(self.blob, 0x8c) as usize;
+        (0..count)
             .map(|i| {
                 let at = first + i * 16;
                 let len = (read64(self.blob, at + 8) >> 44) as usize;
@@ -490,8 +424,8 @@ impl Reader<'_> {
             .collect()
     }
 
-    fn fixups(&self, large_addends: &[i64]) -> Result<Vec<Fixup>, String> {
-        let table = self.array(0x68, FIXUP_SIZE)?;
+    fn fixups(&self, large_addends: &[i64]) -> Vec<Fixup> {
+        let table = self.array(0x68, FIXUP_SIZE);
         table
             .chunks(FIXUP_SIZE)
             .map(|c| {
@@ -500,7 +434,7 @@ impl Reader<'_> {
                 let kind = (w2 & 0x3ff) as u16;
                 let usage = extras_usage(kind);
                 let addend = if w2 & 0x400 != 0 {
-                    *large_addends.get((w2 >> 11) as usize).ok_or("bad large addend index")?
+                    large_addends[(w2 >> 11) as usize]
                 } else {
                     match usage {
                         2 => w3 as i32 as i64,
@@ -509,106 +443,79 @@ impl Reader<'_> {
                         _ => sign_extend((w2 >> 11) as u64, 21),
                     }
                 };
-                Ok(Fixup {
+                Fixup {
                     offset: read32(c, 0),
                     target: read32(c, 4),
                     kind,
                     addend,
                     from: if usage == 1 { w3 } else { 0 },
                     other: if (4..=8).contains(&usage) { w3 as u8 } else { 0 },
-                })
+                }
             })
             .collect()
     }
 
     /// A DylibFileInfoRO_2 at blob offset `at`, and its size.
-    fn dylib_info(&self, at: usize) -> Result<(DylibInfo, usize), String> {
-        if at + DYLIB_INFO_SIZE > self.blob.len() {
-            return Err("buffer is not large enough for dylib file info".into());
-        }
+    fn dylib_info(&self, at: usize) -> (DylibInfo, usize) {
         let info = DylibInfo {
-            install_name: self.cstring(at + 8)?,
+            install_name: self.cstring(at + 8),
             current_version: read32(self.blob, at),
             compatibility_version: read32(self.blob, at + 4),
         };
         let nplatforms = read32(self.blob, at + 0x2c) as usize;
         let lists: usize =
             [0x34, 0x3c, 0x44].iter().map(|&f| read32(self.blob, at + f) as usize).sum();
-        Ok((info, DYLIB_INFO_SIZE + (4 * nplatforms).next_multiple_of(8) + 16 * lists))
+        (info, DYLIB_INFO_SIZE + (4 * nplatforms).next_multiple_of(8) + 16 * lists)
     }
 
     /// `count` DylibFileInfoRO_2 records one after another from `at`.
-    fn dylib_infos(&self, at: usize, count: usize) -> Result<Vec<DylibInfo>, String> {
+    fn dylib_infos(&self, at: usize, count: usize) -> Vec<DylibInfo> {
         let mut out = Vec::with_capacity(count);
         let mut pos = at;
         for _ in 0..count {
-            let (info, size) = self.dylib_info(pos)?;
+            let (info, size) = self.dylib_info(pos);
             out.push(info);
             pos += size;
         }
-        Ok(out)
+        out
     }
 
-    fn debug_infos(&self) -> Result<Vec<DebugInfo>, String> {
+    fn debug_infos(&self) -> Vec<DebugInfo> {
         let first = read32(self.blob, 0xbc) as usize;
         let count = read32(self.blob, 0xc0) as usize;
-        if first + count * DEBUG_INFO_SIZE > self.blob.len() {
-            return Err("not enough space for array in parent buffer".into());
-        }
         (0..count)
             .map(|i| {
                 let at = first + i * DEBUG_INFO_SIZE;
-                Ok(DebugInfo {
+                DebugInfo {
                     mtime: read32(self.blob, at),
-                    source_dir: self.cstring(at + 8)?,
-                    source_name: self.cstring(at + 0x18)?,
-                    object_path: self.cstring(at + 0x28)?,
-                })
+                    source_dir: self.cstring(at + 8),
+                    source_name: self.cstring(at + 0x18),
+                    object_path: self.cstring(at + 0x28),
+                }
             })
             .collect()
     }
 
-    fn entries(
-        &self,
-        symbols: &[&'static [u8]],
-        nfixups: usize,
-        nsections: usize,
-        ndylibs: usize,
-    ) -> Result<Vec<Entry>, String> {
-        let table = self.array(0x60, ENTRY_SIZE)?;
-        let pool = read32(self.blob, 0x98) as i64;
+    fn entries(&self, symbols: &[&'static [u8]]) -> Vec<Entry> {
+        let table = self.array(0x60, ENTRY_SIZE);
+        let pool = read32(self.blob, 0x98) as usize;
         table
             .chunks(ENTRY_SIZE)
-            .enumerate()
-            .map(|(i, c)| {
-                if read32(c, 0) as usize != i {
-                    return Err(format!("entry {i} has ordinal {}", read32(c, 0)));
-                }
+            .map(|c| {
                 let nfix = read32(c, 4) as usize;
                 let first = read32(c, 8) as usize;
-                if first + nfix > nfixups {
-                    return Err("fixups out of range".into());
-                }
                 let name = match read32(c, 12) {
                     0xff_ffff => None,
-                    n => Some(*symbols.get(n as usize).ok_or("symbol index out of range")?),
+                    n => Some(symbols[n as usize]),
                 };
                 let flags = read32(c, 16);
                 let size = read32(c, 20);
                 let content = match read32(c, 24) as i32 {
                     -1 => None,
-                    off => Some(self.string_at(pool as usize, off as i64, size as usize)?),
+                    off => Some(self.string_at(pool, off as i64, size as usize)),
                 };
                 let custom = (flags >> 21) as u8;
-                let custom_section = (custom != 0xff).then_some(custom as usize);
-                if custom_section.is_some_and(|s| s >= nsections) {
-                    return Err("custom section index overflow".into());
-                }
-                let dylib = (c[0x1c] != 0xff).then_some(c[0x1c] as usize);
-                if dylib.is_some_and(|d| d >= ndylibs) {
-                    return Err("dylib index out of range".into());
-                }
-                Ok(Entry {
+                Entry {
                     name,
                     scope: (flags & 7) as u8,
                     kind: ((flags >> 3) & 0x1f) as u8,
@@ -616,15 +523,15 @@ impl Reader<'_> {
                     cold: flags & (1 << 15) != 0,
                     no_dead_strip: flags & (1 << 17) != 0,
                     import: ((flags >> 19) & 3) as u8,
-                    custom_section,
+                    custom_section: (custom != 0xff).then_some(custom as usize),
                     size,
                     content,
-                    dylib,
+                    dylib: (c[0x1c] != 0xff).then_some(c[0x1c] as usize),
                     p2align: c[0x1d],
                     modulus: read16(c, 0x1e),
                     debug: read16(c, 0x20),
                     fixups: first..first + nfix,
-                })
+                }
             })
             .collect()
     }
