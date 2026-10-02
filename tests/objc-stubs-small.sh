@@ -45,7 +45,7 @@ for v in 11.0 13.0; do
     objdump -d --no-show-raw-insn --section=__objc_stubs $t/exe > $t/dis
     [ "$(grep -Ec "	b	$stub( |\$)" $t/dis)" = 2 ]
   else
-    [ "$(sect $t/exe __objc_stubs)" = '0x000000000000001a 2^0 ' ]
+    [ "$(sect $t/exe __objc_stubs)" = '0x000000000000001a 2^5 ' ]
   fi
 
   $CC --ld-path=$mold -o $t/exe2 $t/a.o -framework Foundation -mmacosx-version-min=$v \

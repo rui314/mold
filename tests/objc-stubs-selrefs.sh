@@ -41,12 +41,12 @@ grep -q 'sectname __objc_stubs' $t/lc
 # is one (ld-prime coalesces the two): each name appears once.
 otool -X -s __TEXT __objc_methname -V $t/exe | sort | uniq -d > $t/dups
 [ ! -s $t/dups ]
-# ld-prime packs x86-64's 13-byte stubs back to back, byte-aligned
-# (arm64's are 32 bytes, 32-byte aligned).
+# x86-64's stubs are 13 bytes, packed back to back, arm64's 32 bytes;
+# the section is 32-byte aligned on either. (ld-prime leaves x86-64's
+# byte-aligned.)
+grep -A8 'sectname __objc_stubs' $t/lc | grep 'align 2^5'
 if [ $ARCH = x86_64 ]; then
-  grep -A8 'sectname __objc_stubs' $t/lc | grep 'align 2^0'
   grep -A4 'sectname __objc_stubs' $t/lc | grep 'size 0x000000000000000d'
 else
-  grep -A8 'sectname __objc_stubs' $t/lc | grep 'align 2^5'
   grep -A4 'sectname __objc_stubs' $t/lc | grep 'size 0x0000000000000020'
 fi

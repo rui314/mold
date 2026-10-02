@@ -1170,11 +1170,8 @@ fn add_objc_stubs<E: Target>(ctx: &mut Context<E>) {
         if ctx.args.text_exec {
             ctx.objc_stubs.hdr.segname = b"__TEXT_EXEC";
         }
-        // 32-byte stubs on arm64, small ones word-aligned; ld-prime
-        // leaves x86-64's byte-aligned.
-        if E::CPUTYPE == crate::macho::CPU_TYPE_X86_64 {
-            ctx.objc_stubs.hdr.p2align = 0;
-        } else if ctx.args.objc_stubs_small {
+        // 32-byte aligned, but arm64's small stubs word-aligned.
+        if ctx.args.objc_stubs_small {
             ctx.objc_stubs.hdr.p2align = 2;
         }
         ctx.chunks.push(ChunkId::ObjcStubs);
@@ -1807,16 +1804,6 @@ fn add_stub_and_got_chunks<E: Target>(ctx: &mut Context<E>) {
         }
         ctx.stubs.hdr.reserved2 = E::STUB_SIZE as u32;
         ctx.stubs.hdr.size = ctx.stubs.symbols.len() as u64 * E::STUB_SIZE;
-        // ld-prime's x86-64 stubs are byte-aligned when all of them go
-        // through the lazy-binding helper and 2-byte aligned as soon as
-        // one doesn't (chained fixups, -bind_at_load, a weak-lookup
-        // stub): each stub has its own alignment and the section takes
-        // the largest. arm64's are instruction-aligned.
-        if E::CPUTYPE == crate::macho::CPU_TYPE_X86_64 {
-            let lazy = ctx.args.lazy_binding
-                && ctx.stubs.symbols.iter().all(|&id| !ctx.binds_weak_lookup(id));
-            ctx.stubs.hdr.p2align = if lazy { 0 } else { 1 };
-        }
         ctx.chunks.push(ChunkId::Stubs);
     }
     // (A stub bound by weak lookup goes through the GOT; only lazily
