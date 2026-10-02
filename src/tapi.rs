@@ -77,14 +77,6 @@ fn strs(obj: &'static Value, key: &str) -> impl Iterator<Item = &'static str> {
     list(obj, key).iter().filter_map(Value::as_str)
 }
 
-/// The value as an integer, as LLVM's JSON reader takes one: a number
-/// with no fraction, which serde_json reads as a float if written with
-/// one (5.0).
-fn integer(v: &Value) -> Option<i64> {
-    let float = v.as_f64().filter(|n| n.fract() == 0.0 && n.abs() < 9.2e18);
-    v.as_i64().or(float.map(|n| n as i64))
-}
-
 /// Adds the symbols of an Objective-C class a stub lists by name to its
 /// exports: the class and metaclass objects, and with `eh_type` the
 /// exception type too. tapi has a class listed for its exception type
@@ -119,31 +111,22 @@ fn parse_json(
         Ok(root) => Box::leak(Box::new(root)),
         Err(e) => fatal!("{}: malformed .tbd JSON: {e}", file.raw()),
     };
-    check_json(file, root);
+    if root["tapi_tbd_version"] != 5 {
+        fatal!("{}: unsupported .tbd version", file.raw());
+    }
 
     let targets_of = |lib: &'static Value| -> Vec<Target> {
         let info = list(lib, "target_info").iter();
         info.filter_map(|t| t.get("target").and_then(Value::as_str)).filter_map(target).collect()
     };
     let target_of = |lib| select_target(arch, platform, &targets_of(lib)).0;
-    // A group's targets TAPI can't read - not an array, or one with
-    // something other than a string - don't restrict it.
-    let applies = |group: &'static Value, want: Target| match group.get("targets") {
-        Some(Value::Array(targets)) if targets.iter().all(Value::is_string) => {
-            targets.iter().filter_map(Value::as_str).any(|t| target(t) == Some(want))
-        }
-        _ => true,
-    };
-    let library_applies = |lib: &'static Value, want: Target| {
-        lib.get("target_info").is_none() || targets_of(lib).contains(&want)
+    // A group without targets applies to all of the library's.
+    let applies = |group: &'static Value, want: Target| {
+        group.get("targets").is_none() || strs(group, "targets").any(|t| target(t) == Some(want))
     };
 
-    // Adds one library object's symbols for the requested target.
-    let add_symbols = |tbd: &mut TbdFile, lib: &'static Value| {
-        let target = target_of(lib);
-        if !library_applies(lib, target) {
-            return;
-        }
+    // Adds one library object's symbols for its target.
+    let add_symbols = |tbd: &mut TbdFile, lib: &'static Value, target: Target| {
         for key in ["exported_symbols", "reexported_symbols"] {
             for group in list(lib, key).iter().filter(|g| applies(g, target)) {
                 for section in ["data", "text"] {
@@ -170,7 +153,7 @@ fn parse_json(
     // names it re-exports, for the requested target.
     let parse_library = |lib: &'static Value| -> Option<TbdFile> {
         let target = target_of(lib);
-        if !library_applies(lib, target) {
+        if !targets_of(lib).contains(&target) {
             return None;
         }
         let mut tbd = TbdFile {
@@ -185,10 +168,10 @@ fn parse_json(
             tbd.install_name = s.as_bytes();
         }
         if let Some(s) = first("current_versions", "version") {
-            tbd.current_version = packed_version(s).unwrap();
+            tbd.current_version = parse_version(s);
         }
         if let Some(s) = first("compatibility_versions", "version") {
-            tbd.compatibility_version = packed_version(s).unwrap();
+            tbd.compatibility_version = parse_version(s);
         }
         if let Some(s) = (list(lib, "target_info").iter())
             .find(|t| t["target"].as_str().and_then(self::target) == Some(target))
@@ -208,7 +191,7 @@ fn parse_json(
                 tbd.allowable_clients.extend(strs(group, "clients").map(str::as_bytes));
             }
         }
-        add_symbols(&mut tbd, lib);
+        add_symbols(&mut tbd, lib, target);
         for group in list(lib, "reexported_libraries").iter().filter(|g| applies(g, target)) {
             for name in strs(group, "names").map(str::as_bytes) {
                 if !tbd.reexports.contains(&name) {
@@ -236,139 +219,6 @@ fn parse_json(
         fatal!("{}: no install name in .tbd file", file.raw());
     }
     Some(tbd)
-}
-
-/// Stops the link on a version 5 .tbd TAPI refuses, with its diagnostic
-/// naming the section at fault: the first one that isn't what it should
-/// be, by the order TAPI reads them in. Of some lists it reads the first
-/// element only; unknown keys it ignores.
-fn check_json(file: &Path, root: &Value) {
-    let fail = |key: &str| -> ! {
-        fatal!("tapi error: invalid {key} section\n in '{}'", file.raw());
-    };
-    if root.get("tapi_tbd_version").and_then(integer) != Some(5) {
-        fail("tapi_tbd_version");
-    }
-    let Some(main) = root.get("main_library") else {
-        fatal!("{}: no main_library in .tbd file", file.raw());
-    };
-    let libraries = list(root, "libraries").iter().filter(|lib| lib.is_object());
-    for lib in std::iter::once(main).chain(libraries) {
-        check_json_library(lib, &fail);
-    }
-}
-
-/// check_json for a library: the main one or one inlined.
-fn check_json_library(lib: &Value, fail: &dyn Fn(&str) -> !) {
-    let Some(Value::Array(targets)) = lib.get("target_info") else { fail("targets") };
-    for info in targets {
-        if !info["target"].is_string() {
-            fail("target");
-        }
-        if let Some(version) = info.get("min_deployment").and_then(Value::as_str)
-            && !is_version_tuple(version)
-        {
-            fail("min_deployment");
-        }
-    }
-    match list(lib, "install_names").first() {
-        Some(name @ Value::Object(_)) if !name["name"].is_string() => fail("name"),
-        Some(Value::Object(_)) => {}
-        Some(_) => fail("install_names"),
-        None if matches!(lib.get("install_names"), Some(Value::Array(_))) => {}
-        None => fail("install_names"),
-    }
-    for key in ["current_versions", "compatibility_versions"] {
-        let version = match list(lib, key).first() {
-            Some(first @ Value::Object(_)) => first.get("version").and_then(Value::as_str),
-            Some(_) => fail(key),
-            None => continue,
-        };
-        if version.is_some_and(|v| packed_version(v).is_none()) {
-            fail("version");
-        }
-    }
-    match list(lib, "swift_abi").first() {
-        Some(abi @ Value::Object(_)) if abi.get("abi").and_then(integer).is_none() => fail("abi"),
-        Some(Value::Object(_)) | None => {}
-        Some(_) => fail("swift_abi"),
-    }
-    match list(lib, "flags").first() {
-        Some(flags @ Value::Object(_)) => check_json_strings(flags, "attributes", fail),
-        Some(_) => fail("flags"),
-        None => {}
-    }
-    for umbrella in list(lib, "parent_umbrellas") {
-        match umbrella {
-            Value::Object(_) if !umbrella["umbrella"].is_string() => fail("umbrella"),
-            Value::Object(_) => {}
-            _ => fail("parent_umbrellas"),
-        }
-    }
-    for (key, names) in
-        [("allowable_clients", "clients"), ("reexported_libraries", "names"), ("rpaths", "paths")]
-    {
-        for group in list(lib, key) {
-            check_json_strings(group, names, fail);
-        }
-    }
-    for key in ["exported_symbols", "reexported_symbols", "undefined_symbols"] {
-        for group in list(lib, key).iter().filter(|g| g.is_object()) {
-            let segments: Vec<&Value> = (["data", "text"].iter())
-                .filter_map(|seg| group.get(seg).filter(|v| v.is_object()))
-                .collect();
-            if segments.is_empty() {
-                fail(key);
-            }
-            for segment in segments {
-                for kind in
-                    ["global", "objc_class", "objc_eh_type", "objc_ivar", "weak", "thread_local"]
-                {
-                    check_json_strings(segment, kind, fail);
-                }
-            }
-        }
-    }
-}
-
-/// Fails on an array `key` of `obj` with something other than a string.
-fn check_json_strings(obj: &Value, key: &str, fail: &dyn Fn(&str) -> !) {
-    if let Some(Value::Array(items)) = obj.get(key)
-        && !items.iter().all(Value::is_string)
-    {
-        fail(key);
-    }
-}
-
-/// Whether TAPI reads a version 5 .tbd's min_deployment: one to five
-/// numbers, separated by dots.
-fn is_version_tuple(s: &str) -> bool {
-    let parts = s.split('.');
-    let n = parts.clone().count();
-    n <= 5 && parts.into_iter().all(|p| !p.is_empty() && p.bytes().all(|c| c.is_ascii_digit()))
-}
-
-/// A library version as TAPI reads one, packed into 32 bits: up to
-/// three dot-separated numbers (an empty one skipped), the first below
-/// 65536 and the others below 256.
-fn packed_version(s: &str) -> Option<u32> {
-    let parts: Vec<&str> = s.split('.').filter(|p| !p.is_empty()).collect();
-    if parts.is_empty() || parts.len() > 3 {
-        return None;
-    }
-    let mut version = 0;
-    for (i, part) in parts.iter().enumerate() {
-        if !part.bytes().all(|c| c.is_ascii_digit()) {
-            return None;
-        }
-        let n: u64 = part.parse().ok()?;
-        let max = if i == 0 { 0xffff } else { 0xff };
-        if n > max {
-            return None;
-        }
-        version |= (n as u32) << (16 - 8 * i);
-    }
-    Some(version)
 }
 
 /// Strips a YAML scalar's surrounding quotes, if any.
@@ -446,10 +296,7 @@ pub fn parse(mf: &MappedFile, arch: &'static str, platform: u32) -> Option<TbdFi
     let mut main: Option<TbdFile> = None;
     let mut documents: Vec<TbdFile> = Vec::new();
 
-    let docs = yaml_documents(text);
-    check_yaml(mf, text, &docs);
-
-    for (doc, YamlDoc { fields, .. }) in docs.iter().enumerate() {
+    for (doc, fields) in yaml_documents(text).iter().enumerate() {
         let top = || fields.iter().filter(|f| f.indent == 0 && !f.item);
         let (target, platforms) = select_target(arch, platform, &yaml_targets(top()));
         let doc_active = yaml_matches(top(), target);
@@ -488,12 +335,9 @@ pub fn parse(mf: &MappedFile, arch: &'static str, platform: u32) -> Option<TbdFi
                 continue;
             }
             match field.key {
-                // (check_yaml has made sure they read.)
-                "current-version" => {
-                    tbd.current_version = packed_version(unquote(field.value)).unwrap()
-                }
+                "current-version" => tbd.current_version = parse_version(unquote(field.value)),
                 "compatibility-version" => {
-                    tbd.compatibility_version = packed_version(unquote(field.value)).unwrap()
+                    tbd.compatibility_version = parse_version(unquote(field.value))
                 }
                 // Version 4 lists them per target group ("umbrella:",
                 // "clients:"), older versions directly.
@@ -556,9 +400,8 @@ pub fn parse(mf: &MappedFile, arch: &'static str, platform: u32) -> Option<TbdFi
 struct YamlField {
     indent: usize,
     item: bool,
-    /// The key, unquoted, and as written.
+    /// The key, unquoted.
     key: &'static str,
-    raw_key: &'static str,
     /// The value: a scalar, a flow sequence ("[ a, b ]", perhaps over
     /// several lines), the lines of a block sequence of scalars ("- a"
     /// and on) or empty, for a nested mapping or a block sequence of
@@ -567,15 +410,10 @@ struct YamlField {
 }
 
 impl YamlField {
+    /// The items of a sequence, unquoted. (A stub's export lists are
+    /// most of its bytes, an item a line, indented: the items are split
+    /// with memchr and their blanks skipped byte by byte.)
     fn items(&self) -> impl Iterator<Item = &'static str> {
-        self.raw_items().map(unquote).filter(|s| !s.is_empty())
-    }
-
-    /// The items of a sequence as written, with any blanks after one.
-    /// (A stub's export lists are most of its bytes, an item a line,
-    /// indented: the items are split with memchr and their blanks
-    /// skipped byte by byte.)
-    fn raw_items(&self) -> impl Iterator<Item = &'static str> {
         let block = self.value.starts_with("- ");
         let (body, sep) = match block {
             true => (self.value, b'\n'),
@@ -583,14 +421,12 @@ impl YamlField {
         };
         let mut start = 0;
         let ends = memchr::memchr_iter(sep, body.as_bytes()).chain([body.len()]);
-        ends.map(move |end| {
+        let items = ends.map(move |end| {
             let item = &body[start..end];
             start = end + 1;
-            match block {
-                true => trim_start(trim_start(item).trim_start_matches('-')),
-                false => trim_start(item),
-            }
-        })
+            if block { trim_start(item).trim_start_matches('-') } else { item }
+        });
+        items.map(unquote).filter(|s| !s.is_empty())
     }
 }
 
@@ -625,425 +461,6 @@ fn block_scalar(line: &str) -> Option<&str> {
     (item.starts_with(['\'', '"']) || !item.contains(':')).then_some(item)
 }
 
-/// Stops the link on a malformed .tbd, `what` is wrong at `item` (a
-/// slice of `text`), with ld-prime's YAML reader's diagnostic: the line,
-/// and under it the item's first `len` columns marked.
-fn malformed(mf: &MappedFile, text: &str, item: &str, len: usize, what: &str) -> ! {
-    let off = item.as_ptr() as usize - text.as_ptr() as usize;
-    let line_start = text[..off].rfind('\n').map_or(0, |i| i + 1);
-    let line_end = text[off..].find('\n').map_or(text.len(), |i| off + i);
-    let col = off - line_start;
-    fatal!(
-        "tapi error: malformed file\n{}:{}:{}: error: {what}\n{}\n{}^{}\n in '{}'",
-        crate::passes::resolved_file_name(mf),
-        text[..off].matches('\n').count() + 1,
-        col + 1,
-        &text[line_start..line_end],
-        " ".repeat(col),
-        "~".repeat(len.saturating_sub(1)),
-        mf.name.raw()
-    );
-}
-
-/// The columns a YAML scalar spans: a quoted one's as written, a plain
-/// one's with the blanks up to the next delimiter on its line.
-fn scalar_len(item: &str) -> usize {
-    if item.starts_with(['\'', '"']) {
-        unquote(item).len() + 2
-    } else {
-        item.lines().next().unwrap_or("").len()
-    }
-}
-
-/// Stops the link on a .tbd TAPI's YAML reader refuses, with its
-/// diagnostic for the first fault (see malformed). It reads a document
-/// by the schema of the version its tag names, key by key in the
-/// schema's order, a nested mapping wholly as it comes to one: a key
-/// missing that must be there; a value that should be a sequence (or
-/// one of mappings) but isn't; a target of a platform TAPI doesn't know
-/// (it refuses an architecture it doesn't know too, but those come and
-/// go with SDKs - arm64e.x1 - and one unknown here is merely one the
-/// link can't use) or a version 1-3 platform it doesn't; and then the
-/// first by name of the keys the schema doesn't have. A key given twice
-/// in one mapping it refuses before all that, as it reads the document.
-fn check_yaml(mf: &MappedFile, text: &str, docs: &[YamlDoc]) {
-    for doc in docs.iter().filter(|doc| !doc.fields.is_empty()) {
-        let cx = YamlCheck { mf, text, fields: &doc.fields, v4: doc.tag == "!tapi-tbd" };
-        cx.check_duplicates(0);
-        let schema = match doc.tag {
-            "" | "!tapi-tbd-v1" => TOP_V1,
-            "!tapi-tbd-v2" => TOP_V2,
-            "!tapi-tbd-v3" => TOP_V3,
-            "!tapi-tbd" => TOP_V4,
-            _ => cx.fail(doc.fields[0].raw_key, 1, "unsupported file type"),
-        };
-        cx.check_mapping(0, schema);
-    }
-}
-
-/// A key of a mapping in a .tbd, as TAPI's YAML schema for a version has
-/// it: whether it must be there, and what its value is.
-struct SchemaKey {
-    name: &'static str,
-    required: bool,
-    value: SchemaValue,
-}
-
-#[derive(Clone, Copy)]
-enum SchemaValue {
-    Scalar,
-    Sequence,
-    /// A sequence of mappings of these keys.
-    Mappings(&'static [SchemaKey]),
-}
-
-use SchemaValue::{Mappings, Scalar, Sequence};
-
-const fn key(name: &'static str, value: SchemaValue) -> SchemaKey {
-    SchemaKey { name, required: false, value }
-}
-
-const fn required(name: &'static str, value: SchemaValue) -> SchemaKey {
-    SchemaKey { name, required: true, value }
-}
-
-const TOP_V1: &[SchemaKey] = &[
-    required("archs", Sequence),
-    required("platform", Scalar),
-    required("install-name", Scalar),
-    key("current-version", Scalar),
-    key("compatibility-version", Scalar),
-    key("swift-version", Scalar),
-    key("objc-constraint", Scalar),
-    key("exports", Mappings(EXPORTS_V1)),
-];
-
-const EXPORTS_V1: &[SchemaKey] = &[
-    required("archs", Sequence),
-    key("allowed-clients", Sequence),
-    key("re-exports", Sequence),
-    key("symbols", Sequence),
-    key("objc-classes", Sequence),
-    key("objc-ivars", Sequence),
-    key("weak-def-symbols", Sequence),
-    key("thread-local-symbols", Sequence),
-];
-
-const TOP_V2: &[SchemaKey] = &[
-    required("archs", Sequence),
-    key("uuids", Sequence),
-    required("platform", Scalar),
-    key("flags", Sequence),
-    required("install-name", Scalar),
-    key("current-version", Scalar),
-    key("compatibility-version", Scalar),
-    key("swift-version", Scalar),
-    key("objc-constraint", Scalar),
-    key("parent-umbrella", Scalar),
-    key("exports", Mappings(EXPORTS_V2)),
-    key("undefineds", Mappings(UNDEFINEDS_V2)),
-];
-
-const EXPORTS_V2: &[SchemaKey] = &[
-    required("archs", Sequence),
-    key("allowable-clients", Sequence),
-    key("re-exports", Sequence),
-    key("symbols", Sequence),
-    key("objc-classes", Sequence),
-    key("objc-ivars", Sequence),
-    key("weak-def-symbols", Sequence),
-    key("thread-local-symbols", Sequence),
-];
-
-const UNDEFINEDS_V2: &[SchemaKey] = &[
-    required("archs", Sequence),
-    key("symbols", Sequence),
-    key("objc-classes", Sequence),
-    key("objc-ivars", Sequence),
-    key("weak-ref-symbols", Sequence),
-];
-
-const TOP_V3: &[SchemaKey] = &[
-    required("archs", Sequence),
-    key("uuids", Sequence),
-    required("platform", Scalar),
-    key("flags", Sequence),
-    required("install-name", Scalar),
-    key("current-version", Scalar),
-    key("compatibility-version", Scalar),
-    key("swift-abi-version", Scalar),
-    key("objc-constraint", Scalar),
-    key("parent-umbrella", Scalar),
-    key("exports", Mappings(EXPORTS_V3)),
-    key("undefineds", Mappings(UNDEFINEDS_V3)),
-];
-
-const EXPORTS_V3: &[SchemaKey] = &[
-    required("archs", Sequence),
-    key("allowable-clients", Sequence),
-    key("re-exports", Sequence),
-    key("symbols", Sequence),
-    key("objc-classes", Sequence),
-    key("objc-eh-types", Sequence),
-    key("objc-ivars", Sequence),
-    key("weak-def-symbols", Sequence),
-    key("thread-local-symbols", Sequence),
-];
-
-const UNDEFINEDS_V3: &[SchemaKey] = &[
-    required("archs", Sequence),
-    key("symbols", Sequence),
-    key("objc-classes", Sequence),
-    key("objc-eh-types", Sequence),
-    key("objc-ivars", Sequence),
-    key("weak-ref-symbols", Sequence),
-];
-
-const TOP_V4: &[SchemaKey] = &[
-    required("tbd-version", Scalar),
-    required("targets", Sequence),
-    key("uuids", Mappings(&[required("target", Scalar), required("value", Scalar)])),
-    key("flags", Sequence),
-    required("install-name", Scalar),
-    key("current-version", Scalar),
-    key("compatibility-version", Scalar),
-    key("swift-abi-version", Scalar),
-    key(
-        "parent-umbrella",
-        Mappings(&[required("targets", Sequence), required("umbrella", Scalar)]),
-    ),
-    key(
-        "allowable-clients",
-        Mappings(&[required("targets", Sequence), required("clients", Sequence)]),
-    ),
-    key(
-        "reexported-libraries",
-        Mappings(&[required("targets", Sequence), required("libraries", Sequence)]),
-    ),
-    key("exports", Mappings(SYMBOLS_V4)),
-    key("reexports", Mappings(SYMBOLS_V4)),
-    key("undefineds", Mappings(SYMBOLS_V4)),
-];
-
-const SYMBOLS_V4: &[SchemaKey] = &[
-    required("targets", Sequence),
-    key("symbols", Sequence),
-    key("objc-classes", Sequence),
-    key("objc-eh-types", Sequence),
-    key("objc-ivars", Sequence),
-    key("weak-symbols", Sequence),
-    key("thread-local-symbols", Sequence),
-];
-
-/// A YAML document's fields under check_yaml. A mapping is known by
-/// the index of its first key.
-struct YamlCheck<'a> {
-    mf: &'a MappedFile,
-    text: &'a str,
-    fields: &'a [YamlField],
-    /// The document is in version 4 of the format.
-    v4: bool,
-}
-
-impl YamlCheck<'_> {
-    fn fail(&self, item: &str, len: usize, what: &str) -> ! {
-        malformed(self.mf, self.text, item, len, what)
-    }
-
-    /// The column the key at `i` starts at: an item's after its "- ".
-    fn column(&self, i: usize) -> usize {
-        self.fields[i].indent + if self.fields[i].item { 2 } else { 0 }
-    }
-
-    /// Where the fields of the value of the key at `i` end: those of a
-    /// mapping deeper than it, or of a block sequence's items, whose
-    /// "- " may start at its own column.
-    fn value_end(&self, i: usize) -> usize {
-        let col = self.column(i);
-        let rest = &self.fields[i + 1..];
-        i + 1 + rest.iter().take_while(|f| f.indent > col || (f.item && f.indent == col)).count()
-    }
-
-    /// The keys of a mapping.
-    fn mapping_keys(&self, first: usize) -> Vec<usize> {
-        let col = self.column(first);
-        let mut keys = vec![first];
-        let mut i = self.value_end(first);
-        while i < self.fields.len() && !self.fields[i].item && self.fields[i].indent == col {
-            keys.push(i);
-            i = self.value_end(i);
-        }
-        keys
-    }
-
-    /// The mappings the key at `i` has for its value: a block sequence's
-    /// or a nested one.
-    fn nested_mappings(&self, i: usize) -> Vec<usize> {
-        let end = self.value_end(i);
-        if i + 1 == end {
-            return Vec::new();
-        }
-        let first = &self.fields[i + 1];
-        if !first.item {
-            return vec![i + 1];
-        }
-        (i + 1..end)
-            .filter(|&j| self.fields[j].item && self.fields[j].indent == first.indent)
-            .collect()
-    }
-
-    fn check_duplicates(&self, first: usize) {
-        let keys = self.mapping_keys(first);
-        for (n, &i) in keys.iter().enumerate() {
-            let field = &self.fields[i];
-            if keys[..n].iter().any(|&j| self.fields[j].key == field.key) {
-                let what = format!("duplicated mapping key '{}'", field.key);
-                self.fail(field.raw_key, field.raw_key.len(), &what);
-            }
-            for nested in self.nested_mappings(i) {
-                self.check_duplicates(nested);
-            }
-        }
-    }
-
-    fn check_mapping(&self, first: usize, schema: &[SchemaKey]) {
-        let keys = self.mapping_keys(first);
-        for key in schema {
-            match keys.iter().find(|&&i| self.fields[i].key == key.name) {
-                Some(&i) => self.check_value(i, key),
-                None if key.required => {
-                    let what = format!("missing required key '{}'", key.name);
-                    self.fail(self.fields[first].raw_key, 1, &what);
-                }
-                None => {}
-            }
-        }
-        let unknown = (keys.iter().map(|&i| &self.fields[i]))
-            .filter(|f| !schema.iter().any(|key| key.name == f.key))
-            .min_by_key(|f| f.key);
-        if let Some(f) = unknown {
-            self.fail(f.raw_key, f.raw_key.len(), &format!("unknown key '{}'", f.key));
-        }
-    }
-
-    fn check_value(&self, i: usize, key: &SchemaKey) {
-        let field = &self.fields[i];
-        let value = field.value;
-        let is_sequence = value.starts_with('[') || value.starts_with("- ");
-        // A null is an empty sequence, but for a set of flags.
-        let is_null = value.is_empty() || matches!(value, "~" | "null" | "Null" | "NULL");
-        let is_scalar = !is_sequence && !is_null;
-        match key.value {
-            Scalar => self.check_scalar(key.name, value),
-            Sequence if key.name == "flags" => {
-                if !is_sequence && !value.is_empty() {
-                    self.fail(value, scalar_len(value), "expected sequence of bit values");
-                }
-                let known = |item: &str| {
-                    let flags = ["flat_namespace", "not_app_extension_safe", "installapi"];
-                    flags.contains(&item) || item == "not_for_dyld_shared_cache"
-                };
-                let unknown = |item: &&str| !item.is_empty() && !known(unquote(item));
-                if let Some(item) = field.raw_items().find(unknown) {
-                    self.fail(item, scalar_len(item), "unknown bit value");
-                }
-            }
-            Sequence => {
-                if is_scalar {
-                    self.fail(value, scalar_len(value), "not a sequence");
-                }
-                let unknown =
-                    |item: &&'static str| !item.is_empty() && target(unquote(item)).is_none();
-                if key.name == "targets"
-                    && let Some(item) = field.raw_items().find(unknown)
-                {
-                    self.fail(item, scalar_len(item), "unknown target");
-                }
-            }
-            Mappings(schema) => {
-                if is_scalar {
-                    self.fail(value, scalar_len(value), "not a sequence");
-                }
-                if let Some(item) = field.raw_items().find(|item| !item.is_empty()) {
-                    self.fail(item, scalar_len(item), "not a mapping");
-                }
-                for nested in self.nested_mappings(i) {
-                    self.check_mapping(nested, schema);
-                }
-            }
-        }
-    }
-
-    /// Checks a scalar's value as the type TAPI reads it as takes it. In
-    /// place of a scalar, a sequence fails it with the same complaint,
-    /// at the sequence's first token (or "unexpected scalar", for a
-    /// plain string); an empty value fails it at the token that follows.
-    fn check_scalar(&self, key: &str, value: &'static str) {
-        let what = match key {
-            "platform" => "unknown platform",
-            "current-version" | "compatibility-version" => "invalid packed version string.",
-            "swift-version" | "swift-abi-version" => "invalid Swift ABI version.",
-            "objc-constraint" => "unknown enumerated scalar",
-            "tbd-version" => "invalid number",
-            "target" => "unknown target",
-            _ => "unexpected scalar",
-        };
-        if let Some(seq) = value.strip_prefix('[').or_else(|| value.strip_prefix("- ")) {
-            self.fail(seq.trim_start(), 1, what);
-        }
-        let v = unquote(value);
-        let ok = match key {
-            "platform" => !legacy_platforms(v).is_empty(),
-            "current-version" | "compatibility-version" => packed_version(v).is_some(),
-            "swift-version" | "swift-abi-version" => {
-                (!self.v4 && matches!(v, "1.0" | "1.1" | "2.0" | "3.0"))
-                    || (v.bytes().all(|c| c.is_ascii_digit()) && v.parse::<u8>().is_ok())
-            }
-            "objc-constraint" => matches!(
-                v,
-                "none"
-                    | "retain_release"
-                    | "retain_release_for_simulator"
-                    | "retain_release_or_gc"
-                    | "gc"
-            ),
-            "tbd-version" => match auto_radix_number(v) {
-                Some(n) if n > u32::MAX as u64 => {
-                    self.fail(value, scalar_len(value), "out of range number")
-                }
-                n => n.is_some(),
-            },
-            "target" => target(v).is_some(),
-            _ => true,
-        };
-        if !ok {
-            let off = value.as_ptr() as usize - self.text.as_ptr() as usize;
-            let at = if value.is_empty() { self.text[off..].trim_start() } else { value };
-            self.fail(at, scalar_len(value), what);
-        }
-    }
-}
-
-/// A number as LLVM reads one with its radix from its prefix: 0x for
-/// hexadecimal, 0b binary, 0o or 0 octal, and decimal otherwise.
-fn auto_radix_number(s: &str) -> Option<u64> {
-    let (digits, radix) = if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
-        (hex, 16)
-    } else if let Some(bin) = s.strip_prefix("0b").or_else(|| s.strip_prefix("0B")) {
-        (bin, 2)
-    } else if let Some(oct) = s.strip_prefix("0o") {
-        (oct, 8)
-    } else if s.len() > 1 && s.starts_with('0') {
-        (&s[1..], 8)
-    } else {
-        (s, 10)
-    };
-    if digits.is_empty() || !digits.bytes().all(|c| c.is_ascii_alphanumeric()) {
-        return None;
-    }
-    u64::from_str_radix(digits, radix).ok()
-}
-
 /// The targets of a document's top-level fields: a version 4 file's, or
 /// a version 1-3 file's architectures on its platform.
 fn yaml_targets<'a>(fields: impl Iterator<Item = &'a YamlField> + Clone) -> Vec<Target> {
@@ -1069,29 +486,20 @@ fn yaml_matches<'a>(fields: impl Iterator<Item = &'a YamlField>, want: Target) -
     })
 }
 
-/// A YAML document of a .tbd: the tag its "---" line gives it (which
-/// says the version of the format), and its fields.
-struct YamlDoc {
-    tag: &'static str,
-    fields: Vec<YamlField>,
-}
-
-fn yaml_documents(text: &'static str) -> Vec<YamlDoc> {
+/// The fields of each YAML document of a .tbd.
+fn yaml_documents(text: &'static str) -> Vec<Vec<YamlField>> {
     let bytes = text.as_bytes();
-    let mut docs = vec![YamlDoc { tag: "", fields: Vec::new() }];
+    let mut docs: Vec<Vec<YamlField>> = vec![Vec::new()];
     let mut pos = 0;
     while pos < bytes.len() {
         let eol = memchr_from(bytes, b'\n', pos).unwrap_or(bytes.len());
         let raw = &text[pos..eol];
         let line = raw.trim_start();
         let mut next = eol + 1;
-        if let Some(tag) = line.strip_prefix("---") {
-            if !docs.last().unwrap().fields.is_empty() {
-                docs.push(YamlDoc { tag: "", fields: Vec::new() });
-            }
-            docs.last_mut().unwrap().tag = tag.trim();
+        if line.starts_with("---") && !docs.last().unwrap().is_empty() {
+            docs.push(Vec::new());
         }
-        let fields = &mut docs.last_mut().unwrap().fields;
+        let fields = docs.last_mut().unwrap();
         if line.starts_with("---") || line.starts_with('#') {
         } else if let Some(item) = block_scalar(line) {
             // A block sequence's scalars are its key's value, from the
@@ -1119,12 +527,10 @@ fn yaml_documents(text: &'static str) -> Vec<YamlDoc> {
                 let end = value.as_ptr() as usize - text.as_ptr() as usize + value.len();
                 next = memchr_from(bytes, b'\n', end).map_or(bytes.len(), |i| i + 1);
             }
-            let raw_key = key.trim_end();
             fields.push(YamlField {
                 indent: raw.len() - line.len(),
                 item: line.starts_with("- "),
-                key: unquote(raw_key),
-                raw_key,
+                key: unquote(key),
                 value,
             });
         }

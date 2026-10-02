@@ -68,3 +68,22 @@ grep -q 'undefined.*weak.*_some_weak (from Some)' $t/nm
 $CC --ld-path=$mold -o $t/exe2 $t/a.o -F$t/libs -framework Some -framework Foundation \
   -Wl,-application_extension 2> $t/log || true
 not grep -q 'application extensions' $t/log
+
+# Of the install names and the versions, TAPI reads the first entry,
+# whatever its targets. Keys it doesn't know it ignores.
+cat > $t/first.tbd <<EOF
+{
+  "tapi_tbd_version": 5,
+  "unknown": 1,
+  "main_library": {
+    "target_info": [{"target": "$ARCH-macos"}, {"target": "arm64e-macos"}],
+    "install_names": [{"targets": ["arm64e-macos"], "name": "/usr/lib/libfirst.dylib"},
+                      {"name": "/usr/lib/libsecond.dylib"}],
+    "current_versions": [{"targets": ["arm64e-macos"], "version": "2"}, {"version": "3"}],
+    "exported_symbols": [{"text": {"global": ["_foo"]}}]
+  }
+}
+EOF
+echo 'int foo(); int main() { return foo(); }' | $CC -o $t/b.o -c -xc -
+$CC --ld-path=$mold -o $t/exe3 $t/b.o $t/first.tbd
+otool -L $t/exe3 | grep -q '/usr/lib/libfirst.dylib (compatibility version 1.0.0, current version 2.0.0)'
