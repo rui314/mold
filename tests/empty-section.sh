@@ -45,5 +45,5 @@ Lin_e:
 _p: .quad Lin_e
 .subsections_via_symbols
 EOF
-not $CC --ld-path=$mold -o $t/exe3 $t/main.o $t/c.o 2> $t/log
-grep -Eq 'points to section\(2\) with no content|invalid r_symbolnum' $t/log
+not $CC --ld-path=$mold -o $t/exe3 $t/main.o $t/c.o 2> /dev/null
+not $mold -r -arch $ARCH -o $t/r2.o $t/c.o 2> /dev/null

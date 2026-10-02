@@ -43,9 +43,7 @@ EOF
   not grep -q ltmp1 $t/syms5
 fi
 
-# Its symbol table ends at the last symbol it keeps, so the index of a
-# label no kept symbol follows is out of range. (The arm64 assembler
-# adds ltmp0-2 at the sections' starts.)
+# A relocation to such a label, local or global, fails the link.
 cat <<EOF | $CC -o $t/b.o -c -xassembler -
 .section __TEXT,__literal8,8byte_literals
 .quad 1
@@ -55,9 +53,7 @@ _end8:
 .globl _p
 _p: .quad _end8
 EOF
-[ $ARCH = arm64 ] && n=2 || n=0
-not $CC --ld-path=$mold -o $t/exe3 $t/main.o $t/b.o 2> $t/log3
-grep -q "invalid r_symbolnum=$n in '.*$t/b.o'" $t/log3
+not $CC --ld-path=$mold -o $t/exe3 $t/main.o $t/b.o 2> /dev/null
 
 cat <<EOF | $CC -o $t/b2.o -c -xassembler -
 .section __TEXT,__literal8,8byte_literals
@@ -68,9 +64,7 @@ _end8:
 .p2align 3
 .quad _end8
 EOF
-[ $ARCH = arm64 ] && n=3 || n=0
-not $CC --ld-path=$mold -o $t/exe3 $t/main.o $t/b2.o 2> $t/log3
-grep -q "r_symbolnum=$n out of range in '.*$t/b2.o'" $t/log3
+not $CC --ld-path=$mold -o $t/exe3 $t/main.o $t/b2.o 2> /dev/null
 
 # An initializer or terminator pointer needs a relocation.
 cat <<EOF | $CC -o $t/c.o -c -xassembler -

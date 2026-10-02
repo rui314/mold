@@ -11,10 +11,7 @@ use crate::fatal;
 use crate::input_sections::{Reloc, RelocTarget};
 use crate::macho::*;
 use crate::symbol::SymbolId;
-use crate::target::{
-    BadReloc, RelocError, SplitRef, Target, check_reloc_index, check_reloc_place, has_reloc_form,
-    reloc_form,
-};
+use crate::target::{SplitRef, Target, has_reloc_form, reloc_form};
 
 #[derive(Clone, Copy, Default)]
 pub struct X86_64;
@@ -98,8 +95,9 @@ fn reloc_bias(r_type: u8) -> i64 {
     }
 }
 
-/// Whether ld-prime takes a record's pcrel, length and extern fields
-/// for its type.
+/// Whether a record's pcrel, length and extern fields are ones its type
+/// takes. An assembler writes other forms for `.short sym` or
+/// `.quad sym@GOTPCREL`.
 #[inline]
 fn is_supported(r: &MachRel) -> bool {
     let forms = match r.r_type() {
@@ -122,34 +120,6 @@ fn is_supported(r: &MachRel) -> bool {
         _ => 0,
     };
     has_reloc_form(r, forms)
-}
-
-/// Checks record `i` as ld-prime does when it reads it: its type must
-/// take its pcrel, length and extern fields, and a SUBTRACTOR must pair
-/// with an UNSIGNED of its size at its address. ld-prime checks no
-/// instructions here.
-#[inline(always)]
-fn check_reloc(rels: &[MachRel], i: usize) -> Result<(), BadReloc> {
-    let r = &rels[i];
-    if !is_supported(r) {
-        return Err(BadReloc::new(r, RelocError::Unsupported));
-    }
-    if r.r_type() == X86_64_RELOC_SUBTRACTOR {
-        let Some(u) = rels.get(i + 1).filter(|u| {
-            u.r_type() == X86_64_RELOC_UNSIGNED && is_supported(u) && u.r_length() == r.r_length()
-        }) else {
-            return Err(BadReloc::new(r, RelocError::Unsupported));
-        };
-        if u.r_address != r.r_address {
-            return Err(BadReloc::new(
-                u,
-                RelocError::Invalid(
-                    "X86_64_RELOC_SUBTRACTOR preceeding X86_64_RELOC_UNSIGNED must have same r_address",
-                ),
-            ));
-        }
-    }
-    Ok(())
 }
 
 /// The displacement a 32-bit pc-relative fixup, relocation `r` of
@@ -602,16 +572,13 @@ impl Target for X86_64 {
         hdr: &MachSection,
         contents: &[u8],
         rels: &[MachRel],
-        nsyms: usize,
-    ) -> Result<Vec<Reloc>, BadReloc> {
+    ) -> Vec<Reloc> {
         let mut vec = Vec::with_capacity(rels.len());
 
         for (i, r) in rels.iter().enumerate() {
-            // Diagnostics print the path as its bytes are.
-            let file_name = file_name.raw();
-            check_reloc_place(r, contents)?;
-            check_reloc(rels, i)?;
-            check_reloc_index(r, sections.len(), nsyms)?;
+            if !is_supported(r) {
+                crate::target::bad_reloc(file_name, hdr, r, "unsupported relocation");
+            }
 
             // On x86-64 every relocation's addend is embedded in the
             // relocated field.
@@ -635,7 +602,7 @@ impl Target for X86_64 {
                 let Some(idx) =
                     crate::target::nonextern_target_section(sections, r.r_section(), addr)
                 else {
-                    fatal!("{file_name}: bad relocation: {}", r.r_address);
+                    fatal!("{}: bad relocation: {}", file_name.raw(), r.r_address);
                 };
                 (RelocTarget::Section(idx as u32), addr.wrapping_sub(sections[idx].addr) as i64)
             };
@@ -650,7 +617,7 @@ impl Target for X86_64 {
                 addend,
             });
         }
-        Ok(vec)
+        vec
     }
 
     fn apply_relocs(
@@ -771,7 +738,7 @@ impl Target for X86_64 {
                         write64(loc, s.wrapping_add_signed(a));
                     }
                 }
-                // read_relocs has paired it with an UNSIGNED of its size.
+                // The assembler pairs it with an UNSIGNED of its size.
                 X86_64_RELOC_SUBTRACTOR => {
                     i += 1;
                     let val = ctx

@@ -795,8 +795,8 @@ fn add_merged_dependencies<E: Target>(ctx: &mut Context<E>) {
 /// doesn't know, aligns the constants of a __DATA,__cfstring to a
 /// pointer whatever the section says, reads a __DATA,__objc_imageinfo record
 /// only if it has its 8 bytes and no more than their worth, and ignores
-/// a label at the end of a section of fixed-size records and a symbol
-/// outside its section. It fails the link on an initializer,
+/// a label at the end of a section of fixed-size records. It fails the
+/// link on an initializer,
 /// terminator or __objc_clsrolist pointer with no relocation. It warns
 /// of no section past the one where it gave up reading an object (see
 /// StagedObject::failed_at).
@@ -837,12 +837,6 @@ fn warn_about_sections(staged: &[input_files::StagedObject]) {
                     resolved_file_name(obj.mf)
                 );
             }
-        }
-        for &i in &obj.misplaced_symbols {
-            crate::warn!(
-                "{} symbol is ignored, because its address isn't in its designated section",
-                raw(obj.sym_names[i as usize])
-            );
         }
         for &i in &obj.extraneous_labels {
             let nlist = &obj.nlists[i as usize];

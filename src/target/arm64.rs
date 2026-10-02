@@ -14,10 +14,7 @@ use crate::fatal;
 use crate::input_files::ObjectFile;
 use crate::input_sections::{Reloc, RelocTarget};
 use crate::macho::*;
-use crate::target::{
-    BadReloc, RelocError, SplitRef, Target, check_reloc_index, check_reloc_place, has_reloc_form,
-    reloc_form,
-};
+use crate::target::{SplitRef, Target, has_reloc_form, reloc_form};
 use crate::util::{bits, sign_extend};
 
 #[derive(Clone, Copy, Default)]
@@ -311,9 +308,9 @@ impl LoadStore {
     }
 }
 
-/// Whether ld-prime takes a record's pcrel, length and extern fields
-/// for its type. Only an UNSIGNED may be section-relative; a 4-byte one
-/// is checked further.
+/// Whether a record's pcrel, length and extern fields are ones its type
+/// takes. Only an UNSIGNED may be section-relative. An assembler writes
+/// other forms for `.short sym` or `.quad sym@GOT`.
 #[inline]
 fn is_supported(r: &MachRel) -> bool {
     let forms = match r.r_type() {
@@ -333,210 +330,41 @@ fn is_supported(r: &MachRel) -> bool {
         | ARM64_RELOC_GOT_LOAD_PAGEOFF12
         | ARM64_RELOC_TLVP_LOAD_PAGEOFF12 => reloc_form(false, 2, true),
         ARM64_RELOC_ADDEND => reloc_form(false, 2, false),
-        ARM64_RELOC_AUTHENTICATED_POINTER => reloc_form(false, 3, true),
         _ => 0,
     };
     has_reloc_form(r, forms)
 }
 
-/// A SUBTRACTOR pairs with the record after it: an UNSIGNED of its size
-/// at its address that names a symbol.
-fn check_subtractor(r: &MachRel, next: Option<&MachRel>) -> Result<(), BadReloc> {
-    let Some(u) = next.filter(|u| {
-        u.r_type() == ARM64_RELOC_UNSIGNED
-            && is_supported(u)
-            && u.is_extern()
-            && u.r_length() == r.r_length()
-    }) else {
-        return Err(BadReloc::new(r, RelocError::Unsupported));
-    };
-    if u.r_address != r.r_address {
-        return Err(BadReloc::new(
-            u,
-            RelocError::Invalid(
-                "ARM64_RELOC_SUBTRACTOR preceeding ARM64_RELOC_UNSIGNED must have same r_address",
-            ),
-        ));
-    }
-    Ok(())
-}
-
-/// An ADDEND gives the addend of the record after it, a BRANCH26,
-/// PAGE21 or PAGEOFF12.
-fn check_addend(r: &MachRel, next: Option<&MachRel>) -> Result<(), BadReloc> {
-    match next {
-        Some(n)
-            if matches!(
-                n.r_type(),
-                ARM64_RELOC_BRANCH26 | ARM64_RELOC_PAGE21 | ARM64_RELOC_PAGEOFF12
-            ) && is_supported(n) =>
-        {
-            Ok(())
-        }
-        _ => Err(BadReloc::new(r, RelocError::Unsupported)),
-    }
-}
-
-/// A record as check_reloc matches it: its second word's top byte -
-/// type, extern, length and pcrel fields - above the instruction it
-/// patches (for a record of 4 bytes or more).
-fn reloc_key(r: &MachRel, insn: u32) -> u64 {
-    ((r.bits >> 24) as u64) << 56 | insn as u64
-}
-
-/// A (mask, value) pair for reloc_key matching a record of a type and
-/// form - either extern if `ext` is None - on an instruction whose
-/// `insn_mask` bits are `insn`.
-const fn common_reloc(
-    r_type: u8,
-    pcrel: bool,
-    length: u32,
-    ext: Option<bool>,
-    insn_mask: u32,
-    insn: u32,
-) -> (u64, u64) {
-    let top = (r_type as u64) << 4 | (length as u64) << 1 | pcrel as u64;
-    let (ext_mask, ext) = match ext {
-        Some(ext) => (1 << 3, (ext as u64) << 3),
-        None => (0, 0),
-    };
-    ((0xf7 | ext_mask) << 56 | insn_mask as u64, (top | ext) << 56 | insn as u64)
-}
-
-/// What nearly every record is, all of it taken by ld-prime: of the
-/// form (pcrel, length and extern fields) its type usually has - an
-/// UNSIGNED of either extern - and, for a type that patches an
-/// instruction, on b or bl, adrp, add, or ldr or str of a W or X
-/// register (an X register's ldr for a GOT or TLV load), all with a
-/// zero immediate. For each type, two pairs of which reloc_key matches
-/// one; check_reloc_slow decides any other record.
-const COMMON_RELOCS: [[(u64, u64); 2]; 16] = {
-    // An extern 4-byte record on an instruction, as both pairs.
-    const fn on(r_type: u8, pcrel: bool, insn_mask: u32, insn: u32) -> [(u64, u64); 2] {
-        [common_reloc(r_type, pcrel, 2, Some(true), insn_mask, insn); 2]
-    }
-    const B_BL: (u32, u32) = (0x7fff_ffff, 0x1400_0000);
-    const ADRP: (u32, u32) = (0xffff_ffe0, 0x9000_0000);
-    const ADD: (u32, u32) = (0x7fff_fc00, 0x1100_0000);
-    const LDR_STR: (u32, u32) = (0xbfbf_fc00, 0xb900_0000);
-    const LDR_X: (u32, u32) = (0xffff_fc00, 0xf940_0000);
-
-    // (0, 1) matches nothing: the mask makes every key 0.
-    let mut table = [[(0, 1); 2]; 16];
-    table[ARM64_RELOC_UNSIGNED as usize] =
-        [common_reloc(ARM64_RELOC_UNSIGNED, false, 3, None, 0, 0); 2];
-    table[ARM64_RELOC_BRANCH26 as usize] = on(ARM64_RELOC_BRANCH26, true, B_BL.0, B_BL.1);
-    table[ARM64_RELOC_PAGE21 as usize] = on(ARM64_RELOC_PAGE21, true, ADRP.0, ADRP.1);
-    table[ARM64_RELOC_GOT_LOAD_PAGE21 as usize] =
-        on(ARM64_RELOC_GOT_LOAD_PAGE21, true, ADRP.0, ADRP.1);
-    table[ARM64_RELOC_TLVP_LOAD_PAGE21 as usize] =
-        on(ARM64_RELOC_TLVP_LOAD_PAGE21, true, ADRP.0, ADRP.1);
-    table[ARM64_RELOC_PAGEOFF12 as usize] = [
-        common_reloc(ARM64_RELOC_PAGEOFF12, false, 2, Some(true), ADD.0, ADD.1),
-        common_reloc(ARM64_RELOC_PAGEOFF12, false, 2, Some(true), LDR_STR.0, LDR_STR.1),
-    ];
-    table[ARM64_RELOC_GOT_LOAD_PAGEOFF12 as usize] =
-        on(ARM64_RELOC_GOT_LOAD_PAGEOFF12, false, LDR_X.0, LDR_X.1);
-    table[ARM64_RELOC_TLVP_LOAD_PAGEOFF12 as usize] =
-        on(ARM64_RELOC_TLVP_LOAD_PAGEOFF12, false, LDR_X.0, LDR_X.1);
-    table[ARM64_RELOC_POINTER_TO_GOT as usize] = on(ARM64_RELOC_POINTER_TO_GOT, true, 0, 0);
-    table
-};
-
-/// Checks record `i` as ld-prime does when it reads it, `loc` being
-/// the bytes it applies to: its type must take its pcrel, length and
-/// extern fields, the two records of a pair must go together, and an
-/// instruction it patches must be one its type patches, with a zero
-/// immediate unless an ADDEND record gives the addend (`has_addend`).
-/// A common record takes one table lookup: a branch on its type, one
-/// the processor can't predict, cost more than all the checks.
-#[inline(always)]
-fn check_reloc(rels: &[MachRel], i: usize, loc: &[u8], has_addend: bool) -> Result<(), BadReloc> {
+/// Fails the link on record `i` of section `hdr` if it is one the
+/// linker can't apply, `loc` being the bytes it applies to: one of a
+/// form its type doesn't take, a 4-byte UNSIGNED but as the second half
+/// of a SUBTRACTOR pair (`.long sym` makes one, a 32-bit pointer no
+/// 64-bit image can hold), or the page offset of a GOT load on anything
+/// but an add or an 8-byte load, or of a TLV load on anything but a
+/// load. The assembler writes those for `ldr w0, [x0, sym@GOTPAGEOFF]`
+/// or a store, and relaxing such a load to an add would compute
+/// something else.
+#[inline]
+fn check_reloc(file: &Path, hdr: &MachSection, rels: &[MachRel], i: usize, loc: &[u8]) {
     let r = &rels[i];
-    // A record shorter than 4 bytes has a form COMMON_RELOCS doesn't
-    // take, whatever bytes follow.
-    let insn = loc.first_chunk().map_or(0, |b| u32::from_le_bytes(*b));
-    let key = reloc_key(r, insn);
-    let [(mask0, value0), (mask1, value1)] = COMMON_RELOCS[r.r_type() as usize];
-    if (key & mask0 == value0) | (key & mask1 == value1) {
-        return Ok(());
+    let pointer32 = r.r_type() == ARM64_RELOC_UNSIGNED
+        && r.r_length() == 2
+        && (i == 0 || rels[i - 1].r_type() != ARM64_RELOC_SUBTRACTOR);
+    if !is_supported(r) || pointer32 {
+        crate::target::bad_reloc(file, hdr, r, "unsupported relocation");
     }
-    check_reloc_slow(rels, i, loc, has_addend)
-}
-
-/// check_reloc for a record COMMON_RELOCS doesn't take.
-#[inline(never)]
-fn check_reloc_slow(
-    rels: &[MachRel],
-    i: usize,
-    loc: &[u8],
-    has_addend: bool,
-) -> Result<(), BadReloc> {
-    let r = &rels[i];
-    if !is_supported(r) {
-        return Err(BadReloc::new(r, RelocError::Unsupported));
-    }
-    // A record of any supported form is at least 4 bytes long.
-    let insn = read32(loc);
-    // "add Wd|Xd, Wn|Xn, #imm" with an unshifted immediate
-    let is_add = insn & 0x7fc0_0000 == 0x1100_0000;
-    let ldst = parse_ldst(insn);
-    let load = ldst.as_ref().filter(|ls| !ls.is_store);
-
-    let error = match r.r_type() {
-        ARM64_RELOC_SUBTRACTOR => return check_subtractor(r, rels.get(i + 1)),
-        ARM64_RELOC_ADDEND => return check_addend(r, rels.get(i + 1)),
-        // A 4-byte UNSIGNED is only the second half of a SUBTRACTOR pair.
-        ARM64_RELOC_UNSIGNED
-            if r.r_length() == 2 && (i == 0 || rels[i - 1].r_type() != ARM64_RELOC_SUBTRACTOR) =>
-        {
-            "32-bit pointer in 64-bit arch"
+    let load = || parse_ldst(read32(loc)).filter(|ls| !ls.is_store);
+    let ok = match r.r_type() {
+        ARM64_RELOC_GOT_LOAD_PAGEOFF12 => {
+            // "add Wd|Xd, Wn|Xn, #imm" with an unshifted immediate
+            read32(loc) & 0x7fc0_0000 == 0x1100_0000 || load().is_some_and(|ls| ls.size == 8)
         }
-        ARM64_RELOC_AUTHENTICATED_POINTER => "PAC signed pointer not supported in base arm64",
-        ARM64_RELOC_BRANCH26 if insn & 0x7c00_0000 != 0x1400_0000 => {
-            "ARM64_RELOC_BRANCH26 relocation on non-b/bl instruction"
-        }
-        ARM64_RELOC_BRANCH26 if !has_addend && insn & B_IMM != 0 => {
-            "B/BL has embedded addend. ARM64_RELOC_ADDEND should be used instead"
-        }
-        ARM64_RELOC_PAGE21 if !is_adrp(insn) => {
-            "ARM64_RELOC_PAGE21 relocation on non-ADRP instruction"
-        }
-        ARM64_RELOC_GOT_LOAD_PAGE21 if !is_adrp(insn) => {
-            "ARM64_RELOC_GOT_LOAD_PAGE21 relocation on non-ADRP instruction"
-        }
-        ARM64_RELOC_TLVP_LOAD_PAGE21 if !is_adrp(insn) => {
-            "ARM64_RELOC_TLVP_LOAD_PAGE21 relocation on non-ADRP instruction"
-        }
-        ARM64_RELOC_PAGE21 | ARM64_RELOC_GOT_LOAD_PAGE21 | ARM64_RELOC_TLVP_LOAD_PAGE21
-            if !has_addend && insn & ADRP_IMM != 0 =>
-        {
-            "ADRP has embedded addend. ARM64_RELOC_ADDEND should be used instead"
-        }
-        ARM64_RELOC_PAGEOFF12 if !is_add && ldst.is_none() => {
-            "ARM64_RELOC_PAGEOFF12 relocation on non-ADD/LDR/STR instruction"
-        }
-        ARM64_RELOC_PAGEOFF12 if !has_addend && insn & IMM12 != 0 => {
-            "ADD/LDR/STR has embedded addend. ARM64_RELOC_ADDEND should be used instead"
-        }
-        ARM64_RELOC_GOT_LOAD_PAGEOFF12 if !is_add && load.is_none() => {
-            "ARM64_RELOC_GOT_LOAD_PAGEOFF12 relocation on non-LDR/ADD instruction"
-        }
-        ARM64_RELOC_GOT_LOAD_PAGEOFF12 if load.is_some_and(|ls| ls.size != 8) => {
-            "ARM64_RELOC_GOT_LOAD_PAGEOFF12 on LDR that is not an 8-byte load"
-        }
-        ARM64_RELOC_GOT_LOAD_PAGEOFF12 if insn & IMM12 != 0 => {
-            "ADD/LDR has embedded addend. ARM64_RELOC_ADDEND should be used instead"
-        }
-        ARM64_RELOC_TLVP_LOAD_PAGEOFF12 if load.is_none() => {
-            "ARM64_RELOC_TLVP_LOAD_PAGEOFF12 relocation on non-LDR instruction"
-        }
-        ARM64_RELOC_TLVP_LOAD_PAGEOFF12 if insn & IMM12 != 0 => {
-            "LDR has embedded addend. ARM64_RELOC_ADDEND should be used instead"
-        }
-        _ => return Ok(()),
+        ARM64_RELOC_TLVP_LOAD_PAGEOFF12 => load().is_some(),
+        _ => true,
     };
-    Err(BadReloc::new(r, RelocError::Invalid(error)))
+    if !ok {
+        crate::target::bad_reloc(file, hdr, r, "relocation on an invalid instruction");
+    }
 }
 
 /// Whether a relocation is the page half of a reference: of a GOT
@@ -1475,36 +1303,28 @@ impl Target for Arm64 {
     fn read_relocs(
         file_name: &Path,
         sections: &[MachSection],
-        _hdr: &MachSection,
+        hdr: &MachSection,
         contents: &[u8],
         rels: &[MachRel],
-        nsyms: usize,
-    ) -> Result<Vec<Reloc>, BadReloc> {
+    ) -> Vec<Reloc> {
         let mut vec = Vec::with_capacity(rels.len());
         let mut i = 0;
 
         while i < rels.len() {
-            // Diagnostics print the path as its bytes are.
-            let file_name = file_name.raw();
-            check_reloc_place(&rels[i], contents)?;
-
             // A Mach-O relocation doesn't contain an addend. UNSIGNED
             // relocs have addends in the relocated field. Addends for
             // other types of relocations are specified by prepending an
             // ADDEND reloc, whose address ld-prime takes for the pair's.
             let offset = rels[i].r_address;
             let loc = &contents[offset as usize..];
-            let has_addend = rels[i].r_type() == ARM64_RELOC_ADDEND;
             let mut addend = 0;
-            if has_addend {
-                check_reloc(rels, i, loc, false)?;
+            if rels[i].r_type() == ARM64_RELOC_ADDEND {
                 addend = sign_extend(rels[i].r_symbolnum() as u64, 24);
                 i += 1;
             }
 
             let r = &rels[i];
-            check_reloc(rels, i, loc, has_addend)?;
-            check_reloc_index(r, sections.len(), nsyms)?;
+            check_reloc(file_name, hdr, rels, i, loc);
             if r.r_type() == ARM64_RELOC_UNSIGNED {
                 addend = match r.r_length() {
                     2 => i32::from_le_bytes(loc[..4].try_into().unwrap()) as i64,
@@ -1523,7 +1343,7 @@ impl Target for Arm64 {
                 let Some(idx) =
                     crate::target::nonextern_target_section(sections, r.r_section(), addr)
                 else {
-                    fatal!("{file_name}: bad relocation: {}", r.r_address);
+                    fatal!("{}: bad relocation: {}", file_name.raw(), r.r_address);
                 };
                 let target = RelocTarget::Section(idx as u32);
                 (target, addr.wrapping_sub(sections[idx].addr) as i64)
@@ -1540,8 +1360,7 @@ impl Target for Arm64 {
             });
             i += 1;
         }
-
-        Ok(vec)
+        vec
     }
 
     fn apply_relocs(
@@ -1767,44 +1586,6 @@ impl Target for Arm64 {
                 _ => fatal!("unsupported relocation type: {}", r.r_type),
             }
             i += 1;
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// check_reloc takes a record COMMON_RELOCS matches without asking
-    /// check_reloc_slow, which must then take it too: the table may only
-    /// narrow ld-prime's rules. Tried on records built from each pair,
-    /// with the bits it leaves free set at random.
-    #[test]
-    fn common_relocs_are_valid() {
-        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
-        let mut random = || {
-            seed ^= seed << 13;
-            seed ^= seed >> 7;
-            seed ^= seed << 17;
-            seed
-        };
-        for (r_type, pairs) in COMMON_RELOCS.iter().enumerate() {
-            for &(mask, value) in pairs {
-                // A type the table leaves to check_reloc_slow.
-                if value & !mask != 0 {
-                    continue;
-                }
-                for _ in 0..10000 {
-                    let key = (random() & !mask) | value;
-                    let bits = ((key >> 56) as u32) << 24 | random() as u32 & 0xff_ffff;
-                    let r = MachRel { r_address: 0, bits };
-                    assert_eq!(r.r_type() as usize, r_type);
-                    let loc = [(key as u32).to_le_bytes(), [0; 4]].concat();
-                    let rels = [r, MachRel::default()];
-                    let ok = check_reloc_slow(&rels, 0, &loc, false).is_ok();
-                    assert!(ok, "{r:?} on {:#x}", key as u32);
-                }
-            }
         }
     }
 }

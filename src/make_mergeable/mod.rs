@@ -995,11 +995,7 @@ impl<'a, E: Target> Builder<'a, E> {
         let data = obj.mf.data();
         let contents = &data[hdr.offset as usize..][..hdr.size as usize];
         let raw: Vec<MachRel> = read_array(data, hdr.reloff as usize, hdr.nreloc as usize);
-        let nsyms = obj.nlists.len();
-        let Ok(rels) = E::read_relocs(&obj.mf.name, &obj.sect_hdrs, hdr, contents, &raw, nsyms)
-        else {
-            return Vec::new();
-        };
+        let rels = E::read_relocs(&obj.mf.name, &obj.sect_hdrs, hdr, contents, &raw);
         let mut out = Vec::new();
         for (k, bytes) in contents.as_chunks::<32>().0.iter().enumerate() {
             let start = (k * 32) as u32;
