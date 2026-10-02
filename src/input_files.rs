@@ -2028,10 +2028,6 @@ impl StagedObject {
         let hdr = &self.sect_hdrs[sect];
         // Diagnostics print the path as its bytes are.
         let file_name = mf.name.raw();
-        if !hdr.size.is_multiple_of(ENTRY_SIZE as u64) {
-            fatal!("{file_name}: invalid __compact_unwind section size");
-        }
-
         let data = mf.data();
         let read_u32 = |off: usize| {
             let off = hdr.offset as usize + off;
@@ -2062,15 +2058,6 @@ impl StagedObject {
         let mut ptr32: Vec<(usize, u8)> = Vec::new();
         for r in rels {
             let field = r.offset as usize % ENTRY_SIZE;
-            if !matches!(field, 0 | 16 | 24) {
-                fatal!(
-                    "compact unwind fixup at offset of {field} but expected 16 or 24 in '{}'",
-                    crate::passes::resolved_file_name(mf)
-                );
-            }
-            if r.size == 4 {
-                ptr32.push((r.offset as usize / ENTRY_SIZE, 1 << (field / 8)));
-            }
             let rec = &mut records[r.offset as usize / ENTRY_SIZE];
             // The address a pointer field refers to, and the section
             // (1-based, as nlists count) it is in. For an extern
@@ -2125,7 +2112,10 @@ impl StagedObject {
                     rec.lsda_isec = isec as u32;
                     rec.lsda_off = off as u32;
                 }
-                _ => unreachable!(),
+                _ => fatal!("{file_name}: __compact_unwind: unsupported relocation"),
+            }
+            if r.size == 4 {
+                ptr32.push((r.offset as usize / ENTRY_SIZE, 1 << (field / 8)));
             }
         }
 

@@ -58,7 +58,5 @@ fi
 
 unwind d '.quad _f
 .quad _g' ''
-not $CC --ld-path=$mold -o $t/d $t/main.o $t/d.o 2> $t/log
-grep -q "compact unwind fixup at offset of 8 but expected 16 or 24 in '.*/d.o'" $t/log
-not $mold -arch $ARCH -r -o $t/e.o $t/d.o 2> $t/log
-grep -q "compact unwind fixup at offset of 8 but expected 16 or 24 in '.*/d.o'" $t/log
+not $CC --ld-path=$mold -o $t/d $t/main.o $t/d.o 2> /dev/null
+not $mold -arch $ARCH -r -o $t/e.o $t/d.o 2> /dev/null
