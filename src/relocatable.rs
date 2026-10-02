@@ -743,11 +743,6 @@ fn eh_frame_contents<E: Target>(
             EhRec::Cie(c) => {
                 let cie = &ctx.cies[c];
                 if let Some(p) = cie.personality {
-                    // ld-prime writes 4 into the cell on either target,
-                    // whatever the object held there (a compiler's
-                    // x86-64 CIE holds 4 too).
-                    let at = (off + cie.personality_offset) as usize;
-                    data[at..at + 4].copy_from_slice(&4u32.to_le_bytes());
                     relocs.push(MachRel {
                         r_address: off + cie.personality_offset,
                         bits: targets.personality(p)
@@ -1052,9 +1047,9 @@ fn copy_section_contents<E: Target>(
 }
 
 /// Rewrites the field a relocation at address `here` applies to, as a
-/// -r output holds it: an x86-64 GOT load's cell, or the address a
-/// non-external relocation's field embeds, now in the merged address
-/// space.
+/// -r output holds it: the address a non-external relocation's field
+/// embeds, now in the merged address space. Every other field keeps
+/// the object's bytes.
 fn rewrite_field<E: Target>(
     targets: &RelocTargets<E>,
     isec: &InputSection,
@@ -1063,14 +1058,6 @@ fn rewrite_field<E: Target>(
     field: &mut [u8],
 ) {
     let ctx = targets.ctx;
-    if let Some(cell) = E::RELOCATABLE_GOTPC_CELL
-        && rel.r_type == E::RELOC_GOTPC
-        && rel.is_pcrel
-        && rel.size == 4
-    {
-        field[..4].copy_from_slice(&cell.to_le_bytes());
-        return;
-    }
     let OutTarget::Section(target, addend) = targets.out_target(isec, rel) else {
         return;
     };
