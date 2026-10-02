@@ -20,7 +20,7 @@ use crate::input_files::FileId;
 use crate::input_sections::InputSection;
 use crate::macho::*;
 use crate::objc::DataBlob;
-use crate::passes::{is_class_or_protocol_ref_name, resolved_file_name};
+use crate::passes::is_class_or_protocol_ref_name;
 use crate::symbol_moves::{Move, MoveOption};
 use crate::target::Target;
 use crate::util::align_to;
@@ -1935,74 +1935,28 @@ fn add_linkedit_chunks<E: Target>(ctx: &mut Context<E>) {
     }
 }
 
-/// Settles each output section that renames fill with both zero-fill
-/// and file-backed input sections - bits 0 and 1 of `fill_kinds`, by
-/// output section - as ld-prime does, with a warning. The section
-/// takes the type of its first member in ld-prime's order: the
-/// objects' in input order, a common symbol's __common after its
-/// object's own sections. A zero-fill section drops the contents of
-/// the others.
+/// Makes each output section that renames fill with both zero-fill and
+/// file-backed input sections - bits 0 and 1 of `fill_kinds`, by output
+/// section - file-backed, with a warning: its zero-fill members are
+/// zeros in the file, and no member's contents are lost. (ld-prime gives
+/// the section the type of its first member in its own order, and a
+/// zero-fill one drops the others' contents.)
 fn resolve_zerofill_conflicts<E: Target>(ctx: &mut Context<E>, fill_kinds: &[u8]) {
-    if !fill_kinds.contains(&3) {
-        return;
-    }
-    let owners = common_owners(ctx);
-    for (i, &kinds) in fill_kinds.iter().enumerate() {
-        if kinds == 3 {
-            resolve_zerofill_conflict(ctx, OutputSectionId::new(i as u32), &owners);
-        }
-    }
-}
-
-fn resolve_zerofill_conflict<E: Target>(
-    ctx: &mut Context<E>,
-    id: OutputSectionId,
-    common_owners: &hashbrown::HashMap<u32, u32>,
-) {
-    // The first file with a zero-fill member, whether that is a
-    // common symbol, and the files with file-backed ones. A common
-    // symbol's subsection, which mold makes in its internal object,
-    // counts as its owner's; the others mold makes come from no file.
-    let mut defined_in: Option<(u32, bool)> = None;
-    let mut missing_in = Vec::new();
-    for &member in &ctx.output_section(id).members {
-        let file = ctx.isecs[member as usize].file;
-        let file = if !ctx.is_internal(file as usize) {
-            (file, false)
-        } else if let Some(&owner) = common_owners.get(&member) {
-            (owner, true)
-        } else {
-            continue;
+    for (i, _) in fill_kinds.iter().enumerate().filter(|&(_, &kinds)| kinds == 3) {
+        let hdr = &mut ctx.output_sections[i].hdr;
+        let ty = match hdr.flags & SECTION_TYPE {
+            S_ZEROFILL | S_GB_ZEROFILL => S_REGULAR,
+            S_THREAD_LOCAL_ZEROFILL => S_THREAD_LOCAL_REGULAR,
+            ty => ty,
         };
-        if ctx.hdr_of(&ctx.isecs[member as usize]).is_zerofill() {
-            defined_in = Some(defined_in.map_or(file, |first| first.min(file)));
-        } else {
-            missing_in.push(file.0);
-        }
+        hdr.flags = (hdr.flags & !SECTION_TYPE) | ty;
+        crate::warn!(
+            "section {},{} has both zero-fill and file-backed input sections; it is laid out \
+             in the file",
+            raw(hdr.segname),
+            raw(hdr.sectname)
+        );
     }
-    let Some((defined_in, is_common)) = defined_in else {
-        return;
-    };
-    // mold makes common symbols' subsections last; one that comes
-    // first to ld-prime makes the section zero-fill.
-    if is_common && missing_in.iter().all(|&file| defined_in < file) {
-        let hdr = &mut ctx.output_section_mut(id).hdr;
-        hdr.flags = (hdr.flags & !SECTION_TYPE) | S_ZEROFILL;
-    }
-    missing_in.sort_unstable_by(|a, b| b.cmp(a));
-    missing_in.dedup();
-    let osec = ctx.output_section(id);
-    let name = |file: u32| resolved_file_name(ctx.objs[file as usize].mf);
-    let mut msg = crate::error::render(format_args!(
-        "section {},{} has a conflicting zerofill flag defined in {} but missing in:",
-        raw(osec.hdr.segname),
-        raw(osec.hdr.sectname),
-        name(defined_in)
-    ));
-    for file in missing_in {
-        msg.extend(crate::error::render(format_args!("\n  {}", name(file))));
-    }
-    crate::warn!("{}", raw(&msg));
 }
 
 /// The object each common symbol's subsection stands for the tentative

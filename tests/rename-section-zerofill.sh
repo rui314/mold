@@ -2,9 +2,11 @@
 source "$(dirname "$0")"/common.inc
 
 # A rename that puts zero-fill and file-backed input sections in one
-# output section draws ld-prime's warning, naming the first file with
-# a zero-fill one and, the last first, the files with file-backed
-# ones. The section takes its first member's type: here zero-fill.
+# output section draws a warning, and the section is file-backed: the
+# zero-fill members are zeros in the file, and no member's contents are
+# lost, whichever member comes first. (ld-prime gives the section its
+# first member's type in its own order, dropping the file-backed
+# members' contents if that is zero fill.)
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .zerofill __DATA,__bss,_z,64,4
 .text
@@ -22,19 +24,18 @@ EOF
 
 $mold -arch $ARCH -static -e _main -o $t/exe $t/a.o $t/b.o \
   -rename_section __DATA __data __DATA __bss 2> $t/log
-grep -A2 'warning: section __DATA,__bss has a conflicting zerofill flag defined in' $t/log \
-  | sed 's|.*/||' > $t/files
-[ "$(tr '\n' ' ' < $t/files)" = 'a.o but missing in: b.o a.o ' ]
-otool -l $t/exe | grep -A9 'sectname __bss' | grep -q 'flags 0x00000001'
+grep -q 'warning: section __DATA,__bss has both zero-fill and file-backed' $t/log
+otool -l $t/exe | grep -A9 'sectname __bss' | grep -q 'flags 0x00000000'
+otool -X -s __DATA __bss $t/exe | cut -f2 | tr -d ' \n' > $t/bss
+grep -Eqx '0{128}00000003000000000000000400000000|0{128}03000000000000000400000000000000' $t/bss
 
 # Not in a -r output.
 $mold -r -arch $ARCH -o $t/c.o $t/a.o $t/b.o -rename_section __DATA __data __DATA __bss \
   2> $t/log2
-not grep -q zerofill $t/log2
+not grep -q zero-fill $t/log2
 
-# A common symbol counts as the tentative definition of the object
-# declaring the largest size, after that object's own sections: first
-# in the input, it makes the merged section zero-fill.
+# A common symbol's zero fill is no different, before or after the
+# file-backed section.
 cat <<EOF2 | $CC -o $t/d.o -c -xassembler -
 .comm _common_sym,16,3
 .text
@@ -45,12 +46,11 @@ EOF2
 
 $mold -arch $ARCH -static -e _main -o $t/exe3 $t/d.o $t/b.o \
   -rename_section __DATA __common __DATA __data 2> $t/log3
-grep -A1 'warning: section __DATA,__data has a conflicting zerofill flag defined in' $t/log3 \
-  | sed 's|.*/||' > $t/files3
-[ "$(tr '\n' ' ' < $t/files3)" = 'd.o but missing in: b.o ' ]
-otool -l $t/exe3 | grep -A9 'sectname __data' | grep -q 'flags 0x00000001'
+grep -q 'warning: section __DATA,__data has both zero-fill and file-backed' $t/log3
+otool -l $t/exe3 | grep -A9 'sectname __data' | grep -q 'flags 0x00000000'
+otool -l $t/exe3 | grep -A3 'sectname __data' | grep -q 'size 0x0*18$'
 
 $mold -arch $ARCH -static -e _main -o $t/exe4 $t/b.o $t/d.o \
   -rename_section __DATA __common __DATA __data 2> $t/log4
-grep -q 'conflicting zerofill flag defined in .*/d.o but missing in:' $t/log4
+grep -q 'warning: section __DATA,__data has both zero-fill and file-backed' $t/log4
 otool -l $t/exe4 | grep -A9 'sectname __data' | grep -q 'flags 0x00000000'
