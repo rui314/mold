@@ -50,3 +50,57 @@ $mold -o $t/exe $t/b.o $t/c.o $t/liba.dylib -poison_symbol _baz -lSystem \
 
 not $mold -o $t/exe $t/b.o -poison_symbol 2> $t/log
 grep -q -- '-poison_symbol missing <name>' $t/log
+
+# A reference is a relocation, but an adrp and the add or load right
+# after it with its register for the base make one, and a subtracted
+# symbol makes none (ld-prime).
+cat <<EOF2 | $CC -o $t/d.o -c -xassembler -
+.data
+.globl _d, _garply, _grault
+.p2align 3
+_d:
+  .quad _garply - _d
+  .quad _d - _grault
+_garply: .quad 0
+_grault: .quad 0
+.subsections_via_symbols
+EOF2
+not $CC --ld-path=$mold -shared -o $t/d.dylib $t/d.o -Wl,-poison_symbol,_garply \
+  -Wl,-poison_symbol,_grault 2> $t/log
+grep -A1 '_garply, referenced from:' $t/log | grep -q '^ *_d in d.o$'
+[ $(grep -c ' in d.o$' $t/log) = 1 ]
+not grep -q '_grault, referenced' $t/log
+
+if [ $ARCH = arm64 ]; then
+  cat <<EOF2 | $CC -o $t/e.o -c -xassembler -
+.text
+.globl _f, _g, _h
+_f:
+  adrp x0, _qux@GOTPAGE
+  nop
+  ldr x0, [x0, _qux@GOTPAGEOFF]
+  ret
+_g:
+  adrp x1, _quux@PAGE
+  add x1, x1, _quux@PAGEOFF
+  ldr x2, [x1, _quux@PAGEOFF]
+  ret
+_h:
+  adrp x0, _corge@PAGE
+  adrp x1, _corge@PAGE
+  ldr x0, [x0, _corge@PAGEOFF]
+  ret
+.data
+.globl _qux, _quux, _corge
+.p2align 3
+_qux: .quad 0
+_quux: .quad 0
+_corge: .quad 0
+.subsections_via_symbols
+EOF2
+  not $CC --ld-path=$mold -shared -o $t/e.dylib $t/e.o -Wl,-poison_symbol,_qux \
+    -Wl,-poison_symbol,_quux -Wl,-poison_symbol,_corge 2> $t/log
+  [ $(grep -A3 '_qux, referenced from:' $t/log | grep -c ' _f in e.o$') = 1 ]
+  [ $(grep -A3 '_quux, referenced from:' $t/log | grep -c ' _g in e.o$') = 2 ]
+  [ $(grep -A4 '_corge, referenced from:' $t/log | grep -c ' _h in e.o$') = 3 ]
+fi

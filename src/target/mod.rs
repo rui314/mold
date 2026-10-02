@@ -264,6 +264,15 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
         None
     }
 
+    /// Whether relocation `lo` of a subsection with contents `data`
+    /// completes `page`, the one before it, into one reference, as
+    /// ld-prime reads them: an arm64 adrp and the add, ldr or str right
+    /// after it in the relocation table, of the same kind (GOT load or
+    /// not), target and addend, with the adrp's register for its base.
+    fn completes_page_pair(_page: &Reloc, _lo: &Reloc, _data: &[u8]) -> bool {
+        false
+    }
+
     /// Writes the __stubs section: for each symbol in `ctx.stubs.symbols`, a
     /// jump through the symbol's __got slot. `addr` is the section's
     /// address and `buf` its bytes in the output.

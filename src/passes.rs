@@ -4271,8 +4271,11 @@ fn report_duplicates<E: Target>(ctx: &Context<E>, dups: Vec<Duplicate>) {
 /// reference to a symbol they name, defined in the link or not, once
 /// ld-prime has found no duplicate symbol: it lists each such symbol,
 /// and under it each reference (twice for two in one function), as the
-/// function it is in and the leaf name of that function's file. It
-/// lists the symbols in no stable order; mold sorts them by name.
+/// function it is in and the leaf name of that function's file. A
+/// reference is a relocation, but an adrp and the add or load that
+/// completes it make one (see Target::completes_page_pair), and a
+/// SUBTRACTOR's symbol, subtracted, makes none. It lists the symbols in
+/// no stable order; mold sorts them by name.
 pub fn check_poisoned_symbols<E: Target>(ctx: &Context<E>) {
     let poisoned = &ctx.args.poisoned;
     if poisoned.is_empty() {
@@ -4286,9 +4289,14 @@ pub fn check_poisoned_symbols<E: Target>(ctx: &Context<E>) {
         .filter(|&isec| ctx.isecs[isec].is_alive())
         .flat_map_iter(|isec| {
             let file = ctx.isecs[isec].file as usize;
-            input_files::isec_relocs_of(&ctx.objs, &ctx.isecs[isec])
-                .iter()
-                .filter_map(move |rel| ctx.reloc_target_sym(file, rel))
+            let data = ctx.isecs[isec].data();
+            let rels = input_files::isec_relocs_of(&ctx.objs, &ctx.isecs[isec]);
+            (rels.iter().enumerate())
+                .filter(move |&(i, rel)| {
+                    rel.r_type != E::RELOC_SUBTRACTOR
+                        && (i == 0 || !E::completes_page_pair(&rels[i - 1], rel, data))
+                })
+                .filter_map(move |(_, rel)| ctx.reloc_target_sym(file, rel))
                 .filter(|&id| poisoned.find(ctx.symbols[id].name().as_bytes()) != -1)
                 .map(move |id| (id, isec))
         })

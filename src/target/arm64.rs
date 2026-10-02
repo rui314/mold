@@ -1027,6 +1027,18 @@ impl Target for Arm64 {
         }
     }
 
+    fn completes_page_pair(page: &Reloc, lo: &Reloc, data: &[u8]) -> bool {
+        let lo_type = match page.r_type {
+            ARM64_RELOC_PAGE21 => ARM64_RELOC_PAGEOFF12,
+            ARM64_RELOC_GOT_LOAD_PAGE21 => ARM64_RELOC_GOT_LOAD_PAGEOFF12,
+            _ => return false,
+        };
+        // The adrp's Rd against the add's or the load's Rn.
+        let rd = read32(&data[page.offset as usize..]) & 0x1f;
+        let rn = (read32(&data[lo.offset as usize..]) >> 5) & 0x1f;
+        lo.r_type == lo_type && lo.target == page.target && lo.addend == page.addend && rd == rn
+    }
+
     // ld64 applies no hints to an image bound for the dyld shared cache
     // (resolve_shared_region sets -ignore_optimization_hints): on arm64
     // it records split-seg info v2 for one, which lets the cache builder
