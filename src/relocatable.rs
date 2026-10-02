@@ -307,17 +307,12 @@ fn sect_hdr_mut<'a, E: Target>(
 
 /// The sections of the output: the merged ones in creation order (that
 /// of their first members), the ones only -sectcreate makes, then the
-/// synthetic ones - but zero-fill sections last, as the contents are
-/// laid out in the file in address order (see assign_file_offsets). A
-/// later link orders the sections by its own rules.
+/// synthetic ones. A later link orders the sections by its own rules.
 fn sort_sections<E: Target>(ctx: &Context<E>, synthetic: &[SyntheticSection]) -> Vec<Sect> {
     let merged =
         (0..ctx.output_sections.len()).map(|i| Sect::Merged(OutputSectionId::new(i as u32)));
     let own = (0..ctx.sectcreate_sections.len()).map(Sect::Created);
-    let mut sects: Vec<Sect> =
-        merged.chain(own).chain((0..synthetic.len()).map(Sect::Synthetic)).collect();
-    sects.sort_by_key(|&s| sect_hdr(ctx, synthetic, s).is_zerofill());
-    sects
+    merged.chain(own).chain((0..synthetic.len()).map(Sect::Synthetic)).collect()
 }
 
 /// Assigns the sections their addresses, from zero in output order, and

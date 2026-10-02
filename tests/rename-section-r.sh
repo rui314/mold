@@ -3,8 +3,7 @@ source "$(dirname "$0")"/common.inc
 
 # -rename_section and -rename_segment apply to a -r output too, to the
 # input sections as they came (no __DATA_CONST move) and to the merged
-# __objc_imageinfo record. A zero-fill section still goes after its
-# segment's other sections.
+# __objc_imageinfo record.
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .zerofill __AAA,__zz,_z,64,4
 .text
@@ -33,7 +32,7 @@ grep -qx '__FOO,__bar' $t/sects
 grep -qx '__BBB,__a' $t/sects
 grep -qx '__FOO,__ii' $t/sects
 grep -qx '__CCC,__data' $t/sects
-[ "$(grep __BBB $t/sects | tr '\n' ' ')" = '__BBB,__a __BBB,__zz ' ]
+grep -qx '__BBB,__zz' $t/sects
 not grep -q '__BAD\|__AAA\|__DATA' $t/sects
 
 # The output links.

@@ -2,8 +2,8 @@
 source "$(dirname "$0")"/common.inc
 
 # A -r output has every section of its inputs, in the order their first
-# members come, the linker's own (__compact_unwind) after them, and the
-# zero-fill sections - the thread-local ones too - last, taking no file
+# members come, the linker's own (__compact_unwind) after them, the
+# zero-fill sections - the thread-local ones too - taking no file
 # space. (ld-prime orders them by segment and a rank table; a later
 # link orders the sections by its own rules either way.)
 cat <<EOF2 | $CC -o $t/a.o -c -xassembler -
@@ -55,7 +55,6 @@ $mold -r -arch $ARCH -o $t/r.o $t/a.o $t/b.o
 otool -l $t/r.o | awk '/sectname/{s=$2} /segname/{if(s!=""){print $2 "," s; s=""}}' |
   grep -v __TEXT,__eh_frame > $t/order
 [ "$(sort $t/order | tr '\n' ' ')" = '__DATA,__bss __DATA,__cfstring __DATA,__const __DATA,__data __DATA,__mod_init_func __DATA,__objc_catlist __DATA,__objc_classlist __DATA,__objc_classrefs __DATA,__objc_const __DATA,__objc_data __DATA,__objc_imageinfo __DATA,__objc_ivar __DATA,__objc_nlcatlist __DATA,__objc_nlclslist __DATA,__objc_protolist __DATA,__objc_protorefs __DATA,__objc_selrefs __DATA,__objc_superrefs __DATA,__thread_bss __DATA,__thread_data __DATA,__thread_vars __DATA,__zz __DATA_CONST,__const __LD,__compact_unwind __TEXT,__StaticInit __TEXT,__aa __TEXT,__cstring __TEXT,__objc_classname __TEXT,__objc_methname __TEXT,__objc_methtype __TEXT,__text __TEXT,__zz ' ]
-[ "$(tail -2 $t/order | sort | tr '\n' ' ')" = '__DATA,__bss __DATA,__thread_bss ' ]
 [ "$(head -2 $t/order | tr "\n" " ")" = "__TEXT,__text __DATA,__const " ]
 otool -l $t/r.o > $t/lc
 grep -A4 'sectname __bss' $t/lc | grep -q 'offset 0$'
