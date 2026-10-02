@@ -2,12 +2,12 @@
 . $(dirname $0)/common.inc
 
 # A folded function's name stays in the symbol table, naming the copy
-# it folded into, but of that copy's own name ld-prime lists one of each
-# scope: identical local functions of one name in several objects (an
-# inline function's .cold.1 part, a static helper) leave it there once,
-# and once besides a private extern of the name. -map lists every
-# folded function's name as a row of no size at the copy it folded
-# into.
+# it folded into: identical local functions of one name in several
+# objects (an inline function's .cold.1 part, a static helper) leave it
+# there once for each, at one address, as do a private extern of the
+# name and those folding into it. (ld-prime lists the survivor's own
+# name once of each scope.) -map lists every folded function's name as
+# a row of no size at the copy it folded into.
 if [ $ARCH = arm64 ]; then
   body() { echo "mov w0, #$1"; echo ret; }
   jump() { echo "b $1"; }
@@ -43,7 +43,8 @@ $CC --ld-path=$mold -o $t/exe $t/main.o $t/a1.o $t/a2.o $t/a3.o \
   -Wl,-deduplicate -Wl,-map,$t/map
 $t/exe
 nm $t/exe > $t/nm
-[ "$(grep -c ' _helper$' $t/nm)" = 1 ]
+[ "$(grep -c ' _helper$' $t/nm)" = 2 ]
+[ "$(awk '/ _helper$/ { print $1 }' $t/nm | sort -u | wc -l)" -eq 1 ]
 [ "$(grep -c ' _other$' $t/nm)" = 1 ]
 grep -E '\] (_helper|_other)$' $t/map > $t/rows
 [ "$(wc -l < $t/rows)" -eq 3 ]
@@ -57,17 +58,9 @@ $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/a1.o $t/a2.o $t/a3.o -Wl,-no_dedupli
 $CC --ld-path=$mold -o $t/exe3 $t/main.o $t/a4.o $t/a1.o $t/a2.o $t/a3.o -Wl,-deduplicate
 $t/exe3
 nm -m $t/exe3 | grep ' _helper$' > $t/nm3
-[ "$(grep -c . $t/nm3)" = 2 ]
+[ "$(grep -c . $t/nm3)" = 3 ]
+[ "$(awk '{ print $1 }' $t/nm3 | sort -u | wc -l)" -eq 1 ]
 grep -q 'non-external (was a private external) _helper$' $t/nm3
-
-# The name of the private extern is listed for a local only if the
-# first local to fold into it has it: here _other comes first.
-$CC --ld-path=$mold -o $t/exe4 $t/main.o $t/a4.o $t/a3.o $t/a1.o $t/a2.o -Wl,-deduplicate
-$t/exe4
-nm -m $t/exe4 > $t/nm4
-[ "$(grep -c ' _helper$' $t/nm4)" = 1 ]
-grep -q 'non-external (was a private external) _helper$' $t/nm4
-grep -q ' _other$' $t/nm4
 
 # A folded function's other labels, an alternate entry here, go with
 # it in -map.

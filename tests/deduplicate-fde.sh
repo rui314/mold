@@ -44,7 +44,7 @@ EOF
 
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/r.o -Wl,-deduplicate
 $t/exe
-addr=$(nm $t/exe | awk '/ _helper$/ { print $1 }')
+addr=$(nm $t/exe | awk '/ _helper$/ { print $1; exit }')
 [ "$(dwarfdump --eh-frame $t/exe | grep -c " FDE .* pc=$(echo $addr | sed 's/^0*//')\\.")" = 1 ]
 objdump --macho --unwind-info $t/exe > $t/unwind
 off=$(printf '0x%08x' $((0x$addr - 0x100000000)))

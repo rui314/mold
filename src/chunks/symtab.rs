@@ -863,13 +863,9 @@ fn object_locals<E: Target>(ctx: &Context<E>, obj: &ObjectFile) -> Vec<LocalEnt>
             }
             continue;
         };
-        // A folded function's name goes with it if the function it
-        // folded into has the same (see icf::folded_subsec_names).
+        // A folded function's name names the function it folded into.
         let kept = ctx.resolve_isec(isec);
-        if !matches!(sym.file(), Some(FileId::Obj(_)))
-            || !ctx.isecs[kept].is_alive()
-            || (kept != isec && ctx.folded_subsec_names.get(&sym_id) == Some(&true))
-        {
+        if !matches!(sym.file(), Some(FileId::Obj(_))) || !ctx.isecs[kept].is_alive() {
             continue;
         }
         let ent = local_nlist(ctx.isec_n_sect(&ctx.isecs[kept]), 0);
