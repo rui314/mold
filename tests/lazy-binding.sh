@@ -31,18 +31,21 @@ nm -m $t/exe > $t/nm
 grep -q 'undefined.*dyld_stub_binder' $t/nm
 # The word the stub helper hands dyld_stub_binder has its ld64 name.
 grep -q '(__DATA,__data) non-external __dyld_private' $t/nm
-# The indirect symbol table lists the stubs, the GOT, then the lazy
-# pointers (the stubs' symbols again): the sections' order, which
-# -no_data_const changes, the GOT then following the lazy pointers and
-# the input sections in __DATA.
+# The indirect symbol table lists the stubs, the GOT and the lazy
+# pointers (the stubs' symbols again) in the sections' order: the GOT
+# in __DATA_CONST before the lazy pointers in __DATA, and all of them
+# in __DATA under -no_data_const.
 otool -I $t/exe > $t/isyms
 grep -q 'Indirect symbols for (__DATA,__la_symbol_ptr) 2 entries' $t/isyms
 $CC --ld-path=$mold -o $t/exe_ndc $t/a.o -mmacosx-version-min=$classic -Wl,-no_data_const
+$t/exe_ndc | grep '^4$'
 r1() { otool -l $t/$1 | awk -v s=$2 '$1 == "sectname" { n = $2 } $1 == "reserved1" && n == s { print $2 }'; }
 [ "$(r1 exe __got)" -lt "$(r1 exe __la_symbol_ptr)" ]
-[ "$(r1 exe_ndc __la_symbol_ptr)" -lt "$(r1 exe_ndc __got)" ]
-datasects() { otool -l $t/$1 | awk '$1 == "sectname" { s = $2 } $1 == "segname" && s { if ($2 == "__DATA") printf "%s ", s; s = "" }'; }
-[ "$(datasects exe_ndc)" = '__la_symbol_ptr __data __got ' ]
+otool -Iv $t/exe_ndc > $t/isyms_ndc
+grep -A2 'Indirect symbols for (__DATA,__la_symbol_ptr) 2 entries' $t/isyms_ndc | grep _getpid
+grep -A2 'Indirect symbols for (__DATA,__got)' $t/isyms_ndc | grep dyld_stub_binder
+datasects() { otool -l $t/$1 | awk '$1 == "sectname" { s = $2 } $1 == "segname" && s { if ($2 == "__DATA") print s; s = "" }' | sort | tr '\n' ' '; }
+[ "$(datasects exe_ndc)" = '__data __got __la_symbol_ptr ' ]
 # The helper: header, then one entry per stub.
 if [ $ARCH = arm64 ]; then
   [ "$(grep -A4 'sectname __stub_helper' $t/lc | awk '/size/{print $2}')" = 0x0000000000000030 ]

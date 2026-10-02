@@ -7,9 +7,8 @@ source "$(dirname "$0")"/common.inc
 # references between sections (LC_SEGMENT_SPLIT_INFO) and is laid out
 # as ld-prime lays out such images: the selector references, the class
 # data (with relative method lists), the lazy pointers and the GOT
-# slots of weak-lookup symbols (__weak_got) join __DATA_CONST; the
-# stubs and the Objective-C names follow __unwind_info; and a dylib
-# binds the pointers to its exported classes to itself.
+# slots of weak-lookup symbols (__weak_got) join __DATA_CONST; and a
+# dylib binds the pointers to its exported classes to itself.
 cat <<EOF | $CC -o $t/a.o -c -xobjective-c++ -O1 -
 #import <Foundation/Foundation.h>
 @interface Foo : NSObject
@@ -32,7 +31,6 @@ sects a.dylib > $t/sects
 grep -q '__DATA_CONST,__objc_const ' $t/sects
 grep -q '__DATA_CONST,__weak_got ' $t/sects
 grep -q '__DATA_CONST,__objc_selrefs ' $t/sects
-grep -q '__TEXT,__unwind_info .*__TEXT,__stubs .*__TEXT,__objc_methname __TEXT,__objc_methtype ' $t/sects
 grep -A10 'sectname __objc_selrefs' $t/lc | grep -q 'flags 0x00000000'
 # The cache builder, not dyld, protects __DATA_CONST.
 grep -A10 'segname __DATA_CONST' $t/lc | grep -q 'flags 0x0$'
@@ -55,14 +53,12 @@ link d.dylib -Wl,-install_name,/System/Library/Frameworks/Foo.framework/Foo
 otool -l $t/d.dylib > $t/lc_d
 grep -q 'cmd LC_SEGMENT_SPLIT_INFO$' $t/lc_d
 
-# With lazy binding the lazy pointers lead __DATA_CONST, and the
-# indirect symbol table lists the sections in the image's order.
+# With lazy binding the lazy pointers join __DATA_CONST too, and the
+# indirect symbol table names their slots.
 link e.dylib -Wl,-add_split_seg_info -mmacosx-version-min=11.0
-[ "$(sects e.dylib | grep -o '__DATA_CONST,[^ ]*' | head -1)" = __DATA_CONST,__la_symbol_ptr ]
-r1() { otool -l $t/e.dylib | awk -v s=$1 '$1 == "sectname" { n = $2 } $1 == "reserved1" && n == s { print $2 }'; }
-[ "$(r1 __stubs)" -lt "$(r1 __la_symbol_ptr)" ]
-[ "$(r1 __la_symbol_ptr)" -lt "$(r1 __weak_got)" ]
-[ "$(r1 __weak_got)" -lt "$(r1 __got)" ]
+sects e.dylib | grep -q '__DATA_CONST,__la_symbol_ptr '
+otool -Iv $t/e.dylib > $t/isyms_e
+grep -A4 '(__DATA_CONST,__la_symbol_ptr)' $t/isyms_e | grep _puts
 
 # The cache builder binds every symbol, so none may be looked up
 # dynamically; an OS image should need no run paths, nor be found by

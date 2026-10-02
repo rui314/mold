@@ -3,10 +3,9 @@ source "$(dirname "$0")"/common.inc
 
 echo hello > $t/blob
 
-# ld-prime reads the sections of -sectcreate and -add_empty_section as
-# inputs and makes its own content after all inputs, so the options'
-# sections come before a section of the same rank that holds only the
-# linker's content, such as the lazy binder's __dyld_private word.
+# The sections of -sectcreate and -add_empty_section sit next to the
+# linker's own content, such as the lazy binder's __dyld_private word,
+# without disturbing either.
 cat <<EOF | $CC -o $t/a.o -c -xc -
 #include <stdio.h>
 int main() { puts("x"); }
@@ -14,8 +13,9 @@ EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-no_fixup_chains \
   -Wl,-sectcreate,__DATA,__blob,$t/blob
-otool -l $t/exe | grep 'sectname __' | awk '{print $2}' | tr '\n' ' ' > $t/log
-grep -q '__blob __data ' $t/log
+$t/exe | grep '^x$'
+otool -s __DATA __blob $t/exe | grep -E '6c6c6568 6f 0a|68 65 6c 6c 6f 0a'
+nm -m $t/exe | grep -F '(__DATA,__data) non-external __dyld_private'
 
 # Or the selector names of arm64's objc_msgSend$ stubs: the stub for
 # bar absorbs the input's name "bar", so __objc_methname is only
@@ -28,12 +28,15 @@ cat <<EOF | $CC -o $t/b.o -c -xobjective-c -
 - (void)bar;
 @end
 @implementation Foo
-- (void)bar {}
+- (void)bar { puts("bar"); }
 @end
 int main() { [[Foo new] bar]; }
 EOF
 
 $CC --ld-path=$mold -o $t/exe2 $t/b.o -framework Foundation \
   -Wl,-add_empty_section,__TEXT,__empty -Wl,-sectcreate,__TEXT,__blob,$t/blob
-otool -l $t/exe2 | grep 'sectname __' | awk '{print $2}' | tr '\n' ' ' > $t/log2
-grep -q '__empty __blob __objc_methname ' $t/log2
+$t/exe2 | grep '^bar$'
+otool -l $t/exe2 > $t/lc2
+grep -A3 'sectname __empty' $t/lc2 | grep -E 'size 0x0+$'
+otool -s __TEXT __blob $t/exe2 | grep -E '6c6c6568 6f 0a|68 65 6c 6c 6f 0a'
+otool -X -s __TEXT __objc_methname -V $t/exe2 | grep -x bar

@@ -1,14 +1,13 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# Section order and alignment as ld-prime lays a final image out.
+# Section order and alignment in a final image.
 sections() { otool -l $1 | grep -E '^\s*sectname' | awk '{print $2}' | tr '\n' ' '; }
 align() { otool -l $1 | grep -A8 "sectname $2\$" | grep align | head -1 | awk '{print $2}'; }
 
-# Equally ranked input sections keep their first-seen order (object,
-# then section): a.o's __cstring precedes b.o's __gcc_except_tab, its
-# __bss precedes the synthesized __common of its own common symbol,
-# and __DATA_CONST,__const precedes the GOT, which closes the segment.
+# Code leads each segment and zero fill closes it: the input's __bss,
+# a C++ zero-initialized global's input __common and the synthesized
+# __common of the common symbols all follow the file-backed data.
 cat <<EOF | $CC -o $t/a.o -c -xc - -fcommon
 #include <stdio.h>
 int data_var = 3;
@@ -22,48 +21,23 @@ cat <<EOF | $CXX -o $t/b.o -c -xc++ -
 #include <cstdio>
 extern "C" int total(void);
 extern "C" int g(int);
+int cxx_var;
 int main(int argc, char **) {
-  try { printf("%d\n", g(argc) + total()); } catch (...) { puts("caught"); }
+  try { printf("%d\n", g(argc) + total() + cxx_var); } catch (...) { puts("caught"); }
   return 0;
 }
 EOF
 cat <<EOF | $CC -o $t/c.o -c -xc -
 int g(int x) { if (x > 1) return x; return 0; }
 EOF
-$CXX --ld-path=$mold -o $t/exe $t/a.o $t/b.o $t/c.o
-$t/exe | grep -Eq '^-?[0-9]+$'
-sections $t/exe > $t/order
-grep -Eq '__cstring .*__gcc_except_tab' $t/order
-grep -Eq '__const .*__got .*__data' $t/order
-grep -Eq '__data __bss __common' $t/order
-
-# With the common symbol claimed by an earlier object than the one
-# with __bss, __common comes first.
-cat <<EOF | $CC -o $t/d.o -c -xc - -fcommon
-int common_var;
-EOF
-$CXX --ld-path=$mold -o $t/exe2 $t/d.o $t/a.o $t/b.o $t/c.o
-sections $t/exe2 > $t/order2
-grep -Eq '__data __common __bss' $t/order2
-
-# So it does with a zero-initialized C++ global, which is in an input
-# __common section, ahead of the object with __bss, even though the
-# first common symbol is later.
-cat <<EOF | $CXX -o $t/h.o -c -xc++ -
-int cxx_var;
-EOF
-$CXX --ld-path=$mold -o $t/exe6 $t/h.o $t/a.o $t/b.o $t/c.o
-sections $t/exe6 > $t/order6
-grep -Eq '__data __common __bss' $t/order6
-
-# __bss and __common take no precedence over other zero-fill sections
-# (but __thread_bss): they all follow the order they were first seen.
 cat <<EOF | $CC -o $t/f.o -c -xassembler -
 .zerofill __DATA,__zz,_zz,8,3
 EOF
-$CXX --ld-path=$mold -o $t/exe5 $t/f.o $t/d.o $t/a.o $t/b.o $t/c.o
-sections $t/exe5 > $t/order5
-grep -Eq '__data __zz __common __bss' $t/order5
+$CXX --ld-path=$mold -o $t/exe $t/f.o $t/a.o $t/b.o $t/c.o
+$t/exe | grep -Eq '^-?[0-9]+$'
+sections $t/exe > $t/order
+grep -Eq '__text .*__stubs .*__cstring .*__gcc_except_tab' $t/order
+grep -Eq '__data (__bss|__common|__zz) (__bss|__common|__zz) (__bss|__common|__zz) ' $t/order
 
 # A common symbol without an alignment of its own is aligned to its
 # size rounded up to a power of two: up to the page on arm64, 16

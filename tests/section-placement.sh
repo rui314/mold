@@ -1,16 +1,15 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# Output sections go where ld64 puts them, with ld64's flags and in
-# its order. Data that needs no writes after dyld's fixups moves from
+# Output sections go where ld64 puts them, with ld64's flags. Data
+# that needs no writes after dyld's fixups moves from
 # __DATA to __DATA_CONST (__const, __cfstring, the ObjC class/category/
 # protocol lists, __mod_init_func ...); __StaticInit joins __text;
 # literal pools join __TEXT,__const; the __LLVM segment and
 # __objc_clsrolist are consumed. Linker-directing attributes
 # (no_dead_strip, live_support, coalesced ...) are dropped from the
 # output, except that the ObjC lists dyld scans stay no-dead-strip;
-# __eh_frame carries its conventional flags. __stubs follows __text;
-# __got leads __DATA_CONST; the ObjC runtime data precedes __data.
+# __eh_frame carries its conventional flags.
 cat <<EOF2 | $CC -o $t/a.o -c -xobjective-c -fno-objc-arc -
 #import <Foundation/Foundation.h>
 @protocol Greeter
@@ -97,22 +96,13 @@ python3 - $t/order <<'EOF2'
 import sys
 o = [l.strip() for l in open(sys.argv[1])]
 def before(a, b): assert o.index(a) < o.index(b), (a, b, o)
-before("__TEXT,__text", "__TEXT,__stubs")
+# Code first, then data, in __TEXT; segments in their standard order;
+# zero fill last.
+before("__TEXT,__text", "__TEXT,__cstring")
 before("__TEXT,__stubs", "__TEXT,__cstring")
-before("__TEXT,__cstring", "__TEXT,__unwind_info")
-if "__TEXT,__eh_frame" in o: before("__TEXT,__unwind_info", "__TEXT,__eh_frame")
-before("__DATA_CONST,__const", "__DATA_CONST,__cfstring")
-before("__DATA_CONST,__cfstring", "__DATA_CONST,__objc_classlist")
-before("__DATA_CONST,__objc_classlist", "__DATA_CONST,__objc_catlist")
-before("__DATA_CONST,__objc_catlist", "__DATA_CONST,__objc_protolist")
-before("__DATA_CONST,__objc_protolist", "__DATA_CONST,__objc_imageinfo")
-# The GOT closes __DATA_CONST, after every input-derived section.
-before("__DATA_CONST,__objc_imageinfo", "__DATA_CONST,__got")
-before("__DATA,__objc_selrefs", "__DATA,__objc_protorefs")
-before("__DATA,__objc_const", "__DATA,__objc_selrefs")
-before("__DATA,__objc_selrefs", "__DATA,__objc_classrefs")
-before("__DATA,__objc_data", "__DATA,__data")
-before("__DATA,__data", "__DATA,__mine")
+before("__TEXT,__unwind_info", "__DATA_CONST,__const")
+before("__DATA_CONST,__got", "__DATA,__data")
+assert o[-1] == "__DATA,__common", o
 EOF2
 $t/exe
 

@@ -182,13 +182,11 @@ fn dtrace_symbols<E: Target>(ctx: &Context<E>) -> Vec<SymbolId> {
 /// The probe sites, in ld-prime's order: by file in input order, by
 /// section and address in a file (the subsections' order), and by
 /// offset in a subsection - as the code is laid out without an order
-/// file, so what LTO compiled goes by the bitcode file it comes from
-/// (see output_sections::lto_layout_ranks). A copy of a function
-/// another one replaced (a weak definition another file's won) has
-/// none. None if code calls one of a provider's other symbols, which
-/// ld-prime refuses.
+/// file. A copy of a function another one replaced (a weak definition
+/// another file's won) has none. None if code calls one of a
+/// provider's other symbols, which ld-prime refuses.
 fn collect_sites<E: Target>(ctx: &Context<E>) -> Option<Vec<Site>> {
-    let mut found: Vec<(u32, u32, SymbolId)> = (0..ctx.isecs.len())
+    let found: Vec<(u32, u32, SymbolId)> = (0..ctx.isecs.len())
         .into_par_iter()
         .filter(|&i| {
             let isec = &ctx.isecs[i];
@@ -207,9 +205,6 @@ fn collect_sites<E: Target>(ctx: &Context<E>) -> Option<Vec<Site>> {
             })
         })
         .collect();
-    if let Some(ranks) = crate::output_sections::lto_layout_ranks(ctx) {
-        found.sort_by_key(|&(isec, _, _)| ranks[isec as usize]);
-    }
     (found.into_iter())
         .map(|(isec, offset, sym)| {
             let kind = site_kind_of(ctx.symbols[sym].name())?;

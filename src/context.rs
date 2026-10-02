@@ -253,10 +253,6 @@ pub struct Context<E: Target> {
     /// ld64's __OBJC_$_INSTANCE_METHODS_Foo(A|B) on a merged method
     /// list, and the like. (name, subsection).
     pub extra_local_syms: Vec<(&'static [u8], u32)>,
-    /// The first object (in input order) that claimed a common symbol:
-    /// the synthesized __common section takes its place in the section
-    /// order from it, as ld64's does.
-    pub common_first_obj: Option<u32>,
     /// The symbols naming the subsections of the functions icf folded,
     /// each with whether the output drops it (see
     /// icf::folded_subsec_names).
@@ -394,7 +390,6 @@ impl<E: Target> Context<E> {
             code_signature: CodeSignatureSection::new(),
             data_blobs: Vec::new(),
             extra_local_syms: Vec::new(),
-            common_first_obj: None,
             folded_subsec_names: hashbrown::HashMap::new(),
             dof_sections: Vec::new(),
             dylib_load_seq: 0,
