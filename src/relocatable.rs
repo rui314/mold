@@ -228,7 +228,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) -> u64 {
         })
         .collect();
     let t = ctx.timer("r-symtab");
-    let symtab = build_symtab(ctx, sectcreate_locals(ctx));
+    let symtab = build_symtab(ctx);
     drop(t);
     let t = ctx.timer("r-relocs");
     let targets = RelocTargets::new(ctx, &symtab);
@@ -341,23 +341,25 @@ pub fn link<E: Target>(ctx: &mut Context<E>) -> u64 {
 /// The local symbols that name the -sectcreate input sections, which
 /// ld-prime lists after the objects' locals in command-line order:
 /// "l<sect-create>" and the section's name as the option spelled it,
-/// whichever section each went to, marked no-dead-strip.
+/// whichever section each went to, marked no-dead-strip so that a later
+/// link keeps the data nothing refers to.
 fn sectcreate_locals<E: Target>(ctx: &Context<E>) -> Vec<Local> {
-    (ctx.sectcreate_inputs.iter().zip(&ctx.args.sectcreate).enumerate())
-        .map(|(i, (input, sc))| {
-            let (addr, n_sect) = input.place(ctx);
+    (ctx.sectcreate_inputs.iter().zip(&ctx.args.sectcreate))
+        .map(|(input, sc)| {
+            let (n_value, n_sect) = input.place(ctx);
             Local {
                 name: leak_bytes(
                     [b"l<sect-create>", &sc.segname[..], b",", &sc.sectname[..]].concat(),
                 ),
-                n_type: N_SECT,
-                n_desc: N_NO_DEAD_STRIP,
-                n_sect,
-                addr,
-                rename: Rename::None,
+                nlist: NList {
+                    n_strx: 0,
+                    n_type: N_SECT,
+                    n_sect,
+                    n_desc: N_NO_DEAD_STRIP,
+                    n_value,
+                },
+                hidden: false,
                 sym: None,
-                at: (u32::MAX, 0, i as u64),
-                rank: Rank::Local,
             }
         })
         .collect()
@@ -1202,44 +1204,13 @@ impl RSymtab {
 #[derive(Clone, Copy)]
 struct Local {
     name: &'static [u8],
-    n_type: u8,
-    n_desc: u16,
-    n_sect: u8,
-    addr: u64,
-    rename: Rename,
+    /// Its entry, but for the name.
+    nlist: NList,
+    /// Whether the name is hidden, the symbol taking a name made up for
+    /// it (see local_symbols).
+    hidden: bool,
     /// The input symbol it stands for, if any.
     sym: Option<SymbolId>,
-    /// The object, the section there and the address, which order the
-    /// locals - for an absolute symbol, section 0 and its index in the
-    /// object's symbol table.
-    at: (u32, u8, u64),
-    rank: Rank,
-}
-
-impl Local {
-    /// Its entry but for the name.
-    fn nlist(&self) -> NList {
-        let (n_type, n_sect, n_desc) = (self.n_type, self.n_sect, self.n_desc);
-        NList { n_strx: 0, n_type, n_sect, n_desc, n_value: self.addr }
-    }
-}
-
-/// The name a local takes: its own, or one made up (see Locals::rename).
-#[derive(Clone, Copy, PartialEq)]
-enum Rename {
-    None,
-    Anon,
-}
-
-/// How a local ranks among the names of a place: ld-prime orders them
-/// a private external, a local, a weak definition, an ltmpN label, each
-/// rank by descending name.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum Rank {
-    PrivateExtern,
-    Local,
-    Weak,
-    Ltmp,
 }
 
 /// A symbol's address in the -r output.
@@ -1251,26 +1222,15 @@ fn sym_addr<E: Target>(ctx: &Context<E>, id: SymbolId) -> u64 {
     }
 }
 
-/// Builds a -r output's symbol table as ld-prime lays it out: each
-/// object's local symbols in the order of its sections and of their
-/// addresses in each (a zerofill section comes by ordinal), and the
-/// `sectcreate` ones, then the -add_ast_path entries, as in a final
-/// image, then the stabs, opened by an N_SO of their own, then the
-/// defined externals and the undefined symbols, each by name. The
-/// strings are laid out as a final image's (see layout_strings).
-fn build_symtab<E: Target>(ctx: &Context<E>, sectcreate: Vec<Local>) -> RSymtab {
+/// Builds a -r output's symbol table: the local symbols (see
+/// local_symbols), then the -add_ast_path entries, as in a final image,
+/// then the stabs, opened by an N_SO of their own, then the defined
+/// externals and the undefined symbols, each by name. The strings are
+/// laid out as a final image's (see layout_strings).
+fn build_symtab<E: Target>(ctx: &Context<E>) -> RSymtab {
     let t = ctx.timer("r-symtab-locals");
     let referenced = referenced_syms(ctx);
-    let mut locals = Locals::new(ctx);
-    locals.add_labels();
-    // Private externals (visibility hidden) are demoted unless
-    // -keep_private_externs (which Apple's strip passes to the `ld -r`
-    // it runs on each archive member).
-    if !ctx.args.keep_private_externs {
-        locals.add_private_externs();
-    }
-    locals.locals.extend(sectcreate);
-    let locals = locals.finish();
+    let locals = local_symbols(ctx);
     drop(t);
 
     // Debug-note stabs: ld64 does not merge the inputs' DWARF into a -r
@@ -1299,7 +1259,7 @@ fn build_symtab<E: Target>(ctx: &Context<E>, sectcreate: Vec<Local>) -> RSymtab 
     let total = locals.len() + nasts + usize::from(nstabs != 0) + externals.len();
     let mut names: Vec<&'static [u8]> = Vec::with_capacity(total);
     table.entries.reserve_exact(total);
-    par_push_entries(&mut names, &mut table.entries, &locals, |l| (l.name, l.nlist(), None));
+    par_push_entries(&mut names, &mut table.entries, &locals, |l| (l.name, l.nlist, None));
     crate::chunks::symtab::push_ast_paths(ctx, &mut names, &mut table.entries);
     if nstabs != 0 {
         names.push(b"");
@@ -1325,7 +1285,7 @@ fn build_symtab<E: Target>(ctx: &Context<E>, sectcreate: Vec<Local>) -> RSymtab 
     locals.par_iter().enumerate().for_each(|(i, l)| {
         if let Some(id) = l.sym {
             index_of_sym[id as usize].store(i as u32, Ordering::Relaxed);
-            if i != 0 && !(l.rename == Rename::Anon && l.n_type & N_PEXT != 0) {
+            if i != 0 && !(l.hidden && l.nlist.n_type & N_PEXT != 0) {
                 strx_of[id as usize].store(entries[i].0.n_strx, Ordering::Relaxed);
             }
         }
@@ -1466,193 +1426,71 @@ fn undefined_symbols<E: Target>(ctx: &Context<E>, referenced: &[bool]) -> Vec<(N
         .collect()
 }
 
-/// The local symbols of a -r output, in ld64's form, as they are
-/// gathered: every label of a live section, as it marked a subsection's
-/// start in its input and a later link splits the output at it the same
-/// way, and the private externals, demoted to non-external symbols that
-/// keep N_PEXT (add_private_externs). Each object's are gathered on a
-/// core of its own.
-struct Locals<'a, E: Target> {
-    ctx: &'a Context<E>,
-    locals: Vec<Local>,
+/// The local symbols of a -r output: each object's (see object_locals),
+/// in the objects' order, then those naming the -sectcreate inputs.
+/// Under -x, or where -non_global_symbols_strip_list or
+/// -non_global_symbols_no_strip_list strips a name, the symbol stays,
+/// as a relocation may name it, under a name made up for it, l<n>
+/// numbered in the table's order, and the notes of its unit name it so.
+fn local_symbols<E: Target>(ctx: &Context<E>) -> Vec<Local> {
+    let per_obj: Vec<Vec<Local>> =
+        (0..ctx.objs.len()).into_par_iter().map(|i| object_locals(ctx, i)).collect();
+    let mut locals = per_obj.concat();
+    locals.extend(sectcreate_locals(ctx));
+    let mut counter = 0;
+    for l in locals.iter_mut().filter(|l| l.hidden) {
+        counter += 1;
+        l.name = format!("l{counter:03}").leak().as_bytes();
+    }
+    locals
 }
 
-impl<'a, E: Target> Locals<'a, E> {
-    fn new(ctx: &'a Context<E>) -> Self {
-        Self { ctx, locals: Vec::new() }
+/// An object's local symbols in a -r output, in its symbol table's
+/// order: its labels in live sections, as each marked a subsection's
+/// start in it and a later link splits the output at them the same way,
+/// its absolute symbols, and unless -keep_private_externs (which Apple's
+/// strip passes to the `ld -r` it runs on each archive member) the
+/// private externals it defines, demoted to non-external symbols that
+/// keep N_PEXT, as in ld64 (nm: "was a private external").
+fn object_locals<E: Target>(ctx: &Context<E>, obj_idx: usize) -> Vec<Local> {
+    let obj = &ctx.objs[obj_idx];
+    let mut out = Vec::new();
+    if !obj.is_alive {
+        return out;
     }
-
-    /// Adds the objects' local labels.
-    fn add_labels(&mut self) {
-        let per_obj: Vec<Vec<Local>> = (0..self.ctx.objs.len())
-            .into_par_iter()
-            .map(|obj_idx| self.object_labels(obj_idx))
-            .collect();
-        self.locals.extend(per_obj.into_iter().flatten());
-    }
-
-    /// An object's local labels: every one of a live section.
-    fn object_labels(&self, obj_idx: usize) -> Vec<Local> {
-        let ctx = self.ctx;
-        let obj = &ctx.objs[obj_idx];
-        let mut labels = Vec::new();
-        if !obj.is_alive {
-            return labels;
-        }
-        for i in obj.local_range() {
-            let (nlist, sym_id) = (&obj.nlists[i], obj.symbols[i]);
-            if nlist.is_stab() || nlist.is_extern() {
-                continue;
-            }
-            let sym = &ctx.symbols[sym_id];
-            let Some(input) = sym.input_section().map(|i| i as usize) else {
-                if nlist.n_type() == N_ABS {
-                    labels.push(self.absolute(obj_idx, i, sym_id, N_ABS, Rank::Local));
+    for (nlist, &sym_id) in obj.nlists.iter().zip(&obj.symbols) {
+        let sym = &ctx.symbols[sym_id];
+        let (n_type, mut n_desc) = if nlist.is_stab() {
+            continue;
+        } else if !nlist.is_extern() {
+            (nlist.n_type, nlist.n_desc)
+        } else if !ctx.args.keep_private_externs
+            && sym.is_private_extern()
+            && matches!(sym.file(), Some(FileId::Obj(o)) if o as usize == obj_idx)
+        {
+            let n_desc = nlist.n_desc & (N_ALT_ENTRY | N_NO_DEAD_STRIP | N_WEAK_DEF);
+            (N_PEXT | nlist.n_type(), n_desc)
+        } else {
+            continue;
+        };
+        let (n_sect, n_value) = match sym.input_section() {
+            Some(input) => {
+                let isec = ctx.resolve_isec(input as usize);
+                if !ctx.isecs[isec].is_alive() {
+                    continue;
                 }
-                continue;
-            };
-            let isec = ctx.resolve_isec(input);
-            if !ctx.isecs[isec].is_alive() || sym.name().is_empty() {
-                continue;
+                n_desc |= section_desc(ctx, input as usize);
+                (ctx.isec_n_sect(&ctx.isecs[isec]), sym_addr(ctx, sym_id))
             }
-            labels.push(Local {
-                name: local_symbol_name(sym.name()),
-                n_type: nlist.n_type,
-                n_desc: nlist.n_desc | section_desc(ctx, input),
-                n_sect: ctx.isec_n_sect(&ctx.isecs[isec]),
-                addr: sym_addr(ctx, sym_id),
-                rename: self.rename(sym.name()),
-                sym: Some(sym_id),
-                at: (obj_idx as u32, nlist.n_sect, nlist.n_value),
-                rank: if sym.name().starts_with(b"ltmp") { Rank::Ltmp } else { Rank::Local },
-            });
-        }
-        labels
-    }
-
-    /// Adds the private externals, which become non-external symbols in
-    /// a -r output, as in ld64 - N_PEXT still set, which nm reports as
-    /// "was a private external".
-    fn add_private_externs(&mut self) {
-        let per_obj: Vec<Vec<Local>> = (0..self.ctx.objs.len())
-            .into_par_iter()
-            .map(|obj_idx| self.object_private_externs(obj_idx))
-            .collect();
-        self.locals.extend(per_obj.into_iter().flatten());
-    }
-
-    /// An object's private externals, as its locals.
-    fn object_private_externs(&self, obj_idx: usize) -> Vec<Local> {
-        let ctx = self.ctx;
-        let obj = &ctx.objs[obj_idx];
-        let mut out = Vec::new();
-        if !obj.is_alive {
-            return out;
-        }
-        for i in obj.global_range() {
-            let (nlist, sym_id) = (&obj.nlists[i], obj.symbols[i]);
-            let sym = &ctx.symbols[sym_id];
-            // Only the copy that won resolution is emitted.
-            if nlist.is_stab()
-                || !nlist.is_extern()
-                || !sym.is_private_extern()
-                || !matches!(sym.file(), Some(FileId::Obj(o)) if o as usize == obj_idx)
-            {
-                continue;
-            }
-            let Some(input) = sym.input_section().map(|i| i as usize) else {
-                if nlist.n_type() == N_ABS {
-                    out.push(self.absolute(
-                        obj_idx,
-                        i,
-                        sym_id,
-                        N_PEXT | N_ABS,
-                        Rank::PrivateExtern,
-                    ));
-                }
-                continue;
-            };
-            let isec = ctx.resolve_isec(input);
-            if !ctx.isecs[isec].is_alive() {
-                continue;
-            }
-            out.push(Local {
-                name: local_symbol_name(sym.name()),
-                n_type: N_PEXT | N_SECT,
-                n_desc: nlist.n_desc & (N_ALT_ENTRY | N_NO_DEAD_STRIP | N_WEAK_DEF)
-                    | section_desc(ctx, input),
-                n_sect: ctx.isec_n_sect(&ctx.isecs[isec]),
-                addr: sym_addr(ctx, sym_id),
-                rename: self.rename(sym.name()),
-                sym: Some(sym_id),
-                at: (obj_idx as u32, nlist.n_sect, nlist.n_value),
-                rank: if sym.is_weak_def() { Rank::Weak } else { Rank::PrivateExtern },
-            });
-        }
-        out
-    }
-
-    /// Absolute symbol `i` of object `obj_idx`, which is in no section:
-    /// ld-prime lists an object's absolute symbols after the symbols of
-    /// its sections, in the object's order, and gives them no n_desc
-    /// flags (the assembler marks one N_NO_DEAD_STRIP).
-    fn absolute(
-        &self,
-        obj_idx: usize,
-        i: usize,
-        sym_id: SymbolId,
-        n_type: u8,
-        rank: Rank,
-    ) -> Local {
-        let sym = &self.ctx.symbols[sym_id];
-        Local {
-            name: sym.name(),
-            n_type,
-            n_desc: 0,
-            n_sect: 0,
-            addr: sym.value,
-            rename: self.rename(sym.name()),
+            None if nlist.n_type() == N_ABS => (0, sym.value),
+            None => continue,
+        };
+        out.push(Local {
+            name: local_symbol_name(sym.name()),
+            nlist: NList { n_strx: 0, n_type, n_sect, n_desc, n_value },
+            hidden: ctx.args.strip_locals || crate::chunks::symtab::is_listed_out(ctx, sym.name()),
             sym: Some(sym_id),
-            at: (obj_idx as u32, 0, i as u64),
-            rank,
-        }
-    }
-
-    /// The name a local named `name` takes: under -x, or if
-    /// -non_global_symbols_strip_list or -non_global_symbols_no_strip_list
-    /// strips the name, ld-prime keeps the symbol, which a relocation
-    /// may name, by a name it makes up (l<nnn>, see finish), and the
-    /// notes of its unit name it so.
-    fn rename(&self, name: &[u8]) -> Rename {
-        let ctx = self.ctx;
-        match ctx.args.strip_locals || crate::chunks::symtab::is_listed_out(ctx, name) {
-            true => Rename::Anon,
-            false => Rename::None,
-        }
-    }
-
-    /// The locals in ld-prime's order, those it renames (see rename)
-    /// numbered in it.
-    fn finish(self) -> Vec<Local> {
-        let Self { locals, .. } = self;
-        // A stable sort, by object first: each object's locals as they
-        // were gathered where all else ties.
-        let mut order: Vec<usize> = (0..locals.len()).collect();
-        let place = |l: &Local| (l.at.0, l.n_type & N_TYPE == N_ABS, l.at.1, l.at.2);
-        order.par_sort_by(|&a, &b| {
-            let (a, b) = (&locals[a], &locals[b]);
-            place(a).cmp(&place(b)).then_with(|| (a.rank, b.name).cmp(&(b.rank, a.name)))
         });
-        let mut locals: Vec<Local> = order.par_iter().map(|&e| locals[e]).collect();
-
-        let mut counter = 1u32;
-        for l in &mut locals {
-            if l.rename == Rename::Anon {
-                l.name = format!("l{counter:03}").leak().as_bytes();
-                counter += 1;
-            }
-        }
-
-        locals
     }
+    out
 }

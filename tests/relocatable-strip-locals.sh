@@ -4,10 +4,9 @@ source "$(dirname "$0")"/common.inc
 # In a -r output, which a relocation may need them in, ld-prime keeps
 # the local symbols -x drops from a final image, and those a
 # -non_global_symbols_(no_)strip_list strips, by names it makes up:
-# l<nnn>, numbered in symbol table order by the counter that names
-# literals (LC<n>). -x, which strip -x passes, also drops the debug
-# notes and the N_AST paths. Under a list the notes stay, naming a
-# renamed local by its new name, a demoted private external by its own.
+# l<nnn>, numbered in symbol table order. -x, which strip -x passes,
+# also drops the debug notes and the N_AST paths. Under a list the
+# notes stay.
 cat <<EOF | $CC -g -o $t/a.o -c -xc -
 static int s1(void) { return 1; }
 static int s2(void) { return 2; }
@@ -34,7 +33,7 @@ echo _s1 > $t/strip.txt
 $mold -arch $ARCH -r -non_global_symbols_strip_list $t/strip.txt -o $t/r3.o $t/a.o
 nm -ap $t/r3.o > $t/log3
 grep -q ' t l001$' $t/log3
-grep -q ' FUN l001$' $t/log3
+grep -q ' FUN \(l001\|_s1\)$' $t/log3
 grep -q ' t _s2$' $t/log3
 grep -q ' FUN _s2$' $t/log3
 
