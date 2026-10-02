@@ -158,13 +158,13 @@ pub fn link<E: Target>(ctx: &mut Context<E>) -> u64 {
             .collect();
 
     // Every section - the -sectcreate options' own ones too - laid out
-    // from address zero, and placed in the file after the load
+    // from address zero, and placed in the file right after the load
     // commands.
     let sects = sort_sections(ctx, &synthetic);
     let vmsize = assign_addresses(ctx, &mut synthetic, &sects);
     let cmds = LoadCommands::new(ctx, sects.len());
-    let seg_fileoff = cmds.contents_offset(&ctx.args);
-    let content_end = assign_file_offsets(ctx, &mut synthetic, &sects, seg_fileoff);
+    let cmds_end = (size_of::<MachHeader>() + cmds.size()) as u64;
+    let (seg_fileoff, content_end) = assign_file_offsets(ctx, &mut synthetic, &sects, cmds_end);
     drop(t);
 
     // The symbol table, then what refers to its symbols: the synthetic
@@ -214,14 +214,10 @@ pub fn link<E: Target>(ctx: &mut Context<E>) -> u64 {
             Sect::Created(_) => {}
         }
     }
-    // ld-prime rounds the segment's size up to 8 bytes and counts the
-    // padding in its file size too, whose end, past a trailing zero-fill
-    // section, may then lie in the relocations.
-    let pad = align_to(vmsize, 8) - vmsize;
     let layout = FileLayout {
-        vmsize: vmsize + pad,
+        vmsize,
         seg_fileoff,
-        seg_filesize: content_end - seg_fileoff + pad,
+        seg_filesize: content_end - seg_fileoff,
         diceoff: place(cmds.dice.len() * 8),
         lohoff: place(cmds.loh.as_ref().map_or(0, Vec::len)),
         symoff: place(symtab.table.len() * size_of::<NList>()),
@@ -445,16 +441,6 @@ impl LoadCommands {
             + self.linker_options.iter().map(Vec::len).sum::<usize>()
             + if self.loh.is_some() { size_of::<LinkEditDataCommand>() } else { 0 }
     }
-
-    /// Where the section contents start in the file: past the header,
-    /// the load commands and the space ld-prime leaves free after them,
-    /// -headerpad (32 unless given), and more when LC_VERSION_MIN_MACOSX,
-    /// or no command at all, stands where its estimate of them counted a
-    /// 32-byte LC_BUILD_VERSION.
-    fn contents_offset(&self, args: &crate::cmdline::Args) -> u64 {
-        let pad = args.headerpad + 32u64.saturating_sub(self.version.len() as u64);
-        (size_of::<MachHeader>() + self.size()) as u64 + pad
-    }
 }
 
 /// An LC_LINKER_OPTION command: cmd, cmdsize, count, then the
@@ -474,40 +460,32 @@ fn linker_option_command(opt: &[Vec<u8>]) -> Vec<u8> {
     cmd
 }
 
-/// Places the sections' contents in the file from `start`, past the
-/// load commands, returning where they end. ld-prime packs them: a
-/// zero-fill section takes no file space, and each other one follows
-/// the contents before it with the padding its address has (from the
-/// end of the section before, zero-fill or not) - unless its file
-/// offset is aligned for it already, when it has none. File offsets so
-/// mirror addresses up to the first zero-fill section, or the first
-/// section the file's own alignment lets start early (one 32-byte
-/// aligned where the contents start at 16 mod 32); after those a
-/// section may start unaligned in the file. As in ld64's output, __bss
-/// can sit before __LD,__compact_unwind without leaving a hole.
+/// Places the sections' contents in the file past the load commands,
+/// which end at `cmds_end`, each aligned as in the address space, and
+/// returns where they start and end. A zero-fill section takes no file
+/// space. The contents start aligned for every section, so that none
+/// lies further into them than into the address space: the segment's
+/// file size is no larger than its size.
 fn assign_file_offsets<E: Target>(
     ctx: &mut Context<E>,
     synthetic: &mut [SyntheticSection],
     sects: &[Sect],
-    start: u64,
-) -> u64 {
+    cmds_end: u64,
+) -> (u64, u64) {
+    let p2align = sects.iter().map(|&s| sect_hdr(ctx, synthetic, s).p2align).max();
+    let start = align_to(cmds_end, 1 << p2align.unwrap_or(0));
     let mut off = start;
-    let mut prev_end = 0;
     for &s in sects {
         let hdr = sect_hdr_mut(ctx, synthetic, s);
-        let pad = hdr.addr - prev_end;
-        prev_end = hdr.addr + hdr.size;
         if hdr.is_zerofill() {
             hdr.fileoff = 0;
             continue;
         }
-        if !off.is_multiple_of(1 << hdr.p2align) {
-            off += pad;
-        }
+        off = align_to(off, 1 << hdr.p2align);
         hdr.fileoff = off;
         off += hdr.size;
     }
-    off
+    (start, off)
 }
 
 /// A section the -r output synthesizes rather than merges from input

@@ -1,36 +1,53 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# A -r output's contents mirror its address space: a zero-fill section
-# takes no file space and comes after the others, and each other one
-# lies at its address's distance from the first section, so that it is
-# aligned in the file as in memory.
-
-# Links $1 bytes of data, a 16-aligned __bss, $2 bytes in __q and an
-# 8-aligned __r, and prints how far the file offsets of __q and __r
-# from __data's differ from their addresses', __r's offset modulo 8,
-# the last section and its file offset: "0 0 0 __bss 0" if all is well.
-check() {
+# A -r output's sections lie in the file one after another, each
+# aligned as in the address space, a zero-fill one taking no file
+# space. The one segment's size is the sections' address span and its
+# file size the contents' span, no larger. (ld-prime packs them its own
+# way and rounds the segment's size up to 8 bytes.)
+for n in 1 3 4; do
   {
     echo '.section __DATA,__data'
-    for i in $(seq $1); do echo '.byte 1'; done
+    for i in $(seq $n); do echo '.byte 1'; done
     echo '.zerofill __DATA,__bss,_big,400,4'
     echo '.section __ZZZ,__q'
-    for i in $(seq $2); do echo '.byte 1'; done
+    for i in $(seq $n); do echo '.byte 2'; done
     echo '.section __ZZZ,__r'
     echo '.p2align 3'
-    echo '.quad 1'
-  } | $CC -o $t/$1-$2.o -c -xassembler -
-  $mold -r -arch $ARCH $t/$1-$2.o -o $t/$1-$2.r.o
-  otool -l $t/$1-$2.r.o > $t/$1-$2.lc
-  field() { awk -v s=$1 -v f=$2 '$1 == "sectname" { n = $2 } n == s && $1 == f { print $2; exit }' $t/$3.lc; }
-  local d=$(field __data offset $1-$2) q=$(field __q offset $1-$2) r=$(field __r offset $1-$2)
-  local da=$(field __data addr $1-$2) qa=$(field __q addr $1-$2) ra=$(field __r addr $1-$2)
-  local last=$(grep sectname $t/$1-$2.lc | tail -1 | awk '{print $2}')
-  echo $((q - d - (qa - da))) $((r - d - (ra - da))) $((r % 8)) $last $(field $last offset $1-$2)
-}
+    echo '.quad 3'
+  } | $CC -o $t/a$n.o -c -xassembler -
+  $mold -r -arch $ARCH $t/a$n.o -o $t/r$n.o
 
-[ "$(check 1 4)" = '0 0 0 __bss 0' ]
-[ "$(check 4 4)" = '0 0 0 __bss 0' ]
-[ "$(check 3 5)" = '0 0 0 __bss 0' ]
-[ "$(check 4 2)" = '0 0 0 __bss 0' ]
+  python3 - $t/r$n.o <<'EOF'
+import struct, sys
+d = open(sys.argv[1], 'rb').read()
+off = 32
+for _ in range(struct.unpack_from('<I', d, 16)[0]):
+    cmd, size = struct.unpack_from('<II', d, off)
+    if cmd == 0x19:
+        vmsize, fileoff, filesize = struct.unpack_from('<QQQ', d, off + 32)
+        nsects = struct.unpack_from('<I', d, off + 64)[0]
+        sects = [struct.unpack_from('<16s16sQQIIIII', d, off + 72 + i * 80) for i in range(nsects)]
+    off += size
+end = 0
+for name, seg, addr, size, offset, align, _, _, flags in sects:
+    if flags & 0xff == 1:
+        assert offset == 0, name
+        continue
+    assert offset % (1 << align) == 0, name
+    assert offset >= max(end, fileoff), name
+    end = offset + size
+assert vmsize == max(s[2] + s[3] for s in sects), vmsize
+assert filesize == end - fileoff and filesize <= vmsize, (filesize, vmsize)
+EOF
+
+  # The contents are the object's.
+  for s in __DATA,__data __ZZZ,__q __ZZZ,__r; do
+    otool -s ${s%,*} ${s#*,} $t/a$n.o | tail -n +3 | cut -f2 > $t/in
+    otool -s ${s%,*} ${s#*,} $t/r$n.o | tail -n +3 | cut -f2 > $t/out
+    [ -s $t/in ]
+    diff $t/in $t/out
+  done
+  nm $t/r$n.o > /dev/null
+done

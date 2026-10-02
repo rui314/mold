@@ -10,17 +10,23 @@ source "$(dirname "$0")"/common.inc
 # what the estimate over-counts: a 28-byte header for each dependency
 # (an 8-byte step for /usr/lib/libz.1.dylib), 16 bytes for classic dyld
 # info, 32 for x86-64 chained fixups or -static, and 80 for the header
-# of a section it gives a static executable's stack. A -r output gets
-# -headerpad as given, 32 by default.
+# of a section it gives a static executable's stack. A -r output, which
+# no tool adds commands to, gets none: its contents start right after
+# its load commands, aligned for its sections. (ld-prime gives it
+# -headerpad, 32 by default.)
 echo 'int main() { return 0; }' | $CC -o $t/a.o -c -xc -
 
 # Checks that the first section starts `want` bytes past the load
-# commands, rounded up to its alignment unless in a -r output.
+# commands, rounded up to its alignment, or in a -r output (r) to the
+# largest section alignment.
 gap() {
   local end=$((32 + $(otool -h $1 | tail -1 | awk '{print $7}')))
   local first=$(otool -l $1 | awk '$1 == "offset" && $2 > 0 { print $2; exit }')
-  local align=1
-  if [ "$3" != r ]; then
+  local align
+  if [ "$3" = r ]; then
+    align=$((1 << $(otool -l $1 | awk '$1 == "align" { sub(/2\^/, "", $2); if ($2 + 0 > m) m = $2 + 0 }
+      END { print m + 0 }')))
+  else
     align=$((1 << $(otool -l $1 | awk '$1 == "align" { sub(/2\^/, "", $2); print $2; exit }')))
   fi
   [ $first = $(( (end + $2 + align - 1) / align * align )) ]
@@ -53,6 +59,6 @@ $mold -arch $ARCH -static -e _main -stack_size 0x8000 -o $t/static3 $t/a.o
 gap $t/static3 $((64 + 80))
 
 $mold -arch $ARCH -r -o $t/r.o $t/a.o
-gap $t/r.o 32 r
+gap $t/r.o 0 r
 $mold -arch $ARCH -r -headerpad 0x10 -o $t/r2.o $t/a.o
-gap $t/r2.o 16 r
+gap $t/r2.o 0 r
