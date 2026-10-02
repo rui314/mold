@@ -8,6 +8,7 @@
 //! a number or boolean as a string), an empty map, array or string is an
 //! empty node, and a null is no node at all, which fails the read.
 
+use crate::error::RawPath;
 use std::path::Path;
 
 use serde_json::Value;
@@ -22,7 +23,7 @@ pub struct ApiList {
 /// Reads an API list, stopping the link on one ld-prime refuses.
 pub fn read(path: &Path) -> ApiList {
     let fail = |what: &dyn std::fmt::Display| -> ! {
-        crate::fatal!("-sdk_imports_api_list invalid list at {}: {what}", path.display());
+        crate::fatal!("-sdk_imports_api_list invalid list at {}: {what}", path.raw());
     };
     // A file that can't be read is as an empty one.
     let data = std::fs::read(path).unwrap_or_default();

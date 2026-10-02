@@ -13,6 +13,7 @@ use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+use crate::error::RawPath;
 use crate::fatal;
 
 /// Opens are memoized by path: a file named twice (a library on the
@@ -60,7 +61,7 @@ impl MappedFile {
         if !metadata.is_file() {
             return Err(io::Error::from(io::ErrorKind::NotFound));
         }
-        let display = path.display();
+        let display = path.raw();
         let size = metadata.len();
 
         let data: &'static [u8] = if size == 0 {
@@ -103,7 +104,7 @@ impl MappedFile {
         match Self::open_impl(path) {
             Ok(mf) => Some(mf),
             Err(e) if e.kind() == io::ErrorKind::NotFound => None,
-            Err(e) => fatal!("cannot open {}: {e}", path.display()),
+            Err(e) => fatal!("cannot open {}: {e}", path.raw()),
         }
     }
 
@@ -115,7 +116,7 @@ impl MappedFile {
     /// Opens a file that must exist.
     pub fn must_open(path: impl AsRef<Path>) -> &'static Self {
         let path = path.as_ref();
-        Self::open_impl(path).unwrap_or_else(|e| fatal!("cannot open {}: {e}", path.display()))
+        Self::open_impl(path).unwrap_or_else(|e| fatal!("cannot open {}: {e}", path.raw()))
     }
 
     /// Returns a view of a member of this archive (or of a fat file).

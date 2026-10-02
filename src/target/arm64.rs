@@ -9,6 +9,7 @@ use crate::chunks::delay_init::{DelayCode, DelayTarget, DelayUse};
 use crate::chunks::lazy_helpers::{LazyTarget, LazyUse};
 use crate::context::Context;
 use crate::dtrace::SiteKind;
+use crate::error::RawPath;
 use crate::fatal;
 use crate::input_files::ObjectFile;
 use crate::input_sections::{Reloc, RelocTarget};
@@ -1483,8 +1484,8 @@ impl Target for Arm64 {
         let mut i = 0;
 
         while i < rels.len() {
-            // Diagnostics spell the path lossily.
-            let file_name = file_name.display();
+            // Diagnostics print the path as its bytes are.
+            let file_name = file_name.raw();
             check_reloc_place(&rels[i], contents)?;
 
             // A Mach-O relocation doesn't contain an addend. UNSIGNED

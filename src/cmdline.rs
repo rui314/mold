@@ -10,6 +10,7 @@ use std::io::IsTerminal;
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
 
+use crate::error::RawPath;
 use crate::error::{Held, raw};
 use crate::fatal;
 use crate::filetype::{FileType, get_file_type};
@@ -17,7 +18,7 @@ use crate::input_files::PlatformVersion;
 use crate::macho::*;
 use crate::mapped_file::MappedFile;
 use crate::util::glob::{Glob, GlobBuilder};
-use crate::util::{display, is_space, lines, os_str, page_align, trim_space};
+use crate::util::{is_space, lines, os_str, page_align, trim_space};
 
 /// The Apple ld64 version whose command line this linker implements,
 /// reported by -version_details. Xcode passes flags according to this
@@ -1178,8 +1179,8 @@ fn env_source_version() -> u64 {
     let Some(env) = std::env::var_os("RC_ProjectSourceVersion") else {
         return 0;
     };
-    let env = env.to_string_lossy();
-    parse_source_version(&env).unwrap_or_else(|| {
+    env.to_str().and_then(parse_source_version).unwrap_or_else(|| {
+        let env = env.raw();
         crate::warn!("$RC_ProjectSourceVersion: malformed 64-bit a.b.c.d.e version number: {env}");
         0
     })
@@ -1321,7 +1322,7 @@ fn resolve_lazy_load(args: &mut Args) {
     for lib in frameworks.iter().chain(&libraries).filter(|_| !lazy_load) {
         crate::warn!(
             "lazy-load will be ignored for '{}' because deployment target version is too low",
-            display(lib)
+            raw(lib)
         );
     }
     if args.platform == PLATFORM_FIRMWARE || args.preload {
@@ -1357,7 +1358,7 @@ fn resolve_delay_init(args: &mut Args) {
     for lib in frameworks.iter().chain(&libraries).filter(|_| !supported) {
         crate::warn!(
             "delay-init will be ignored for '{}' because deployment target version is too low",
-            display(lib)
+            raw(lib)
         );
     }
     args.forced_undefined.push(b"_dlopen".to_vec());
@@ -1477,7 +1478,7 @@ fn names_cpu_family(list: &[u8], family: &str) -> bool {
             Some(f) => found |= f == family,
             None => crate::warn!(
                 "unknown architecture name '{}' in LD_DYLIB_CPU_SUBTYPES_MUST_MATCH",
-                display(name)
+                raw(name)
             ),
         }
     }
@@ -1623,7 +1624,7 @@ fn read_symbol_list(opt: &str, path: &Path) -> Vec<Vec<u8>> {
         Ok(text) => symbol_list(&text),
         Err(e) => fatal!(
             "{opt} file '{}' could not be opened, {}\n",
-            path.display(),
+            path.raw(),
             crate::error::errno_text(&e)
         ),
     }
@@ -1835,13 +1836,13 @@ fn expand_response_file(
     let path = Path::new(os_str(path));
     let path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     if !loaded.insert(path.clone()) {
-        fatal!("recursively loading {}", path.display());
+        fatal!("recursively loading {}", path.raw());
     }
     let mut file = match std::fs::File::open(&path) {
         Ok(file) => file,
         Err(e) => {
             let errno = crate::error::errno_text(&e);
-            crate::warn!("response file '{}' could not be opened, {errno}", path.display());
+            crate::warn!("response file '{}' could not be opened, {errno}", path.raw());
             args.push(arg);
             return;
         }
@@ -1849,7 +1850,7 @@ fn expand_response_file(
     let mut data = Vec::new();
     if let Err(e) = std::io::Read::read_to_end(&mut file, &mut data) {
         let errno = crate::error::errno_text(&e);
-        fatal!("response file '{}' could not be read, {errno}", path.display());
+        fatal!("response file '{}' could not be read, {errno}", path.raw());
     }
     for arg in split_response_file(Vec::leak(data)) {
         expand_response_file(arg, loaded, args);
@@ -1870,7 +1871,7 @@ fn read_filelist(arg: &OsStr) -> (PathBuf, Vec<PathBuf>) {
     };
     let text = std::fs::read(path).unwrap_or_else(|e| {
         let errno = crate::error::errno_text(&e);
-        fatal!("-filelist file '{}' could not be opened, {errno}\n", path.display())
+        fatal!("-filelist file '{}' could not be opened, {errno}\n", path.raw())
     });
     let files = text
         .split(|&b| b == b'\n')
@@ -2002,7 +2003,7 @@ struct ParseState<'a> {
     /// ignores with a warning once it has read them all.
     obsolete: Vec<String>,
     /// The options ld-prime doesn't know, each followed by a space.
-    unknown: String,
+    unknown: Vec<u8>,
 }
 
 /// The symbol name patterns the options give, which parse_args compiles
@@ -2150,9 +2151,9 @@ fn add_linker_option(words: &mut Vec<Vec<u8>>, opt: &[u8], warnings: &mut Option
         words.push(head.to_vec());
         words.push(arg.to_vec());
     } else {
-        warnings.warn(format!(
+        warnings.warn(format_args!(
             "unknown linker option from -add_linker_option ignored, starting with: '{}'",
-            display(head)
+            raw(head)
         ));
     }
 }
@@ -2227,7 +2228,7 @@ impl<'a> ArgCursor<'a> {
 /// An argument that is text by nature.
 fn text<'a>(opt: &str, arg: &'a OsStr) -> &'a str {
     arg.to_str().unwrap_or_else(|| {
-        fatal!("option {opt}: expected a UTF-8 argument: {}", display(arg.as_bytes()))
+        fatal!("option {opt}: expected a UTF-8 argument: {}", raw(arg.as_bytes()))
     })
 }
 
@@ -2287,7 +2288,7 @@ fn read_bundle_loader(
     if let Some(pos) = args.inputs.iter().position(loader)
         && let InputArg::BundleLoader(old) = args.inputs.remove(pos)
     {
-        let old = old.display();
+        let old = old.raw();
         warnings.warn(format!("duplicate -bundle_loader option, '{old}' ignored"));
     }
     args.inputs.push(InputArg::BundleLoader(cur.next_path(opt)))
@@ -2466,7 +2467,7 @@ fn read_alias_list(
         Ok(contents) => contents,
         Err(e) => {
             let errno = crate::error::errno_text(&e);
-            warnings.warn(format!("order file '{}' could not be opened, {errno}", list.display()));
+            warnings.warn(format_args!("order file '{}' could not be opened, {errno}", list.raw()));
             Vec::new()
         }
     };
@@ -2489,13 +2490,7 @@ fn read_alias_list(
 /// -debug_snapshot with its mode, an optimization level, or one ld-prime
 /// doesn't know, which it reports with the others once it has read them
 /// all (see finish_options).
-fn read_joined_option(
-    cur: &mut ArgCursor,
-    args: &mut Args,
-    st: &mut ParseState,
-    raw: &[u8],
-    name: &str,
-) {
+fn read_joined_option(cur: &mut ArgCursor, args: &mut Args, st: &mut ParseState, raw: &[u8]) {
     if let Some(&(prefix, kind)) =
         JOINED_LIBRARY_OPTIONS.iter().find(|(prefix, _)| raw.starts_with(prefix.as_bytes()))
     {
@@ -2516,7 +2511,7 @@ fn read_joined_option(
         // or after a '='.
         let mode = mode.strip_prefix(b"=").unwrap_or(mode);
         if !matches!(mode, b"" | b"minimal") {
-            fatal!("unknown debug snapshot mode: {}", display(mode));
+            fatal!("unknown debug snapshot mode: {}", crate::error::raw(mode));
         }
     } else if raw.starts_with(b"-O") {
         // An optimization level, which clang passes on from its own
@@ -2525,8 +2520,8 @@ fn read_joined_option(
         // deduplication, which here is on unless -no_deduplicate,
         // whatever the level.
     } else {
-        st.unknown.push_str(name);
-        st.unknown.push(' ');
+        st.unknown.extend_from_slice(raw);
+        st.unknown.push(b' ');
     }
 }
 
@@ -2576,7 +2571,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
 
     let mut cur = ArgCursor { args: cmdline, index: 0 };
     while let Some(opt) = cur.advance() {
-        // Every option name is ASCII; an unknown one is reported lossily.
+        // Every option name is ASCII; an unknown one is reported as it
+        // is (see read_joined_option).
         let name = opt.to_string_lossy();
         let name: &str = &name;
         match opt.as_bytes() {
@@ -2640,7 +2636,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 if !arg.starts_with(b"DYLD_") || !arg.contains(&b'=') {
                     fatal!(
                         "malformed '-dyld_env {}', arg should be of form 'DYLD_xxx=something'",
-                        display(arg)
+                        raw(arg)
                     );
                 }
                 args.dyld_envs.push(arg.to_vec());
@@ -2670,7 +2666,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-arch_variant" => {
                 let variant = cur.next_arg(name).as_bytes();
                 if arch_cpu_family(variant).is_none() {
-                    fatal!("unknown -arch name: {}", display(variant));
+                    fatal!("unknown -arch name: {}", raw(variant));
                 }
                 st.arch_variant = true;
             }
@@ -3122,7 +3118,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-objc_abi_version" => {
                 let version = cur.next_arg(name).as_bytes();
                 if version != b"2" {
-                    fatal!("-objc_abi_version '{}' not supported (expected 2)", display(version));
+                    fatal!("-objc_abi_version '{}' not supported (expected 2)", raw(version));
                 }
             }
             // Whether objects may disagree on signing class_ro_t
@@ -3324,9 +3320,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // ld-prime skips an empty argument, which names no file: a
             // build system's empty variable, or '' in a response file.
             b"" => {}
-            raw if raw.starts_with(b"-") => {
-                read_joined_option(&mut cur, &mut args, &mut st, raw, name)
-            }
+            raw if raw.starts_with(b"-") => read_joined_option(&mut cur, &mut args, &mut st, raw),
             _ => args.inputs.push(input_file(opt)),
         }
     }
@@ -3375,7 +3369,7 @@ fn finish_options(args: &mut Args, st: &mut ParseState) {
     // ld-prime reports the options it doesn't know together, once it
     // has read the others (and given their warnings).
     if !st.unknown.is_empty() {
-        fatal!("unknown options: {}", st.unknown);
+        fatal!("unknown options: {}", crate::error::raw(&st.unknown));
     }
     // Then it reads -objc_class_ro_signing_mismatch's environment
     // variable, as it would the option.
@@ -4548,7 +4542,7 @@ fn resolve_lto_library(mut paths: Vec<PathBuf>) -> Option<PathBuf> {
     }
     let path = paths.pop()?;
     if std::fs::metadata(&path).is_err() {
-        crate::warn!("ignoring -lto_library '{}', file does not exist", path.display());
+        crate::warn!("ignoring -lto_library '{}', file does not exist", path.raw());
         return None;
     }
     Some(path)
@@ -4588,7 +4582,7 @@ fn detect_target(args: &Args) -> &'static str {
 fn open_for_target(path: &Path) -> Option<&'static MappedFile> {
     match MappedFile::try_open(path) {
         Ok(mf) => (mf.size() > 0).then_some(mf),
-        Err(e) => fatal!("{}", crate::passes::unreadable_file(path, &e)),
+        Err(e) => fatal!("{}", crate::error::raw(&crate::passes::unreadable_file(path, &e))),
     }
 }
 
@@ -4614,7 +4608,7 @@ fn infer_platform(args: &mut Args) {
                 if v.platform != PLATFORM_MACOS && v.platform != PLATFORM_FIRMWARE {
                     fatal!(
                         "{}: unsupported platform: {}",
-                        mf.name.display(),
+                        mf.name.raw(),
                         platform_name(v.platform)
                     );
                 }

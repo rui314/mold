@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 
 use crate::chunks::ChunkId;
 use crate::context::Context;
+use crate::error::RawPath;
 use crate::input_files::{DylibFile, FileId, MergedFile, NameSource};
 use crate::macho::*;
 use crate::symbol::SymbolId;
@@ -49,7 +50,7 @@ pub fn write_sdk_imports<E: Target>(ctx: &Context<E>) {
         .map(|((_, name), mut symbols)| {
             symbols.sort_unstable();
             symbols.dedup();
-            json!({ "installName": crate::util::display(name), "symbols": json_names(&symbols) })
+            json!({ "installName": String::from_utf8_lossy(name), "symbols": json_names(&symbols) })
         })
         .collect();
     let inputs = match libraries.is_empty() {
@@ -68,7 +69,7 @@ pub fn write_sdk_imports<E: Target>(ctx: &Context<E>) {
         "inputs": inputs,
     });
     let Ok(file) = std::fs::File::create(path) else {
-        crate::warn!("can't open SDK imports file for writing at '{}'", path.display());
+        crate::warn!("can't open SDK imports file for writing at '{}'", path.raw());
         return;
     };
     let mut out = std::io::BufWriter::new(file);
@@ -122,7 +123,7 @@ pub fn write_dependency_info<E: Target>(ctx: &Context<E>) {
     entries.sort();
 
     let Ok(file) = std::fs::File::create(path) else {
-        crate::warn!("Could not open or create -dependency_info file: {}", path.display());
+        crate::warn!("Could not open or create -dependency_info file: {}", path.raw());
         return;
     };
     let mut out = std::io::BufWriter::new(file);
@@ -292,7 +293,7 @@ pub fn write_trace_files<E: Target>(ctx: &Context<E>) {
 fn trace_symbols_dir_file<E: Target>(dir: &Path) -> Option<PathBuf> {
     if std::fs::create_dir_all(dir).is_err() {
         // ld-prime reports errno, which mkpath_np leaves alone.
-        crate::error!("call to mkpath_np({}) failed due to: Undefined error: 0", dir.display());
+        crate::error!("call to mkpath_np({}) failed due to: Undefined error: 0", dir.raw());
         return None;
     }
     // SAFETY: getppid has no preconditions.
@@ -318,7 +319,7 @@ fn append_trace(path: &Path, record: &Value) {
         Err(e) => crate::error!(
             "Could not open or create trace file (errno={}): {}",
             e.raw_os_error().unwrap_or(0),
-            path.display()
+            path.raw()
         ),
     }
 }
@@ -388,14 +389,14 @@ impl<'a> TraceInputs<'a> {
     fn dylibs_json<E: Target>(&self, ctx: &Context<E>, uuid: &str, shared_cache: bool) -> Value {
         let name = match ctx.args.output_type {
             MH_DYLIB if shared_cache => {
-                crate::util::display(ctx.args.output_install_name()).into_owned()
+                String::from_utf8_lossy(ctx.args.output_install_name()).into_owned()
             }
             _ if shared_cache => ctx.args.output.to_string_lossy().into_owned(),
             _ => output_leaf(ctx),
         };
         let mut record = json!({ "uuid": uuid, "name": name, "arch": E::NAME });
         let id = |d: &DylibFile| match shared_cache {
-            true => crate::util::display(&d.install_name).into_owned(),
+            true => String::from_utf8_lossy(&d.install_name).into_owned(),
             false => trace_path(&d.path),
         };
         let weak = |d: &DylibFile| d.is_weak || d.is_weak_asserted;
@@ -438,7 +439,7 @@ impl<'a> TraceInputs<'a> {
                 let attrs: Vec<&str> = attrs.iter().filter(|a| a.0).map(|a| a.1).collect();
                 let mut entry = json!({
                     "path": trace_path(&d.path),
-                    "install-name": crate::util::display(&d.install_name),
+                    "install-name": String::from_utf8_lossy(&d.install_name),
                     "arch": E::NAME,
                     "attributes": attrs,
                     "imported-symbols": json_names(&imports[i]),
@@ -454,7 +455,7 @@ impl<'a> TraceInputs<'a> {
         dylibs.extend(self.lazy.iter().map(|&(i, d)| {
             json!({
                 "path": trace_path(&d.path),
-                "install-name": crate::util::display(&d.install_name),
+                "install-name": String::from_utf8_lossy(&d.install_name),
                 "arch": E::NAME,
                 "attributes": ["lazy-load"],
                 "imported-symbols": json_names(&imports[i]),
@@ -487,7 +488,7 @@ impl<'a> TraceInputs<'a> {
         });
         if args.output_type == MH_DYLIB {
             let eligible = if args.shared_region { "yes" } else { "no" };
-            record["install-name"] = json!(crate::util::display(args.output_install_name()));
+            record["install-name"] = json!(String::from_utf8_lossy(args.output_install_name()));
             record["shared-cache-eligible"] = json!(eligible);
         }
         if let Some(uuid) = uuid {
@@ -1036,7 +1037,7 @@ fn write_map<E: Target>(
     dead: &[MapEntry],
 ) {
     let Ok(file) = std::fs::File::create(path) else {
-        crate::warn!("could not write map file: {}", path.display());
+        crate::warn!("could not write map file: {}", path.raw());
         return;
     };
     let mut out = std::io::BufWriter::new(file);

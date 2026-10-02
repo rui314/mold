@@ -148,11 +148,6 @@ pub fn random_bytes(buf: &mut [u8]) {
     getrandom::fill(buf).unwrap_or_else(|err| crate::fatal!("cannot get random bytes: {err}"));
 }
 
-/// Formats a byte string for diagnostics, replacing invalid UTF-8.
-pub fn display(bytes: &[u8]) -> std::borrow::Cow<'_, str> {
-    String::from_utf8_lossy(bytes)
-}
-
 /// Computes the SHA-256 hash of `data` into `out`.
 pub fn sha256(data: &[u8], out: &mut [u8; 32]) {
     use sha2::Digest;

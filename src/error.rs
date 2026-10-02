@@ -59,11 +59,48 @@ pub fn set_suppress_warnings(on: bool) {
 pub struct Raw<'a>(&'a [u8]);
 
 /// Prints a byte string in a diagnostic as it is, as ld-prime prints
-/// the names it reads - a segment's or a section's, which need not be
-/// UTF-8 - byte for byte. Formatted anywhere but into a diagnostic,
-/// each byte that isn't UTF-8 comes out as U+FFFD.
+/// the names it reads - a symbol's, a section's, a file's - which need
+/// not be UTF-8, byte for byte. Formatted anywhere but into a
+/// diagnostic (or error::render), each byte that isn't UTF-8 comes out
+/// as U+FFFD.
 pub fn raw(bytes: &[u8]) -> Raw<'_> {
     Raw(bytes)
+}
+
+/// An owned byte string a diagnostic prints as it is (see raw): a
+/// file's name made up for the diagnostic, say.
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub struct RawBuf(pub Vec<u8>);
+
+impl From<&str> for RawBuf {
+    fn from(s: &str) -> Self {
+        Self(s.as_bytes().to_vec())
+    }
+}
+
+impl fmt::Display for RawBuf {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        raw(&self.0).fmt(f)
+    }
+}
+
+/// Paths a diagnostic prints as they are, byte for byte (see raw), as
+/// ld-prime prints them: path.raw() in place of Path::display, which
+/// writes a U+FFFD for each byte that isn't UTF-8.
+pub trait RawPath {
+    fn raw(&self) -> Raw<'_>;
+}
+
+impl RawPath for std::path::Path {
+    fn raw(&self) -> Raw<'_> {
+        raw(std::os::unix::ffi::OsStrExt::as_bytes(self.as_os_str()))
+    }
+}
+
+impl RawPath for std::ffi::OsStr {
+    fn raw(&self) -> Raw<'_> {
+        raw(std::os::unix::ffi::OsStrExt::as_bytes(self))
+    }
 }
 
 impl fmt::Display for Raw<'_> {

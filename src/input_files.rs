@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use rayon::prelude::*;
 
 use crate::context::Context;
+use crate::error::RawPath;
 use crate::error::{Message, raw};
 use crate::fatal;
 use crate::input_sections::InputSection;
@@ -328,7 +329,7 @@ fn report_bad_reloc(file: &Path, nsects: usize, bad: &BadReloc, subsec: &[u8], b
             r.r_length()
         )
     };
-    let name = file.display();
+    let name = file.raw();
     match bad.error {
         RelocError::OutOfBounds => {
             report_out_of_bounds(file, 1 << r.r_length(), r.r_address, bounds)
@@ -365,7 +366,7 @@ fn report_out_of_bounds(file: &Path, size: u8, offset: u32, bounds: (u32, u32)) 
          0x{:04X}->0x{:04X} in '{}'",
         bounds.0,
         bounds.1,
-        file.display()
+        file.raw()
     );
 }
 
@@ -677,7 +678,7 @@ fn check_sections(
     };
     for (i, hdr) in hdrs.iter().enumerate() {
         if hdr.size != 0 && split && is_linker_code_section(hdr) && has_symbol(i) {
-            crate::error!("unknown symboled section type in '{}'", file.display());
+            crate::error!("unknown symboled section type in '{}'", file.raw());
             return Some(i);
         }
         if let Some(size) = record_size(hdr)
@@ -688,7 +689,7 @@ fn check_sections(
                 raw(hdr.segname()),
                 raw(hdr.sectname()),
                 hdr.size,
-                file.display()
+                file.raw()
             );
             return Some(i);
         }
@@ -698,7 +699,7 @@ fn check_sections(
             crate::error!(
                 "unknown fixed size section __DATA,{} with content type: {content} in '{}'",
                 raw(hdr.sectname()),
-                file.display()
+                file.raw()
             );
             return Some(i);
         }
@@ -713,7 +714,7 @@ fn check_sections(
     if nindirect != 0 && hdrs.iter().any(|h| h.section_type() == S_NON_LAZY_SYMBOL_POINTERS) {
         crate::error!(
             "non-lazy pointers sections no longer supported for 64-bit architectures in '{}'",
-            file.display()
+            file.raw()
         );
         return Some(hdrs.len());
     }
@@ -1031,7 +1032,7 @@ impl LoadCommands {
                     // no more, as ld-prime sees it.
                     let count = u32::from_le_bytes(data[off + 8..off + 12].try_into().unwrap());
                     if !(1..=2).contains(&count) {
-                        let file = mf.name.display();
+                        let file = mf.name.raw();
                         fatal!(
                             "LC_LINKER_OPTION has count={count}, only 1 or 2 is valid in '{file}' in '{file}'"
                         );
@@ -1145,7 +1146,7 @@ pub fn stage_object<E: Target>(
     let hdr = MachHeader::read_from(data);
 
     if hdr.cputype != E::CPUTYPE {
-        fatal!("{}: incompatible CPU type: expected {}", mf.name.display(), E::NAME);
+        fatal!("{}: incompatible CPU type: expected {}", mf.name.raw(), E::NAME);
     }
 
     let cmds = LoadCommands::read::<E>(mf, &hdr);
@@ -1595,7 +1596,7 @@ impl StagedObject {
                 "section '{}/{}' has a non-zero nreloc field in '{}'",
                 raw(sect.segname()),
                 raw(sect.sectname()),
-                mf.name.display()
+                mf.name.raw()
             );
             return None;
         }
@@ -1658,7 +1659,7 @@ impl StagedObject {
                 crate::error!(
                     "address=0x{addr:x} points to section({}) with no content in '{}'",
                     sect_pos + 1,
-                    self.mf.name.display()
+                    self.mf.name.raw()
                 );
                 false
             }
@@ -1667,7 +1668,7 @@ impl StagedObject {
                 // keeps.
                 let n = self.nlists.len() as u32;
                 let kept = (0..n).rev().find(|&i| !self.is_ignored_symbol(i)).map_or(0, |i| i + 1);
-                let file = self.mf.name.display();
+                let file = self.mf.name.raw();
                 if idx >= kept {
                     crate::error!("r_symbolnum={idx} out of range in '{file}'");
                 } else if self.misplaced_symbols.binary_search(&idx).is_ok() {
@@ -1688,7 +1689,7 @@ impl StagedObject {
                             || self.sect_hdrs.get(sect).is_some_and(is_unknown_ld_section))
                 }) =>
             {
-                crate::error!("invalid r_symbolnum={idx} in '{}'", self.mf.name.display());
+                crate::error!("invalid r_symbolnum={idx} in '{}'", self.mf.name.raw());
                 false
             }
             _ => true,
@@ -1717,7 +1718,7 @@ impl StagedObject {
         let addr = sect.addr.wrapping_add_signed(addend);
         let range = sect_isecs[sect_pos as usize].clone();
         if range.is_empty() {
-            fatal!("{}: relocation against a discarded section", self.mf.name.display());
+            fatal!("{}: relocation against a discarded section", self.mf.name.raw());
         }
         let n = self.isecs[range.clone()].partition_point(|isec| isec.input_addr as u64 <= addr);
         let isec = range.start + n.saturating_sub(1);
@@ -2166,7 +2167,7 @@ pub fn integrate_object<E: Target>(ctx: &mut Context<E>, mut staged: StagedObjec
 /// warnings and, for an FDE in a section of data, the object's name.
 pub struct UnwindCheck {
     warnings: Vec<Message>,
-    data_fde: Option<String>,
+    data_fde: Option<crate::error::RawBuf>,
 }
 
 impl UnwindCheck {
@@ -2218,7 +2219,7 @@ pub fn parse_bitcode<E: Target>(
             let name = without_fat_arch(crate::util::path_bytes(&mf.name));
             crate::warn!(
                 "linking {arch} file '{}' into {} link",
-                crate::util::display(&name),
+                crate::error::raw(&name),
                 E::NAME
             );
         } else {
@@ -2405,8 +2406,8 @@ impl StagedObject {
         const ENTRY_SIZE: usize = 32;
         let mf = self.mf;
         let hdr = &self.sect_hdrs[sect];
-        // Diagnostics spell the path lossily.
-        let file_name = mf.name.display();
+        // Diagnostics print the path as its bytes are.
+        let file_name = mf.name.raw();
         if !hdr.size.is_multiple_of(ENTRY_SIZE as u64) {
             fatal!("{file_name}: invalid __compact_unwind section size");
         }
@@ -2666,8 +2667,8 @@ impl StagedObject {
     /// Returns whether an FDE describes a function in a section of data.
     fn parse_eh_frame<E: Target>(&mut self, hdr: &MachSection, keep_all_fdes: bool) -> bool {
         let mf = self.mf;
-        // Diagnostics spell the path lossily.
-        let file_name = mf.name.display();
+        // Diagnostics print the path as its bytes are.
+        let file_name = mf.name.raw();
         let data = mf.data();
         let rels: Vec<MachRel> = read_array(data, hdr.reloff as usize, hdr.nreloc as usize);
 
@@ -2804,8 +2805,8 @@ impl StagedObject {
         sect_addr: u32,
         keep_all_fdes: bool,
     ) -> bool {
-        // Diagnostics spell the path lossily.
-        let file_name = self.mf.name.display();
+        // Diagnostics print the path as its bytes are.
+        let file_name = self.mf.name.raw();
         let mut data_fde = false;
         let mut covered: std::collections::HashSet<(usize, u32)> = std::collections::HashSet::new();
         let mut dwarf_recs: std::collections::HashMap<(usize, u32), usize> =
@@ -2916,8 +2917,8 @@ impl StagedObject {
         enc: u8,
         sect_addr: u32,
     ) -> Option<(u32, u32)> {
-        // Diagnostics spell the path lossily.
-        let file_name = self.mf.name.display();
+        // Diagnostics print the path as its bytes are.
+        let file_name = self.mf.name.raw();
         let truncated = || truncated_cfi(&self.mf.name, (input_addr - sect_addr) as usize);
         if skip_uleb(rec, pos).is_none() {
             truncated();
@@ -3155,8 +3156,8 @@ fn apply_eh_frame_relocs<E: Target>(
     nlists: &[NList],
     file_name: &Path,
 ) {
-    // Diagnostics spell the path lossily.
-    let file_name = file_name.display();
+    // Diagnostics print the path as its bytes are.
+    let file_name = file_name.raw();
     let target = |r: MachRel| {
         if r.is_extern() { nlists[r.r_symbolnum() as usize].n_value } else { 0 }
     };
@@ -3224,10 +3225,7 @@ fn apply_eh_frame_relocs<E: Target>(
 /// Reports an __eh_frame record, at `pos` in the section, too short for
 /// its fields.
 fn truncated_cfi(file_name: &Path, pos: usize) -> ! {
-    fatal!(
-        "{}: malformed __eh_frame section: CFI at 0x{pos:08X} is truncated",
-        file_name.display()
-    );
+    fatal!("{}: malformed __eh_frame section: CFI at 0x{pos:08X} is truncated", file_name.raw());
 }
 
 /// Returns the position past the ULEB128 number at `pos` in `data`, or
@@ -3282,8 +3280,8 @@ fn read_pointer(rec: &[u8], pos: usize, enc: u8, rec_addr: u32) -> u64 {
 /// their LSDA pointer (see Cie::fde_enc and Cie::lsda_enc); None if the
 /// CIE ends before its augmentation data does.
 fn parse_cie_augmentation(data: &[u8], file_name: &Path) -> Option<(u8, Option<u8>)> {
-    // Diagnostics spell the path lossily.
-    let file_name = file_name.display();
+    // Diagnostics print the path as its bytes are.
+    let file_name = file_name.raw();
     // The version byte follows the length and the CIE ID, then the
     // augmentation string.
     let version = *data.get(8)?;
@@ -3509,11 +3507,15 @@ pub fn fat_slice<E: Target>(
 
 /// Ignores an input file without the link's architecture, as ld-prime
 /// does: with a warning, or with an error under -arch_errors_fatal.
-pub fn ignore_foreign_file<E: Target>(ctx: &Context<E>, mf: &MappedFile, why: &str) {
+pub fn ignore_foreign_file<E: Target>(
+    ctx: &Context<E>,
+    mf: &MappedFile,
+    why: &dyn std::fmt::Display,
+) {
     if ctx.args.arch_errors_fatal {
-        crate::error!("{why} in '{}'", mf.name.display());
+        crate::error!("{why} in '{}'", mf.name.raw());
     } else {
-        crate::warn!("ignoring file '{}': {why}", mf.name.display());
+        crate::warn!("ignoring file '{}': {why}", mf.name.raw());
     }
 }
 
@@ -3575,8 +3577,8 @@ pub fn untrace_file<E: Target>(ctx: &mut Context<E>, name: &[u8]) {
     }
 }
 
-pub fn trace_name(name: &[u8]) -> String {
-    crate::util::display(&without_fat_arch(name)).to_string()
+pub fn trace_name(name: &[u8]) -> Vec<u8> {
+    without_fat_arch(name)
 }
 
 /// Splits the name fat_slice gives a fat file's slice into the file's
@@ -3647,11 +3649,11 @@ fn trace_reexports<'a, E: Target>(
     }
     let file = crate::passes::real_path(parent.path).0;
     for name in names.filter(|name| crate::passes::traces_implicit(args, name)) {
-        let line = format!(
+        let line = crate::error::render(format_args!(
             "indirect library '{}' from file '{}'",
-            crate::util::display(name),
-            file.display()
-        );
+            crate::error::raw(name),
+            file.raw()
+        ));
         for _ in 0..parent.platforms {
             let (parent, name) = (parent.install_name.to_vec(), name.to_vec());
             ctx.implicit_trace.push(ImplicitTrace::Reexport { parent, name, line: line.clone() });
@@ -3757,7 +3759,7 @@ fn load_reexports<E: Target>(
         let Some(dep) = on_disk else {
             crate::warn!(
                 "ignoring missing indirect library: library for install name '{}' not found",
-                crate::util::display(&name)
+                crate::error::raw(&name)
             );
             continue;
         };
@@ -4082,11 +4084,11 @@ fn check_dylib_platforms<E: Target>(
     if platforms.is_empty() || platforms.contains(&ctx.args.platform) {
         return;
     }
-    let msg = format!(
+    let msg = crate::error::render(format_args!(
         "building for '{}', but linking in dylib ({}) built for '{name}'",
         platform_name(ctx.args.platform),
         crate::passes::resolved_file_name(mf),
-    );
+    ));
     // The input's priority, or its parent's for a re-exported library.
     let priority = ctx.priority_counter + 1;
     ctx.foreign_platform_dylibs.push((priority, msg));
@@ -4096,7 +4098,7 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
     let minos = check_dylib_platform(ctx, mf);
     let mut dylib = read_dylib_binary(mf);
     if dylib.install_name.is_empty() {
-        fatal!("{}: dylib has no LC_ID_DYLIB", mf.name.display());
+        fatal!("{}: dylib has no LC_ID_DYLIB", mf.name.raw());
     }
     let directives = interpret_binary_ld_symbols(ctx, &mut dylib);
     let DylibBinary {
@@ -4573,9 +4575,9 @@ fn resolve_dylib_ref<E: Target>(
     for (_, file) in dylib_files {
         match MappedFile::try_open(file) {
             Ok(mf) if mf.size() > 0 => return Some(mf),
-            Ok(_) => fatal!("file is empty in '{}'", file.display()),
+            Ok(_) => fatal!("file is empty in '{}'", file.raw()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound && !file.exists() => {}
-            Err(e) => fatal!("{}", crate::passes::unreadable_input(file, &e)),
+            Err(e) => fatal!("{}", crate::error::raw(&crate::passes::unreadable_input(file, &e))),
         }
     }
     let prober = crate::passes::Prober::new(ctx);
@@ -4972,7 +4974,8 @@ pub fn load_tbd<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> Option<
     let tbd = read_tbd(ctx, mf);
     if tbd.is_none() {
         let path = crate::passes::resolved_file_name(mf);
-        let why = format!("tapi error: missing required architecture {} in file {path}", E::NAME);
+        let why =
+            format_args!("tapi error: missing required architecture {} in file {path}", E::NAME);
         ignore_foreign_file(ctx, mf, &why);
     }
     tbd

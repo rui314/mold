@@ -123,7 +123,7 @@ pub struct Context<E: Target> {
     /// priority of the input they came with and with ld-prime's message,
     /// which it gives as it checks the inputs' versions (see
     /// passes::check_input_versions).
-    pub foreign_platform_dylibs: Vec<(u32, String)>,
+    pub foreign_platform_dylibs: Vec<(u32, crate::error::Message)>,
     /// The inputs that name a dylib loaded before, by another input -
     /// the same file by path, or another with its install name - by
     /// priority, with the dylib's index and the path they name it by:
@@ -170,10 +170,10 @@ pub struct Context<E: Target> {
     pub cmdline_linker_options: Option<Vec<Vec<Vec<u8>>>>,
     /// The warnings about the auto-link options of the objects read
     /// (see passes::warn_linker_options), by object.
-    pub linker_option_warnings: Vec<(usize, String)>,
+    pub linker_option_warnings: Vec<(usize, crate::error::Message)>,
     /// The libraries and frameworks auto-link options named that were
     /// not found, as ld-prime reports them if symbols stay undefined.
-    pub autolink_misses: Vec<String>,
+    pub autolink_misses: Vec<crate::error::Message>,
     /// The files only -possible-l and the like name, which load with
     /// the auto-linked libraries (see passes::load_autolink_deps).
     pub possible_files: Vec<std::path::PathBuf>,
@@ -300,7 +300,7 @@ pub struct Context<E: Target> {
     pub force_loaded: std::collections::HashSet<std::path::PathBuf>,
     /// For -t: every input file as it is loaded, by the path it was
     /// found at (a library inlined in a stub by its install name).
-    pub traced_files: Vec<String>,
+    pub traced_files: Vec<Vec<u8>>,
     /// -trace_implicit_libraries' lines of the libraries re-exports and
     /// archive members' auto-link options bring in, in the order they
     /// do (see passes::print_implicit_trace).
@@ -1478,8 +1478,8 @@ impl<E: Target> Context<E> {
     pub fn fixup_error(&self, isec: usize, offset: u32, kind: &str, msg: std::fmt::Arguments) {
         let sec = &self.isecs[isec];
         let obj = &self.objs[sec.file as usize];
-        let path = crate::passes::resolved_file_name(obj.mf);
-        let file = path.rsplit_once('/').map_or(path.as_str(), |(_, leaf)| leaf);
+        let path = crate::passes::resolved_file_name(obj.mf).0;
+        let file = crate::error::raw(path.rsplit(|&c| c == b'/').next().unwrap_or_default());
         let name = self.subsec_name(isec);
         let name = crate::error::raw(&name);
         let osec = self.chunk_header(sec.output_section().unwrap());

@@ -16,6 +16,7 @@ use std::path::Path;
 use rayon::prelude::*;
 use serde_json::Value;
 
+use crate::error::RawPath;
 use crate::fatal;
 use crate::macho::*;
 use crate::mapped_file::MappedFile;
@@ -116,7 +117,7 @@ fn parse_json(
     // so that the names in it can be borrowed.
     let root: &'static Value = match serde_json::from_str(text) {
         Ok(root) => Box::leak(Box::new(root)),
-        Err(e) => fatal!("{}: malformed .tbd JSON: {e}", file.display()),
+        Err(e) => fatal!("{}: malformed .tbd JSON: {e}", file.raw()),
     };
     check_json(file, root);
 
@@ -219,7 +220,7 @@ fn parse_json(
     };
 
     let Some(main) = root.get("main_library") else {
-        fatal!("{}: no main_library in .tbd file", file.display());
+        fatal!("{}: no main_library in .tbd file", file.raw());
     };
     let mut tbd = parse_library(main)?;
     tbd.platforms = select_target(arch, platform, &targets_of(main)).1;
@@ -232,7 +233,7 @@ fn parse_json(
     }
 
     if tbd.install_name.is_empty() {
-        fatal!("{}: no install name in .tbd file", file.display());
+        fatal!("{}: no install name in .tbd file", file.raw());
     }
     Some(tbd)
 }
@@ -243,13 +244,13 @@ fn parse_json(
 /// element only; unknown keys it ignores.
 fn check_json(file: &Path, root: &Value) {
     let fail = |key: &str| -> ! {
-        fatal!("tapi error: invalid {key} section\n in '{}'", file.display());
+        fatal!("tapi error: invalid {key} section\n in '{}'", file.raw());
     };
     if root.get("tapi_tbd_version").and_then(integer) != Some(5) {
         fail("tapi_tbd_version");
     }
     let Some(main) = root.get("main_library") else {
-        fatal!("{}: no main_library in .tbd file", file.display());
+        fatal!("{}: no main_library in .tbd file", file.raw());
     };
     let libraries = list(root, "libraries").iter().filter(|lib| lib.is_object());
     for lib in std::iter::once(main).chain(libraries) {
@@ -429,7 +430,7 @@ pub fn prefetch(
 /// which makes ld-prime ignore the file.
 pub fn parse(mf: &MappedFile, arch: &'static str, platform: u32) -> Option<TbdFile> {
     let Ok(text): Result<&'static str, _> = std::str::from_utf8(mf.data()) else {
-        fatal!("{}: invalid UTF-8 in .tbd file", mf.name.display());
+        fatal!("{}: invalid UTF-8 in .tbd file", mf.name.raw());
     };
 
     // TBD version 5 is JSON (tapi's current output, and what Xcode
@@ -545,7 +546,7 @@ pub fn parse(mf: &MappedFile, arch: &'static str, platform: u32) -> Option<TbdFi
     tbd.documents = documents;
 
     if tbd.install_name.is_empty() {
-        fatal!("{}: no install-name in .tbd file", mf.name.display());
+        fatal!("{}: no install-name in .tbd file", mf.name.raw());
     }
     Some(tbd)
 }
@@ -640,7 +641,7 @@ fn malformed(mf: &MappedFile, text: &str, item: &str, len: usize, what: &str) ->
         &text[line_start..line_end],
         " ".repeat(col),
         "~".repeat(len.saturating_sub(1)),
-        mf.name.display()
+        mf.name.raw()
     );
 }
 

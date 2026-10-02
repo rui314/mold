@@ -15,6 +15,7 @@ use rayon::prelude::*;
 
 use crate::chunks::init_offsets::InitFunc;
 use crate::context::Context;
+use crate::error::RawPath;
 use crate::error::{Message, raw, render};
 use crate::input_files::{FileId, is_literal_section};
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
@@ -911,7 +912,7 @@ impl<'a, E: Target> WhyLive<'a, E> {
                 let path = self.providers.get(&sym).copied();
                 let path = path.unwrap_or(&ctx.dylibs[i as usize].path);
                 let (real, _) = crate::passes::real_path(path);
-                return from(&real.display());
+                return from(&real.raw());
             }
         };
         let file = ctx.isecs[isec].file as usize;

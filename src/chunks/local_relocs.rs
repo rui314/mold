@@ -67,7 +67,7 @@ fn check_fixup_range<E: Target>(ctx: &Context<E>, locs: &[(u64, u64)]) {
 
 /// The name of the subsection starting at `addr`, and its file, for a
 /// diagnostic.
-fn subsec_name<E: Target>(ctx: &Context<E>, addr: u64) -> (Vec<u8>, String) {
+fn subsec_name<E: Target>(ctx: &Context<E>, addr: u64) -> (Vec<u8>, crate::error::RawBuf) {
     for (id, isec) in ctx.isecs.iter().enumerate() {
         if !isec.is_alive() || ctx.isec_addr(id) != addr {
             continue;
@@ -75,7 +75,7 @@ fn subsec_name<E: Target>(ctx: &Context<E>, addr: u64) -> (Vec<u8>, String) {
         let obj = &ctx.objs[isec.file as usize];
         return (ctx.subsec_name(id).into_owned(), crate::passes::resolved_file_name(obj.mf));
     }
-    (Vec::new(), String::new())
+    (Vec::new(), Default::default())
 }
 
 /// Where the relocation addresses count from: the first segment, or on

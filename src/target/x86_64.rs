@@ -6,6 +6,7 @@ use crate::chunks::delay_init::{DelayCode, DelayTarget, DelayUse};
 use crate::chunks::lazy_helpers::{LazyTarget, LazyUse};
 use crate::context::Context;
 use crate::dtrace::SiteKind;
+use crate::error::RawPath;
 use crate::fatal;
 use crate::input_sections::{Reloc, RelocTarget};
 use crate::macho::*;
@@ -606,8 +607,8 @@ impl Target for X86_64 {
         let mut vec = Vec::with_capacity(rels.len());
 
         for (i, r) in rels.iter().enumerate() {
-            // Diagnostics spell the path lossily.
-            let file_name = file_name.display();
+            // Diagnostics print the path as its bytes are.
+            let file_name = file_name.raw();
             check_reloc_place(r, contents)?;
             check_reloc(rels, i)?;
             check_reloc_index(r, sections.len(), nsyms)?;

@@ -31,6 +31,7 @@
 
 use std::path::Path;
 
+use crate::error::RawPath;
 use crate::fatal;
 use crate::macho::*;
 use crate::mapped_file::MappedFile;
@@ -887,7 +888,7 @@ impl<E: Target> Synth<'_, E> {
         let entry = &self.rec.entries[i];
         if !matches!(entry.kind, REGULAR | WEAK_DEF | RESOLVER | ANON | ANON_COAL_BY_CONTENT) {
             if matches!(entry.kind, 13..=17) {
-                fatal!("{}: unsupported entry kind {} in LC_ATOM_INFO", path.display(), entry.kind);
+                fatal!("{}: unsupported entry kind {} in LC_ATOM_INFO", path.raw(), entry.kind);
             }
             return;
         }
@@ -920,7 +921,7 @@ impl<E: Target> Synth<'_, E> {
             Some((seg, sect, flags)) => (bytes_to_name(seg), bytes_to_name(sect), flags),
             None => fatal!(
                 "{}: unsupported content type {} in LC_ATOM_INFO",
-                path.display(),
+                path.raw(),
                 entry.content_type
             ),
         }
@@ -1168,7 +1169,7 @@ impl<E: Target> Synth<'_, E> {
             let Some(sym) = self.target_sym(f.target) else {
                 fatal!(
                     "{}: fixup of entry {i} at 0x{:x} has a target with no symbol",
-                    path.display(),
+                    path.raw(),
                     f.offset
                 );
             };
@@ -1180,7 +1181,7 @@ impl<E: Target> Synth<'_, E> {
                 self.x86_64_fixup(sect, off, i, f, sym, &mut out)
             };
             if !ok {
-                fatal!("{}: unsupported fixup kind 0x{:x} in LC_ATOM_INFO", path.display(), f.kind);
+                fatal!("{}: unsupported fixup kind 0x{:x} in LC_ATOM_INFO", path.raw(), f.kind);
             }
             self.sections[sect].relocs.extend(out);
         }

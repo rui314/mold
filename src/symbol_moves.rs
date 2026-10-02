@@ -181,9 +181,9 @@ pub(crate) fn find_moves<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32,
         // ld-prime makes the thread-local variables' descriptors, the
         // relative method lists and the -alias names itself.
         let file = match (subsec.kind, file) {
-            ("thread-vars", _) => "tlv-file".to_string(),
-            ("objc-method-list", _) => "objc-file".to_string(),
-            (_, SymbolFile::Aliases(_)) => "command-line-aliases-file".to_string(),
+            ("thread-vars", _) => "tlv-file".into(),
+            ("objc-method-list", _) => "objc-file".into(),
+            (_, SymbolFile::Aliases(_)) => "command-line-aliases-file".into(),
             (_, SymbolFile::Obj(obj)) => resolved_file_name(ctx.objs[obj].mf),
         };
         let what = if subsec.content == Content::Code { "code" } else { "not code" };

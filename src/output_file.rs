@@ -32,6 +32,7 @@ use std::sync::mpsc::{Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
+use crate::error::RawPath;
 use crate::error::errno_text;
 use crate::fatal;
 
@@ -71,7 +72,7 @@ fn accessible(path: &Path, mode: libc::c_int) -> bool {
 /// symbolic link fails the exclusive create.
 fn open(path: &Path, mode: u32) -> (std::fs::File, bool) {
     if accessible(path, libc::F_OK) && !accessible(path, libc::W_OK) {
-        fatal!("can't write output file: {}", path.display());
+        fatal!("can't write output file: {}", path.raw());
     }
     if std::fs::metadata(path).is_ok_and(|m| !m.file_type().is_char_device()) {
         let _ = std::fs::remove_file(path);
@@ -84,13 +85,13 @@ fn open(path: &Path, mode: u32) -> (std::fs::File, bool) {
     }
     let file = options
         .open(path)
-        .unwrap_or_else(|e| fatal!("open() failed, {} for '{}'", errno_text(&e), path.display()));
+        .unwrap_or_else(|e| fatal!("open() failed, {} for '{}'", errno_text(&e), path.raw()));
     (file, !in_place)
 }
 
 /// ld-prime's words for a failed write of the output file.
 fn write_error(path: &Path, e: &io::Error) -> ! {
-    fatal!("write() failed, {} for '{}'", errno_text(e), path.display())
+    fatal!("write() failed, {} for '{}'", errno_text(e), path.raw())
 }
 
 /// Removes a partially written output file.
@@ -177,7 +178,7 @@ impl OutputFile {
             set_output_path(Some(path));
         }
         if let Err(e) = file.set_len(len as u64) {
-            fatal!("ftruncate() failed, {} for '{}'", errno_text(&e), path.display());
+            fatal!("ftruncate() failed, {} for '{}'", errno_text(&e), path.raw());
         }
         let file = Arc::new(file);
 
@@ -249,7 +250,7 @@ impl OutputFile {
             match thread.join() {
                 Ok(Ok(())) => {}
                 Ok(Err(e)) => write_error(&self.path, &e),
-                Err(_) => fatal!("cannot write {}: writer thread panicked", self.path.display()),
+                Err(_) => fatal!("cannot write {}: writer thread panicked", self.path.raw()),
             }
         }
         for &(off, n) in self.edges.get_mut().unwrap().iter() {

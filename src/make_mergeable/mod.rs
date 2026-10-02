@@ -24,6 +24,7 @@ use hashbrown::HashMap;
 
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
+use crate::error::RawPath;
 use crate::fatal;
 use crate::input_files::{FileId, ObjectFile};
 use crate::input_sections::{InputSection, NO_REPLACEMENT, Reloc, RelocTarget};
@@ -706,7 +707,7 @@ impl<'a, E: Target> Builder<'a, E> {
                 Some((to, off)) => (to, off - rel.addend),
                 None => fatal!(
                     "{}: -make_mergeable: a relocation refers to a section with no entry",
-                    self.ctx.objs[obj].mf.name.display()
+                    self.ctx.objs[obj].mf.name.raw()
                 ),
             },
         }
@@ -786,7 +787,7 @@ impl<'a, E: Target> Builder<'a, E> {
             let Some((fixup, taken)) = fixup else {
                 fatal!(
                     "{}: -make_mergeable: unsupported relocation type {} at 0x{:x}",
-                    ctx.objs[obj].mf.name.display(),
+                    ctx.objs[obj].mf.name.raw(),
                     r.r_type,
                     r.offset
                 );

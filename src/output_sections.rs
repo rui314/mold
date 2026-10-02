@@ -13,6 +13,7 @@ use crate::chunks::{
 };
 use crate::context::Context;
 use crate::error;
+use crate::error::RawPath;
 use crate::error::raw;
 use crate::fatal;
 use crate::input_files::FileId;
@@ -1170,7 +1171,7 @@ fn trace_symbol_layout<E: Target>(ctx: &Context<E>, moves: &hashbrown::HashMap<u
             Err(e) => {
                 crate::warn!(
                     "could not open -trace_symbol_layout_file {} for writing ({})\n",
-                    path.display(),
+                    path.raw(),
                     e.raw_os_error().unwrap_or(0)
                 );
                 return;
@@ -1750,7 +1751,7 @@ fn place_sectcreate_inputs<E: Target>(ctx: &mut Context<E>) {
         let data: &'static [u8] = match &ctx.args.sectcreate[i].path {
             Some(path) => Vec::leak(std::fs::read(path).unwrap_or_else(|e| {
                 let errno = crate::error::errno_text(&e);
-                fatal!("file cannot be open()ed, {errno} path={}", path.display())
+                fatal!("file cannot be open()ed, {errno} path={}", path.raw())
             })),
             None => &[],
         };
@@ -2790,16 +2791,16 @@ fn resolve_zerofill_conflict<E: Target>(
     missing_in.dedup();
     let osec = ctx.output_section(id);
     let name = |file: u32| resolved_file_name(ctx.objs[file as usize].mf);
-    let mut msg = format!(
+    let mut msg = crate::error::render(format_args!(
         "section {},{} has a conflicting zerofill flag defined in {} but missing in:",
         raw(osec.hdr.segname),
         raw(osec.hdr.sectname),
         name(defined_in)
-    );
+    ));
     for file in missing_in {
-        msg += &format!("\n  {}", name(file));
+        msg.extend(crate::error::render(format_args!("\n  {}", name(file))));
     }
-    crate::warn!("{msg}");
+    crate::warn!("{}", raw(&msg));
 }
 
 /// The object each common symbol's subsection stands for the tentative
@@ -2888,7 +2889,7 @@ fn read_order_files<E: Target>(ctx: &Context<E>) -> Vec<OrderEntry> {
             Ok(text) => text,
             Err(e) => {
                 let errno = crate::error::errno_text(&e);
-                crate::warn!("order file '{}' could not be opened, {errno}", path.display());
+                crate::warn!("order file '{}' could not be opened, {errno}", path.raw());
                 continue;
             }
         };

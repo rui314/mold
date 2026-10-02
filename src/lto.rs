@@ -13,6 +13,7 @@ use std::ffi::{CStr, CString, c_char, c_int, c_void};
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
+use crate::error::{RawBuf, RawPath};
 use crate::fatal;
 
 // Symbol attribute bits from llvm-c/lto.h
@@ -83,28 +84,29 @@ pub struct ObjectBuffer {
 }
 
 impl Plugin {
-    pub fn error_message(&self) -> String {
+    pub fn error_message(&self) -> RawBuf {
         // SAFETY: libLTO returns a NUL-terminated string or null.
-        unsafe { c_string(self.get_error_message).unwrap_or_else(|| "unknown error".to_string()) }
+        unsafe { c_string(self.get_error_message).unwrap_or_else(|| "unknown error".into()) }
     }
 
     /// The library's version, as ld-prime quotes it when LTO fails.
-    pub fn version(&self) -> String {
+    pub fn version(&self) -> RawBuf {
         // SAFETY: as for error_message.
         unsafe { c_string(self.get_version).unwrap_or_default() }
     }
 }
 
-/// The string a libLTO function returns, if any.
+/// The string a libLTO function returns, if any: bytes, which may name
+/// a file.
 ///
 /// # Safety
 ///
 /// `f` must return a NUL-terminated string or null.
-unsafe fn c_string(f: unsafe extern "C" fn() -> *const c_char) -> Option<String> {
+unsafe fn c_string(f: unsafe extern "C" fn() -> *const c_char) -> Option<RawBuf> {
     // SAFETY: per the caller's contract.
     unsafe {
         let s = f();
-        (!s.is_null()).then(|| CStr::from_ptr(s).to_string_lossy().into_owned())
+        (!s.is_null()).then(|| RawBuf(CStr::from_ptr(s).to_bytes().to_vec()))
     }
 }
 
@@ -157,7 +159,7 @@ pub fn load_plugin(path: Option<&Path>) -> Plugin {
         if handle.is_null() {
             fatal!(
                 "could not load the LTO library {}; is -lto_library missing?",
-                path.to_string_lossy()
+                crate::error::raw(path.as_bytes())
             );
         }
 
@@ -316,9 +318,9 @@ pub unsafe fn write_merged_modules(
     plugin: &Plugin,
     cg: *mut c_void,
     path: &Path,
-) -> Result<(), String> {
+) -> Result<(), RawBuf> {
     let path = CString::new(crate::util::path_bytes(path))
-        .map_err(|_| "output path contains a NUL byte".to_string())?;
+        .map_err(|_| RawBuf::from("output path contains a NUL byte"))?;
     // SAFETY: the generator is live per the caller, and the path is
     // NUL-terminated.
     if unsafe { (plugin.codegen_write_merged_modules)(cg, path.as_ptr()) } {
@@ -373,7 +375,7 @@ unsafe fn set_cache(plugin: &Plugin, cg: *mut c_void, cache: &CacheOptions) {
         && let Err(e) = std::fs::DirBuilder::new().mode(0o700).create(cache.dir)
     {
         let errno = e.raw_os_error().unwrap_or(0);
-        crate::warn!("unable to create ThinLTO cache directory: {} ({errno})", cache.dir.display());
+        crate::warn!("unable to create ThinLTO cache directory: {} ({errno})", cache.dir.raw());
         return;
     }
     let dir = CString::new(crate::util::path_bytes(cache.dir)).unwrap_or_default();
@@ -509,7 +511,7 @@ fn make_save_temps_dir(output: &Path) {
     if !Path::new(&dir).is_dir() && std::fs::DirBuilder::new().mode(0o700).create(&dir).is_err() {
         crate::warn!(
             "unable to create ThinLTO output directory for temporary bitcode files: {}",
-            dir.display()
+            dir.raw()
         );
     }
 }
@@ -520,7 +522,7 @@ fn save_thin_objects(output: &Path, objects: &[ThinObject]) {
     for (i, obj) in objects.iter().enumerate() {
         let path = temp_path(output, &format!(".{i}.thinlto.o"));
         if std::fs::write(&path, &obj.data).is_err() {
-            crate::warn!("unable to write temporary ThinLTO output: {}", path.display());
+            crate::warn!("unable to write temporary ThinLTO output: {}", path.raw());
         }
     }
 }
@@ -563,7 +565,7 @@ unsafe fn thin_object_files(plugin: &Plugin, cg: *mut c_void) -> Vec<ThinObject>
             let path = CStr::from_ptr((plugin.thinlto_module_get_object_file)(cg, i));
             let path = std::path::PathBuf::from(crate::util::os_str(path.to_bytes()));
             let data = std::fs::read(&path)
-                .unwrap_or_else(|e| fatal!("cannot read ThinLTO object {}: {}", path.display(), e));
+                .unwrap_or_else(|e| fatal!("cannot read ThinLTO object {}: {}", path.raw(), e));
             objects.push(ThinObject { path: Some(path), data });
         }
     }
@@ -653,7 +655,7 @@ fn create_module(plugin: &Plugin, data: &[u8], name: &Path) -> *mut c_void {
         )
     };
     if module.is_null() {
-        fatal!("{}: lto_module_create failed: {}", name.display(), plugin.error_message());
+        fatal!("{}: lto_module_create failed: {}", name.raw(), plugin.error_message());
     }
     module
 }
