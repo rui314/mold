@@ -609,18 +609,9 @@ fn is_discarded_section(hdr: &MachSection) -> bool {
 /// image; a thread-local variable descriptor (from a section clang aligns
 /// to a byte) to a pointer in an image, and in a -r output to at least
 /// one.
-/// A section's alignment, as a power of two: ld-prime shifts a 32-bit
-/// 1 by it, which wraps around at 32 - an alignment of 2^40 is 256
-/// bytes -, but takes one of 32 or more to exceed a segment's all the
-/// same (see output_sections::finish_section_alignments). It stays
-/// below 64, with the same remainder by 32.
-fn section_p2align(raw: u32) -> u8 {
-    if raw < 32 { raw as u8 } else { 32 + (raw % 32) as u8 }
-}
-
 fn record_p2align(hdr: &MachSection, relocatable: bool) -> Option<u8> {
     let size = record_size(hdr)?;
-    let p2align = section_p2align(hdr.p2align);
+    let p2align = hdr.p2align as u8;
     Some(match hdr.section_type() {
         S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS => size.trailing_zeros() as u8,
         S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS | S_NON_LAZY_SYMBOL_POINTERS => 3,
@@ -1477,7 +1468,7 @@ impl StagedObject {
                 self.isecs.push(InputSection {
                     file: u32::MAX,
                     shndx: i as u32,
-                    p2align: record_p2align.unwrap_or(section_p2align(sect.p2align)),
+                    p2align: record_p2align.unwrap_or(sect.p2align as u8),
                     input_addr: start as u32,
                     size: size as u32,
                     contents: if contents.is_empty() { 0 } else { contents.as_ptr() as usize },

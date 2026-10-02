@@ -620,7 +620,7 @@ pub fn small_pointer_subsecs<E: Target>(ctx: &Context<E>, obj: usize) -> Vec<u32
         .filter(|&id| {
             let isec = &ctx.isecs[id];
             let hdr = ctx.hdr_of(isec);
-            isec.p2align % 32 < 3
+            isec.p2align < 3
                 && !hdr.segname_is(b"__DWARF")
                 && !hdr.segname_is(b"__LLVM")
                 && !hdr.sectname_is(b"__compact_unwind")
@@ -636,7 +636,7 @@ pub fn small_pointer_subsecs<E: Target>(ctx: &Context<E>, obj: usize) -> Vec<u32
 pub fn warn_small_pointer_subsec<E: Target>(ctx: &Context<E>, id: u32) {
     crate::warn!(
         "alignment ({}) of atom {} is too small and may result in unaligned pointers ",
-        1u64 << (ctx.isecs[id].p2align % 32),
+        1 << ctx.isecs[id].p2align,
         subsec_location(ctx, id, None)
     );
 }

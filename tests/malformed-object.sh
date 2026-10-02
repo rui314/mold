@@ -80,8 +80,6 @@ elif mut in ('huge-common', 'main-stab'):
             struct.pack_into('<Q', d, symoff + 16 * i + 8, 0xca00000000000000)
         if mut == 'main-stab' and name == b'_main':
             d[symoff + 16 * i + 4] = 0x24
-elif mut.startswith('align-'):
-    set32(sects[0] + 52, int(mut[6:]))
 elif mut == 'dice-offset':
     dice = find(0x29)
     set32(u32(dice[1] + 8), 0x100000)
@@ -204,16 +202,6 @@ mut main-stab
 if [ "$(basename $mold)" != ld ]; then
   $CC --ld-path=$mold -r -o $t/r.o $t/main-stab.o
 fi
-
-# ld-prime shifts a 32-bit 1 by a section's alignment, which wraps
-# around at 32, but takes an alignment of 32 or more to exceed the
-# segment's all the same.
-mut align-40
-$CC --ld-path=$mold -o $t/exe $t/align-40.o 2> $t/align-40.log
-grep -q 'reducing alignment of section __TEXT,__text from 0x100 to 0x' $t/align-40.log
-mut align-64
-$CC --ld-path=$mold -o $t/exe $t/align-64.o 2> $t/align-64.log
-grep -q 'reducing alignment of section __TEXT,__text from 0x1 to 0x' $t/align-64.log
 
 # Whatever is cut off it, mold refuses an object without crashing.
 size=$(wc -c < $t/a.o)

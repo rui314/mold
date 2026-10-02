@@ -690,7 +690,7 @@ fn assign_addresses<E: Target>(
     let mut addr = 0;
     for (i, &s) in sects.iter().enumerate() {
         let hdr = sect_hdr_mut(ctx, synthetic, s);
-        addr = align_to(addr, 1 << (hdr.p2align % 32));
+        addr = align_to(addr, 1 << hdr.p2align);
         hdr.addr = addr;
         hdr.n_sect = i as u8 + 1;
         addr += hdr.size;
@@ -814,7 +814,7 @@ fn assign_file_offsets<E: Target>(
             hdr.fileoff = 0;
             continue;
         }
-        if !off.is_multiple_of(1 << (hdr.p2align % 32)) {
+        if !off.is_multiple_of(1 << hdr.p2align) {
             off += pad;
         }
         hdr.fileoff = off;
