@@ -1492,6 +1492,22 @@ impl<E: Target> Context<E> {
         }
     }
 
+    /// Whether the target of relocation `r` of subsection `isec`, of
+    /// object `obj`, has an address in the image, as a PC-relative
+    /// reference that goes through no stub or GOT slot needs (an
+    /// x86-64 RIP-relative one, an arm64 adrp or the offset into its
+    /// page): an import has none, which ld-prime reports as a fixup
+    /// error (named `kind`), and so does this.
+    pub fn target_has_address(&self, obj: usize, isec: usize, r: &Reloc, kind: &str) -> bool {
+        let Some(id) = self.reloc_target_sym(obj, r).filter(|&id| self.symbols[id].is_imported())
+        else {
+            return true;
+        };
+        let msg = format_args!("target '{}' does not have address", self.symbols[id]);
+        self.fixup_error(isec, r.offset, kind, msg);
+        false
+    }
+
     /// Notes relocation `i` of `rels`, subsection `isec`'s, whose
     /// pointer is at `addr`, if it is a text relocation: in a range of
     /// text_reloc_ranges, and needing a fixup.

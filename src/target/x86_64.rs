@@ -823,8 +823,10 @@ impl Target for X86_64 {
                         X86_64_RELOC_SIGNED_2 => "x86_64_rip2",
                         _ => "x86_64_rip4",
                     };
-                    let (t, name) = (s.wrapping_add_signed(a), ctx.fixup_target_name(obj, r));
-                    write32(loc, rip32_displacement(ctx, isec_id, r, kind, p, t, name));
+                    if ctx.target_has_address(obj, isec_id, r, kind) {
+                        let (t, name) = (s.wrapping_add_signed(a), ctx.fixup_target_name(obj, r));
+                        write32(loc, rip32_displacement(ctx, isec_id, r, kind, p, t, name));
+                    }
                 }
                 X86_64_RELOC_GOT_LOAD if relaxed_got_load => {
                     let kind = "x86_64_was_rip_got_load_elide_got";

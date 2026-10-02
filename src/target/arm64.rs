@@ -1677,14 +1677,18 @@ impl Target for Arm64 {
                     }
                 }
                 ARM64_RELOC_PAGE21 => {
-                    check_adrp(ctx, isec_id, rels, i, p, s.wrapping_add_signed(a));
-                    write_adrp(loc, s.wrapping_add_signed(a), p);
+                    if ctx.target_has_address(obj, isec_id, r, "arm64_adrp") {
+                        check_adrp(ctx, isec_id, rels, i, p, s.wrapping_add_signed(a));
+                        write_adrp(loc, s.wrapping_add_signed(a), p);
+                    }
                 }
                 // (ld-prime checks the alignment only of an offset
                 // whose adrp it hasn't paired with it, and truncates
                 // the others.)
                 ARM64_RELOC_PAGEOFF12 => {
-                    if let Err(size) = write_add_ldst(loc, s.wrapping_add_signed(a)) {
+                    if ctx.target_has_address(obj, isec_id, r, "arm64_lo12")
+                        && let Err(size) = write_add_ldst(loc, s.wrapping_add_signed(a))
+                    {
                         let target = ctx.symbols[ctx.reloc_target_sym(obj, r).unwrap()].name();
                         report_ldst_alignment(ctx, isec_id, r, "arm64_lo12", target, size);
                     }
