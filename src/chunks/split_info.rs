@@ -202,9 +202,7 @@ impl<'a, E: Target> Places<'a, E> {
         Some((hdr.n_sect, if is_start { 0 } else { end - hdr.addr }))
     }
 
-    /// Where offset `off` of chunk `id` lies: in a section of its own,
-    /// or in the output section a synthesized one joined, after what
-    /// was there.
+    /// Where offset `off` of chunk `id` lies.
     fn chunk(&self, id: ChunkId, off: u64) -> Place {
         let hdr = self.ctx.chunk_header(id);
         (hdr.n_sect, hdr.addr - self.starts[hdr.n_sect as usize] + off)
@@ -423,7 +421,7 @@ impl<'a, E: Target> Places<'a, E> {
     /// range-extension thunks.
     fn stub_entries(&self, out: &mut Vec<Entry>) {
         let ctx = self.ctx;
-        let has = |id| ctx.has_chunk(id);
+        let has = |id| ctx.chunks.contains(&id);
         if has(ChunkId::Stubs) {
             for (i, &id) in ctx.stubs.symbols.iter().enumerate() {
                 let slot = if ctx.args.lazy_binding && !ctx.binds_weak_lookup(id) {
@@ -583,7 +581,7 @@ impl<'a, E: Target> Places<'a, E> {
     fn objc_entries(&self, out: &mut Vec<Entry>) {
         let ctx = self.ctx;
         let stubs = &ctx.objc_stubs;
-        if ctx.has_chunk(ChunkId::ObjcStubs) {
+        if ctx.chunks.contains(&ChunkId::ObjcStubs) {
             let [sel, msgsend] = E::OBJC_STUB_REF_OFFS;
             let msgsend_slot = self.got_index(stubs.msgsend_got_idx as usize);
             for i in 0..stubs.symbols.len() {
@@ -639,7 +637,7 @@ impl<'a, E: Target> Places<'a, E> {
     /// __init_offsets: an image offset per initializer.
     fn table_entries(&self, out: &mut Vec<Entry>) {
         let ctx = self.ctx;
-        if !ctx.has_chunk(ChunkId::InitOffsets) {
+        if !ctx.chunks.contains(&ChunkId::InitOffsets) {
             return;
         }
         for (i, &func) in ctx.init_offsets.init_funcs.iter().enumerate() {
@@ -684,7 +682,7 @@ impl<'a, E: Target> Places<'a, E> {
     /// FDE itself), function and LSDA.
     fn eh_frame_entries(&self, out: &mut Vec<Entry>) {
         let ctx = self.ctx;
-        if !ctx.has_chunk(ChunkId::EhFrame) {
+        if !ctx.chunks.contains(&ChunkId::EhFrame) {
             return;
         }
         let at = |off: u64| self.chunk(ChunkId::EhFrame, off);

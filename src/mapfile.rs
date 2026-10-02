@@ -598,16 +598,10 @@ pub fn print_map_of<E: Target>(ctx: &Context<E>, sections: &[MapSection]) {
             })
             .collect();
         rows.extend(members.into_iter().flatten());
-        // What the linker adds after the members: a tail, and a section
-        // of its own of the same name.
-        let end = hdr.joined.map_or(hdr.size, |(_, off)| off);
+        // What the linker adds after the members: a tail.
         if osec.tail != crate::chunks::output_section::Tail::None {
-            let (addr, size) = (hdr.addr + osec.tail_off, end - osec.tail_off);
+            let (addr, size) = (hdr.addr + osec.tail_off, hdr.size - osec.tail_off);
             rows.push(Row { addr, size, file: 0, name: section_name(hdr) });
-        }
-        if let Some((joined, off)) = hdr.joined {
-            let size = ctx.chunk_header(joined).size;
-            rows.push(Row { addr: hdr.addr + off, size, file: 0, name: section_name(hdr) });
         }
     }
     for (addr, _, name) in crate::thunks::island_symbols(ctx) {

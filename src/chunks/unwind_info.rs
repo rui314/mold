@@ -24,11 +24,6 @@ pub struct UnwindInfoSection {
     /// first encoding takes: what an encoding with every segment placed
     /// took (see set_osec_offsets). The contents are padded with zeros.
     pub min_size: u64,
-    /// Stubs that joined a code section of their name (see
-    /// output_sections::merge_same_name_sections), which ld-prime
-    /// gives an entry each, as other code there: a subsection standing
-    /// for the stubs, and the size of each.
-    pub merged_stubs: Vec<(u32, u64)>,
 }
 
 /// The greatest offset into __eh_frame the low 24 bits of a DWARF-mode
@@ -39,13 +34,7 @@ impl UnwindInfoSection {
     pub fn new() -> Self {
         let mut hdr = ChunkHeader::new(b"__TEXT", b"__unwind_info");
         hdr.p2align = 2;
-        Self {
-            hdr,
-            contents: Vec::new(),
-            personalities: Vec::new(),
-            min_size: 0,
-            merged_stubs: Vec::new(),
-        }
+        Self { hdr, contents: Vec::new(), personalities: Vec::new(), min_size: 0 }
     }
 }
 
@@ -457,8 +446,7 @@ fn bare_code_records<E: Target>(ctx: &Context<E>, records: &[UnwindRecord]) -> V
         }
     }
 
-    let mut bare: Vec<UnwindRecord> = ctx
-        .isecs
+    ctx.isecs
         .par_iter()
         .enumerate()
         .filter(|&(_, isec)| is_code_subsec(ctx, isec))
@@ -477,16 +465,7 @@ fn bare_code_records<E: Target>(ctx: &Context<E>, records: &[UnwindRecord]) -> V
             };
             pieces.into_iter().map(move |(off, size)| bare_record(i, off, size))
         })
-        .collect();
-
-    // Stubs that joined a code section are pieces of its code too, a
-    // stub each.
-    for &(isec, size) in &ctx.unwind_info.merged_stubs {
-        let len = ctx.isecs[isec as usize].size;
-        let stubs = (0..len).step_by(size as usize);
-        bare.extend(stubs.map(|off| bare_record(isec, off, size as u32)));
-    }
-    bare
+        .collect()
 }
 
 /// The record of a piece of code with no unwind information.

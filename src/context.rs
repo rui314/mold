@@ -433,17 +433,6 @@ impl<E: Target> Context<E> {
         chunk_header!(self, id, mut)
     }
 
-    /// Whether the output has chunk `id`: as a chunk of its own, or as
-    /// part of the section of its name that it joined (see
-    /// output_sections::merge_same_name_sections).
-    pub fn has_chunk(&self, id: ChunkId) -> bool {
-        self.chunks.contains(&id)
-            || self
-                .chunks
-                .iter()
-                .any(|&c| self.chunk_header(c).joined.is_some_and(|(j, _)| j == id))
-    }
-
     pub fn output_section(&self, id: OutputSectionId) -> &OutputSection {
         &self.output_sections[id.index()]
     }

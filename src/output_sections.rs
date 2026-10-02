@@ -938,7 +938,6 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     warn_eh_frame_too_large(ctx);
     add_linkedit_chunks(ctx);
     rename_synthetic_sections(ctx);
-    merge_same_name_sections(ctx);
     add_boundary_sections(ctx);
     trace_symbol_layout(ctx);
 
@@ -2026,14 +2025,6 @@ fn create_segments<E: Target>(ctx: &mut Context<E>) {
         }
     }
     ctx.segments = segments;
-    // A chunk that joined a section of its name is part of it.
-    for i in 0..ctx.chunks.len() {
-        let hdr = ctx.chunk_header(ctx.chunks[i]);
-        if let Some((joined, _)) = hdr.joined {
-            let n_sect = hdr.n_sect;
-            ctx.chunk_header_mut(joined).n_sect = n_sect;
-        }
-    }
 }
 
 /// -no_zero_fill_sections gives every zero-fill section its bytes in
@@ -2183,111 +2174,6 @@ fn rename_synthetic_sections<E: Target>(ctx: &mut Context<E>) {
         hdr.segname = seg;
         hdr.sectname = sect;
     }
-}
-
-/// ld-prime makes one output section of each name, whatever made its
-/// contents: a section the linker synthesizes (the stubs, the GOT, the
-/// lazy pointers, the Objective-C stubs, image info and method lists,
-/// ...) or fills with records of its own (__dyld_private's __data) that
-/// has, its renames applied, the name of an input section's output
-/// section - an input __DATA_CONST,__got, or one -rename_section gives
-/// the name - or of a -sectcreate or -add_empty_section section joins
-/// that section. The inputs' contents come first, the options' after
-/// them (as files in the options' places among the inputs, see
-/// place_sectcreate_inputs), the linker's last (see content_rank); and
-/// the section keeps the first contents' flags. So the GOT or the stubs
-/// in a regular section are no longer typed as such: the indirect
-/// symbol table leaves their slots out, and the stubs lose their stub
-/// size. (ld-prime fails on a zero-fill section joined so, and on two
-/// synthesized sections of one name, which keep sections of their own
-/// here, as do __unwind_info and __chain_starts, which only layout
-/// sizes.)
-fn merge_same_name_sections<E: Target>(ctx: &mut Context<E>) {
-    if ctx.args.relocatable {
-        return;
-    }
-    let mut i = 0;
-    while i < ctx.chunks.len() {
-        let id = ctx.chunks[i];
-        let hdr = ctx.chunk_header(id);
-        let host = content_rank(ctx, id).and_then(|rank| {
-            (ctx.chunks.iter().copied())
-                .filter(|&c| {
-                    let h = ctx.chunk_header(c);
-                    h.segname == hdr.segname
-                        && h.sectname == hdr.sectname
-                        && h.joined.is_none()
-                        && !h.is_zerofill()
-                        && !hdr.is_zerofill()
-                })
-                .filter_map(|c| Some((content_rank(ctx, c)?, c)))
-                .filter(|&(r, _)| r < rank)
-                .min_by_key(|&(r, _)| r)
-        });
-        let Some((_, host)) = host else {
-            i += 1;
-            continue;
-        };
-        let (size, p2align) = (hdr.size, hdr.p2align);
-        ctx.chunks.remove(i);
-        let hdr = ctx.chunk_header_mut(host);
-        let off = align_to(hdr.size, 1 << p2align);
-        hdr.joined = Some((id, off));
-        hdr.size = off + size;
-        hdr.p2align = hdr.p2align.max(p2align);
-        if hdr.flags & S_ATTR_PURE_INSTRUCTIONS != 0 {
-            add_merged_stubs(ctx, id);
-        }
-    }
-}
-
-/// Where the contents of a section come in a section of its name that
-/// others share (see merge_same_name_sections): those of input files
-/// first, then -sectcreate's and -add_empty_section's, then the
-/// records the linker makes in an output section no input has
-/// contents in, then a section it synthesizes. None for a chunk that
-/// joins no other: no section, or one only layout sizes.
-fn content_rank<E: Target>(ctx: &Context<E>, id: ChunkId) -> Option<u8> {
-    match id {
-        ChunkId::Output(osec) => {
-            let members = &ctx.output_section(osec).members;
-            let from_input = |&m: &u32| !ctx.is_internal(ctx.isecs[m as usize].file as usize);
-            Some(if members.iter().any(from_input) { 0 } else { 2 })
-        }
-        ChunkId::SectCreate(_) => Some(1),
-        ChunkId::MachHeader | ChunkId::UnwindInfo | ChunkId::ChainStarts => None,
-        _ if !ctx.chunk_header(id).is_sect => None,
-        _ => Some(3),
-    }
-}
-
-/// Stubs in a code section are code there, which ld-prime gives an
-/// __unwind_info entry per stub as it does any code without unwind
-/// information (see chunks::unwind_info::bare_code_records): a
-/// subsection stands for them, at the place of the stubs' chunk.
-fn add_merged_stubs<E: Target>(ctx: &mut Context<E>, id: ChunkId) {
-    let stub_size = match id {
-        ChunkId::Stubs => E::STUB_SIZE,
-        ChunkId::ObjcStubs => ctx.objc_stub_size(),
-        ChunkId::DelayStubs => E::DELAY_STUB_SIZE,
-        _ => return,
-    };
-    let hdr = ctx.chunk_header(id);
-    let size = hdr.size;
-    let sect = MachSection {
-        segname: bytes_to_name(hdr.segname),
-        sectname: bytes_to_name(hdr.sectname),
-        flags: S_ATTR_PURE_INSTRUCTIONS,
-        size,
-        ..Default::default()
-    };
-    let sect = ctx.add_synthetic_section(sect);
-    let size = size as u32;
-    let isec = crate::objc::add_slot_stand_in(ctx, sect);
-    ctx.isecs[isec as usize].size = size;
-    ctx.isecs[isec as usize].offset = 0;
-    ctx.isecs[isec as usize].set_output_section(id);
-    ctx.unwind_info.merged_stubs.push((isec, stub_size));
 }
 
 /// Resolves each section$start$/section$end$ and segment$start$/

@@ -3,9 +3,10 @@ source "$(dirname "$0")"/common.inc
 
 # ld-prime knows the Objective-C image info in __DATA alone: an
 # __objc_imageinfo of another segment is any other section to it, kept
-# as it is (no check of its size), stripped under -dead_strip when
-# nothing refers to it, and in a final image the record it makes of the
-# __DATA ones joins it when both are __DATA_CONST,__objc_imageinfo.
+# as it is (no check of its size), and stripped under -dead_strip when
+# nothing refers to it. In a final image the record the linker makes of
+# the __DATA ones is a section of its own, even next to an input's
+# __DATA_CONST,__objc_imageinfo (ld-prime appends it to that one).
 mk() {
   {
     echo ".section $2,__objc_imageinfo,regular"
@@ -21,10 +22,9 @@ mk text __TEXT 0x40
 
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/data.o
 otool -l $t/exe > $t/load
-[ "$(grep -c 'sectname __objc_imageinfo' $t/load)" = 1 ]
-otool -s __DATA_CONST __objc_imageinfo $t/exe > $t/info
-grep -Eq '00000000 00000040 00000007 00000000|00 00 00 00 40 00 00 00 07 00 00 00 00 00 00 00' $t/info
-grep -Eq '10\s+(00000000|00 00 00 00) *$' $t/info
+[ "$(grep -c 'sectname __objc_imageinfo' $t/load)" = 2 ]
+grep -A3 'sectname __objc_imageinfo' $t/load | grep -E 'size 0x0+8$'
+grep -A3 'sectname __objc_imageinfo' $t/load | grep -E 'size 0x0+c$'
 
 $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/text.o
 otool -l $t/exe2 | grep -A1 'sectname __objc_imageinfo' > $t/load2

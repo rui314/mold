@@ -76,10 +76,6 @@ pub struct ChunkHeader {
     /// (what an nlist's n_sect holds), 0 for a chunk that is not a
     /// section; mold's shndx.
     pub n_sect: u8,
-    /// A chunk of the same name that joined this section (see
-    /// output_sections::merge_same_name_sections), and its offset here:
-    /// laid out after this one's own contents, in the section's size.
-    pub joined: Option<(ChunkId, u64)>,
 }
 
 impl ChunkHeader {
@@ -97,7 +93,6 @@ impl ChunkHeader {
             reserved2: 0,
             is_sect: true,
             n_sect: 0,
-            joined: None,
         }
     }
 
@@ -322,18 +317,6 @@ pub fn segment_and_offset<E: Target>(ctx: &Context<E>, addr: u64) -> (usize, u64
 /// serially after the parallel copy (see copy_chunks), so they have
 /// nothing to do here.
 pub fn copy_buf<E: Target>(ctx: &Context<E>, id: ChunkId, buf: &mut [u8]) {
-    // A chunk that joined this section comes after its own contents.
-    if let Some((joined, off)) = ctx.chunk_header(id).joined {
-        let (own, rest) = buf.split_at_mut(off as usize);
-        copy_buf(ctx, joined, rest);
-        copy_own(ctx, id, own);
-    } else {
-        copy_own(ctx, id, buf);
-    }
-}
-
-/// Writes chunk `id`'s own contents.
-fn copy_own<E: Target>(ctx: &Context<E>, id: ChunkId, buf: &mut [u8]) {
     match id {
         ChunkId::MachHeader
         | ChunkId::Symtab
