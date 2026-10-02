@@ -167,15 +167,6 @@ pub(crate) fn keep_local_symbol(name: &[u8]) -> bool {
     !name.is_empty() && !name.starts_with(b"l") && !name.starts_with(b"L")
 }
 
-/// Whether a symbol names a method list convert_objc_method_lists
-/// rewrote in the relative form, in __TEXT,__objc_methlist.
-fn names_relative_method_list<E: Target>(ctx: &Context<E>, id: crate::symbol::SymbolId) -> bool {
-    ctx.symbols[id].input_section().is_some_and(|isec| {
-        let hdr = ctx.hdr_of(&ctx.isecs[ctx.resolve_isec(isec as usize)]);
-        hdr.segname_is(b"__TEXT") && hdr.sectname_is(b"__objc_methlist")
-    })
-}
-
 /// One stab entry: its name and nlist, the symbol whose final address
 /// fills in n_value, and the symbol the name is, if any, whose string
 /// the entry shares.
@@ -736,13 +727,8 @@ fn plan_local_symbols<E: Target>(
             }
             (_, None) => (NList { n_type: N_ABS | N_PEXT, ..local_nlist(0, sym.value) }, None),
         };
-        // A demoted weak definition keeps N_WEAK_DEF. A method list
-        // rewritten in the relative form is a subsection ld-prime makes
-        // itself, whose name is a plain local: Swift's protocol method
-        // lists are weak private externals.
-        let (rank, ent) = if names_relative_method_list(ctx, i as u32) {
-            (RANK_LOCAL, NList { n_type: N_SECT, ..ent })
-        } else if sym.is_weak_def() {
+        // A demoted weak definition keeps N_WEAK_DEF.
+        let (rank, ent) = if sym.is_weak_def() {
             (RANK_WEAK, NList { n_desc: N_WEAK_DEF, ..ent })
         } else {
             (RANK_PEXT, ent)

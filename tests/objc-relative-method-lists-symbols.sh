@@ -1,11 +1,12 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# A method list rewritten in the relative form is a subsection of
-# ld-prime's own in __TEXT,__objc_methlist: the input list's symbol
-# names it as a plain local, not a private external as Swift's protocol
-# method lists are. (An x86-64 executable keeps its lists absolute, a
-# dylib doesn't.)
+# A method list rewritten in the relative form moves to
+# __TEXT,__objc_methlist, and the input list's symbol names it there,
+# a private external such as Swift's protocol method lists demoted as
+# any other. (ld-prime lists it as a plain local, the list being a
+# subsection of its own making. An x86-64 executable keeps its lists
+# absolute, a dylib doesn't.)
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .section __TEXT,__objc_methname,cstring_literals
 Lsel: .asciz "foo"
@@ -34,7 +35,7 @@ __PROTOCOL_P:
 EOF
 $CC --ld-path=$mold -o $t/a.dylib -dynamiclib $t/a.o -mmacosx-version-min=12.0
 nm -m $t/a.dylib > $t/nm
-grep -q '(__TEXT,__objc_methlist) non-external __PROTOCOL_INSTANCE_METHODS_P$' $t/nm
+grep -q '(__TEXT,__objc_methlist) non-external (was a private external) __PROTOCOL_INSTANCE_METHODS_P$' $t/nm
 
 cat <<EOF | $CC -g -o $t/b.o -c -xobjective-c -
 #import <Foundation/Foundation.h>
