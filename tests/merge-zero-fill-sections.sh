@@ -51,7 +51,9 @@ not grep -q '__bss' $t/rsects
 nm $t/r.o | grep -q ' C _com1$'
 
 # Without the option, a section$start$ symbol makes an empty __zerofill,
-# and the zero-fill sections stay apart, after the file-backed ones.
+# plain data as a section of a name with no standard flags is (ld-prime
+# makes it zero fill), and the zero-fill sections stay apart, after the
+# file-backed ones.
 cat <<EOF2 | $CC -o $t/c.o -c -xassembler -
 .section __DATA,__ptrs
 .p2align 3
@@ -61,5 +63,5 @@ $CC --ld-path=$mold -o $t/exe3 $t/a.o $t/b.o $t/c.o
 sects $t/exe3 | grep -o '__DATA,[a-z_]*' > $t/sects3
 [ "$(sort $t/sects3 | tr '\n' ' ')" = \
   '__DATA,__bss __DATA,__common __DATA,__data __DATA,__ptrs __DATA,__zerofill __DATA,__zfa __DATA,__zfb ' ]
-[ "$(head -2 $t/sects3 | sort | tr '\n' ' ')" = '__DATA,__data __DATA,__ptrs ' ]
-otool -l $t/exe3 | grep -A10 'sectname __zerofill' | grep -q 'flags 0x00000001'
+[ "$(head -3 $t/sects3 | sort | tr '\n' ' ')" = '__DATA,__data __DATA,__ptrs __DATA,__zerofill ' ]
+otool -l $t/exe3 | grep -A10 'sectname __zerofill' | grep -q 'flags 0x00000000'

@@ -3,10 +3,11 @@ source "$(dirname "$0")"/common.inc
 
 # A section only a section$start$ or section$end$ symbol makes gets the
 # flags a compiler marks a section of the name the symbol gives with,
-# or ld-prime its own section of that name, as in ld-prime - also when
-# the section moves to __DATA_CONST - and none for another name. That
-# holds in the segments the linker consumes too: __LD,__compact_unwind
-# has the debug attribute clang gives it, the __DWARF sections none.
+# or ld-prime its own section of that name - also when the section
+# moves to __DATA_CONST - and none for another name. (ld-prime makes
+# an initializer list plain data.) That holds in the segments the
+# linker consumes too: __LD,__compact_unwind has the debug attribute
+# clang gives it, the __DWARF sections none.
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .text
 .globl _main
@@ -25,6 +26,7 @@ _main:
 .quad section\$start\$__DATA\$__objc_classlist
 .quad section\$start\$__DATA\$__thread_vars
 .quad section\$start\$__DATA\$__bss
+.quad section\$start\$__DATA\$__mod_init_func
 .quad section\$start\$__DATA\$__foo
 .quad section\$start\$__LD\$__compact_unwind
 .quad section\$start\$__DWARF\$__debug_info
@@ -46,6 +48,7 @@ flags() {
 [ "$(flags __DATA_CONST __objc_classlist)" = 0x10000000 ]
 [ "$(flags __DATA __thread_vars)" = 0x00000013 ]
 [ "$(flags __DATA __bss)" = 0x00000001 ]
+[ "$(flags __DATA_CONST __mod_init_func)" = 0x00000009 ]
 [ "$(flags __DATA __foo)" = 0x00000000 ]
 [ "$(flags __LD __compact_unwind)" = 0x02000000 ]
 [ "$(flags __DWARF __debug_info)" = 0x00000000 ]

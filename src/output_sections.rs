@@ -1723,7 +1723,8 @@ fn rename_synthetic_sections<E: Target>(ctx: &mut Context<E>) {
 /// __DATA_CONST,__const, and -rename_section and -rename_segment
 /// apply - or as its own section's (see SectionMap::boundary_name),
 /// but merges and drops nothing: section$start$__TEXT$__literal8
-/// names an empty __literal8 of its own.
+/// names an empty __literal8 of its own, with the flags of the
+/// standard section of its name (see standard_section_flags), if any.
 fn add_boundary_sections<E: Target>(ctx: &mut Context<E>) {
     let map = SectionMap::final_link(ctx);
     for i in 0..ctx.boundary_syms.len() {
@@ -1732,7 +1733,7 @@ fn add_boundary_sections<E: Target>(ctx: &mut Context<E>) {
             ctx.boundary_syms[i].2 = renamed_segment(&ctx.args, seg);
             continue;
         };
-        let flags = boundary_section_flags(seg, sect);
+        let flags = standard_section_flags(seg, sect).unwrap_or(S_REGULAR);
         let name = map.boundary_name(map.zero_fill_name((seg, sect), flags));
         let (seg, sect) = map.renamed(&ctx.args, name);
         ctx.boundary_syms[i].2 = seg;
@@ -1778,19 +1779,6 @@ fn add_stack_segment<E: Target>(ctx: &mut Context<E>) {
     if ctx.args.unixthread && ctx.args.stack_size != 0 {
         let linkedit = ctx.segments.len() - 1;
         ctx.segments.insert(linkedit, OutputSegment::new(b"__UNIXSTACK"));
-    }
-}
-
-/// The flags ld-prime gives a section only a section$start$ or
-/// section$end$ symbol makes, by the name the symbol gives (before any
-/// move or rename): a standard section's, though the initializer and
-/// terminator lists are plain data then, and none for another name.
-fn boundary_section_flags(segname: &[u8], sectname: &[u8]) -> u32 {
-    match (segname, sectname) {
-        (b"__DATA", b"__mod_init_func" | b"__mod_term_func") => S_REGULAR,
-        // -merge_zero_fill_sections's section, whether or not given.
-        (b"__DATA", b"__zerofill") => S_ZEROFILL,
-        _ => standard_section_flags(segname, sectname).unwrap_or(S_REGULAR),
     }
 }
 
