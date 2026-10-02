@@ -2262,8 +2262,6 @@ impl StagedObject {
     /// Returns whether an FDE describes a function in a section of data.
     fn parse_eh_frame<E: Target>(&mut self, hdr: &MachSection, keep_all_fdes: bool) -> bool {
         let mf = self.mf;
-        // Diagnostics print the path as its bytes are.
-        let file_name = mf.name.raw();
         let data = mf.data();
         let rels: Vec<MachRel> = read_array(data, hdr.reloff as usize, hdr.nreloc as usize);
 
@@ -2277,40 +2275,18 @@ impl StagedObject {
         let contents: &'static [u8] = Vec::leak(contents);
 
         // Split the section into records: a zero ID marks a CIE, anything
-        // else is an FDE pointing back at its CIE. The checks and their
-        // words are ld-prime's, but a record's fields must lie within it:
-        // ld-prime reads them wherever they fall, into the next record or,
-        // as it lets a record's length (leaving out the length field
-        // itself) reach the section's end, past it.
-        let word = |pos: usize| {
-            contents.get(pos..pos + 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()))
-        };
+        // else is an FDE whose ID is how far back its CIE is from the ID.
+        let word = |pos: usize| u32::from_le_bytes(contents[pos..pos + 4].try_into().unwrap());
         let mut fdes: Vec<(u32, &'static [u8], u32)> = Vec::new();
+        let mut personality_encs = Vec::new();
         let mut pos = 0;
         while pos < contents.len() {
-            // An extended length (0xffffffff, then 64 bits) is not
-            // supported: it extends beyond any section.
-            let len = match word(pos) {
-                Some(len) if pos + 4 + len as usize <= contents.len() => len as usize,
-                _ => fatal!("CFI at 0x{pos:08X} extends beyond end of section in '{file_name}'"),
-            };
-            // ld-prime takes the word after the length for the ID even
-            // if the length leaves it no room - the next record's length
-            // after an empty one - and checks the CIE pointer of an FDE
-            // before its size.
-            let id = word(pos + 4).filter(|&id| len >= 4 || id != 0);
-            let Some(id) = id else {
-                if len == 0 {
-                    fatal!("empty CIE in '{file_name}'");
-                }
-                truncated_cfi(&mf.name, pos);
-            };
-            let rec: &'static [u8] = &contents[pos..pos + 4 + len];
+            let rec: &'static [u8] = &contents[pos..pos + 4 + word(pos) as usize];
+            let id = word(pos + 4);
             let input_addr = hdr.addr as u32 + pos as u32;
             if id == 0 {
-                let Some((fde_enc, lsda_enc)) = parse_cie_augmentation(rec, &mf.name) else {
-                    truncated_cfi(&mf.name, pos);
-                };
+                let (fde_enc, lsda_enc, personality_enc) = parse_cie_augmentation(rec, &mf.name);
+                personality_encs.push(personality_enc);
                 self.cies.push(Cie {
                     obj: u32::MAX,
                     input_addr,
@@ -2324,71 +2300,56 @@ impl StagedObject {
                     has_fdes: false,
                 });
             } else {
-                // The ID is how far back the CIE is from the ID itself,
-                // and ld-prime takes whatever it finds there for one.
-                let Some(cie_pos) = (pos + 4).checked_sub(id as usize) else {
-                    fatal!("FDE points to CIE outside __eh_frame section in '{file_name}'");
-                };
-                let cie_addr = hdr.addr as u32 + cie_pos as u32;
+                let cie_addr = (input_addr + 4).wrapping_sub(id);
                 let Some(cie) = self.cies.iter().position(|c| c.input_addr == cie_addr) else {
-                    if word(cie_pos) == Some(0) {
-                        fatal!("empty CIE in '{file_name}'");
-                    }
-                    if word(cie_pos + 4) != Some(0) {
-                        fatal!("CIE ID is not zero in '{file_name}'");
-                    }
-                    fatal!("{file_name}: __eh_frame: FDE with an invalid CIE pointer");
+                    fatal!("{}: __eh_frame: bad FDE pointer", mf.name.raw());
                 };
-                if len < 4 {
-                    truncated_cfi(&mf.name, pos);
-                }
                 self.cies[cie].has_fdes = true;
                 fdes.push((input_addr, rec, cie as u32));
             }
-            pos += 4 + len;
+            pos += rec.len();
         }
 
-        // Personality references appear as GOT-relative relocations inside
-        // a CIE, whatever the personality's encoding says; ld-prime takes
-        // no other reference from a CIE.
+        // The one relocation a CIE can have is its personality's: a
+        // 4-byte pc-relative reference to its GOT slot (0x9b,
+        // DW_EH_PE_indirect|pcrel|sdata4), which the linker rewrites
+        // into the output's GOT (see chunks::eh_frame). It would write
+        // any other wrong, as `.cfi_personality 0x10, sym` makes one.
         for r in &rels {
             let addr = hdr.addr as u32 + r.r_address;
             let i = self.cies.partition_point(|c| c.input_addr <= addr);
-            let cie = i
-                .checked_sub(1)
-                .filter(|&i| addr < self.cies[i].input_addr + self.cies[i].data.len() as u32);
-            if r.r_type() != E::RELOC_GOTPC {
-                if cie.is_some() {
-                    fatal!("CIE reference to personality function not supported in '{file_name}'");
-                }
+            let Some(i) = i.checked_sub(1) else { continue };
+            let cie = &mut self.cies[i];
+            if addr >= cie.input_addr + cie.data.len() as u32 {
                 continue;
             }
-            let Some(cie) = cie.map(|i| &mut self.cies[i]) else {
-                fatal!("{file_name}: __eh_frame: stray personality relocation");
-            };
-            if !r.is_extern() {
-                fatal!("{file_name}: __eh_frame: unsupported personality reference");
+            const GOT_PCREL_SDATA4: u8 = DW_EH_PE_INDIRECT | DW_EH_PE_PCREL | DW_EH_PE_SDATA4;
+            if r.r_type() != E::RELOC_GOTPC
+                || r.r_length() != 2
+                || personality_encs[i] != Some(GOT_PCREL_SDATA4)
+            {
+                fatal!("{}: __eh_frame: unsupported personality reference", mf.name.raw());
             }
             // A local symbol index, mapped to a symbol at integration.
             cie.personality = Some(r.r_symbolnum());
             cie.personality_offset = addr - cie.input_addr;
         }
 
-        self.add_fdes::<E>(&fdes, hdr.addr as u32, keep_all_fdes)
+        self.add_fdes::<E>(&fdes, keep_all_fdes)
     }
 
-    /// Adds the FDEs of the __eh_frame at `sect_addr`, given as (input
-    /// address, bytes, CIE index), and ties them to the functions'
-    /// unwind records. A function that already has a compact unwind
-    /// record doesn't need its FDE; the compact record wins. A
-    /// DWARF-mode record is the exception: it exists to point at the
-    /// FDE. `keep_all_fdes` keeps the FDEs of covered functions too: a
-    /// -r output carries every input CIE and FDE through, as ld64's
-    /// does, and a -static image or one linked with -no_compact_unwind
-    /// has no __unwind_info for the compact record (which ld-prime
-    /// drops, turning none into an FDE), and one for a macOS before
-    /// 10.9 keeps them for its old unwinders (see Args::keeps_all_fdes);
-    /// any other final image has no use for them.
+    /// Adds the FDEs of an __eh_frame, given as (input address, bytes,
+    /// CIE index), and ties them to the functions' unwind records. A
+    /// function that already has a compact unwind record doesn't need
+    /// its FDE; the compact record wins. A DWARF-mode record is the
+    /// exception: it exists to point at the FDE. `keep_all_fdes` keeps
+    /// the FDEs of covered functions too: a -r output carries every
+    /// input CIE and FDE through, as ld64's does, and a -static image or
+    /// one linked with -no_compact_unwind has no __unwind_info for the
+    /// compact record (which ld-prime drops, turning none into an FDE),
+    /// and one for a macOS before 10.9 keeps them for its old unwinders
+    /// (see Args::keeps_all_fdes); any other final image has no use for
+    /// them.
     ///
     /// ld-prime unwinds only code. An FDE for a function in a section
     /// of data it refuses: returns true for that. One in a section of
@@ -2397,11 +2358,8 @@ impl StagedObject {
     fn add_fdes<E: Target>(
         &mut self,
         fdes: &[(u32, &'static [u8], u32)],
-        sect_addr: u32,
         keep_all_fdes: bool,
     ) -> bool {
-        // Diagnostics print the path as its bytes are.
-        let file_name = self.mf.name.raw();
         let mut data_fde = false;
         let mut covered: std::collections::HashSet<(usize, u32)> = std::collections::HashSet::new();
         let mut dwarf_recs: std::collections::HashMap<(usize, u32), usize> =
@@ -2417,35 +2375,24 @@ impl StagedObject {
         for &(input_addr, rec, cie) in fdes {
             // The function's address and size follow the CIE pointer, in
             // the CIE's encoding, then, if the CIE has an LSDA, the
-            // augmentation data's length and the LSDA pointer. ld-prime
-            // reads any pointer of 4 or 8 bytes, absolute or relative to
-            // itself, and looks the function up before it refuses all
-            // but the pc-relative ones compilers write.
+            // augmentation data's length and the LSDA pointer. The
+            // function's is relative to itself, as compilers write it.
             let enc = self.cies[cie as usize].fde_enc;
-            let Some(size) = pointer_size(enc) else {
-                fatal!("unsupported pointer encoding 0x{enc:02X} in '{file_name}'");
-            };
-            if rec.len() < 8 + 2 * size {
-                truncated_cfi(&self.mf.name, (input_addr - sect_addr) as usize);
-            }
+            let size = check_pointer_encoding(enc, &self.mf.name);
+            let func_addr = read_pcrel(rec, 8, size, input_addr);
             // The size is in the same format, but absolute.
-            let func_addr = read_pointer(rec, 8, enc, input_addr);
-            let code_len = read_pointer(rec, 8 + size, enc & 0xf, 0) as u32;
-
+            let code_len = read_value(rec, 8 + size, size) as u32;
             let Some((isec, func_offset)) = find_subsec(&self.isecs, &self.subsecs, func_addr)
             else {
-                fatal!("address=0x{func_addr:X} not in any section in '{file_name}'");
+                fatal!("{}: __eh_frame: FDE for no function", self.mf.name.raw());
             };
-            if enc != DW_EH_PE_PCREL && enc != DW_EH_PE_PCREL | DW_EH_PE_SDATA4 {
-                fatal!("unsupported FDE pointer encoding 0x{enc:02X} in FDE in '{file_name}'");
-            }
             let func_offset = func_offset as u32;
             let sect = &self.sect_hdrs[self.isecs[isec].shndx as usize];
             let is_code = is_code_section(sect);
             data_fde |= is_typed_data_section(sect);
             let lsda = self.cies[cie as usize]
                 .lsda_enc
-                .and_then(|enc| self.fde_lsda(rec, input_addr, 8 + 2 * size, enc, sect_addr));
+                .and_then(|enc| self.fde_lsda(rec, input_addr, 8 + 2 * size, enc));
 
             let is_covered = covered.contains(&(isec, func_offset));
             if is_covered && !keep_all_fdes {
@@ -2501,43 +2448,20 @@ impl StagedObject {
     /// returns the subsection and offset it points to. As libunwind
     /// reads it, an FDE with no augmentation data or with a zero pointer
     /// has none (GCC writes one for a function with no LSDA under a CIE
-    /// that declares them). Like the function's, ld-prime reads the
-    /// pointer in any encoding it knows, but takes only 0x10 and 0x1b
-    /// once it has found what it points to.
-    fn fde_lsda(
-        &self,
-        rec: &[u8],
-        input_addr: u32,
-        mut pos: usize,
-        enc: u8,
-        sect_addr: u32,
-    ) -> Option<(u32, u32)> {
-        // Diagnostics print the path as its bytes are.
-        let file_name = self.mf.name.raw();
-        let truncated = || truncated_cfi(&self.mf.name, (input_addr - sect_addr) as usize);
-        if skip_uleb(rec, pos).is_none() {
-            truncated();
-        }
+    /// that declares them).
+    fn fde_lsda(&self, rec: &[u8], input_addr: u32, mut pos: usize, enc: u8) -> Option<(u32, u32)> {
         if read_uleb_at(rec, &mut pos) == 0 {
             return None;
         }
-        let Some(size) = pointer_size(enc) else {
-            fatal!("unsupported pointer encoding 0x{enc:02X} in '{file_name}'");
-        };
-        if pos + size > rec.len() {
-            truncated();
-        }
-        if read_pointer(rec, pos, enc & 0xf, 0) == 0 {
+        let size = if enc & 0xf == DW_EH_PE_SDATA4 { 4 } else { 8 };
+        if read_value(rec, pos, size) == 0 {
             return None;
         }
-        let addr = read_pointer(rec, pos, enc, input_addr);
+        check_pointer_encoding(enc, &self.mf.name);
+        let addr = read_pcrel(rec, pos, size, input_addr);
         let Some((isec, off)) = find_subsec(&self.isecs, &self.subsecs, addr) else {
-            fatal!("address=0x{addr:X} not in any section in '{file_name}'");
+            fatal!("{}: __eh_frame: FDE for no LSDA", self.mf.name.raw());
         };
-        // ld-prime names the FDE's function encoding here.
-        if enc != DW_EH_PE_PCREL && enc != DW_EH_PE_PCREL | DW_EH_PE_SDATA4 {
-            fatal!("unsupported FDE pointer encoding 0x{enc:02X} in FDE to LSDA in '{file_name}'");
-        }
         Some((isec as u32, off as u32))
     }
 
@@ -2663,12 +2587,11 @@ fn is_typed_data_section(hdr: &MachSection) -> bool {
     }
 }
 
-/// Pre-applies an __eh_frame's relocations to its contents, as ld-prime
-/// reads them, so that the records' pointers become plain values: a
-/// SUBTRACTOR adds the next relocation's target, whatever its type, less
-/// its own, and an UNSIGNED of no pair adds its target. Its GOT-relative
-/// relocations, a CIE's personality reference, are left for
-/// parse_eh_frame; there may be no other kind.
+/// Pre-applies an __eh_frame's relocations to its contents, so that the
+/// records' pointers become plain values: a SUBTRACTOR adds the next
+/// relocation's target less its own, and an UNSIGNED of no pair adds
+/// its target. Its GOT-relative relocations, a CIE's personality
+/// reference, are left for parse_eh_frame; there may be no other kind.
 ///
 /// Either half of a pair may be non-extern, naming a section instead
 /// of a symbol. The x86_64 assembler writes one for a label that no
@@ -2682,171 +2605,112 @@ fn apply_eh_frame_relocs<E: Target>(
     nlists: &[NList],
     file_name: &Path,
 ) {
-    // Diagnostics print the path as its bytes are.
-    let file_name = file_name.raw();
     let target = |r: MachRel| {
         if r.is_extern() { nlists[r.r_symbolnum() as usize].n_value } else { 0 }
     };
     let mut i = 0;
     while i < rels.len() {
-        // ld-prime checks a relocation's offset, type and size, in that
-        // order, but not those of a SUBTRACTOR's partner. It lets a
-        // field start at the section's end, which this does not.
         let r = rels[i];
-        let off = r.r_address as usize;
-        let beyond_end = || -> ! {
-            fatal!(
-                "malformed __eh_frame relocation, offset (0x{off:08X}) is beyond end of \
-                 section, in '{file_name}'"
-            )
-        };
-        if off > contents.len() {
-            beyond_end();
-        }
         let ty = r.r_type();
-        if ty != E::RELOC_UNSIGNED && ty != E::RELOC_SUBTRACTOR && ty != E::RELOC_GOTPC {
-            fatal!(
-                "__eh_frame unexpected relocation type ({ty}) at r_address=0x{off:08X} in \
-                 '{file_name}'"
-            );
-        }
-        let size = match r.r_length() {
-            2 => 4,
-            3 => 8,
-            len => fatal!(
-                "__eh_frame unexpected relocation size ({len}) at r_address=0x{off:08X} in \
-                 '{file_name}'"
-            ),
-        };
-        if off + size > contents.len() {
-            beyond_end();
-        }
         i += 1;
-
         let val = if ty == E::RELOC_SUBTRACTOR {
-            let Some(&plus) = rels.get(i) else {
-                fatal!(
-                    "malformed __eh_frame relocation, SUBTRACTOR at offset (0x{off:08X}) has \
-                     no pair, in '{file_name}'"
-                );
-            };
             i += 1;
-            target(plus).wrapping_sub(target(r))
+            target(rels[i - 1]).wrapping_sub(target(r))
         } else if ty == E::RELOC_UNSIGNED {
             target(r)
-        } else {
+        } else if ty == E::RELOC_GOTPC {
             continue;
-        };
-        let loc = &mut contents[off..off + size];
-        if size == 4 {
-            let old = u32::from_le_bytes(loc.try_into().unwrap());
-            loc.copy_from_slice(&old.wrapping_add(val as u32).to_le_bytes());
         } else {
-            let old = u64::from_le_bytes(loc.try_into().unwrap());
-            loc.copy_from_slice(&old.wrapping_add(val).to_le_bytes());
+            fatal!("{}: unsupported relocation in __eh_frame: r_type={ty}", file_name.raw());
+        };
+        let loc = &mut contents[r.r_address as usize..];
+        if r.r_length() == 2 {
+            let old = u32::from_le_bytes(loc[..4].try_into().unwrap());
+            loc[..4].copy_from_slice(&old.wrapping_add(val as u32).to_le_bytes());
+        } else {
+            let old = u64::from_le_bytes(loc[..8].try_into().unwrap());
+            loc[..8].copy_from_slice(&old.wrapping_add(val).to_le_bytes());
         }
     }
-}
-
-/// Reports an __eh_frame record, at `pos` in the section, too short for
-/// its fields.
-fn truncated_cfi(file_name: &Path, pos: usize) -> ! {
-    fatal!("{}: malformed __eh_frame section: CFI at 0x{pos:08X} is truncated", file_name.raw());
-}
-
-/// Returns the position past the ULEB128 number at `pos` in `data`, or
-/// None if the number runs past the end.
-fn skip_uleb(data: &[u8], pos: usize) -> Option<usize> {
-    let len = data.get(pos..)?.iter().position(|&b| b & 0x80 == 0)?;
-    Some(pos + len + 1)
 }
 
 // DWARF pointer encodings (DW_EH_PE_*): the low four bits give the
-// format, the next three what the value is relative to.
+// format, the next three what the value is relative to, and the top
+// bit (DW_EH_PE_indirect) makes it the address of the pointer.
 const DW_EH_PE_ABSPTR: u8 = 0x00;
 const DW_EH_PE_SDATA4: u8 = 0x0b;
-const DW_EH_PE_SDATA8: u8 = 0x0c;
 const DW_EH_PE_PCREL: u8 = 0x10;
+const DW_EH_PE_INDIRECT: u8 = 0x80;
 
-/// The size of a pointer __eh_frame encodes with `enc`, if ld-prime
-/// reads that encoding: an 8-byte value (DW_EH_PE_absptr or
-/// DW_EH_PE_sdata8) or a sign-extended 4-byte one (DW_EH_PE_sdata4),
-/// absolute or relative to its own address (DW_EH_PE_pcrel). The top
-/// bit, an indirection (DW_EH_PE_indirect), does not change it.
-fn pointer_size(enc: u8) -> Option<usize> {
-    if enc & 0x70 != DW_EH_PE_ABSPTR && enc & 0x70 != DW_EH_PE_PCREL {
-        return None;
-    }
-    match enc & 0xf {
-        DW_EH_PE_ABSPTR | DW_EH_PE_SDATA8 => Some(8),
-        DW_EH_PE_SDATA4 => Some(4),
-        _ => None,
-    }
-}
-
-/// Reads the pointer at `pos` of an __eh_frame record at input address
-/// `rec_addr`, in encoding `enc` (one pointer_size takes), and returns
-/// the address it names. ld-prime reads an indirect pointer, whatever
-/// it is relative to, as the address itself; it refuses the encoding
-/// only afterwards.
-fn read_pointer(rec: &[u8], pos: usize, enc: u8, rec_addr: u32) -> u64 {
-    let val = match enc & 0xf {
-        DW_EH_PE_SDATA4 => i32::from_le_bytes(rec[pos..pos + 4].try_into().unwrap()) as i64,
-        _ => i64::from_le_bytes(rec[pos..pos + 8].try_into().unwrap()),
-    };
-    if enc & 0xf0 == DW_EH_PE_PCREL {
-        (rec_addr as u64 + pos as u64).wrapping_add_signed(val)
+/// Fails the link on a function or LSDA pointer encoding, `enc`, other
+/// than the ones compilers write: pc-relative, of 8 bytes
+/// (DW_EH_PE_absptr, clang's) or 4 (DW_EH_PE_sdata4, GCC's). Returns
+/// the size of a pointer.
+fn check_pointer_encoding(enc: u8, file_name: &Path) -> usize {
+    if enc == DW_EH_PE_PCREL {
+        8
+    } else if enc == DW_EH_PE_PCREL | DW_EH_PE_SDATA4 {
+        4
     } else {
-        val as u64
+        fatal!("{}: __eh_frame: unsupported pointer encoding: 0x{enc:x}", file_name.raw())
     }
 }
 
-/// Reads a CIE's version and augmentation, checking that they are ones
-/// the linker knows, and returns how its FDEs encode their function and
-/// their LSDA pointer (see Cie::fde_enc and Cie::lsda_enc); None if the
-/// CIE ends before its augmentation data does.
-fn parse_cie_augmentation(data: &[u8], file_name: &Path) -> Option<(u8, Option<u8>)> {
-    // Diagnostics print the path as its bytes are.
-    let file_name = file_name.raw();
+/// Reads the signed value of `size` bytes at `pos` of an __eh_frame
+/// record.
+fn read_value(rec: &[u8], pos: usize, size: usize) -> i64 {
+    match size {
+        4 => i32::from_le_bytes(rec[pos..pos + 4].try_into().unwrap()) as i64,
+        _ => i64::from_le_bytes(rec[pos..pos + 8].try_into().unwrap()),
+    }
+}
+
+/// The address a pc-relative pointer of `size` bytes at `pos` of an
+/// __eh_frame record at `rec_addr` names.
+fn read_pcrel(rec: &[u8], pos: usize, size: usize, rec_addr: u32) -> u64 {
+    (rec_addr as u64 + pos as u64).wrapping_add_signed(read_value(rec, pos, size))
+}
+
+/// Reads a CIE's version and augmentation and returns how its FDEs
+/// encode their function and their LSDA pointer (see Cie::fde_enc and
+/// Cie::lsda_enc), and its personality pointer. Fails the link on a
+/// version other than 1 or 3.
+fn parse_cie_augmentation(data: &[u8], file_name: &Path) -> (u8, Option<u8>, Option<u8>) {
     // The version byte follows the length and the CIE ID, then the
     // augmentation string.
-    let version = *data.get(8)?;
+    let version = data[8];
     if version != 1 && version != 3 {
-        fatal!("CIE version is not 1 or 3 in '{file_name}'");
+        fatal!("{}: __eh_frame: unsupported CIE version: {version}", file_name.raw());
     }
     let aug_start = 9;
-    if data.get(aug_start).copied() != Some(b'z') {
-        return Some((DW_EH_PE_ABSPTR, None));
+    if data[aug_start] != b'z' {
+        return (DW_EH_PE_ABSPTR, None, None);
     }
-    let aug_end = aug_start + data[aug_start..].iter().position(|&b| b == 0)?;
+    let aug_end = aug_start + data[aug_start..].iter().position(|&b| b == 0).unwrap();
     // The code and data alignment factors, the return address register
     // and the augmentation data's length.
     let mut pos = aug_end + 1;
     for _ in 0..4 {
-        pos = skip_uleb(data, pos)?;
+        read_uleb_at(data, &mut pos);
     }
     let mut fde_enc = DW_EH_PE_ABSPTR;
     let mut lsda_enc = None;
+    let mut personality_enc = None;
     for &c in &data[aug_start + 1..aug_end] {
         match c {
             b'L' => {
-                lsda_enc = Some(*data.get(pos)?);
+                lsda_enc = Some(data[pos]);
                 pos += 1;
             }
-            // The personality's encoding, then the pointer: compilers
-            // write 0x9b, a 4-byte pc-relative reference to its GOT slot
-            // (DW_EH_PE_indirect|DW_EH_PE_pcrel|DW_EH_PE_sdata4), but
-            // ld-prime reads any encoding it knows, finding the
-            // personality by the GOT-relative relocation alone.
+            // The personality's encoding, then the pointer, whose value
+            // its relocation gives.
             b'P' => {
-                let enc = *data.get(pos)?;
-                let Some(size) = pointer_size(enc) else {
-                    fatal!("unsupported pointer encoding 0x{enc:02X} in '{file_name}'");
-                };
-                pos += 1 + size;
+                let enc = data[pos];
+                personality_enc = Some(enc);
+                pos += if enc & 0xf == DW_EH_PE_SDATA4 { 5 } else { 9 };
             }
             b'R' => {
-                fde_enc = *data.get(pos)?;
+                fde_enc = data[pos];
                 pos += 1;
             }
             // The rest carry no augmentation data: 'S' marks a signal
@@ -2857,7 +2721,7 @@ fn parse_cie_augmentation(data: &[u8], file_name: &Path) -> Option<(u8, Option<u
             _ => {}
         }
     }
-    (pos <= data.len()).then_some((fde_enc, lsda_enc))
+    (fde_enc, lsda_enc, personality_enc)
 }
 
 /// Returns true if an object contains Objective-C class or category
