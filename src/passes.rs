@@ -2683,11 +2683,11 @@ fn lto_roots<E: Target>(ctx: &Context<E>) -> Vec<&str> {
     use std::sync::atomic::{AtomicU8, Ordering};
 
     // Who refers to each symbol: a ThinLTO module or a module to merge
-    // (a ThinLTO module whose copy of a weak definition another's
-    // replaced counts, as ThinLTO has its code call that one; a merged
-    // module keeps calling its own); whether a Mach-O object defines it;
-    // and whether it has a weak definition and one that can't be
-    // hidden.
+    // (one whose copy of a weak definition another's replaced counts,
+    // as mold's LTO plugin calls such a copy preempted: its code has to
+    // reach the copy that won, or a C++ inline function's static local
+    // would split in two); whether a Mach-O object defines it; and
+    // whether it has a weak definition and one that can't be hidden.
     const THIN_REF: u8 = 1;
     const MERGED_REF: u8 = 2;
     const NATIVE_DEF: u8 = 4;
@@ -2705,15 +2705,13 @@ fn lto_roots<E: Target>(ctx: &Context<E>) -> Vec<&str> {
                 continue;
             }
             let defined = matches!(nlist.n_type(), N_SECT | N_ABS);
+            let lost = || ctx.symbols[sym_id].file() != Some(FileId::Obj(i as u32));
             let mut flag = match (nlist.n_type(), thin[i]) {
                 (N_UNDF, Some(true)) => THIN_REF,
                 (N_UNDF, Some(false)) => MERGED_REF,
                 (N_SECT | N_ABS, None) => NATIVE_DEF,
-                (N_ABS, Some(true))
-                    if ctx.symbols[sym_id].file() != Some(FileId::Obj(i as u32)) =>
-                {
-                    THIN_REF
-                }
+                (N_ABS, Some(true)) if lost() => THIN_REF,
+                (N_ABS, Some(false)) if lost() => MERGED_REF,
                 _ => 0,
             };
             if defined && nlist.n_desc & N_WEAK_DEF != 0 {
