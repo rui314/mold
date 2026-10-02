@@ -149,9 +149,7 @@ fn merged_name(name: (&[u8], &[u8])) -> Option<SectionName> {
 /// section renames it, and the first -rename_segment naming the
 /// resulting segment then moves it - after a -rename_section too, so
 /// a section renamed into a renamed segment moves on. Neither applies
-/// twice: -rename_section chains A to B and B to C take A to B. A
-/// section of a legacy name no -rename_section names takes its modern
-/// name in its place (see modern_name).
+/// twice: -rename_section chains A to B and B to C take A to B.
 pub(crate) fn renamed(args: &crate::cmdline::Args, name: SectionName) -> SectionName {
     let (seg, sect) = section_renamed(args, name);
     (renamed_segment(args, seg), sect)
@@ -162,23 +160,7 @@ fn section_renamed(args: &crate::cmdline::Args, name: SectionName) -> SectionNam
     let (seg, sect) = name;
     match args.rename_sections.iter().find(|(s, t, _, _)| s == seg && t == sect) {
         Some((_, _, s, t)) => (static_name(s), static_name(t)),
-        None => modern_name(name),
-    }
-}
-
-/// The name ld-prime gives a section of a name old compilers used for
-/// coalesced (weak) code and data, which lives in the usual sections
-/// now: __textcoal_nt is __text, __const_coal __const and
-/// __datacoal_nt __data, in the segments ld-prime knows the old names
-/// in. It renames them in a final image and a -r output alike, and a
-/// boundary symbol's section too, but the flags and the __DATA_CONST
-/// move follow the old name: a __DATA,__const_coal stays in __DATA.
-fn modern_name(name: SectionName) -> SectionName {
-    match name {
-        (b"__TEXT", b"__textcoal_nt") => (b"__TEXT", b"__text"),
-        (b"__TEXT" | b"__DATA" | b"__DATA_CONST", b"__const_coal") => (name.0, b"__const"),
-        (b"__DATA" | b"__DATA_DIRTY", b"__datacoal_nt") => (name.0, b"__data"),
-        _ => name,
+        None => name,
     }
 }
 
