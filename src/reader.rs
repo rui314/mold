@@ -159,6 +159,8 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
     let paths: Vec<Option<PathBuf>> = inputs.iter().map(|arg| find_input(ctx, arg)).collect();
     let namings = library_namings(&ctx.args, &inputs, &paths);
 
+    // Parse the stubs among the inputs ahead, in parallel (see
+    // prefetch_stubs).
     let stubs: Vec<&'static MappedFile> = inputs
         .iter()
         .zip(&paths)
@@ -168,6 +170,8 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
         .collect();
     prefetch_stubs(ctx, &stubs);
 
+    // A library only -possible-l and the like name is a hint: one not
+    // found is mentioned only if symbols stay undefined.
     for (arg, path) in inputs.iter().zip(&paths) {
         if let (InputArg::Library(LibraryKind::Possible, name), None) = (arg, path) {
             let framework = matches!(name, LibraryName::Framework(_));
