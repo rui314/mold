@@ -676,6 +676,15 @@ impl SelrefFinder {
     }
 }
 
+/// A classic method list's header: its entsize field, which holds flags
+/// in its high bits, and its number of entries, if as many 24-byte
+/// entries fill the rest of the list's subsection, `data`.
+fn classic_list_header(data: &[u8]) -> Option<(u32, u64)> {
+    let entsize_flags = u32::from_le_bytes(data.get(0..4)?.try_into().unwrap());
+    let count = u32::from_le_bytes(data.get(4..8)?.try_into().unwrap()) as u64;
+    (8 + 24 * count == data.len() as u64).then_some((entsize_flags, count))
+}
+
 /// The methods of a classic method list as a relative list holds them,
 /// naming a selector reference rather than the selector string; None
 /// if the list is not the whole of its subsection in the classic
@@ -685,16 +694,10 @@ fn relative_methods<E: Target>(
     list: u32,
     selrefs: &mut SelrefFinder,
 ) -> Option<Vec<ObjcMethod>> {
-    let data = ctx.isecs[list as usize].data();
-    if data.len() < 8 {
-        return None;
-    }
-    let entsize_flags = u32::from_le_bytes(data[0..4].try_into().unwrap());
-    let count = u32::from_le_bytes(data[4..8].try_into().unwrap()) as u64;
-    if entsize_flags & 0x8000_0000 != 0
-        || entsize_flags & 0xffff != 24
-        || 8 + 24 * count != data.len() as u64
-    {
+    // Not in the relative form already (the top flag), and 24 bytes an
+    // entry.
+    let (entsize_flags, count) = classic_list_header(ctx.isecs[list as usize].data())?;
+    if entsize_flags & 0x8000_0000 != 0 || entsize_flags & 0xffff != 24 {
         return None;
     }
     // Every name must be a whole selector string in the image before
@@ -1067,13 +1070,8 @@ fn read_method_list<E: Target>(
     if relative {
         return None;
     }
-    let data = ctx.isecs[isec as usize].data();
-    if data.len() < 8 {
-        return None;
-    }
-    let entsize_flags = u32::from_le_bytes(data[0..4].try_into().unwrap());
-    let count = u32::from_le_bytes(data[4..8].try_into().unwrap()) as u64;
-    if entsize_flags != 24 || 8 + 24 * count != data.len() as u64 {
+    let (entsize_flags, count) = classic_list_header(ctx.isecs[isec as usize].data())?;
+    if entsize_flags != 24 {
         return None;
     }
     let mut methods = Vec::new();
