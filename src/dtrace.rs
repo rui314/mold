@@ -17,10 +17,9 @@
 //! the symbol names (dtrace_ld_create_dof): it rebuilds the provider's
 //! D script from them, compiles it, and registers each site under its
 //! probe and the function it is in. We make the DOF from the symbols
-//! ourselves, in libdtrace's layout, with the D compiler's names for
-//! the argument types (see build_dof). The DOF leaves a slot for each
-//! site's distance from it, which a pair of relocations fills in once
-//! the output is laid out.
+//! ourselves, in libdtrace's layout (see build_dof). The DOF leaves a
+//! slot for each site's distance from it, which a pair of relocations
+//! fills in once the output is laid out.
 //!
 //! ld-prime makes the DOF sections in the order of a hash table of the
 //! providers; we make them in the order of their first sites.
@@ -363,186 +362,21 @@ fn attributes(stability: Option<&[u8]>) -> [u32; 5] {
     std::array::from_fn(|k| digits[3 * k] << 24 | digits[3 * k + 1] << 16 | digits[3 * k + 2] << 8)
 }
 
-/// Whether a name is a C identifier.
-fn is_identifier(name: &[u8]) -> bool {
-    let mut bytes = name.iter();
-    bytes.next().is_some_and(|&c| c.is_ascii_alphabetic() || c == b'_')
-        && bytes.all(|&c| c.is_ascii_alphanumeric() || c == b'_')
+/// An argument's type as the DOF names it: as `dtrace -h` spelled it in
+/// the symbol, but for each name of the provider's `typedefs`, which is
+/// an int (the type it stood for is gone). D compiles the name when a
+/// script uses the argument.
+fn arg_type(spelled: &[u8], typedefs: &[Vec<u8>]) -> Vec<u8> {
+    let is_ident = |c: u8| c.is_ascii_alphanumeric() || c == b'_';
+    (spelled.chunk_by(|&a, &b| is_ident(a) && is_ident(b)))
+        .flat_map(|token| if typedefs.iter().any(|t| t == token) { b"int" } else { token })
+        .copied()
+        .collect()
 }
 
-/// The typedefs D predefines for an LP64 target, and the types they
-/// stand for (libdtrace's _dtrace_typedefs_64, and its string).
-const D_TYPEDEFS: [(&str, &str); 21] = [
-    ("int8_t", "char"),
-    ("int16_t", "short"),
-    ("int32_t", "int"),
-    ("int64_t", "long"),
-    ("intptr_t", "long"),
-    ("ssize_t", "long"),
-    ("uint8_t", "unsigned char"),
-    ("uint16_t", "unsigned short"),
-    ("uint32_t", "unsigned"),
-    ("uint64_t", "unsigned long"),
-    ("uchar_t", "unsigned char"),
-    ("ushort_t", "unsigned short"),
-    ("uint_t", "unsigned"),
-    ("ulong_t", "unsigned long"),
-    ("u_longlong_t", "unsigned long long"),
-    ("ptrdiff_t", "long"),
-    ("uintptr_t", "unsigned long"),
-    ("size_t", "unsigned long"),
-    ("id_t", "unsigned long long"),
-    ("pid_t", "int"),
-    ("string", "char [256]"),
-];
-
-/// D's intrinsic types, by the names its parser builds from the type
-/// specifiers (libdtrace's _dtrace_ints and _dtrace_floats).
-const D_INTRINSICS: [&str; 22] = [
-    "void",
-    "signed",
-    "unsigned",
-    "char",
-    "short",
-    "int",
-    "long",
-    "long long",
-    "signed char",
-    "signed short",
-    "signed int",
-    "signed long",
-    "signed long long",
-    "unsigned char",
-    "unsigned short",
-    "unsigned int",
-    "unsigned long",
-    "unsigned long long",
-    "_Bool",
-    "float",
-    "double",
-    "long double",
-];
-
-/// The types whose pointers D's "C" container predefines; a pointer to
-/// any other is made in its "D" container, by the name of the type it
-/// points to (see d_type_name).
-const C_POINTER_TYPES: [&str; 3] = ["void", "char", "int"];
-
-/// The name libdtrace's D compiler gives the type of an argument
-/// spelled `spelled` (which `dtrace -h` wrote already in its own
-/// spelling), as the DOF has it: ctf_type_name() of the type it makes
-/// of it, with `user_types` (the provider's typedefs) as ints. None
-/// for what it can't compile, or we can't tell how it would.
-///
-/// Qualifiers vanish; the integer specifiers come in D's order (an int
-/// after short or long goes); a struct, union or enum is a forward
-/// declaration, which prints as a struct; a pointer to what is, through
-/// typedefs, void, char or int is that one's pointer, and any other
-/// pointer is named after the type it points to; a function pointer is
-/// int (*)(). A spelling with a byte no type has, UTF-8 or not, is
-/// none.
-fn d_type_name(spelled: &[u8], user_types: &[Vec<u8>]) -> Option<String> {
-    let tokens = type_tokens(std::str::from_utf8(spelled).ok()?)?;
-    let (base, resolved, rest) = match tokens.as_slice() {
-        ["struct" | "union" | "enum", tag, rest @ ..] if is_identifier(tag.as_bytes()) => {
-            (format!("struct {tag}"), None, rest)
-        }
-        _ => {
-            let n = tokens.iter().take_while(|t| is_identifier(t.as_bytes())).count();
-            let base = specifiers_name(&tokens[..n])?;
-            let resolved = if user_types.iter().any(|t| t == base.as_bytes()) {
-                "int"
-            } else if let Some(&(_, t)) = D_TYPEDEFS.iter().find(|(name, _)| *name == base) {
-                t
-            } else {
-                *D_INTRINSICS.iter().find(|&&name| name == base)?
-            };
-            (base, Some(resolved), &tokens[n..])
-        }
-    };
-    if rest.first() == Some(&"(") {
-        return (rest.get(1) == Some(&"*")).then(|| "int (*)()".to_string());
-    }
-    let stars = rest.iter().take_while(|&&t| t == "*").count();
-    if stars == 0 {
-        let mut dims = String::new();
-        for dim in rest.chunks(3) {
-            match dim {
-                ["[", n, "]"] if n.bytes().all(|c| c.is_ascii_digit()) => dims += &format!("[{n}]"),
-                _ => return None,
-            }
-        }
-        return Some(if dims.is_empty() { base } else { format!("{base} {dims}") });
-    }
-    if stars != rest.len() {
-        return None;
-    }
-    let pointee = match resolved {
-        Some(t) if C_POINTER_TYPES.contains(&t) => t,
-        _ => &base,
-    };
-    Some(format!("{pointee} *{}", "*".repeat(stars - 1)))
-}
-
-/// The tokens of a type's spelling - identifiers, numbers and the
-/// punctuation of declarators - without the qualifiers, or None for a
-/// character no type has.
-fn type_tokens(spelled: &str) -> Option<Vec<&str>> {
-    let mut tokens = Vec::new();
-    let mut rest = spelled.trim_start();
-    while !rest.is_empty() {
-        let len = match rest.as_bytes()[0] {
-            b'*' | b'(' | b')' | b'[' | b']' | b',' => 1,
-            c if c.is_ascii_alphanumeric() || c == b'_' => {
-                rest.bytes().take_while(|&c| c.is_ascii_alphanumeric() || c == b'_').count()
-            }
-            _ => return None,
-        };
-        let (token, after) = rest.split_at(len);
-        if !matches!(token, "const" | "volatile" | "restrict") {
-            tokens.push(token);
-        }
-        rest = after.trim_start();
-    }
-    Some(tokens)
-}
-
-/// The name D's parser builds from a type's specifiers: signed,
-/// unsigned, short, long and long long in that order, then the type
-/// name, but for an int that a size specifier makes redundant. None for
-/// specifiers that make no type.
-fn specifiers_name(specifiers: &[&str]) -> Option<String> {
-    let (mut sign, mut short, mut longs, mut name) = (None, false, 0, None);
-    for &s in specifiers {
-        match s {
-            "signed" | "unsigned" if sign.is_none() => sign = Some(s),
-            "short" if !short && longs == 0 => short = true,
-            "long" if !short && longs < 2 => longs += 1,
-            "signed" | "unsigned" | "short" | "long" => return None,
-            _ if name.is_none() => name = Some(s),
-            _ => return None,
-        }
-    }
-    let mut parts: Vec<&str> = sign.into_iter().collect();
-    if short {
-        parts.push("short");
-    }
-    match longs {
-        1 => parts.push("long"),
-        2 => parts.push("long long"),
-        _ => {}
-    }
-    match name {
-        Some("int") if short || longs > 0 => {}
-        Some(name) => parts.push(name),
-        None => {}
-    }
-    (!parts.is_empty()).then(|| parts.join(" "))
-}
-
-/// A probe as libdtrace registers it: its name, the D compiler's names
-/// for the types of its arguments, none if no probe site declares them,
-/// and the functions it has sites in, newest first.
+/// A probe as libdtrace registers it: its name, the types of its
+/// arguments, none if no probe site declares them, and the functions it
+/// has sites in, newest first.
 struct Probe {
     name: Vec<u8>,
     args: Option<Vec<Vec<u8>>>,
@@ -564,10 +398,8 @@ struct Instance {
 /// the probe's when it is new. libdtrace keeps a function name in 128
 /// bytes and compares it with the full name, so the sites of a function
 /// with a longer one get an instance each. A probe's arguments are those
-/// the symbol of its first probe site gives, as the D compiler names
-/// them (or as the symbol spells them, where we can't tell how), the
-/// provider's `typedefs` ints. Returns the probes in the DOF's order, by
-/// name.
+/// the symbol of its first probe site gives (see arg_type). Returns the
+/// probes in the DOF's order, by name.
 fn register<'a>(
     probe_names: &[&'a [u8]],
     functions: &[&[u8]],
@@ -587,11 +419,8 @@ fn register<'a>(
             if f.get(3) != Some(&&b"v1"[..]) {
                 return Err(symbol);
             }
-            let arg = |hex: &&[u8]| {
-                let spelled = unhex(hex);
-                d_type_name(&spelled, typedefs).map_or(spelled, String::into_bytes)
-            };
-            probes[k].args = Some(f[4..].iter().map(arg).collect());
+            probes[k].args =
+                Some(f[4..].iter().map(|hex| arg_type(&unhex(hex), typedefs)).collect());
         }
         let function = function.strip_prefix(b"_").unwrap_or(function);
         let instances = &mut probes[k].instances;
@@ -901,57 +730,21 @@ mod tests {
         assert_eq!(dof.slots, [0x1dc, 0x1d8, 0x1d4, 0x1e0]);
     }
 
-    /// The D compiler's names for what dtrace -h spells, as ld-prime's
-    /// DOFs have them.
+    /// A probe's arguments as dtrace -h spells them, but the provider's
+    /// typedefs, which are ints.
     #[test]
-    fn d_type_names() {
+    fn arg_types() {
         let user = [b"myint_t".to_vec(), b"foo_t".to_vec()];
         let cases = [
-            ("unsigned", "unsigned"),
-            ("signed", "signed"),
-            ("unsigned int", "unsigned int"),
-            ("int unsigned", "unsigned int"),
-            ("long int", "long"),
-            ("unsigned long int", "unsigned long"),
-            ("short int", "short"),
-            ("long long int", "long long"),
-            ("long double", "long double"),
-            ("_Bool", "_Bool"),
-            ("const int", "int"),
-            ("int64_t *", "int64_t *"),
-            ("int8_t *", "char *"),
-            ("int8_t **", "char **"),
-            ("uintptr_t *", "uintptr_t *"),
-            ("uint64_t **", "uint64_t **"),
-            ("unsigned long *", "unsigned long *"),
-            ("pid_t *", "int *"),
-            ("string", "string"),
-            ("union u *", "struct u *"),
-            ("union u", "struct u"),
-            ("enum e", "struct e"),
-            ("const struct s *", "struct s *"),
-            ("struct s **", "struct s **"),
-            ("myint_t *", "int *"),
-            ("const myint_t *", "int *"),
-            ("myint_t **", "int **"),
-            ("foo_t", "foo_t"),
-            ("volatile foo_t", "foo_t"),
-            ("void *", "void *"),
-            ("void **", "void **"),
-            ("char * *", "char **"),
-            ("const char *", "char *"),
-            ("char * const *", "char **"),
-            ("unsigned char * const", "unsigned char *"),
-            ("const unsigned char *", "unsigned char *"),
-            ("int (*)()", "int (*)()"),
-            ("void (*)(int)", "int (*)()"),
-            ("int [4]", "int [4]"),
+            ("unsigned long int", "unsigned long int"),
+            ("const char *", "const char *"),
+            ("myint_t", "int"),
+            ("const myint_t **", "const int **"),
+            ("myint_t2 *", "myint_t2 *"),
+            ("void (*)(foo_t)", "void (*)(int)"),
         ];
         for (spelled, name) in cases {
-            assert_eq!(d_type_name(spelled.as_bytes(), &user).as_deref(), Some(name), "{spelled}");
-        }
-        for spelled in ["bar_t", "unsigned myint_t", "long char", "int int", "*", "int @"] {
-            assert_eq!(d_type_name(spelled.as_bytes(), &user), None, "{spelled}");
+            assert_eq!(arg_type(spelled.as_bytes(), &user), name.as_bytes(), "{spelled}");
         }
     }
 

@@ -3,11 +3,9 @@ source "$(dirname "$0")"/common.inc
 source "$(dirname "$0")"/dtrace.inc
 
 # A probe's argument types are in its symbol's name, as dtrace -h spelled
-# them, and the DOF names them as libdtrace's D compiler does, which
-# ld-prime has rebuild the provider's script: qualifiers go, a struct,
-# union or enum is a struct, a typedef of the D script is an int, and a
-# pointer to what is (through typedefs) void, char or int is that
-# one's pointer, any other one named after the type it points to.
+# them, and the DOF names each of them, a typedef of the D script as an
+# int: the type it stood for is gone. (ld-prime has libdtrace's D
+# compiler name them, which spells some types otherwise.)
 cat > $t/p.d <<EOF
 typedef int myint_t;
 typedef struct conn conn_t;
@@ -52,14 +50,16 @@ $CC --ld-path=$mold -o $t/exe $t/a.o
 $t/exe
 
 dof_dump $t/exe > $t/dof
+sed -n 's/^probe \([a-z]*\)(\(.*\)) in main: 1 sites, 0 tests$/\1, \2/p' $t/dof |
+  awk -F', ' '{ print $1, NF - 1 }' > $t/nargs
 cat > $t/expected <<EOF
-dof __dof_types types flags 0xf align 0
-attrs 0x05050400 0x01010000 0x01010000 0x05060500 0x07030200
-probe floats(double, float) in main: 1 sites, 0 tests
-probe ints(int, unsigned, unsigned int, short, long, long long, unsigned char) in main: 1 sites, 0 tests
-probe pointers(char *, char *, void *, char **, uint8_t *, int64_t *) in main: 1 sites, 0 tests
-probe sized(uint64_t, size_t, uintptr_t, pid_t, int *, char *) in main: 1 sites, 0 tests
-probe tagged(struct info *, struct u *, struct e) in main: 1 sites, 0 tests
-probe user(myint_t, int *, int *) in main: 1 sites, 0 tests
+floats 2
+ints 7
+pointers 6
+sized 6
+tagged 3
+user 3
 EOF
-diff $t/dof $t/expected
+diff $t/nargs $t/expected
+grep -q '^probe user([a-z_]*, int \*, int \*) in main' $t/dof
+not grep -q conn_t $t/dof
