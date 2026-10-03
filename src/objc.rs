@@ -182,16 +182,21 @@ fn add_relative_method_list<E: Target>(
 
 /// The relocation of the pointer field at `off` in a subsection, the
 /// 8-byte one there, as (object, index into its relocation arena).
+/// A subsection's relocations are sorted by offset, so a binary search
+/// finds it: a method list's fields are looked up one by one, and a
+/// linear search made long lists quadratic.
 fn objc_pointer_reloc<E: Target>(ctx: &Context<E>, isec: u32, off: u64) -> Option<(usize, usize)> {
     let sec = &ctx.isecs[isec as usize];
     if ctx.is_internal(sec.file as usize) {
         return None;
     }
-    let k = ctx
-        .isec_relocs(isec as usize)
+    let rels = ctx.isec_relocs(isec as usize);
+    let start = rels.partition_point(|r| (r.offset as u64) < off);
+    let k = rels[start..]
         .iter()
-        .position(|r| r.offset as u64 == off && r.size == 8 && !r.is_pcrel && !r.is_subtracted)?;
-    Some((sec.file as usize, sec.rel_offset as usize + k))
+        .take_while(|r| r.offset as u64 == off)
+        .position(|r| r.size == 8 && !r.is_pcrel && !r.is_subtracted)?;
+    Some((sec.file as usize, sec.rel_offset as usize + start + k))
 }
 
 /// The pointer stored at `off` in a subsection: the target of the
