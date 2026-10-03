@@ -157,7 +157,7 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
     let paths: Vec<Option<PathBuf>> = inputs.iter().map(|arg| find_input(ctx, arg)).collect();
     let namings = library_namings(&ctx.args, &inputs, &paths);
 
-    // Parse the stubs among the inputs ahead, in parallel (see
+    // Read the stubs among the inputs ahead, in parallel (see
     // prefetch_stubs).
     let stubs: Vec<&'static MappedFile> = inputs
         .iter()
@@ -774,30 +774,52 @@ fn check_naming(rc: ReaderContext, framework: bool, name: &OsStr) {
     }
 }
 
-/// Reads the `stubs` on all cores (see input_files::read_stub), then the
-/// stubs they re-export likewise, wave after wave down an SDK's
-/// umbrella trees, so that the serial loop loading them finds every
-/// stub read.
+/// Reads the `stubs` on all cores (see input_files::read_stub), and the
+/// stubs of the libraries they re-export, down an SDK's umbrella trees,
+/// so that the serial loop loading them finds every stub read.
 fn prefetch_stubs<E: Target>(ctx: &Context<E>, stubs: &[&'static MappedFile]) {
-    let mut seen: hashbrown::HashSet<&Path> = stubs.iter().map(|mf| mf.name.as_path()).collect();
-    let mut wave = stubs.to_vec();
-    while !wave.is_empty() {
-        let read: Vec<_> = wave.par_iter().map(|mf| input_files::read_stub(ctx, mf)).collect();
-        wave.clear();
-        for stub in read.iter().flatten() {
-            for name in stub.reexports() {
-                if stub.inlines(name) {
-                    continue;
-                }
-                if let Some(dep) = crate::input_files::find_reexport(ctx, name)
-                    && get_file_type(dep) == FileType::Tapi
-                    && seen.insert(dep.name.as_path())
-                {
-                    wave.push(dep);
-                }
+    let seen = Prefetched::default();
+    rayon::scope(|scope| {
+        for &mf in stubs {
+            prefetch_stub(ctx, scope, &seen, mf);
+        }
+    });
+}
+
+/// The stubs prefetch_stub has taken up, and the re-exported install
+/// names it has looked for.
+#[derive(Default)]
+struct Prefetched {
+    files: std::sync::Mutex<hashbrown::HashSet<&'static Path>>,
+    names: std::sync::Mutex<hashbrown::HashSet<&'static [u8]>>,
+}
+
+/// Has `scope` read `mf` if it is a stub not taken up before, and then
+/// likewise the stubs of the libraries it re-exports. Each stub is a
+/// task of its own, which starts as soon as the stub re-exporting it is
+/// read, as mold's mark_live_files visits each file it finds: the pool
+/// stays busy with the small stubs while the large ones are read (an
+/// SDK's SwiftUICore stub is 10 MB).
+fn prefetch_stub<'s, E: Target>(
+    ctx: &'s Context<E>,
+    scope: &rayon::Scope<'s>,
+    seen: &'s Prefetched,
+    mf: &'static MappedFile,
+) {
+    if get_file_type(mf) != FileType::Tapi || !seen.files.lock().unwrap().insert(&mf.name) {
+        return;
+    }
+    scope.spawn(move |scope| {
+        let Some(stub) = input_files::read_stub(ctx, mf) else { return };
+        for &name in stub.reexports() {
+            if !stub.inlines(name)
+                && seen.names.lock().unwrap().insert(name)
+                && let Some(dep) = input_files::find_reexport(ctx, name)
+            {
+                prefetch_stub(ctx, scope, seen, dep);
             }
         }
-    }
+    });
 }
 
 /// Whether -sub_umbrella or -sub_library re-exports an input: the
@@ -1425,30 +1447,27 @@ fn load_autolinked_libraries<E: Target>(ctx: &mut Context<E>) {
 }
 
 /// Looks for the libraries the auto-link options `opts` name, in
-/// parallel, and parses their stubs (see prefetch_stubs), ahead of
-/// load_autolinked_libraries' serial loop, which takes the file found
-/// for each option and gives what its search noted and warned of in its
-/// turn. Each file is opened by one thread.
+/// parallel, and reads their stubs as they are found (see
+/// prefetch_stub), ahead of load_autolinked_libraries' serial loop,
+/// which takes the file found for each option and gives what its
+/// search noted and warned of in its turn. (mold's read_input_files
+/// looks for each library in the task that reads it.)
 fn prefetch_autolinked_stubs<E: Target>(
     ctx: &Context<E>,
     opts: &[Vec<Vec<u8>>],
 ) -> Vec<(Option<PathBuf>, ProbeLog)> {
-    let found: Vec<(Option<PathBuf>, ProbeLog)> = (opts.par_iter())
-        .map(|opt| {
+    let seen = Prefetched::default();
+    rayon::scope(|scope| {
+        let find = |opt: &Vec<Vec<u8>>| {
             let log = ProbeLog::default();
-            (find_autolinked(ctx, &Prober::recording(ctx, &log), opt), log)
-        })
-        .collect();
-    let mut paths: Vec<&PathBuf> = found.iter().filter_map(|(path, _)| path.as_ref()).collect();
-    paths.sort_unstable();
-    paths.dedup();
-    let stubs: Vec<&'static MappedFile> = paths
-        .par_iter()
-        .filter_map(|path| MappedFile::try_open(path).ok())
-        .filter(|mf| get_file_type(mf) == FileType::Tapi)
-        .collect();
-    prefetch_stubs(ctx, &stubs);
-    found
+            let path = find_autolinked(ctx, &Prober::recording(ctx, &log), opt);
+            if let Some(mf) = path.as_ref().and_then(|path| MappedFile::try_open(path).ok()) {
+                prefetch_stub(ctx, scope, &seen, mf);
+            }
+            (path, log)
+        };
+        opts.par_iter().map(find).collect()
+    })
 }
 
 /// Reads an object's auto-link options (LC_LINKER_OPTION) as ld-prime
