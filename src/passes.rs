@@ -3340,10 +3340,9 @@ pub fn merge_literals<E: Target>(ctx: &mut Context<E>) {
     mark_labeled_literals(ctx);
     // Deduplication follows the symbol table's sharded shape: every
     // element's content hash is computed in parallel, elements bin by
-    // hash, and the shards resolve independently - within a shard the
-    // copies meet in input order, as in the old serial single-map
-    // walk.
-    let hashed: Vec<(u64, &MachSection, u32)> = ctx
+    // hash, and the shards resolve independently, each meeting its
+    // copies in input order.
+    let literals: Vec<Literal> = ctx
         .isecs
         .par_iter()
         .enumerate()
@@ -3363,63 +3362,64 @@ pub fn merge_literals<E: Target>(ctx: &mut Context<E>) {
         .collect();
 
     const NUM_SHARDS: usize = 64;
-    let mut bins: Vec<Vec<(u64, &MachSection, u32)>> = vec![Vec::new(); NUM_SHARDS];
-    for &e in &hashed {
-        bins[(e.0 % NUM_SHARDS as u64) as usize].push(e);
+    let mut shards: Vec<Vec<Literal>> = vec![Vec::new(); NUM_SHARDS];
+    for &lit in &literals {
+        shards[(lit.0 % NUM_SHARDS as u64) as usize].push(lit);
     }
-
     let isecs = &ctx.isecs;
-    let folds: Vec<Vec<(u32, u32)>> = bins
-        .into_par_iter()
-        .map(|bin| {
-            // Keyed by the content hash already computed; a match is
-            // the same bytes in a section of the same name. An entry
-            // holds its first copy and its group, whose winner so far
-            // is in `best`.
-            let mut table: hashbrown::HashTable<(u64, &MachSection, u32, u32)> =
-                hashbrown::HashTable::new();
-            let mut best: Vec<u32> = Vec::new();
-            let mut losers: Vec<(u32, u32)> = Vec::new();
-            let p2align =
-                |i: u32| isecs[i as usize].p2align_at(isecs[i as usize].input_addr as u64);
-            for (hash, hdr, i) in bin {
-                let data = isecs[i as usize].data();
-                let same = |&(h, other, j, _): &(u64, &MachSection, u32, u32)| {
-                    h == hash
-                        && other.segname == hdr.segname
-                        && other.sectname == hdr.sectname
-                        && other.section_type() == hdr.section_type()
-                        && isecs[j as usize].data() == data
-                };
-                match table.entry(hash, same, |e| e.0) {
-                    hashbrown::hash_table::Entry::Occupied(e) => {
-                        let group = e.get().3;
-                        let winner = &mut best[group as usize];
-                        if p2align(i) > p2align(*winner) {
-                            losers.push((*winner, group));
-                            *winner = i;
-                        } else {
-                            losers.push((i, group));
-                        }
-                    }
-                    hashbrown::hash_table::Entry::Vacant(e) => {
-                        e.insert((hash, hdr, i, best.len() as u32));
-                        best.push(i);
-                    }
-                }
-            }
-            losers.into_iter().map(|(i, group)| (i, best[group as usize])).collect::<Vec<_>>()
-        })
-        .collect();
+    let folds: Vec<Vec<(u32, u32)>> =
+        shards.into_par_iter().map(|shard| merge_shard(isecs, shard)).collect();
 
     // The winner keeps its own alignment: a loser's is no stricter.
-    for fold in folds {
-        for (loser, winner) in fold {
-            ctx.isecs[loser as usize].replacement = winner;
+    for (loser, winner) in folds.into_iter().flatten() {
+        ctx.isecs[loser as usize].replacement = winner;
+    }
+    redirect_symbols_to_replacements(ctx);
+}
+
+/// A literal element to merge: its content hash, its section's header
+/// and its subsection.
+type Literal<'a> = (u64, &'a MachSection, u32);
+
+/// Merges the identical elements of a shard, met in input order: the
+/// same bytes in a section of the same name and type. Of each group the
+/// most aligned copy wins, the first of equals. Returns each losing
+/// copy with the winning one.
+fn merge_shard(isecs: &[InputSection], shard: Vec<Literal>) -> Vec<(u32, u32)> {
+    // Keyed by the content hash already computed, each group's first
+    // copy and its index in `best`, which holds its winner so far.
+    let mut table: hashbrown::HashTable<(u64, &MachSection, u32, u32)> =
+        hashbrown::HashTable::new();
+    let mut best: Vec<u32> = Vec::new();
+    let mut losers: Vec<(u32, u32)> = Vec::new();
+    let p2align = |i: u32| isecs[i as usize].p2align_at(isecs[i as usize].input_addr as u64);
+    for (hash, hdr, i) in shard {
+        let data = isecs[i as usize].data();
+        let same = |&(h, other, j, _): &(u64, &MachSection, u32, u32)| {
+            h == hash
+                && other.segname == hdr.segname
+                && other.sectname == hdr.sectname
+                && other.section_type() == hdr.section_type()
+                && isecs[j as usize].data() == data
+        };
+        match table.entry(hash, same, |e| e.0) {
+            hashbrown::hash_table::Entry::Occupied(e) => {
+                let group = e.get().3;
+                let winner = &mut best[group as usize];
+                if p2align(i) > p2align(*winner) {
+                    losers.push((*winner, group));
+                    *winner = i;
+                } else {
+                    losers.push((i, group));
+                }
+            }
+            hashbrown::hash_table::Entry::Vacant(e) => {
+                e.insert((hash, hdr, i, best.len() as u32));
+                best.push(i);
+            }
         }
     }
-
-    redirect_symbols_to_replacements(ctx);
+    losers.into_iter().map(|(i, group)| (i, best[group as usize])).collect()
 }
 
 /// Whether ld-prime merges a literal element with identical ones: a C
@@ -3640,97 +3640,83 @@ pub fn force_symbol_weakness<E: Target>(ctx: &mut Context<E>) {
 /// in ld64: an inline function compiled at different optimization
 /// levels, or a Swift __swift5_typeref string with or without a pad
 /// byte, still has one definition, and a loser's bytes, relocations,
-/// unwind info and data-in-code go with it. The defining symbol must
-/// sit at the same offset in both copies, though.
+/// unwind info and data-in-code go with it (see weak_def_losers for
+/// the copies that stay).
 pub fn coalesce_weak_defs<E: Target>(ctx: &mut Context<E>) {
     // A C++ debug link has millions of weak-def nlists (every inline
-    // and template instance), so the scan that finds each losing copy
-    // - filtering, and a find_subsec binary search per weak def - runs
-    // in parallel per object. Only pure reads happen here (resolution
-    // has already set origins, and find_subsec reads stable subsection
-    // extents), so each object independently emits its candidate
-    // (loser, winner) subsection pairs, unresolved, in nlist order.
-    let shared = &*ctx;
-    let candidates: Vec<Vec<(usize, usize, u64, u64)>> = ctx
-        .objs
-        .par_iter()
-        .enumerate()
-        .map(|(obj_idx, obj)| {
-            let mut out = Vec::new();
-            if !obj.is_alive {
-                return out;
-            }
-            // The addresses of the object's other symbols, to recognize
-            // a losing subsection that holds more than the weak
-            // definition: an object without subsections-via-symbols
-            // has one subsection per section, and folding it away
-            // would take every other symbol's bytes with it. ld64
-            // splits at symbols regardless; we keep such a copy.
-            let mut values: Option<Vec<u64>> = None;
-            let r = obj.global_range();
-            for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
-                if nlist.is_stab()
-                    || !nlist.is_extern()
-                    || nlist.n_type() != N_SECT
-                    || nlist.n_desc & N_WEAK_DEF == 0
-                {
-                    continue;
-                }
-                let sym = &shared.symbols[sym_id];
-                let Some(FileId::Obj(owner)) = sym.file() else { continue };
-                if owner as usize == obj_idx {
-                    continue;
-                }
-                let Some(winner) = sym.input_section().map(|i| i as usize) else { continue };
-                let Some((loser, off)) = crate::input_files::find_symbol_subsec(
-                    &shared.isecs,
-                    &obj.subsecs,
-                    nlist.n_sect,
-                    nlist.n_value,
-                ) else {
-                    continue;
-                };
-                let values = values.get_or_insert_with(|| {
-                    let mut v: Vec<u64> = obj
-                        .nlists
-                        .iter()
-                        .filter(|n| !n.is_stab() && n.n_type() == N_SECT)
-                        .map(|n| n.n_value)
-                        .collect();
-                    v.sort_unstable();
-                    v.dedup();
-                    v
-                });
-                let l = &shared.isecs[loser];
-                let (start, end) = (l.input_addr as u64, l.input_addr as u64 + l.size as u64);
-                let lo = values.partition_point(|&v| v < start);
-                let hi = values.partition_point(|&v| v < end);
-                if values[lo..hi].iter().any(|&v| v != nlist.n_value) {
-                    continue;
-                }
-                out.push((loser, winner, off, sym.value));
-            }
-            out
-        })
-        .collect();
-
-    // Applying the replacements is serial and order-dependent (a later
-    // loser may resolve through an earlier one), so it stays a single
-    // walk in object order - the same order and the same resolve
-    // checks as the original loop, over only the qualifying weak defs.
-    for list in candidates {
-        for (loser, winner, off, sym_value) in list {
-            let winner = ctx.resolve_isec(winner);
-            let loser = ctx.resolve_isec(loser);
-            if loser == winner
-                || off != sym_value
-                || ctx.isecs[loser].replacement != crate::input_sections::NO_REPLACEMENT
-            {
-                continue;
-            }
+    // and template instance), so the losing copies are found in
+    // parallel, object by object. A later loser may resolve through an
+    // earlier one, so the replacements are made serially, in object
+    // order.
+    let losers: Vec<Vec<(usize, usize)>> =
+        (0..ctx.objs.len()).into_par_iter().map(|i| weak_def_losers(ctx, i)).collect();
+    for (loser, winner) in losers.into_iter().flatten() {
+        let winner = ctx.resolve_isec(winner);
+        let loser = ctx.resolve_isec(loser);
+        if loser != winner && ctx.isecs[loser].replacement == crate::input_sections::NO_REPLACEMENT
+        {
             ctx.isecs[loser].replacement = winner as u32;
         }
     }
+}
+
+/// The subsections of object `obj_idx` that hold a losing copy of a
+/// weak definition, each with the winning copy's subsection, in nlist
+/// order. The definition must be at the same offset in both copies, and
+/// the losing subsection hold no other symbol: an object without
+/// subsections-via-symbols has one subsection per section, and folding
+/// it away would take every other symbol's bytes with it. ld64 splits
+/// at symbols regardless; we keep such a copy.
+fn weak_def_losers<E: Target>(ctx: &Context<E>, obj_idx: usize) -> Vec<(usize, usize)> {
+    let obj = &ctx.objs[obj_idx];
+    let mut out = Vec::new();
+    if !obj.is_alive {
+        return out;
+    }
+    // The addresses of the object's symbols, sorted, once there is a
+    // losing copy to check.
+    let mut values: Option<Vec<u64>> = None;
+    let r = obj.global_range();
+    for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
+        if nlist.is_stab()
+            || !nlist.is_extern()
+            || nlist.n_type() != N_SECT
+            || nlist.n_desc & N_WEAK_DEF == 0
+        {
+            continue;
+        }
+        let sym = &ctx.symbols[sym_id];
+        let Some(FileId::Obj(owner)) = sym.file() else { continue };
+        if owner as usize == obj_idx {
+            continue;
+        }
+        let Some(winner) = sym.input_section() else { continue };
+        let Some((loser, off)) =
+            input_files::find_symbol_subsec(&ctx.isecs, &obj.subsecs, nlist.n_sect, nlist.n_value)
+        else {
+            continue;
+        };
+        if off != sym.value {
+            continue;
+        }
+        let values = values.get_or_insert_with(|| {
+            let mut v: Vec<u64> = (obj.nlists.iter())
+                .filter(|n| !n.is_stab() && n.n_type() == N_SECT)
+                .map(|n| n.n_value)
+                .collect();
+            v.sort_unstable();
+            v.dedup();
+            v
+        });
+        let l = &ctx.isecs[loser];
+        let (start, end) = (l.input_addr as u64, l.input_addr as u64 + l.size as u64);
+        let lo = values.partition_point(|&v| v < start);
+        let hi = values.partition_point(|&v| v < end);
+        if values[lo..hi].iter().all(|&v| v == nlist.n_value) {
+            out.push((loser, winner as usize));
+        }
+    }
+    out
 }
 
 /// Reports the symbols live objects define strongly more than once, as
