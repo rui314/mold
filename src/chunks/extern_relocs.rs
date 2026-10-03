@@ -6,7 +6,7 @@
 //! in data by them too, its GOT slots and lazy pointers being bound by
 //! the indirect symbol table.
 
-use crate::chunks::ChunkHeader;
+use crate::chunks::{ChunkHeader, rebase_info};
 use crate::context::Context;
 use crate::input_sections::NO_REPLACEMENT;
 use crate::macho::*;
@@ -66,10 +66,7 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<(u64, SymbolId, bool)> {
             if !binds(id) || rel.is_subtracted {
                 continue;
             }
-            let pointer = E::classify_reloc(rel.r_type) == RelocClass::Plain
-                && rel.size == 8
-                && !rel.is_pcrel
-                && rel.r_type != E::RELOC_SUBTRACTOR;
+            let pointer = rebase_info::is_pointer_reloc::<E>(rel);
             let call = E::classify_reloc(rel.r_type) == RelocClass::Branch
                 && ctx.sym_aux(id).stub_idx == crate::symbol::NO_IDX;
             if pointer || call {

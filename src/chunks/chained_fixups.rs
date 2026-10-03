@@ -4,14 +4,13 @@
 
 use rayon::prelude::*;
 
-use crate::chunks::ChunkHeader;
+use crate::chunks::{ChunkHeader, rebase_info};
 use crate::cmdline::Treatment;
 use crate::context::Context;
 use crate::fatal;
 use crate::input_files::FileId;
 use crate::macho::*;
 use crate::symbol::SymbolId;
-use crate::target::RelocClass;
 use crate::target::Target;
 
 #[derive(Debug)]
@@ -409,25 +408,10 @@ fn collect_fixups<E: Target>(ctx: &Context<E>) -> (Vec<Fixup>, Vec<(u32, u64)>) 
             isec.is_alive() && isec.replacement == crate::input_sections::NO_REPLACEMENT
         })
         .flat_map_iter(|(id, isec)| {
-            let base = ctx.chunk_header(isec.output_section().unwrap()).addr + isec.offset as u64;
             let unaligned = &unaligned;
-            crate::input_files::isec_relocs_of(&ctx.objs, isec).iter().filter_map(move |rel| {
-                if E::classify_reloc(rel.r_type) != RelocClass::Plain
-                    || rel.size != 8
-                    || rel.is_pcrel
-                    || rel.is_subtracted
-                    || rel.r_type == E::RELOC_SUBTRACTOR
-                {
-                    return None;
-                }
-                if ctx
-                    .reloc_target_sym(isec.file as usize, rel)
-                    .is_some_and(|id| ctx.is_absolute_symbol(id) && !ctx.binds_at_runtime(id))
-                {
-                    return None;
-                }
-                let addr = base + rel.offset as u64;
+            rebase_info::pointer_relocs(ctx, isec).filter_map(move |(addr, rel)| {
                 let fixup = match ctx.reloc_target_sym(isec.file as usize, rel) {
+                    Some(id) if ctx.is_absolute_symbol(id) && !ctx.binds_at_runtime(id) => None,
                     Some(id)
                         if ctx.binds_at_runtime(id)
                             || ctx.binds_to_self(id)
@@ -435,13 +419,8 @@ fn collect_fixups<E: Target>(ctx: &Context<E>) -> (Vec<Fixup>, Vec<(u32, u64)>) 
                     {
                         Some((addr, Some(id), rel.addend as u64))
                     }
-                    _ => {
-                        if !ctx.reloc_target_is_tls(isec.file as usize, rel) {
-                            Some((addr, None, 0))
-                        } else {
-                            None
-                        }
-                    }
+                    _ if ctx.reloc_target_is_tls(isec.file as usize, rel) => None,
+                    _ => Some((addr, None, 0)),
                 };
                 if fixup.is_some() && !addr.is_multiple_of(8) {
                     unaligned.lock().unwrap().push((id as u32, addr));
@@ -451,29 +430,27 @@ fn collect_fixups<E: Target>(ctx: &Context<E>) -> (Vec<Fixup>, Vec<(u32, u64)>) 
         })
         .collect();
 
-    {
-        for (i, &id) in ctx.got.got_syms.iter().enumerate() {
-            if ctx.is_absolute_symbol(id) && !ctx.binds_at_runtime(id) {
-                continue;
-            }
-            let sym = Some(id).filter(|&id| ctx.binds_at_runtime(id));
-            let slot = ctx.got.slot_addr(i);
-            fixups.push((slot, sym, 0));
+    for (i, &id) in ctx.got.got_syms.iter().enumerate() {
+        if ctx.is_absolute_symbol(id) && !ctx.binds_at_runtime(id) {
+            continue;
         }
+        let sym = Some(id).filter(|&id| ctx.binds_at_runtime(id));
+        let slot = ctx.got.slot_addr(i);
+        fixups.push((slot, sym, 0));
     }
     for i in 0..ctx.objc_stubs.symbols.len() + ctx.objc_stubs.extra_selrefs.len() {
         let slot = ctx.objc_selref_addr(i);
         fixups.push((slot, None, 0));
     }
-    for (addr, _) in super::rebase_info::data_blob_pointers(ctx) {
+    for (addr, _) in rebase_info::data_blob_pointers(ctx) {
         fixups.push((addr, None, 0));
     }
-    for (addr, id) in super::rebase_info::data_blob_binds(ctx) {
+    for (addr, id) in rebase_info::data_blob_binds(ctx) {
         fixups.push((addr, Some(id), 0));
     }
     // The pointers of an image nothing slides keep their addresses:
     // its chains hold only binds.
-    if super::rebase_info::is_never_slid(ctx) {
+    if rebase_info::is_never_slid(ctx) {
         fixups.retain(|&(_, sym, _)| sym.is_some());
     }
 

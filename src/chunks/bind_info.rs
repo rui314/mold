@@ -1,10 +1,10 @@
 //! The LC_DYLD_INFO bind opcode stream: every slot dyld fills with an
 //! import.
 
-use crate::chunks::{ChunkHeader, segment_and_offset};
+use crate::chunks::{ChunkHeader, rebase_info, segment_and_offset};
 use crate::context::Context;
 use crate::macho::*;
-use crate::target::{RelocClass, Target};
+use crate::target::Target;
 use crate::util::encode_uleb;
 
 /// The bind opcode stream: every slot dyld fills with an import.
@@ -39,11 +39,9 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     let mut binds: Vec<(u64, crate::symbol::SymbolId, i64)> = Vec::new();
 
     // GOT slots for imported symbols.
-    {
-        for (i, &id) in ctx.got.got_syms.iter().enumerate() {
-            if ctx.binds_as_import(id) {
-                binds.push((ctx.got.slot_addr(i), id, 0));
-            }
+    for (i, &id) in ctx.got.got_syms.iter().enumerate() {
+        if ctx.binds_as_import(id) {
+            binds.push((ctx.got.slot_addr(i), id, 0));
         }
     }
 
@@ -53,24 +51,15 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
         if !isec.is_alive() || isec.replacement != crate::input_sections::NO_REPLACEMENT {
             continue;
         }
-        let base = ctx.chunk_header(isec.output_section().unwrap()).addr + isec.offset as u64;
-        for rel in crate::input_files::isec_relocs_of(&ctx.objs, isec) {
-            if E::classify_reloc(rel.r_type) != RelocClass::Plain
-                || rel.size != 8
-                || rel.is_pcrel
-                || rel.is_subtracted
-                || rel.r_type == E::RELOC_SUBTRACTOR
-            {
-                continue;
-            }
+        for (addr, rel) in rebase_info::pointer_relocs(ctx, isec) {
             if let Some(id) = ctx.reloc_target_sym(isec.file as usize, rel)
                 && (ctx.binds_as_import(id) || ctx.is_dtrace_pointer_target(id))
             {
-                binds.push((base + rel.offset as u64, id, rel.addend));
+                binds.push((addr, id, rel.addend));
             }
         }
     }
-    for (addr, id) in super::rebase_info::data_blob_binds(ctx) {
+    for (addr, id) in rebase_info::data_blob_binds(ctx) {
         binds.push((addr, id, 0));
     }
 

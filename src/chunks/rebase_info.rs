@@ -3,6 +3,7 @@
 
 use crate::chunks::{ChunkHeader, segment_and_offset};
 use crate::context::Context;
+use crate::input_sections::{InputSection, NO_REPLACEMENT, Reloc};
 use crate::macho::*;
 use crate::objc::{DataField, ObjcRef, objc_ref_addr};
 use crate::symbol::SymbolId;
@@ -34,6 +35,28 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     buf[..data.len()].copy_from_slice(data);
 }
 
+/// Whether a relocation has the linker write a pointer, which dyld may
+/// slide or bind: an 8-byte absolute address, not a term of a
+/// SUBTRACTOR pair's difference.
+pub(crate) fn is_pointer_reloc<E: Target>(rel: &Reloc) -> bool {
+    E::classify_reloc(rel.r_type) == RelocClass::Plain
+        && rel.size == 8
+        && !rel.is_pcrel
+        && !rel.is_subtracted
+        && rel.r_type != E::RELOC_SUBTRACTOR
+}
+
+/// The pointers (see is_pointer_reloc) the relocations of a live
+/// subsection write, each with its address.
+pub(crate) fn pointer_relocs<'a, E: Target>(
+    ctx: &'a Context<E>,
+    isec: &'a InputSection,
+) -> impl Iterator<Item = (u64, &'a Reloc)> + 'a {
+    let base = ctx.chunk_header(isec.output_section().unwrap()).addr + isec.offset as u64;
+    let rels = crate::input_files::isec_relocs_of(&ctx.objs, isec).iter();
+    rels.filter(|rel| is_pointer_reloc::<E>(rel)).map(move |rel| (base + rel.offset as u64, rel))
+}
+
 /// Every pointer a loader must slide when the image lands at another
 /// address than its own: the pointers written for absolute relocations
 /// to local targets, then the synthesized ones. Unsorted. The rebase
@@ -44,29 +67,18 @@ pub fn rebase_locations<E: Target>(ctx: &Context<E>) -> Vec<u64> {
 
     // Pointers written for UNSIGNED relocations to local targets.
     for isec in ctx.isecs.iter() {
-        if !isec.is_alive() || isec.replacement != crate::input_sections::NO_REPLACEMENT {
+        if !isec.is_alive() || isec.replacement != NO_REPLACEMENT {
             continue;
         }
-        let base = ctx.chunk_header(isec.output_section().unwrap()).addr + isec.offset as u64;
-        for rel in crate::input_files::isec_relocs_of(&ctx.objs, isec) {
-            if E::classify_reloc(rel.r_type) != RelocClass::Plain
-                || rel.size != 8
-                || rel.is_pcrel
-                || rel.is_subtracted
-                || rel.r_type == E::RELOC_SUBTRACTOR
-            {
-                continue;
-            }
+        for (addr, rel) in pointer_relocs(ctx, isec) {
             // Pointers to thread-local data are thread-pointer-relative
             // offsets, not addresses, so they are not rebased.
-            let imported = ctx
-                .reloc_target_sym(isec.file as usize, rel)
-                .is_some_and(|id| ctx.binds_pointer(id) || ctx.is_dtrace_pointer_target(id));
-            let absolute = ctx
-                .reloc_target_sym(isec.file as usize, rel)
-                .is_some_and(|id| ctx.is_absolute_symbol(id));
+            let target = ctx.reloc_target_sym(isec.file as usize, rel);
+            let imported =
+                target.is_some_and(|id| ctx.binds_pointer(id) || ctx.is_dtrace_pointer_target(id));
+            let absolute = target.is_some_and(|id| ctx.is_absolute_symbol(id));
             if !imported && !absolute && !ctx.reloc_target_is_tls(isec.file as usize, rel) {
-                locs.push(base + rel.offset as u64);
+                locs.push(addr);
             }
         }
     }
