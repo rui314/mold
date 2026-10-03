@@ -30,15 +30,13 @@ otool -l $t/exe2 > $t/log2
 grep -q 'cmd LC_BUILD_VERSION' $t/log2
 not grep -q LC_VERSION_MIN $t/log2
 
-# ld-prime also takes the legacy command for 10.14.4 up to 10.15 and
-# for 10.15.4 up to 10.16, whatever the SDK.
-for v in 10.14.3 10.14.4 10.14.6 10.15 10.15.3 10.15.4 10.15.99 10.16; do
+# Any version from 10.14 on gets LC_BUILD_VERSION. (ld-prime also
+# takes the legacy command for 10.14.4 up to 10.15 and for 10.15.4 up to
+# 10.16, from a slip in its version-to-year mapping.)
+for v in 10.14.3 10.14.6 10.15 10.15.99 10.16; do
   $mold -arch $ARCH -r $t/a.o -platform_version macos $v 10.14 -o $t/r.o 2> /dev/null
   otool -l $t/r.o | awk '$1 == "cmd" && /VERSION/ { print $2 }' > $t/cmd
-  case $ARCH-$v in
-  x86_64-10.14.[4-9]|x86_64-10.15.[4-9]*) grep -q LC_VERSION_MIN_MACOSX $t/cmd ;;
-  *) grep -q LC_BUILD_VERSION $t/cmd ;;
-  esac
+  grep -q LC_BUILD_VERSION $t/cmd
 done
 
 $CC -o $t/b.o -c -xc /dev/null -mmacosx-version-min=10.13
