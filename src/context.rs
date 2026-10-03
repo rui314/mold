@@ -560,16 +560,10 @@ impl<E: Target> Context<E> {
         &self.objs[isec.file as usize].relocs[off..off + isec.nrels as usize]
     }
 
-    /// Returns the output address of an input section. Layout stores
-    /// every subsection's final address the moment its output section
-    /// is placed (literal-merge losers borrow their survivor's), so
-    /// this is one field read.
     /// A subsection's output address: its output section's address plus
-    /// its offset there, as mold's isec.addr(ctx) derives it - not
-    /// a cached field, which cost 8 bytes on every subsection. A
-    /// literal-merge loser reports its surviving copy's address (the
-    /// redirect is followed only when one exists, so the common case is
-    /// one branch); an unplaced subsection reports 0.
+    /// its offset there, as mold's isec.addr(ctx) derives it. A
+    /// literal-merge loser reports its surviving copy's address; an
+    /// unplaced subsection reports 0.
     #[inline]
     pub fn isec_addr(&self, id: usize) -> u64 {
         let mut isec = &self.isecs[id];
@@ -988,26 +982,14 @@ impl<E: Target> Context<E> {
     /// The index in its object's symbol table of the symbol that names
     /// subsection `id` (see subsec_label).
     pub fn subsec_label_index(&self, id: usize) -> Option<usize> {
+        use crate::input_files::{has_merged_subsecs, is_private_label, subsec_name_rank};
         let isec = &self.isecs[id];
         let obj = &self.objs[isec.file as usize];
         let key = Some(label_key(isec));
-        let at_start = (0..obj.nlists.len()).filter(|&i| nlist_label_key(&obj.nlists[i]) == key);
-        self.pick_label(id, at_start)
-    }
-
-    /// Of the symbols `at_start` of subsection `id` (indices in its
-    /// object's symbol table, ascending), the one that names it (see
-    /// subsec_label).
-    fn pick_label(
-        &self,
-        id: usize,
-        at_start: impl Iterator<Item = usize> + Clone,
-    ) -> Option<usize> {
-        use crate::input_files::is_private_label;
-        let isec = &self.isecs[id];
-        let obj = &self.objs[isec.file as usize];
-        let merged = crate::input_files::has_merged_subsecs(self.hdr_of(isec));
-        let labels = at_start.map(|i| (i, &obj.nlists[i], self.symbols[obj.symbols[i]].name()));
+        let labels = (0..obj.nlists.len())
+            .filter(|&i| nlist_label_key(&obj.nlists[i]) == key)
+            .map(|i| (i, &obj.nlists[i], self.symbols[obj.symbols[i]].name()));
+        let merged = has_merged_subsecs(self.hdr_of(isec));
         if merged
             && labels
                 .clone()
@@ -1017,7 +999,7 @@ impl<E: Target> Context<E> {
         }
         labels
             .filter(|(_, _, name)| !(merged && is_private_label(name)))
-            .max_by_key(|&(i, n, name)| (crate::input_files::subsec_name_rank(n, name), name, i))
+            .max_by_key(|&(i, n, name)| (subsec_name_rank(n, name), name, i))
             .map(|(i, _, _)| i)
     }
 
