@@ -217,6 +217,35 @@ fn read_form<'a>(
     })
 }
 
+/// Finds the abbreviation numbered `code` in an abbreviation table and
+/// returns its tag and a reader at its attribute specifications (mold's
+/// find_abbrev).
+fn find_abbrev(table: &[u8], code: u64) -> Option<(u64, Reader<'_>)> {
+    let mut r = Reader { data: table, pos: 0 };
+    loop {
+        let c = r.uleb()?;
+        if c == 0 {
+            return None;
+        }
+        let tag = r.uleb()?;
+        let _children = r.u8()?;
+        if c == code {
+            return Some((tag, r));
+        }
+        // Skip the attribute specifications of another abbreviation.
+        loop {
+            let attr = r.uleb()?;
+            let form = r.uleb()?;
+            if attr == 0 && form == 0 {
+                break;
+            }
+            if form == DW_FORM_IMPLICIT_CONST {
+                r.sleb()?;
+            }
+        }
+    }
+}
+
 /// The compilation directory and source file name of an object's first
 /// compile unit (DW_AT_comp_dir and DW_AT_name of the DW_TAG_compile_unit
 /// DIE), read from its __DWARF sections. DWARF versions 2 through 5;
@@ -249,38 +278,21 @@ pub fn compile_unit_name(file: &[u8], sects: &[MachSection]) -> Option<(Vec<u8>,
         (abbrev_off, r.u8()? as usize)
     };
 
-    // The abbreviation of the first DIE.
-    let code = r.uleb()?;
-    let mut a = Reader { data: abbrev_sect.get(abbrev_off..)?, pos: 0 };
-    let specs: Vec<(u64, u64, i64)> = loop {
-        let c = a.uleb()?;
-        if c == 0 {
-            return None;
-        }
-        let tag = a.uleb()?;
-        let _children = a.u8()?;
-        let mut specs = Vec::new();
-        loop {
-            let attr = a.uleb()?;
-            let form = a.uleb()?;
-            if attr == 0 && form == 0 {
-                break;
-            }
-            let implicit = if form == DW_FORM_IMPLICIT_CONST { a.sleb()? } else { 0 };
-            specs.push((attr, form, implicit));
-        }
-        if c == code {
-            if tag != DW_TAG_COMPILE_UNIT {
-                return None;
-            }
-            break specs;
-        }
-    };
-
+    // The first DIE, read by its abbreviation's attribute specifications.
+    let (tag, mut specs) = find_abbrev(abbrev_sect.get(abbrev_off..)?, r.uleb()?)?;
+    if tag != DW_TAG_COMPILE_UNIT {
+        return None;
+    }
     let mut name = None;
     let mut comp_dir = None;
     let mut str_offsets_base = None;
-    for &(attr, form, implicit) in &specs {
+    loop {
+        let attr = specs.uleb()?;
+        let form = specs.uleb()?;
+        if attr == 0 && form == 0 {
+            break;
+        }
+        let implicit = if form == DW_FORM_IMPLICIT_CONST { specs.sleb()? } else { 0 };
         let val = read_form(&mut r, form, addr_size, implicit)?;
         match attr {
             DW_AT_NAME => name = Some(val),
