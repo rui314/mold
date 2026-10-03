@@ -562,34 +562,63 @@ fn append_tail(osec: &mut OutputSection, p2align: u32, tail: Tail, tail_size: u6
     osec.hdr.size = osec.tail_off + tail_size;
 }
 
+/// Where an input section goes: the output section's name, the name its
+/// flags follow (see output_section_for), and the symbol move that
+/// took it there, if one did.
+#[derive(Clone, Copy)]
+struct Destination {
+    name: SectionName,
+    flags_name: SectionName,
+    moved: Option<MoveOption>,
+}
+
+/// Where an input section with header `hdr` goes: to the section the
+/// symbol move `m` of its subsection takes it to (see
+/// SectionMap::moved_name), if one does, and to its output section
+/// (see output_section_for) otherwise; None for one the link consumes.
+fn destination(
+    args: &crate::cmdline::Args,
+    map: SectionMap,
+    hdr: &MachSection,
+    m: Option<Move>,
+) -> Option<Destination> {
+    let (seg, sect) = (hdr.segname(), hdr.sectname());
+    if let Some(m) = m
+        && let Some((moved, flags_name)) = map.moved_name(m, seg, sect, hdr.flags)
+    {
+        return Some(Destination { name: renamed(args, moved), flags_name, moved: Some(m.option) });
+    }
+    let (name, flags_name) = output_section_for(args, map, seg, sect, hdr.flags)?;
+    Some(Destination { name, flags_name, moved: None })
+}
+
+/// Adds the output section `dest` names, for its first member, an
+/// input section with header `hdr` (see first_member_flags).
+fn add_output_section_for<E: Target>(
+    ctx: &mut Context<E>,
+    hdr: &MachSection,
+    text: SectionName,
+    dest: Destination,
+) -> OutputSectionId {
+    let flags = first_member_flags(ctx, hdr, text, dest.name, dest.flags_name);
+    let id = add_output_section(ctx, dest.name.0, dest.name.1, flags);
+    ctx.output_section_mut(id).moved = dest.moved;
+    id
+}
+
 /// The output section of a record the linker rewrote in place of a
-/// subsection of the input section `hdr`, as the input's would go: to
-/// the section the symbol move `m` takes it to (see
-/// SectionMap::moved_name), if one does. The section is made here if
-/// no input subsection went there, or every one was replaced.
+/// subsection of the input section `hdr`, as the input's would go (see
+/// destination), under the symbol move `m`. The section is made here
+/// if no input subsection went there, or every one was replaced.
 fn record_section<E: Target>(
     ctx: &mut Context<E>,
     hdr: &MachSection,
     text: SectionName,
     m: Option<Move>,
 ) -> Option<OutputSectionId> {
-    let map = SectionMap::final_link(ctx);
-    let (seg, sect) = (hdr.segname(), hdr.sectname());
-    let moved = m.and_then(|m| {
-        let (moved, from) = map.moved_name(m, seg, sect, hdr.flags)?;
-        Some((m.option, (renamed(&ctx.args, moved), from)))
-    });
-    let (out, flags_name) = match moved {
-        Some((_, names)) => names,
-        None => output_section_for(&ctx.args, map, seg, sect, hdr.flags)?,
-    };
-    if let Some(id) = find_output_section(ctx, out) {
-        return Some(id);
-    }
-    let flags = first_member_flags(ctx, hdr, text, out, flags_name);
-    let id = add_output_section(ctx, out.0, out.1, flags);
-    ctx.output_section_mut(id).moved = moved.map(|(option, _)| option);
-    Some(id)
+    let dest = destination(&ctx.args, SectionMap::final_link(ctx), hdr, m)?;
+    let id = find_output_section(ctx, dest.name);
+    Some(id.unwrap_or_else(|| add_output_section_for(ctx, hdr, text, dest)))
 }
 
 /// A record category merging rewrites in place of an input subsection,
@@ -743,99 +772,110 @@ fn assign_input_sections<E: Target>(
     moves: &hashbrown::HashMap<u32, Move>,
 ) {
     let map = SectionMap::new(ctx);
-    // Each input section name's output section, keyed by the raw
-    // 16-byte names, so that the hot loop does no allocation and no
-    // linear scans - and by its flags too, which say whether -text_exec
-    // moves it and whether it is the standard section of its name (see
-    // is_standard_section), and by the move of a moved subsection.
-    type Key = ([u8; 16], [u8; 16], u32, Option<(MoveOption, &'static [u8])>);
-    let mut by_name: hashbrown::HashMap<Key, Option<OutputSectionId>> = hashbrown::HashMap::new();
-    // Output sections by their (possibly renamed) names: several input
-    // section names can land in one output section.
-    let mut by_out: hashbrown::HashMap<SectionName, OutputSectionId> = hashbrown::HashMap::new();
-    // All subsections of one input section share the exact same leaked
-    // header pointer and are contiguous in the arena, and a header
-    // uniquely names one (object, section) - so a section's whole run
-    // of subsections maps to the same output chunk. Cache the last
-    // header pointer to skip the 32-byte name hash for all but the
-    // first subsection of each section; on a debug link this turns
-    // millions of hash lookups into a handful of thousands.
-    let mut last_hdr: *const crate::macho::MachSection = std::ptr::null();
-    let mut last_osec: Option<OutputSectionId> = None;
-    // Whether each output section has zero-fill (bit 0) and
-    // file-backed (bit 1) input sections; renames can mix them.
-    let mut fill_kinds: Vec<u8> = Vec::new();
+    let mut table = OutputSectionTable::default();
+    // The subsections of an input section are contiguous in the arena
+    // and go to the same output section, but for those a symbol move
+    // takes elsewhere: the last input section's (file, shndx) and output
+    // section spare all but its first subsection the 32-byte name hash -
+    // on a debug link, millions of lookups.
+    let mut last: Option<((u32, u32), Option<OutputSectionId>)> = None;
     for i in 0..ctx.isecs.len() {
-        if !ctx.isecs[i].is_alive()
-            || ctx.isecs[i].replacement != crate::input_sections::NO_REPLACEMENT
-            || ctx.isecs[i].is_placed()
+        let isec = &ctx.isecs[i];
+        if !isec.is_alive()
+            || isec.replacement != crate::input_sections::NO_REPLACEMENT
+            || isec.is_placed()
         {
             continue;
         }
-        let hdr_ref = ctx.hdr_of(&ctx.isecs[i]);
-        let hdr_ptr = std::ptr::from_ref::<crate::macho::MachSection>(hdr_ref);
-        // A copy: the header lives in its object, which stays borrowed
-        // while the section is placed below otherwise.
-        let hdr = *hdr_ref;
+        let sec = (isec.file, isec.shndx);
         let mv = moves.get(&(i as u32)).copied();
-        let osec_id = if hdr_ptr == last_hdr && mv.is_none() {
-            last_osec
-        } else {
-            let key = (hdr.segname, hdr.sectname, hdr.flags, mv.map(|m| (m.option, m.segment)));
-            let id = match by_name.get(&key) {
-                Some(&id) => id,
-                None => {
-                    let (seg, sect) = (hdr.segname(), hdr.sectname());
-                    let moved = mv.and_then(|m| {
-                        let (moved, from) = map.moved_name(m, seg, sect, hdr.flags)?;
-                        Some((m.option, (renamed(&ctx.args, moved), from)))
-                    });
-                    let out = match moved {
-                        Some((_, names)) => Some(names),
-                        None => output_section_for(&ctx.args, map, seg, sect, hdr.flags),
-                    };
-                    let id = out.map(|(out, flags_name)| match by_out.get(&out) {
-                        Some(&id) => id,
-                        None => {
-                            let flags = first_member_flags(ctx, &hdr, text, out, flags_name);
-                            let id = add_output_section(ctx, out.0, out.1, flags);
-                            ctx.output_section_mut(id).moved = moved.map(|(option, _)| option);
-                            by_out.insert(out, id);
-                            id
-                        }
-                    });
-                    by_name.insert(key, id);
-                    id
+        let id = match last {
+            Some((last_sec, id)) if last_sec == sec && mv.is_none() => id,
+            _ => {
+                // A copy: the header lives in its object, which stays
+                // borrowed while the section is placed otherwise.
+                let hdr = *ctx.hdr_of(isec);
+                let id = table.get(ctx, map, text, &hdr, mv);
+                if mv.is_none() {
+                    last = Some((sec, id));
                 }
-            };
-            if let Some(id) = id {
-                if fill_kinds.len() <= id.index() {
-                    fill_kinds.resize(id.index() + 1, 0);
-                }
-                fill_kinds[id.index()] |= if hdr.is_zerofill() { 1 } else { 2 };
-                if matches!(hdr.section_type(), S_THREAD_LOCAL_REGULAR | S_THREAD_LOCAL_ZEROFILL) {
-                    ctx.output_section_mut(id).has_tlv_data = true;
-                }
+                id
             }
-            if mv.is_none() {
-                last_hdr = hdr_ptr;
-                last_osec = id;
-            }
-            id
         };
-        let Some(osec_id) = osec_id else {
+        let Some(id) = id else {
             // Consumed by the link: no output section.
             ctx.isecs[i].set_alive(false);
             continue;
         };
 
-        let osec = &mut ctx.output_sections[osec_id.index()];
+        let osec = &mut ctx.output_sections[id.index()];
         osec.hdr.p2align = osec.hdr.p2align.max(ctx.isecs[i].p2align as u32);
         osec.members.push(i as u32);
-        ctx.isecs[i].set_output_section(ChunkId::Output(osec_id));
+        ctx.isecs[i].set_output_section(ChunkId::Output(id));
     }
     if !ctx.args.relocatable {
-        resolve_zerofill_conflicts(ctx, &fill_kinds);
+        resolve_zerofill_conflicts(ctx, &table.fill_kinds);
+    }
+}
+
+/// What decides an input section's output section: the raw 16-byte
+/// names, so that the hot loop does no allocation, the flags, which say
+/// whether -text_exec moves it and whether it is the standard section of
+/// its name (see is_standard_section), and the move of a moved
+/// subsection.
+type OutputSectionKey = ([u8; 16], [u8; 16], u32, Option<(MoveOption, &'static [u8])>);
+
+/// The output sections assign_input_sections makes, by what decides an
+/// input section's, as mold's create_output_sections caches them by
+/// key.
+#[derive(Default)]
+struct OutputSectionTable {
+    by_key: hashbrown::HashMap<OutputSectionKey, Option<OutputSectionId>>,
+    /// The output sections by their (possibly renamed) names: several
+    /// keys can land in one output section.
+    by_name: hashbrown::HashMap<SectionName, OutputSectionId>,
+    /// Whether each output section has zero-fill (bit 0) and
+    /// file-backed (bit 1) input sections; renames can mix them.
+    fill_kinds: Vec<u8>,
+}
+
+impl OutputSectionTable {
+    /// The output section of an input section with header `hdr` whose
+    /// subsection the symbol move `mv` takes, if one does (see
+    /// destination), made for it if it is the first; None for one the
+    /// link consumes.
+    fn get<E: Target>(
+        &mut self,
+        ctx: &mut Context<E>,
+        map: SectionMap,
+        text: SectionName,
+        hdr: &MachSection,
+        mv: Option<Move>,
+    ) -> Option<OutputSectionId> {
+        let key = (hdr.segname, hdr.sectname, hdr.flags, mv.map(|m| (m.option, m.segment)));
+        if let Some(&id) = self.by_key.get(&key) {
+            return id;
+        }
+        let id = destination(&ctx.args, map, hdr, mv).map(|dest| {
+            *self
+                .by_name
+                .entry(dest.name)
+                .or_insert_with(|| add_output_section_for(ctx, hdr, text, dest))
+        });
+        self.by_key.insert(key, id);
+
+        // The key holds the section type: note what it brings to the
+        // output section once.
+        if let Some(id) = id {
+            if self.fill_kinds.len() <= id.index() {
+                self.fill_kinds.resize(id.index() + 1, 0);
+            }
+            self.fill_kinds[id.index()] |= if hdr.is_zerofill() { 1 } else { 2 };
+            if matches!(hdr.section_type(), S_THREAD_LOCAL_REGULAR | S_THREAD_LOCAL_ZEROFILL) {
+                ctx.output_section_mut(id).has_tlv_data = true;
+            }
+        }
+        id
     }
 }
 
