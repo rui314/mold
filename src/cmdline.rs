@@ -2897,17 +2897,10 @@ fn resolve_options(target: &TargetTraits, args: &mut Args, st: &mut ParseState) 
     }
     args.objc_stubs_small = st.objc_stubs_small == Some(true);
     resolve_shared_region(target, args);
+    args.objc_stubs_small &= target.name == "arm64";
 
     args.segment_align = resolve_segment_align(target, args, st.segalign);
     resolve_encryptable(args);
-    // An encryptable image's __oslogstring, which goes unencrypted,
-    // starts a page of its own unless -sectalign says otherwise.
-    let oslog =
-        |(seg, sect, _): &(Vec<u8>, Vec<u8>, u8)| seg == b"__TEXT" && sect == b"__oslogstring";
-    if args.encryptable && !args.sectalign.iter().any(oslog) {
-        let p2align = args.segment_align.max(1).ilog2() as u8;
-        args.sectalign.push((b"__TEXT".to_vec(), b"__oslogstring".to_vec(), p2align));
-    }
     args.segprots = resolve_segprots(target, std::mem::take(&mut st.segprots));
     args.seg_page_sizes = resolve_seg_page_sizes(args, std::mem::take(&mut st.seg_page_sizes));
     resolve_pagezero_size(args, st.pagezero_size);
@@ -2921,7 +2914,6 @@ fn resolve_options(target: &TargetTraits, args: &mut Args, st: &mut ParseState) 
     complete_segment_order(args);
     resolve_image_base(args);
     args.unaligned_pointers = resolve_unaligned_pointers(target, args, st.unaligned_pointers);
-    args.objc_stubs_small &= target.name == "arm64";
 }
 
 /// -segaddr's (segment, address) pins, one per segment: ld-prime takes
@@ -3262,6 +3254,14 @@ fn resolve_segment_align(target: &TargetTraits, args: &Args, segalign: Option<u6
 /// which ld-prime reads but which -encryptable overrides.)
 fn resolve_encryptable(args: &mut Args) {
     args.encryptable &= !args.relocatable && !args.preload && !args.is_kext();
+    // An encryptable image's __oslogstring, which goes unencrypted,
+    // starts a page of its own unless -sectalign says otherwise.
+    let oslog =
+        |(seg, sect, _): &(Vec<u8>, Vec<u8>, u8)| seg == b"__TEXT" && sect == b"__oslogstring";
+    if args.encryptable && !args.sectalign.iter().any(oslog) {
+        let p2align = args.segment_align.max(1).ilog2() as u8;
+        args.sectalign.push((b"__TEXT".to_vec(), b"__oslogstring".to_vec(), p2align));
+    }
 }
 
 /// -segprot's (segment, max, init) protections, as ld-prime applies
@@ -3568,7 +3568,9 @@ fn check_options(target: &TargetTraits, args: &mut Args, st: &ParseState) {
     if let Some((old, new)) = st.incompatible_platforms {
         fatal!("incompatible platforms: {} - {}", platform_name(old), platform_name(new));
     }
-    check_segment_order(args);
+    if args.segment_order.len() == 1 {
+        fatal!("-segment_order should specifify at least two segments");
+    }
     if args.kernel && st.kind != OutputKind::StaticExecutable {
         fatal!("-kernel must be used with -static");
     }
@@ -3627,12 +3629,6 @@ fn check_options(target: &TargetTraits, args: &mut Args, st: &ParseState) {
     }
     if !args.has_entry_point() && st.explicit_entry {
         crate::warn!("ignoring -e, not used for output type");
-    }
-}
-
-fn check_segment_order(args: &Args) {
-    if !args.segment_order.is_empty() && args.segment_order.len() < 2 {
-        fatal!("-segment_order should specifify at least two segments");
     }
 }
 
