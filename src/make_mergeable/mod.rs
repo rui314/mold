@@ -1,6 +1,7 @@
 //! -make_mergeable: the LC_ATOM_INFO record of a dylib's contents, which
 //! lets a later link's -merge_* take the dylib as the objects it was
-//! made of (mergeable.rs reads the record; see there for its format).
+//! made of (the mergeable module reads the record; see there for its
+//! format).
 //!
 //! The record has an entry for each piece the linker moves as a whole:
 //! each live subsection of the objects, an alias for each other symbol

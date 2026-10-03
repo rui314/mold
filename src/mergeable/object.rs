@@ -402,8 +402,8 @@ impl<E: Target> Synth<'_, E> {
         (self.sections[sect].addr + off).wrapping_add_signed(addend)
     }
 
-    /// The symbol a fixup refers to its target by, and the addend
-    /// relative to it.
+    /// The symbol that stands for an entry, by which a relocation
+    /// refers to it.
     fn target_sym(&self, entry: u32) -> Option<usize> {
         self.sym_of.get(entry as usize).copied().flatten()
     }
@@ -770,8 +770,8 @@ impl<E: Target> Synth<'_, E> {
     /// DWARF (see chunks::symtab's symbol_stabs), and the address to
     /// order them by: a function's N_FUN pair between N_BNSYM and
     /// N_ENSYM, an external variable's N_GSYM (a private external's
-    /// too), a local one's N_STSYM, and
-    /// a tentative definition's N_GSYM, last.
+    /// too), a local one's N_STSYM, and a tentative definition's N_GSYM,
+    /// last.
     fn symbol_stabs(&self, i: usize, strtab: &mut Strtab) -> Option<(u64, Vec<NList>)> {
         let sym = &self.symbols[self.sym_of[i]?];
         if crate::input_files::is_private_label(&sym.name) {
