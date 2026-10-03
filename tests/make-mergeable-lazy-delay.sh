@@ -2,10 +2,11 @@
 source "$(dirname "$0")"/common.inc
 
 # A mergeable dylib may name a lazy-load or delay-init dylib it uses
-# nothing of: ld-prime links it as any other, the delay-init dylib's
-# load command and _dlopen kept, so that an image that merges it,
-# linked by either linker, gets them too. The lazy dylib, which nothing
-# uses, leaves nothing to merge.
+# nothing of: it links as any other, the delay-init dylib's load command
+# kept, so that an image that merges it, linked by either linker, loads
+# that dylib too. The lazy dylib, which nothing uses, leaves nothing to
+# merge. The _dlopen that -delay-l makes the mergeable dylib import is
+# no import of the merging image, whose merged code calls nothing of it.
 cat <<EOF | $CC -o $t/bar.o -c -xc -
 int bv = 10;
 int bar(void) { return 4; }
@@ -43,8 +44,9 @@ for ldflag in --ld-path=$mold ""; do
   $CC $ldflag -o $t/exe2 $t/main.o -L$t/m2 -L$t/lib -Wl,-merge-lbaz \
     -mmacosx-version-min=27.0
   nm -m $t/exe2 > $t/syms2
-  grep -q '(undefined) external _dlopen (from libSystem)' $t/syms2
-  otool -L $t/exe2 | grep -q libbar.dylib
+  not grep -q _dlopen $t/syms2
+  otool -L $t/exe2 > $t/libs2
+  grep -q libbar.dylib $t/libs2
 done
 
 # Code that reaches a symbol of a lazy-load or delay-init dylib is

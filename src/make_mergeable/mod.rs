@@ -1045,16 +1045,14 @@ impl<'a, E: Target> Builder<'a, E> {
 
     /// The symbols the fixups refer to by name, as first referred to,
     /// each with its library's index among the dependencies if it is an
-    /// import. An import the link
-    /// names as an initial undefine - by -u, or _dlopen in one that
-    /// names a delay-init dylib - is one whether or not anything refers
-    /// to it.
+    /// import.
     fn referenced_syms(&self, deps: &[(i32, DylibRecord)]) -> Vec<(SymbolId, Option<u8>)> {
         let ctx = self.ctx;
         let mut syms: Vec<SymbolId> = Vec::new();
         let mut seen = hashbrown::HashSet::new();
-        // The stub helper's and the objc stubs', which ld-prime records
-        // too.
+        // The imports the stub helper and the objc stubs call, which no
+        // fixup names: ld-prime's merging link makes objc stubs of its
+        // own, which call _objc_msgSend.
         for id in [ctx.stub_helper.dyld_stub_binder, ctx.objc_stubs.msgsend_sym] {
             if let Some(id) = id
                 && ctx.symbols[id].is_imported()
@@ -1070,14 +1068,6 @@ impl<'a, E: Target> Builder<'a, E> {
                 {
                     syms.push(id);
                 }
-            }
-        }
-        for name in &ctx.args.forced_undefined {
-            if let Some(id) = ctx.symbols.get(name)
-                && ctx.symbols[id].is_imported()
-                && seen.insert(id)
-            {
-                syms.push(id);
             }
         }
         let dep_index = |id: SymbolId| match ctx.symbols[id].file() {
