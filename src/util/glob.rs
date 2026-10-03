@@ -269,7 +269,7 @@ impl Nfa {
         }
 
         let mut value = -1;
-        for (i, &state) in states.iter().enumerate().take(num_words) {
+        for (i, &state) in states.iter().enumerate() {
             let mut word = state & self.accept_states[i];
             while word != 0 {
                 let bit = word.trailing_zeros() as usize;
