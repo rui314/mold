@@ -69,7 +69,7 @@ impl PlatformVersion {
     /// The deployment target a bitcode file's target triple names, such
     /// as arm64-apple-macosx13.0.0 or arm64-apple-ios17.0.0-simulator,
     /// if it names an Apple platform. The SDK is not part of it.
-    pub fn of_triple(triple: &str) -> Option<Self> {
+    fn of_triple(triple: &str) -> Option<Self> {
         let os = triple.splitn(3, '-').nth(2)?;
         let (os, env) = os.split_once('-').unwrap_or((os, ""));
         let (name, version) =
@@ -1740,7 +1740,7 @@ fn append_in_parallel<T: Send>(v: &mut Vec<T>, parts: impl Iterator<Item = Vec<T
 /// Appends a staged object to the global arenas, rebasing its local
 /// indices and interning its symbol names: integrate_objects for a
 /// batch of one, done serially.
-pub fn integrate_object<E: Target>(ctx: &mut Context<E>, mut staged: StagedObject) -> usize {
+fn integrate_object<E: Target>(ctx: &mut Context<E>, mut staged: StagedObject) -> usize {
     let obj_idx = ctx.objs.len();
     let syms: Vec<SymbolId> = (staged.nlists.iter().zip(&staged.sym_names))
         .map(|(nlist, name)| {
@@ -1774,7 +1774,7 @@ pub fn parse_object<E: Target>(
 }
 
 /// Loads the LTO plugin on first use.
-pub fn ensure_lto_plugin<E: Target>(ctx: &mut Context<E>) -> crate::lto::Plugin {
+fn ensure_lto_plugin<E: Target>(ctx: &mut Context<E>) -> crate::lto::Plugin {
     if ctx.lto_plugin.is_none() {
         ctx.lto_plugin = Some(crate::lto::load_plugin(ctx.args.lto_library.as_deref()));
     }
@@ -1871,7 +1871,7 @@ fn bitcode_nlist(ls: &crate::lto::LtoSymbol) -> NList {
 /// triple (x86_64h-apple-macosx14.0.0), if the link doesn't take it -
 /// named as for a Mach-O file, a Thumb one (thumbv7-apple-ios9.0.0) by
 /// its ARM architecture.
-pub fn foreign_bitcode_arch<E: Target>(
+fn foreign_bitcode_arch<E: Target>(
     plugin: &crate::lto::Plugin,
     module: usize,
 ) -> Option<String> {
@@ -2158,7 +2158,7 @@ pub struct Fde {
 #[cfg(target_pointer_width = "64")]
 const _: () = assert!(std::mem::size_of::<Fde>() == 56);
 
-pub fn read_uleb_at(data: &[u8], pos: &mut usize) -> u64 {
+fn read_uleb_at(data: &[u8], pos: &mut usize) -> u64 {
     let mut val = 0;
     let mut shift = 0;
     loop {
@@ -3214,7 +3214,7 @@ fn defined_externals(data: &'static [u8]) -> Vec<(&'static [u8], bool, bool)> {
 
 /// The ordinal the next LC_LOAD_DYLIB will have: dylibs are numbered
 /// in load-command order, and a -bundle_loader has no load command.
-pub fn next_dylib_ordinal<E: Target>(ctx: &Context<E>) -> i32 {
+fn next_dylib_ordinal<E: Target>(ctx: &Context<E>) -> i32 {
     ctx.dylibs.iter().filter(|d| !d.is_bundle_loader).count() as i32 + 1
 }
 
