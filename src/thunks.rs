@@ -281,11 +281,7 @@ fn create_thunks<E: Target>(ctx: &mut Context<E>, reach: &mut Reach) {
         reach.backward = reach.before.is_some_and(|before| before + c_offset <= distance);
         reach.forward = d == n
             && reach.after.is_some_and(|after| {
-                let batches = std::iter::successors(Some(b), |&i| {
-                    (i < n).then(|| batch_end(ctx, &members, i, n))
-                })
-                .count() as u64
-                    - 1;
+                let batches = batches_left(ctx, &members, b);
                 offset + batches * (MAX_THUNK_SIZE + THUNK_ALIGN) + after - b_offset <= distance
             });
 
@@ -323,6 +319,18 @@ fn batch_end<E: Target>(ctx: &Context<E>, members: &[InputSectionId], b: usize, 
             let isec = &ctx.isecs[m];
             (isec.offset as u64 + isec.size as u64) < limit
         })
+}
+
+/// The number of batches from member `b` to the end of a section whose
+/// members are all placed.
+fn batches_left<E: Target>(ctx: &Context<E>, members: &[InputSectionId], b: usize) -> u64 {
+    let mut batches = 0;
+    let mut i = b;
+    while i < members.len() {
+        i = batch_end(ctx, members, i, members.len());
+        batches += 1;
+    }
+    batches
 }
 
 /// Scans `batch`'s branch relocations in parallel and returns the
