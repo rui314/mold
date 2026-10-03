@@ -95,9 +95,9 @@ fn dlopen_name<E: Target>(ctx: &Context<E>, id: SymbolId) -> &[u8] {
 }
 
 /// Gives each dylib the stubs and helpers dlopen() its dlopen helper,
-/// by install name: the helper's flag word in __data (ahead of
-/// __dyld_private) and the install name's C string, after the inputs'
-/// in __cstring. Returns the helper of each install name.
+/// by install name: the helper's flag word in __data and the install
+/// name's C string in __cstring, after the inputs'. Returns the helper
+/// of each install name.
 fn create_dlopen_helpers<E: Target>(
     ctx: &mut Context<E>,
     uses: &[DelayUseSite],
@@ -125,11 +125,6 @@ fn create_dlopen_helpers<E: Target>(
         let offset = 0;
         let helper = DlopenHelper { install_name, name, flag_name, flag, string, offset };
         ctx.delay_init.dlopens.push(helper);
-    }
-    let private = ctx.stub_helper.dyld_private_isec;
-    if let Some(i) = ctx.data_blobs.iter().position(|b| b.isec == private) {
-        let blob = ctx.data_blobs.remove(i);
-        ctx.data_blobs.push(blob);
     }
     dlopen_of
 }
