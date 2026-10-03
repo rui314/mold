@@ -2,6 +2,7 @@
 name = "mold-target-riscv32be"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "The mold linker instantiated for riscv32be"
 license.workspace = true
 

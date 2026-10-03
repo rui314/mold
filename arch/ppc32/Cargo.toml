@@ -2,6 +2,7 @@
 name = "mold-target-ppc32"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "The mold linker instantiated for ppc32"
 license.workspace = true
 

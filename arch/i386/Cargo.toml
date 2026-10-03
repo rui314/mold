@@ -2,6 +2,7 @@
 name = "mold-target-i386"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "The mold linker instantiated for i386"
 license.workspace = true
 

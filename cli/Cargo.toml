@@ -2,6 +2,7 @@
 name = "mold-cli"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "The mold executable"
 license.workspace = true
 

@@ -2,6 +2,7 @@
 name = "mold-target-m68k"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "The mold linker instantiated for m68k"
 license.workspace = true
 
