@@ -89,7 +89,8 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     // ld-prime says why it loads each archive member as it resolves the
     // symbols, then checks the inputs it uses.
     let explained = passes::print_why_load(&ctx, &[]);
-    let checked = passes::check_input_versions(&ctx, &Default::default());
+    let mut checked = passes::CheckedInputs::default();
+    passes::check_input_versions(&ctx, &mut checked);
     passes::warn_linker_options(&mut ctx);
     passes::find_bitcode_duplicates(&mut ctx);
     if ctx.args.relocatable && passes::links_only_bitcode(&ctx) {
@@ -116,10 +117,11 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
             }
         }
         passes::print_why_load(&ctx, &explained);
-        passes::check_input_versions(&ctx, &checked);
+        passes::check_input_versions(&ctx, &mut checked);
         passes::warn_linker_options(&mut ctx);
         passes::keep_bitcode_imports(&mut ctx);
     }
+    passes::warn_newer_dylibs(&ctx);
     passes::report_bitcode_duplicates(&ctx);
     crate::error::checkpoint();
     t.stop();

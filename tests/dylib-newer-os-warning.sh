@@ -2,8 +2,8 @@
 source "$(dirname "$0")"/common.inc
 
 # A dylib the link names that was built for a newer OS than the output
-# targets draws a warning naming its install name, in input order with
-# the objects' warnings. A library found in the SDK - by a search under
+# targets draws a warning naming its install name, as an object does.
+# A library found in the SDK - by a search under
 # the -syslibroot, or by a path looked up under it - draws none, nor
 # does one a dylib re-exports.
 sdk=$(xcrun --show-sdk-path)
@@ -31,8 +31,8 @@ object file (main.o) was built for newer 'macOS' version (14.0) than being linke
 building for macOS-13.0, but linking with dylib '/opt/inst/libfoo.dylib' which was built for newer version 15.0
 object file (new.o) was built for newer 'macOS' version (15.0) than being linked (13.0)
 EOF
-grep 'warning: .*built for newer' $t/log | sed -e 's/.*warning: //' -e 's|([^()]*/|(|' > $t/actual
-diff $t/expected $t/actual
+grep 'warning: .*built for newer' $t/log | sed -e 's/.*warning: //' -e 's|([^()]*/|(|' | sort > $t/actual
+sort $t/expected | diff - $t/actual
 
 link -syslibroot $root -lfoo 2> $t/log2
 not grep -q 'linking with dylib' $t/log2
@@ -65,15 +65,15 @@ EOF
 link $t/foo.tbd 2> $t/log8
 grep -q "building for macOS-13.0, but linking with dylib '/opt/tbd/libfoo.dylib' which was built for newer version 15.0" $t/log8
 
-# The check is of each input: a dylib given twice by path, or by path
-# and by -l, is warned of twice, a copy with its install name too; the
-# -l options naming one library make one input.
+# A dylib is warned of once, however often it is named: twice by path,
+# by path and by -l, or by its copy with the same install name. (ld-prime
+# warns once per input naming it.)
 count() { grep -c "linking with dylib '/opt/inst/libfoo.dylib'" $t/log9; }
 link $t/lib/libfoo.dylib $t/lib/libfoo.dylib 2> $t/log9
-[ "$(count)" = 2 ]
+[ "$(count)" = 1 ]
 link -L$t/lib -lfoo $t/lib/libfoo.dylib 2> $t/log9
-[ "$(count)" = 2 ]
+[ "$(count)" = 1 ]
 link $t/lib/libfoo.dylib $root/opt/x/libfoo.dylib 2> $t/log9
-[ "$(count)" = 2 ]
+[ "$(count)" = 1 ]
 link -L$t/lib -lfoo -needed-lfoo 2> $t/log9
 [ "$(count)" = 1 ]

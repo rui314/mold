@@ -3213,12 +3213,11 @@ fn check_dylib_platform<E: Target>(ctx: &mut Context<E>, mf: &MappedFile) -> u32
     0
 }
 
-/// Notes a dylib built for none of the link's platform - for
-/// `platforms`, which `name` names - for ld-prime's message, which it
-/// gives once it has read all the inputs, where it checks the input
-/// with which the dylib came (see passes::check_input_versions).
+/// Refuses a dylib built for none of the link's platform - for
+/// `platforms`, which `name` names -, which a firmware link takes with
+/// a warning.
 fn check_dylib_platforms<E: Target>(
-    ctx: &mut Context<E>,
+    ctx: &Context<E>,
     mf: &MappedFile,
     platforms: &[u32],
     name: &str,
@@ -3226,14 +3225,16 @@ fn check_dylib_platforms<E: Target>(
     if platforms.is_empty() || platforms.contains(&ctx.args.platform) {
         return;
     }
-    let msg = crate::error::render(format_args!(
+    let msg = format_args!(
         "building for '{}', but linking in dylib ({}) built for '{name}'",
         platform_name(ctx.args.platform),
-        crate::passes::resolved_file_name(mf),
-    ));
-    // The input's priority, or its parent's for a re-exported library.
-    let priority = ctx.priority_counter + 1;
-    ctx.foreign_platform_dylibs.push((priority, msg));
+        mf.name.raw(),
+    );
+    if ctx.args.platform == PLATFORM_FIRMWARE {
+        crate::warn!("{msg}");
+    } else {
+        crate::error!("{msg}");
+    }
 }
 
 pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFile) -> usize {

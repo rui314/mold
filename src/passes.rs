@@ -639,8 +639,6 @@ fn collect_file<E: Target>(
             // One named before by another path keeps what that said.
             if idx >= first || ctx.dylibs[idx].is_implicit {
                 name_dylib(ctx, idx, rc);
-            } else if !rc.autolinked {
-                ctx.dylib_renamings.push((ctx.priority_counter, idx, &mf.name));
             }
             note_naming(ctx, first, idx);
         }
@@ -690,8 +688,7 @@ fn collect_file<E: Target>(
 
 /// A file named again: a library (or a universal file) is loaded once,
 /// but -force_load of an archive named before loads its members all the
-/// same, and ld-prime checks a dylib's version for each input that names
-/// it (see check_input_versions).
+/// same.
 fn name_again<E: Target>(
     ctx: &mut Context<E>,
     mf: &'static MappedFile,
@@ -702,12 +699,6 @@ fn name_again<E: Target>(
         for p in out.iter_mut().filter(|p| p.mf.parent.is_some_and(|a| a.name == mf.name)) {
             p.alive = true;
         }
-    }
-    if let Some(idx) = ctx.dylibs.iter().position(|d| d.path == mf.name)
-        && !rc.autolinked
-    {
-        let priority = ctx.next_priority();
-        ctx.dylib_renamings.push((priority, idx, &mf.name));
     }
 }
 
@@ -3116,115 +3107,62 @@ fn initializers<E: Target>(ctx: &Context<E>) -> Vec<(&[u8], error::RawBuf)> {
     vec
 }
 
-/// The inputs check_input_versions has looked at: the objects live
-/// then, and the dylibs loaded by then - those built for another
-/// platform, and the inputs naming one again, included.
+/// The objects check_input_versions has checked, and the Objective-C
+/// image info flags they merge to (see check_objc_flags).
 #[derive(Default)]
 pub struct CheckedInputs {
     objs: Vec<bool>,
-    dylibs: usize,
-    foreign_dylibs: usize,
-    renamings: usize,
-    /// The objects' Objective-C image info flags merged so far (see
-    /// check_objc_flags).
     objc: Option<u32>,
 }
 
-/// The warning for a dylib with install name `install_name` built for
-/// OS version `built_for`, if that is newer than the link's.
-fn newer_dylib_warning<E: Target>(
-    ctx: &Context<E>,
-    install_name: &[u8],
-    built_for: u32,
-) -> Option<error::Message> {
+/// Warns if a dylib with install name `install_name` was built for an
+/// OS version, `built_for`, newer than the link's.
+fn warn_newer_dylib<E: Target>(ctx: &Context<E>, install_name: &[u8], built_for: u32) {
     let minos = ctx.args.platform_minos;
-    (minos != 0 && built_for > minos).then(|| {
-        error::render(format_args!(
+    if minos != 0 && built_for > minos {
+        crate::warn!(
             "building for {}-{}, but linking with dylib '{}' which was built for newer version {}",
             platform_name(ctx.args.platform),
             format_version(minos),
             raw(install_name),
             format_version(built_for)
-        ))
-    })
+        );
+    }
 }
 
-/// Validates only objects selected by resolution, not those `checked`
-/// covers. Unused archive members must not cause errors or warnings.
-/// ld-prime checks the dylibs the link names along with them, in input
-/// order, used or not: one built for another platform is an error (a
-/// firmware link takes it with a warning), as an object is, and the
-/// first stops the link; one built for a newer OS version gets a
-/// warning, for each input that names it, but not those it re-exports,
-/// nor those of the SDK, built for newer OS versions as a matter of
-/// course. A merged mergeable dylib is a dylib to these checks. It
-/// checks bitcode files by their
-/// target triples before LTO, and the object LTO makes (with what it
-/// pulls in) after: the driver calls this twice. Along with each
-/// object's deployment target, it checks its Objective-C image info
-/// against the objects' before (see check_objc_flags), for any
-/// platform.
-pub fn check_input_versions<E: Target>(ctx: &Context<E>, checked: &CheckedInputs) -> CheckedInputs {
-    let now = CheckedInputs {
-        objs: ctx.objs.iter().map(|obj| obj.is_alive).collect(),
-        dylibs: ctx.dylibs.len(),
-        foreign_dylibs: ctx.foreign_platform_dylibs.len(),
-        renamings: ctx.dylib_renamings.len(),
-        objc: None,
-    };
-    let platform = ctx.args.platform;
-    let newer = |d: &input_files::DylibFile| {
-        (!d.is_implicit && !d.in_sdk)
-            .then(|| newer_dylib_warning(ctx, &d.install_name, d.minos))
-            .flatten()
-    };
-    let renamings = ctx.dylib_renamings[checked.renamings..]
-        .iter()
-        .map(|&(priority, idx, _)| (priority, &ctx.dylibs[idx]));
-    let mut dylibs: Vec<(u32, error::Message, bool)> = ctx.dylibs[checked.dylibs..]
-        .iter()
-        .map(|d| (d.named_at.unwrap_or(d.priority), d))
-        .chain(renamings)
-        .filter_map(|(priority, d)| Some((priority, newer(d)?, false)))
-        .chain(
-            ctx.foreign_platform_dylibs[checked.foreign_dylibs..]
-                .iter()
-                .map(|(priority, msg)| (*priority, msg.clone(), true)),
-        )
-        .collect();
-    dylibs.sort_by_key(|&(priority, ..)| priority);
-    let mut dylibs = dylibs.into_iter().peekable();
-    let report_dylib = |(_, msg, foreign): (u32, error::Message, bool)| {
-        if foreign && platform != crate::macho::PLATFORM_FIRMWARE {
-            fatal!("{}", raw(&msg));
+/// Checks the deployment target and the Objective-C image info of each
+/// live object `checked` doesn't cover yet. Unused archive members must
+/// not cause errors or warnings. The driver calls this before LTO, so
+/// that bitcode built for another platform stops the link before it is
+/// compiled, and again for the objects LTO made or pulled in.
+pub fn check_input_versions<E: Target>(ctx: &Context<E>, checked: &mut CheckedInputs) {
+    checked.objs.resize(ctx.objs.len(), false);
+    for (i, obj) in ctx.objs.iter().enumerate() {
+        // The hook for the classes of mergeable libraries is the
+        // linker's, for any macOS.
+        if !obj.is_alive || checked.objs[i] || ctx.is_bundle_hook(i) {
+            continue;
         }
-        crate::warn!("{}", raw(&msg));
-    };
-    // In input order: a bitcode file's placeholder object joins the
-    // link ahead of the Mach-O objects, which are staged in parallel.
-    // The hook for the classes of mergeable libraries is the linker's,
-    // for any macOS (ld-prime warns that its own is for a newer one).
-    let is_new = |i: usize| {
-        ctx.objs[i].is_alive && !checked.objs.get(i).is_some_and(|&c| c) && !ctx.is_bundle_hook(i)
-    };
-    let mut objs: Vec<usize> = (0..ctx.objs.len()).filter(|&i| is_new(i)).collect();
-    objs.sort_by_key(|&i| ctx.objs[i].priority);
-    let mut objc = checked.objc;
-    for i in objs {
-        let obj = &ctx.objs[i];
-        while let Some(dylib) = dylibs.next_if(|&(priority, ..)| priority < obj.priority) {
-            report_dylib(dylib);
-        }
+        checked.objs[i] = true;
         // A -r or -preload output for no platform takes any object.
-        if platform != 0 {
+        if ctx.args.platform != 0 {
             check_object_version(ctx, i);
         }
         if let Some(flags) = obj.objc_image_info {
-            objc = Some(check_objc_flags(ctx, objc, flags, obj.mf));
+            checked.objc = Some(check_objc_flags(ctx, checked.objc, flags, obj.mf));
         }
     }
-    dylibs.for_each(report_dylib);
-    CheckedInputs { objc, ..now }
+}
+
+/// Warns of each dylib the link names that was built for a newer OS
+/// version than the link's, but not one only re-exported, nor one of
+/// the SDK, built for newer OS versions as a matter of course. (A
+/// dylib built for another platform is refused as it is read; see
+/// input_files::check_dylib_platforms.)
+pub fn warn_newer_dylibs<E: Target>(ctx: &Context<E>) {
+    for dylib in ctx.dylibs.iter().filter(|d| !d.is_implicit && !d.in_sdk) {
+        warn_newer_dylib(ctx, &dylib.install_name, dylib.minos);
+    }
 }
 
 /// Checks the deployment target of object `i` (see
@@ -3259,11 +3197,10 @@ fn check_object_version<E: Target>(ctx: &Context<E>, i: usize) {
         );
     };
 
+    // A merged mergeable dylib is a dylib to this check.
     let merged = ctx.merged_libraries.iter().find(|lib| std::ptr::eq(lib.obj, obj.mf));
     if let Some(lib) = merged {
-        if let Some(msg) = newer_dylib_warning(ctx, &lib.install_name, lib.minos) {
-            crate::warn!("{}", raw(&msg));
-        }
+        warn_newer_dylib(ctx, &lib.install_name, lib.minos);
         return;
     }
 
@@ -3292,8 +3229,7 @@ const OBJC_HAS_CATEGORY_CLASS_PROPERTIES: u32 = 0x40;
 
 /// Merges the Objective-C image info `flags` of an object into those
 /// of the objects checked before it, `merged`, with ld-prime's
-/// diagnostics, which it gives as it checks each object, after its
-/// deployment target. The first Swift ABI version stays: another one
+/// diagnostics. The first Swift ABI version stays: another one
 /// fails the link (or with $LD_WARN_ON_SWIFT_ABI_VERSION_MISMATCHES
 /// draws a warning). And an object that has category class properties
 /// where those before don't, or lacks them where those before have
