@@ -64,22 +64,16 @@ pub fn read_api_list(path: &Path) -> ApiList {
 /// lists one a time for each reference to it (its stub, its GOT slot,
 /// ...).
 pub fn write_sdk_imports<E: Target>(ctx: &Context<E>) {
-    use crate::macho::{format_version, platform_name};
     let Some(path) = &ctx.args.sdk_imports else { return };
     let api_list = ctx.args.sdk_imports_api_list.as_ref();
+    let listed = |name: &&[u8]| api_list.is_none_or(|list| list.apis.contains(*name));
     let mut imports = std::collections::BTreeMap::<(i32, &[u8]), Vec<&[u8]>>::new();
-    for sym in &ctx.symbols.syms {
-        if !sym.is_imported() || !sym.is_used() {
-            continue;
+    for (dylib, names) in ctx.dylibs.iter().zip(dylib_imports(ctx)) {
+        let names: Vec<&[u8]> = names.into_iter().filter(listed).collect();
+        if !names.is_empty() {
+            let key = (dylib.dylib_idx, dylib.install_name.as_slice());
+            imports.entry(key).or_default().extend(names);
         }
-        if api_list.is_some_and(|list| !list.apis.contains(sym.name())) {
-            continue;
-        }
-        let Some(FileId::Dylib(idx)) = sym.file() else { continue };
-        // Dynamic-lookup symbols have no defining library to report.
-        let Some(dylib) = ctx.dylibs.get(idx as usize) else { continue };
-        let key = (dylib.dylib_idx, dylib.install_name.as_slice());
-        imports.entry(key).or_default().push(sym.name());
     }
 
     // JSON is text: a path, install name or symbol name outside UTF-8 is
@@ -437,7 +431,7 @@ impl<'a> TraceInputs<'a> {
             "name": output_leaf(ctx),
             "arch": E::NAME,
             "platforms": [{
-                "name": crate::macho::platform_name(args.platform),
+                "name": platform_name(args.platform),
                 "min-version": {
                     "major": (version >> 16).to_string(),
                     "minor": ((version >> 8) & 0xff).to_string(),
