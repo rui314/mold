@@ -2062,13 +2062,12 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     ),
                 }
             }
-            b"-force_symbols_weak_list" | b"-force_symbols_not_weak_list" => {
-                let names = cur.next_symbol_list(name);
-                let glob = match name {
-                    "-force_symbols_weak_list" => &mut st.lists.force_weak,
-                    _ => &mut st.lists.force_not_weak,
-                };
-                add_patterns(glob, &names);
+            b"-force_symbols_weak_list" => {
+                add_patterns(&mut st.lists.force_weak, cur.next_symbol_list(name));
+                st.force_weakness_listed = true;
+            }
+            b"-force_symbols_not_weak_list" => {
+                add_patterns(&mut st.lists.force_not_weak, cur.next_symbol_list(name));
                 st.force_weakness_listed = true;
             }
             b"-commons" => {
@@ -2175,17 +2174,16 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 let new = section_name(cur.next_arg(name).as_bytes());
                 args.rename_segments.push((old, new));
             }
-            b"-move_to_rw_segment" | b"-move_to_ro_segment" => {
+            b"-move_to_rw_segment" => {
                 let segment = cur.next_arg(name).as_bytes();
-                let list = symbol_move(name, segment, &cur.next_path(name));
-                match name {
-                    "-move_to_rw_segment" => args.move_to_rw.push(list),
-                    _ => args.move_to_ro.push(list),
-                }
+                args.move_to_rw.push(symbol_move(name, segment, &cur.next_path(name)));
+            }
+            b"-move_to_ro_segment" => {
+                let segment = cur.next_arg(name).as_bytes();
+                args.move_to_ro.push(symbol_move(name, segment, &cur.next_path(name)));
             }
             b"-dirty_data_list" => {
-                let list = symbol_move(name, b"__DATA_DIRTY", &cur.next_path(name));
-                args.dirty_data.push(list);
+                args.dirty_data.push(symbol_move(name, b"__DATA_DIRTY", &cur.next_path(name)));
             }
             b"-data_const" => st.data_const = Some(true),
             b"-no_data_const" => st.data_const = Some(false),
