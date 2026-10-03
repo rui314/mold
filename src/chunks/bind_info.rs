@@ -65,7 +65,6 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
             }
             if let Some(id) = ctx.reloc_target_sym(isec.file as usize, rel)
                 && (ctx.binds_as_import(id) || ctx.is_dtrace_pointer_target(id))
-                && !ctx.is_swift_force_load_ref(id)
             {
                 binds.push((base + rel.offset as u64, id, rel.addend));
             }

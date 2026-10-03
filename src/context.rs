@@ -736,15 +736,6 @@ impl<E: Target> Context<E> {
             && sym.input_section().is_some_and(|isec| self.isecs[isec as usize].is_alive())
     }
 
-    /// A weak reference to an overlay's __swift_FORCE_LOAD_$_ marker.
-    /// The Swift compiler emits one per module to keep the overlay
-    /// loaded; ld-prime keeps the dylib as a dependency but writes no
-    /// fixup for the slot (it stays zero), and so do we.
-    pub fn is_swift_force_load_ref(&self, id: SymbolId) -> bool {
-        let sym = &self.symbols[id];
-        sym.is_imported() && sym.is_weak_ref() && sym.name().starts_with(b"__swift_FORCE_LOAD_$_")
-    }
-
     /// True for a definition the image exports that dyld binds the
     /// image's own references to by name, as it binds imports, so that
     /// another image can interpose it: each export of a -flat_namespace
@@ -1313,7 +1304,7 @@ impl<E: Target> Context<E> {
         let slides = self.args.pie || self.args.output_type != crate::macho::MH_EXECUTE;
         let needs_fixup = match self.reloc_target_sym(file, rel) {
             Some(id) if self.binds_at_runtime(id) || self.binds_to_self(id) => true,
-            Some(id) if self.is_absolute_symbol(id) || self.is_swift_force_load_ref(id) => false,
+            Some(id) if self.is_absolute_symbol(id) => false,
             _ => slides && !self.reloc_target_is_tls(file, rel),
         };
         if needs_fixup {

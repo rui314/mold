@@ -3,9 +3,9 @@ source "$(dirname "$0")"/common.inc
 
 # The Swift compiler keeps an overlay loaded with a weak reference to
 # its __swift_FORCE_LOAD_$_<overlay> marker, stored in a hidden
-# __DATA,__const word. ld-prime lists the dylib as a dependency (weak
-# when every reference to it is weak) but writes no fixup for the
-# word, which stays zero; other weak imports bind as usual.
+# __DATA,__const word. The dylib is a dependency (weak when every
+# reference to it is weak), and the word binds as any weak import.
+# (ld-prime writes no fixup for the word, which stays zero.)
 cat <<EOF | $CC -o $t/lib.o -c -xc -
 int fl asm("__swift_FORCE_LOAD_\$_swiftFoo") = 1;
 int other = 2;
@@ -24,7 +24,7 @@ EOF
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/libfoo.dylib -Wl,-rpath,$t
 $t/exe
 dyld_info -fixups $t/exe > $t/fixups
-not grep -q FORCE_LOAD $t/fixups
+grep -q 'libfoo/__swift_FORCE_LOAD_\$_swiftFoo \[weak-import\]' $t/fixups
 grep -q 'libfoo/_other \[weak-import\]' $t/fixups
 otool -L $t/exe | grep 'libfoo.dylib.*weak'
 nm -m $t/exe | grep 'undefined) weak external __swift_FORCE_LOAD_\$_swiftFoo (from libfoo)'
@@ -33,5 +33,5 @@ nm -m $t/exe | grep 'undefined) weak external __swift_FORCE_LOAD_\$_swiftFoo (fr
 $CC --ld-path=$mold -o $t/exe2 $t/a.o $t/libfoo.dylib -Wl,-rpath,$t -Wl,-no_fixup_chains
 $t/exe2
 dyld_info -fixups $t/exe2 > $t/fixups2
-not grep -q FORCE_LOAD $t/fixups2
+grep -q 'libfoo/__swift_FORCE_LOAD_\$_swiftFoo \[weak-import\]' $t/fixups2
 grep -q 'libfoo/_other \[weak-import\]' $t/fixups2

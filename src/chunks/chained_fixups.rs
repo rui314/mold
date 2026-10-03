@@ -428,7 +428,6 @@ fn collect_fixups<E: Target>(ctx: &Context<E>) -> (Vec<Fixup>, Vec<(u32, u64)>) 
                 }
                 let addr = base + rel.offset as u64;
                 let fixup = match ctx.reloc_target_sym(isec.file as usize, rel) {
-                    Some(id) if ctx.is_swift_force_load_ref(id) => None,
                     Some(id)
                         if ctx.binds_at_runtime(id)
                             || ctx.binds_to_self(id)
