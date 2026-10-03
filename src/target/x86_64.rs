@@ -267,7 +267,7 @@ impl Target for X86_64 {
             // jmp *ptr(%rip)
             ent[0] = 0xff;
             ent[1] = 0x25;
-            write32(&mut ent[2..], ptr_addr.wrapping_sub(ent_addr + 6) as u32);
+            write32(&mut ent[2..], disp as u32);
         }
     }
 
