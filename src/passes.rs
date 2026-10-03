@@ -5220,16 +5220,10 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
     if need_thunks == Some(true) {
         crate::thunks::create_range_extension_thunks(ctx);
     }
-    let mut fileoff = lay_out_segments(ctx);
-    while !finish_unwind_info(ctx) {
-        fileoff = lay_out_segments(ctx);
-    }
+    let mut fileoff = lay_out_segments_with_unwind_info(ctx);
     if need_thunks.is_none() && crate::thunks::code_span(ctx) > E::BRANCH_RANGE / 2 {
         crate::thunks::create_range_extension_thunks(ctx);
-        fileoff = lay_out_segments(ctx);
-        while !finish_unwind_info(ctx) {
-            fileoff = lay_out_segments(ctx);
-        }
+        fileoff = lay_out_segments_with_unwind_info(ctx);
     }
 
     while !finish_chain_starts(ctx) {
@@ -5361,6 +5355,18 @@ fn lay_out_segments<E: Target>(ctx: &mut Context<E>) -> u64 {
     check_segment_overlaps(ctx);
     crate::error::checkpoint();
     fileoff
+}
+
+/// Lays out every segment but __LINKEDIT as lay_out_segments does, and
+/// again until __unwind_info fits the room __TEXT leaves it (see
+/// finish_unwind_info). Returns the file offset past them.
+fn lay_out_segments_with_unwind_info<E: Target>(ctx: &mut Context<E>) -> u64 {
+    loop {
+        let fileoff = lay_out_segments(ctx);
+        if finish_unwind_info(ctx) {
+            return fileoff;
+        }
+    }
 }
 
 /// The segment holding the mach header, laid out in place at the image
