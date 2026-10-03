@@ -1011,24 +1011,6 @@ const JOINED_LIBRARY_OPTIONS: [(&str, LibraryKind); 13] = [
     ("-l", LibraryKind::Plain),
 ];
 
-/// Takes the platform and minimum OS version an option names. The last
-/// option wins; ld-prime warns about another minimum version for the
-/// same platform, and about firmware replacing macOS, but refuses
-/// macOS (or another platform) replacing firmware (see check_options).
-fn set_platform(args: &mut Args, st: &mut ParseState, platform: u32, minos: u32) {
-    if args.platform == platform && args.platform_minos != minos {
-        let (old, new) = (format_version(args.platform_minos), format_version(minos));
-        let name = platform_name(platform);
-        crate::warn!("passed two min versions ({old}, {new}) for platform {name}. Using {new}.");
-    } else if args.platform == PLATFORM_MACOS && platform == PLATFORM_FIRMWARE {
-        crate::warn!("conflicting -platform_version platform: macOS, using: firmware");
-    } else if args.platform != 0 && args.platform != platform {
-        st.incompatible_platforms.get_or_insert((args.platform, platform));
-    }
-    args.platform = platform;
-    args.platform_minos = minos;
-}
-
 /// The target a triple's architecture names.
 fn triple_arch(arch: &str, triple: &str) -> &'static str {
     crate::target::canonical_name(arch)
@@ -1437,28 +1419,6 @@ struct SymbolLists {
     interposable_list: Option<GlobBuilder>,
 }
 
-/// Adds an -add_linker_option's words to `words`. ld-prime splits the
-/// option at its first space only for an option that names a framework
-/// (any word with "framework" in it), and takes the rest for its
-/// argument, spaces and all; it ignores any other with a space, and
-/// passes one without on as a word of its own.
-fn add_linker_option(words: &mut Vec<Vec<u8>>, opt: &[u8]) {
-    let Some(space) = memchr::memchr(b' ', opt) else {
-        words.push(opt.to_vec());
-        return;
-    };
-    let (head, arg) = (&opt[..space], &opt[space + 1..]);
-    if memchr::memmem::find(head, b"framework").is_some() {
-        words.push(head.to_vec());
-        words.push(arg.to_vec());
-    } else {
-        crate::warn!(
-            "unknown linker option from -add_linker_option ignored, starting with: '{}'",
-            raw(head)
-        );
-    }
-}
-
 /// The command line as parse_args reads it: `index` is the argument it
 /// is on, an option or the last argument of one.
 struct ArgCursor<'a> {
@@ -1543,6 +1503,24 @@ fn read_macos_version_min(cur: &mut ArgCursor, args: &mut Args, st: &mut ParseSt
     args.platform_sdk = minos;
 }
 
+/// Takes the platform and minimum OS version an option names. The last
+/// option wins; ld-prime warns about another minimum version for the
+/// same platform, and about firmware replacing macOS, but refuses
+/// macOS (or another platform) replacing firmware (see check_options).
+fn set_platform(args: &mut Args, st: &mut ParseState, platform: u32, minos: u32) {
+    if args.platform == platform && args.platform_minos != minos {
+        let (old, new) = (format_version(args.platform_minos), format_version(minos));
+        let name = platform_name(platform);
+        crate::warn!("passed two min versions ({old}, {new}) for platform {name}. Using {new}.");
+    } else if args.platform == PLATFORM_MACOS && platform == PLATFORM_FIRMWARE {
+        crate::warn!("conflicting -platform_version platform: macOS, using: firmware");
+    } else if args.platform != 0 && args.platform != platform {
+        st.incompatible_platforms.get_or_insert((args.platform, platform));
+    }
+    args.platform = platform;
+    args.platform_minos = minos;
+}
+
 /// -bundle_loader <executable>: the last one counts; ld-prime reads no
 /// other.
 fn read_bundle_loader(cur: &mut ArgCursor, args: &mut Args, opt: &str) {
@@ -1566,6 +1544,28 @@ fn add_dylib_file(args: &mut Args, arg: &[u8]) {
     );
     let file = PathBuf::from(os_str(&arg[colon + 1..]));
     args.dylib_files.push((arg[..colon].to_vec(), file));
+}
+
+/// Adds an -add_linker_option's words to `words`. ld-prime splits the
+/// option at its first space only for an option that names a framework
+/// (any word with "framework" in it), and takes the rest for its
+/// argument, spaces and all; it ignores any other with a space, and
+/// passes one without on as a word of its own.
+fn add_linker_option(words: &mut Vec<Vec<u8>>, opt: &[u8]) {
+    let Some(space) = memchr::memchr(b' ', opt) else {
+        words.push(opt.to_vec());
+        return;
+    };
+    let (head, arg) = (&opt[..space], &opt[space + 1..]);
+    if memchr::memmem::find(head, b"framework").is_some() {
+        words.push(head.to_vec());
+        words.push(arg.to_vec());
+    } else {
+        crate::warn!(
+            "unknown linker option from -add_linker_option ignored, starting with: '{}'",
+            raw(head)
+        );
+    }
 }
 
 /// -segprot <segment> <max-prot> <init-prot>.
