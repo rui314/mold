@@ -2773,48 +2773,15 @@ fn note_reexport_file<E: Target>(ctx: &mut Context<E>, path: &Path) {
     }
 }
 
-/// A dylib whose re-exports load_reexports loads: its install name and
-/// its file.
-struct ReexportParent<'a> {
-    install_name: &'a [u8],
-    path: &'a Path,
-}
-
-/// Notes for -trace_implicit_libraries the libraries `names` that
-/// `parent` re-exports.
-fn trace_reexports<'a, E: Target>(
-    ctx: &mut Context<E>,
-    parent: &ReexportParent,
-    names: impl Iterator<Item = &'a [u8]>,
-) {
-    use crate::passes::ImplicitTrace;
-    let args = &ctx.args;
-    if !args.trace_implicit_libraries && args.trace_implicit_library.is_empty() {
-        return;
-    }
-    let file = crate::passes::real_path(parent.path).0;
-    for name in names.filter(|name| crate::passes::traces_implicit(args, name)) {
-        let line = crate::error::render(format_args!(
-            "indirect library '{}' from file '{}'",
-            crate::error::raw(name),
-            file.raw()
-        ));
-        let (parent, name) = (parent.install_name.to_vec(), name.to_vec());
-        ctx.implicit_trace.push(ImplicitTrace::Reexport { parent, name, line });
-    }
-}
-
 fn load_reexports<E: Target>(
     ctx: &mut Context<E>,
     reexports: Vec<ReexportRef>,
-    parent: ReexportParent,
+    parent: &Path,
     documents: Vec<tapi::TbdFile>,
     exports: &mut hashbrown::HashSet<&'static [u8]>,
     tlv_exports: &mut hashbrown::HashSet<&'static [u8]>,
     weak_exports: &mut hashbrown::HashSet<&'static [u8]>,
 ) -> LoadedReexports {
-    trace_reexports(ctx, &parent, reexports.iter().map(|r| r.name.as_slice()));
-    let parent = parent.path;
     let mut walk = ReexportWalk {
         queue: reexports,
         pool: documents,
@@ -3264,11 +3231,10 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
     // and rpaths, since @loader_path and @rpath in an install name are
     // relative to the referrer.
     let reexports = ReexportRef::of(reexports, &install_name, &dir_of(&mf.name), &rpaths, 0);
-    let parent = ReexportParent { install_name: &install_name, path: &mf.name };
     let loaded = load_reexports(
         ctx,
         reexports,
-        parent,
+        &mf.name,
         Vec::new(),
         &mut exports,
         &mut tlv_exports,
@@ -4168,11 +4134,10 @@ fn register_tbd<E: Target>(
     let names = tbd.reexports.into_iter().map(<[u8]>::to_vec).collect();
     let name = tbd.install_name;
     let reexports = ReexportRef::of(names, name, &dir_of(path), &[], 0);
-    let parent = ReexportParent { install_name: name, path };
     let loaded = load_reexports(
         ctx,
         reexports,
-        parent,
+        path,
         documents,
         &mut exports,
         &mut tlv_exports,

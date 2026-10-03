@@ -1521,11 +1521,6 @@ pub fn load_autolink_deps<E: Target>(ctx: &mut Context<E>) -> Autolinked {
             obj.linker_options =
                 read_linker_options(&obj.linker_options, || resolved_file_name(mf));
             obj.linker_options_read = true;
-            // ld-prime traces an archive member's hints as it loads it.
-            if mf.parent.is_some() {
-                let lines = autolink_hint_lines(ctx, &ctx.objs[i]);
-                ctx.implicit_trace.extend(lines.into_iter().map(ImplicitTrace::Hint));
-            }
         }
     }
     // ld64 does not act on auto-link options in a -r link: the
@@ -4495,89 +4490,60 @@ pub(crate) fn real_path(name: &Path) -> (PathBuf, Option<&[u8]>) {
     (std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf()), arch)
 }
 
-/// -trace_implicit_libraries: the libraries auto-link options and
-/// re-exports bring in, as ld-prime prints them: the auto-link hints
-/// of the command line's objects as it reads them, then what it loads
-/// for them and for the command line's dylibs, in turn - the libraries
-/// a dylib re-exports, found or not, and the hints of an archive member
-/// as it loads -, and the command line's objects' hints again as it
-/// acts on them. With -trace_implicit_library, only the lines about
-/// the libraries whose names hold one of its names.
+/// -trace_implicit_libraries prints on stdout the libraries the link
+/// brings in on its own: each live object's auto-link hints, and each
+/// library loaded as the re-export of another, with that library's
+/// file. With -trace_implicit_library, only the lines about the
+/// libraries whose names hold one of its names.
 pub fn print_implicit_trace<E: Target>(ctx: &Context<E>) {
-    if !ctx.args.trace_implicit_libraries && ctx.args.trace_implicit_library.is_empty() {
+    let args = &ctx.args;
+    if !args.trace_implicit_libraries && args.trace_implicit_library.is_empty() {
         return;
     }
-    let hints: Vec<Vec<u8>> = ctx
-        .objs
-        .iter()
-        .enumerate()
-        .filter(|&(i, obj)| obj.mf.parent.is_none() && !ctx.is_internal(i) && !ctx.is_lto_obj(i))
-        .flat_map(|(_, obj)| autolink_hint_lines(ctx, obj))
-        .collect();
-    // A re-export is traced of a dylib loaded directly - named or
-    // auto-linked -, and unless it is loaded so itself.
-    let direct: hashbrown::HashSet<&[u8]> =
-        ctx.dylibs.iter().filter(|d| !d.is_implicit).map(|d| d.install_name.as_slice()).collect();
-    let loaded = ctx.implicit_trace.iter().filter_map(|trace| match trace {
-        ImplicitTrace::Hint(line) => Some(line),
-        ImplicitTrace::Reexport { parent, name, line } => (direct.contains(parent.as_slice())
-            && !direct.contains(name.as_slice()))
-        .then_some(line),
-    });
+    let traced = |name: &[u8]| {
+        args.trace_implicit_libraries
+            || args.trace_implicit_library.iter().any(|s| memchr::memmem::find(name, s).is_some())
+    };
     let mut out = Vec::new();
-    for line in hints.iter().chain(loaded).chain(&hints) {
-        out.extend_from_slice(line);
-        out.push(b'\n');
-    }
-    let _ = std::io::Write::write_all(&mut std::io::stdout(), &out);
-}
-
-/// A line of -trace_implicit_libraries (see print_implicit_trace): an
-/// archive member's auto-link hint, or a library a dylib re-exports, by
-/// the install names of both.
-pub enum ImplicitTrace {
-    Hint(Vec<u8>),
-    Reexport { parent: Vec<u8>, name: Vec<u8>, line: Vec<u8> },
-}
-
-/// Whether -trace_implicit_libraries prints a line about the library
-/// `name`.
-pub(crate) fn traces_implicit(args: &crate::cmdline::Args, name: &[u8]) -> bool {
-    args.trace_implicit_libraries
-        || args.trace_implicit_library.iter().any(|s| memchr::memmem::find(name, s).is_some())
-}
-
-/// The -trace_implicit_libraries lines of an object's auto-link hints:
-/// "auto-linking framework hint 'Foo' from file '/abs/a.o'" for
-/// -framework Foo, then "auto-linking library hint 'foo' ..." for -lfoo.
-fn autolink_hint_lines<E: Target>(ctx: &Context<E>, obj: &input_files::ObjectFile) -> Vec<Vec<u8>> {
-    if !ctx.args.trace_implicit_libraries && ctx.args.trace_implicit_library.is_empty() {
-        return Vec::new();
-    }
-    let mut hints: Vec<(bool, &str, &[u8])> = Vec::new();
-    for opt in &obj.linker_options {
-        match opt.as_slice() {
-            [lib] => {
-                let name = ["-hidden-l", "-needed-l", "-lazy-l", "-l"]
+    for obj in ctx.objs.iter().filter(|obj| obj.is_alive) {
+        for opt in &obj.linker_options {
+            let (kind, name) = match opt.as_slice() {
+                [flag, name] if flag.ends_with(b"framework") => ("framework", name.as_slice()),
+                [lib] => match ["-hidden-l", "-needed-l", "-lazy-l", "-l"]
                     .iter()
-                    .find_map(|prefix| lib.strip_prefix(prefix.as_bytes()));
-                if let Some(name) = name {
-                    hints.push((true, "library", name));
-                }
+                    .find_map(|prefix| lib.strip_prefix(prefix.as_bytes()))
+                {
+                    Some(name) => ("library", name),
+                    None => continue,
+                },
+                _ => continue,
+            };
+            if traced(name) {
+                let (name, file) = (raw(name), obj.mf.name.raw());
+                let line = format_args!("auto-linking {kind} hint '{name}' from file '{file}'\n");
+                out.extend(error::render(line));
             }
-            [flag, name] if flag.ends_with(b"framework") => hints.push((false, "framework", name)),
-            _ => {}
         }
     }
-    hints.sort_by_key(|&(is_lib, ..)| is_lib);
-    hints
-        .into_iter()
-        .filter(|&(_, _, name)| traces_implicit(&ctx.args, name))
-        .map(|(_, kind, name)| {
-            let (name, file) = (raw(name), resolved_file_name(obj.mf));
-            error::render(format_args!("auto-linking {kind} hint '{name}' from file '{file}'"))
-        })
-        .collect()
+    // A library re-exported from a private location is merged into the
+    // dylib re-exporting it; one from a public location is a dylib of
+    // its own, unless the link names it itself.
+    let mut seen = hashbrown::HashSet::new();
+    for parent in &ctx.dylibs {
+        let public = (parent.reexported.iter())
+            .map(|edge| &ctx.dylibs[edge.dylib])
+            .filter(|dylib| dylib.is_implicit)
+            .map(|dylib| dylib.install_name.as_slice());
+        let private = parent.merged_reexports.iter().map(Vec::as_slice);
+        for name in private.chain(public) {
+            if traced(name) && seen.insert(name) {
+                let (name, file) = (raw(name), parent.path.raw());
+                let line = format_args!("indirect library '{name}' from file '{file}'\n");
+                out.extend(error::render(line));
+            }
+        }
+    }
+    let _ = std::io::Write::write_all(&mut std::io::stdout(), &out);
 }
 
 /// -assert-weak-l and the like load a dylib weakly but leave its
