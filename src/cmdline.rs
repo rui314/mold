@@ -2982,16 +2982,14 @@ fn libraries_of_kind(inputs: &[InputArg], kind: LibraryKind) -> Vec<&OsStr> {
 /// (or not at all, in an image no dyld loads), bound lazily or not; and
 /// whether it is position independent, emits its initializers as
 /// offsets, or may fix up read-only segments.
-fn resolve_fixups(target: &TargetTraits, args: &mut Args, st: &mut ParseState) {
+fn resolve_fixups(target: &TargetTraits, args: &mut Args, st: &ParseState) {
     // kmutil links a kext by its relocations and slides a -kernel
     // image by its local ones: ld-prime takes neither -fixup_chains nor
     // -no_fixup_chains for them.
-    if args.is_kext() || args.kernel {
-        st.fixup_chains = None;
-    }
-    args.pie = resolve_pie(target, args, st.pie, st.fixup_chains);
-    args.fixup_chains = resolve_fixup_chains(target, args, st.fixup_chains);
-    args.no_fixup_chains = st.fixup_chains == Some(false);
+    let fixup_chains = if args.is_kext() || args.kernel { None } else { st.fixup_chains };
+    args.pie = resolve_pie(target, args, st.pie, fixup_chains);
+    args.fixup_chains = resolve_fixup_chains(target, args, fixup_chains);
+    args.no_fixup_chains = fixup_chains == Some(false);
     args.fixup_chains_section = st.chain_starts.is_some() && args.static_link && args.fixup_chains;
     args.chain_starts_kind = st.chain_starts.unwrap_or(0);
     // ld64 binds lazily below the chained-fixups deployment targets
@@ -3009,9 +3007,9 @@ fn resolve_fixups(target: &TargetTraits, args: &mut Args, st: &mut ParseState) {
     // -static one or a kext (XNU runs the kernel's __mod_init_func
     // itself, and a kext's): it converts only with -init_offsets.
     args.init_offsets |= !args.without_dyld()
-        && st.fixup_chains.unwrap_or_else(|| chained_fixups_by_default(target, args));
+        && fixup_chains.unwrap_or_else(|| chained_fixups_by_default(target, args));
     args.text_relocs = resolve_text_relocs(target, args, st.read_only_relocs);
-    check_fixup_sections(args, st.fixup_chains, st.chain_starts.is_some(), st.rebase_section);
+    check_fixup_sections(args, fixup_chains, st.chain_starts.is_some(), st.rebase_section);
 }
 
 /// Whether an executable is position independent (MH_PIE). It is
