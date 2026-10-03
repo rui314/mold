@@ -1253,9 +1253,7 @@ impl<E: Target> Context<E> {
     /// How a text-relocation diagnostic names the target of relocation
     /// `rel` of object `obj`: by its symbol, or else by the subsection
     /// it points into - as for a label an assembler made for itself on a
-    /// literal (see literal_label_target). A class reference slot folded
-    /// into the GOT is its class's GOT entry, a subsection of ld-prime's
-    /// stubs-got-file (see stubs_got_ordinal); one left in place is a
+    /// literal (see literal_label_target). A class reference slot is a
     /// subsection no label names, whatever labels it has: the copy of it
     /// ld-prime keeps.
     pub fn text_reloc_target_name(
@@ -1263,9 +1261,6 @@ impl<E: Target> Context<E> {
         obj: usize,
         rel: &Reloc,
     ) -> std::borrow::Cow<'static, [u8]> {
-        if let Some(class) = self.folded_classref_target(obj, rel) {
-            return format!("anon-{}", self.stubs_got_ordinal(class)).into_bytes().into();
-        }
         if let Some(isec) = self.reloc_target_isec(obj, rel)
             && self.hdr_of(&self.isecs[isec]).sectname() == b"__objc_classrefs"
         {
@@ -1283,77 +1278,6 @@ impl<E: Target> Context<E> {
         }
     }
 
-    /// The class whose GOT entry stands in for the class reference slot
-    /// relocation `rel` of object `obj` points to, if the slot is folded
-    /// into the GOT (see objc::fold_objc_classrefs).
-    fn folded_classref_target(&self, obj: usize, rel: &Reloc) -> Option<SymbolId> {
-        let slot = match rel.target() {
-            RelocTarget::Sym(idx) => {
-                self.symbols[self.objs[obj].symbols[idx as usize]].input_section()? as usize
-            }
-            RelocTarget::Section(idx) => idx as usize,
-        };
-        let isec = &self.isecs[slot];
-        if self.hdr_of(isec).sectname() != b"__objc_classrefs" {
-            return None;
-        }
-        let stand_in = self.got.stand_ins.iter().find(|&&(id, _)| id == isec.replacement)?;
-        Some(stand_in.1)
-    }
-
-    /// The number ld-prime gives `class`'s GOT entry among the
-    /// subsections of its "stubs-got-file", the N of its "anon-N". It
-    /// makes them as it meets the references, object by object in
-    /// address order: two for each GOT entry, and one for a stub, after
-    /// its GOT entry's. A lazy stub has no GOT entry but a lazy pointer
-    /// and a stub helper entry, three subsections in all, after the four
-    /// of the stub helper's header.
-    fn stubs_got_ordinal(&self, class: SymbolId) -> usize {
-        use crate::target::RelocClass;
-        let mut with_got = hashbrown::HashSet::new();
-        let mut with_stub = hashbrown::HashSet::new();
-        let mut has_helper = false;
-        let mut n = 0;
-        for (obj_idx, obj) in self.objs.iter().enumerate().filter(|(_, obj)| obj.is_alive) {
-            let mut subs = obj.subsecs.clone();
-            subs.sort_unstable_by_key(|&i| (self.isecs[i].shndx, self.isecs[i].input_addr));
-            for isec in subs {
-                let isec = isec as usize;
-                if !self.isecs[isec].is_alive() {
-                    continue;
-                }
-                for rel in self.isec_relocs(isec) {
-                    let (id, kind) = match self.folded_classref_target(obj_idx, rel) {
-                        Some(id) => (id, RelocClass::Got),
-                        None => match self.reloc_target_sym(obj_idx, rel) {
-                            Some(id) => (id, E::classify_reloc(rel.r_type)),
-                            None => continue,
-                        },
-                    };
-                    let aux = self.sym_aux(id);
-                    let stub = kind == RelocClass::Branch && aux.stub_idx != crate::symbol::NO_IDX;
-                    let lazy = stub && self.stubs.lazy.contains(&aux.stub_idx);
-                    let got = aux.got_idx != crate::symbol::NO_IDX
-                        && (matches!(kind, RelocClass::Got | RelocClass::GotLoad) || stub && !lazy);
-                    if got && with_got.insert(id) {
-                        if id == class {
-                            return n;
-                        }
-                        n += 2;
-                    }
-                    if stub && with_stub.insert(id) {
-                        if lazy && !has_helper {
-                            n += 4;
-                            has_helper = true;
-                        }
-                        n += if lazy { 3 } else { 1 };
-                    }
-                }
-            }
-        }
-        n
-    }
-
     /// The literal (subsection of object `obj`) relocation `rel` points
     /// into through a label a compiler or assembler made for itself (see
     /// input_files::is_private_label) on literals ld-prime merges by
@@ -1362,8 +1286,6 @@ impl<E: Target> Context<E> {
     fn literal_label_target(&self, obj: usize, rel: &Reloc) -> Option<usize> {
         let RelocTarget::Sym(idx) = rel.target() else { return None };
         let obj = &self.objs[obj];
-        // A symbol the linker gave the object has no nlist (see
-        // name_classref_targets).
         let nlist = obj.nlists.get(idx as usize)?;
         let name = self.symbols[obj.symbols[idx as usize]].name();
         if nlist.is_stab()

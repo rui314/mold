@@ -21,10 +21,8 @@ pub struct GotSection {
     pub weak_hdr: ChunkHeader,
     pub weak_start: usize,
     /// Synthetic subsections standing for __got slots that absorbed
-    /// input pointers - __objc_classrefs entries (see
-    /// fold_objc_classrefs) and an input __got's slots (see
-    /// fold_input_got) - with their symbols; they are placed at the
-    /// symbols' slots once the section exists.
+    /// an input __got's slots (see fold_input_got), with their symbols;
+    /// they are placed at the symbols' slots once the section exists.
     pub stand_ins: Vec<(u32, SymbolId)>,
     /// The slots of the inputs' __got that are no plain pointer to a
     /// symbol (see fold_input_got), after the symbols' slots in __got:

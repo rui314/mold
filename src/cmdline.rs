@@ -2928,7 +2928,7 @@ fn resolve_defaults(target: &TargetTraits, args: &mut Args, st: &ParseState) {
     // deployment target. It optimizes the Objective-C of no image dyld
     // doesn't load (a -static or -preload one, a kext): it converts no
     // method list there, whatever the option says, and merges no
-    // category (nor folds a class reference, see fold_objc_classrefs).
+    // category.
     args.objc_relative_method_lists = !args.without_dyld()
         && st.objc_relative_method_lists.unwrap_or(
             (target.name == "arm64" || args.output_type != MH_EXECUTE)

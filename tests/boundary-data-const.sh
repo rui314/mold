@@ -4,10 +4,9 @@ source "$(dirname "$0")"/common.inc
 # A section$start$ or section$end$ symbol naming a pointer section only
 # the linker makes finds it where ld-prime puts its own: __auth_got,
 # __weak_got and __weak_auth_got in __DATA_CONST, and in the shared
-# region __la_symbol_ptr too. From macOS 15 on, the class references
-# fold into __got, and __objc_classrefs - empty now - moves to
-# __DATA_CONST with the other reference lists; before, it stays in
-# __DATA with the references in it.
+# region __la_symbol_ptr too. From macOS 14.4 on, __objc_classrefs
+# moves to __DATA_CONST with the other reference lists; before, it
+# stays in __DATA.
 cat <<'EOF' | $CC -o $t/a.o -c -xc - -mmacosx-version-min=14.0
 #include <stdio.h>
 extern char auth_got __asm("section$start$__DATA$__auth_got");
@@ -40,10 +39,10 @@ $CC --ld-path=$mold -o $t/exe15 $t/a.o $t/b.o -framework Foundation -mmacosx-ver
 sects $t/exe15 > $t/sects15
 grep -q '^__DATA_CONST,__auth_got 0x0*0 0x00000006$' $t/sects15
 grep -q '^__DATA_CONST,__weak_got 0x0*0 0x00000006$' $t/sects15
-grep -q '^__DATA_CONST,__objc_classrefs 0x0*0 ' $t/sects15
+grep -q '^__DATA_CONST,__objc_classrefs 0x0*10 ' $t/sects15
 not grep -q '^__DATA,__objc_classrefs' $t/sects15
 $t/exe15 > $t/out15
-grep -q ' 0$' $t/out15
+grep -q ' 16$' $t/out15
 
 $CC --ld-path=$mold -o $t/exe14 $t/a.o $t/b.o -framework Foundation -mmacosx-version-min=14.0
 sects $t/exe14 > $t/sects14

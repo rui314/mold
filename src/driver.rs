@@ -217,7 +217,6 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     passes::scan_unwind_personalities(&mut ctx);
     objc::scan_objc_stubs(&mut ctx);
     passes::fold_input_got(&mut ctx);
-    objc::fold_objc_classrefs(&mut ctx);
     objc::convert_objc_method_lists(&mut ctx);
     objc::merge_objc_categories(&mut ctx);
     // Synthetic stubs and unwind data can introduce library references

@@ -1,13 +1,12 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# From macOS 15 on, a class reference folds into the GOT, and loads of
-# a class the image defines relax to computing its address (adrp+add)
-# with no slot left. ld-prime does so only if every adrp of the class's
-# slot, in every object, is followed in its function by one @PAGEOFF
-# use before the next: code that loads twice through one adrp (as -O0
-# code can) keeps a rebased GOT slot for the class, and then every
-# load of it, even a well-paired one, reads that slot.
+# Code loads a class through its __objc_classrefs slot: an adrp and an
+# ldr of each load, or one adrp for two loads (as -O0 code can), and it
+# may take the slot's address. Each works at any deployment target.
+# (From macOS 15 on, ld-prime folds the slots into __got and relaxes
+# the loads of a class the image defines where every adrp pairs with
+# one load.)
 [ "$ARCH" = arm64 ] || skip
 
 cat <<EOF | $CC -o $t/a.o -c -xobjective-c -fno-objc-arc -
@@ -57,22 +56,8 @@ $addr
 EOF
 done
 
-got_rebases() { dyld_info -fixups $1 | grep '__got' | grep -c rebase; }
-foo_class_load() {
-  otool -tV $1 | sed -n '/^_foo_class:/,/ret/p' | grep -Eo $'\t(ldr|add)\tx0' | cut -f2
-}
-
-$CC --ld-path=$mold -o $t/exe1 $t/a.o $t/b1.o -framework Foundation -mmacosx-version-min=15.0
-$t/exe1 | grep -q '^Foo 1$'
-[ "$(got_rebases $t/exe1)" = 0 ]
-[ "$(foo_class_load $t/exe1)" = add ]
-
-$CC --ld-path=$mold -o $t/exe2 $t/a.o $t/b2.o -framework Foundation -mmacosx-version-min=15.0
-$t/exe2 | grep -q '^Foo 1$'
-[ "$(got_rebases $t/exe2)" = 1 ]
-[ "$(foo_class_load $t/exe2)" = ldr ]
-
-$CC --ld-path=$mold -o $t/exe3 $t/a.o $t/b3.o -framework Foundation -mmacosx-version-min=15.0
-$t/exe3 | grep -q '^Foo 1$'
-[ "$(got_rebases $t/exe3)" = 1 ]
-[ "$(foo_class_load $t/exe3)" = add ]
+for v in 1 2 3; do
+  $CC --ld-path=$mold -o $t/exe$v $t/a.o $t/b$v.o -framework Foundation -mmacosx-version-min=15.0
+  $t/exe$v | grep -q '^Foo 1$'
+  otool -l $t/exe$v | grep -q 'sectname __objc_classrefs'
+done

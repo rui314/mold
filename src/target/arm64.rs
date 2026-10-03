@@ -830,31 +830,6 @@ impl Target for Arm64 {
         !matches!(r_type, ARM64_RELOC_UNSIGNED | ARM64_RELOC_SUBTRACTOR)
     }
 
-    // Both halves of an adrp+ldr GOT load relax together: the adrp
-    // keeps its shape and the ldr becomes an add. So the page half is
-    // always relaxable, and the offset half is if it is an ldr (of 64
-    // or 32 bits; ld-prime relaxes both); an add under it takes the
-    // slot's address and keeps the slot.
-    fn got_load_form(r_type: u8) -> Option<u8> {
-        match r_type {
-            ARM64_RELOC_PAGE21 => Some(ARM64_RELOC_GOT_LOAD_PAGE21),
-            ARM64_RELOC_PAGEOFF12 => Some(ARM64_RELOC_GOT_LOAD_PAGEOFF12),
-            _ => None,
-        }
-    }
-
-    fn can_relax_got_load(data: &[u8], offset: u32, r_type: u8) -> bool {
-        r_type != ARM64_RELOC_GOT_LOAD_PAGEOFF12 || is_ldr_imm(read32(&data[offset as usize..]))
-    }
-
-    fn page_pair_half(r_type: u8) -> Option<bool> {
-        match r_type {
-            ARM64_RELOC_PAGE21 | ARM64_RELOC_GOT_LOAD_PAGE21 => Some(true),
-            ARM64_RELOC_PAGEOFF12 | ARM64_RELOC_GOT_LOAD_PAGEOFF12 => Some(false),
-            _ => None,
-        }
-    }
-
     fn completes_page_pair(page: &Reloc, lo: &Reloc, data: &[u8]) -> bool {
         let lo_type = match page.r_type {
             ARM64_RELOC_PAGE21 => ARM64_RELOC_PAGEOFF12,

@@ -6,8 +6,6 @@
 //! - create_objc_msgsend_stubs and scan_objc_stubs synthesize the
 //!   _objc_msgSend$<selector> stubs, whose selector references take
 //!   over the inputs' (chunks/objc_stubs.rs writes them).
-//! - fold_objc_classrefs turns class references into GOT entries
-//!   (macOS 15 on).
 //! - convert_objc_method_lists rewrites the method lists in the
 //!   relative form (macOS 11 on; chunks/objc_methlist.rs writes them).
 //! - merge_objc_categories merges the categories of a class defined in
@@ -23,9 +21,7 @@ use crate::context::Context;
 use crate::input_files::FileId;
 use crate::input_sections::{InputSection, RelocTarget};
 use crate::macho::*;
-use crate::passes::{
-    absorb_got_slots, add_branch_target, add_got, pointer_target, redirect_symbols_to_replacements,
-};
+use crate::passes::{add_branch_target, redirect_symbols_to_replacements};
 use crate::target::RelocClass;
 use crate::target::Target;
 use crate::util::align_to;
@@ -316,10 +312,8 @@ pub(crate) fn cstring_of(data: &[u8]) -> &[u8] {
 /// __cfstring constants. ld64 keeps one of each in a final link
 /// (NetNewsWire's debug dylib had 592 selector references too many);
 /// the first copy wins and the rest redirect to it, like merged
-/// literals. (A -r link leaves them all to the final link.) A final
-/// link from macOS 15 on leaves class references to
-/// fold_objc_classrefs, which turns them into GOT slots (and coalesces
-/// those nothing refers to). __objc_superrefs and __objc_protorefs
+/// literals. (A -r link leaves them all to the final link.)
+/// __objc_superrefs and __objc_protorefs
 /// entries of one class or protocol coalesce too, but for those a
 /// symbol names (see mark_labeled_literals).
 pub fn coalesce_objc_refs<E: Target>(ctx: &mut Context<E>) {
@@ -377,7 +371,6 @@ pub fn coalesce_objc_refs<E: Target>(ctx: &mut Context<E>) {
                 && !rel.is_subtracted
         };
         let key = match h.sectname() {
-            b"__objc_classrefs" if folds_objc_classrefs(ctx) => continue,
             b"__objc_selrefs" if h.section_type() != S_LITERAL_POINTERS => continue,
             b"__objc_selrefs" | b"__objc_classrefs" => {
                 if isec.size != 8 || rels.len() != 1 || !plain_ptr(&rels[0]) {
@@ -605,297 +598,6 @@ fn absorb_selrefs<E: Target>(ctx: &mut Context<E>, absorbed: Vec<(u32, u32)>) {
         let s = &mut ctx.isecs[synth as usize];
         s.p2align = s.p2align.max(p2align);
     }
-}
-
-/// Folds __objc_classrefs into __got, as ld-prime does from a
-/// deployment target of macOS 15 on. A class reference is an 8-byte
-/// slot holding a class's address, fixed up by dyld - exactly what a
-/// GOT entry for the class symbol is. So the code that loads a class
-/// from its slot (adrp/ldr on arm64, a RIP-relative mov on x86-64) is
-/// retargeted at the class symbol as a GOT load: an imported class is
-/// then read from its GOT entry, shared by every reference in the
-/// image, and a class defined in the image relaxes to computing the
-/// address directly (adrp/add, lea), needing no slot at all. The image
-/// has no __objc_classrefs section and none of the slots' local
-/// symbols (_OBJC_CLASSLIST_REFERENCES_$_n); the runtime only ever
-/// read the section to remap references to swapped classes, which
-/// macOS 15's dyld handles through the GOT. ld-prime turned
-/// NetNewsWire's 581 class references into 168 GOT entries.
-///
-/// A reference that cannot become a GOT load (the slot's address
-/// taken, or a pointer to it) keeps the slot: it is replaced by a
-/// synthetic subsection standing for the class's GOT entry.
-///
-/// What folds is what is referenced, whatever the slot points at (a
-/// class or not): ld-prime rewrites the references to the slots it
-/// has coalesced, one per class. The slot of a class nothing refers
-/// to through one stays in __objc_classrefs, and its class gets no
-/// GOT entry.
-///
-/// On arm64 ld-prime relaxes a class's loads only if each adrp of its
-/// slot is followed, within the function, by one @PAGEOFF use before
-/// the next adrp of it (-O0 code can load twice through one adrp). If
-/// any reference of the class's, in any object, pairs up otherwise,
-/// no reference is rewritten: the slot moves to the GOT and every
-/// load reads it there.
-///
-/// A slot may point at its class section-relatively, as an x86-64
-/// object refers to a class only a temporary (L) label names; ld-prime
-/// folds it all the same (see name_classref_targets).
-pub fn fold_objc_classrefs<E: Target>(ctx: &mut Context<E>) {
-    if !folds_objc_classrefs(ctx) {
-        return;
-    }
-    name_classref_targets(ctx);
-    let slots: Vec<_> = (0..ctx.objs.len()).map(|i| classref_slots(ctx, i)).collect();
-    let uses: Vec<_> = (0..ctx.objs.len()).map(|i| classref_uses(ctx, i, &slots[i])).collect();
-    let mut unpaired = hashbrown::HashSet::new();
-    let pairs: Vec<_> =
-        (0..ctx.objs.len()).map(|i| pair_classref_uses(ctx, i, &uses[i], &mut unpaired)).collect();
-    let referenced: hashbrown::HashSet<_> = uses.iter().flatten().map(|u| u.class).collect();
-    let mut unreferenced: hashbrown::HashMap<crate::symbol::SymbolId, u32> =
-        hashbrown::HashMap::new();
-    let mut coalesced = false;
-    let mut absorbed = Vec::new();
-    for obj_idx in 0..ctx.objs.len() {
-        let slots = &slots[obj_idx];
-        if slots.is_empty() {
-            continue;
-        }
-
-        // Retarget the loads; note the slots something else refers to.
-        // A pair's halves go together, as its offset half decides.
-        let mut keep: hashbrown::HashSet<u32> = hashbrown::HashSet::new();
-        let partner: hashbrown::HashMap<usize, usize> =
-            pairs[obj_idx].iter().flat_map(|&(page, off)| [(page, off), (off, off)]).collect();
-        for u in &uses[obj_idx] {
-            let rel = ctx.objs[obj_idx].relocs[u.k];
-            let decider = ctx.objs[obj_idx].relocs[partner.get(&u.k).copied().unwrap_or(u.k)];
-            let data = ctx.isecs[u.isec as usize].data();
-            match (E::got_load_form(rel.r_type), E::got_load_form(decider.r_type)) {
-                (Some(form), Some(dform))
-                    if !unpaired.contains(&u.class)
-                        && E::can_relax_got_load(data, decider.offset, dform) =>
-                {
-                    let r = &mut ctx.objs[obj_idx].relocs[u.k];
-                    r.r_type = form;
-                    r.set_target(RelocTarget::Sym(slots[&u.slot].0));
-                }
-                _ => {
-                    keep.insert(u.slot);
-                }
-            }
-        }
-
-        // In input order: the GOT slots the classes get (and with
-        // them the slot addresses every load encodes) follow the
-        // object's class-reference order, not the hash map's, which
-        // hashbrown seeds afresh for every process.
-        let mut ordered: Vec<(u32, crate::symbol::SymbolId)> =
-            slots.iter().map(|(&slot, &(_, class))| (slot, class)).collect();
-        ordered.sort_unstable_by_key(|&(slot, _)| slot);
-        for (slot, class) in ordered {
-            if !referenced.contains(&class) {
-                // Coalesced, as below macOS 15: the first slot stays.
-                let first = *unreferenced.entry(class).or_insert(slot);
-                if first != slot {
-                    ctx.isecs[slot as usize].replacement = first;
-                    coalesced = true;
-                }
-                continue;
-            }
-            // (A lazy dylib's class is loaded through a lazy-load
-            // helper instead: see passes::create_lazy_loads.)
-            let imported = ctx.symbols[class].is_imported() && !ctx.is_lazy_import(class);
-            if imported || keep.contains(&slot) {
-                add_got(ctx, class);
-            }
-            if !keep.contains(&slot) {
-                ctx.isecs[slot as usize].set_alive(false);
-                continue;
-            }
-            absorbed.push((slot, class));
-        }
-    }
-    absorb_got_slots(ctx, absorbed);
-    if coalesced {
-        redirect_symbols_to_replacements(ctx);
-    }
-}
-
-/// Whether the link folds class references into __got: a final link
-/// for macOS 15 or later (see fold_objc_classrefs), of an image dyld
-/// loads (ld-prime optimizes the Objective-C of no other). From macOS
-/// 14.4 on they are read-only after fixups all the same (see
-/// objc_refs_are_const).
-fn folds_objc_classrefs<E: Target>(ctx: &Context<E>) -> bool {
-    !ctx.args.relocatable
-        && !ctx.args.without_dyld()
-        && ctx.args.platform == PLATFORM_MACOS
-        && ctx.args.platform_minos >= encode_version(15, 0, 0)
-}
-
-/// Names by a symbol of its object, anonymous and in no symbol table, the
-/// class each class-reference slot points at section-relatively, for
-/// fold_objc_classrefs to fold the slot as it does one naming a symbol;
-/// the slots of an object pointing at one class share it. A slot that
-/// points into the middle of a subsection is left alone and keeps its
-/// slot: ld-prime folds it to the start of its subsection, losing the
-/// offset.
-fn name_classref_targets<E: Target>(ctx: &mut Context<E>) {
-    for obj_idx in 0..ctx.objs.len() {
-        let obj = &ctx.objs[obj_idx];
-        if !obj.is_alive
-            || !obj
-                .sect_hdrs
-                .iter()
-                .any(|h| h.segname() == b"__DATA" && h.sectname() == b"__objc_classrefs")
-        {
-            continue;
-        }
-        let mut named: hashbrown::HashMap<u32, u32> = hashbrown::HashMap::new();
-        for k in 0..ctx.objs[obj_idx].subsecs.len() {
-            let i = ctx.objs[obj_idx].subsecs[k] as usize;
-            let isec = &ctx.isecs[i];
-            let h = ctx.hdr_of(isec);
-            if !isec.is_alive()
-                || isec.replacement != crate::input_sections::NO_REPLACEMENT
-                || h.segname() != b"__DATA"
-                || h.sectname() != b"__objc_classrefs"
-                || isec.size != 8
-            {
-                continue;
-            }
-            let rel_idx = isec.rel_offset as usize;
-            let [rel] = ctx.isec_relocs(i) else { continue };
-            let RelocTarget::Section(class) = rel.target() else { continue };
-            if E::classify_reloc(rel.r_type) != RelocClass::Plain
-                || rel.addend != 0
-                || rel.size != 8
-                || rel.is_pcrel
-                || rel.is_subtracted
-            {
-                continue;
-            }
-            let idx = *named.entry(class).or_insert_with(|| {
-                let mut sym = crate::symbol::Symbol::new(b"");
-                sym.set_file(FileId::Obj(obj_idx as u32));
-                sym.set_input_section(Some(class));
-                ctx.symbols.syms.push(sym);
-                let obj = &mut ctx.objs[obj_idx];
-                obj.symbols.push((ctx.symbols.syms.len() - 1) as u32);
-                (obj.symbols.len() - 1) as u32
-            });
-            ctx.objs[obj_idx].relocs[rel_idx].set_target(RelocTarget::Sym(idx));
-        }
-    }
-}
-
-/// An object's class-reference slots: slot subsection -> the class
-/// symbol (its index in the object, and globally).
-fn classref_slots<E: Target>(
-    ctx: &Context<E>,
-    obj_idx: usize,
-) -> hashbrown::HashMap<u32, (u32, crate::symbol::SymbolId)> {
-    let mut slots = hashbrown::HashMap::new();
-    if !ctx.objs[obj_idx].is_alive {
-        return slots;
-    }
-    for &i in &ctx.objs[obj_idx].subsecs {
-        let isec = &ctx.isecs[i];
-        if !isec.is_alive() || isec.replacement != crate::input_sections::NO_REPLACEMENT {
-            continue;
-        }
-        let h = ctx.hdr_of(isec);
-        if h.segname() != b"__DATA" || h.sectname() != b"__objc_classrefs" {
-            continue;
-        }
-        if let Some(idx) = pointer_target(ctx, i as usize) {
-            slots.insert(i, (idx, ctx.objs[obj_idx].symbols[idx as usize]));
-        }
-    }
-    slots
-}
-
-/// A reference to a class-reference slot: relocation `k` of the
-/// object, in subsection `isec`.
-struct ClassrefUse {
-    isec: u32,
-    k: usize,
-    slot: u32,
-    class: crate::symbol::SymbolId,
-}
-
-/// The references an object's code and data make to its class-reference
-/// slots, in subsection and then address order.
-fn classref_uses<E: Target>(
-    ctx: &Context<E>,
-    obj_idx: usize,
-    slots: &hashbrown::HashMap<u32, (u32, crate::symbol::SymbolId)>,
-) -> Vec<ClassrefUse> {
-    let mut uses = Vec::new();
-    if slots.is_empty() {
-        return uses;
-    }
-    let obj = &ctx.objs[obj_idx];
-    for &i in &obj.subsecs {
-        let isec = &ctx.isecs[i];
-        if !isec.is_alive() || slots.contains_key(&i) {
-            continue;
-        }
-        for k in isec.rel_offset as usize..(isec.rel_offset + isec.nrels) as usize {
-            let rel = obj.relocs[k];
-            let slot = match rel.target() {
-                RelocTarget::Section(t) if rel.addend == 0 => t,
-                RelocTarget::Sym(idx) => {
-                    let sym = &ctx.symbols[obj.symbols[idx as usize]];
-                    match sym.input_section() {
-                        Some(t) if sym.value == 0 && rel.addend == 0 => t,
-                        _ => continue,
-                    }
-                }
-                _ => continue,
-            };
-            if let Some(&(_, class)) = slots.get(&slot) {
-                uses.push(ClassrefUse { isec: i, k, slot, class });
-            }
-        }
-    }
-    uses
-}
-
-/// Pairs an object's page-and-offset references to class slots (arm64's
-/// adrp then ldr or add), each page half with the next offset half of
-/// the same class in its subsection, and returns the pairs' relocation
-/// indices. A class with a half left over joins `unpaired`.
-fn pair_classref_uses<E: Target>(
-    ctx: &Context<E>,
-    obj_idx: usize,
-    uses: &[ClassrefUse],
-    unpaired: &mut hashbrown::HashSet<crate::symbol::SymbolId>,
-) -> Vec<(usize, usize)> {
-    let mut pairs = Vec::new();
-    let mut open: hashbrown::HashMap<crate::symbol::SymbolId, usize> = hashbrown::HashMap::new();
-    for (n, u) in uses.iter().enumerate() {
-        match E::page_pair_half(ctx.objs[obj_idx].relocs[u.k].r_type) {
-            Some(true) => {
-                if open.insert(u.class, u.k).is_some() {
-                    unpaired.insert(u.class);
-                }
-            }
-            Some(false) => match open.remove(&u.class) {
-                Some(page) => pairs.push((page, u.k)),
-                None => {
-                    unpaired.insert(u.class);
-                }
-            },
-            None => {}
-        }
-        if uses.get(n + 1).is_none_or(|next| next.isec != u.isec) {
-            unpaired.extend(open.drain().map(|(class, _)| class));
-        }
-    }
-    pairs
 }
 
 /// Rewrites the Objective-C method lists in the relative form, as

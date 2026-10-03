@@ -187,31 +187,6 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
     /// How LC_SEGMENT_SPLIT_INFO records a relocation type's reference.
     fn split_ref(r_type: u8) -> SplitRef;
 
-    /// True if a relocation of GOT-load type `r_type` at `offset` sits
-    /// on an instruction that loads the pointer, not one that computes
-    /// its address: the class-reference fold (objc.rs) turns only such
-    /// a reference to a slot into a GOT load. An object's own GOT loads
-    /// of a local symbol relax whatever the instruction, or ld-prime
-    /// refuses them.
-    fn can_relax_got_load(data: &[u8], offset: u32, r_type: u8) -> bool;
-
-    /// The GOT-load form of a plain relocation that loads a pointer
-    /// from a data slot (adrp/ldr, or a RIP-relative mov): the type a
-    /// reference to an __objc_classrefs slot is rewritten to when the
-    /// slot folds into __got, so that the ordinary GOT-load handling
-    /// then loads the class from its GOT entry or, for a class defined
-    /// in the image, relaxes the load to its address. None for other
-    /// relocation types.
-    fn got_load_form(r_type: u8) -> Option<u8>;
-
-    /// Which half of a two-instruction address or load a relocation
-    /// is: Some(true) for the page (arm64's adrp), Some(false) for the
-    /// offset into it (the ldr or add that follows); None for one that
-    /// stands alone (x86-64's RIP-relative references).
-    fn page_pair_half(_r_type: u8) -> Option<bool> {
-        None
-    }
-
     /// Whether relocation `lo` of a subsection with contents `data`
     /// completes `page`, the one before it, into one reference, as
     /// ld-prime reads them: an arm64 adrp and the add, ldr or str right

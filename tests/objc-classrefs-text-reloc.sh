@@ -1,13 +1,11 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# A class reference slot folded into the GOT (macOS 15 on) is its
-# class's GOT entry, which ld-prime makes a subsection of its own
-# stubs-got-file, and so a text relocation to the slot names it
-# anon-N. It makes those subsections as it meets the references, object
-# by object in address order: two for each GOT entry, and one for each
-# stub, after its GOT entry's. Here puts's GOT entry and stub take
-# anon-0 to anon-2, NSString's entry anon-3 and NSObject's anon-5.
+# A pointer in read-only data to a class reference slot is a text
+# relocation, which fails the link. The slot is a subsection of its
+# object that no label names, whatever its labels, at any deployment
+# target. (From macOS 15 on ld-prime folds it into the GOT, and names
+# its class's GOT entry instead.)
 if [ $ARCH = arm64 ]; then
   load() { printf 'adrp x0, %s@PAGE\n  ldr x0, [x0, %s@PAGEOFF]\n' $1 $1; }
   call='bl _puts'
@@ -54,20 +52,13 @@ LCR:
 .subsections_via_symbols
 EOF
 
+# In a.o, _main is anon-0, LCR1 anon-1 and LCR2 anon-2.
 not $CC --ld-path=$mold -o $t/exe $t/a.o -framework Foundation -mmacosx-version-min=15.0 \
   2> $t/log
-grep -q "text-relocation in '_ptr' (.*/a.o) to 'anon-5'" $t/log
-grep -q "text-relocation in '_ptr'+0x8 (.*/a.o) to 'anon-3'" $t/log
+grep -q "text-relocation in '_ptr' (.*/a.o) to 'anon-1'" $t/log
+grep -q "text-relocation in '_ptr'+0x8 (.*/a.o) to 'anon-2'" $t/log
 
-# The objects' order is the references'.
-not $CC --ld-path=$mold -o $t/exe $t/b.o $t/a.o -framework Foundation \
-  -mmacosx-version-min=15.0 2> $t/log
-grep -q "text-relocation in '_ptr' (.*/a.o) to 'anon-0'" $t/log
-grep -q "text-relocation in '_ptr'+0x8 (.*/a.o) to 'anon-5'" $t/log
-
-# Below macOS 15 a slot stays in place, a subsection of its object
-# that no label names, whatever its labels: in a.o, _main is anon-0,
-# LCR1 anon-1 and LCR2 anon-2.
+# Whatever the objects' order.
 not $CC --ld-path=$mold -o $t/exe $t/b.o $t/a.o -framework Foundation \
   -mmacosx-version-min=14.0 2> $t/log
 grep -q "text-relocation in '_ptr' (.*/a.o) to 'anon-1'" $t/log
