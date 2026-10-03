@@ -859,17 +859,24 @@ pub fn convert_objc_method_lists<E: Target>(ctx: &mut Context<E>) {
 }
 
 /// Every method list the runtime would visit, each once, in the order
-/// the list sections lead to them. Blocks of the subsections are
+/// the list sections lead to them. Blocks of the list subsections are
 /// followed in parallel, one not knowing what the others visit, and the
 /// first visit of each list counts.
 fn runtime_method_lists<E: Target>(ctx: &Context<E>) -> Vec<u32> {
-    const BLOCK: u32 = 4096;
-    let n = ctx.isecs.len() as u32;
-    let found: Vec<Vec<u32>> = (0..n.div_ceil(BLOCK))
-        .into_par_iter()
+    // The sections visit_list_section follows.
+    let sects: [&[u8]; 7] = [
+        b"__objc_classlist",
+        b"__objc_nlclslist",
+        b"__objc_catlist",
+        b"__objc_catlist2",
+        b"__objc_nlcatlist",
+        b"__objc_protolist",
+        b"__objc_clsrolist",
+    ];
+    let found: Vec<Vec<u32>> = (subsecs_of_sections(ctx, &sects).par_chunks(16))
         .map(|block| {
             let mut found = MethodListFinder::default();
-            for i in block * BLOCK..n.min((block + 1) * BLOCK) {
+            for &(i, _) in block {
                 found.visit_list_section(ctx, i);
             }
             found.lists
@@ -978,15 +985,10 @@ impl SelrefFinder {
     /// The inputs' selector references are found in parallel; the first
     /// to a selector string is the one its relative entries use.
     fn new<E: Target>(ctx: &Context<E>) -> Self {
-        let refs: Vec<(u32, u32)> = (0..ctx.isecs.len() as u32)
-            .into_par_iter()
-            .filter_map(|i| {
-                let isec = &ctx.isecs[i];
-                if !isec.is_alive() || ctx.is_internal(isec.file as usize) || isec.size != 8 {
-                    return None;
-                }
-                let h = ctx.hdr_of(isec);
-                if h.sectname() != b"__objc_selrefs" || h.section_type() != S_LITERAL_POINTERS {
+        let refs: Vec<(u32, u32)> = (subsecs_of_sections(ctx, &[b"__objc_selrefs"]).par_iter())
+            .filter_map(|&(i, _)| {
+                let isec = &ctx.isecs[i as usize];
+                if isec.size != 8 || ctx.hdr_of(isec).section_type() != S_LITERAL_POINTERS {
                     return None;
                 }
                 match objc_ref_location(ctx, objc_pointer_at(ctx, i, 0)?) {
