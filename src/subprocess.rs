@@ -1,7 +1,9 @@
 //! Process management: forking a child to hide exit latency, and
 //! signal handling that removes a partial output file.
 
-use std::os::unix::io::{AsRawFd, FromRawFd, OwnedFd};
+use std::fs::File;
+use std::io::{Read, Write};
+use std::os::unix::io::{FromRawFd, OwnedFd};
 use std::sync::Mutex;
 
 static PIPE_WRITER: Mutex<Option<OwnedFd>> = Mutex::new(None);
@@ -31,8 +33,7 @@ pub fn fork_child() {
         if pid > 0 {
             // Parent
             drop(writer);
-            let mut buf = [0u8; 1];
-            if libc::read(reader.as_raw_fd(), buf.as_mut_ptr().cast(), 1) == 1 {
+            if File::from(reader).read_exact(&mut [0u8]).is_ok() {
                 libc::_exit(0);
             }
             let mut status = 0;
@@ -56,11 +57,7 @@ pub fn notify_parent() {
     let Some(writer) = PIPE_WRITER.lock().unwrap().take() else {
         return;
     };
-    let buf = [1u8];
-    // SAFETY: writer owns a valid pipe write end.
-    unsafe {
-        libc::write(writer.as_raw_fd(), buf.as_ptr().cast(), 1);
-    }
+    let _ = File::from(writer).write_all(&[1]);
 }
 
 extern "C" fn on_signal(
