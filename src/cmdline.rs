@@ -2772,14 +2772,15 @@ fn resolve_defaults(target: &TargetTraits, args: &mut Args, st: &ParseState) {
         );
     args.objc_category_merging &= !args.without_dyld();
 
+    // A -preload image aligns its common symbols to 256 bytes at most.
+    args.max_default_common_align =
+        st.max_default_common_align.unwrap_or(if args.preload { 8 } else { 15 });
+
     // A -preload image has no __LINKEDIT segment: ld-prime keeps nothing
     // outside its segments but the symbol table (and the local
     // relocations of a -pie one). The options asking for the code
     // tables, a build or source version or a signature go unheeded, as
     // does -rpath, which only dyld would read.
-    // A -preload image aligns its common symbols to 256 bytes at most.
-    args.max_default_common_align =
-        st.max_default_common_align.unwrap_or(if args.preload { 8 } else { 15 });
     if args.preload {
         args.function_starts = false;
         args.data_in_code_info = false;
