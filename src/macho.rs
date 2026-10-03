@@ -483,13 +483,7 @@ pub fn platform_name(platform: u32) -> String {
     .to_string()
 }
 
-/// The platforms a .tbd file has targets for, as ld-prime names them:
-/// in platform order, with a zippered library's pair named once more,
-/// as in "macOS macCatalyst zippered(macOS/Catalyst)".
+/// The platforms a .tbd file has targets for, for a diagnostic.
 pub fn platforms_name(platforms: &[u32]) -> String {
-    let mut names: Vec<String> = platforms.iter().map(|&p| platform_name(p)).collect();
-    if platforms.contains(&PLATFORM_MACOS) && platforms.contains(&PLATFORM_MACCATALYST) {
-        names.push("zippered(macOS/Catalyst)".to_string());
-    }
-    names.join(" ")
+    platforms.iter().map(|&p| platform_name(p)).collect::<Vec<_>>().join(" ")
 }
