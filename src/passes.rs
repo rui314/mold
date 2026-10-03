@@ -562,17 +562,6 @@ fn is_foreign<E: Target>(ctx: &Context<E>, mf: &MappedFile) -> bool {
     true
 }
 
-/// Whether a dylib (or a universal file) a naming loaded before was
-/// ignored then: for lacking the architecture, or in a link that takes
-/// no dylib.
-fn was_ignored<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> bool {
-    match get_file_type(mf) {
-        FileType::Tapi | FileType::Dylib => !ctx.dylibs.iter().any(|d| d.path == mf.name),
-        FileType::Fat => input_files::fat_slice::<E>(&ctx.args, mf).is_none(),
-        _ => false,
-    }
-}
-
 /// Classifies one input file. Dylib stubs and binaries are registered
 /// immediately (they are cheap and order-sensitive); objects and
 /// archive members are queued for parallel staging; bitcode is
@@ -587,10 +576,9 @@ fn collect_file<E: Target>(
     // auto-link options; load each file once, as its first naming says
     // (the first that isn't a public re-export's, for a dylib). An
     // object file, though, loads as often as it is named, as in
-    // ld-prime: twice over, its globals are duplicate definitions. So
-    // does a dylib ld-prime ignored, with its warning each time.
+    // ld-prime: twice over, its globals are duplicate definitions.
     let object = matches!(get_file_type(mf), FileType::Object | FileType::LlvmBitcode);
-    if !ctx.visited_files.insert(mf.name.clone()) && !object && !was_ignored(ctx, mf) {
+    if !ctx.visited_files.insert(mf.name.clone()) && !object {
         name_again(ctx, mf, rc, out);
         return;
     }
