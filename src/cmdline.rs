@@ -64,7 +64,7 @@ pub enum InputArg {
 /// name to look up in the library paths; `-framework Foo` and the
 /// like, in the framework paths; `-weak_library path` and the like, by
 /// its path.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum LibraryName {
     Lib(OsString),
     Framework(OsString),
@@ -74,7 +74,7 @@ pub enum LibraryName {
 /// What a library option makes of the library it names. The options
 /// of each kind name a library in each of the three ways (see
 /// LibraryName), but for those that say otherwise.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum LibraryKind {
     /// -l, -framework: a library like any other. ld-prime also takes
     /// a path ending in .a on the command line for one, looked up as a
@@ -130,62 +130,6 @@ pub enum LibraryKind {
     /// initializers run at the first use of one of its symbols (see
     /// delay_init::create_delay_init). -delay-l looks for a dylib only.
     Delay,
-}
-
-impl LibraryKind {
-    /// The option of this kind that names a library as `name` does, as
-    /// ld-prime spells it in diagnostics: with the name joined to it,
-    /// or followed by a space.
-    pub fn option(self, name: &LibraryName) -> &'static str {
-        use LibraryKind::*;
-        match name {
-            LibraryName::Lib(_) => match self {
-                Plain => "-l",
-                Weak => "-weak-l",
-                Reexport => "-reexport-l",
-                Hidden => "-hidden-l",
-                Needed => "-needed-l",
-                Upward => "-upward-l",
-                Lazy => "-lazy-l",
-                NoMerge => "-no_merge-l",
-                Merge => "-merge-l",
-                Force => "-force-l",
-                Possible => "-possible-l",
-                AssertWeak => "-assert-weak-l",
-                Delay => "-delay-l",
-            },
-            LibraryName::Framework(_) => match self {
-                Plain => "-framework ",
-                Weak => "-weak_framework ",
-                Reexport => "-reexport_framework ",
-                Needed => "-needed_framework ",
-                Upward => "-upward_framework ",
-                Lazy => "-lazy_framework ",
-                NoMerge => "-no_merge_framework ",
-                Merge => "-merge_framework ",
-                Hidden => "-hidden_framework ",
-                Possible => "-possible_framework ",
-                AssertWeak => "-assert_weak_framework ",
-                Delay => "-delay_framework ",
-                Force => unreachable!(),
-            },
-            LibraryName::Path(_) => match self {
-                Weak => "-weak_library ",
-                Reexport => "-reexport_library ",
-                Needed => "-needed_library ",
-                Upward => "-upward_library ",
-                Lazy => "-lazy_library ",
-                NoMerge => "-no_merge_library ",
-                Merge => "-merge_library ",
-                Hidden => "-load_hidden ",
-                Force => "-force_load ",
-                Possible => "-possible_library ",
-                AssertWeak => "-assert_weak_library ",
-                Delay => "-delay_library ",
-                Plain => "",
-            },
-        }
-    }
 }
 
 impl LibraryName {

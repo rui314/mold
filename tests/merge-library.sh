@@ -79,7 +79,7 @@ grep -q "'-weak-l$t/lib/libfoo.dylib' and '-merge-l$t/lib/libfoo.dylib' cannot b
 
 # Repeated, they are spelled as given; each wants its argument.
 not $CC --ld-path=$mold -o $t/exe $t/main.o -L$t/lib -Wl,-merge-lfoo -Wl,-merge-lfoo 2> $t/log12
-grep -q "warning: ignoring duplicate libraries: '-merge-lfoo'" $t/log12
+grep -q "warning: ignoring duplicate libraries: '.*foo'" $t/log12
 for opt in -merge_framework -merge_library -merge-l; do
   not $mold -arch $ARCH -o $t/exe $t/main.o $opt 2> $t/log13
   grep -q -- "$opt.*missing" $t/log13

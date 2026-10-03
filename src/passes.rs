@@ -908,12 +908,11 @@ fn warn_about_objects<E: Target>(
     }
 }
 
-/// ld64 warns, once, about the libraries given more than once, each as
-/// spelled (-weak-lz repeats no -lz): the -l options, those naming a
-/// library by path, and an archive's bare path, but not a dylib's or a
-/// framework option. Build systems that knowingly repeat them pass
-/// -no_warn_duplicate_libraries. Under -w ld-prime leaves the warning
-/// out, -fatal_warnings or not.
+/// ld64 warns, once, about the libraries given more than once by the
+/// same kind of option (-weak-lz repeats no -lz): the -l options, those
+/// naming a library by path, and an archive's bare path, but not a
+/// dylib's or a framework option. Build systems that knowingly repeat
+/// them pass -no_warn_duplicate_libraries.
 fn warn_duplicate_libraries<E: Target>(ctx: &Context<E>) {
     if !ctx.args.warn_duplicate_libraries {
         return;
@@ -922,25 +921,19 @@ fn warn_duplicate_libraries<E: Target>(ctx: &Context<E>) {
     let mut seen_files = std::collections::HashSet::new();
     let mut dups = std::collections::BTreeSet::new();
     for arg in &ctx.args.inputs {
-        let (option, name) = match arg {
+        let name = match arg {
             InputArg::Library(_, LibraryName::Framework(_)) => continue,
-            InputArg::Library(kind, name) => (kind.option(name), name.as_os_str()),
-            // Objects, which are many, go without a string.
-            InputArg::File(path) | InputArg::Listed(path) => {
+            InputArg::Library(kind, name) if !seen.insert((kind, name)) => name.as_os_str(),
+            InputArg::File(path) | InputArg::Listed(path)
                 if !seen_files.insert(path)
                     && MappedFile::open(path)
-                        .is_some_and(|mf| get_file_type(mf) == FileType::Archive)
-                {
-                    dups.insert(error::render(format_args!("'{}'", path.raw())));
-                }
-                continue;
+                        .is_some_and(|mf| get_file_type(mf) == FileType::Archive) =>
+            {
+                path.as_os_str()
             }
             _ => continue,
         };
-        let spelled = error::render(format_args!("'{option}{}'", name.raw()));
-        if !seen.insert(spelled.clone()) {
-            dups.insert(spelled);
-        }
+        dups.insert(error::render(format_args!("'{}'", name.raw())));
     }
     if !dups.is_empty() {
         let list: Vec<Vec<u8>> = dups.into_iter().collect();

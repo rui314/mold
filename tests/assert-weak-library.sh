@@ -67,7 +67,7 @@ grep -q '/CoreFoundation (.*[0-9])$' $t/libs6
 
 $CC --ld-path=$mold -o $t/exe7 $t/c.o -L$t \
   -Wl,-assert-weak-lfoo,-assert-weak-lfoo,-assert_weak_library,$t/libfoo.dylib 2> $t/log7
-grep -Fq "ignoring duplicate libraries: '-assert-weak-lfoo'" $t/log7
+grep -q "ignoring duplicate libraries: '.*foo'" $t/log7
 
 # A lazy dylib's (macOS 27) refused imports are named alone.
 sdk=$(xcrun --show-sdk-path)

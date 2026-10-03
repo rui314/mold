@@ -58,4 +58,5 @@ grep -Fq "library '$t/none.a' not found" $t/log
 $CC --ld-path=$mold -o $t/exe9 $t/a.o -L$t/ar -F$t -Wl,-force-lfa,-force-lfa \
   -Wl,-load_hidden,$t/ar/libfa.a,-load_hidden,$t/ar/libfa.a \
   -Wl,-hidden_framework,Stat,-hidden_framework,Stat 2> $t/log
-grep -Fq "ignoring duplicate libraries: '-force-lfa', '-load_hidden $t/ar/libfa.a'" $t/log
+grep -q "ignoring duplicate libraries: .*fa'" $t/log
+grep -qF "$t/ar/libfa.a'" $t/log

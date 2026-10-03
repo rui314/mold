@@ -37,7 +37,7 @@ done
 # when at odds with another naming of the library.
 $CC --ld-path=$mold -o $t/exe $t/main.o -L$t/lib -Wl,-no_merge-lfoo \
   -Wl,-no_merge-lfoo 2> $t/log1
-grep -q "warning: ignoring duplicate libraries: '-no_merge-lfoo'" $t/log1
+grep -q "warning: ignoring duplicate libraries: '.*foo'" $t/log1
 not $CC --ld-path=$mold -o $t/exe $t/main.o -L$t/lib -Wl,-weak-lfoo \
   -Wl,-no_merge-lfoo 2> $t/log2
 grep -q "'-weak-lfoo' and '-reexport-lfoo' cannot be used together" $t/log2

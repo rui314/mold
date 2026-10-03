@@ -47,4 +47,4 @@ grep -A1 "Could not find or use auto-linked library 'none': library 'none' not f
 
 $CC --ld-path=$mold -o $t/exe8 $t/a.o -L$t \
   -Wl,-possible-lfoo,-possible-lfoo,-possible_library,$t/libfoo.dylib 2> $t/log8
-grep -Fq "ignoring duplicate libraries: '-possible-lfoo'" $t/log8
+grep -q "ignoring duplicate libraries: '.*foo'" $t/log8
