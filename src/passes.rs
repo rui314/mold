@@ -5573,32 +5573,20 @@ fn text_reloc_ranges<E: Target>(ctx: &Context<E>) -> Vec<Range<u64>> {
         .collect()
 }
 
-/// Fails the link on the text relocations applying relocations found,
-/// listing them as ld-prime does: output section by output section,
-/// each subsection's from the last to the first (the order an assembler
-/// emits relocations in). Where it encodes rebase opcodes, it lists
-/// each subsection's in address order, and those of the first section
-/// only. An unaligned pointer in a chain fails the link then instead.
+/// Fails the link on the text relocations found applying relocations,
+/// listed by address, and on the 32-bit pointers of an x86-64 image
+/// dyld loads, which it could neither slide nor bind.
 fn report_text_relocs<E: Target>(ctx: &Context<E>) {
     let mut found = std::mem::take(&mut *ctx.text_relocs.lock().unwrap());
-    let rebase_opcodes = !ctx.use_chained_fixups() && ctx.chunks.contains(&ChunkId::RebaseInfo);
-    if rebase_opcodes {
-        found.sort_unstable_by_key(|&(isec, i)| (ctx.isec_addr(isec as usize), i));
-    } else {
-        found.sort_unstable_by_key(|&(isec, i)| {
-            (ctx.isec_addr(isec as usize), std::cmp::Reverse(i))
-        });
+    let addr = |isec: u32, off: u32| ctx.isec_addr(isec as usize) + off as u64;
+    found.sort_unstable_by_key(|&(isec, i)| {
+        addr(isec, ctx.isec_relocs(isec as usize)[i as usize].offset)
+    });
+    if !found.is_empty() {
+        crate::error::notice(format_args!("Illegal text-relocations:"));
     }
-    let mut osec = None;
-    for (id, i) in found {
+    for &(id, i) in &found {
         let isec = &ctx.isecs[id as usize];
-        if osec != Some(isec.output_section) {
-            if rebase_opcodes && osec.is_some() {
-                break;
-            }
-            crate::error::notice(format_args!("Illegal text-relocations:"));
-            osec = Some(isec.output_section);
-        }
         let rel = &ctx.isec_relocs(id as usize)[i as usize];
         let target = ctx.reloc_target_name(isec.file as usize, rel);
         crate::error::notice(format_args!(
@@ -5607,41 +5595,18 @@ fn report_text_relocs<E: Target>(ctx: &Context<E>) {
             raw(&target)
         ));
     }
-    if report_32bit_pointer(ctx, osec.is_some()) {
-        return;
-    }
-    if osec.is_some() {
+    if !found.is_empty() {
         error!("Found illegal text-relocations");
     }
-}
 
-/// Fails the link on a 32-bit pointer of an x86-64 image dyld loads,
-/// which it could neither slide nor bind, as ld-prime does once the
-/// text relocations are listed. With chained fixups, it finds it as it
-/// builds the chains, section by section as it does unaligned pointers
-/// (see chunks::chained_fixups::check_pointer_alignment), and the error
-/// takes the place of the text relocations': it reports the last
-/// section's, the first subsection's, from its last pointer. Otherwise
-/// only an image without text relocations gets it, of the first pointer.
-/// Returns whether it failed the link.
-fn report_32bit_pointer<E: Target>(ctx: &Context<E>, text_relocs: bool) -> bool {
-    let found = std::mem::take(&mut *ctx.pointers32.lock().unwrap());
-    let addr = |&(isec, off): &(u32, u32)| ctx.isec_addr(isec as usize) + off as u64;
-    let pick = if ctx.use_chained_fixups() {
-        let osec = |isec: u32| ctx.isecs[isec as usize].output_section();
-        let Some(&(last, _)) = found.iter().max_by_key(|p| addr(p)) else { return false };
-        let in_sect = found.iter().filter(|&&(isec, _)| osec(isec) == osec(last));
-        let first =
-            in_sect.clone().map(|&(isec, _)| isec).min_by_key(|&i| ctx.isec_addr(i as usize));
-        in_sect.filter(|&&(isec, _)| Some(isec) == first).max_by_key(|&&(_, off)| off)
-    } else if text_relocs {
-        None
-    } else {
-        found.iter().min_by_key(|p| addr(p))
-    };
-    let Some(&(isec, off)) = pick else { return false };
-    error!("32-bit pointer used in 64-bit code in {}", raw(&ctx.subsec_ref(isec as usize, off)));
-    true
+    let mut pointers32 = std::mem::take(&mut *ctx.pointers32.lock().unwrap());
+    pointers32.sort_unstable_by_key(|&(isec, off)| addr(isec, off));
+    for (isec, off) in pointers32 {
+        error!(
+            "32-bit pointer used in 64-bit code in {}",
+            raw(&ctx.subsec_ref(isec as usize, off))
+        );
+    }
 }
 
 /// Lays out every segment but __LINKEDIT and gives each its address.

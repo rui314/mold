@@ -3,10 +3,10 @@ source "$(dirname "$0")"/common.inc
 
 # A pointer in a segment mapped without write permission that needs a
 # fixup (a rebase or a bind) is a text relocation: the loader would
-# have to make the segment writable to apply it. ld-prime lists every
-# one, output section by section and each subsection's from the last
-# to the first, then fails. An unnamed subsection is "anon-N", the
-# object's Nth.
+# have to make the segment writable to apply it. Every one is listed,
+# by address, then the link fails. (ld-prime lists them output section
+# by section, each subsection's from the last to the first, and with
+# rebase opcodes the first section's only.)
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .text
 .globl _site
@@ -45,10 +45,9 @@ dir=$t
 cat > $t/expected <<EOF
 Illegal text-relocations:
   text-relocation in '_site'+0x8 ($dir/a.o) to '_ext'
-  text-relocation in '_site2'+0x8 ($dir/a.o) to '_ext'
   text-relocation in '_site2' ($dir/a.o) to '_ext2'
+  text-relocation in '_site2'+0x8 ($dir/a.o) to '_ext'
   text-relocation in '_bsite' ($dir/b.o) to '_ext'
-Illegal text-relocations:
   text-relocation in '_k' ($dir/a.o) to '_ext'
 EOF
 
@@ -62,19 +61,11 @@ not $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/a.o $t/b.o $t/libext.dylib 2> $t
 grep -E '^(Illegal|  text-relocation)' $t/log2 > $t/list2
 diff $t/expected $t/list2
 
-# Encoding rebase opcodes (without chained fixups), ld-prime lists
-# each subsection's in address order, and the first section's only.
-cat > $t/expected5 <<EOF
-Illegal text-relocations:
-  text-relocation in '_site'+0x8 ($dir/a.o) to '_ext'
-  text-relocation in '_site2' ($dir/a.o) to '_ext2'
-  text-relocation in '_site2'+0x8 ($dir/a.o) to '_ext'
-  text-relocation in '_bsite' ($dir/b.o) to '_ext'
-EOF
+# So with rebase opcodes (without chained fixups).
 not $CC --ld-path=$mold -o $t/exe5 $t/main.o $t/a.o $t/b.o $t/ext.o -Wl,-no_fixup_chains \
   2> $t/log5
 grep -E '^(Illegal|  text-relocation)' $t/log5 > $t/list5
-diff $t/expected5 $t/list5
+diff $t/expected $t/list5
 
 not $CC --ld-path=$mold -shared -o $t/c.dylib $t/b.o $t/ext.o 2> $t/log3
 grep -qF "  text-relocation in '_bsite' ($dir/b.o) to '_ext'" $t/log3

@@ -43,11 +43,11 @@ $mold -arch x86_64 -preload -e _g -o $t/f $t/a.o $t/ext.o
 not $mold -arch x86_64 -static -e _g -o $t/g $t/a.o $t/ext.o 2> $t/log
 grep -qF "$t/a.o: _g+0x8: 32-bit pointer overflow" $t/log
 
-# One where any pointer would be a text relocation ld-prime lists as
-# one. With chained fixups a 32-bit pointer elsewhere then fails the
-# link in place of the text relocations: the last section's (its first
-# subsection's last). With classic dyld info the text relocations fail
-# it first, and only without them does a 32-bit pointer, the first.
+# One where any pointer would be a text relocation is listed as one;
+# every other fails the link, as do the text relocations. (ld-prime
+# reports only one 32-bit pointer - with chained fixups the last
+# section's, in place of the text relocations; with classic dyld info
+# none if there are text relocations, else the first.)
 cat <<EOF2 | $CC -o $t/h.o -c -xassembler -
 .section __TEXT,__const
 .p2align 3
@@ -69,13 +69,13 @@ echo 'int main() { return 0; }' | $CC -o $t/main.o -c -xc -
 not $CC --ld-path=$mold -o $t/h $t/main.o $t/h.o $t/ext.o 2> $t/log
 grep -q "text-relocation in '_tc' (.*/h.o) to '_ext'" $t/log
 grep -q "32-bit pointer used in 64-bit code in '_f1'+0x4 (.*/h.o)" $t/log
-[ "$(grep -c '32-bit pointer' $t/log)" = 1 ]
-not grep -q 'Found illegal text-relocations' $t/log
+[ "$(grep -c '32-bit pointer' $t/log)" = 6 ]
+grep -q 'Found illegal text-relocations' $t/log
 
 not $CC --ld-path=$mold -o $t/h $t/main.o $t/h.o $t/ext.o -Wl,-no_fixup_chains 2> $t/log
 grep -q "text-relocation in '_tc' (.*/h.o) to '_ext'" $t/log
 grep -q 'Found illegal text-relocations' $t/log
-not grep -q '32-bit pointer' $t/log
+[ "$(grep -c '32-bit pointer' $t/log)" = 6 ]
 
 not $CC --ld-path=$mold -o $t/h $t/main.o $t/a.o $t/ext.o -Wl,-no_fixup_chains 2> $t/log
 grep -q "32-bit pointer used in 64-bit code in '_g'+0x8 (" $t/log

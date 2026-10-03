@@ -660,7 +660,7 @@ impl Target for X86_64 {
                     // no dyld or kmutil loads, where it must fit
                     // ("oveflow" sic). Elsewhere one where a pointer
                     // would be a text relocation is one, and any other
-                    // an error (see passes::report_32bit_pointer).
+                    // an error (see passes::report_text_relocs).
                     let val = s.wrapping_add_signed(a);
                     if ctx.args.static_link {
                         if val > u32::MAX as u64 {

@@ -246,7 +246,7 @@ pub struct Context<E: Target> {
     /// relocation index) pairs.
     pub text_relocs: std::sync::Mutex<Vec<(u32, u32)>>,
     /// The 32-bit pointers an image dyld loads can't have (see
-    /// passes::report_32bit_pointer), as (subsection, offset) pairs.
+    /// passes::report_text_relocs), as (subsection, offset) pairs.
     pub pointers32: std::sync::Mutex<Vec<(u32, u32)>>,
     /// The output's UUID, computed from its contents.
     pub uuid: std::sync::Mutex<[u8; 16]>,
