@@ -1332,77 +1332,14 @@ fn triple_arch(arch: &str, triple: &str) -> &'static str {
         .unwrap_or_else(|| fatal!("unknown architecture in target triple '{triple}'"))
 }
 
-/// The CPU family - "arm64", "x86_64" or another - of an architecture
-/// name ld-prime knows, as -arch_variant and
-/// $LD_DYLIB_CPU_SUBTYPES_MUST_MATCH take them (and -arch, for the
-/// targets mold links for); None for one it doesn't.
-fn arch_cpu_family(name: &[u8]) -> Option<&'static str> {
-    const ARM64: [&str; 14] = [
-        "arm64",
-        "arm64e",
-        "arm64.x1",
-        "arm64.x2",
-        "arm64e.x1",
-        "arm64e.x2",
-        "arm64e.v1",
-        "arm64e.old",
-        "arm64e.x1.old",
-        "arm64e.kernel",
-        "arm64e.kernel.v1",
-        "arm64e.kernel.v2",
-        "arm64e.x1.kernel",
-        "arm64e.x2.kernel",
-    ];
-    const OTHER: [&str; 18] = [
-        "armv4t",
-        "armv6",
-        "armv7",
-        "armv7k",
-        "armv7s",
-        "armv6m",
-        "armv7m",
-        "armv7em",
-        "armv8m.main",
-        "armv8.1m.main",
-        "thumbv6m",
-        "thumbv7",
-        "thumbv7k",
-        "thumbv7s",
-        "thumbv7m",
-        "thumbv7em",
-        "thumbv8m.main",
-        "thumbv8.1m.main",
-    ];
-    let is = |names: &[&str]| names.iter().any(|n| n.as_bytes() == name);
-    match name {
-        _ if is(&ARM64) => Some("arm64"),
-        b"x86_64" | b"x86_64h" => Some("x86_64"),
-        b"arm64_32" | b"i386" | b"ppc" => Some("other"),
-        _ if is(&OTHER) => Some("other"),
-        _ => None,
-    }
-}
-
 /// Whether a ':'-separated list of architecture names, as
 /// -no_allow_dylib_sub_type_mismatches and
-/// $LD_DYLIB_CPU_SUBTYPES_MUST_MATCH give one, names one of CPU family
-/// `family`. ld-prime warns of each name it doesn't know (and passes
-/// over a list of just "1").
-fn names_cpu_family(list: &[u8], family: &str) -> bool {
-    if list == b"1" {
-        return false;
-    }
-    let mut found = false;
-    for name in list.split(|&c| c == b':').filter(|name| !name.is_empty()) {
-        match arch_cpu_family(name) {
-            Some(f) => found |= f == family,
-            None => crate::warn!(
-                "unknown architecture name '{}' in LD_DYLIB_CPU_SUBTYPES_MUST_MATCH",
-                raw(name)
-            ),
-        }
-    }
-    found
+/// $LD_DYLIB_CPU_SUBTYPES_MUST_MATCH give one, names one of the CPU
+/// type of `target`: arm64 and its variants (arm64e, arm64e.v1, ...)
+/// but arm64_32, or x86_64 and x86_64h.
+fn names_cpu_family(list: &[u8], target: &str) -> bool {
+    list.split(|&c| c == b':')
+        .any(|name| name.starts_with(target.as_bytes()) && !name.starts_with(b"arm64_32"))
 }
 
 /// Splits a target triple, <arch>-<vendor>-<os><version>, into its
