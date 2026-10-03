@@ -946,7 +946,7 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
 pub fn mach_header_size<E: Target>(ctx: &Context<E>) -> u64 {
     let cmds = create_load_commands(ctx);
     let size: usize = cmds.iter().map(Vec::len).sum();
-    let size = size_of::<MachHeader>() as u64 + size as u64 + header_pad(ctx, &cmds);
+    let size = size_of::<MachHeader>() as u64 + size as u64 + header_pad(ctx);
     // An encryptable image's code starts a page of its own, which the
     // header and load commands, left unencrypted, don't share; dyld's
     // starts a 4 KiB page of its own anyway.
@@ -956,71 +956,26 @@ pub fn mach_header_size<E: Target>(ctx: &Context<E>) -> u64 {
     }
 }
 
-/// The free space ld-prime leaves after a final image's load commands:
-/// -headerpad (at least 32 bytes in an image dyld loads), or with
-/// -headerpad_max_install_names room for each dylib command to grow by
-/// MAXPATHLEN. ld-prime places the sections after an estimate of the
-/// load commands, not their final size, so the space grows by the
-/// estimate's excess too: it counts dylib_use_command's 28-byte header
-/// for each dependency, LC_DYLD_INFO_ONLY plus LC_DYLD_EXPORTS_TRIE
-/// unless the image is an arm64 one with chained fixups (a -static
-/// image: 32 bytes), and a section header for a static executable's
-/// stack.
-fn header_pad<E: Target>(ctx: &Context<E>, cmds: &[Vec<u8>]) -> u64 {
+/// The free space left after a final image's load commands, for tools
+/// that add or grow commands in place: -headerpad, at least 32 bytes in
+/// an image dyld loads (room for codesign's LC_CODE_SIGNATURE), or with
+/// -headerpad_max_install_names room for each dylib command to grow to
+/// MAXPATHLEN.
+fn header_pad<E: Target>(ctx: &Context<E>) -> u64 {
     // A -preload image's header has pages of its own, ahead of the
-    // segments, and ld-prime leaves nothing free after its commands;
-    // nor after dyld's, whose __text starts on the next 4 KiB boundary
-    // (see create_output_sections), whatever -headerpad says.
+    // segments; dyld's __text starts on the next 4 KiB boundary (see
+    // create_output_sections), whatever -headerpad says.
     if ctx.args.preload || ctx.args.is_dylinker() {
         return 0;
     }
-    let dylib_cmds: Vec<(DylibCommand, &[u8])> = cmds
-        .iter()
-        .filter(|c| {
-            matches!(
-                LoadCommand::read_from(c).cmd,
-                LC_ID_DYLIB
-                    | LC_LOAD_DYLIB
-                    | LC_LOAD_WEAK_DYLIB
-                    | LC_REEXPORT_DYLIB
-                    | LC_LOAD_UPWARD_DYLIB
-            )
-        })
-        .map(|c| (DylibCommand::read_from(c), c.as_slice()))
-        .collect();
-
-    // An image dyld loads keeps room to add a code signature's command
-    // in, whatever -headerpad says.
     let mut pad =
         if ctx.args.without_dyld() { ctx.args.headerpad } else { ctx.args.headerpad.max(32) };
     if ctx.args.headerpad_max_install_names {
-        pad = pad.max(dylib_cmds.len() as u64 * 1024);
+        let loads = ctx.dylibs.iter().filter(|d| !d.is_bundle_loader && !d.is_lazy).count();
+        let id = (ctx.args.output_type == MH_DYLIB) as usize;
+        pad = pad.max((loads + id) as u64 * 1024);
     }
-
-    let mut excess = if ctx.args.static_link {
-        32
-    } else if ctx.args.is_kext() {
-        0
-    } else if !ctx.use_chained_fixups() {
-        16
-    } else if E::CPUTYPE == CPU_TYPE_ARM64 {
-        0
-    } else {
-        32
-    };
-    // The estimate gives __UNIXSTACK the header of a __stack section,
-    // which the segment's command goes without.
-    if ctx.segments.iter().any(|seg| seg.name == b"__UNIXSTACK") {
-        excess += size_of::<MachSection>() as u64;
-    }
-    for (cmd, bytes) in dylib_cmds {
-        if cmd.cmd != LC_ID_DYLIB && cmd.timestamp != DYLIB_USE_MARKER {
-            let name = &bytes[cmd.nameoff as usize..];
-            let len = name.iter().position(|&b| b == 0).unwrap_or(name.len()) as u64;
-            excess += crate::util::align_to(len + 29, 8) - crate::util::align_to(len + 25, 8);
-        }
-    }
-    pad + excess
+    pad
 }
 
 pub fn copy_mach_header<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
