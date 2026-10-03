@@ -2757,18 +2757,6 @@ pub fn without_fat_arch(name: &[u8]) -> Vec<u8> {
     name
 }
 
-/// Loads the libraries a dylib re-exports. A public one becomes an
-/// implicit dylib of its own (its symbols bind to it), recursively
-/// loading what it re-exports in turn; a private one's exports are
-/// merged into `exports`, `tlv_exports` and `weak_exports` as the
-/// re-exporting dylib's, and its own re-exports are walked the same
-/// way. A library may be a file of its own or a document inlined in a
-/// stub (`documents`: the re-exporting stub's). A public one is loaded
-/// from its file when one exists, as ld-prime does, and from its
-/// document otherwise; a private one inlined is merged from its
-/// document. Returns the install names of the private libraries merged,
-/// with -why_live the files they are, and the exports of theirs
-/// that $ld$previous directives move to older libraries.
 /// Notes the file of a library loaded as another's re-export for the
 /// -dependency_info file, which names it.
 fn note_reexport_file<E: Target>(ctx: &mut Context<E>, path: &Path) {
@@ -2777,145 +2765,52 @@ fn note_reexport_file<E: Target>(ctx: &mut Context<E>, path: &Path) {
     }
 }
 
+/// Adds a library to the link: `dylib`, as a stub or a binary gives it
+/// with its own exports, once the libraries it re-exports (`reexports`,
+/// which may resolve to the inlined `documents`) have loaded, and with
+/// the older libraries its exports move to for the link's target, which
+/// its "$ld$..." names (`directives`) or the merged libraries' say.
+fn add_library<E: Target>(
+    ctx: &mut Context<E>,
+    mut dylib: DylibFile,
+    reexports: Vec<ReexportRef>,
+    documents: Vec<tapi::TbdFile>,
+    directives: LdDirectives,
+) -> usize {
+    // Named before the libraries it re-exports, which load now.
+    dylib.priority = ctx.next_priority();
+    let mut moved = load_reexports(ctx, &mut dylib, reexports, documents);
+    moved.extend(directives.moved);
+    dylib.moved_exports = add_moved_dylibs(ctx, &dylib.path, moved, &dylib.exports);
+    if directives.renamed {
+        dylib.name_source = NameSource::Directive;
+    }
+    dylib.dylib_idx = next_dylib_ordinal(ctx);
+    add_dylib(ctx, dylib)
+}
+
+/// Loads the libraries `dylib` re-exports. A public one becomes an
+/// implicit dylib of its own (its symbols bind to it), recursively
+/// loading what it re-exports in turn; a private one is merged into
+/// `dylib` - its exports join `dylib`'s, and its own re-exports are
+/// walked the same way. A library may be a file of its own or a
+/// document inlined in a stub (`documents`: the re-exporting stub's).
+/// Returns the exports of the private ones that $ld$previous
+/// directives move to older libraries.
 fn load_reexports<E: Target>(
     ctx: &mut Context<E>,
+    dylib: &mut DylibFile,
     reexports: Vec<ReexportRef>,
-    parent: &Path,
     documents: Vec<tapi::TbdFile>,
-    exports: &mut hashbrown::HashSet<&'static [u8]>,
-    tlv_exports: &mut hashbrown::HashSet<&'static [u8]>,
-    weak_exports: &mut hashbrown::HashSet<&'static [u8]>,
-) -> LoadedReexports {
-    let mut walk = ReexportWalk {
-        queue: reexports,
-        pool: documents,
-        exports,
-        tlv_exports,
-        weak_exports,
-        moved: Vec::new(),
-    };
-    let mut edges = Vec::new();
+) -> Vec<MovedExport> {
+    let mut walk = ReexportWalk { dylib, queue: reexports, pool: documents, moved: Vec::new() };
     let mut visited = std::collections::HashSet::new();
-    let mut merged = Vec::new();
     while let Some(r) = walk.queue.pop() {
-        let ReexportRef { name, loader_dir, loader_rpaths, hops, via } = r;
-        if !visited.insert(name.clone()) {
-            continue;
-        }
-        let edge = |dylib| ReexportEdge { dylib, hops, via: via.clone() };
-        let public = !ctx.args.no_implicit_dylibs && is_public_location(&name);
-        // A library already in the link, matched by install name
-        // (libXCTestSwiftSupport re-exports @rpath/XCTest.framework/...,
-        // which its own rpaths cannot reach but -framework XCTest has
-        // loaded): its symbols bind to it if it is public, else count
-        // as this dylib's.
-        if let Some(idx) = ctx.dylibs.iter().position(|d| d.install_name == name) {
-            let loaded = &ctx.dylibs[idx];
-            if public {
-                edges.push(edge(idx));
-            } else {
-                walk.exports.extend(loaded.exports.iter().copied());
-                walk.tlv_exports.extend(loaded.tlv_exports.iter().copied());
-                walk.weak_exports.extend(loaded.weak_exports.iter().copied());
-                merged.push(name);
-            }
-            continue;
-        }
-        let inline = walk.pool.iter().position(|d| d.install_name == name);
-        let on_disk = if inline.is_some() && !public {
-            None
-        } else {
-            resolve_dylib_ref(ctx, &name, &loader_dir, &loader_rpaths, inline.is_some())
-        };
-        if on_disk.is_none()
-            && let Some(i) = inline
-        {
-            // ld-prime names an inlined library by the file it would
-            // find for it, where there is one.
-            if ctx.args.trace || ctx.args.dependency_info.is_some() {
-                let found = resolve_dylib_ref(ctx, &name, &loader_dir, &loader_rpaths, true);
-                if let Some(mf) = found {
-                    note_reexport_file(ctx, &mf.name);
-                }
-                let found = found.map(|mf| crate::util::path_bytes(&mf.name).to_vec());
-                trace_file(ctx, found.as_deref().unwrap_or(&name));
-            }
-            let mut doc = walk.pool[i].clone();
-            if DylibIdentity::of_tbd(&doc).is_public(ctx) {
-                let idx = register_tbd(ctx, parent, doc, walk.pool.clone());
-                ctx.dylibs[idx].is_implicit = true;
-                edges.push(edge(idx));
-                continue;
-            }
-            walk.moved.extend(interpret_ld_symbols(ctx, &mut doc).moved);
-            walk.merge_tbd(doc, &loader_dir, &loader_rpaths, hops);
-            merged.push(name);
-            continue;
-        }
-        let Some(dep) = on_disk else {
-            crate::warn!(
-                "ignoring missing indirect library: library for install name '{}' not found",
-                crate::error::raw(&name)
-            );
-            continue;
-        };
-        // A file of another kind, which only a -dylib_file names, is
-        // one ld-prime loads as any input.
-        use crate::filetype::FileType;
-        let ty = crate::filetype::get_file_type(dep);
-        if !matches!(ty, FileType::Tapi | FileType::Dylib | FileType::Fat) {
-            ctx.indirect_files.push(dep);
-            continue;
-        }
-        trace_file(ctx, crate::util::path_bytes(&dep.name));
-        note_reexport_file(ctx, &dep.name);
-        // The file found decides by its own install name, which a lookup
-        // by leaf name may find to differ from the one re-exported:
-        // ld-prime binds to libz a symbol of /opt/x/libz.dylib that it
-        // found as the SDK's /usr/lib/libz.1.dylib, and merges a
-        // /usr/lib/libq.dylib found as /opt/q/libq.dylib.
-        match ty {
-            FileType::Tapi => {
-                let Some(mut dep_tbd) = load_tbd(ctx, dep) else { continue };
-                if DylibIdentity::of_tbd(&dep_tbd).is_public(ctx) {
-                    let idx = register_tbd_file(ctx, dep, dep_tbd);
-                    ctx.dylibs[idx].is_implicit = true;
-                    edges.push(edge(idx));
-                    continue;
-                }
-                merged.push(dep_tbd.install_name.to_vec());
-                walk.moved.extend(interpret_ld_symbols(ctx, &mut dep_tbd).moved);
-                walk.merge_tbd(dep_tbd, &dir_of(&dep.name), &[], hops);
-            }
-            _ => {
-                // A universal binary (Xcode's XCTestCore, re-exported by
-                // XCTest) is read for the target's slice, if it has one.
-                let binary = match ty {
-                    FileType::Dylib => dep,
-                    _ => match fat_slice::<E>(&ctx.args, dep) {
-                        Some(slice) => slice,
-                        None => {
-                            warn_fat_missing_arch(ctx, dep);
-                            continue;
-                        }
-                    },
-                };
-                let found = DylibIdentity::of_binary(binary);
-                if found.is_public(ctx) {
-                    let idx = parse_dylib_binary(ctx, binary);
-                    ctx.dylibs[idx].is_implicit = true;
-                    edges.push(edge(idx));
-                    continue;
-                }
-                check_dylib_platform(ctx, binary);
-                let mut dylib = read_dylib_binary(binary);
-                walk.moved.extend(interpret_binary_ld_symbols(ctx, &mut dylib).moved);
-                walk.merge_binary(dylib, &found.install_name, &dir_of(&dep.name), hops);
-                merged.push(found.install_name);
-            }
+        if visited.insert(r.name.clone()) {
+            walk.load(ctx, r);
         }
     }
-    LoadedReexports { merged, moved: walk.moved, edges }
+    walk.moved
 }
 
 /// A library a dylib re-exports, as load_reexports walks it: its
@@ -2951,32 +2846,158 @@ impl ReexportRef {
     }
 }
 
-/// What load_reexports found: the install names of the private
-/// libraries merged, with -why_live the files they are, the
-/// exports of theirs that move to older libraries, and the public
-/// libraries loaded as dylibs of their own.
-struct LoadedReexports {
-    merged: Vec<Vec<u8>>,
-    moved: Vec<MovedExport>,
-    edges: Vec<ReexportEdge>,
-}
-
-/// A dylib's re-exported libraries as load_reexports walks them: those
-/// left to visit, each with the directory and rpaths its install name
-/// resolves from; the inlined documents a name may resolve to (the
-/// dylib's, and those of every stub merged along the way); and the
-/// dylib's export sets, which the private ones merge into, with those
-/// of their exports that move to older libraries.
+/// A dylib's re-exported libraries as load_reexports walks them: the
+/// dylib, which the private ones merge into and the public ones become
+/// edges of; the libraries left to visit; the inlined documents a name
+/// may resolve to (the dylib's, and those of every stub merged along
+/// the way); and the merged libraries' exports that move to older
+/// libraries.
 struct ReexportWalk<'a> {
+    dylib: &'a mut DylibFile,
     queue: Vec<ReexportRef>,
     pool: Vec<tapi::TbdFile>,
-    exports: &'a mut hashbrown::HashSet<&'static [u8]>,
-    tlv_exports: &'a mut hashbrown::HashSet<&'static [u8]>,
-    weak_exports: &'a mut hashbrown::HashSet<&'static [u8]>,
     moved: Vec<MovedExport>,
 }
 
 impl ReexportWalk<'_> {
+    /// Loads a re-exported library: one the link has, matched by install
+    /// name, else the file the name resolves to, else the document
+    /// inlined for it. A public library is loaded from its file when one
+    /// exists, as ld-prime does, and from its document otherwise; a
+    /// private one inlined is merged from its document.
+    fn load<E: Target>(&mut self, ctx: &mut Context<E>, r: ReexportRef) {
+        let public = !ctx.args.no_implicit_dylibs && is_public_location(&r.name);
+        // A library already in the link (libXCTestSwiftSupport re-exports
+        // @rpath/XCTest.framework/..., which its own rpaths cannot reach
+        // but -framework XCTest has loaded): its symbols bind to it if it
+        // is public, else count as this dylib's.
+        if let Some(idx) = ctx.dylibs.iter().position(|d| d.install_name == r.name) {
+            if public {
+                self.add_edge(idx, &r);
+            } else {
+                let loaded = &ctx.dylibs[idx];
+                self.dylib.exports.extend(loaded.exports.iter().copied());
+                self.dylib.tlv_exports.extend(loaded.tlv_exports.iter().copied());
+                self.dylib.weak_exports.extend(loaded.weak_exports.iter().copied());
+                self.dylib.merged_reexports.push(r.name);
+            }
+            return;
+        }
+        let inline = self.pool.iter().position(|d| d.install_name == r.name);
+        let on_disk = if inline.is_some() && !public {
+            None
+        } else {
+            resolve_dylib_ref(ctx, &r.name, &r.loader_dir, &r.loader_rpaths, inline.is_some())
+        };
+        match (on_disk, inline) {
+            (Some(mf), _) => self.load_file(ctx, mf, r),
+            (None, Some(i)) => self.load_inlined(ctx, i, r),
+            (None, None) => crate::warn!(
+                "ignoring missing indirect library: library for install name '{}' not found",
+                crate::error::raw(&r.name)
+            ),
+        }
+    }
+
+    /// Loads a re-exported library from the stub document inlined for it
+    /// at `pool[i]`.
+    fn load_inlined<E: Target>(&mut self, ctx: &mut Context<E>, i: usize, r: ReexportRef) {
+        // ld-prime names an inlined library by the file it would find
+        // for it, where there is one.
+        if ctx.args.trace || ctx.args.dependency_info.is_some() {
+            let found = resolve_dylib_ref(ctx, &r.name, &r.loader_dir, &r.loader_rpaths, true);
+            if let Some(mf) = found {
+                note_reexport_file(ctx, &mf.name);
+            }
+            let found = found.map(|mf| crate::util::path_bytes(&mf.name).to_vec());
+            trace_file(ctx, found.as_deref().unwrap_or(&r.name));
+        }
+        let mut doc = self.pool[i].clone();
+        if DylibIdentity::of_tbd(&doc).is_public(ctx) {
+            let idx = register_tbd(ctx, &self.dylib.path, doc, self.pool.clone());
+            self.add_implicit(ctx, idx, &r);
+            return;
+        }
+        self.moved.extend(interpret_ld_symbols(ctx, &mut doc).moved);
+        self.merge_tbd(doc, &r.loader_dir, &r.loader_rpaths, r.hops);
+        self.dylib.merged_reexports.push(r.name);
+    }
+
+    /// Loads a re-exported library from the file `dep` its name resolves
+    /// to. The file decides by its own install name, which a lookup by
+    /// leaf name may find to differ from the one re-exported: ld-prime
+    /// binds to libz a symbol of /opt/x/libz.dylib that it found as the
+    /// SDK's /usr/lib/libz.1.dylib, and merges a /usr/lib/libq.dylib
+    /// found as /opt/q/libq.dylib.
+    fn load_file<E: Target>(
+        &mut self,
+        ctx: &mut Context<E>,
+        dep: &'static MappedFile,
+        r: ReexportRef,
+    ) {
+        // A file of another kind, which only a -dylib_file names, is
+        // one ld-prime loads as any input.
+        use crate::filetype::FileType;
+        let ty = crate::filetype::get_file_type(dep);
+        if !matches!(ty, FileType::Tapi | FileType::Dylib | FileType::Fat) {
+            ctx.indirect_files.push(dep);
+            return;
+        }
+        trace_file(ctx, crate::util::path_bytes(&dep.name));
+        note_reexport_file(ctx, &dep.name);
+
+        if ty == FileType::Tapi {
+            let Some(mut tbd) = load_tbd(ctx, dep) else { return };
+            if DylibIdentity::of_tbd(&tbd).is_public(ctx) {
+                let idx = register_tbd_file(ctx, dep, tbd);
+                self.add_implicit(ctx, idx, &r);
+                return;
+            }
+            self.dylib.merged_reexports.push(tbd.install_name.to_vec());
+            self.moved.extend(interpret_ld_symbols(ctx, &mut tbd).moved);
+            self.merge_tbd(tbd, &dir_of(&dep.name), &[], r.hops);
+            return;
+        }
+
+        // A universal binary (Xcode's XCTestCore, re-exported by XCTest)
+        // is read for the target's slice, if it has one.
+        let binary = match ty {
+            FileType::Dylib => dep,
+            _ => match fat_slice::<E>(&ctx.args, dep) {
+                Some(slice) => slice,
+                None => {
+                    warn_fat_missing_arch(ctx, dep);
+                    return;
+                }
+            },
+        };
+        let found = DylibIdentity::of_binary(binary);
+        if found.is_public(ctx) {
+            let idx = parse_dylib_binary(ctx, binary);
+            self.add_implicit(ctx, idx, &r);
+            return;
+        }
+        check_dylib_platform(ctx, binary);
+        let mut dylib = read_dylib_binary(binary);
+        self.moved.extend(interpret_binary_ld_symbols(ctx, &mut dylib).moved);
+        self.merge_binary(dylib, &found.install_name, &dir_of(&dep.name), r.hops);
+        self.dylib.merged_reexports.push(found.install_name);
+    }
+
+    /// Notes that the dylib re-exports the public library `dylib` of the
+    /// link, as `r` reached it.
+    fn add_edge(&mut self, dylib: usize, r: &ReexportRef) {
+        let edge = ReexportEdge { dylib, hops: r.hops, via: r.via.clone() };
+        self.dylib.reexported.push(edge);
+    }
+
+    /// Notes that the dylib re-exports the public library `dylib`, which
+    /// the link has loaded for that alone.
+    fn add_implicit<E: Target>(&mut self, ctx: &mut Context<E>, dylib: usize, r: &ReexportRef) {
+        ctx.dylibs[dylib].is_implicit = true;
+        self.add_edge(dylib, r);
+    }
+
     /// Merges a private library's stub, `hops` re-exports away, into the
     /// dylib: its exports join the dylib's, by kind, its inlined
     /// documents the pool, and the libraries it re-exports in turn the
@@ -2988,11 +3009,12 @@ impl ReexportWalk<'_> {
         loader_rpaths: &[PathBuf],
         hops: u32,
     ) {
-        self.tlv_exports.extend(tbd.tlv_exports.iter().copied());
-        self.exports.extend(tbd.tlv_exports);
-        self.exports.extend(tbd.exports);
-        self.weak_exports.extend(tbd.weak_exports.iter().copied());
-        self.exports.extend(tbd.weak_exports);
+        let dylib = &mut *self.dylib;
+        dylib.tlv_exports.extend(tbd.tlv_exports.iter().copied());
+        dylib.exports.extend(tbd.tlv_exports);
+        dylib.exports.extend(tbd.exports);
+        dylib.weak_exports.extend(tbd.weak_exports.iter().copied());
+        dylib.exports.extend(tbd.weak_exports);
         self.pool.extend(tbd.documents);
         let names = tbd.reexports.into_iter().map(<[u8]>::to_vec).collect();
         let name = tbd.install_name;
@@ -3003,8 +3025,8 @@ impl ReexportWalk<'_> {
     /// the dylib likewise: the libraries it re-exports resolve from
     /// `loader_dir` and the binary's rpaths.
     fn merge_binary(&mut self, dylib: DylibBinary, name: &[u8], loader_dir: &Path, hops: u32) {
-        self.exports.extend(dylib.exports);
-        self.tlv_exports.extend(dylib.tlv_exports);
+        self.dylib.exports.extend(dylib.exports);
+        self.dylib.tlv_exports.extend(dylib.tlv_exports);
         let refs = ReexportRef::of(dylib.reexports, name, loader_dir, &dylib.rpaths, hops);
         self.queue.extend(refs);
     }
@@ -3165,66 +3187,32 @@ fn check_dylib_platforms<E: Target>(
     }
 }
 
+/// Adds a dylib binary to the link.
 pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFile) -> usize {
     let minos = check_dylib_platform(ctx, mf);
-    let mut dylib = read_dylib_binary(mf);
-    if dylib.install_name.is_empty() {
+    let mut binary = read_dylib_binary(mf);
+    if binary.install_name.is_empty() {
         fatal!("{}: dylib has no LC_ID_DYLIB", mf.name.raw());
     }
-    let directives = interpret_binary_ld_symbols(ctx, &mut dylib);
-    let DylibBinary {
-        install_name,
-        current_version,
-        compatibility_version,
-        exports,
-        weak_exports,
-        tlv_exports,
-        reexports,
-        rpaths,
-        ..
-    } = dylib;
-    let mut exports: hashbrown::HashSet<&'static [u8]> = exports.into_iter().collect();
-    let mut weak_exports: hashbrown::HashSet<&'static [u8]> = weak_exports.into_iter().collect();
-    let has_weak_defs = !weak_exports.is_empty();
-    let mut tlv_exports: hashbrown::HashSet<&'static [u8]> = tlv_exports.into_iter().collect();
-
+    let directives = interpret_binary_ld_symbols(ctx, &mut binary);
     // Each re-exported library keeps the referencing dylib's directory
     // and rpaths, since @loader_path and @rpath in an install name are
     // relative to the referrer.
-    let reexports = ReexportRef::of(reexports, &install_name, &dir_of(&mf.name), &rpaths, 0);
-    // Named before the libraries it re-exports, which load now.
-    let priority = ctx.next_priority();
-    let loaded = load_reexports(
-        ctx,
-        reexports,
-        &mf.name,
-        Vec::new(),
-        &mut exports,
-        &mut tlv_exports,
-        &mut weak_exports,
-    );
-    let mut moved = loaded.moved;
-    moved.extend(directives.moved);
-    let moved_exports = add_moved_dylibs(ctx, &mf.name, moved, &exports);
-    let name_source = if directives.renamed { NameSource::Directive } else { NameSource::Own };
-
+    let dir = dir_of(&mf.name);
+    let reexports =
+        ReexportRef::of(binary.reexports, &binary.install_name, &dir, &binary.rpaths, 0);
+    let weak_exports: hashbrown::HashSet<&'static [u8]> = binary.weak_exports.into_iter().collect();
     let dylib = DylibFile {
-        current_version,
-        compatibility_version,
+        current_version: binary.current_version,
+        compatibility_version: binary.compatibility_version,
         minos,
-        dylib_idx: next_dylib_ordinal(ctx),
-        priority,
-        exports,
+        exports: binary.exports.into_iter().collect(),
+        has_weak_defs: !weak_exports.is_empty(),
         weak_exports,
-        has_weak_defs,
-        tlv_exports,
-        merged_reexports: loaded.merged,
-        reexported: loaded.edges,
-        moved_exports,
-        name_source,
-        ..DylibFile::new(mf.name.clone(), install_name)
+        tlv_exports: binary.tlv_exports.into_iter().collect(),
+        ..DylibFile::new(mf.name.clone(), binary.install_name)
     };
-    add_dylib(ctx, dylib)
+    add_library(ctx, dylib, reexports, Vec::new(), directives)
 }
 
 /// Returns the 1-based ordinals of S_THREAD_LOCAL_VARIABLES sections.
@@ -4039,49 +4027,25 @@ fn register_tbd<E: Target>(
 ) -> usize {
     let directives = interpret_ld_symbols(ctx, &mut tbd);
     let mut exports: hashbrown::HashSet<&'static [u8]> = tbd.exports.into_iter().collect();
-    let mut weak_exports: hashbrown::HashSet<&'static [u8]> =
+    let weak_exports: hashbrown::HashSet<&'static [u8]> =
         tbd.weak_exports.iter().copied().collect();
-    let has_weak_defs = !weak_exports.is_empty();
     exports.extend(tbd.weak_exports);
-    let mut tlv_exports: hashbrown::HashSet<&'static [u8]> = tbd.tlv_exports.into_iter().collect();
+    let tlv_exports: hashbrown::HashSet<&'static [u8]> = tbd.tlv_exports.into_iter().collect();
     exports.extend(tlv_exports.iter().copied());
 
     let names = tbd.reexports.into_iter().map(<[u8]>::to_vec).collect();
-    let name = tbd.install_name;
-    let reexports = ReexportRef::of(names, name, &dir_of(path), &[], 0);
-    // Named before the libraries it re-exports, which load now.
-    let priority = ctx.next_priority();
-    let loaded = load_reexports(
-        ctx,
-        reexports,
-        path,
-        documents,
-        &mut exports,
-        &mut tlv_exports,
-        &mut weak_exports,
-    );
-    let mut moved = loaded.moved;
-    moved.extend(directives.moved);
-    let moved_exports = add_moved_dylibs(ctx, path, moved, &exports);
-    let name_source = if directives.renamed { NameSource::Directive } else { NameSource::Own };
-
+    let reexports = ReexportRef::of(names, tbd.install_name, &dir_of(path), &[], 0);
     let dylib = DylibFile {
         current_version: tbd.current_version,
         compatibility_version: tbd.compatibility_version,
         minos: tbd.minos,
-        dylib_idx: next_dylib_ordinal(ctx),
-        priority,
         exports,
+        has_weak_defs: !weak_exports.is_empty(),
         weak_exports,
-        has_weak_defs,
         tlv_exports,
-        merged_reexports: loaded.merged,
-        reexported: loaded.edges,
-        moved_exports,
-        name_source,
         ..DylibFile::new(path.to_path_buf(), tbd.install_name.to_vec())
     };
-    add_dylib(ctx, dylib)
+    add_library(ctx, dylib, reexports, documents, directives)
 }
 
 /// Makes a dylib stand for each older library that exports of the
