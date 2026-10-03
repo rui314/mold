@@ -73,6 +73,7 @@ pub enum OriginValue {
 impl Origin {
     const NONE: Self = Self(0);
 
+    #[inline]
     pub(crate) fn new(value: OriginValue) -> Self {
         match value {
             OriginValue::None => Self::NONE,
@@ -612,12 +613,6 @@ impl Symbol {
     }
 
     #[inline]
-    fn set_visibility_bits(&self, mask: u8, value: u8) {
-        self.visibility
-            .update(Ordering::Relaxed, Ordering::Relaxed, |cur| (cur & !mask) | (value & mask));
-    }
-
-    #[inline]
     fn symbol_state(&self) -> u8 {
         (self.visibility.load(Ordering::Relaxed) & SYMBOL_STATE_MASK) >> SYMBOL_STATE_SHIFT
     }
@@ -634,8 +629,9 @@ impl Symbol {
     }
 
     #[inline]
-    pub fn set_visibility(&self, v: u32) {
-        self.set_visibility_bits(VISIBILITY_MASK, v as u8);
+    pub fn set_visibility(&mut self, v: u32) {
+        let bits = self.visibility.get_mut();
+        *bits = (*bits & !VISIBILITY_MASK) | (v as u8 & VISIBILITY_MASK);
     }
 
     // Symbol's visibility is set to the most restrictive one. For example,
