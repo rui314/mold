@@ -2,11 +2,9 @@
 source "$(dirname "$0")"/common.inc
 
 # REFERENCED_DYNAMICALLY has strip(1) keep a symbol dyld looks up by
-# name (crt1.o's _NXArgc, _environ and so on). ld-prime warns that it
-# is deprecated on each exported non-weak definition in a section - not
-# on a private extern, a local, an undefined, an absolute or a weak one -
-# as it reads the object, an archive member it never loads too. The
-# output's entry still carries it, in an executable and a dylib alike.
+# name (crt1.o's _NXArgc, _environ and so on). The output's entry of an
+# exported definition still carries it, in an executable and a dylib
+# alike.
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .globl _main, _g, _h, _p, _w, _abs
 .desc _g, 0x10
@@ -41,10 +39,6 @@ rm -f $t/libb.a
 ar rcs $t/libb.a $t/b.o
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/libb.a -Wl,-U,_u 2> $t/log
-grep -q "REFERENCED_DYNAMICALLY flag on symbol '_g' is deprecated" $t/log
-grep -q "REFERENCED_DYNAMICALLY flag on symbol '_h' is deprecated" $t/log
-grep -q "REFERENCED_DYNAMICALLY flag on symbol '_unused' is deprecated" $t/log
-[ $(grep -c REFERENCED_DYNAMICALLY $t/log) = 3 ]
 
 nm -m $t/exe > $t/syms
 grep -q '\[referenced dynamically\] external _g$' $t/syms

@@ -997,7 +997,6 @@ pub fn stage_object<E: Target>(
     obj.demote_thread_local_zerofill_names();
     let sect_isecs = obj.initialize_sections(&bare, relocatable);
     obj.read_symbol_names(strtab);
-    obj.warn_referenced_dynamically();
     obj.read_relocations::<E>(&bare, &sect_isecs);
     obj.check_init_pointers();
     if let Some(i) =
@@ -1367,24 +1366,6 @@ impl StagedObject {
         let n = self.isecs[range.clone()].partition_point(|isec| isec.input_addr as u64 <= addr);
         let isec = range.start + n.saturating_sub(1);
         (isec, addr.wrapping_sub(self.isecs[isec].input_addr as u64))
-    }
-
-    /// ld-prime warns about REFERENCED_DYNAMICALLY, the flag that has
-    /// strip(1) keep a symbol dyld looks up by name, on each exported
-    /// non-weak definition in a section, as it reads the object (an
-    /// archive member it never loads too). The output still carries it.
-    fn warn_referenced_dynamically(&self) {
-        let r = self.global_range();
-        for (nlist, name) in self.nlists[r.clone()].iter().zip(&self.sym_names[r]) {
-            if !nlist.is_stab()
-                && nlist.n_type & (N_EXT | N_PEXT) == N_EXT
-                && nlist.n_type() == N_SECT
-                && nlist.n_desc & (REFERENCED_DYNAMICALLY | N_WEAK_DEF) == REFERENCED_DYNAMICALLY
-            {
-                let name = crate::error::raw(name);
-                crate::warn!("REFERENCED_DYNAMICALLY flag on symbol '{name}' is deprecated");
-            }
-        }
     }
 
     /// Records each symbol's name, and for an external symbol the hash
@@ -4154,18 +4135,11 @@ fn interpret_ld_symbols<E: Target>(ctx: &Context<E>, tbd: &mut tapi::TbdFile) ->
 
 /// Applies a dylib binary's "$ld$..." names (see LdSymbols) to it.
 /// ld-prime knows fewer kinds of directive in a binary than TAPI does
-/// in a stub - not $ld$compatibility_version - and warns of each name
-/// of another kind, by name, each time it reads the file.
+/// in a stub: not $ld$compatibility_version.
 fn interpret_binary_ld_symbols<E: Target>(
     ctx: &Context<E>,
     dylib: &mut DylibBinary,
 ) -> LdDirectives {
-    for name in &dylib.ld_symbols {
-        let kind = name[b"$ld$".len()..].split(|&c| c == b'$').next().unwrap();
-        if !matches!(kind, b"previous" | b"add" | b"hide" | b"install_name" | b"weak") {
-            crate::warn!("unknown link constraint kind: {}", crate::error::raw(kind));
-        }
-    }
     let ld = LdSymbols::read(ctx, &dylib.ld_symbols);
     dylib.exports.retain(|n| ld.keeps(n));
     dylib.weak_exports.retain(|n| ld.keeps(n));

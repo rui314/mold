@@ -22,7 +22,7 @@ $CC --ld-path=$mold -o $t/exe $t/a.o $t/libbar.dylib -L$t/lib -Wl,-t \
   -Wl,-dylib_file,/nonexistent/libfoo.dylib:$t/lib/libfoo.dylib > $t/log 2> $t/log2
 grep -q "$t/sub/libfoo_real.dylib" $t/log
 not grep -q "$t/lib/libfoo.dylib" $t/log
-[ "$(grep -c -- '-dylib_file is deprecated. Use -F or -L to control where indirect dylibs are found' $t/log2)" = 1 ]
+grep -q -- '-dylib_file is deprecated. Use -F or -L to control where indirect dylibs are found' $t/log2
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/libbar.dylib -L$t/lib -Wl,-t \
   -Wl,-dylib_file,/nonexistent/libfoo.dylib:$t/sub/none.dylib > $t/log

@@ -1895,17 +1895,14 @@ fn read_bundle_loader(cur: &mut ArgCursor, args: &mut Args, opt: &str) {
     args.inputs.push(InputArg::BundleLoader(cur.next_path(opt)))
 }
 
-/// -dylib_file <install_name>:<path>, which ld-prime deprecates, once,
-/// as it reads it.
+/// -dylib_file <install_name>:<path>, which ld-prime deprecates.
 fn add_dylib_file(args: &mut Args, arg: &[u8]) {
     let Some(colon) = memchr::memchr(b':', arg) else {
         fatal!("-dylib_file malformed <path:path>");
     };
-    if args.dylib_files.is_empty() {
-        crate::warn!(
-            "-dylib_file is deprecated. Use -F or -L to control where indirect dylibs are found"
-        );
-    }
+    crate::warn!(
+        "-dylib_file is deprecated. Use -F or -L to control where indirect dylibs are found"
+    );
     let file = PathBuf::from(os_str(&arg[colon + 1..]));
     args.dylib_files.push((arg[..colon].to_vec(), file));
 }
@@ -3209,15 +3206,10 @@ fn check_options(target: &TargetTraits, args: &mut Args, st: &ParseState) {
     if st.reexports_listed && args.output_type != MH_DYLIB {
         fatal!("-reexported_symbols_list can only used used when created dynamic libraries");
     }
-    // ld-prime deprecates the lists but for the libraries of /usr/lib,
-    // libSystem's among them, which still use them.
-    let usr_lib =
-        args.output_type == MH_DYLIB && args.output_install_name().starts_with(b"/usr/lib/");
-    if st.force_weakness_listed && !usr_lib {
+    if st.force_weakness_listed {
         crate::warn!("-force_symbols_[not_]weak_list is deprecated");
     }
-    // ld-prime leaves this one out under -w, -fatal_warnings or not.
-    if !args.has_entry_point() && st.explicit_entry && !args.suppress_warnings {
+    if !args.has_entry_point() && st.explicit_entry {
         crate::warn!("ignoring -e, not used for output type");
     }
 }

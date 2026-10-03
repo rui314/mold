@@ -8,8 +8,7 @@ source "$(dirname "$0")"/common.inc
 # (1.2.3.1, 70000, 14.0x) makes it ignore the directive. A stub may
 # also give the compatibility version for an OS version
 # ($ld$compatibility_version$os<ver>$<version>), which a dylib binary
-# can't: there, as for any kind of directive it doesn't know, ld-prime
-# warns "unknown link constraint kind".
+# can't: there it is ignored, as any kind of directive it doesn't know.
 cat <<EOF | $CC -o $t/a.o -c -xc -
 int foo();
 int main() { return foo(); }
@@ -75,6 +74,4 @@ $CC -shared -o $t/libb.dylib $t/b.o -install_name /usr/lib/libb.dylib \
   -Wl,-compatibility_version,4
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/libb.dylib -Wl,-platform_version,macos,14.0,14.0 \
   2> $t/log
-grep -q 'warning: unknown link constraint kind: bogus$' $t/log
-grep -q 'warning: unknown link constraint kind: compatibility_version$' $t/log
 otool -L $t/exe | grep -q '/usr/lib/libb.dylib (compatibility version 4.0.0'

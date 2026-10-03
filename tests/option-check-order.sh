@@ -37,7 +37,7 @@ warnings
 } | sort | diff - $t/got
 
 link -dylib -install_name /usr/lib/libfoo.dylib -mark_dead_strippable_dylib -e _main \
-  -force_symbols_weak_list $t/list -headerpad 0x10 -segalign 0x5000 -rpath /x -pie
+  -headerpad 0x10 -segalign 0x5000 -rpath /x -pie
 warnings
 {
   echo '-pie being ignored. It is only used when linking a main executable'
