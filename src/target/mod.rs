@@ -318,40 +318,23 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
     fn apply_optimization_hints(_ctx: &Context<Self>, _buf: &mut [u8]) {}
 }
 
-/// Returns the target name for a Mach-O CPU type, if we know it.
-/// The canonical name of a target named on the command line, borrowed
-/// from static storage so that a restart for that target can carry it.
 /// The section a non-extern relocation targets: the one its
 /// r_symbolnum names (a 1-based section ordinal), wherever the target
-/// address lies, as ld-prime reads it. Only the ordinal tells apart
-/// sections that share an address - an empty one and its successor,
-/// or one section's end and the next one's start. An address outside
-/// the section, ld-prime takes for its first or last subsection's with
-/// a warning; one past its end (a label after the last instruction) is
-/// its last subsection's.
-pub fn nonextern_target_section(
-    sections: &[MachSection],
-    ordinal: u32,
-    addr: u64,
-) -> Option<usize> {
+/// address lies. Only the ordinal tells apart sections that share an
+/// address - an empty one and its successor, or one section's end and
+/// the next one's start.
+pub fn nonextern_target_section(sections: &[MachSection], ordinal: u32) -> Option<usize> {
     let i = (ordinal as usize).checked_sub(1)?;
-    let sec = sections.get(i)?;
-    if addr < sec.addr {
-        crate::warn!(
-            "address=0x{addr:X} points before section({ordinal}) start and the target atom is ambiguous"
-        );
-    } else if addr > sec.addr + sec.size {
-        crate::warn!(
-            "address=0x{addr:X} points beyond section({ordinal}) end and the target atom is ambiguous"
-        );
-    }
-    Some(i)
+    sections.get(i).map(|_| i)
 }
 
+/// The canonical name of a target named on the command line, borrowed
+/// from static storage so that a restart for that target can carry it.
 pub fn canonical_name(name: &str) -> Option<&'static str> {
     [Arm64::NAME, X86_64::NAME].into_iter().find(|&canonical| canonical == name)
 }
 
+/// Returns the target name for a Mach-O CPU type, if we know it.
 pub fn cputype_name(cputype: u32) -> Option<&'static str> {
     use crate::macho::*;
     match cputype {

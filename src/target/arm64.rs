@@ -1339,8 +1339,7 @@ impl Target for Arm64 {
                 (RelocTarget::Sym(r.r_symbolnum()), addend)
             } else {
                 let addr = addend as u64;
-                let Some(idx) =
-                    crate::target::nonextern_target_section(sections, r.r_section(), addr)
+                let Some(idx) = crate::target::nonextern_target_section(sections, r.r_section())
                 else {
                     fatal!("{}: bad relocation: {}", file_name.raw(), r.r_address);
                 };

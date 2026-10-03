@@ -598,8 +598,7 @@ impl Target for X86_64 {
                 } else {
                     addend as u64
                 };
-                let Some(idx) =
-                    crate::target::nonextern_target_section(sections, r.r_section(), addr)
+                let Some(idx) = crate::target::nonextern_target_section(sections, r.r_section())
                 else {
                     fatal!("{}: bad relocation: {}", file_name.raw(), r.r_address);
                 };

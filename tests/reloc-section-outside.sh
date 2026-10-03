@@ -2,10 +2,9 @@
 source "$(dirname "$0")"/common.inc
 
 # A non-extern relocation names its target section by ordinal and holds
-# the target's address. ld-prime takes the named section whatever the
+# the target's address. The named section is taken whatever the
 # address: one before its start or beyond its end is its first or last
-# subsection's, with a warning, and one just past its end its last
-# subsection's.
+# subsection's, and one just past its end its last subsection's.
 
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .text
@@ -60,11 +59,8 @@ int main() {
 }
 EOF
 
-$CC --ld-path=$mold -o $t/exe $t/main.o $t/b.o 2> $t/log
+$CC --ld-path=$mold -o $t/exe $t/main.o $t/b.o 2> /dev/null
 $t/exe
-grep -qF 'address=0x0 points before section(2) start and the target atom is ambiguous' $t/log
-grep -qF 'address=0x40 points beyond section(2) end and the target atom is ambiguous' $t/log
-not grep -q 'address=0x30' $t/log
 
 # A relocatable link keeps the targets.
 $mold -arch $ARCH -r -o $t/c.o $t/b.o 2> /dev/null
