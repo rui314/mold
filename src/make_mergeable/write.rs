@@ -425,7 +425,7 @@ fn encode_fixup(f: &OutFixup, from: u32, large: &mut Vec<i64>) -> (u32, u32) {
         2 if fits(32) => (kind, f.addend as u32),
         2 => (large_index(large), 0),
         4..=8 => {
-            let extras = f.other as u32 | (f.scale as u32) << 8;
+            let extras = (f.scale as u32) << 8;
             if fits(32) {
                 let a = f.addend as u32;
                 (kind | (a & 0x1f_ffff) << 11, extras | (a >> 21) << 16)

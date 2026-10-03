@@ -137,15 +137,13 @@ struct OutFixup {
     addend: i64,
     /// The entry a difference subtracts.
     from: Option<To>,
-    /// The second instruction of a fused pair, in instructions from the
-    /// first, and the size of the access it makes.
-    other: u8,
+    /// The size of the access a page offset's instruction makes.
     scale: u8,
 }
 
 impl OutFixup {
     fn new(offset: u32, target: To, kind: u16, addend: i64) -> Self {
-        Self { offset, target, kind, addend, from: None, other: 0, scale: 0 }
+        Self { offset, target, kind, addend, from: None, scale: 0 }
     }
 }
 
@@ -701,7 +699,6 @@ impl<'a, E: Target> Builder<'a, E> {
         let obj = isec.file as usize;
         let rels = ctx.isec_relocs(id);
         let hdr = ctx.hdr_of(isec);
-        let data = isec.data();
         let mut out = Vec::with_capacity(rels.len());
         let mut i = 0;
         while i < rels.len() {
@@ -733,11 +730,11 @@ impl<'a, E: Target> Builder<'a, E> {
                 continue;
             }
             let fixup = if E::CPUTYPE == CPU_TYPE_ARM64 {
-                self.arm64_fixup(obj, data, &rels[i..], target, addend)
+                arm64_fixup(isec.data(), r, target, addend)
             } else {
-                x86_64_fixup(hdr, r, target, addend).map(|f| (f, 1))
+                x86_64_fixup(hdr, r, target, addend)
             };
-            let Some((fixup, taken)) = fixup else {
+            let Some(fixup) = fixup else {
                 fatal!(
                     "{}: -make_mergeable: unsupported relocation type {} at 0x{:x}",
                     ctx.objs[obj].mf.name.raw(),
@@ -746,80 +743,9 @@ impl<'a, E: Target> Builder<'a, E> {
                 );
             };
             out.push(fixup);
-            i += taken;
+            i += 1;
         }
         out
-    }
-
-    /// An arm64 relocation's fixup, or a pair's, and the number of
-    /// relocations it takes: an ADRP and the instruction that adds or
-    /// loads its page offset fuse into one fixup where that instruction
-    /// is the next relocation's, of the same target, works on the
-    /// ADRP's register and is within 255 instructions.
-    fn arm64_fixup(
-        &self,
-        obj: usize,
-        data: &[u8],
-        rels: &[Reloc],
-        target: To,
-        addend: i64,
-    ) -> Option<(OutFixup, usize)> {
-        use fk::*;
-        let r = &rels[0];
-        let insn = |off: u32| read32(data, off as usize);
-        let pair = |r_type: u8| {
-            rels.get(1).filter(|n| {
-                n.r_type == r_type
-                    && n.offset > r.offset
-                    && n.offset - r.offset <= 0x3fc
-                    && n.addend == r.addend
-                    && self.reloc_target(obj, n) == self.reloc_target(obj, r)
-                    && imm12_base(insn(n.offset)) == Some(insn(r.offset) & 0x1f)
-            })
-        };
-        let mut f = OutFixup::new(r.offset, target, 0, addend);
-        let mut taken = 1;
-        f.kind = match r.r_type {
-            ARM64_RELOC_BRANCH26 if addend != 0 => ARM64_B26_ADDEND,
-            ARM64_RELOC_BRANCH26 => ARM64_B26,
-            ARM64_RELOC_PAGE21 => match pair(ARM64_RELOC_PAGEOFF12) {
-                Some(n) => {
-                    (f.other, f.scale, taken) =
-                        (((n.offset - r.offset) / 4) as u8, imm12_scale(insn(n.offset)), 2);
-                    if addend != 0 { ARM64_ADRP_LO12_ADDEND } else { ARM64_ADRP_LO12 }
-                }
-                None if addend != 0 => ARM64_ADRP_ADDEND,
-                None => ARM64_ADRP,
-            },
-            ARM64_RELOC_PAGEOFF12 => {
-                f.scale = imm12_scale(insn(r.offset));
-                if addend != 0 { ARM64_LO12_ADDEND } else { ARM64_LO12 }
-            }
-            ARM64_RELOC_GOT_LOAD_PAGE21 => {
-                match pair(ARM64_RELOC_GOT_LOAD_PAGEOFF12).filter(|n| is_ldr_x(insn(n.offset))) {
-                    Some(n) => {
-                        (f.other, f.scale, taken) = (((n.offset - r.offset) / 4) as u8, 8, 2);
-                        ARM64_ADRP_LDR_GOT
-                    }
-                    None => ARM64_ADRP_GOT,
-                }
-            }
-            ARM64_RELOC_GOT_LOAD_PAGEOFF12 => {
-                f.scale = imm12_scale(insn(r.offset));
-                if is_ldr_x(insn(r.offset)) { ARM64_LD12_GOT } else { ARM64_ADD_GOT }
-            }
-            ARM64_RELOC_TLVP_LOAD_PAGE21 => ARM64_ADRP_TLV,
-            ARM64_RELOC_TLVP_LOAD_PAGEOFF12 => {
-                f.scale = imm12_scale(insn(r.offset));
-                ARM64_LD12_TLV
-            }
-            // A 32-bit reference to a GOT slot from data, relative to
-            // the field (whose contents the assembler leaves to no use).
-            ARM64_RELOC_POINTER_TO_GOT if r.is_pcrel => PCREL32_TO_GOT,
-            ARM64_RELOC_POINTER_TO_GOT => PTR64_TO_GOT,
-            _ => return None,
-        };
-        Some((f, taken))
     }
 
     /// The initializer offsets the link made of the objects'
@@ -1334,16 +1260,39 @@ fn x86_64_fixup(hdr: &MachSection, r: &Reloc, target: To, addend: i64) -> Option
     Some(f)
 }
 
-fn read32(data: &[u8], off: usize) -> u32 {
-    u32::from_le_bytes(data[off..off + 4].try_into().unwrap())
-}
-
-/// The base register of an instruction that adds a page offset (an
-/// add, a load or a store of an unsigned 12-bit immediate).
-fn imm12_base(insn: u32) -> Option<u32> {
-    let is_add = insn & 0x7f80_0000 == 0x1100_0000;
-    let is_ldst = insn & 0x3b00_0000 == 0x3900_0000;
-    (is_add || is_ldst).then_some((insn >> 5) & 0x1f)
+/// An arm64 relocation's fixup, each instruction's of its own: ld-prime
+/// also has kinds for an ADRP and the instruction that adds or loads its
+/// page offset together, which it writes for the pairs of its objects.
+fn arm64_fixup(data: &[u8], r: &Reloc, target: To, addend: i64) -> Option<OutFixup> {
+    use fk::*;
+    let insn = u32::from_le_bytes(data[r.offset as usize..][..4].try_into().unwrap());
+    let mut f = OutFixup::new(r.offset, target, 0, addend);
+    f.kind = match r.r_type {
+        ARM64_RELOC_BRANCH26 if addend != 0 => ARM64_B26_ADDEND,
+        ARM64_RELOC_BRANCH26 => ARM64_B26,
+        ARM64_RELOC_PAGE21 if addend != 0 => ARM64_ADRP_ADDEND,
+        ARM64_RELOC_PAGE21 => ARM64_ADRP,
+        ARM64_RELOC_PAGEOFF12 => {
+            f.scale = imm12_scale(insn);
+            if addend != 0 { ARM64_LO12_ADDEND } else { ARM64_LO12 }
+        }
+        ARM64_RELOC_GOT_LOAD_PAGE21 => ARM64_ADRP_GOT,
+        ARM64_RELOC_GOT_LOAD_PAGEOFF12 => {
+            f.scale = imm12_scale(insn);
+            if is_ldr_x(insn) { ARM64_LD12_GOT } else { ARM64_ADD_GOT }
+        }
+        ARM64_RELOC_TLVP_LOAD_PAGE21 => ARM64_ADRP_TLV,
+        ARM64_RELOC_TLVP_LOAD_PAGEOFF12 => {
+            f.scale = imm12_scale(insn);
+            ARM64_LD12_TLV
+        }
+        // A 32-bit reference to a GOT slot from data, relative to the
+        // field (whose contents the assembler leaves to no use).
+        ARM64_RELOC_POINTER_TO_GOT if r.is_pcrel => PCREL32_TO_GOT,
+        ARM64_RELOC_POINTER_TO_GOT => PTR64_TO_GOT,
+        _ => return None,
+    };
+    Some(f)
 }
 
 /// How many bytes such an instruction moves, by which it scales its
