@@ -304,15 +304,29 @@ fn objc_cstring_at<E: Target>(ctx: &Context<E>, r: Option<ObjcRef>) -> Option<&'
 /// coalesces those nothing refers to. __objc_superrefs and
 /// __objc_protorefs entries of one class or protocol coalesce too, but
 /// for those a symbol names (see mark_labeled_literals).
+///
+/// The records' keys are found in parallel, in subsection order, then
+/// the first of each key is kept in a serial walk.
 pub fn coalesce_objc_refs<E: Target>(ctx: &mut Context<E>) {
-    let mut first: hashbrown::HashMap<RefKey, u32> = hashbrown::HashMap::new();
+    // The sections ref_key reads.
+    let sects: [&[u8]; 5] = [
+        b"__objc_selrefs",
+        b"__objc_classrefs",
+        b"__objc_superrefs",
+        b"__objc_protorefs",
+        b"__cfstring",
+    ];
+    let keys: Vec<(u32, RefKey)> = (subsecs_of_sections(ctx, &sects).par_iter())
+        .filter_map(|&(i, _)| Some((i, ref_key(ctx, i as usize)?)))
+        .collect();
+
+    let mut first: hashbrown::HashMap<RefKey, u32> = hashbrown::HashMap::with_capacity(keys.len());
     let mut folds: Vec<(usize, u32)> = Vec::new();
-    for i in 0..ctx.isecs.len() {
-        let Some(key) = ref_key(ctx, i) else { continue };
+    for (i, key) in keys {
         match first.entry(key) {
-            hashbrown::hash_map::Entry::Occupied(e) => folds.push((i, *e.get())),
+            hashbrown::hash_map::Entry::Occupied(e) => folds.push((i as usize, *e.get())),
             hashbrown::hash_map::Entry::Vacant(e) => {
-                e.insert(i as u32);
+                e.insert(i);
             }
         }
     }
