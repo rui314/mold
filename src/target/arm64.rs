@@ -47,12 +47,11 @@ fn write_adrp(loc: &mut [u8], hi: u64, lo: u64) {
     write32(loc, (read32(loc) & !ADRP_IMM) | page_offset(hi, lo));
 }
 
-/// Whether an ADRP at `lo` reaches `hi`'s page: its 21-bit immediate
-/// counts 4 KiB pages, less than 4 GiB either way for ld-prime, which
-/// refuses the page exactly 4 GiB below that the immediate could hold.
+/// Whether an ADRP at `lo` reaches `hi`'s page: its signed 21-bit
+/// immediate counts 4 KiB pages, from 4 GiB below up to 4 GiB above.
 fn adrp_reaches(hi: u64, lo: u64) -> bool {
     let delta = page(hi).wrapping_sub(page(lo)) as i64;
-    delta.unsigned_abs() < 1 << 32
+    (-(1 << 32)..1 << 32).contains(&delta)
 }
 
 /// Checks that the ADRP of relocation `i` of subsection `isec`, at `p`,
