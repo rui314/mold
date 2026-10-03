@@ -59,13 +59,14 @@ grep -q -- 'warning: -rpath missing <path>' $t/log
 otool -l $t/e.dylib > $t/load
 not grep -F LC_RPATH $t/load
 
-# An architecture ld-prime doesn't know is reported as such.
+# An architecture mold doesn't link for is refused, by -arch or a
+# target triple.
 not $mold -arch foo -o $t/exe $t/a.o 2> $t/log
 grep -Fq -- 'unknown -arch name: foo' $t/log
 not $mold -target foo-apple-macos14.0 -o $t/exe $t/a.o 2> $t/log
 grep -Fq -- "unknown architecture in target triple 'foo-apple-macos14.0'" $t/log
 not $mold -arch i386 -o $t/exe $t/a.o 2> $t/log
-grep -Fq -- 'linking for i386 is no longer supported' $t/log
+grep -q i386 $t/log
 
 # A library option with the name joined to it takes the name as the
 # next argument as well, as -l does.

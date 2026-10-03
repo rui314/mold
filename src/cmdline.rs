@@ -1185,8 +1185,7 @@ fn env_source_version() -> u64 {
 
 /// ld64 takes the platform by name, in any case, or by its PLATFORM_*
 /// number; Xcode passes the number for some prelink steps
-/// (`-platform_version 1 11.0`). A platform ld-prime knows but mold
-/// does not link for is unsupported, and any other name unknown.
+/// (`-platform_version 1 11.0`). mold links for macOS and firmware.
 fn parse_platform(arg: &str) -> u32 {
     let name = arg.to_ascii_lowercase();
     let number = match name.bytes().all(|c| c.is_ascii_digit()) {
@@ -1196,29 +1195,7 @@ fn parse_platform(arg: &str) -> u32 {
     match (name.as_str(), number) {
         ("macos" | "macosx", _) | (_, Some(PLATFORM_MACOS)) => PLATFORM_MACOS,
         ("firmware", _) | (_, Some(PLATFORM_FIRMWARE)) => PLATFORM_FIRMWARE,
-        // ld-prime numbers its platforms up to 30.
-        (_, Some(1..=30)) => fatal!("unsupported platform: {arg}"),
-        (name, _) if is_other_platform(name) => fatal!("unsupported platform: {arg}"),
-        _ => fatal!("-platform_version unknown platform: {arg}"),
-    }
-}
-
-/// Whether ld-prime knows a platform name (in lower case) mold does not
-/// link for: Apple's other OSes, their simulators, exclaves and kernel
-/// kits.
-fn is_other_platform(name: &str) -> bool {
-    let (os, variant) = name.split_once('-').unwrap_or((name, ""));
-    let apple_os = matches!(os, "macos" | "ios" | "tvos" | "watchos" | "visionos" | "xros");
-    match variant {
-        "" => {
-            apple_os && os != "macos"
-                || matches!(os, "bridgeos" | "driverkit" | "sepos" | "maccatalyst")
-        }
-        "simulator" => apple_os && os != "macos",
-        "exclavecore" | "exclavekit" => apple_os,
-        "kernelkit" => apple_os || os == "bridgeos",
-        "catalyst" => os == "mac",
-        _ => false,
+        _ => fatal!("unsupported platform: {arg}"),
     }
 }
 
@@ -1391,10 +1368,13 @@ fn apply_target_triple(args: &mut Args, triple: &str) {
     args.platform = platform;
     args.platform_minos = minos;
     args.platform_sdk = encode_version(0, 0, 0);
-    args.arch = Some(
-        target_arch(arch)
-            .unwrap_or_else(|| fatal!("unknown architecture in target triple '{triple}'")),
-    );
+    args.arch = Some(triple_arch(arch, triple));
+}
+
+/// The target a triple's architecture names.
+fn triple_arch(arch: &str, triple: &str) -> &'static str {
+    crate::target::canonical_name(arch)
+        .unwrap_or_else(|| fatal!("unknown architecture in target triple '{triple}'"))
 }
 
 /// The CPU family - "arm64", "x86_64" or another - of an architecture
@@ -1482,39 +1462,6 @@ fn names_cpu_family(list: &[u8], family: &str) -> bool {
     found
 }
 
-/// The target an architecture name ld-prime knows stands for, None for
-/// a name it does not know. mold links for arm64 and x86_64 of them,
-/// and ld-prime no longer for i386.
-fn target_arch(arch: &str) -> Option<&'static str> {
-    // As `ld -v` lists them.
-    const KNOWN: [&str; 15] = [
-        "armv6",
-        "armv7",
-        "armv7s",
-        "arm64",
-        "arm64e",
-        "arm64_32",
-        "i386",
-        "x86_64",
-        "x86_64h",
-        "armv6m",
-        "armv7k",
-        "armv7m",
-        "armv7em",
-        "armv8m.main",
-        "armv8.1m.main",
-    ];
-    if arch == "i386" {
-        fatal!("linking for i386 is no longer supported");
-    }
-    if !KNOWN.contains(&arch) {
-        return None;
-    }
-    Some(
-        crate::target::canonical_name(arch).unwrap_or_else(|| fatal!("unsupported target: {arch}")),
-    )
-}
-
 /// Splits a target triple, <arch>-<vendor>-<os><version>, into its
 /// architecture, platform and OS version.
 fn parse_triple(triple: &str) -> (&str, u32, u32) {
@@ -1526,7 +1473,6 @@ fn parse_triple(triple: &str) -> (&str, u32, u32) {
     let platform = match os_name.to_ascii_lowercase().as_str() {
         "macos" | "macosx" => PLATFORM_MACOS,
         "firmware" => PLATFORM_FIRMWARE,
-        name if is_other_platform(name) => fatal!("unsupported platform: {os_name}"),
         _ => 0,
     };
     // An environment after the version (clang makes x86-64 firmware
@@ -2152,21 +2098,6 @@ fn read_macos_version_min(cur: &mut ArgCursor, args: &mut Args, st: &mut ParseSt
     args.platform_sdk = minos;
 }
 
-/// -ios_version_min and -maccatalyst_version_min, which ld-prime still
-/// takes, under their old names too, as it does -macosx_version_min.
-/// mold links for neither, as -platform_version ios says.
-fn read_other_version_min(cur: &mut ArgCursor, st: &mut ParseState, name: &str) -> ! {
-    let (opt, platform) = match name {
-        "-ios_version_min" | "-iphoneos_version_min" => ("-ios_version_min", PLATFORM_IOS),
-        _ => ("-maccatalyst_version_min", PLATFORM_MACCATALYST),
-    };
-    if name != opt {
-        st.warnings.notice(format!("{name} has been renamed to {opt}"));
-    }
-    parse_version(opt, cur.next_text(opt));
-    fatal!("unsupported platform: {}", platform_name(platform));
-}
-
 /// -bundle_loader <executable>: the last one counts; ld-prime reads no
 /// other.
 fn read_bundle_loader(
@@ -2514,26 +2445,27 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // The target: the architecture, the platform and its versions.
             b"-arch" => {
                 let arch = cur.next_text(name);
-                args.arch =
-                    Some(target_arch(arch).unwrap_or_else(|| fatal!("unknown -arch name: {arch}")));
+                args.arch = Some(
+                    crate::target::canonical_name(arch)
+                        .unwrap_or_else(|| fatal!("unknown -arch name: {arch}")),
+                );
             }
             b"-target" => st.target_triple = Some(cur.next_text(name)),
             b"-platform_version" => read_platform_version(&mut cur, &mut args, &mut st, name),
             b"-macos_version_min" | b"-macosx_version_min" => {
                 read_macos_version_min(&mut cur, &mut args, &mut st, name)
             }
+            // The minimum versions of iOS and Mac Catalyst, under their
+            // old names too: mold links for neither.
             b"-ios_version_min"
             | b"-iphoneos_version_min"
             | b"-maccatalyst_version_min"
             | b"-iosmac_version_min"
-            | b"-uikitformac_version_min" => read_other_version_min(&mut cur, &mut st, name),
+            | b"-uikitformac_version_min" => fatal!("{name}: unsupported platform"),
             // An architecture's variant (of arm64e's pointer
             // authentication ABI), which no -arch mold links for has.
             b"-arch_variant" => {
-                let variant = cur.next_arg(name).as_bytes();
-                if arch_cpu_family(variant).is_none() {
-                    fatal!("unknown -arch name: {}", raw(variant));
-                }
+                cur.next_arg(name);
                 st.arch_variant = true;
             }
             b"-arch_errors_fatal" => args.arch_errors_fatal = true,
@@ -4426,9 +4358,7 @@ fn detect_target(args: &Args) -> &'static str {
             FileType::LlvmBitcode => {
                 let plugin = crate::lto::load_plugin(args.lto_library.as_deref());
                 let triple = crate::lto::target_triple(&plugin, mf.data(), &mf.name);
-                let arch = triple.split('-').next().unwrap_or_default();
-                return target_arch(arch)
-                    .unwrap_or_else(|| fatal!("unknown architecture in target triple '{triple}'"));
+                return triple_arch(triple.split('-').next().unwrap_or_default(), &triple);
             }
             _ => {}
         }

@@ -2,8 +2,8 @@
 source "$(dirname "$0")"/common.inc
 
 # -platform_version takes a platform by name, in any case, or by its
-# number (ld-prime numbers them up to 30), and a version made of
-# decimal numbers that must fit LC_BUILD_VERSION's 16.8.8 bits.
+# number, and a version made of decimal numbers that must fit
+# LC_BUILD_VERSION's 16.8.8 bits. mold links for macOS and firmware.
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .text
 .globl _main
@@ -22,7 +22,11 @@ link -platform_version 01 14..1 14.0 -o $t/exe2
 
 for p in foo 0 31 iossimulator macos-simulator; do
   not link -platform_version $p 14.0 14.0 -o $t/exe3 2> $t/log3
-  grep -q "^[a-z]*: .*-platform_version unknown platform: $p$" $t/log3
+  grep -q "platform: $p$" $t/log3
+done
+# (ld-prime takes iOS, and refuses the macOS object file.)
+for p in ios 2; do
+  not link -platform_version $p 14.0 14.0 -o $t/exe3
 done
 
 not link -platform_version macos 14.x 14.0 -o $t/exe4 2> $t/log4
