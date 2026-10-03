@@ -582,8 +582,6 @@ pub struct BitcodeModule {
 pub struct LtoInput {
     /// The placeholder object.
     pub obj: usize,
-    /// The external symbols the file defines, other than weakly.
-    pub strong_defs: Vec<crate::symbol::SymbolId>,
     /// The names the module defined, internal ones included.
     pub defined: Vec<&'static [u8]>,
     /// The external symbols resolution gave the file's definitions.

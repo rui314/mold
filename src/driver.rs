@@ -91,10 +91,10 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     let explained = passes::print_why_load(&ctx, &[]);
     let mut checked = passes::CheckedInputs::default();
     passes::check_input_versions(&ctx, &mut checked);
-    passes::find_bitcode_duplicates(&mut ctx);
+    passes::check_bitcode_duplicates(&ctx);
+    crate::error::checkpoint();
     if ctx.args.relocatable && passes::links_only_bitcode(&ctx) {
         t.stop();
-        passes::report_bitcode_duplicates(&ctx);
         passes::write_merged_bitcode(&ctx);
         crate::error::checkpoint();
         crate::mapfile::write_dependency_info(&ctx);
@@ -120,7 +120,6 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
         passes::keep_bitcode_imports(&mut ctx);
     }
     passes::warn_newer_dylibs(&ctx);
-    passes::report_bitcode_duplicates(&ctx);
     crate::error::checkpoint();
     t.stop();
     bundle_hook::create_class_table(&mut ctx);
