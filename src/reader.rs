@@ -24,7 +24,6 @@ use crate::input_files;
 use crate::macho::*;
 use crate::mapped_file::MappedFile;
 use crate::mergeable::MergedLibrary;
-use crate::tapi;
 use crate::target::Target;
 use crate::util::path_bytes;
 
@@ -775,19 +774,19 @@ fn check_naming(rc: ReaderContext, framework: bool, name: &OsStr) {
     }
 }
 
-/// Warms the .tbd parse cache: parses the `stubs` on all cores, then
-/// the stubs they re-export likewise, wave after wave down an SDK's
+/// Reads the `stubs` on all cores (see input_files::read_stub), then the
+/// stubs they re-export likewise, wave after wave down an SDK's
 /// umbrella trees, so that the serial loop loading them finds every
-/// parse done.
+/// stub read.
 fn prefetch_stubs<E: Target>(ctx: &Context<E>, stubs: &[&'static MappedFile]) {
     let mut seen: hashbrown::HashSet<&Path> = stubs.iter().map(|mf| mf.name.as_path()).collect();
     let mut wave = stubs.to_vec();
     while !wave.is_empty() {
-        let tbds = tapi::prefetch(&wave, E::NAME, ctx.args.platform);
+        let read: Vec<_> = wave.par_iter().map(|mf| input_files::read_stub(ctx, mf)).collect();
         wave.clear();
-        for tbd in tbds.iter().flatten() {
-            for name in &tbd.reexports {
-                if tbd.document(name).is_some() {
+        for stub in read.iter().flatten() {
+            for name in stub.reexports() {
+                if stub.inlines(name) {
                     continue;
                 }
                 if let Some(dep) = crate::input_files::find_reexport(ctx, name)

@@ -13,7 +13,6 @@
 
 use std::path::Path;
 
-use rayon::prelude::*;
 use serde_json::Value;
 
 use crate::error::RawPath;
@@ -62,6 +61,7 @@ pub struct TbdFile {
     pub minos: u32,
 }
 
+#[cfg(test)]
 impl TbdFile {
     /// The inlined document for a re-exported library, by install name.
     pub fn document(&self, install_name: &[u8]) -> Option<&Self> {
@@ -244,9 +244,7 @@ fn parse_version(val: &str) -> u32 {
 
 /// Parses a .tbd file as `parse` does, memoized. Stub parsing is pure
 /// string work over the mapped file, so results are cached by the
-/// file's address and the link's architecture and platform. The big SDK
-/// stubs (libSystem's tree, framework umbrellas) can be parsed once, in
-/// parallel, by prefetch() before the serial input loop needs them.
+/// file's address and the link's architecture and platform.
 pub fn parse_cached(mf: &'static MappedFile, arch: &'static str, platform: u32) -> Option<TbdFile> {
     type Cache = hashbrown::HashMap<(usize, &'static str, u32), Option<TbdFile>>;
     static CACHE: std::sync::Mutex<Option<Cache>> = std::sync::Mutex::new(None);
@@ -257,15 +255,6 @@ pub fn parse_cached(mf: &'static MappedFile, arch: &'static str, platform: u32) 
     let tbd = parse(mf, arch, platform);
     CACHE.lock().unwrap().get_or_insert_with(Cache::new).insert(key, tbd.clone());
     tbd
-}
-
-/// Warms the parse cache on all cores.
-pub fn prefetch(
-    mfs: &[&'static MappedFile],
-    arch: &'static str,
-    platform: u32,
-) -> Vec<Option<TbdFile>> {
-    mfs.par_iter().map(|mf| parse_cached(mf, arch, platform)).collect()
 }
 
 /// Parses a .tbd file for the architecture `arch` of a link for
@@ -290,10 +279,9 @@ pub fn parse(mf: &MappedFile, arch: &'static str, platform: u32) -> Option<TbdFi
 }
 
 /// Notes a library's linker directives among its exports, which the
-/// link reads before it takes the library: stubs are parsed in
-/// parallel ahead of the serial loop loading them (see prefetch), and
-/// an SDK framework's stub has tens of thousands of exports, few or
-/// none of them directives.
+/// link reads before it takes the library (see
+/// input_files::interpret_ld_symbols): an SDK framework's stub has tens
+/// of thousands of exports, few or none of them directives.
 fn find_ld_symbols(tbd: &mut TbdFile) {
     tbd.ld_symbols = tbd.exports.iter().copied().filter(|n| n.starts_with(b"$ld$")).collect();
 }

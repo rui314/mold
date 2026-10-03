@@ -2,6 +2,7 @@
 
 use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use rayon::prelude::*;
 
@@ -2903,7 +2904,7 @@ fn add_library<E: Target>(
     ctx: &mut Context<E>,
     mut dylib: DylibFile,
     reexports: Vec<ReexportRef>,
-    documents: Vec<tapi::TbdFile>,
+    documents: Vec<Arc<StubLibrary>>,
     directives: LdDirectives,
 ) -> usize {
     // Named before the libraries it re-exports, which load now.
@@ -2930,7 +2931,7 @@ fn load_reexports<E: Target>(
     ctx: &mut Context<E>,
     dylib: &mut DylibFile,
     reexports: Vec<ReexportRef>,
-    documents: Vec<tapi::TbdFile>,
+    documents: Vec<Arc<StubLibrary>>,
 ) -> Vec<MovedExport> {
     let mut walk = ReexportWalk { dylib, queue: reexports, pool: documents, moved: Vec::new() };
     let mut visited = std::collections::HashSet::new();
@@ -2984,7 +2985,7 @@ impl ReexportRef {
 struct ReexportWalk<'a> {
     dylib: &'a mut DylibFile,
     queue: Vec<ReexportRef>,
-    pool: Vec<tapi::TbdFile>,
+    pool: Vec<Arc<StubLibrary>>,
     moved: Vec<MovedExport>,
 }
 
@@ -3012,7 +3013,7 @@ impl ReexportWalk<'_> {
             }
             return;
         }
-        let inline = self.pool.iter().position(|d| d.install_name == r.name);
+        let inline = self.pool.iter().position(|d| d.identity.install_name == r.name);
         let on_disk = if inline.is_some() && !public {
             None
         } else {
@@ -3041,14 +3042,13 @@ impl ReexportWalk<'_> {
             let found = found.map(|mf| crate::util::path_bytes(&mf.name).to_vec());
             trace_file(ctx, found.as_deref().unwrap_or(&r.name));
         }
-        let mut doc = self.pool[i].clone();
-        if DylibIdentity::of_tbd(&doc).is_public(ctx) {
-            let idx = register_tbd(ctx, &self.dylib.path, doc, self.pool.clone());
+        let doc = self.pool[i].clone();
+        if doc.identity.is_public(ctx) {
+            let idx = register_tbd(ctx, &self.dylib.path, &doc, self.pool.clone());
             self.add_implicit(ctx, idx, &r);
             return;
         }
-        self.moved.extend(interpret_ld_symbols(ctx, &mut doc).moved);
-        self.merge_tbd(doc, &r.loader, &r.loader_rpaths, r.hops);
+        self.merge_tbd(&doc, &[], &r.loader, &r.loader_rpaths, r.hops);
         self.dylib.merged_reexports.push(r.name);
     }
 
@@ -3076,15 +3076,14 @@ impl ReexportWalk<'_> {
         note_reexport_file(ctx, &dep.name);
 
         if ty == FileType::Tapi {
-            let Some(mut tbd) = load_tbd(ctx, dep) else { return };
-            if DylibIdentity::of_tbd(&tbd).is_public(ctx) {
-                let idx = register_tbd_file(ctx, dep, tbd);
+            let Some(stub) = load_tbd(ctx, dep) else { return };
+            if stub.main.identity.is_public(ctx) {
+                let idx = register_tbd_file(ctx, dep, &stub);
                 self.add_implicit(ctx, idx, &r);
                 return;
             }
-            self.dylib.merged_reexports.push(tbd.install_name.to_vec());
-            self.moved.extend(interpret_ld_symbols(ctx, &mut tbd).moved);
-            self.merge_tbd(tbd, &dep.name, &[], r.hops);
+            self.dylib.merged_reexports.push(stub.main.identity.install_name.clone());
+            self.merge_tbd(&stub.main, &stub.documents, &dep.name, &[], r.hops);
             return;
         }
 
@@ -3127,26 +3126,28 @@ impl ReexportWalk<'_> {
         self.add_edge(dylib, r);
     }
 
-    /// Merges a private library's stub, `hops` re-exports away, into the
-    /// dylib: its exports join the dylib's, by kind, its inlined
-    /// documents the pool, and the libraries it re-exports in turn the
-    /// queue, to resolve from `loader` and `loader_rpaths`.
+    /// Merges a private library of a stub, `hops` re-exports away, into
+    /// the dylib: its exports join the dylib's, by kind, and those it
+    /// moves to older libraries the walk's; the libraries the stub
+    /// inlines (`documents`) join the pool, and those the library
+    /// re-exports in turn the queue, to resolve from `loader` and
+    /// `loader_rpaths`.
     fn merge_tbd(
         &mut self,
-        tbd: tapi::TbdFile,
+        lib: &StubLibrary,
+        documents: &[Arc<StubLibrary>],
         loader: &Path,
         loader_rpaths: &[PathBuf],
         hops: u32,
     ) {
         let dylib = &mut *self.dylib;
-        dylib.tlv_exports.extend(tbd.tlv_exports.iter().copied());
-        dylib.exports.extend(tbd.tlv_exports);
-        dylib.exports.extend(tbd.exports);
-        dylib.weak_exports.extend(tbd.weak_exports.iter().copied());
-        dylib.exports.extend(tbd.weak_exports);
-        self.pool.extend(tbd.documents);
-        let names = tbd.reexports.into_iter().map(<[u8]>::to_vec).collect();
-        let name = tbd.install_name;
+        add_names(&mut dylib.exports, &lib.exports);
+        add_names(&mut dylib.weak_exports, &lib.weak_exports);
+        add_names(&mut dylib.tlv_exports, &lib.tlv_exports);
+        self.moved.extend(lib.directives.moved.iter().cloned());
+        self.pool.extend(documents.iter().cloned());
+        let names = lib.tbd.reexports.iter().map(|name| name.to_vec()).collect();
+        let name = lib.tbd.install_name;
         self.queue.extend(ReexportRef::of(names, name, loader, loader_rpaths, hops));
     }
 
@@ -3161,9 +3162,23 @@ impl ReexportWalk<'_> {
     }
 }
 
+/// Adds the names of a merged library to a set of the dylib it merges
+/// into. A set smaller than the one it joins is the one added: the other
+/// is copied whole, which hashes nothing (SwiftUI merges the 53,000
+/// exports of SwiftUICore into its 21,000).
+fn add_names(to: &mut hashbrown::HashSet<&'static [u8]>, from: &hashbrown::HashSet<&'static [u8]>) {
+    if from.len() > to.len() {
+        let smaller = std::mem::replace(to, from.clone());
+        to.extend(smaller);
+    } else {
+        to.extend(from);
+    }
+}
+
 /// A dylib's install name and who may link it directly: the umbrella it
 /// belongs to (LC_SUB_FRAMEWORK, a stub's parent-umbrella) and the
 /// clients it names (LC_SUB_CLIENT, allowable-clients).
+#[derive(Clone)]
 pub struct DylibIdentity {
     pub install_name: Vec<u8>,
     umbrella: Option<Vec<u8>>,
@@ -3210,9 +3225,10 @@ impl DylibIdentity {
 /// The identity of the dylib in a stub or binary file.
 pub fn dylib_identity<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> DylibIdentity {
     match crate::filetype::get_file_type(mf) {
-        crate::filetype::FileType::Tapi => {
-            DylibIdentity::of_tbd(&read_tbd(ctx, mf).unwrap_or_default())
-        }
+        crate::filetype::FileType::Tapi => match read_stub(ctx, mf) {
+            Some(stub) => stub.main.identity.clone(),
+            None => DylibIdentity::of_tbd(&tapi::TbdFile::default()),
+        },
         _ => DylibIdentity::of_binary(mf),
     }
 }
@@ -3695,6 +3711,7 @@ fn find_by_leaf<E: Target>(
 /// library for the link's target: it binds to the library with that
 /// install name, at the directive's version or else the defining
 /// library's.
+#[derive(Clone)]
 struct MovedExport {
     name: &'static [u8],
     install_name: &'static [u8],
@@ -3705,6 +3722,7 @@ struct MovedExport {
 /// What a library's "$ld$..." names say for the link's target beyond its
 /// exports: whether its install name is an older library's, and the
 /// exports that move to one.
+#[derive(Clone)]
 struct LdDirectives {
     renamed: bool,
     moved: Vec<MovedExport>,
@@ -3954,17 +3972,93 @@ fn read_tbd<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> Option<tapi
     tapi::parse_cached(mf, E::NAME, ctx.args.platform)
 }
 
-/// A stub's library to load, or None, with ld-prime's warning, if it
-/// has no target on the architecture: the file is then ignored.
-pub fn load_tbd<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> Option<tapi::TbdFile> {
-    let tbd = read_tbd(ctx, mf);
-    if tbd.is_none() {
+/// A stub's libraries, read for the link (see StubLibrary): the
+/// library itself and those it inlines, which its re-exports may
+/// resolve to.
+pub struct Stub {
+    main: Arc<StubLibrary>,
+    documents: Vec<Arc<StubLibrary>>,
+}
+
+impl Stub {
+    /// The install names the stub's library re-exports.
+    pub fn reexports(&self) -> &[&'static [u8]] {
+        &self.main.tbd.reexports
+    }
+
+    /// Whether the stub inlines the library with `install_name`.
+    pub fn inlines(&self, install_name: &[u8]) -> bool {
+        self.documents.iter().any(|d| d.identity.install_name == install_name)
+    }
+}
+
+/// A library of a stub - the stub's own or one it inlines - read for the
+/// link's target: its "$ld$..." names applied (see interpret_ld_symbols)
+/// and its exports gathered into the sets a DylibFile keeps. That is
+/// most of the work of loading a stub, and it needs nothing of the link
+/// but its target: the stubs are read on all cores ahead of the serial
+/// loop loading them (see reader::prefetch_stubs), as mold parses its
+/// shared libraries in parallel.
+pub struct StubLibrary {
+    /// Who the stub says the library is, before a directive renames it.
+    identity: DylibIdentity,
+    /// The library as its directives leave it, less its exports and the
+    /// libraries it inlines.
+    tbd: tapi::TbdFile,
+    directives: LdDirectives,
+    /// Its exports: all of them, and the weak and the thread-local ones
+    /// again by kind.
+    exports: hashbrown::HashSet<&'static [u8]>,
+    weak_exports: hashbrown::HashSet<&'static [u8]>,
+    tlv_exports: hashbrown::HashSet<&'static [u8]>,
+}
+
+impl StubLibrary {
+    fn read<E: Target>(ctx: &Context<E>, mut tbd: tapi::TbdFile) -> Self {
+        let identity = DylibIdentity::of_tbd(&tbd);
+        let directives = interpret_ld_symbols(ctx, &mut tbd);
+        let mut exports: hashbrown::HashSet<&'static [u8]> =
+            std::mem::take(&mut tbd.exports).into_iter().collect();
+        let weak_exports: hashbrown::HashSet<&'static [u8]> =
+            tbd.weak_exports.iter().copied().collect();
+        exports.extend(std::mem::take(&mut tbd.weak_exports));
+        let tlv_exports: hashbrown::HashSet<&'static [u8]> =
+            std::mem::take(&mut tbd.tlv_exports).into_iter().collect();
+        exports.extend(tlv_exports.iter().copied());
+        Self { identity, tbd, directives, exports, weak_exports, tlv_exports }
+    }
+}
+
+/// A stub read for the link's target (see StubLibrary); None if it has
+/// no target on the architecture. Memoized by the file's address and
+/// the link's target, as tapi::parse_cached memoizes a parse.
+pub fn read_stub<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> Option<Arc<Stub>> {
+    type Cache = hashbrown::HashMap<(usize, &'static str, u32, u32), Option<Arc<Stub>>>;
+    static CACHE: std::sync::Mutex<Option<Cache>> = std::sync::Mutex::new(None);
+    let key = (mf.data().as_ptr() as usize, E::NAME, ctx.args.platform, ctx.args.platform_minos);
+    if let Some(stub) = CACHE.lock().unwrap().get_or_insert_with(Cache::new).get(&key) {
+        return stub.clone();
+    }
+    let stub = tapi::parse(mf, E::NAME, ctx.args.platform).map(|mut tbd| {
+        let documents = std::mem::take(&mut tbd.documents);
+        let read = |tbd| Arc::new(StubLibrary::read(ctx, tbd));
+        Arc::new(Stub { main: read(tbd), documents: documents.into_iter().map(read).collect() })
+    });
+    CACHE.lock().unwrap().get_or_insert_with(Cache::new).insert(key, stub.clone());
+    stub
+}
+
+/// A stub to load, or None, with ld-prime's warning, if it has no
+/// target on the architecture: the file is then ignored.
+pub fn load_tbd<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> Option<Arc<Stub>> {
+    let stub = read_stub(ctx, mf);
+    if stub.is_none() {
         let path = mf.name.raw();
         let why =
             format_args!("tapi error: missing required architecture {} in file {path}", E::NAME);
         ignore_foreign_file(ctx, mf, &why);
     }
-    tbd
+    stub
 }
 
 /// A dylib's or stub's install name, and the Objective-C and Swift
@@ -4024,51 +4118,43 @@ fn is_class_export(name: &[u8]) -> bool {
 /// Adds a .tbd stub's library to the link; None if the stub has no
 /// target on the link's architecture, and the link ignores it.
 pub fn parse_tbd<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFile) -> Option<usize> {
-    let tbd = load_tbd(ctx, mf)?;
-    Some(register_tbd_file(ctx, mf, tbd))
+    let stub = load_tbd(ctx, mf)?;
+    Some(register_tbd_file(ctx, mf, &stub))
 }
 
 /// Registers the library of a stub file as a dylib of the link.
 fn register_tbd_file<E: Target>(
     ctx: &mut Context<E>,
     mf: &'static MappedFile,
-    mut tbd: tapi::TbdFile,
+    stub: &Stub,
 ) -> usize {
-    check_dylib_platforms(ctx, mf, &tbd.platforms);
-    let documents = std::mem::take(&mut tbd.documents);
-    register_tbd(ctx, &mf.name, tbd, documents)
+    check_dylib_platforms(ctx, mf, &stub.main.tbd.platforms);
+    register_tbd(ctx, &mf.name, &stub.main, stub.documents.clone())
 }
 
-/// Registers a stub's library - a file's main document, or a
-/// re-exported one inlined in it - as a dylib of the link. `documents`
-/// are the inlined libraries its re-exports may resolve to.
+/// Registers a stub's library - a file's own, or a re-exported one
+/// inlined in it - as a dylib of the link. `documents` are the inlined
+/// libraries its re-exports may resolve to.
 fn register_tbd<E: Target>(
     ctx: &mut Context<E>,
     path: &Path,
-    mut tbd: tapi::TbdFile,
-    documents: Vec<tapi::TbdFile>,
+    lib: &StubLibrary,
+    documents: Vec<Arc<StubLibrary>>,
 ) -> usize {
-    let directives = interpret_ld_symbols(ctx, &mut tbd);
-    let mut exports: hashbrown::HashSet<&'static [u8]> = tbd.exports.into_iter().collect();
-    let weak_exports: hashbrown::HashSet<&'static [u8]> =
-        tbd.weak_exports.iter().copied().collect();
-    exports.extend(tbd.weak_exports);
-    let tlv_exports: hashbrown::HashSet<&'static [u8]> = tbd.tlv_exports.into_iter().collect();
-    exports.extend(tlv_exports.iter().copied());
-
-    let names = tbd.reexports.into_iter().map(<[u8]>::to_vec).collect();
+    let tbd = &lib.tbd;
+    let names = tbd.reexports.iter().map(|name| name.to_vec()).collect();
     let reexports = ReexportRef::of(names, tbd.install_name, path, &[], 0);
     let dylib = DylibFile {
         current_version: tbd.current_version,
         compatibility_version: tbd.compatibility_version,
         minos: tbd.minos,
-        exports,
-        has_weak_defs: !weak_exports.is_empty(),
-        weak_exports,
-        tlv_exports,
+        exports: lib.exports.clone(),
+        has_weak_defs: !lib.weak_exports.is_empty(),
+        weak_exports: lib.weak_exports.clone(),
+        tlv_exports: lib.tlv_exports.clone(),
         ..DylibFile::new(path.to_path_buf(), tbd.install_name.to_vec())
     };
-    add_library(ctx, dylib, reexports, documents, directives)
+    add_library(ctx, dylib, reexports, documents, lib.directives.clone())
 }
 
 /// Makes a dylib stand for each older library that exports of the
