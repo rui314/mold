@@ -19,7 +19,7 @@
 
 use crate::context::Context;
 use crate::input_files::FileId;
-use crate::input_sections::{InputSection, RelocTarget};
+use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
 use crate::passes::{add_branch_target, add_got, redirect_symbols_to_replacements};
 use crate::target::RelocClass;
@@ -191,24 +191,30 @@ fn add_relative_method_list<E: Target>(
     isec
 }
 
-/// The pointer stored at `off` in a subsection: the target of the
-/// 8-byte relocation there, if any.
-fn objc_pointer_at<E: Target>(ctx: &Context<E>, isec: u32, off: u64) -> Option<ObjcRef> {
-    let sec = &ctx.isecs[isec];
+/// The relocation of the pointer field at `off` in a subsection, the
+/// 8-byte one there, as (object, index into its relocation arena).
+fn objc_pointer_reloc<E: Target>(ctx: &Context<E>, isec: u32, off: u64) -> Option<(usize, usize)> {
+    let sec = &ctx.isecs[isec as usize];
     if ctx.is_internal(sec.file as usize) {
         return None;
     }
-    let rel = ctx
+    let k = ctx
         .isec_relocs(isec as usize)
         .iter()
-        .find(|r| r.offset as u64 == off && r.size == 8 && !r.is_pcrel && !r.is_subtracted)?;
+        .position(|r| r.offset as u64 == off && r.size == 8 && !r.is_pcrel && !r.is_subtracted)?;
+    Some((sec.file as usize, sec.rel_offset as usize + k))
+}
+
+/// The pointer stored at `off` in a subsection: the target of the
+/// 8-byte relocation there, if any.
+fn objc_pointer_at<E: Target>(ctx: &Context<E>, isec: u32, off: u64) -> Option<ObjcRef> {
+    let (obj, k) = objc_pointer_reloc(ctx, isec, off)?;
+    let rel = &ctx.objs[obj].relocs[k];
     if E::classify_reloc(rel.r_type) != RelocClass::Plain {
         return None;
     }
     Some(match rel.target() {
-        RelocTarget::Sym(idx) => {
-            ObjcRef::Sym(ctx.objs[sec.file as usize].symbols[idx as usize], rel.addend)
-        }
+        RelocTarget::Sym(idx) => ObjcRef::Sym(ctx.objs[obj].symbols[idx as usize], rel.addend),
         RelocTarget::Section(t) => ObjcRef::Isec(t, rel.addend as u64),
     })
 }
@@ -242,20 +248,6 @@ pub(crate) fn list_entries<E: Target>(
     (0..size).step_by(8).map(move |off| objc_pointer_at(ctx, isec, off))
 }
 
-/// The relocation of the pointer field at `off` in a subsection, as
-/// (object, index into its relocation arena), for rewriting it.
-fn objc_pointer_reloc<E: Target>(ctx: &Context<E>, isec: u32, off: u64) -> Option<(usize, usize)> {
-    let sec = &ctx.isecs[isec as usize];
-    if ctx.is_internal(sec.file as usize) {
-        return None;
-    }
-    let k = ctx
-        .isec_relocs(isec as usize)
-        .iter()
-        .position(|r| r.offset as u64 == off && r.size == 8 && !r.is_pcrel && !r.is_subtracted)?;
-    Some((sec.file as usize, sec.rel_offset as usize + k))
-}
-
 /// A class's ro data: class_t.data at offset 32, whose low two bits a
 /// Swift class uses as flags (FAST_IS_SWIFT_STABLE), so the record
 /// itself sits at the pointer with those bits cleared.
@@ -282,109 +274,14 @@ fn objc_cstring_at<E: Target>(ctx: &Context<E>, r: Option<ObjcRef>) -> Option<&'
 /// (NetNewsWire's debug dylib had 592 selector references too many);
 /// the first copy wins and the rest redirect to it, like merged
 /// literals. (A -r link leaves them all to the final link.)
-/// __objc_superrefs and __objc_protorefs
-/// entries of one class or protocol coalesce too, but for those a
-/// symbol names (see mark_labeled_literals).
+/// __objc_superrefs and __objc_protorefs entries of one class or
+/// protocol coalesce too, but for those a symbol names (see
+/// mark_labeled_literals).
 pub fn coalesce_objc_refs<E: Target>(ctx: &mut Context<E>) {
-    // What a pointer relocation refers to: a place in a subsection
-    // (where identical content has already been merged), or a symbol
-    // defined elsewhere.
-    #[derive(Hash, PartialEq, Eq)]
-    enum Target {
-        At(usize, i64),
-        Sym(crate::symbol::SymbolId, i64),
-    }
-    #[derive(Hash, PartialEq, Eq)]
-    enum Key {
-        Sel(Target),
-        Class(crate::symbol::SymbolId),
-        Super(Target),
-        Proto(Target),
-        CfString(Vec<u8>, Vec<(u32, Target)>),
-    }
-    let place = |ctx: &Context<E>, obj: usize, rel: &crate::input_sections::Reloc| -> Target {
-        match rel.target() {
-            RelocTarget::Section(t) => Target::At(ctx.resolve_isec(t as usize), rel.addend),
-            RelocTarget::Sym(idx) => {
-                let sym_id = ctx.objs[obj].symbols[idx as usize];
-                let sym = &ctx.symbols[sym_id];
-                match sym.input_section() {
-                    Some(isec) => {
-                        Target::At(ctx.resolve_isec(isec as usize), sym.value as i64 + rel.addend)
-                    }
-                    None => Target::Sym(sym_id, rel.addend),
-                }
-            }
-        }
-    };
-    let mut first: hashbrown::HashMap<Key, u32> = hashbrown::HashMap::new();
+    let mut first: hashbrown::HashMap<RefKey, u32> = hashbrown::HashMap::new();
     let mut folds: Vec<(usize, u32)> = Vec::new();
     for i in 0..ctx.isecs.len() {
-        let isec = &ctx.isecs[i];
-        if !isec.is_alive()
-            || isec.replacement != crate::input_sections::NO_REPLACEMENT
-            || ctx.is_internal(isec.file as usize)
-        {
-            continue;
-        }
-        let h = ctx.hdr_of(isec);
-        if h.segname() != b"__DATA" {
-            continue;
-        }
-        let obj = isec.file as usize;
-        let rels = ctx.isec_relocs(i);
-        let plain_ptr = |rel: &crate::input_sections::Reloc| {
-            E::classify_reloc(rel.r_type) == RelocClass::Plain
-                && rel.size == 8
-                && !rel.is_pcrel
-                && !rel.is_subtracted
-        };
-        let key = match h.sectname() {
-            b"__objc_selrefs" if h.section_type() != S_LITERAL_POINTERS => continue,
-            b"__objc_selrefs" | b"__objc_classrefs" => {
-                if isec.size != 8 || rels.len() != 1 || !plain_ptr(&rels[0]) {
-                    continue;
-                }
-                if h.sectname() == b"__objc_classrefs" {
-                    let RelocTarget::Sym(idx) = rels[0].target() else { continue };
-                    if rels[0].addend != 0 {
-                        continue;
-                    }
-                    Key::Class(ctx.objs[obj].symbols[idx as usize])
-                } else {
-                    Key::Sel(place(ctx, obj, &rels[0]))
-                }
-            }
-            b"__objc_superrefs" | b"__objc_protorefs" => {
-                if isec.is_labeled() || isec.size != 8 || rels.len() != 1 || !plain_ptr(&rels[0]) {
-                    continue;
-                }
-                let target = place(ctx, obj, &rels[0]);
-                if h.sectname() == b"__objc_superrefs" {
-                    Key::Super(target)
-                } else {
-                    Key::Proto(target)
-                }
-            }
-            b"__cfstring" => {
-                if isec.size != 32 || !rels.iter().all(plain_ptr) {
-                    continue;
-                }
-                let mut targets: Vec<(u32, Target)> =
-                    rels.iter().map(|rel| (rel.offset, place(ctx, obj, rel))).collect();
-                targets.sort_by_key(|t| t.0);
-                // The relocated fields hold per-object addends (x86-64
-                // embeds the target's address); the targets stand for
-                // them.
-                let mut bytes = isec.data().to_vec();
-                for rel in rels {
-                    let (a, b) = (rel.offset as usize, rel.offset as usize + rel.size as usize);
-                    bytes[a..b].fill(0);
-                }
-                Key::CfString(bytes, targets)
-            }
-            _ => continue,
-        };
+        let Some(key) = ref_key(ctx, i) else { continue };
         match first.entry(key) {
             hashbrown::hash_map::Entry::Occupied(e) => folds.push((i, *e.get())),
             hashbrown::hash_map::Entry::Vacant(e) => {
@@ -402,6 +299,112 @@ pub fn coalesce_objc_refs<E: Target>(ctx: &mut Context<E>) {
         w.p2align = w.p2align.max(p2align);
     }
     redirect_symbols_to_replacements(ctx);
+}
+
+/// What a reference record's pointer refers to: a place in a subsection
+/// (where identical content has already been merged), or a symbol
+/// defined elsewhere.
+#[derive(Hash, PartialEq, Eq)]
+enum RefTarget {
+    At(usize, i64),
+    Sym(crate::symbol::SymbolId, i64),
+}
+
+/// What makes two reference records of a section the same, for
+/// coalesce_objc_refs.
+#[derive(Hash, PartialEq, Eq)]
+enum RefKey {
+    Sel(RefTarget),
+    Class(crate::symbol::SymbolId),
+    Super(RefTarget),
+    Proto(RefTarget),
+    CfString(Vec<u8>, Vec<(u32, RefTarget)>),
+}
+
+/// What relocation `rel` of object `obj` refers to (see RefTarget).
+fn ref_target<E: Target>(ctx: &Context<E>, obj: usize, rel: &Reloc) -> RefTarget {
+    match rel.target() {
+        RelocTarget::Section(t) => RefTarget::At(ctx.resolve_isec(t as usize), rel.addend),
+        RelocTarget::Sym(idx) => {
+            let sym_id = ctx.objs[obj].symbols[idx as usize];
+            let sym = &ctx.symbols[sym_id];
+            match sym.input_section() {
+                Some(isec) => {
+                    RefTarget::At(ctx.resolve_isec(isec as usize), sym.value as i64 + rel.addend)
+                }
+                None => RefTarget::Sym(sym_id, rel.addend),
+            }
+        }
+    }
+}
+
+/// The key subsection `i` coalesces by, if it is a reference record
+/// coalesce_objc_refs coalesces.
+fn ref_key<E: Target>(ctx: &Context<E>, i: usize) -> Option<RefKey> {
+    let isec = &ctx.isecs[i];
+    if !isec.is_alive()
+        || isec.replacement != crate::input_sections::NO_REPLACEMENT
+        || ctx.is_internal(isec.file as usize)
+    {
+        return None;
+    }
+    let h = ctx.hdr_of(isec);
+    if h.segname() != b"__DATA" {
+        return None;
+    }
+    let obj = isec.file as usize;
+    let rels = ctx.isec_relocs(i);
+    let plain_ptr = |rel: &Reloc| {
+        E::classify_reloc(rel.r_type) == RelocClass::Plain
+            && rel.size == 8
+            && !rel.is_pcrel
+            && !rel.is_subtracted
+    };
+    match h.sectname() {
+        b"__objc_selrefs" if h.section_type() != S_LITERAL_POINTERS => None,
+        b"__objc_selrefs" | b"__objc_classrefs" => {
+            if isec.size != 8 || rels.len() != 1 || !plain_ptr(&rels[0]) {
+                return None;
+            }
+            if h.sectname() == b"__objc_classrefs" {
+                let RelocTarget::Sym(idx) = rels[0].target() else { return None };
+                if rels[0].addend != 0 {
+                    return None;
+                }
+                Some(RefKey::Class(ctx.objs[obj].symbols[idx as usize]))
+            } else {
+                Some(RefKey::Sel(ref_target(ctx, obj, &rels[0])))
+            }
+        }
+        b"__objc_superrefs" | b"__objc_protorefs" => {
+            if isec.is_labeled() || isec.size != 8 || rels.len() != 1 || !plain_ptr(&rels[0]) {
+                return None;
+            }
+            let target = ref_target(ctx, obj, &rels[0]);
+            if h.sectname() == b"__objc_superrefs" {
+                Some(RefKey::Super(target))
+            } else {
+                Some(RefKey::Proto(target))
+            }
+        }
+        b"__cfstring" => {
+            if isec.size != 32 || !rels.iter().all(plain_ptr) {
+                return None;
+            }
+            let mut targets: Vec<(u32, RefTarget)> =
+                rels.iter().map(|rel| (rel.offset, ref_target(ctx, obj, rel))).collect();
+            targets.sort_by_key(|t| t.0);
+            // The relocated fields hold per-object addends (x86-64
+            // embeds the target's address); the targets stand for them.
+            let mut bytes = isec.data().to_vec();
+            for rel in rels {
+                let (a, b) = (rel.offset as usize, rel.offset as usize + rel.size as usize);
+                bytes[a..b].fill(0);
+            }
+            Some(RefKey::CfString(bytes, targets))
+        }
+        _ => None,
+    }
 }
 
 /// Synthesizes _objc_msgSend$<selector> stubs. With selector stubs
