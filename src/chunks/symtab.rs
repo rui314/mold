@@ -172,12 +172,12 @@ pub(crate) fn keep_local_symbol(name: &[u8]) -> bool {
 pub struct Stab {
     pub name: &'static [u8],
     pub ent: NList,
-    pub value_of: Option<crate::symbol::SymbolId>,
-    pub name_of: Option<crate::symbol::SymbolId>,
+    pub value_of: Option<SymbolId>,
+    pub name_of: Option<SymbolId>,
 }
 
 impl Stab {
-    fn new(name: &'static [u8], ent: NList, value_of: Option<crate::symbol::SymbolId>) -> Self {
+    fn new(name: &'static [u8], ent: NList, value_of: Option<SymbolId>) -> Self {
         Self { name, ent, value_of, name_of: None }
     }
 
@@ -259,7 +259,7 @@ impl StabPlan {
 /// for a local's.
 #[derive(Clone, Copy, Debug)]
 struct SymbolStabs {
-    sym: crate::symbol::SymbolId,
+    sym: SymbolId,
     size: u32,
     n_sect: u8,
     n_type: u8,
@@ -605,7 +605,7 @@ pub(crate) fn object_stabs_opening<E: Target>(
 fn symbol_stabs<E: Target>(
     ctx: &Context<E>,
     obj: &ObjectFile,
-    sym_id: crate::symbol::SymbolId,
+    sym_id: SymbolId,
     nlist: &NList,
     common: bool,
 ) -> Option<SymbolStabs> {
@@ -653,11 +653,11 @@ pub const STAB_END: NList = NList { n_strx: 1, n_type: N_SO, n_sect: 1, n_desc: 
 /// stubs. -x drops them all, the demoted private externals too, as ld64
 /// lists no local symbol under it. (ld-prime lists them by address, the
 /// names at one address by rank, a subsection's own name last.)
-fn plan_local_symbols<E: Target>(ctx: &Context<E>, pexts: &[usize]) -> Vec<LocalEnt> {
+fn plan_local_symbols<E: Target>(ctx: &Context<E>, pexts: &[usize]) -> Vec<NamedEntry> {
     if ctx.args.strip_locals {
         return Vec::new();
     }
-    let per_obj: Vec<Vec<LocalEnt>> =
+    let per_obj: Vec<Vec<NamedEntry>> =
         ctx.objs.par_iter().map(|obj| object_locals(ctx, obj)).collect();
     let mut ents = per_obj.concat();
 
@@ -690,7 +690,7 @@ fn plan_local_symbols<E: Target>(ctx: &Context<E>, pexts: &[usize]) -> Vec<Local
 /// The local names the linker gives its own code and data: on
 /// synthesized data, the objc_msgSend$ stubs, the lazy-load helpers and
 /// slots, and the range-extension thunks' entries.
-fn linker_locals<E: Target>(ctx: &Context<E>) -> Vec<LocalEnt> {
+fn linker_locals<E: Target>(ctx: &Context<E>) -> Vec<NamedEntry> {
     let mut ents = Vec::new();
     // Locals the linker named itself, on synthesized data whose
     // addresses are final by now.
@@ -769,7 +769,7 @@ pub(crate) fn is_listed_out<E: Target>(ctx: &Context<E>, name: &[u8]) -> bool {
 
 /// The non-external symbols of an object that the output lists, in
 /// symbol-table order.
-fn object_locals<E: Target>(ctx: &Context<E>, obj: &ObjectFile) -> Vec<LocalEnt> {
+fn object_locals<E: Target>(ctx: &Context<E>, obj: &ObjectFile) -> Vec<NamedEntry> {
     let mut out = Vec::new();
     if !obj.is_alive {
         return out;
@@ -805,17 +805,17 @@ fn object_locals<E: Target>(ctx: &Context<E>, obj: &ObjectFile) -> Vec<LocalEnt>
     out
 }
 
-/// A local symbol table entry: its name, its entry, and the symbol
-/// whose address fills n_value.
-type LocalEnt = (&'static [u8], NList, Option<crate::symbol::SymbolId>);
+/// A symbol table entry with its name, and the symbol whose address
+/// fills n_value.
+type NamedEntry = (&'static [u8], NList, Option<SymbolId>);
 
 /// Appends an entry and its name for each item, made by `f` on all cores
 /// straight into the arrays' spare capacity, which the caller reserved.
 pub fn par_push_entries<T: Sync>(
     names: &mut Vec<&'static [u8]>,
-    entries: &mut Vec<(NList, Option<crate::symbol::SymbolId>)>,
+    entries: &mut Vec<(NList, Option<SymbolId>)>,
     items: &[T],
-    f: impl Fn(&T) -> (&'static [u8], NList, Option<crate::symbol::SymbolId>) + Sync,
+    f: impl Fn(&T) -> NamedEntry + Sync,
 ) {
     let n = items.len();
     names.spare_capacity_mut()[..n]
@@ -1009,10 +1009,7 @@ fn classify_symbols<E: Target>(ctx: &Context<E>, indexed: &[bool]) -> Vec<Symbol
 
 /// A defined global's entry, its name and the symbol whose address
 /// fills in n_value.
-fn global_entry<E: Target>(
-    ctx: &Context<E>,
-    i: SymbolId,
-) -> (&'static [u8], NList, Option<SymbolId>) {
+fn global_entry<E: Target>(ctx: &Context<E>, i: SymbolId) -> NamedEntry {
     let sym = &ctx.symbols[i];
     let (n_type, n_sect, mut n_desc) = match (sym.file(), sym.input_section()) {
         (_, Some(isec)) => {
@@ -1043,7 +1040,7 @@ fn global_entry<E: Target>(
 
 /// An import's entry and its name. The library ordinal lives in the
 /// high byte of n_desc.
-fn import_entry<E: Target>(ctx: &Context<E>, i: usize) -> (&'static [u8], NList, Option<SymbolId>) {
+fn import_entry<E: Target>(ctx: &Context<E>, i: usize) -> NamedEntry {
     let sym = &ctx.symbols[i];
     let Some(FileId::Dylib(dylib)) = sym.file() else { unreachable!() };
     // A dynamic-lookup import records the DYNAMIC_LOOKUP ordinal, a
