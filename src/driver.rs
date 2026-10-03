@@ -14,6 +14,13 @@ use crate::output_sections;
 use crate::passes;
 use crate::target::Target;
 
+/// The fully expanded command line.
+pub type Cmdline = Arc<[Cow<'static, OsStr>]>;
+
+/// The exit status of a link, or the name of the target the inputs are
+/// actually for.
+pub type LinkResult = Result<i32, &'static str>;
+
 /// Runs the linker with the given command line. Returns the exit status.
 ///
 /// `initial_target` is an enabled target used for the initial argument
@@ -23,9 +30,9 @@ use crate::target::Target;
 pub fn main(
     argv: Vec<OsString>,
     initial_target: &str,
-    link_for_target: impl Fn(&str, Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'static str>,
+    link_for_target: impl Fn(&str, Cmdline) -> LinkResult,
 ) -> i32 {
-    let cmdline: Arc<[_]> = cmdline::expand_response_files(argv).into();
+    let cmdline: Cmdline = cmdline::expand_response_files(argv).into();
 
     // Parse with an enabled target's defaults; if the target turns out to
     // be different, start over with the right one.
@@ -44,7 +51,7 @@ fn target_traits<E: Target>() -> cmdline::TargetTraits {
 
 /// Links for the target `E`, or reports the target the inputs are
 /// actually for.
-pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'static str> {
+pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     let args = cmdline::parse_args(&target_traits::<E>(), &cmdline);
 
     // Redo if the target does not match with our speculation.
