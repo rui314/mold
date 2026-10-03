@@ -1616,20 +1616,15 @@ impl<E: Target> Synth<'_, E> {
         table.nlists.push(n);
     }
 
-    /// Writes the object out: the header and load commands (one segment
-    /// of all the sections, the build version and the symbol tables),
-    /// the sections' bytes, their relocations, the symbols and their
-    /// names.
+    /// Writes the object out: the header and load commands (see
+    /// write_load_commands), the sections' bytes, their relocations, the
+    /// symbols and their names.
     fn write(self) -> Vec<u8> {
-        let nsects = self.sections.len();
-        let seg_size = size_of::<SegmentCommand>() + nsects * size_of::<MachSection>();
-        let cmds_size = seg_size
-            + size_of::<BuildVersionCommand>()
-            + size_of::<SymtabCommand>()
-            + size_of::<DysymtabCommand>();
-        let mut out = vec![0u8; size_of::<MachHeader>() + cmds_size];
+        let mut out = vec![0u8; size_of::<MachHeader>() + self.load_commands_size()];
 
-        let mut sect_offs = Vec::with_capacity(nsects);
+        // The sections' bytes, which make up the segment; none of zero
+        // fill.
+        let mut sect_offs = Vec::with_capacity(self.sections.len());
         for s in &self.sections {
             if is_zerofill(s.flags) {
                 sect_offs.push(0);
@@ -1640,12 +1635,14 @@ impl<E: Target> Synth<'_, E> {
             out.extend_from_slice(&s.data);
             sect_offs.push(off as u32);
         }
-        let fileoff = sect_offs.iter().copied().filter(|&o| o != 0).min().unwrap_or(0) as u64;
-        let filesize = out.len() as u64 - fileoff;
+        let seg_fileoff = sect_offs.iter().copied().filter(|&o| o != 0).min().unwrap_or(0) as u64;
+        let seg_filesize = out.len() as u64 - seg_fileoff;
         out.resize(out.len().next_multiple_of(8), 0);
 
+        // The relocations, which refer to the symbols by their indices
+        // in the table.
         let table = self.symbol_table();
-        let mut reloc_offs = Vec::with_capacity(nsects);
+        let mut reloc_offs = Vec::with_capacity(self.sections.len());
         for s in &self.sections {
             reloc_offs.push(out.len() as u32);
             for r in &s.relocs {
@@ -1656,6 +1653,7 @@ impl<E: Target> Synth<'_, E> {
                 out.extend_from_slice(r.as_bytes());
             }
         }
+
         let symoff = out.len().next_multiple_of(8);
         out.resize(symoff, 0);
         for n in &table.nlists {
@@ -1665,9 +1663,27 @@ impl<E: Target> Synth<'_, E> {
         out.extend_from_slice(&table.strtab.data);
         out.resize(out.len().next_multiple_of(8), 0);
 
+        let layout =
+            FileLayout { sect_offs, reloc_offs, seg_fileoff, seg_filesize, symoff, stroff };
+        self.write_load_commands(&mut out, &layout, &table);
+        out
+    }
+
+    /// The size of the load commands: a segment of all the sections, the
+    /// build version and the symbol tables.
+    fn load_commands_size(&self) -> usize {
+        size_of::<SegmentCommand>()
+            + self.sections.len() * size_of::<MachSection>()
+            + size_of::<BuildVersionCommand>()
+            + size_of::<SymtabCommand>()
+            + size_of::<DysymtabCommand>()
+    }
+
+    /// Writes the Mach header and the load commands.
+    fn write_load_commands(&self, buf: &mut [u8], layout: &FileLayout, table: &SymbolTable) {
         let mut off = 0;
-        let mut put = |out: &mut Vec<u8>, bytes: &[u8]| {
-            out[off..off + bytes.len()].copy_from_slice(bytes);
+        let mut put = |bytes: &[u8]| {
+            buf[off..off + bytes.len()].copy_from_slice(bytes);
             off += bytes.len();
         };
         let header = MachHeader {
@@ -1676,37 +1692,38 @@ impl<E: Target> Synth<'_, E> {
             cpusubtype: self.rec.cpusubtype,
             filetype: MH_OBJECT,
             ncmds: 4,
-            sizeofcmds: cmds_size as u32,
+            sizeofcmds: self.load_commands_size() as u32,
             flags: MH_SUBSECTIONS_VIA_SYMBOLS,
             reserved: 0,
         };
-        put(&mut out, header.as_bytes());
+        put(header.as_bytes());
+        let nsects = self.sections.len();
         let segment = SegmentCommand {
             cmd: LC_SEGMENT_64,
-            cmdsize: seg_size as u32,
+            cmdsize: (size_of::<SegmentCommand>() + nsects * size_of::<MachSection>()) as u32,
             vmsize: self.sections.iter().map(|s| s.addr + s.size).max().unwrap_or(0),
-            fileoff,
-            filesize,
-            maxprot: 7,
-            initprot: 7,
+            fileoff: layout.seg_fileoff,
+            filesize: layout.seg_filesize,
+            maxprot: VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE,
+            initprot: VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE,
             nsects: nsects as u32,
             ..Default::default()
         };
-        put(&mut out, segment.as_bytes());
+        put(segment.as_bytes());
         for (i, s) in self.sections.iter().enumerate() {
             let hdr = MachSection {
                 sectname: s.sectname,
                 segname: s.segname,
                 addr: s.addr,
                 size: s.size,
-                offset: sect_offs[i],
+                offset: layout.sect_offs[i],
                 p2align: s.p2align as u32,
-                reloff: if s.relocs.is_empty() { 0 } else { reloc_offs[i] },
+                reloff: if s.relocs.is_empty() { 0 } else { layout.reloc_offs[i] },
                 nreloc: s.relocs.len() as u32,
                 flags: s.flags,
                 ..Default::default()
             };
-            put(&mut out, hdr.as_bytes());
+            put(hdr.as_bytes());
         }
         let build = BuildVersionCommand {
             cmd: LC_BUILD_VERSION,
@@ -1716,16 +1733,16 @@ impl<E: Target> Synth<'_, E> {
             sdk: self.rec.sdk,
             ntools: 0,
         };
-        put(&mut out, build.as_bytes());
+        put(build.as_bytes());
         let symtab = SymtabCommand {
             cmd: LC_SYMTAB,
             cmdsize: size_of::<SymtabCommand>() as u32,
-            symoff: symoff as u32,
+            symoff: layout.symoff as u32,
             nsyms: table.nlists.len() as u32,
-            stroff: stroff as u32,
+            stroff: layout.stroff as u32,
             strsize: table.strtab.data.len() as u32,
         };
-        put(&mut out, symtab.as_bytes());
+        put(symtab.as_bytes());
         let dysymtab = DysymtabCommand {
             cmd: LC_DYSYMTAB,
             cmdsize: size_of::<DysymtabCommand>() as u32,
@@ -1737,9 +1754,20 @@ impl<E: Target> Synth<'_, E> {
             nundefsym: (table.nlists.len() - table.nlocal - table.nextdef) as u32,
             ..Default::default()
         };
-        put(&mut out, dysymtab.as_bytes());
-        out
+        put(dysymtab.as_bytes());
     }
+}
+
+/// Where the parts of the object lie in the file: each section's bytes
+/// and relocations, the segment the bytes make up, and the symbol and
+/// string tables.
+struct FileLayout {
+    sect_offs: Vec<u32>,
+    reloc_offs: Vec<u32>,
+    seg_fileoff: u64,
+    seg_filesize: u64,
+    symoff: usize,
+    stroff: usize,
 }
 
 /// The symbol table of the object being made.
