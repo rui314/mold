@@ -27,11 +27,6 @@ impl Default for BindInfoSection {
     }
 }
 
-pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
-    let data = &ctx.bind_info.contents;
-    buf[..data.len()].copy_from_slice(data);
-}
-
 /// Builds the bind opcode stream: it tells dyld which imported symbol to
 /// write into each GOT slot. Runs during layout, once every segment
 /// before __LINKEDIT has an address.

@@ -32,11 +32,6 @@ impl Default for FunctionStartsSection {
     }
 }
 
-pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
-    let data = &ctx.function_starts.contents;
-    buf[..data.len()].copy_from_slice(data);
-}
-
 /// Lists, as ld-prime does, the start of each piece it splits the
 /// image's code into: each non-empty subsection of an output section
 /// of pure instructions (__text with the __StaticInit static

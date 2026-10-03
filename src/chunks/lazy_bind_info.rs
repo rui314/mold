@@ -30,11 +30,6 @@ impl Default for LazyBindInfoSection {
     }
 }
 
-pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
-    let data = &ctx.lazy_bind_info.contents;
-    buf[..data.len()].copy_from_slice(data);
-}
-
 /// The lazy-bind opcode stream: one self-contained record per lazily
 /// bound stub (segment/offset of its lazy pointer, dylib ordinal,
 /// symbol, bind, done), and each record's offset, which the stub helper

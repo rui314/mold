@@ -29,11 +29,6 @@ impl Default for ExportTrieSection {
     }
 }
 
-pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
-    let data = &ctx.export_trie.contents;
-    buf[..data.len()].copy_from_slice(data);
-}
-
 /// What an export trie terminal says about a symbol.
 #[derive(Clone, Copy)]
 enum Export {

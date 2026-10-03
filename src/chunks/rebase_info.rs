@@ -30,11 +30,6 @@ impl Default for RebaseInfoSection {
     }
 }
 
-pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
-    let data = &ctx.rebase_info.contents;
-    buf[..data.len()].copy_from_slice(data);
-}
-
 /// Whether a relocation has the linker write a pointer, which dyld may
 /// slide or bind: an 8-byte absolute address, not a term of a
 /// SUBTRACTOR pair's difference.

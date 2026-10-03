@@ -48,11 +48,6 @@ impl Default for SplitInfoSection {
     }
 }
 
-pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
-    let data = &ctx.split_info.contents;
-    buf[..data.len()].copy_from_slice(data);
-}
-
 /// One reference, in the V2 format's terms. The fields are in the
 /// order the format groups references by: (from, to) section, then
 /// target offset, then kind.

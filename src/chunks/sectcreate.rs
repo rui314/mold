@@ -58,8 +58,3 @@ impl SectCreateInput {
         }
     }
 }
-
-pub fn copy_buf<E: Target>(ctx: &Context<E>, idx: u32, buf: &mut [u8]) {
-    let data = ctx.sectcreate_sections[idx as usize].contents;
-    buf[..data.len()].copy_from_slice(data);
-}

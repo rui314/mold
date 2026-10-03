@@ -51,11 +51,6 @@ impl Default for ChainedFixupsSection {
     }
 }
 
-pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
-    let data = &ctx.chained_fixups.contents;
-    buf[..data.len()].copy_from_slice(data);
-}
-
 /// What build_chained_fixups makes, for the caller to store on the
 /// context: the encoded payload, the fixups, the import table and each
 /// import's index.

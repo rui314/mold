@@ -334,24 +334,30 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, id: ChunkId, buf: &mut [u8]) {
         ChunkId::ObjcStubs => objc_stubs::copy_buf(ctx, buf),
         ChunkId::ObjcMethlist => objc_methlist::copy_buf(ctx, buf),
         ChunkId::ObjcImageInfo => objc_imageinfo::copy_buf(ctx, buf),
-        ChunkId::SectCreate(i) => sectcreate::copy_buf(ctx, i, buf),
+        ChunkId::SectCreate(i) => copy_contents(ctx.sectcreate_sections[i as usize].contents, buf),
         ChunkId::InitOffsets => init_offsets::copy_buf(ctx, buf),
         ChunkId::ChainStarts => chain_starts::copy_buf(ctx, buf),
         ChunkId::UnwindInfo => unwind_info::copy_buf(ctx, buf),
         ChunkId::EhFrame => eh_frame::copy_buf(ctx, buf),
-        ChunkId::RebaseInfo => rebase_info::copy_buf(ctx, buf),
-        ChunkId::BindInfo => bind_info::copy_buf(ctx, buf),
-        ChunkId::WeakBindInfo => weak_bind_info::copy_buf(ctx, buf),
-        ChunkId::LazyBindInfo => lazy_bind_info::copy_buf(ctx, buf),
-        ChunkId::ChainedFixups => chained_fixups::copy_buf(ctx, buf),
-        ChunkId::ExportTrie => export_trie::copy_buf(ctx, buf),
-        ChunkId::FunctionStarts => function_starts::copy_buf(ctx, buf),
+        ChunkId::RebaseInfo => copy_contents(&ctx.rebase_info.contents, buf),
+        ChunkId::BindInfo => copy_contents(&ctx.bind_info.contents, buf),
+        ChunkId::WeakBindInfo => copy_contents(&ctx.weak_bind_info.contents, buf),
+        ChunkId::LazyBindInfo => copy_contents(&ctx.lazy_bind_info.contents, buf),
+        ChunkId::ChainedFixups => copy_contents(&ctx.chained_fixups.contents, buf),
+        ChunkId::ExportTrie => copy_contents(&ctx.export_trie.contents, buf),
+        ChunkId::FunctionStarts => copy_contents(&ctx.function_starts.contents, buf),
         ChunkId::DataInCode => data_in_code::copy_buf(ctx, buf),
         ChunkId::MergeableRecord => crate::make_mergeable::copy_buf(ctx, buf),
-        ChunkId::SplitInfo => split_info::copy_buf(ctx, buf),
+        ChunkId::SplitInfo => copy_contents(&ctx.split_info.contents, buf),
         ChunkId::LazyLoadInfo => lazy_load_info::copy_buf(ctx, buf),
         ChunkId::IndirectSymtab => indirect_symtab::copy_buf(ctx, buf),
     }
+}
+
+/// Copies a chunk's contents, built during layout, into its slice of
+/// the output.
+fn copy_contents(contents: &[u8], buf: &mut [u8]) {
+    buf[..contents.len()].copy_from_slice(contents);
 }
 
 fn to_vec(record: &impl FileRecord) -> Vec<u8> {
