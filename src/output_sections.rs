@@ -1732,9 +1732,8 @@ fn add_stub_and_got_chunks<E: Target>(ctx: &mut Context<E>) {
     // (A stub bound by weak lookup goes through the GOT; only lazily
     // bound stubs need the helper and lazy pointers.)
     if !ctx.stubs.lazy.is_empty() {
-        ctx.stub_helper.hdr.size = ctx.stub_helper_header_size()
-            + ctx.stubs.lazy.len() as u64 * E::STUB_HELPER_ENTRY_SIZE
-            - ctx.stub_helper_entry_padding();
+        ctx.stub_helper.hdr.size =
+            ctx.stub_helper_header_size() + ctx.stubs.lazy.len() as u64 * E::STUB_HELPER_ENTRY_SIZE;
         ctx.chunks.push(ChunkId::StubHelper);
         // In the shared region, dyld binds them all at load, and the
         // section joins the read-only data.

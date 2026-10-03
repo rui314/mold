@@ -799,7 +799,6 @@ impl Target for Arm64 {
     const STUB_SIZE: u64 = 12;
     const STUB_HELPER_HEADER_SIZE: u64 = 24;
     const STUB_HELPER_ENTRY_SIZE: u64 = 12;
-    const STUB_HELPER_ENTRY_PADDING: u64 = 0;
     const UNWIND_MODE_DWARF: u32 = UNWIND_ARM64_MODE_DWARF;
     const OBJC_STUB_SIZE: u64 = 32;
     const OBJC_SMALL_STUB_SIZE: u64 = 12;

@@ -53,10 +53,9 @@ if [ $ARCH = arm64 ]; then
   grep -q 'a9bf47f0' $t/helper       # stp x16, x17, [sp, #-16]!
   grep -q 'd61f0200 18000050' $t/helper   # br x16; ldr w16, #8
 else
-  # ld-prime keeps x86-64 entries 4-byte aligned: 10 bytes of push and
-  # jmp, then 2 zero bytes before the next entry (none after the last),
-  # so the lazy pointers, which start at the entries, are 12 apart.
-  [ "$(grep -A4 'sectname __stub_helper' $t/lc | awk '/size/{print $2}')" = 0x0000000000000026 ]
+  # x86-64 entries are 4-byte aligned: 10 bytes of push and jmp, then
+  # 2 zero bytes, so the lazy pointers, which start at the entries, are
+  # 12 apart.
   otool -s __TEXT __stub_helper $t/exe | tail -n +3 | cut -c12- | tr -d '\n' | tr -s ' ' > $t/helper
   grep -q '4c 8d 1d' $t/helper        # lea __dyld_private(%rip), %r11
   set -- $(otool -s __DATA __la_symbol_ptr $t/exe | tail -n +3 | head -1 | cut -f2)

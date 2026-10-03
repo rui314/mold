@@ -731,12 +731,6 @@ impl<E: Target> Context<E> {
         if self.args.legacy_linkedit { 0 } else { E::STUB_HELPER_HEADER_SIZE }
     }
 
-    /// The padding after each __stub_helper entry but the last. (Legacy
-    /// LINKEDIT's x86-64 entries fill their 12 bytes.)
-    pub fn stub_helper_entry_padding(&self) -> u64 {
-        if self.args.legacy_linkedit { 0 } else { E::STUB_HELPER_ENTRY_PADDING }
-    }
-
     /// The address of the pointer slot stub `i` (for symbol `id`)
     /// jumps through: its lazy pointer, or its GOT slot. A weak
     /// definition of this image always goes through its GOT slot (the

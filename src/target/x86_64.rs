@@ -211,7 +211,6 @@ impl Target for X86_64 {
     // ld64 keeps the entries 4-byte aligned: 10 bytes of push and jmp,
     // then 2 zero bytes.
     const STUB_HELPER_ENTRY_SIZE: u64 = 12;
-    const STUB_HELPER_ENTRY_PADDING: u64 = 2;
     const UNWIND_MODE_DWARF: u32 = UNWIND_X86_64_MODE_DWARF;
     const OBJC_STUB_SIZE: u64 = 13;
     // ld-prime has no small form of x86-64's.
@@ -333,9 +332,7 @@ impl Target for X86_64 {
             write32(&mut buf[off + 1..], lazy_off);
             buf[off + 5] = 0xe9;
             write32(&mut buf[off + 6..], addr.wrapping_sub(ent_addr + 10) as u32);
-            if i + 1 < lazy_offsets.len() {
-                buf[off + 10..off + 12].fill(0);
-            }
+            buf[off + 10..off + 12].fill(0);
         }
     }
 
