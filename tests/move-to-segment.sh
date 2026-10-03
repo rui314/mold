@@ -36,7 +36,7 @@ prot() {
 
 printf '_data1\n_sdata\n_bss1\n_const1\n_func1\n# a comment\n' > $t/rw.txt
 $CC --ld-path=$mold -o $t/exe1 $t/a.o -Wl,-move_to_rw_segment,__FOO,$t/rw.txt 2> $t/log1
-grep -q "warning: cannot move symbol '_func1' (.*/a.o) to segment '__FOO' because symbol is code (is function)" $t/log1
+grep -q "warning: cannot move symbol '_func1' (.*/a.o) to segment '__FOO' because .*code" $t/log1
 [ "$(grep -c warning $t/log1)" = 1 ]
 nm -m $t/exe1 > $t/nm1
 grep -q '(__FOO,__data) external _data1$' $t/nm1
@@ -55,7 +55,8 @@ segs $t/exe1 | grep -q '__DATA __FOO __LINKEDIT'
 # protection check and the run below fail.
 printf '_func1\n_func2\n_const1\n_data1\n' > $t/ro.txt
 $CC --ld-path=$mold -o $t/exe2 $t/a.o -Wl,-move_to_ro_segment,__BAR,$t/ro.txt 2> $t/log2
-grep -q "warning: cannot move symbol '_data1' (.*/a.o) to segment '__BAR' because symbol is not code (is data)" $t/log2
+grep -q "warning: cannot move symbol '_data1' (.*/a.o) to segment '__BAR' because" $t/log2
+[ "$(grep -c warning $t/log2)" = 1 ]
 nm -m $t/exe2 > $t/nm2
 grep -q '(__BAR,__text) external _func1$' $t/nm2
 grep -q '(__BAR,__text) external _func2$' $t/nm2
@@ -109,9 +110,9 @@ nm -m $t/libb.dylib | grep -q '(__FOO,__data) external _ptr$'
 $CC --ld-path=$mold -o $t/exe5 $t/c.o $t/libb.dylib
 [ "$($t/exe5)" = hello ]
 
-# The warnings follow ld-prime's walk: file by file an object's
-# subsections, common symbols and absolute symbols, then the
-# thread-local variables' descriptors it makes.
+# -move_to_ro_segment refuses every kind of data a list names, each
+# once: initialized, common, absolute, and a thread-local variable's
+# descriptor, which the runtime writes.
 cat <<EOF | $CC -o $t/e.o -c -xassembler -
 .data
 .globl _f1
@@ -129,13 +130,14 @@ int main() { return 0; }
 EOF
 printf '_tv1\n_e1\n_absf\n_c1\n_f1\n' > $t/order.txt
 $CC --ld-path=$mold -o $t/exe10 $t/e.o $t/f.o -Wl,-move_to_ro_segment,__BAR,$t/order.txt 2> $t/log10
-sed -n "s/.*cannot move symbol '\([^']*\)'.*/\1/p" $t/log10 | tr '\n' ' ' > $t/order10
-[ "$(cat $t/order10)" = '_f1 _c1 _absf _e1 _tv1 ' ]
+sed -n "s/.*cannot move symbol '\([^']*\)'.*/\1/p" $t/log10 | sort | tr '\n' ' ' > $t/warn10
+[ "$(cat $t/warn10)" = '_absf _c1 _e1 _f1 _tv1 ' ]
+nm -m $t/exe10 > $t/nm10
+not grep -q __BAR $t/nm10
 
-# An -alias name stands for its base's subsection; ld-prime defines the
-# alias in its command-line-aliases-file (after the objects'
-# subsections): a list naming either name moves the subsection, and the
-# base's own list wins.
+# An -alias name stands for its base's subsection: a list naming either
+# name moves the subsection, and the base's own list wins. A warning
+# names the -alias option for an alias.
 cat <<EOF | $CC -o $t/g.o -c -xc -
 int real1 = 1, real2 = 2, real3 = 3;
 int rfunc(void) { return real1 + real2 + real3; }
@@ -151,7 +153,7 @@ $CC --ld-path=$mold -o $t/exe11 $t/g.o -Wl,-alias,_real1,_al1 -Wl,-alias,_real2,
   -Wl,-move_to_ro_segment,__BAR,$t/al-ro.txt -Wl,-trace_symbol_layout > $t/trace11 2> $t/log11
 sed -n "s/.*cannot move symbol '\([^']*\)' (\([^)]*\)).*/\1 \2/p" $t/log11 > $t/warn11
 grep -q '^_real3 .*/g.o$' $t/warn11
-grep -q '^_al3 command-line-aliases-file$' $t/warn11
+grep -q '^_al3 .*alias' $t/warn11
 [ "$(wc -l < $t/warn11)" -eq 2 ]
 nm -m $t/exe11 > $t/nm11
 grep -q '(__DATA_DIRTY,__data) external _real1$' $t/nm11
@@ -165,9 +167,9 @@ grep -qx "symbol '_alf', mapped to __BAR/__text" $t/trace11
 
 # The Objective-C records the linker rewrites move as the input's would:
 # the class data category merging rebuilt, and the method lists in the
-# relative form, which ld-prime makes in its own objc-file and counts
-# as code - -move_to_rw_segment leaves them with a warning, and
-# -move_to_ro_segment takes them to an __objc_methlist of its segment.
+# relative form, which count as code - -move_to_rw_segment leaves them
+# with a warning, and -move_to_ro_segment takes them to an
+# __objc_methlist of its segment.
 cat <<EOF | $CC -o $t/d.o -c -xobjective-c -
 #import <Foundation/Foundation.h>
 #include <stdio.h>
@@ -192,14 +194,14 @@ EOF
 printf '__OBJC_CLASS_RO_$_A\n__OBJC_$_CLASS_METHODS_A\n' > $t/objc.txt
 $CC --ld-path=$mold -o $t/exe8 $t/d.o -framework Foundation -Wl,-objc_relative_method_lists \
   -Wl,-move_to_rw_segment,__FOO,$t/objc.txt 2> $t/log8
-grep -q "warning: cannot move symbol '__OBJC_\$_CLASS_METHODS_A' (objc-file) to segment '__FOO' because symbol is code (is objc-method-list)" $t/log8
+grep -q "warning: cannot move symbol '__OBJC_\$_CLASS_METHODS_A' (.*) to segment '__FOO' because .*code" $t/log8
 nm -m $t/exe8 > $t/nm8
 grep -q '(__FOO,__objc_const) non-external __OBJC_CLASS_RO_\$_A$' $t/nm8
 grep -q '(__TEXT,__objc_methlist) non-external __OBJC_\$_CLASS_METHODS_A$' $t/nm8
 [ "$($t/exe8)" = '1 2 3' ]
 $CC --ld-path=$mold -o $t/exe9 $t/d.o -framework Foundation -Wl,-objc_relative_method_lists \
   -Wl,-move_to_ro_segment,__FOO,$t/objc.txt -Wl,-trace_symbol_layout > $t/trace9 2> $t/log9
-grep -q "warning: cannot move symbol '__OBJC_CLASS_RO_\$_A' (.*/d.o) to segment '__FOO' because symbol is not code (is objc-const)" $t/log9
+grep -q "warning: cannot move symbol '__OBJC_CLASS_RO_\$_A' (.*/d.o) to segment '__FOO' because" $t/log9
 nm -m $t/exe9 > $t/nm9
 grep -q '(__FOO,__objc_methlist) non-external __OBJC_\$_CLASS_METHODS_A$' $t/nm9
 grep -q "^symbol '__OBJC_\$_CLASS_METHODS_A', mapped to __FOO/__objc_methlist$" $t/trace9

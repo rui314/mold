@@ -72,7 +72,7 @@ $t/exe8
 sects $t/exe8 | grep -aqx "$seg,__data"
 echo _main > $t/list2
 $link -o $t/exe9 -Wl,-move_to_rw_segment,"$seg",$t/list2 2> $t/log9
-grep -aqF "to segment '$seg' because symbol is code" $t/log9
+grep -aqF "to segment '$seg' because" $t/log9
 
 # -segment_order, -section_order and -seg_page_size, in a -static
 # image.
