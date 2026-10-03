@@ -534,7 +534,7 @@ impl Target for X86_64 {
     // (ld-prime names both %rsp and %rbp "xxx".)
     fn lazy_register_name(reg: u8) -> String {
         const NAMES: [&str; 16] = [
-            "rax", "rcx", "rdx", "rbx", "xxx", "xxx", "rsi", "rdi", "r8", "r9", "r10", "r11",
+            "rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi", "r8", "r9", "r10", "r11",
             "r12", "r13", "r14", "r15",
         ];
         NAMES[reg as usize & 15].to_string()
