@@ -81,7 +81,6 @@ pub mod scope {
 /// The content types whose entries need more than their section.
 pub(crate) mod ctype {
     pub const CFI: u8 = 31;
-    pub const OBJC_METHOD_LIST: u8 = 15;
     pub const OBJC_IMAGE_INFO: u8 = 43;
     pub const INIT_OFFSET: u8 = 55;
 }
@@ -639,25 +638,6 @@ fn is_record_section(flags: u32, sectname: &[u8; 16]) -> bool {
     .any(|n| bytes_to_name(n.as_bytes()) == *sectname)
 }
 
-/// Sections beyond which an object can't number its symbols'.
-const MAX_SECTIONS: usize = 255;
-
-/// The section a final link puts a section's contents in, by name,
-/// where it merges several (see output_sections::merged_name):
-/// __StaticInit joins __text, the literal pools __TEXT,__const.
-fn output_group(segname: &[u8; 16], sectname: &[u8; 16]) -> ([u8; 16], [u8; 16]) {
-    let text = bytes_to_name(b"__TEXT");
-    if *segname == text && *sectname == bytes_to_name(b"__StaticInit") {
-        return (text, bytes_to_name(b"__text"));
-    }
-    if *segname == text
-        && matches!(name_to_bytes(sectname), b"__literal4" | b"__literal8" | b"__literal16")
-    {
-        return (text, bytes_to_name(b"__const"));
-    }
-    (*segname, *sectname)
-}
-
 fn is_zerofill(flags: u32) -> bool {
     matches!(flags & SECTION_TYPE, S_ZEROFILL | S_GB_ZEROFILL | S_THREAD_LOCAL_ZEROFILL)
 }
@@ -729,10 +709,8 @@ struct Symbol {
 struct Synth<'a, E: Target> {
     rec: &'a MergeableRecord,
     sections: Vec<Section>,
-    /// The section each section key is being filled into.
-    open: hashbrown::HashMap<SectionKey, usize>,
-    /// The section an entry of each output section went to last.
-    last_in_group: hashbrown::HashMap<([u8; 16], [u8; 16]), usize>,
+    /// The section of each section key and alignment.
+    open: hashbrown::HashMap<(SectionKey, u8), usize>,
     /// Each entry's section and offset there, if it has a place.
     place: Vec<Option<(usize, u64)>>,
     /// The symbol that stands for each entry, if any.
@@ -748,14 +726,13 @@ pub fn synthesize_object<E: Target>(rec: &MergeableRecord, path: &Path) -> Vec<u
         rec,
         sections: Vec::new(),
         open: hashbrown::HashMap::new(),
-        last_in_group: hashbrown::HashMap::new(),
         place: vec![None; rec.entries.len()],
         sym_of: vec![None; rec.entries.len()],
         symbols: Vec::new(),
         undefined: hashbrown::HashMap::new(),
         _target: std::marker::PhantomData,
     };
-    for i in placement_order(rec) {
+    for i in 0..rec.entries.len() {
         s.place(i, path);
     }
     s.add_image_info();
@@ -770,18 +747,6 @@ pub fn synthesize_object<E: Target>(rec: &MergeableRecord, path: &Path) -> Vec<u
         s.apply_fixups(i, path);
     }
     s.write()
-}
-
-/// The order to lay the entries out in: theirs, but for the method lists
-/// in the relative form, which go as the dylib has them - in the order
-/// the linker's conversion writes them, by class, category and
-/// protocol, which the order of ld-prime's entries doesn't keep.
-fn placement_order(rec: &MergeableRecord) -> Vec<usize> {
-    let is_list = |i: &usize| rec.entries[*i].content_type == ctype::OBJC_METHOD_LIST;
-    let mut lists: Vec<usize> = (0..rec.entries.len()).filter(is_list).collect();
-    lists.sort_by_key(|&i| rec.entries[i].content.map(|c| c.as_ptr() as usize));
-    let mut lists = lists.into_iter();
-    (0..rec.entries.len()).map(|i| if is_list(&i) { lists.next().unwrap() } else { i }).collect()
 }
 
 impl<E: Target> Synth<'_, E> {
@@ -838,28 +803,14 @@ impl<E: Target> Synth<'_, E> {
     /// in. The objects had a section of a name each, but with their own
     /// alignments, which to the linker are those of all their
     /// subsections: entries of another alignment go in a section of
-    /// their own. And the entries of sections a final link merges into
-    /// one (see output_group) keep their order there: a section opens
-    /// again after another of the group, as the objects had theirs.
+    /// their own. Records, which the linker aligns itself, go in one.
     fn section_for(&mut self, key: SectionKey, p2align: u8) -> usize {
         let (segname, sectname, flags) = key;
-        let record = is_record_section(flags, &sectname);
-        let group = output_group(&segname, &sectname);
-        let last = self.last_in_group.get(&group).copied();
-        let reusable = |idx: usize, sections: &[Section]| {
-            (record || sections[idx].p2align == p2align)
-                && (last.is_none_or(|last| last == idx) || sections.len() >= MAX_SECTIONS)
-        };
-        let idx = match self.open.get(&key) {
-            Some(&idx) if reusable(idx, &self.sections) => idx,
-            _ => {
-                self.sections.push(Section::new(segname, sectname, flags, p2align));
-                self.open.insert(key, self.sections.len() - 1);
-                self.sections.len() - 1
-            }
-        };
-        self.last_in_group.insert(group, idx);
-        idx
+        let p2align = if is_record_section(flags, &sectname) { 0 } else { p2align };
+        *self.open.entry((key, p2align)).or_insert_with(|| {
+            self.sections.push(Section::new(segname, sectname, flags, p2align));
+            self.sections.len() - 1
+        })
     }
 
     /// Adds the __objc_imageinfo record the objects had, from what the

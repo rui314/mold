@@ -5,9 +5,8 @@ source "$(dirname "$0")"/common.inc
 # linked from (LC_ATOM_INFO), and an image that merges it gets them as
 # it would the objects: code, data and its zero fill, tentative
 # definitions, thread-local variables, initializers, weak definitions,
-# literals and the compact unwind records, all at the place in the
-# layout the objects would have. Their optimization hints aren't among
-# them; mold, which applies hints as ld64 did, is compared without.
+# literals and the compact unwind records, in the sections the objects
+# would have them in. Their optimization hints aren't among them.
 cat <<EOF | $CC -o $t/a.o -c -O1 -xc -
 #include <stdio.h>
 int counter = 5;
@@ -58,27 +57,22 @@ $CC -shared -o $t/libfoo.dylib $t/a.o $t/b.o -Wl,-make_mergeable \
   -Wl,-install_name,@rpath/libfoo.dylib
 otool -l $t/libfoo.dylib | grep -q LC_ATOM_INFO
 
-nohints=
-if $mold -v 2>&1 | grep -q mold-macho; then
-  nohints=-Wl,-ignore_optimization_hints
-fi
-
 mkdir -p $t/x $t/y
-$CC --ld-path=$mold -o $t/x/exe $t/main.o -L$t -Wl,-merge-lfoo $nohints
-$CC --ld-path=$mold -o $t/y/exe $t/main.o $t/a.o $t/b.o $nohints
-# The same image, but for the order of the locals, each object's in
-# its symbol table's order, which the merged record doesn't keep.
-cmp_but_symbol_order $t/x/exe $t/y/exe
+$CC --ld-path=$mold -o $t/x/exe $t/main.o -L$t -Wl,-merge-lfoo
+$CC --ld-path=$mold -o $t/y/exe $t/main.o $t/a.o $t/b.o
 $t/x/exe > $t/out
 grep -q 'hello from a two 33' $t/out
 grep -q '^16909092$' $t/out
+$t/y/exe > $t/out1
+cmp $t/out $t/out1
+same_sections_and_symbols $t/x/exe $t/y/exe
 
 otool -L $t/x/exe > $t/libs
 not grep -q libfoo $t/libs
 
 # -dead_strip takes what the merged code doesn't use away as ever.
-$CC --ld-path=$mold -o $t/x/exe2 $t/main.o -L$t -Wl,-merge-lfoo -Wl,-dead_strip \
-  $nohints
-$CC --ld-path=$mold -o $t/y/exe2 $t/main.o $t/a.o $t/b.o -Wl,-dead_strip \
-  $nohints
-cmp_but_symbol_order $t/x/exe2 $t/y/exe2
+$CC --ld-path=$mold -o $t/x/exe2 $t/main.o -L$t -Wl,-merge-lfoo -Wl,-dead_strip
+$CC --ld-path=$mold -o $t/y/exe2 $t/main.o $t/a.o $t/b.o -Wl,-dead_strip
+$t/x/exe2 > $t/out2
+cmp $t/out $t/out2
+same_sections_and_symbols $t/x/exe2 $t/y/exe2

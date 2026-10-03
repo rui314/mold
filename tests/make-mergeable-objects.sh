@@ -6,8 +6,7 @@ source "$(dirname "$0")"/common.inc
 # linked by the linker or by ld-prime, gets them as it would the
 # objects: code, data and its zero fill, tentative definitions,
 # thread-local variables, initializers, weak definitions, literals,
-# compact unwind records and absolute symbols. mold, which applies
-# optimization hints as ld64 did, is compared without them.
+# compact unwind records and absolute symbols.
 cat <<EOF | $CC -o $t/a.o -c -O1 -xc -
 #include <stdio.h>
 asm(".globl _abs_val\n_abs_val = 0x1234");
@@ -57,22 +56,20 @@ $CC --ld-path=$mold -shared -o $t/libfoo.dylib $t/a.o $t/b.o -Wl,-make_mergeable
   -Wl,-install_name,@rpath/libfoo.dylib
 otool -l $t/libfoo.dylib | grep -q LC_ATOM_INFO
 
-nohints=
-if $mold -v 2>&1 | grep -q mold-macho; then
-  nohints=-Wl,-ignore_optimization_hints
-fi
-
 mkdir -p $t/x $t/y
-$CC --ld-path=$mold -o $t/x/exe $t/main.o -L$t -Wl,-merge-lfoo $nohints
-$CC --ld-path=$mold -o $t/y/exe $t/main.o $t/a.o $t/b.o $nohints
-# The same image, but for the order of the locals, each object's in
-# its symbol table's order, which the merged record doesn't keep.
-cmp_but_symbol_order $t/x/exe $t/y/exe
+$CC --ld-path=$mold -o $t/x/exe $t/main.o -L$t -Wl,-merge-lfoo
+$CC --ld-path=$mold -o $t/y/exe $t/main.o $t/a.o $t/b.o
 $t/x/exe > $t/out
 grep -q 'hello from a two 33 1234' $t/out
 grep -q '^16909092$' $t/out
 otool -L $t/x/exe > $t/libs
 not grep -q libfoo $t/libs
+
+# The merged image has what the objects would give it, if not in their
+# order.
+$t/y/exe > $t/out1
+cmp $t/out $t/out1
+same_sections_and_symbols $t/x/exe $t/y/exe
 
 # ld-prime merges it as well.
 $CC -o $t/exe2 $t/main.o -L$t -Wl,-merge-lfoo

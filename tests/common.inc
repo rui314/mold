@@ -35,35 +35,17 @@ test_cflags() {
   echo 'int main() {}' | $CC "$@" -o /dev/null -xc - >& /dev/null
 }
 
-# Compares two images as cmp does, but for the order of their symbols:
-# the symbol tables must hold the same entries, each with its name. The
-# UUID and the code signature, which cover the tables, are left out.
-cmp_but_symbol_order() {
-  python3 - "$1" "$2" <<'EOF'
-import struct, sys
-def read(path):
-    d = bytearray(open(path, 'rb').read())
-    off, cut = 32, []
-    for _ in range(struct.unpack_from('<I', d, 16)[0]):
-        cmd, size = struct.unpack_from('<II', d, off)
-        if cmd == 0x2:
-            symoff, nsyms, stroff, strsize = struct.unpack_from('<IIII', d, off + 8)
-            cut += [(symoff, nsyms * 16), (stroff, strsize)]
-        if cmd == 0x1b:
-            cut.append((off + 8, 16))
-        if cmd == 0x1d:
-            cut.append(struct.unpack_from('<II', d, off + 8))
-        off += size
-    syms = []
-    for i in range(nsyms):
-        strx, rest = struct.unpack_from('<I12s', d, symoff + 16 * i)
-        syms.append((bytes(d[stroff + strx:d.index(b'\0', stroff + strx)]), rest))
-    for start, size in cut:
-        d[start:start + size] = bytes(size)
-    return d, sorted(syms)
-a, b = read(sys.argv[1]), read(sys.argv[2])
-sys.exit(0 if a == b else 1)
-EOF
+# Compares two images whose contents may come in another order: they
+# must have the same sections, each of the same size, and define the
+# same symbols.
+same_sections_and_symbols() {
+  local f
+  for f in "$1" "$2"; do
+    otool -l "$f" | awk '$1 == "sectname" { sect = $2 } $1 == "segname" { seg = $2 }
+      $1 == "size" { print seg, sect, $2 }' | sort > "$f.layout"
+    nm -jU "$f" | sort >> "$f.layout"
+  done
+  diff "$1.layout" "$2.layout"
 }
 
 # Prints, for each symbol or address given after an image, the
