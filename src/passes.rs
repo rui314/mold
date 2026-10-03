@@ -25,147 +25,6 @@ use crate::target::RelocClass;
 use crate::target::Target;
 use crate::util::{align_to, path_bytes, split_once};
 
-/// For each dylib, the dylibs of the link it merged as private
-/// re-exports (see `providing_dylib`). An auto-linked library named by
-/// an @rpath install name is none: ld-prime takes it for the one the
-/// dylib re-exports, which it has loaded already (XCTest's
-/// XCUIAutomation, which UI tests' objects auto-link), and binds its
-/// symbols to the dylib.
-fn merged_providers(dylibs: &[input_files::DylibFile]) -> Vec<Vec<usize>> {
-    let by_name: hashbrown::HashMap<&[u8], usize> = (dylibs.iter().enumerate())
-        .filter(|(_, d)| !(d.is_autolinked && d.install_name.starts_with(b"@rpath/")))
-        .map(|(i, d)| (d.install_name.as_slice(), i))
-        .collect();
-    dylibs
-        .iter()
-        .map(|d| {
-            d.merged_reexports.iter().filter_map(|n| by_name.get(n.as_slice()).copied()).collect()
-        })
-        .collect()
-}
-
-/// The dylib a symbol found in `dylibs[idx]`'s exports binds to. A
-/// private re-export's exports count as the re-exporting dylib's
-/// (libswiftDarwin's include libswift_Builtin_float's), but when the
-/// library that defines the symbol is in the link itself - named or
-/// auto-linked - ld-prime binds to it, whichever of the two comes first.
-/// An export that an $ld$previous directive moves to an older library
-/// for the target binds to that one.
-fn providing_dylib(
-    dylibs: &[input_files::DylibFile],
-    providers: &[Vec<usize>],
-    mut idx: usize,
-    name: &[u8],
-) -> usize {
-    for _ in 0..dylibs.len() {
-        match providers[idx].iter().find(|&&p| dylibs[p].exports.contains(name)) {
-            Some(&p) => idx = p,
-            None => break,
-        }
-    }
-    dylibs[idx].moved_exports.get(name).copied().unwrap_or(idx)
-}
-
-/// Makes `sym`, found in `dylibs[idx]`'s exports, an import from the
-/// dylib that provides it, and returns that dylib's index.
-fn import_from_dylib(
-    sym: &mut crate::symbol::Symbol,
-    dylibs: &[input_files::DylibFile],
-    providers: &[Vec<usize>],
-    idx: usize,
-) -> usize {
-    let owner = providing_dylib(dylibs, providers, idx, sym.name());
-    sym.set_file(FileId::Dylib(owner as u32));
-    sym.set_is_imported(true);
-    sym.set_is_extern(true);
-    sym.set_input_section(None);
-    sym.set_is_common(false);
-    owner
-}
-
-/// Lets newly auto-linked dylibs claim still-unresolved symbols. They
-/// carry later priorities than every file already resolved, so they
-/// can steal nothing - a full re-resolution would reach exactly this
-/// outcome, at many times the cost.
-pub(crate) fn claim_new_dylibs<E: Target>(ctx: &mut Context<E>, first: usize) {
-    let dylibs = &ctx.dylibs;
-    let providers = merged_providers(dylibs);
-    let order = dylib_search_order(&dylib_ranks(dylibs), first);
-    ctx.symbols.syms.par_iter_mut().for_each(|sym| {
-        if !sym.is_used() || sym.is_defined() {
-            return;
-        }
-        if let Some(&dylib_idx) = order.iter().find(|&&i| dylibs[i].exports.contains(sym.name())) {
-            import_from_dylib(sym, dylibs, &providers, dylib_idx);
-        }
-    });
-}
-
-/// The rank with which each dylib's exports claim a symbol, comparable
-/// with a lazy archive member's (see definition_rank), lower first; a
-/// dylib that stands for a library exports moved to has none. ld-prime
-/// looks a symbol up in the libraries the command line names, in their
-/// order among the other inputs, and only then, after every archive,
-/// in the public libraries they re-export: nearest first, a private
-/// library in between counting as a step, and among the equally near
-/// by the install name of the library that re-exports them, then by
-/// their own (a breadth-first walk of each level sorted by name). Then
-/// come the libraries auto-link options name, and the ones they
-/// re-export likewise. So a symbol of both Foundation and CFNetwork
-/// that `-framework Carbon -framework Foundation` finds binds to
-/// Foundation, though Carbon re-exports CoreServices, which re-exports
-/// CFNetwork.
-pub fn dylib_ranks(dylibs: &[input_files::DylibFile]) -> Vec<u64> {
-    let phase = |phase: u64| (2 << 40) | (phase << 32);
-    let mut ranks = vec![u64::MAX; dylibs.len()];
-    for (i, d) in dylibs.iter().enumerate().filter(|(_, d)| !d.is_implicit) {
-        // A library first loaded as a re-export takes the place of its
-        // naming.
-        let priority = d.named_at.unwrap_or(d.priority) as u64;
-        ranks[i] = phase(if d.is_autolinked { 2 } else { 0 }) | priority;
-    }
-    for autolinked in [false, true] {
-        // How near each re-exported library is, and the library that
-        // re-exports it there.
-        let mut key: Vec<Option<(u32, &[u8])>> = vec![None; dylibs.len()];
-        let mut queue: Vec<(usize, u32)> = (0..dylibs.len())
-            .filter(|&i| !dylibs[i].is_implicit && dylibs[i].is_autolinked == autolinked)
-            .map(|i| (i, 0))
-            .collect();
-        while let Some((i, depth)) = queue.pop() {
-            for edge in &dylibs[i].reexported {
-                let (to, k) = (edge.dylib, (depth + edge.hops, edge.via.as_slice()));
-                if dylibs[to].is_implicit
-                    && ranks[to] == u64::MAX
-                    && key[to].is_none_or(|old| k < old)
-                {
-                    key[to] = Some(k);
-                    queue.push((to, k.0));
-                }
-            }
-        }
-        let mut reached: Vec<usize> = (0..dylibs.len()).filter(|&i| key[i].is_some()).collect();
-        reached.sort_by_key(|&i| (key[i], &dylibs[i].install_name));
-        for (n, i) in reached.into_iter().enumerate() {
-            ranks[i] = phase(if autolinked { 3 } else { 1 }) | n as u64;
-        }
-    }
-    // One that no named library reaches, if any, comes last.
-    for (i, d) in dylibs.iter().enumerate() {
-        if ranks[i] == u64::MAX && d.name_source != input_files::NameSource::Moved {
-            ranks[i] = phase(4) | d.priority as u64;
-        }
-    }
-    ranks
-}
-
-/// The dylibs from `first` on that have a rank, in rank order.
-fn dylib_search_order(ranks: &[u64], first: usize) -> Vec<usize> {
-    let mut order: Vec<usize> = (first..ranks.len()).filter(|&i| ranks[i] != u64::MAX).collect();
-    order.sort_by_key(|&i| ranks[i]);
-    order
-}
-
 /// Adds the object that owns what the linker synthesizes: the
 /// sections standing for merged Objective-C records, folded class
 /// references or tentative definitions, and symbols such as
@@ -770,6 +629,147 @@ fn claim_dylib_exports<E: Target>(
             }
         }
     });
+}
+
+/// For each dylib, the dylibs of the link it merged as private
+/// re-exports (see `providing_dylib`). An auto-linked library named by
+/// an @rpath install name is none: ld-prime takes it for the one the
+/// dylib re-exports, which it has loaded already (XCTest's
+/// XCUIAutomation, which UI tests' objects auto-link), and binds its
+/// symbols to the dylib.
+fn merged_providers(dylibs: &[input_files::DylibFile]) -> Vec<Vec<usize>> {
+    let by_name: hashbrown::HashMap<&[u8], usize> = (dylibs.iter().enumerate())
+        .filter(|(_, d)| !(d.is_autolinked && d.install_name.starts_with(b"@rpath/")))
+        .map(|(i, d)| (d.install_name.as_slice(), i))
+        .collect();
+    dylibs
+        .iter()
+        .map(|d| {
+            d.merged_reexports.iter().filter_map(|n| by_name.get(n.as_slice()).copied()).collect()
+        })
+        .collect()
+}
+
+/// The dylib a symbol found in `dylibs[idx]`'s exports binds to. A
+/// private re-export's exports count as the re-exporting dylib's
+/// (libswiftDarwin's include libswift_Builtin_float's), but when the
+/// library that defines the symbol is in the link itself - named or
+/// auto-linked - ld-prime binds to it, whichever of the two comes first.
+/// An export that an $ld$previous directive moves to an older library
+/// for the target binds to that one.
+fn providing_dylib(
+    dylibs: &[input_files::DylibFile],
+    providers: &[Vec<usize>],
+    mut idx: usize,
+    name: &[u8],
+) -> usize {
+    for _ in 0..dylibs.len() {
+        match providers[idx].iter().find(|&&p| dylibs[p].exports.contains(name)) {
+            Some(&p) => idx = p,
+            None => break,
+        }
+    }
+    dylibs[idx].moved_exports.get(name).copied().unwrap_or(idx)
+}
+
+/// Makes `sym`, found in `dylibs[idx]`'s exports, an import from the
+/// dylib that provides it, and returns that dylib's index.
+fn import_from_dylib(
+    sym: &mut crate::symbol::Symbol,
+    dylibs: &[input_files::DylibFile],
+    providers: &[Vec<usize>],
+    idx: usize,
+) -> usize {
+    let owner = providing_dylib(dylibs, providers, idx, sym.name());
+    sym.set_file(FileId::Dylib(owner as u32));
+    sym.set_is_imported(true);
+    sym.set_is_extern(true);
+    sym.set_input_section(None);
+    sym.set_is_common(false);
+    owner
+}
+
+/// Lets newly auto-linked dylibs claim still-unresolved symbols. They
+/// carry later priorities than every file already resolved, so they
+/// can steal nothing - a full re-resolution would reach exactly this
+/// outcome, at many times the cost.
+pub(crate) fn claim_new_dylibs<E: Target>(ctx: &mut Context<E>, first: usize) {
+    let dylibs = &ctx.dylibs;
+    let providers = merged_providers(dylibs);
+    let order = dylib_search_order(&dylib_ranks(dylibs), first);
+    ctx.symbols.syms.par_iter_mut().for_each(|sym| {
+        if !sym.is_used() || sym.is_defined() {
+            return;
+        }
+        if let Some(&dylib_idx) = order.iter().find(|&&i| dylibs[i].exports.contains(sym.name())) {
+            import_from_dylib(sym, dylibs, &providers, dylib_idx);
+        }
+    });
+}
+
+/// The rank with which each dylib's exports claim a symbol, comparable
+/// with a lazy archive member's (see definition_rank), lower first; a
+/// dylib that stands for a library exports moved to has none. ld-prime
+/// looks a symbol up in the libraries the command line names, in their
+/// order among the other inputs, and only then, after every archive,
+/// in the public libraries they re-export: nearest first, a private
+/// library in between counting as a step, and among the equally near
+/// by the install name of the library that re-exports them, then by
+/// their own (a breadth-first walk of each level sorted by name). Then
+/// come the libraries auto-link options name, and the ones they
+/// re-export likewise. So a symbol of both Foundation and CFNetwork
+/// that `-framework Carbon -framework Foundation` finds binds to
+/// Foundation, though Carbon re-exports CoreServices, which re-exports
+/// CFNetwork.
+pub fn dylib_ranks(dylibs: &[input_files::DylibFile]) -> Vec<u64> {
+    let phase = |phase: u64| (2 << 40) | (phase << 32);
+    let mut ranks = vec![u64::MAX; dylibs.len()];
+    for (i, d) in dylibs.iter().enumerate().filter(|(_, d)| !d.is_implicit) {
+        // A library first loaded as a re-export takes the place of its
+        // naming.
+        let priority = d.named_at.unwrap_or(d.priority) as u64;
+        ranks[i] = phase(if d.is_autolinked { 2 } else { 0 }) | priority;
+    }
+    for autolinked in [false, true] {
+        // How near each re-exported library is, and the library that
+        // re-exports it there.
+        let mut key: Vec<Option<(u32, &[u8])>> = vec![None; dylibs.len()];
+        let mut queue: Vec<(usize, u32)> = (0..dylibs.len())
+            .filter(|&i| !dylibs[i].is_implicit && dylibs[i].is_autolinked == autolinked)
+            .map(|i| (i, 0))
+            .collect();
+        while let Some((i, depth)) = queue.pop() {
+            for edge in &dylibs[i].reexported {
+                let (to, k) = (edge.dylib, (depth + edge.hops, edge.via.as_slice()));
+                if dylibs[to].is_implicit
+                    && ranks[to] == u64::MAX
+                    && key[to].is_none_or(|old| k < old)
+                {
+                    key[to] = Some(k);
+                    queue.push((to, k.0));
+                }
+            }
+        }
+        let mut reached: Vec<usize> = (0..dylibs.len()).filter(|&i| key[i].is_some()).collect();
+        reached.sort_by_key(|&i| (key[i], &dylibs[i].install_name));
+        for (n, i) in reached.into_iter().enumerate() {
+            ranks[i] = phase(if autolinked { 3 } else { 1 }) | n as u64;
+        }
+    }
+    // One that no named library reaches, if any, comes last.
+    for (i, d) in dylibs.iter().enumerate() {
+        if ranks[i] == u64::MAX && d.name_source != input_files::NameSource::Moved {
+            ranks[i] = phase(4) | d.priority as u64;
+        }
+    }
+    ranks
+}
+
+/// The dylibs from `first` on that have a rank, in rank order.
+fn dylib_search_order(ranks: &[u64], first: usize) -> Vec<usize> {
+    let mut order: Vec<usize> = (first..ranks.len()).filter(|&i| ranks[i] != u64::MAX).collect();
+    order.sort_by_key(|&i| ranks[i]);
+    order
 }
 
 /// Marks archive members whose definitions live code references,
