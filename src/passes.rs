@@ -3503,11 +3503,7 @@ pub fn auto_hide_weak_defs<E: Target>(ctx: &mut Context<E>) {
         }
         let r = obj.global_range();
         for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
-            if nlist.is_stab()
-                || !nlist.is_extern()
-                || nlist.n_type() != N_SECT
-                || nlist.n_desc & N_WEAK_DEF == 0
-            {
+            if !is_weak_def(nlist) {
                 continue;
             }
             let bits = if nlist.n_desc & N_WEAK_REF != 0 { SEEN } else { SEEN | NOT_HIDABLE };
@@ -3528,6 +3524,14 @@ pub fn auto_hide_weak_defs<E: Target>(ctx: &mut Context<E>) {
             sym.set_is_private_extern(true);
         }
     });
+}
+
+/// Whether an nlist is an external weak definition in a section.
+fn is_weak_def(nlist: &NList) -> bool {
+    !nlist.is_stab()
+        && nlist.is_extern()
+        && nlist.n_type() == N_SECT
+        && nlist.n_desc & N_WEAK_DEF != 0
 }
 
 /// Hide definitions before dead stripping and relocation scanning so
@@ -3673,11 +3677,7 @@ fn weak_def_losers<E: Target>(ctx: &Context<E>, obj_idx: usize) -> Vec<(usize, u
     let mut values: Option<Vec<u64>> = None;
     let r = obj.global_range();
     for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
-        if nlist.is_stab()
-            || !nlist.is_extern()
-            || nlist.n_type() != N_SECT
-            || nlist.n_desc & N_WEAK_DEF == 0
-        {
+        if !is_weak_def(nlist) {
             continue;
         }
         let sym = &ctx.symbols[sym_id];
