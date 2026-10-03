@@ -144,8 +144,9 @@ impl LibraryName {
 
 /// -weak_reference_mismatches: an import referenced both weakly and not
 /// is a strong one (the default), a weak one, or an error.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum WeakRefMismatches {
+    #[default]
     NonWeak,
     Weak,
     Error,
@@ -153,8 +154,9 @@ pub enum WeakRefMismatches {
 
 /// How an option says to treat what it is about (text relocations,
 /// unaligned pointers, ...).
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum Treatment {
+    #[default]
     Warning,
     Error,
     Suppress,
@@ -175,8 +177,9 @@ fn parse_treatment(opt: &str, arg: &OsStr, suppress: bool) -> Treatment {
 /// -commons: what becomes of a tentative definition (a common symbol)
 /// some dylib of the link defines: it wins (ignore_dylibs, the
 /// default), the dylib's does (use_dylibs), or the link fails.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum CommonsMode {
+    #[default]
     IgnoreDylibs,
     UseDylibs,
     Error,
@@ -210,8 +213,10 @@ pub struct SectCreate {
 /// A -rename_section: (old_seg, old_sect, new_seg, new_sect).
 pub type SectionRename = (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>);
 
-/// Parsed command line arguments.
-#[derive(Debug)]
+/// Parsed command line arguments. parse_args starts from the option
+/// defaults of initial_args, not from Args::default(), which leaves every
+/// field zero, false or empty.
+#[derive(Debug, Default)]
 pub struct Args {
     pub output: PathBuf,
     /// The output file type: MH_EXECUTE, MH_DYLIB, MH_BUNDLE,
@@ -270,6 +275,8 @@ pub struct Args {
     pub unexported_symbols: Glob,
     /// -reexported_symbols_list: publish selected imports as exports.
     pub reexported_symbols: Glob,
+    /// -current_version and -compatibility_version: a dylib's versions
+    /// in LC_ID_DYLIB, 0.0.0 unless given.
     pub current_version: u32,
     pub compatibility_version: u32,
     /// -map: write a map file describing the output layout.
@@ -545,7 +552,6 @@ pub struct Args {
     /// -add_ast_path: Swift AST paths recorded as N_AST stabs for the
     /// debugger.
     pub add_ast_paths: Vec<PathBuf>,
-    pub dynamic: bool,
     /// -headerpad: the space left free after the load commands (32
     /// unless given, 128 in firmware dyld loads; an image dyld loads
     /// never gets less than 32).
@@ -786,205 +792,6 @@ pub struct Args {
     /// -remove_swift_reflection_metadata_sections: drop the Swift
     /// reflection metadata (see passes::remove_swift_reflection_metadata).
     pub remove_swift_reflection_metadata_sections: bool,
-}
-
-impl Default for Args {
-    fn default() -> Self {
-        Self {
-            output: PathBuf::from("a.out"),
-            output_type: MH_EXECUTE,
-            install_name: None,
-            final_output: None,
-            keep_private_externs: false,
-            arch: None,
-            entry: b"_main".to_vec(),
-            platform: 0,
-            platform_minos: encode_version(0, 0, 0),
-            platform_sdk: encode_version(0, 0, 0),
-            syslibroot: Vec::new(),
-            library_paths: Vec::new(),
-            framework_paths: Vec::new(),
-            inputs: Vec::new(),
-            rpaths: Vec::new(),
-            adhoc_codesign: false,
-            dead_strip: false,
-            strip_debug: false,
-            all_load: false,
-            load_objc: false,
-            forced_undefined: Vec::new(),
-            exported_symbols: None,
-            no_exported_symbols: false,
-            unexported_symbols: Glob::new(),
-            reexported_symbols: Glob::new(),
-            // ld64 leaves both at 0.0.0 unless -current_version /
-            // -compatibility_version say otherwise.
-            current_version: encode_version(0, 0, 0),
-            compatibility_version: encode_version(0, 0, 0),
-            map: None,
-            dependency_info: None,
-            filelists: Vec::new(),
-            sdk_imports: None,
-            sdk_imports_api_list: None,
-            fixup_chains: false,
-            no_fixup_chains: false,
-            lto_library: None,
-            lto_cpu: None,
-            lto_softload: false,
-            save_temps: false,
-            lto_codegen_only: false,
-            mllvm: Vec::new(),
-            lto_cache_dir: None,
-            lto_cache_prune_interval: None,
-            lto_cache_expiration: 0,
-            lto_cache_max_size: 0,
-            stack_size: 0,
-            sectcreate: Vec::new(),
-            relocatable: false,
-            flat_namespace: false,
-            no_standard_dirs: false,
-            verbose: false,
-            version_details: false,
-            strip_locals: false,
-            deduplicate: true,
-            dtrace_dof: true,
-            verbose_deduplicate: false,
-            function_starts: true,
-            data_in_code_info: true,
-            version_load_command: false,
-            source_version: Some(0),
-            unixthread: false,
-            add_split_seg_info: false,
-            init_offsets: false,
-            init: None,
-            data_const: true,
-            no_implicit_dylibs: false,
-            objc_relative_method_lists: false,
-            objc_category_merging: true,
-            uuid: true,
-            random_uuid: false,
-            uuid_salt: Vec::new(),
-            no_dynamic_access: false,
-            warn_weak_exports: false,
-            no_weak_exports: false,
-            no_weak_imports: false,
-            weak_reference_mismatches: WeakRefMismatches::NonWeak,
-            commons: CommonsMode::IgnoreDylibs,
-            warn_commons: false,
-            warn_swift_abi_mismatches: false,
-            prefer_stubs: false,
-            max_default_common_align: 15,
-            force_weak: Glob::new(),
-            force_not_weak: Glob::new(),
-            keep_duplicates: Glob::new(),
-            allow_dead_duplicates: false,
-            poisoned: Glob::new(),
-            deployment_target_mismatches: Treatment::Warning,
-            unaligned_pointers: Treatment::Suppress,
-            interposable: None,
-            sub_libraries: Vec::new(),
-            sub_umbrellas: Vec::new(),
-            image_suffixes: Vec::new(),
-            encryptable: false,
-            suppress_warnings: false,
-            fatal_warnings: false,
-            demangle: false,
-            undefined_dynamic_lookup: false,
-            allowed_undefined: Vec::new(),
-            dead_strip_dylibs: false,
-            lazy_load: false,
-            warn_unused_dylibs: false,
-            not_for_dyld_shared_cache: false,
-            shared_cache_marker: false,
-            debug_variant: false,
-            shared_region: false,
-            no_inits: false,
-            no_warn_inits: false,
-            no_compact_unwind: false,
-            warn_eh_frame_too_large: true,
-            bind_at_load: false,
-            lazy_binding: false,
-            legacy_linkedit: false,
-            application_extension: false,
-            simulator_support: false,
-            add_ast_paths: Vec::new(),
-            dynamic: true,
-            headerpad: 32,
-            headerpad_max_install_names: false,
-            search_dylibs_first: false,
-            search_in_sparse_frameworks: false,
-            dylib_files: Vec::new(),
-            umbrella: None,
-            oso_prefix: None,
-            export_dynamic: false,
-            order_files: Vec::new(),
-            order_file_statistics: false,
-            lto_filenames_in_order_file: true,
-            object_path_lto: None,
-            print_dependencies: false,
-            why_load: false,
-            why_live: Glob::new(),
-            aliases: Vec::new(),
-            sectalign: Vec::new(),
-            allowable_clients: Vec::new(),
-            client_name: None,
-            trace: false,
-            trace_symbol_layout: false,
-            trace_symbol_layout_file: None,
-            trace_file: None,
-            trace_file_shared_cache: None,
-            trace_symbols_file: None,
-            trace_symbols_dir: None,
-            trace_implicit_libraries: false,
-            trace_implicit_library: Vec::new(),
-            arch_errors_fatal: false,
-            allow_sub_type_mismatches: false,
-            dylib_subtypes_must_match: false,
-            ignore_optimization_hints: false,
-            perf: false,
-            warn_duplicate_libraries: true,
-            local_strip_list: Glob::new(),
-            local_keep_list: None,
-            pagezero_size: 0x1_0000_0000,
-            explicit_pagezero: false,
-            image_base: None,
-            segaddrs: Vec::new(),
-            segprots: Vec::new(),
-            segment_order: Vec::new(),
-            seg_page_sizes: Vec::new(),
-            segment_align: 0,
-            no_zero_fill_sections: false,
-            warn_reduced_section_align: true,
-            section_order: Vec::new(),
-            rename_sections: Vec::new(),
-            rename_segments: Vec::new(),
-            move_to_rw: Vec::new(),
-            move_to_ro: Vec::new(),
-            dirty_data: Vec::new(),
-            zero_ar_date: false,
-            static_link: false,
-            preload: false,
-            kernel: false,
-            kexts_use_stubs: false,
-            text_exec: false,
-            no_branch_islands: false,
-            pie: true,
-            text_relocs: false,
-            merged_libraries_hook: true,
-            make_mergeable: false,
-            add_mergeable_debug_hook: false,
-            dyld_envs: Vec::new(),
-            objc_stubs_small: false,
-            const_selrefs: false,
-            no_dwarf_unwind: false,
-            ignore_auto_link: false,
-            linker_options: Vec::new(),
-            force_load_swift_libs: false,
-            merge_zero_fill_sections: false,
-            fixup_chains_section: false,
-            chain_starts_kind: 0,
-            remove_swift_reflection_metadata_sections: false,
-        }
-    }
 }
 
 impl Args {
@@ -2026,21 +1833,37 @@ fn input_file(path: &OsStr) -> InputArg {
     }
 }
 
-/// The Args the environment variables ld-prime reads in place of
-/// options make, which the options may then change.
-fn env_defaults() -> Args {
+/// The Args parse_args starts from: the defaults of the options that
+/// aren't zero, false or empty, and what the environment variables
+/// ld-prime reads in place of options say, which the options may then
+/// change. The defaults that depend on the target or the kind of output
+/// are settled once those are known (see resolve_defaults and
+/// resolve_options).
+fn initial_args() -> Args {
+    let env = |var| std::env::var_os(var);
     Args {
-        zero_ar_date: std::env::var_os("ZERO_AR_DATE").is_some(),
-        warn_commons: std::env::var_os("LD_WARN_COMMONS").is_some(),
-        warn_swift_abi_mismatches: std::env::var_os("LD_WARN_ON_SWIFT_ABI_VERSION_MISMATCHES")
-            .is_some(),
-        prefer_stubs: std::env::var_os("LD_PREFER_TAPI_FILE").is_some(),
-        order_file_statistics: std::env::var_os("LD_PRINT_ORDER_FILE_STATISTICS").is_some(),
-        fatal_warnings: std::env::var_os("LD_TREAT_WARNINGS_AS_ERRORS").is_some_and(|v| v != "0"),
-        application_extension: ["LD_APPLICATION_EXTENSION_SAFE", "LD_NO_ENCRYPT"]
-            .iter()
-            .any(|var| std::env::var_os(var).is_some()),
-        uuid_salt: std::env::var_os("RC_UUID_SALT").map_or(Vec::new(), |s| s.as_bytes().to_vec()),
+        output: PathBuf::from("a.out"),
+        entry: b"_main".to_vec(),
+        deduplicate: true,
+        dtrace_dof: true,
+        objc_category_merging: true,
+        uuid: true,
+        warn_eh_frame_too_large: true,
+        lto_filenames_in_order_file: true,
+        warn_duplicate_libraries: true,
+        pagezero_size: 0x1_0000_0000,
+        warn_reduced_section_align: true,
+        merged_libraries_hook: true,
+
+        zero_ar_date: env("ZERO_AR_DATE").is_some(),
+        warn_commons: env("LD_WARN_COMMONS").is_some(),
+        warn_swift_abi_mismatches: env("LD_WARN_ON_SWIFT_ABI_VERSION_MISMATCHES").is_some(),
+        prefer_stubs: env("LD_PREFER_TAPI_FILE").is_some(),
+        order_file_statistics: env("LD_PRINT_ORDER_FILE_STATISTICS").is_some(),
+        fatal_warnings: env("LD_TREAT_WARNINGS_AS_ERRORS").is_some_and(|v| v != "0"),
+        application_extension: env("LD_APPLICATION_EXTENSION_SAFE").is_some()
+            || env("LD_NO_ENCRYPT").is_some(),
+        uuid_salt: env("RC_UUID_SALT").map_or(Vec::new(), |s| s.as_bytes().to_vec()),
         ..Default::default()
     }
 }
@@ -2054,7 +1877,7 @@ fn env_defaults() -> Args {
 /// inputs' are. Arguments that are text by nature (versions, numbers,
 /// the -undefined treatment) must be UTF-8.
 pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
-    let mut args = env_defaults();
+    let mut args = initial_args();
     let mut st = ParseState::default();
 
     crate::error::set_color(std::io::stderr().is_terminal());
@@ -2086,7 +1909,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-kext" => st.kind = OutputKind::Kext,
             b"-dylinker" => st.kind = OutputKind::Dylinker,
             b"-kernel" => args.kernel = true,
-            b"-dynamic" => args.dynamic = true,
+            // ld64's default kind of image, as against -static.
+            b"-dynamic" => {}
             b"-e" => {
                 args.entry = cur.next_bytes(name);
                 st.explicit_entry = true;
