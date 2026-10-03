@@ -314,6 +314,75 @@ pub fn is_record_list(hdr: &MachSection, split: bool) -> bool {
         || split && hdr.sectname_is(b"__ustring")
 }
 
+/// Whether a section is an Objective-C list whose entries ld-prime
+/// names no symbol for: __DATA's __objc_classlist, __objc_nlclslist,
+/// __objc_catlist, __objc_catlist2 and __objc_nlcatlist, and
+/// __objc_clsrolist, which only a -r output keeps.
+fn is_unnamed_objc_list(hdr: &MachSection) -> bool {
+    hdr.segname_is(b"__DATA")
+        && hdr.sectname.starts_with(b"__objc_")
+        && [
+            "__objc_classlist",
+            "__objc_nlclslist",
+            "__objc_catlist",
+            "__objc_catlist2",
+            "__objc_nlcatlist",
+            "__objc_clsrolist",
+        ]
+        .iter()
+        .any(|name| hdr.sectname_is(name.as_bytes()))
+}
+
+/// Whether ld-prime splits a section into subsections by content and
+/// names none of them: CFStrings, selector and class references,
+/// UTF-16 literals and Objective-C constant literals (@42, @[...],
+/// @{...}). No label of theirs is in an image's symbol table.
+/// Selector references are so only of the literal-pointer type the
+/// compilers give them: a regular or coalesced __objc_selrefs is data,
+/// whose labels stay and whose references don't merge. Superclass and
+/// protocol references of the literal-pointer type are taken for class
+/// references too, which merge whatever labels them (see
+/// is_class_or_protocol_ref). In an object without subsections (`split`
+/// false) the UTF-16 literals' section is one subsection, whose labels
+/// ld-prime keeps as any other's.
+fn has_unnamed_subsecs(hdr: &MachSection, split: bool) -> bool {
+    if hdr.segname_is(b"__TEXT") {
+        return split && hdr.sectname_is(b"__ustring");
+    }
+    if hdr.sectname_is(b"__objc_selrefs") {
+        return hdr.segname_is(b"__DATA") && hdr.section_type() == S_LITERAL_POINTERS;
+    }
+    hdr.segname_is(b"__DATA")
+        && ([
+            "__cfstring",
+            "__objc_classrefs",
+            "__objc_intobj",
+            "__objc_floatobj",
+            "__objc_doubleobj",
+            "__objc_dateobj",
+            "__objc_arraydata",
+            "__objc_arrayobj",
+            "__objc_dictobj",
+        ]
+        .iter()
+        .any(|name| hdr.sectname_is(name.as_bytes()))
+            || (hdr.section_type() == S_LITERAL_POINTERS && is_class_or_protocol_ref(hdr)))
+}
+
+/// Whether a section holds superclass or protocol references,
+/// __DATA,__objc_superrefs or __objc_protorefs. ld-prime cuts them one
+/// per pointer and merges the unlabeled ones of one target; one a
+/// symbol names stays apart and keeps its label (see
+/// mark_labeled_literals), unless the section has the literal-pointer
+/// type, which merges them all (see has_unnamed_subsecs).
+pub(crate) fn is_class_or_protocol_ref(hdr: &MachSection) -> bool {
+    hdr.segname_is(b"__DATA") && is_class_or_protocol_ref_name(hdr.sectname())
+}
+
+pub(crate) fn is_class_or_protocol_ref_name(sectname: &[u8]) -> bool {
+    matches!(sectname, b"__objc_superrefs" | b"__objc_protorefs")
+}
+
 /// How ld-prime prefers a symbol at a subsection's start to name the
 /// subsection in a diagnostic: an exported one before a private extern,
 /// a local, a weak definition and an ltmpN label; among equals, the
@@ -1084,7 +1153,6 @@ impl StagedObject {
     /// definition is no duplicate and no output lists it, while its own
     /// object's relocations still reach the subsection.
     fn demote_unnamed_subsec_names(&mut self) {
-        use crate::passes::{has_unnamed_subsecs, is_unnamed_objc_list};
         let split = self.subsections_via_symbols;
         let unnamed: Vec<bool> = self
             .sect_hdrs
