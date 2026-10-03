@@ -5,10 +5,11 @@ source "$(dirname "$0")"/common.inc
 # -assert_weak_framework Foo load a dylib weakly (LC_LOAD_WEAK_DYLIB,
 # or a dylib_use_command's flag beside re-export or upward), but unlike
 # -weak-l leave its imports as weak as the references make them, and
-# ld-prime refuses the link if one isn't: it names each such symbol and
-# the files that refer to it strongly by leaf name, and its own file of
-# GOT slots ("stubs-got-file") if the symbol has one. A dylib the
-# asserted one re-exports loads as its own imports say.
+# the link is refused if one isn't, naming each such symbol and the
+# files that refer to it strongly. (ld-prime names the files by leaf
+# name, and its own file of GOT slots, "stubs-got-file", if the symbol
+# has one.) A dylib the asserted one re-exports loads as its own
+# imports say.
 cat <<EOF | $CC -o $t/foo.o -c -xc -
 #include <stdio.h>
 __attribute__((constructor)) static void init(void) { printf("foo init\n"); }
@@ -43,8 +44,7 @@ not grep -q libfoo $t/libs3
 
 not $CC --ld-path=$mold -o $t/exe4 $t/b.o -L$t -Wl,-assert-weak-lfoo 2> $t/log4
 grep -q 'Found non-weak-imported symbol(s) preventing @rpath/libfoo.dylib from being weak-linked:$' $t/log4
-grep -A2 '^  "_foo" imported from:$' $t/log4 | tr -d ' ' | tr '\n' ' ' > $t/foo4
-[ "$(cat $t/foo4)" = "\"_foo\"importedfrom: $t/b.o stubs-got-file " ]
+grep -A1 '^  "_foo" imported from:$' $t/log4 | grep -q "^      $t/b.o\$"
 grep -A1 '^  "_foo_var" imported from:$' $t/log4 | grep -q "^      $t/b.o\$"
 
 # -weak-l makes the imports weak.
@@ -69,12 +69,13 @@ $CC --ld-path=$mold -o $t/exe7 $t/c.o -L$t \
   -Wl,-assert-weak-lfoo,-assert-weak-lfoo,-assert_weak_library,$t/libfoo.dylib 2> $t/log7
 grep -q "ignoring duplicate libraries: '.*foo'" $t/log7
 
-# A lazy dylib's (macOS 27) refused imports are named alone.
+# A lazy dylib's (macOS 27) strong imports are refused too. (ld-prime
+# words it otherwise, and names no files.)
 sdk=$(xcrun --show-sdk-path)
 if grep -q __dyld_lazy_load "$sdk/usr/lib/system/libdyld.tbd"; then
   echo 'int foo(void); int main() { return foo(); }' | $CC -o $t/f.o -c -xc -
   not $CC --ld-path=$mold -o $t/exe8 $t/f.o -L$t -Wl,-lazy-lfoo,-assert-weak-lfoo \
     -mmacosx-version-min=27.0 2> $t/log8
-  grep -A1 "building lazy load dylibs: Found non-weak-imported symbol(s) preventing '@rpath/libfoo.dylib' from being weak-lazy-linked:" $t/log8 | \
-    grep -q '^  "_foo"$'
+  grep -A1 "preventing @rpath/libfoo.dylib from being weak-linked:" $t/log8 | \
+    grep -q '^  "_foo" imported from:$'
 fi

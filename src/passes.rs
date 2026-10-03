@@ -4423,16 +4423,11 @@ pub fn print_implicit_trace<E: Target>(ctx: &Context<E>) {
 
 /// -assert-weak-l and the like load a dylib weakly but leave its
 /// imports as the references make them, where -weak-l makes them all
-/// weak: ld-prime refuses the link if one isn't weak, naming the first
-/// such dylib, each symbol, and the files that refer to it strongly
-/// from what the output keeps - by leaf name, an archive member as
-/// "libfoo.a[2](foo.o)" - and last its own file of GOT slots if the
-/// symbol has one: "stubs-got-file", or "deferred-dylib-file" for a
-/// delay-init dylib's, whose stubs and helpers each one has. A lazy
-/// dylib's symbols it names alone. (ld-prime lists the symbols in no
-/// fixed order; here they go by name.)
+/// weak: the link is refused if one isn't weak, naming the first such
+/// dylib, each symbol by name, and the files that refer to it strongly
+/// from what the output keeps.
 pub fn check_weak_assertions<E: Target>(ctx: &Context<E>) {
-    use crate::symbol::{NO_IDX, SymbolId};
+    use crate::symbol::SymbolId;
     let asserted = |id: SymbolId| match ctx.symbols[id].file() {
         Some(FileId::Dylib(d)) if d != u32::MAX => {
             let dylib = &ctx.dylibs[d as usize];
@@ -4474,34 +4469,17 @@ pub fn check_weak_assertions<E: Target>(ctx: &Context<E>) {
         return;
     };
     let install_name = crate::error::raw(&dylib.install_name);
-    let mut msg = if dylib.is_lazy {
-        format!(
-            "building lazy load dylibs: Found non-weak-imported symbol(s) preventing '{install_name}' from being weak-lazy-linked:"
-        )
-    } else {
-        format!(
-            "Found non-weak-imported symbol(s) preventing {install_name} from being weak-linked:"
-        )
-    }
-    .into_bytes();
+    let mut msg = error::render(format_args!(
+        "Found non-weak-imported symbol(s) preventing {install_name} from being weak-linked:"
+    ));
     for (name, (id, files)) in &by_sym {
         if !std::ptr::eq(asserted(*id).unwrap(), dylib) {
             continue;
         }
-        let name = raw(name);
-        if dylib.is_lazy {
-            msg.extend(error::render(format_args!("\n  \"{name}\"")));
-            continue;
-        }
-        msg.extend(error::render(format_args!("\n  \"{name}\" imported from:")));
+        msg.extend(error::render(format_args!("\n  \"{}\" imported from:", raw(name))));
         for &file in files {
             let file = ctx.objs[file as usize].mf.name.raw();
             msg.extend(error::render(format_args!("\n      {file}")));
-        }
-        if dylib.delay_init.is_some() {
-            msg.extend_from_slice(b"\n      deferred-dylib-file");
-        } else if ctx.sym_aux(*id).got_idx != NO_IDX {
-            msg.extend_from_slice(b"\n      stubs-got-file");
         }
     }
     error!("{}", raw(&msg));

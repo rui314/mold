@@ -102,10 +102,11 @@ grep -Fq "'-delay-lfoo' and '-reexport-lfoo' cannot be used together" $t/log
 not $CC --ld-path=$mold -o $t/exe7 $t/c.o -L$t -Wl,-delay-lfoo,-lazy-lfoo 2> $t/log
 grep -Fq "'-delay-lfoo' and '-lazy-lfoo' cannot be used together" $t/log
 
-# -assert-weak-l names a delayed dylib's strong imports with the file of
-# its stubs and helpers, as ld-prime calls it.
+# -assert-weak-l refuses a delayed dylib's strong imports too. (ld-prime
+# lists the file of its stubs and helpers, "deferred-dylib-file", with
+# the importers.)
 not $CC --ld-path=$mold -o $t/exe9 $t/a.o -L$t -Wl,-delay-lfoo,-assert-weak-lfoo,-lqux 2> $t/log
-grep -A2 '^  "_foo" imported from:$' $t/log | grep -q '^      deferred-dylib-file$'
+grep -A1 '^  "_foo" imported from:$' $t/log | grep -q "^      $t/a.o\$"
 
 # The public libraries a delayed dylib re-exports are delayed with it,
 # and dlopen() it.
