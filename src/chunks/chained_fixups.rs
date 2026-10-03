@@ -196,8 +196,8 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> Option<ChainedFixups
         push32(&mut buf, 22 + npages as u32 * 2);
         push16(&mut buf, page_size as u16);
         push16(&mut buf, pointer_format(ctx));
-        // A layout in error (reported by print_final_layout) may put a
-        // segment below the image base; the table is never written then.
+        // A layout in error may put a segment below the image base; the
+        // table is never written then.
         push64(&mut buf, seg.cmd.vmaddr.wrapping_sub(image_base));
         push32(&mut buf, 0); // max_valid_pointer
         push16(&mut buf, npages as u16);

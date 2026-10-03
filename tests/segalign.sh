@@ -57,11 +57,9 @@ grep -q -- -segalign $t/log
 
 # ld-prime keeps a section's file offset in 32 bits, and so its
 # segment's end: a segment that ends at 4 GiB ends at 0, before the
-# section. It prints the layout twice, and a -r output takes either.
+# section. A -r output takes either.
 not $CC --ld-path=$mold -o $t/exe7 $t/a.o -Wl,-segalign,0x80000000 2> $t/log
 grep -q 'section __DATA,__data file end (2147483664) goes past the segment end (0) $' $t/log
-[ "$(grep -c '^final section layout:$' $t/log)" = 2 ]
-grep -q '^    __LINKEDIT  *addr=0x200000000, size=0x000000000, fileOffset=0x00000000, fileSize=0x00000000$' $t/log
 
 # A -segalign of 0, pages of no size, is refused. (ld-prime takes it,
 # for segments of no size, which fails a final link only.)

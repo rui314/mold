@@ -27,7 +27,6 @@ static COLOR: AtomicBool = AtomicBool::new(false);
 static FATAL_WARNINGS: AtomicBool = AtomicBool::new(false);
 static SUPPRESS_WARNINGS: AtomicBool = AtomicBool::new(false);
 static HAS_ERROR: AtomicBool = AtomicBool::new(false);
-static HAS_LAYOUT_ERROR: AtomicBool = AtomicBool::new(false);
 static OUTPUT_LOCK: Mutex<()> = Mutex::new(());
 
 /// Returns the text that C's strerror gives for an I/O error. Unlike
@@ -203,7 +202,6 @@ fn release_parallel() {
 
 /// Reports an unrecoverable error and exits.
 pub fn fatal(msg: fmt::Arguments) -> ! {
-    release_layout_error();
     emit("mold: fatal: ", "mold: \x1b[0;1;31mfatal:\x1b[0m ", msg);
     exit_after_cleanup(1);
 }
@@ -238,45 +236,6 @@ pub fn error(msg: fmt::Arguments) {
     HAS_ERROR.store(true, Ordering::Relaxed);
 }
 
-/// The layout error to give, with where in the output file it is (see
-/// layout_error_at), until it is given.
-static LAYOUT_ERROR: Mutex<Option<(u64, Message)>> = Mutex::new(None);
-
-/// Reports an error in the output's layout: a thread-local section it
-/// can't place, say. ld-prime lays the output out to the end all the
-/// same, and prints the layout as it fails the link (see
-/// passes::print_final_layout), but gives only the first error it
-/// finds: one found later is dropped.
-pub fn layout_error(msg: fmt::Arguments) {
-    layout_error_at(0, msg);
-}
-
-/// Reports an error in writing the output, `fileoff` bytes into the
-/// file: a fixup that doesn't fit. Of the errors found as the sections
-/// are written, in parallel, ld-prime gives the first in the file,
-/// whatever its kind or the order of the inputs - and none of them
-/// after an error in the layout (see layout_error).
-pub fn layout_error_at(fileoff: u64, msg: fmt::Arguments) {
-    let mut first = LAYOUT_ERROR.lock().unwrap_or_else(|e| e.into_inner());
-    if first.as_ref().is_none_or(|&(at, _)| fileoff < at) {
-        *first = Some((fileoff, render(msg)));
-    }
-    HAS_LAYOUT_ERROR.store(true, Ordering::Relaxed);
-}
-
-/// Gives the layout error reported, unless it has been given.
-pub fn release_layout_error() {
-    let first = LAYOUT_ERROR.lock().unwrap_or_else(|e| e.into_inner()).take();
-    if let Some((_, msg)) = first {
-        emit("mold: error: ", "mold: \x1b[0;1;31merror:\x1b[0m ", format_args!("{}", raw(&msg)));
-    }
-}
-
-/// Whether a layout_error has been reported.
-pub fn has_layout_error() -> bool {
-    HAS_LAYOUT_ERROR.load(Ordering::Relaxed)
-}
-
 /// Reports a warning, or holds it back (see hold_warnings). With -w it
 /// is dropped; with -fatal_warnings it is promoted to an error.
 pub fn warn(msg: fmt::Arguments) {
@@ -295,9 +254,9 @@ pub fn warn(msg: fmt::Arguments) {
     }
 }
 
-/// Prints a message with no prefix: ld-prime reports some of what it
-/// did (-why_live, -why_load, the text relocations and the final
-/// layout it fails on) in lines of its own.
+/// Prints a message with no prefix: some reports of what the link did
+/// (-why_live, -why_load, the text relocations) come in lines of their
+/// own.
 pub fn notice(msg: fmt::Arguments) {
     emit("", "", msg);
 }
@@ -306,14 +265,6 @@ pub fn notice(msg: fmt::Arguments) {
 /// the messages of the parallel passes before it first.
 pub fn checkpoint() {
     release_parallel();
-    if HAS_ERROR.load(Ordering::Relaxed) || HAS_LAYOUT_ERROR.load(Ordering::Relaxed) {
-        exit_after_cleanup(1);
-    }
-}
-
-/// Exits with a failure status if an error has been reported that
-/// stops the layout: any but a layout_error.
-pub fn checkpoint_in_layout() {
     if HAS_ERROR.load(Ordering::Relaxed) {
         exit_after_cleanup(1);
     }
@@ -323,7 +274,6 @@ pub fn checkpoint_in_layout() {
 /// without running destructors. Input files are mapped for the process's
 /// lifetime, so there is nothing else to release.
 pub fn exit_after_cleanup(status: i32) -> ! {
-    release_layout_error();
     release_parallel();
     crate::output_file::cleanup();
     let _ = io::stdout().flush();
@@ -343,20 +293,6 @@ macro_rules! fatal {
 macro_rules! error {
     ($($arg:tt)*) => {
         $crate::error::error(format_args!($($arg)*))
-    };
-}
-
-#[macro_export]
-macro_rules! layout_error {
-    ($($arg:tt)*) => {
-        $crate::error::layout_error(format_args!($($arg)*))
-    };
-}
-
-#[macro_export]
-macro_rules! layout_error_at {
-    ($fileoff:expr, $($arg:tt)*) => {
-        $crate::error::layout_error_at($fileoff, format_args!($($arg)*))
     };
 }
 

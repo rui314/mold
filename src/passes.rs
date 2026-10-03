@@ -5530,21 +5530,9 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
         crate::thunks::gather_thunk_addresses(ctx, &thunked);
     }
 
-    // An error ld-prime finds before it lays out __LINKEDIT ends the
-    // link there: it prints the layout with __LINKEDIT unsized (see
-    // unsized_linkedit_addr), once or twice (see check_segments), and
-    // writes the dependency info, though not the map.
-    let dumps = check_segments(ctx);
-    if dumps > 0 {
-        ctx.segments[linkedit].cmd.vmaddr = unsized_linkedit_addr(ctx);
-        ctx.segments[linkedit].cmd.fileoff = fileoff;
-        for _ in 0..dumps {
-            print_final_layout(ctx);
-        }
-        crate::mapfile::write_dependency_info(ctx);
-        crate::error::checkpoint();
-    }
+    check_segments(ctx);
     check_tlv_template(ctx);
+    crate::error::checkpoint();
 
     // The fixup builders leave a text relocation's alignment alone.
     ctx.text_reloc_ranges = text_reloc_ranges(ctx);
@@ -5656,49 +5644,6 @@ fn report_32bit_pointer<E: Target>(ctx: &Context<E>, text_relocs: bool) -> bool 
     true
 }
 
-/// Prints the image's segments and sections, in load command order, if
-/// an error in its layout ends the link (see error::layout_error), as
-/// ld-prime does - with its own layout's addresses, sizes and file
-/// offsets, the last in 32 bits.
-pub fn print_final_layout<E: Target>(ctx: &Context<E>) {
-    use crate::error::render;
-    if !crate::error::has_layout_error() {
-        return;
-    }
-    crate::error::release_layout_error();
-    // The names are padded as printf's %-20s and %-16s pad them, by
-    // bytes.
-    let mut lines = vec![b"final section layout:".to_vec()];
-    for seg in &ctx.segments {
-        let cmd = &seg.cmd;
-        let pad = 20usize.saturating_sub(seg.name.len());
-        lines.push(render(format_args!(
-            "    {}{:pad$} addr=0x{:09x}, size=0x{:09x}, fileOffset=0x{:08x}, fileSize=0x{:08x}",
-            raw(seg.name),
-            "",
-            cmd.vmaddr,
-            cmd.vmsize,
-            cmd.fileoff as u32,
-            cmd.filesize as u32
-        )));
-        for hdr in seg.chunks.iter().map(|&id| ctx.chunk_header(id)).filter(|hdr| hdr.is_sect) {
-            let zerofill = hdr.is_zerofill();
-            let fileoff = if zerofill { 0 } else { hdr.fileoff };
-            let pad = 16usize.saturating_sub(hdr.sectname.len());
-            lines.push(render(format_args!(
-                "        {}{:pad$} addr=0x{:09x}, size=0x{:09x}, fileOffset=0x{:08x} (zerofill={})",
-                raw(hdr.sectname),
-                "",
-                hdr.addr,
-                hdr.size,
-                fileoff as u32,
-                zerofill as u8
-            )));
-        }
-    }
-    crate::error::notice(format_args!("{}", raw(&lines.join(&b'\n'))));
-}
-
 /// Lays out every segment but __LINKEDIT and gives each its address.
 /// Returns the file offset past them.
 fn lay_out_segments<E: Target>(ctx: &mut Context<E>) -> u64 {
@@ -5739,7 +5684,7 @@ fn lay_out_segments<E: Target>(ctx: &mut Context<E>) -> u64 {
     }
     check_segment_overlaps(ctx);
     place_segments(ctx);
-    crate::error::checkpoint_in_layout();
+    crate::error::checkpoint();
     fileoff
 }
 
@@ -6108,25 +6053,19 @@ fn check_segment_overlaps<E: Target>(ctx: &Context<E>) {
 }
 
 /// Checks the segments and their sections before __LINKEDIT is laid
-/// out, as ld-prime does: in one walk in load command order, each
-/// segment and then each of its sections, reporting the first error,
-/// an error in the layout (see error::layout_error). In an image dyld
-/// slides, a segment must not be below the one before it, nor a pinned
-/// __LINKEDIT below the last. ld-prime keeps a section's file offset in
-/// 32 bits, and so its segment's end, and refuses a section that ends
-/// past that: in a segment that ends at 4 GiB, which a -segalign of
-/// 2 GiB gives one, and in any with a -segalign of 0, which leaves
-/// every segment empty. And it takes a section named __thread_data or
-/// __thread_bss, in any segment, for part of the template dyld copies
-/// for each thread, which the variables' offsets count from, and
-/// refuses one its first member doesn't type as thread-local data - and
-/// a section of the template that doesn't follow the one before, as a
-/// rename or a symbol move to another segment leaves them (dyld copies
-/// the template as one block). Returns how many times ld-prime prints
-/// the layout for the error: twice for a segment or a section out of
-/// place, once for a section's type or the template, and none if there
-/// is no error.
-fn check_segments<E: Target>(ctx: &Context<E>) -> usize {
+/// out, reporting the first error. In an image dyld slides, a segment
+/// must not be below the one before it, nor a pinned __LINKEDIT below
+/// the last. A section's file offset is 32 bits, and so its segment's
+/// end: a section that ends past that is refused - in a segment that
+/// ends at 4 GiB, which a -segalign of 2 GiB gives one, and in any with
+/// a -segalign of 0, which leaves every segment empty. And a section
+/// named __thread_data or __thread_bss, in any segment, is part of the
+/// template dyld copies for each thread, which the variables' offsets
+/// count from: one its first member doesn't type as thread-local data
+/// is refused, as is a section of the template that doesn't follow the
+/// one before, as a rename or a symbol move to another segment leaves
+/// them (dyld copies the template as one block).
+fn check_segments<E: Target>(ctx: &Context<E>) {
     let slides = dyld_slides(ctx);
     let (linkedit, segs) = ctx.segments.split_last().unwrap();
     // The last section of the template seen, with its place in the walk.
@@ -6134,41 +6073,37 @@ fn check_segments<E: Target>(ctx: &Context<E>) -> usize {
     let mut nsects = 0;
     for (i, seg) in segs.iter().enumerate() {
         if slides && i > 0 && seg.cmd.vmaddr < segs[i - 1].cmd.vmaddr {
-            crate::layout_error!("segment {} address is out of order", raw(seg.name));
-            return 2;
+            error!("segment {} address is out of order", raw(seg.name));
+            return;
         }
         let seg_end = (seg.cmd.fileoff + seg.cmd.filesize) as u32;
         for hdr in seg.chunks.iter().map(|&id| ctx.chunk_header(id)).filter(|hdr| hdr.is_sect) {
             if !hdr.is_zerofill() && hdr.fileoff + hdr.size > seg_end as u64 {
-                crate::layout_error!(
+                error!(
                     "section {},{} file end ({}) goes past the segment end ({seg_end}) ",
                     raw(hdr.segname),
                     raw(hdr.sectname),
                     hdr.fileoff + hdr.size
                 );
-                return 2;
+                return;
             }
             if matches!(hdr.sectname, b"__thread_data" | b"__thread_bss") && !hdr.is_thread_local()
             {
-                crate::layout_error!(
-                    "Missing TLV section flags in {},{}",
-                    raw(hdr.segname),
-                    raw(hdr.sectname)
-                );
-                return 1;
+                error!("Missing TLV section flags in {},{}", raw(hdr.segname), raw(hdr.sectname));
+                return;
             }
             if hdr.is_thread_local() {
                 if let Some((n, prev)) = template
                     && n + 1 != nsects
                 {
-                    crate::layout_error!(
+                    error!(
                         "TLV sections must be contiguous, but {},{} - {},{} aren't",
                         raw(prev.segname),
                         raw(prev.sectname),
                         raw(hdr.segname),
                         raw(hdr.sectname)
                     );
-                    return 1;
+                    return;
                 }
                 template = Some((nsects, hdr));
             }
@@ -6179,10 +6114,8 @@ fn check_segments<E: Target>(ctx: &Context<E>) -> usize {
         && let (Some(addr), Some(last)) = (ctx.args.segaddr(linkedit.name), segs.last())
         && addr < last.cmd.vmaddr
     {
-        crate::layout_error!("segment {} address is out of order", raw(linkedit.name));
-        return 2;
+        error!("segment {} address is out of order", raw(linkedit.name));
     }
-    0
 }
 
 /// Reports thread-local data (of input sections so typed) that a rename
@@ -6191,33 +6124,11 @@ fn check_segments<E: Target>(ctx: &Context<E>) -> usize {
 /// falls outside it. ld-prime reports data before the template, whose
 /// offset wraps past 4GB; mold also data after it, of which ld-prime
 /// writes an image dyld refuses, and data with no template left, on
-/// which ld-prime crashes. It is an error in the layout ld-prime finds
-/// after those of check_segments.
+/// which ld-prime crashes.
 fn check_tlv_template<E: Target>(ctx: &Context<E>) {
     if ctx.output_sections.iter().any(|osec| osec.has_tlv_data && !osec.hdr.is_thread_local()) {
-        crate::layout_error!("thread-locals too large.  Max 4GB for 64-bit architectures");
+        error!("thread-locals too large.  Max 4GB for 64-bit architectures");
     }
-}
-
-/// Where ld-prime has __LINKEDIT when an error in the layout stops it
-/// before sizing it: where -segaddr pins it, or else after the last
-/// segment as it places them first - each one neither in place nor
-/// pinned above all the ones before it, before place_segments moves it.
-fn unsized_linkedit_addr<E: Target>(ctx: &Context<E>) -> u64 {
-    let (linkedit, segs) = ctx.segments.split_last().unwrap();
-    if let Some(addr) = ctx.args.segaddr(linkedit.name) {
-        return addr;
-    }
-    let header_seg = in_place_segment(ctx);
-    let (mut top, mut end) = (0, 0);
-    for seg in segs {
-        let in_place = seg.name == b"__PAGEZERO" || Some(seg.name) == header_seg;
-        let pinned = ctx.args.segaddr(seg.name).is_some();
-        let start = if in_place || pinned { seg.cmd.vmaddr } else { top };
-        end = start + segment_span(ctx, seg);
-        top = top.max(end);
-    }
-    end
 }
 
 /// __LINKEDIT goes where -segaddr pins it. Otherwise, in an image dyld
@@ -6619,7 +6530,6 @@ pub fn copy_chunks<E: Target>(
     drop(t);
     // Relocations that failed to apply fail the link before the fixups
     // are written.
-    print_final_layout(ctx);
     report_text_relocs(ctx);
     crate::error::checkpoint();
 

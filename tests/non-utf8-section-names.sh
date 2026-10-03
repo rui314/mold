@@ -45,14 +45,3 @@ $mold -r -arch $ARCH -o $t/r.o $t/a.o
 otool -l $t/r.o > $t/lc-r
 grep -aqx "  sectname $sect" $t/lc-r
 grep -aqx "   segname $seg" $t/lc-r
-
-# The layout ld-prime prints as an error in it fails the link pads the
-# names as printf's %-20s and %-16s do, by bytes.
-cat <<EOF | $CC -o $t/b.o -c -xassembler -
-.section __TEXT,__thread_bss
-.quad 0
-EOF
-not $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/a.o $t/b.o 2> $t/log
-grep -q 'Missing TLV section flags in __TEXT,__thread_bss' $t/log
-grep -aq "^    $seg$(printf '%14s') addr=" $t/log
-grep -aq "^        $sect$(printf '%10s') addr=" $t/log

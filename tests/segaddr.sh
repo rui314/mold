@@ -93,13 +93,6 @@ $CC --ld-path=$mold -o $t/exe9 $t/a.o -Wl,-segaddr,__CCC,0x200000000
 [ $(hex $(addr $t/exe9 __LINKEDIT)) = $(end $t/exe9 __CCC) ]
 not $CC --ld-path=$mold -o $t/exe10 $t/a.o -Wl,-segaddr,__AAA,0x200000000 2> $t/log10
 grep -q 'segment __BBB address is out of order' $t/log10
-grep -q '^    __BBB  *addr=0x10000[0-9a-f]\{4\}, ' $t/log10
-# ld-prime finds it before it lays out __LINKEDIT, which the layout it
-# prints - twice - has unsized, after the last segment as it placed
-# them first: each one not pinned above all those before it.
-[ $(grep -c '^final section layout:$' $t/log10) = 2 ]
-linkedit=$(printf '0x%09x' $((0x200008000 + 2 * page)))
-grep -q "^    __LINKEDIT  *addr=$linkedit, size=0x000000000, .*, fileSize=0x00000000$" $t/log10
 
 # A PIE ignores -segaddr __TEXT as its image base: the other segments go
 # where they would have, below __TEXT.
@@ -113,7 +106,6 @@ not $CC --ld-path=$mold -o $t/exe14 $t/a.o -Wl,-segaddr,__TEXT,0x200000000 \
   -Wl,-segaddr,__AAA,0x100000000 2> $t/log14
 grep -q 'segment __DATA address is out of order' $t/log14
 not grep -q 'overlap' $t/log14
-grep -q '^    __DATA  *addr=0x100008000, ' $t/log14
 
 # A dylib with chained fixups has no preferred address either, but a
 # pinned __TEXT stays where it is, and the other segments follow it.
@@ -138,7 +130,6 @@ EOF
 not $CC --ld-path=$mold -shared -o $t/d.dylib $t/d.o -Wl,-no_fixup_chains \
   -Wl,-segaddr,__TEXT,0x200000000 -Wl,-segaddr,__AAA,0x100000000 2> $t/log15
 grep -q 'segment __AAA address is out of order' $t/log15
-grep -q "^    __DATA  *addr=$(printf '0x%09x' $((0x200000000 + page))), " $t/log15
 
 # ld-prime checks for overlaps before it places the segments, with each
 # one that floats right after the one before it: __BBB after __AAA runs
