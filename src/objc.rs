@@ -1138,26 +1138,37 @@ struct DefinedClass {
 }
 
 /// The classes __objc_classlist and __objc_nlclslist list, in the order
-/// first listed, and their index by class_t location.
+/// first listed, and their index by class_t location. The list
+/// subsections are read in parallel; a class listed more than once (in
+/// both lists) then becomes one.
 fn defined_classes<E: Target>(
     ctx: &Context<E>,
 ) -> (Vec<DefinedClass>, hashbrown::HashMap<(u32, u64), usize>) {
+    // class_t: isa (the metaclass), superclass, cache, vtable, data (the
+    // ro).
+    let read = |cls: (u32, u64), nonlazy: bool| {
+        let ro = objc_class_ro(ctx, cls)?;
+        let meta = objc_ref_location(ctx, objc_pointer_at(ctx, cls.0, cls.1)?)?;
+        let meta_ro = objc_class_ro(ctx, meta)?;
+        Some(DefinedClass { cls, meta, ro, meta_ro, nonlazy, cats: Vec::new() })
+    };
+    let lists = subsecs_of_sections(ctx, &[b"__objc_classlist", b"__objc_nlclslist"]);
+    let listed: Vec<Vec<DefinedClass>> = (lists.par_iter())
+        .map(|&(i, kind)| {
+            let entries = list_entries(ctx, i).filter_map(|r| objc_ref_location(ctx, r?));
+            entries.filter_map(|cls| read(cls, kind == 1)).collect()
+        })
+        .collect();
+
     let mut classes: Vec<DefinedClass> = Vec::new();
-    let mut class_idx = hashbrown::HashMap::new();
-    for (i, kind) in subsecs_of_sections(ctx, &[b"__objc_classlist", b"__objc_nlclslist"]) {
-        let nonlazy = kind == 1;
-        for cls in list_entries(ctx, i).filter_map(|r| objc_ref_location(ctx, r?)) {
-            // class_t: isa (the metaclass), superclass, cache, vtable,
-            // data (the ro).
-            let ro = objc_class_ro(ctx, cls);
-            let meta = objc_pointer_at(ctx, cls.0, cls.1).and_then(|r| objc_ref_location(ctx, r));
-            let meta_ro = meta.and_then(|m| objc_class_ro(ctx, m));
-            let (Some(ro), Some(meta), Some(meta_ro)) = (ro, meta, meta_ro) else { continue };
-            let idx = *class_idx.entry(cls).or_insert_with(|| {
-                classes.push(DefinedClass { cls, meta, ro, meta_ro, nonlazy: false, cats: vec![] });
-                classes.len() - 1
-            });
-            classes[idx].nonlazy |= nonlazy;
+    let mut class_idx: hashbrown::HashMap<(u32, u64), usize> = hashbrown::HashMap::new();
+    for class in listed.into_iter().flatten() {
+        match class_idx.entry(class.cls) {
+            hashbrown::hash_map::Entry::Occupied(e) => classes[*e.get()].nonlazy |= class.nonlazy,
+            hashbrown::hash_map::Entry::Vacant(e) => {
+                e.insert(classes.len());
+                classes.push(class);
+            }
         }
     }
     (classes, class_idx)
