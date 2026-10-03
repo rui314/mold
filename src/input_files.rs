@@ -367,10 +367,6 @@ pub struct DylibFile {
     /// Found in the SDK, whose libraries' minimum OS versions ld-prime
     /// doesn't check (see passes::check_input_versions).
     pub in_sdk: bool,
-    /// Read from a Mach-O file, not a .tbd stub. (A mergeable dylib
-    /// records whether every input was split into subsections by its
-    /// symbols, which a dylib's header never says.)
-    pub from_binary: bool,
     /// The 1-based ordinal used to refer to this dylib in bind records;
     /// BIND_SPECIAL_DYLIB_MAIN_EXECUTABLE (-1) for a -bundle_loader.
     pub dylib_idx: i32,
@@ -3183,7 +3179,6 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
             compatibility_version,
             minos,
             in_sdk: false,
-            from_binary: true,
             dylib_idx: next_dylib_ordinal(ctx),
             is_bundle_loader: false,
             priority,
@@ -3388,7 +3383,6 @@ pub fn parse_bundle_loader<E: Target>(ctx: &mut Context<E>, mf: &'static MappedF
             compatibility_version: encode_version(1, 0, 0),
             minos: 0,
             in_sdk: false,
-            from_binary: true,
             dylib_idx: BIND_SPECIAL_DYLIB_MAIN_EXECUTABLE,
             is_bundle_loader: true,
             priority,
@@ -4081,7 +4075,6 @@ fn register_tbd<E: Target>(
             compatibility_version: tbd.compatibility_version,
             minos: tbd.minos,
             in_sdk: false,
-            from_binary: false,
             dylib_idx: next_dylib_ordinal(ctx),
             is_bundle_loader: false,
             priority,
@@ -4136,7 +4129,6 @@ fn add_moved_dylibs<E: Target>(
                     compatibility_version: export.compatibility_version,
                     minos: 0,
                     in_sdk: false,
-                    from_binary: false,
                     dylib_idx: next_dylib_ordinal(ctx),
                     is_bundle_loader: false,
                     priority,
@@ -4184,7 +4176,6 @@ pub fn add_merged_dependency<E: Target>(ctx: &mut Context<E>, dep: crate::mergea
         compatibility_version: dep.info.compatibility_version,
         minos: 0,
         in_sdk: false,
-        from_binary: false,
         dylib_idx: next_dylib_ordinal(ctx),
         is_bundle_loader: false,
         priority,

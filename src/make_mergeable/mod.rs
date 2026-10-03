@@ -1269,19 +1269,12 @@ fn own_record<E: Target>(ctx: &Context<E>) -> DylibRecord {
     }
 }
 
-/// The record's flags word: whether every input was split into
-/// subsections by its symbols (bit 24: every object has
-/// MH_SUBSECTIONS_VIA_SYMBOLS, and no dylib was read from a Mach-O
-/// file, which never does); whether an object has Swift metadata (a
-/// __TEXT,__swift* section) or Objective-C classes or categories (bit
-/// 30, image info or not); and what the Objective-C image info says:
-/// that there was one (26), with the Swift versions (bits 0-23) and
-/// category class properties (29), and classes (31).
+/// The record's flags word: whether every object has
+/// MH_SUBSECTIONS_VIA_SYMBOLS (bit 24), and what the Objective-C image
+/// info says: that there was one (26), with the Swift versions (bits
+/// 0-23) and category class properties (29), and classes (31).
 fn record_flags<E: Target>(ctx: &Context<E>) -> u64 {
-    use crate::mergeable::{
-        FLAG_CATEGORY_CLASS_PROPERTIES, FLAG_HAS_CLASSES, FLAG_HAS_OBJC_INFO,
-        FLAG_HAS_SWIFT_OR_OBJC,
-    };
+    use crate::mergeable::{FLAG_CATEGORY_CLASS_PROPERTIES, FLAG_HAS_CLASSES, FLAG_HAS_OBJC_INFO};
     let live_objs = || {
         ctx.objs
             .iter()
@@ -1293,15 +1286,8 @@ fn record_flags<E: Target>(ctx: &Context<E>) -> u64 {
         live_objs().any(|o| o.sect_hdrs.iter().any(|h| h.size > 0 && names.contains(&h.sectname())))
     };
     let mut flags = 0u64;
-    if live_objs().all(|o| o.subsections_via_symbols) && !ctx.dylibs.iter().any(|d| d.from_binary) {
+    if live_objs().all(|o| o.subsections_via_symbols) {
         flags |= 1 << 24;
-    }
-    let swift = live_objs().any(|o| {
-        o.sect_hdrs.iter().any(|h| h.segname() == b"__TEXT" && h.sectname().starts_with(b"__swift"))
-    });
-    let has_classes = has_section(&[b"__objc_classlist", b"__objc_nlclslist"]);
-    if swift || has_classes || has_section(&[b"__objc_catlist", b"__objc_nlcatlist"]) {
-        flags |= FLAG_HAS_SWIFT_OR_OBJC;
     }
     if !ctx.chunks.contains(&crate::chunks::ChunkId::ObjcImageInfo) {
         return flags;
@@ -1312,7 +1298,7 @@ fn record_flags<E: Target>(ctx: &Context<E>) -> u64 {
     if info & 0x40 != 0 {
         flags |= FLAG_CATEGORY_CLASS_PROPERTIES;
     }
-    if has_classes {
+    if has_section(&[b"__objc_classlist", b"__objc_nlclslist"]) {
         flags |= FLAG_HAS_CLASSES;
     }
     flags
