@@ -4055,13 +4055,7 @@ pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
     // -undefined dynamic_lookup or -U: -u, the entry point, a name an
     // export list gives without wildcards, an -alias base. The alias
     // itself counts as defined.
-    let entry = ctx.args.has_entry_point().then_some(&ctx.args.entry);
-    let bases = ctx.args.aliases.iter().map(|(base, _)| base);
-    let initial: hashbrown::HashSet<SymbolId> = (ctx.args.forced_undefined.iter())
-        .chain(entry)
-        .chain(bases)
-        .filter_map(|name| ctx.symbols.get(name))
-        .collect();
+    let initial: hashbrown::HashSet<SymbolId> = crate::dead_strip::initial_undefines(ctx).collect();
     let aliases: hashbrown::HashSet<SymbolId> =
         ctx.args.aliases.iter().filter_map(|(_, alias)| ctx.symbols.get(alias)).collect();
 
@@ -4157,16 +4151,8 @@ fn referenced_symbols<E: Target>(ctx: &Context<E>) -> Vec<std::sync::atomic::Ato
             referenced[id as usize].store(true, Ordering::Relaxed);
         }
     }
-    for name in ctx
-        .args
-        .forced_undefined
-        .iter()
-        .chain(ctx.args.has_entry_point().then_some(&ctx.args.entry))
-        .chain(ctx.args.aliases.iter().map(|(base, _)| base))
-    {
-        if let Some(id) = ctx.symbols.get(name) {
-            referenced[id as usize].store(true, Ordering::Relaxed);
-        }
+    for id in crate::dead_strip::initial_undefines(ctx) {
+        referenced[id as usize].store(true, Ordering::Relaxed);
     }
     referenced
 }

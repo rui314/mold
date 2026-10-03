@@ -107,9 +107,11 @@ fn is_symbol_root<E: Target>(ctx: &Context<E>, sym: &Symbol) -> bool {
             && keeps_export(ctx, sym.name()))
 }
 
-/// The symbols that are roots by name: the -u ones, the entry point and
-/// the bases of -alias, which ld-prime keeps as initial undefines too.
-fn initial_undefines<E: Target>(ctx: &Context<E>) -> impl Iterator<Item = SymbolId> {
+/// The symbols the command line names, which the link must define and
+/// dead stripping keeps: the -u ones (and those the options that add to
+/// them name), the entry point and the bases of -alias - ld-prime's
+/// initial undefines.
+pub(crate) fn initial_undefines<E: Target>(ctx: &Context<E>) -> impl Iterator<Item = SymbolId> {
     let entry = ctx.args.has_entry_point().then_some(&ctx.args.entry);
     let aliased = ctx.args.aliases.iter().map(|(base, _)| base);
     ctx.args
@@ -558,16 +560,8 @@ fn mark_live_references<E: Target>(ctx: &mut Context<E>) {
             ctx.symbols[id].mark();
         }
     }
-    for name in ctx
-        .args
-        .forced_undefined
-        .iter()
-        .chain(ctx.args.has_entry_point().then_some(&ctx.args.entry))
-        .chain(ctx.args.aliases.iter().map(|(base, _)| base))
-    {
-        if let Some(id) = ctx.symbols.get(name) {
-            ctx.symbols[id].mark();
-        }
+    for id in initial_undefines(ctx) {
+        ctx.symbols[id].mark();
     }
     ctx.symbols.syms.par_iter_mut().for_each(|sym| {
         sym.set_is_used(sym.is_marked());
