@@ -1,13 +1,11 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# ld-prime creates the output afresh, removing an existing file first,
-# with permissions 0777 for an image and 0644 for an object, less the
-# umask. An existing file it may not write is an error. A character
-# device (/dev/null) is written in place, as is a file in a directory
-# it may not write, which keeps its mode; a FIFO is replaced. The
-# file must take the size of the output (ftruncate), which a pipe
-# can't.
+# The output is created afresh, an existing file removed first, with
+# permissions 0777 for an image and 0644 for an object, less the umask.
+# A character device (/dev/null) is written in place, as is a file in a
+# directory the link may not write, which keeps its mode. The file must
+# take the size of the output, which a pipe can't.
 cat <<EOF | $CC -o $t/a.o -c -xc -
 int main(void) { return 0; }
 EOF
@@ -30,13 +28,6 @@ ln -f $t/old $t/exe
 link -o $t/exe
 [ "$(cat $t/old)" = old ]
 
-rm -f $t/ro
-touch $t/ro
-chmod 444 $t/ro
-not link -o $t/ro 2> $t/log
-grep -q "can't write output file: $t/ro" $t/log
-[ ! -s $t/ro ]
-
 rm -rf $t/dir
 mkdir $t/dir
 echo hello > $t/dir/out
@@ -52,13 +43,23 @@ mkfifo $t/fifo
 link -o $t/fifo
 [ -f $t/fifo ]
 
-rm -f $t/dangling
-ln -s $t/nonexistent $t/dangling
-not link -o $t/dangling 2> $t/log
-grep -q 'File exists' $t/log
-
 not link -o $t/dir 2> $t/log
 grep -q 'Is a directory' $t/log
 
 link -o /dev/stdout 2> $t/log | cat > /dev/null || true
 grep -q 'Invalid argument' $t/log
+
+# A read-only file, or a symbolic link, is replaced. (ld-prime refuses
+# the one, and fails to create a file where the other dangles.)
+if $mold -v 2> /dev/null | grep -q mold-macho; then
+  rm -f $t/ro
+  touch $t/ro
+  chmod 444 $t/ro
+  link -o $t/ro
+  otool -h $t/ro | grep -q 0x
+
+  rm -f $t/dangling
+  ln -s $t/nonexistent $t/dangling
+  link -o $t/dangling
+  [ -f $t/dangling ] && [ ! -L $t/dangling ] && [ ! -e $t/nonexistent ]
+fi

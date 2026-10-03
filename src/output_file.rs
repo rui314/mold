@@ -51,42 +51,25 @@ fn set_output_path(path: Option<&Path>) {
     OUTPUT_PATH.store(ptr, Ordering::Release);
 }
 
-/// Whether `path` names a file the process may access as `mode` says
-/// (F_OK, W_OK): access(2), which goes by the real user, as ld-prime's
-/// checks do.
-fn accessible(path: &Path, mode: libc::c_int) -> bool {
-    let Ok(path) = CString::new(crate::util::path_bytes(path)) else {
-        return false;
-    };
-    // SAFETY: a NUL-terminated string that outlives the call.
-    unsafe { libc::access(path.as_ptr(), mode) == 0 }
-}
-
-/// Opens the output file as ld-prime does, returning it and whether it
-/// was created. An existing file must be writable ("can't write output
-/// file"). It is removed first, so that a fresh file takes `mode` (less
-/// the umask: 0777 for an image, 0644 for an object), unless it is a
-/// character device (/dev/null), which is written in place. So is a
-/// file that could not be removed, in an unwritable directory, which
-/// keeps its mode. A FIFO is replaced as any file is, and a dangling
-/// symbolic link fails the exclusive create.
+/// Opens the output file, returning it and whether this link created
+/// it. An existing file is removed first, so that a fresh file takes
+/// `mode` (less the umask: 0777 for an image, 0644 for an object), but
+/// a character device (/dev/null), which is written in place, as is a
+/// file that can't be removed (in a directory the link may not write),
+/// which keeps its mode.
 fn open(path: &Path, mode: u32) -> (std::fs::File, bool) {
-    if accessible(path, libc::F_OK) && !accessible(path, libc::W_OK) {
-        fatal!("can't write output file: {}", path.raw());
-    }
-    if std::fs::metadata(path).is_ok_and(|m| !m.file_type().is_char_device()) {
+    if !std::fs::metadata(path).is_ok_and(|m| m.file_type().is_char_device()) {
         let _ = std::fs::remove_file(path);
     }
-    let in_place = accessible(path, libc::W_OK);
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true);
-    if !in_place {
-        options.create_new(true).mode(mode);
-    }
-    let file = options
+    let created = std::fs::symlink_metadata(path).is_err();
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(mode)
         .open(path)
         .unwrap_or_else(|e| fatal!("cannot open {}: {}", path.raw(), strerror(&e)));
-    (file, !in_place)
+    (file, created)
 }
 
 fn write_error(path: &Path, e: &io::Error) -> ! {
