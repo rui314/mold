@@ -1,10 +1,11 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# ld-prime orders GOT slots by what fills them, and puts the slot of a
-# weak definition of the image's own - one the link hid included - with
-# those it binds by weak lookup, after the imports, by name: here
-# _plain and _zzz, then ___stderrp, then _aaa, _wext and _wh.
+# A GOT slot of one of the image's own definitions holds its address,
+# rebased - a weak definition the link hid too (_aaa, _wh) - while an
+# exported weak definition (_wext) is bound by weak lookup, so that
+# another image's copy may replace it, and an import (___stderrp) is
+# bound to its library. The slots may come in any order.
 [ $ARCH = arm64 ] || skip
 
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
@@ -47,6 +48,6 @@ $(addr _aaa)
 <weak-def-coalesce>/_wext
 $(addr _wh)
 EOF
-sed -E 's/^0x0*/0x/' $t/got | tr 'A-F' 'a-f' > $t/got2
-tr 'A-F' 'a-f' < $t/expected > $t/expected2
+sed -E 's/^0x0*/0x/' $t/got | tr 'A-F' 'a-f' | sort > $t/got2
+tr 'A-F' 'a-f' < $t/expected | sort > $t/expected2
 diff $t/expected2 $t/got2

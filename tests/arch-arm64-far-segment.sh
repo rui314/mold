@@ -82,5 +82,5 @@ _d:
 EOF
 $CC --ld-path=$mold -o $t/c.dylib -shared $t/b.o -Wl,-segaddr,__TEXT,0x200000000
 otool -tv $t/c.dylib | grep -A3 '^_f:' > $t/f
-grep -Eq 'ldr[[:space:]]+x0, \[x0\]' $t/f
+grep -Eq 'ldr[[:space:]]+x0, \[x0(, #0x[0-9a-f]+)?\]' $t/f
 otool -Iv $t/c.dylib | grep -A2 '__TEXT,__stubs' | grep -q LOCAL

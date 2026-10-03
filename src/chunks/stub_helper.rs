@@ -25,7 +25,7 @@ pub struct StubHelperSection {
     /// jump to instead: crt1.o's dyld_stub_binding_helper, if defined.
     pub binding_helper: Option<SymbolId>,
     /// N of 'anon-N', ld-prime's name for the first entry in the error
-    /// for a missing dyld_stub_binding_helper (see sort_stubs_and_got).
+    /// for a missing dyld_stub_binding_helper (see finish_stubs).
     pub first_entry_anon: usize,
 }
 

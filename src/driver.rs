@@ -220,7 +220,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     crate::error::checkpoint();
     passes::create_lazy_loads(&mut ctx);
     crate::delay_init::create_delay_init(&mut ctx);
-    passes::sort_stubs_and_got(&mut ctx);
+    passes::finish_stubs(&mut ctx);
 
     // Decide the output layout
     timed!("create_output_sections", output_sections::create_output_sections(&mut ctx));

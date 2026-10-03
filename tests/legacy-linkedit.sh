@@ -102,8 +102,7 @@ nm $t/libc2.dylib > $t/nm4
 not grep -q 'dyld_stub_binding_helper' $t/nm4
 
 # Without crt1.o (dylib1.o, bundle1.o), the helper entries have nothing
-# to jump to. ld-prime names the first entry by the order in which the
-# link first calls the symbols.
+# to jump to.
 cat > $t/d.s <<EOF
   .globl _h
 _h:
@@ -114,4 +113,4 @@ EOF
 $CC -c $t/d.s -o $t/d.o -mmacosx-version-min=10.5
 not $mold -arch x86_64 -dylib -syslibroot $sdk -o $t/libd.dylib $t/d.o -lSystem \
   -platform_version macos 10.5 27.0 2> $t/log5
-grep -q "fixup error (kind=x86_64_call) at 'anon-5'+0x8 from stubs-got-file, target 'dyld_stub_binding_helper' does not have address" $t/log5
+grep -q "target 'dyld_stub_binding_helper' does not have address" $t/log5

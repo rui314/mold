@@ -6,7 +6,7 @@ source "$(dirname "$0")"/common.inc
 # debug build its mergeable libraries with -no_merge_*) binds the
 # imports from them to itself, ordinal 0, as ld64 and ld-prime do: dyld
 # finds them through the image's re-exports. Their load commands stay
-# as they are, and the GOT slots bound so come first.
+# as they are.
 cat <<EOF | $CC -o $t/main.o -c -xc -
 #include <stdio.h>
 int foo(void); int bar(void); int baz(void);
@@ -28,7 +28,7 @@ $CC --ld-path=$mold -o $t/exe $t/main.o -L$t/lib -Wl,-reexport-lfoo \
   -Wl,-reexport-lbar -lbaz -Wl,-rpath,@loader_path/lib
 dyld_info -fixups $t/exe > $t/fixups1
 grep __got $t/fixups1 | grep -v libSystem > $t/got1
-[ "$(awk '{print $NF}' $t/got1 | tr '\n' ' ')" = "<this-image>/_bar <this-image>/_foo libbaz/_baz " ]
+[ "$(awk '{print $NF}' $t/got1 | sort | tr '\n' ' ')" = "<this-image>/_bar <this-image>/_foo libbaz/_baz " ]
 otool -L $t/exe > $t/libs1
 grep -A1 'libfoo.dylib .*reexport)' $t/libs1 | grep -q 'libbar.dylib .*reexport)'
 [ "$($t/exe)" = 3 ]

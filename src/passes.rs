@@ -5225,82 +5225,26 @@ fn create_lazy_helpers<E: Target>(
     ctx.lazy_helpers.helpers = helpers;
 }
 
-/// Lays out __stubs and __got in ld-prime's order rather than in the
-/// order relocations first reached them. Stubs - and with them the
-/// lazy pointers, their helper entries and the indirect symbol table -
-/// sort by name across all libraries. GOT slots sort by what fills
-/// them: the image's own addresses first, then the -bundle_loader
-/// executable's symbols, each library's in load-command order, the
-/// weak definitions - those bound by weak lookup and the image's own
-/// the link hid alike - and flat lookups no library provides; by name
-/// within each. Runs once the dylib ordinals are final.
-pub fn sort_stubs_and_got<E: Target>(ctx: &mut Context<E>) {
-    let mut stubs = std::mem::take(&mut ctx.stubs.symbols);
+/// Settles which stubs jump through a lazy pointer (and so have a stub
+/// helper entry), once the stubs are made. Stubs and GOT slots stay in
+/// the order relocations first reached them. Runs again when branch
+/// shims add stubs.
+pub fn finish_stubs<E: Target>(ctx: &mut Context<E>) {
+    let stubs = &ctx.stubs.symbols;
+    let lazy = |id| !ctx.binds_weak_lookup(id) && !ctx.has_branch_shim(id);
+    let lazy_stubs: Vec<u32> = match ctx.args.lazy_binding {
+        true => (0..stubs.len() as u32).filter(|&i| lazy(stubs[i as usize])).collect(),
+        false => Vec::new(),
+    };
     // ld-prime names what it makes for each symbol called through a
     // stub - the stub, the lazy pointer and the helper entry - 'anon-N',
     // three in a row, in the order the link first calls the symbols. An
     // error at the first helper entry names the third of its symbol's.
     if ctx.args.legacy_linkedit && ctx.stub_helper.binding_helper.is_none() {
-        let lazy = |id| !ctx.binds_weak_lookup(id) && !ctx.has_branch_shim(id);
-        let first = (stubs.iter().enumerate().filter(|&(_, &id)| lazy(id)))
-            .min_by_key(|&(_, &id)| crate::util::name_sort_key(ctx.symbols[id].name()));
-        ctx.stub_helper.first_entry_anon = first.map_or(0, |(i, _)| 3 * i + 2);
+        let first = stubs.iter().position(|&id| lazy(id));
+        ctx.stub_helper.first_entry_anon = first.map_or(0, |i| 3 * i + 2);
     }
-    stubs.par_sort_by_key(|&id| crate::util::name_sort_key(ctx.symbols[id].name()));
-    for (i, &id) in stubs.iter().enumerate() {
-        ctx.sym_aux_mut(id).stub_idx = i as u32;
-    }
-    if ctx.args.lazy_binding {
-        ctx.stubs.lazy = (0..stubs.len() as u32)
-            .filter(|&i| {
-                let id = stubs[i as usize];
-                !ctx.binds_weak_lookup(id) && !ctx.has_branch_shim(id)
-            })
-            .collect();
-    }
-    ctx.stubs.symbols = stubs;
-
-    // A delay-init stub's own slot goes after the one other references
-    // share.
-    let got = std::mem::take(&mut ctx.got.got_syms);
-    let delay_own: hashbrown::HashSet<usize> = (ctx.delay_init.stubs.iter())
-        .filter(|s| s.got != ctx.sym_aux(s.sym).got_idx)
-        .map(|s| s.got as usize)
-        .collect();
-    let mut order: Vec<usize> = (0..got.len()).collect();
-    order.par_sort_by_key(|&i| {
-        let id = got[i];
-        let name = crate::util::name_sort_key(ctx.symbols[id].name());
-        (got_rank(ctx, id), name, delay_own.contains(&i))
-    });
-    let mut slot_of = vec![0; got.len()];
-    for (slot, &i) in order.iter().enumerate() {
-        slot_of[i] = slot as u32;
-        if !delay_own.contains(&i) {
-            ctx.sym_aux_mut(got[i]).got_idx = slot as u32;
-        }
-    }
-    for stub in &mut ctx.delay_init.stubs {
-        stub.got = slot_of[stub.got as usize];
-    }
-    ctx.got.got_syms = order.iter().map(|&i| got[i]).collect();
-}
-
-/// A GOT slot's group in ld-prime's order (see sort_stubs_and_got).
-fn got_rank<E: Target>(ctx: &Context<E>, id: crate::symbol::SymbolId) -> i64 {
-    let sym = &ctx.symbols[id];
-    if ctx.binds_weak_lookup(id)
-        || (sym.is_weak_def() && matches!(sym.file(), Some(FileId::Obj(_))))
-    {
-        return i64::MAX - 1;
-    }
-    match ctx.symbols[id].file() {
-        Some(FileId::Dylib(u32::MAX)) => i64::MAX,
-        Some(FileId::Dylib(d)) if ctx.dylibs[d as usize].is_bundle_loader => 0,
-        Some(FileId::Dylib(d)) if ctx.dylibs[d as usize].binds_to_image => 0,
-        Some(FileId::Dylib(d)) => ctx.dylibs[d as usize].dylib_idx as i64,
-        _ => -1,
-    }
+    ctx.stubs.lazy = lazy_stubs;
 }
 
 /// Publishes selected imports without reexporting their whole dylib:

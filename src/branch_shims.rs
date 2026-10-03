@@ -107,5 +107,5 @@ pub fn add_far_ref_slots<E: Target>(ctx: &mut Context<E>) {
         }
         crate::passes::add_got(ctx, id);
     }
-    crate::passes::sort_stubs_and_got(ctx);
+    crate::passes::finish_stubs(ctx);
 }
