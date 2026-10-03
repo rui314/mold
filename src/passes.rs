@@ -297,17 +297,16 @@ fn resolve_symbols_pass<E: Target>(
     // weak reference make it weak instead, in a final image.
     let weak_wins = ctx.args.weak_reference_mismatches == crate::cmdline::WeakRefMismatches::Weak
         && !ctx.args.relocatable;
-    for i in 0..ctx.symbols.syms.len() {
+    ctx.symbols.syms.par_iter_mut().enumerate().for_each(|(i, sym)| {
         if weak_wins && refs.weak[i].load(Ordering::Relaxed) {
-            ctx.symbols.syms[i].set_is_weak_ref(true);
+            sym.set_is_weak_ref(true);
         } else if refs.strong[i].load(Ordering::Relaxed) {
-            let sym = &mut ctx.symbols.syms[i];
             sym.set_is_strong_ref(true);
             sym.set_is_weak_ref(false);
-        } else if refs.weak[i].load(Ordering::Relaxed) && !ctx.symbols.syms[i].is_strong_ref() {
-            ctx.symbols.syms[i].set_is_weak_ref(true);
+        } else if refs.weak[i].load(Ordering::Relaxed) && !sym.is_strong_ref() {
+            sym.set_is_weak_ref(true);
         }
-    }
+    });
 
     // A relocatable link keeps every reference undefined rather than
     // binding it to a dylib.
@@ -316,9 +315,8 @@ fn resolve_symbols_pass<E: Target>(
     }
 
     // Record the final usage set for downstream passes.
-    for (i, u) in refs.used.iter().enumerate() {
-        ctx.symbols.syms[i].set_is_used(u.load(Ordering::Relaxed));
-    }
+    let used = ctx.symbols.syms.par_iter_mut().zip(&refs.used);
+    used.for_each(|(sym, used)| sym.set_is_used(used.load(Ordering::Relaxed)));
     tentative
 }
 
@@ -702,7 +700,12 @@ fn collect_dylib_symbols<E: Target>(ctx: &mut Context<E>) {
         .collect();
     ctx.dylibs.par_iter_mut().for_each(|dylib| {
         match dylib.symbols_seen {
-            None => dylib.symbols = dylib.exports.iter().filter_map(|n| symbols.get(n)).collect(),
+            // An SDK framework's stub can export a hundred thousand
+            // names, so they are looked up in parallel too.
+            None => {
+                let names: Vec<&[u8]> = dylib.exports.iter().copied().collect();
+                dylib.symbols = names.par_iter().filter_map(|n| symbols.get(n)).collect();
+            }
             Some(seen) => {
                 let new = interned.iter().filter(|&&id| id as usize >= seen);
                 let exported = new.filter(|&&id| dylib.exports.contains(symbols[id].name()));
