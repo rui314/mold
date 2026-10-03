@@ -794,6 +794,67 @@ pub struct Args {
 }
 
 impl Args {
+    pub fn is_kext(&self) -> bool {
+        self.output_type == MH_KEXT_BUNDLE
+    }
+
+    /// Whether the image is dyld itself (ld64's kDyld, MH_DYLINKER),
+    /// which the kernel maps next to a main executable and starts: it
+    /// loads no dylib, and slides itself by its fixups before it loads
+    /// anything else.
+    pub fn is_dylinker(&self) -> bool {
+        self.output_type == MH_DYLINKER
+    }
+
+    /// Whether the image starts at an entry point (-e): a main
+    /// executable, or dyld.
+    pub fn has_entry_point(&self) -> bool {
+        (self.output_type == MH_EXECUTE && !self.relocatable) || self.is_dylinker()
+    }
+
+    /// Whether the image may link dylibs: not an image no dyld loads,
+    /// with nothing to load them, nor dyld, which is what loads them.
+    /// ld-prime searches -l for archives alone in either, and ignores a
+    /// dylib named outright.
+    pub fn links_dylibs(&self) -> bool {
+        !self.without_dyld() && !self.is_dylinker()
+    }
+
+    /// Whether no dyld loads the image: a -static one, which loads (and
+    /// slides) itself, or a kext, which kmutil links into the kernel
+    /// by its relocations.
+    pub fn without_dyld(&self) -> bool {
+        self.static_link || self.is_kext()
+    }
+
+    /// Whether the image gets __unwind_info, the table the unwinder
+    /// looks a function up in: not a -r output, which carries the
+    /// objects' __compact_unwind records instead, nor an image no dyld
+    /// loads or one linked with -no_compact_unwind, which unwind by
+    /// their __eh_frame alone and so keep every FDE.
+    pub fn unwind_info(&self) -> bool {
+        !self.relocatable && !self.without_dyld() && !self.no_compact_unwind
+    }
+
+    /// Whether the FDEs of the functions that have compact unwind
+    /// records reach the output too: in an image without __unwind_info
+    /// for the records, and, as ld-prime keeps them, in one for a macOS
+    /// before 10.9, whose unwinders ld64 still gave the FDEs (its
+    /// -keep_dwarf_unwind default).
+    pub fn keeps_all_fdes(&self) -> bool {
+        !self.unwind_info()
+            || (self.platform == PLATFORM_MACOS && self.platform_minos < encode_version(10, 9, 0))
+    }
+
+    /// The output's install name: -install_name, else -final_output,
+    /// else the output path.
+    pub fn output_install_name(&self) -> &[u8] {
+        self.install_name
+            .as_deref()
+            .or(self.final_output.as_deref())
+            .unwrap_or(crate::util::path_bytes(&self.output))
+    }
+
     /// The address -segaddr pins a segment to.
     pub fn segaddr(&self, segname: &[u8]) -> Option<u64> {
         self.segaddrs.iter().find(|(name, _)| name == segname).map(|&(_, addr)| addr)
@@ -873,35 +934,6 @@ fn parse_source_version(arg: &str) -> Option<u64> {
     Some(nums.iter().zip([40, 30, 20, 10, 0]).fold(0, |v, (&n, shift)| v | (n << shift)))
 }
 
-/// The traces Apple's build system asks for in the environment, where
-/// no option names a file: with $LD_TRACE_DEPENDENTS set, whatever its
-/// value, -trace_file's record goes to $LD_TRACE_FILE, if that names a
-/// file; and with a -trace_file either way, -trace_symbols_file's goes
-/// to a file of its own in $LD_TRACE_SYMBOLS_DIR.
-fn trace_env(args: &mut Args) {
-    if args.trace_file.is_none() && std::env::var_os("LD_TRACE_DEPENDENTS").is_some() {
-        let file = std::env::var_os("LD_TRACE_FILE").filter(|file| !file.is_empty());
-        args.trace_file = file.map(PathBuf::from);
-    }
-    if args.trace_file.is_some() && args.trace_symbols_file.is_none() {
-        args.trace_symbols_dir = std::env::var_os("LD_TRACE_SYMBOLS_DIR").map(PathBuf::from);
-    }
-}
-
-/// The source version the build system gives in
-/// $RC_ProjectSourceVersion, which ld-prime takes when -source_version
-/// gives none, and takes for 0 with a warning when malformed.
-fn env_source_version() -> u64 {
-    let Some(env) = std::env::var_os("RC_ProjectSourceVersion") else {
-        return 0;
-    };
-    env.to_str().and_then(parse_source_version).unwrap_or_else(|| {
-        let env = env.raw();
-        crate::warn!("$RC_ProjectSourceVersion: malformed 64-bit a.b.c.d.e version number: {env}");
-        0
-    })
-}
-
 /// ld64 takes the platform by name, in any case, or by its PLATFORM_*
 /// number; Xcode passes the number for some prelink steps
 /// (`-platform_version 1 11.0`). mold links for macOS and firmware.
@@ -977,64 +1009,6 @@ const JOINED_LIBRARY_OPTIONS: [(&str, LibraryKind); 13] = [
     ("-l", LibraryKind::Plain),
 ];
 
-/// The names of the libraries the options of a kind name, each once.
-fn libraries_of_kind(inputs: &[InputArg], kind: LibraryKind) -> Vec<&OsStr> {
-    let mut names = Vec::new();
-    for input in inputs {
-        if let InputArg::Library(k, name) = input
-            && *k == kind
-            && !names.contains(&name.as_os_str())
-        {
-            names.push(name.as_os_str());
-        }
-    }
-    names
-}
-
-/// Decides whether the dylibs -lazy-l and the like name load lazily:
-/// dyld loads one when __dyld_lazy_load says so, for macOS 27 on.
-/// Firmware, a -preload image included, has no dyld: the library links
-/// as usual there.
-fn resolve_lazy_load(args: &mut Args) {
-    let libs = libraries_of_kind(&args.inputs, LibraryKind::Lazy);
-    if libs.is_empty() {
-        return;
-    }
-    let lazy_load = args.platform == PLATFORM_MACOS
-        && args.platform_minos >= encode_version(27, 0, 0)
-        && !args.preload;
-    for lib in libs.iter().filter(|_| !lazy_load) {
-        crate::warn!(
-            "lazy-load will be ignored for '{}' because deployment target version is too low",
-            lib.raw()
-        );
-    }
-    args.lazy_load = lazy_load;
-}
-
-/// A dylib -delay-l and the like name keeps its initializers until the
-/// image dlopen()s it, which dyld supports from macOS 15 on: ld-prime
-/// warns of an older or another target (a -preload image included),
-/// but delays the dylib all the same. It wants _dlopen as one of the
-/// command line's initial undefines in any link that names one, -r
-/// included.
-fn resolve_delay_init(args: &mut Args) {
-    let libs = libraries_of_kind(&args.inputs, LibraryKind::Delay);
-    if libs.is_empty() {
-        return;
-    }
-    let supported = args.platform == PLATFORM_MACOS
-        && args.platform_minos >= encode_version(15, 0, 0)
-        && !args.preload;
-    for lib in libs.iter().filter(|_| !supported) {
-        crate::warn!(
-            "delay-init will be ignored for '{}' because deployment target version is too low",
-            lib.raw()
-        );
-    }
-    args.forced_undefined.push(b"_dlopen".to_vec());
-}
-
 /// Takes the platform and minimum OS version an option names. The last
 /// option wins; ld-prime warns about another minimum version for the
 /// same platform, and about firmware replacing macOS, but refuses
@@ -1053,32 +1027,10 @@ fn set_platform(args: &mut Args, st: &mut ParseState, platform: u32, minos: u32)
     args.platform_minos = minos;
 }
 
-/// Applies -target <arch>-<vendor>-<os><version>, which clang passes in
-/// place of -arch and -platform_version for firmware (for instance
-/// arm64-apple-firmware1.0.0). ld-prime lets the triple override both,
-/// before or after it, and records no SDK version.
-fn apply_target_triple(args: &mut Args, triple: &str) {
-    let (arch, platform, minos) = parse_triple(triple);
-    args.platform = platform;
-    args.platform_minos = minos;
-    args.platform_sdk = encode_version(0, 0, 0);
-    args.arch = Some(triple_arch(arch, triple));
-}
-
 /// The target a triple's architecture names.
 fn triple_arch(arch: &str, triple: &str) -> &'static str {
     crate::target::canonical_name(arch)
         .unwrap_or_else(|| fatal!("unknown architecture in target triple '{triple}'"))
-}
-
-/// Whether a ':'-separated list of architecture names, as
-/// -no_allow_dylib_sub_type_mismatches and
-/// $LD_DYLIB_CPU_SUBTYPES_MUST_MATCH give one, names one of the CPU
-/// type of `target`: arm64 and its variants (arm64e, arm64e.v1, ...)
-/// but arm64_32, or x86_64 and x86_64h.
-fn names_cpu_family(list: &[u8], target: &str) -> bool {
-    list.split(|&c| c == b':')
-        .any(|name| name.starts_with(target.as_bytes()) && !name.starts_with(b"arm64_32"))
 }
 
 /// Splits a target triple, <arch>-<vendor>-<os><version>, into its
@@ -1490,35 +1442,6 @@ struct SymbolLists {
     /// some.
     interposable_all: bool,
     interposable_list: Option<GlobBuilder>,
-}
-
-/// ld-prime's checks of the options that put an image's fixups in a
-/// section of its own, for its own loader: -fixup_chains_section, which
-/// rules out -rebase_section as -fixup_chains does, and -rebase_section.
-/// Only an image no dyld loads can have them (a kext or a -kernel
-/// image, which have neither, ignores them), and only a 32-bit one
-/// -rebase_section's.
-fn check_fixup_sections(
-    args: &Args,
-    fixup_chains: Option<bool>,
-    fixup_chains_section: bool,
-    rebase_section: bool,
-) {
-    if rebase_section && fixup_chains == Some(true) {
-        fatal!(
-            "-fixup_chains*, -rebase_section and -threaded_starts_section can't be used together"
-        );
-    }
-    let dynamic = !args.static_link && !args.relocatable && !args.is_kext();
-    if rebase_section && dynamic {
-        fatal!("-rebase_section can't be used with dynamic binaries");
-    }
-    if fixup_chains_section && dynamic {
-        fatal!("-fixup_chains_section* can't be used with dynamic binaries");
-    }
-    if rebase_section && !args.is_kext() && !args.kernel {
-        fatal!("-rebase_section can only be used on 32-bit architectures");
-    }
 }
 
 /// Adds an -add_linker_option's words to `words`. ld-prime splits the
@@ -2650,6 +2573,21 @@ fn finish_options(args: &mut Args) {
     trace_env(args);
 }
 
+/// The traces Apple's build system asks for in the environment, where
+/// no option names a file: with $LD_TRACE_DEPENDENTS set, whatever its
+/// value, -trace_file's record goes to $LD_TRACE_FILE, if that names a
+/// file; and with a -trace_file either way, -trace_symbols_file's goes
+/// to a file of its own in $LD_TRACE_SYMBOLS_DIR.
+fn trace_env(args: &mut Args) {
+    if args.trace_file.is_none() && std::env::var_os("LD_TRACE_DEPENDENTS").is_some() {
+        let file = std::env::var_os("LD_TRACE_FILE").filter(|file| !file.is_empty());
+        args.trace_file = file.map(PathBuf::from);
+    }
+    if args.trace_file.is_some() && args.trace_symbols_file.is_none() {
+        args.trace_symbols_dir = std::env::var_os("LD_TRACE_SYMBOLS_DIR").map(PathBuf::from);
+    }
+}
+
 /// Sets the Mach-O file type of the output and the kind of image it is.
 fn set_output_kind(args: &mut Args, kind: OutputKind) {
     args.output_type = match kind {
@@ -2662,6 +2600,18 @@ fn set_output_kind(args: &mut Args, kind: OutputKind) {
     args.relocatable = kind == OutputKind::Object;
     args.static_link = matches!(kind, OutputKind::StaticExecutable | OutputKind::Preload);
     args.preload = kind == OutputKind::Preload;
+}
+
+/// Applies -target <arch>-<vendor>-<os><version>, which clang passes in
+/// place of -arch and -platform_version for firmware (for instance
+/// arm64-apple-firmware1.0.0). ld-prime lets the triple override both,
+/// before or after it, and records no SDK version.
+fn apply_target_triple(args: &mut Args, triple: &str) {
+    let (arch, platform, minos) = parse_triple(triple);
+    args.platform = platform;
+    args.platform_minos = minos;
+    args.platform_sdk = encode_version(0, 0, 0);
+    args.arch = Some(triple_arch(arch, triple));
 }
 
 /// `ld -v` with nothing to link just reports the version; build
@@ -2696,6 +2646,88 @@ fn resolve_target(target: &TargetTraits, args: &mut Args) -> bool {
         infer_platform(args);
     }
     true
+}
+
+/// Without -arch, ld-prime links for the target of the first object
+/// file named on the command line: a Mach-O object's CPU type, or a
+/// bitcode file's target triple. Archives, dylibs and universal files
+/// don't count, and without such an object there is no target.
+fn detect_target(args: &Args) -> &'static str {
+    for input in &args.inputs {
+        let (InputArg::File(path) | InputArg::Listed(path)) = input else { continue };
+        let Some(mf) = open_for_target(path) else { continue };
+        match get_file_type(mf) {
+            FileType::Object => {
+                if let Some(name) = crate::filetype::get_macho_target(mf.data()) {
+                    return name;
+                }
+            }
+            FileType::LlvmBitcode => {
+                let plugin = crate::lto::load_plugin(args.lto_library.as_deref());
+                let triple = crate::lto::target_triple(&plugin, mf.data(), &mf.name);
+                return triple_arch(triple.split('-').next().unwrap_or_default(), &triple);
+            }
+            _ => {}
+        }
+    }
+    fatal!("Missing -arch option");
+}
+
+/// An input file ld-prime reads before the link proper to work out the
+/// target (see detect_target and infer_platform): None for an empty
+/// one, which says nothing. A file it can't map stops it, in words that
+/// name no input.
+fn open_for_target(path: &Path) -> Option<&'static MappedFile> {
+    match MappedFile::try_open(path) {
+        Ok(mf) => (mf.size() > 0).then_some(mf),
+        Err(e) => fatal!("{}", crate::error::raw(&crate::passes::unreadable_file(path, &e))),
+    }
+}
+
+/// Without -platform_version (or -macos_version_min or -target),
+/// ld-prime links for what the first object file named on the command
+/// line that has a platform load command was built for: its platform,
+/// minimum OS and SDK versions, whatever later objects say (one built
+/// for a newer OS draws a warning, one for another platform an error).
+/// Archive members, universal files and dylibs don't count, nor does a
+/// bitcode file unless no Mach-O object does: then the first one's
+/// target triple names the platform and OS version, and no SDK. A final
+/// image must have a platform; a -r or -preload output may be for none.
+fn infer_platform(args: &mut Args) {
+    let mut bitcode = None;
+    for input in &args.inputs {
+        let (InputArg::File(path) | InputArg::Listed(path)) = input else { continue };
+        let Some(mf) = open_for_target(path) else { continue };
+        match get_file_type(mf) {
+            FileType::Object => {
+                let Some(v) = PlatformVersion::of_object(mf.data()) else {
+                    continue;
+                };
+                if v.platform != PLATFORM_MACOS && v.platform != PLATFORM_FIRMWARE {
+                    fatal!(
+                        "{}: unsupported platform: {}",
+                        mf.name.raw(),
+                        platform_name(v.platform)
+                    );
+                }
+                args.platform = v.platform;
+                args.platform_minos = v.minos;
+                args.platform_sdk = v.sdk;
+                return;
+            }
+            FileType::LlvmBitcode => {
+                bitcode.get_or_insert(mf);
+            }
+            _ => {}
+        }
+    }
+    if let Some(mf) = bitcode {
+        let plugin = crate::lto::load_plugin(args.lto_library.as_deref());
+        let triple = crate::lto::target_triple(&plugin, mf.data(), &mf.name);
+        (_, args.platform, args.platform_minos) = parse_triple(&triple);
+    } else if !args.relocatable && !args.preload {
+        fatal!("Missing -platform_version option");
+    }
 }
 
 /// Resolves the options whose defaults depend on the target and the
@@ -2810,6 +2842,16 @@ fn check_arch_options(target: &TargetTraits, args: &mut Args, st: &ParseState) {
     }
 }
 
+/// Whether a ':'-separated list of architecture names, as
+/// -no_allow_dylib_sub_type_mismatches and
+/// $LD_DYLIB_CPU_SUBTYPES_MUST_MATCH give one, names one of the CPU
+/// type of `target`: arm64 and its variants (arm64e, arm64e.v1, ...)
+/// but arm64_32, or x86_64 and x86_64h.
+fn names_cpu_family(list: &[u8], target: &str) -> bool {
+    list.split(|&c| c == b':')
+        .any(|name| name.starts_with(target.as_bytes()) && !name.starts_with(b"arm64_32"))
+}
+
 /// The build system's source version stands in for -source_version
 /// unless -no_source_version says there is none (ld-prime reads it
 /// even where there is none anyway).
@@ -2820,6 +2862,20 @@ fn resolve_env_source_version(args: &mut Args, st: &ParseState) {
             *v = version;
         }
     }
+}
+
+/// The source version the build system gives in
+/// $RC_ProjectSourceVersion, which ld-prime takes when -source_version
+/// gives none, and takes for 0 with a warning when malformed.
+fn env_source_version() -> u64 {
+    let Some(env) = std::env::var_os("RC_ProjectSourceVersion") else {
+        return 0;
+    };
+    env.to_str().and_then(parse_source_version).unwrap_or_else(|| {
+        let env = env.raw();
+        crate::warn!("$RC_ProjectSourceVersion: malformed 64-bit a.b.c.d.e version number: {env}");
+        0
+    })
 }
 
 /// Resolves the options whose values depend on one another, on the
@@ -2865,6 +2921,654 @@ fn resolve_options(target: &TargetTraits, args: &mut Args, st: &mut ParseState) 
     resolve_image_base(args);
     args.unaligned_pointers = resolve_unaligned_pointers(target, args, st.unaligned_pointers);
     args.objc_stubs_small &= target.name == "arm64";
+}
+
+/// -segaddr's (segment, address) pins, one per segment: ld-prime takes
+/// the last address given for a segment, with a warning.
+fn resolve_segaddrs(segaddrs: Vec<(Vec<u8>, u64)>) -> Vec<(Vec<u8>, u64)> {
+    let mut out: Vec<(Vec<u8>, u64)> = Vec::new();
+    for (name, addr) in segaddrs {
+        match out.iter_mut().find(|(seen, _)| *seen == name) {
+            Some((_, old)) if *old == addr => {
+                crate::warn!("-segaddr {} used more than once", raw(&name))
+            }
+            Some((_, old)) => {
+                crate::warn!("-segaddr {} has conflicting values, using 0x{addr:X}", raw(&name));
+                *old = addr;
+            }
+            None => out.push((name, addr)),
+        }
+    }
+    out
+}
+
+/// The names of the libraries the options of a kind name, each once.
+fn libraries_of_kind(inputs: &[InputArg], kind: LibraryKind) -> Vec<&OsStr> {
+    let mut names = Vec::new();
+    for input in inputs {
+        if let InputArg::Library(k, name) = input
+            && *k == kind
+            && !names.contains(&name.as_os_str())
+        {
+            names.push(name.as_os_str());
+        }
+    }
+    names
+}
+
+/// Decides whether the dylibs -lazy-l and the like name load lazily:
+/// dyld loads one when __dyld_lazy_load says so, for macOS 27 on.
+/// Firmware, a -preload image included, has no dyld: the library links
+/// as usual there.
+fn resolve_lazy_load(args: &mut Args) {
+    let libs = libraries_of_kind(&args.inputs, LibraryKind::Lazy);
+    if libs.is_empty() {
+        return;
+    }
+    let lazy_load = args.platform == PLATFORM_MACOS
+        && args.platform_minos >= encode_version(27, 0, 0)
+        && !args.preload;
+    for lib in libs.iter().filter(|_| !lazy_load) {
+        crate::warn!(
+            "lazy-load will be ignored for '{}' because deployment target version is too low",
+            lib.raw()
+        );
+    }
+    args.lazy_load = lazy_load;
+}
+
+/// A dylib -delay-l and the like name keeps its initializers until the
+/// image dlopen()s it, which dyld supports from macOS 15 on: ld-prime
+/// warns of an older or another target (a -preload image included),
+/// but delays the dylib all the same. It wants _dlopen as one of the
+/// command line's initial undefines in any link that names one, -r
+/// included.
+fn resolve_delay_init(args: &mut Args) {
+    let libs = libraries_of_kind(&args.inputs, LibraryKind::Delay);
+    if libs.is_empty() {
+        return;
+    }
+    let supported = args.platform == PLATFORM_MACOS
+        && args.platform_minos >= encode_version(15, 0, 0)
+        && !args.preload;
+    for lib in libs.iter().filter(|_| !supported) {
+        crate::warn!(
+            "delay-init will be ignored for '{}' because deployment target version is too low",
+            lib.raw()
+        );
+    }
+    args.forced_undefined.push(b"_dlopen".to_vec());
+}
+
+/// Resolves how the image's pointers are fixed up as it loads: by
+/// chained fixups, dyld's opcodes or the legacy LINKEDIT's relocations
+/// (or not at all, in an image no dyld loads), bound lazily or not; and
+/// whether it is position independent, emits its initializers as
+/// offsets, or may fix up read-only segments.
+fn resolve_fixups(target: &TargetTraits, args: &mut Args, st: &mut ParseState) {
+    // kmutil links a kext by its relocations and slides a -kernel
+    // image by its local ones: ld-prime takes neither -fixup_chains nor
+    // -no_fixup_chains for them.
+    if args.is_kext() || args.kernel {
+        st.fixup_chains = None;
+    }
+    args.pie = resolve_pie(target, args, st.pie, st.fixup_chains);
+    args.fixup_chains = resolve_fixup_chains(target, args, st.fixup_chains);
+    args.no_fixup_chains = st.fixup_chains == Some(false);
+    args.fixup_chains_section = st.chain_starts.is_some() && args.static_link && args.fixup_chains;
+    args.chain_starts_kind = st.chain_starts.unwrap_or(0);
+    // ld64 binds lazily below the chained-fixups deployment targets
+    // unless -bind_at_load.
+    args.lazy_binding =
+        !args.relocatable && !args.without_dyld() && !args.fixup_chains && !args.bind_at_load;
+    args.legacy_linkedit = resolve_legacy_linkedit(target, args);
+    // ld-prime emits initializers as offsets implicitly with chained
+    // fixups: the point of chains is a fixup-free __DATA_CONST, and
+    // absolute initializer pointers would drag rebases back in. It
+    // follows -fixup_chains or the deployment target even when
+    // -undefined dynamic_lookup sends the fixups themselves back to
+    // classic dyld info; only -no_fixup_chains keeps __mod_init_func.
+    // Not so for an image whose initializers dyld never runs, a
+    // -static one or a kext (XNU runs the kernel's __mod_init_func
+    // itself, and a kext's): it converts only with -init_offsets.
+    args.init_offsets |= !args.without_dyld()
+        && st.fixup_chains.unwrap_or_else(|| chained_fixups_by_default(target, args));
+    args.text_relocs = resolve_text_relocs(target, args, st.read_only_relocs);
+    check_fixup_sections(args, st.fixup_chains, st.chain_starts.is_some(), st.rebase_section);
+}
+
+/// Whether an executable is position independent (MH_PIE). It is
+/// unless -no_pie says otherwise, which arm64 ignores (arm64 macOS runs
+/// PIE executables only) and which ld-prime deprecates from the OS
+/// versions that default to chained fixups. An x86-64 one is PIE by
+/// default from macOS 10.6 on, as ld64 made it, and only with -pie for
+/// an older macOS. A -static image (a kernel) is PIE only with -pie or
+/// -kernel, or with -fixup_chains, whose chains exist to slide it.
+fn resolve_pie(
+    target: &TargetTraits,
+    args: &Args,
+    pie: Option<bool>,
+    fixup_chains: Option<bool>,
+) -> bool {
+    match pie {
+        Some(false) if args.output_type == MH_EXECUTE && !args.static_link && !args.relocatable => {
+            if is_new_os(target.name, MH_EXECUTE, args.platform, args.platform_minos) {
+                crate::warn!("-no_pie is deprecated when targeting new OS versions");
+            }
+            if target.name == "arm64" {
+                crate::warn!("-no_pie ignored for arm64*");
+            }
+            target.name == "arm64"
+        }
+        Some(pie) => pie,
+        None => {
+            (!args.static_link && !is_before_x86_64_macos_10_6(target, args))
+                || args.kernel
+                || fixup_chains == Some(true)
+        }
+    }
+}
+
+/// Whether the image is for x86-64 macOS before 10.6.
+fn is_before_x86_64_macos_10_6(target: &TargetTraits, args: &Args) -> bool {
+    target.name == "x86_64"
+        && args.platform == PLATFORM_MACOS
+        && args.platform_minos < encode_version(10, 6, 0)
+}
+
+/// Whether the image is laid out for chained fixups (see
+/// Args::fixup_chains).
+fn resolve_fixup_chains(target: &TargetTraits, args: &Args, fixup_chains: Option<bool>) -> bool {
+    // A static executable has no dyld: it has no chains unless
+    // -fixup_chains asks for them, which its own loader then walks
+    // (a -kernel image cannot). A kext has none either: kmutil
+    // links it into the kernel by its relocations.
+    if args.is_kext() {
+        return false;
+    }
+    if args.static_link {
+        return fixup_chains == Some(true);
+    }
+    // ld-prime's defaults: chained fixups from macOS 12 on arm64 and
+    // from macOS 13 on x86_64 (below that, classic dyld info with
+    // lazy binding), and never under -undefined dynamic_lookup or
+    // suppress - only an explicit -fixup_chains overrides that.
+    fixup_chains.unwrap_or_else(|| {
+        !args.undefined_dynamic_lookup && chained_fixups_by_default(target, args)
+    })
+}
+
+/// Whether the image defaults to chained fixups: its deployment target
+/// is new enough, and it is not a non-PIE executable, which ld-prime
+/// gives classic dyld info whatever the target.
+fn chained_fixups_by_default(target: &TargetTraits, args: &Args) -> bool {
+    (args.pie || args.output_type != MH_EXECUTE)
+        && is_new_os(target.name, args.output_type, args.platform, args.platform_minos)
+}
+
+/// Whether an image dyld loads goes without LC_DYLD_INFO, the opcode
+/// streams that came with macOS 10.6, as ld-prime links one for x86-64
+/// macOS before that (arm64 macOS has none so old). Its legacy LINKEDIT
+/// gives dyld the same facts as older dyld read them: what each GOT
+/// slot and lazy pointer binds to by the indirect symbol table, what
+/// data pointers bind to by external relocations, and what pointers
+/// slide by local relocations. dyld binds a lazy pointer on the first
+/// call through it, entering dyld_stub_binding_helper, which crt1.o
+/// (dylib1.o, bundle1.o) defines, from the pointer's stub helper entry.
+fn resolve_legacy_linkedit(target: &TargetTraits, args: &Args) -> bool {
+    is_before_x86_64_macos_10_6(target, args)
+        && !args.relocatable
+        && !args.without_dyld()
+        && !args.fixup_chains
+}
+
+/// Whether a pointer may need a fixup in a segment mapped without write
+/// permission, which the loader would have to make writable (a text
+/// relocation). ld-prime allows one by default only in an x86-64 kext
+/// or non-PIE executable. -read_only_relocs warning or suppress allows
+/// one where the option applies, and error refuses it; elsewhere the
+/// option, ignored with a warning, leaves none allowed.
+fn resolve_text_relocs(target: &TargetTraits, args: &Args, read_only_relocs: Option<bool>) -> bool {
+    match read_only_relocs {
+        Some(allow) => allow && read_only_relocs_apply(target, args),
+        None => {
+            target.name == "x86_64"
+                && (args.is_kext() || (args.output_type == MH_EXECUTE && !args.pie))
+        }
+    }
+}
+
+/// Whether -read_only_relocs decides on text relocations: in firmware,
+/// in an image no dyld loads but an arm64 kext, and in -r (which has
+/// none).
+fn read_only_relocs_apply(target: &TargetTraits, args: &Args) -> bool {
+    args.relocatable
+        || args.static_link
+        || args.platform == PLATFORM_FIRMWARE
+        || (args.is_kext() && target.name == "x86_64")
+}
+
+/// ld-prime's checks of the options that put an image's fixups in a
+/// section of its own, for its own loader: -fixup_chains_section, which
+/// rules out -rebase_section as -fixup_chains does, and -rebase_section.
+/// Only an image no dyld loads can have them (a kext or a -kernel
+/// image, which have neither, ignores them), and only a 32-bit one
+/// -rebase_section's.
+fn check_fixup_sections(
+    args: &Args,
+    fixup_chains: Option<bool>,
+    fixup_chains_section: bool,
+    rebase_section: bool,
+) {
+    if rebase_section && fixup_chains == Some(true) {
+        fatal!(
+            "-fixup_chains*, -rebase_section and -threaded_starts_section can't be used together"
+        );
+    }
+    let dynamic = !args.static_link && !args.relocatable && !args.is_kext();
+    if rebase_section && dynamic {
+        fatal!("-rebase_section can't be used with dynamic binaries");
+    }
+    if fixup_chains_section && dynamic {
+        fatal!("-fixup_chains_section* can't be used with dynamic binaries");
+    }
+    if rebase_section && !args.is_kext() && !args.kernel {
+        fatal!("-rebase_section can only be used on 32-bit architectures");
+    }
+}
+
+/// Decides whether the image is bound for the dyld shared cache or a
+/// kernel collection (ld64's fSharedRegionEligible): with
+/// -add_split_seg_info or -kernel, an arm64 kext, dyld, or a dylib
+/// installed where the cache takes libraries from, unless
+/// -not_for_dyld_shared_cache, or -debug_variant for a dylib. Such an
+/// image records its references between sections
+/// (LC_SEGMENT_SPLIT_INFO), so ld64 leaves its code as compiled (no
+/// optimization hints); it may not look symbols up dynamically, since
+/// the cache builder binds every one to the dylib that exports it (see
+/// check_dynamic_lookup); nor may it have small objc stubs, on either
+/// architecture; and ld-prime warns about run paths, which an OS
+/// library must not need. (check_dylib_use refuses a flat namespace.)
+fn resolve_shared_region(target: &TargetTraits, args: &mut Args) {
+    args.shared_region = shared_region_eligible(target, args);
+    if !args.shared_region {
+        return;
+    }
+    args.ignore_optimization_hints = true;
+    if !args.rpaths.is_empty() {
+        crate::warn!(
+            "OS dylibs should not add rpaths (linker option: -rpath) (Xcode build setting: \
+             LD_RUNPATH_SEARCH_PATHS)"
+        );
+    }
+    // Nor be found by run path, as a dylib -add_split_seg_info makes
+    // eligible may be.
+    let install_name = args.install_name.as_deref().unwrap_or_default();
+    if args.output_type == MH_DYLIB && install_name.starts_with(b"@rpath") {
+        crate::warn!(
+            "OS dylibs should not use @rpath for -install_name. Use absolute path instead"
+        );
+    }
+    if args.objc_stubs_small {
+        fatal!("Shared cache eligible dylibs cannot use '-objc_stubs_small'");
+    }
+}
+
+/// Whether the image is bound for the shared region: see
+/// resolve_shared_region.
+fn shared_region_eligible(target: &TargetTraits, args: &Args) -> bool {
+    let is_dylib = args.output_type == MH_DYLIB;
+    !args.not_for_dyld_shared_cache
+        && !(is_dylib && args.debug_variant)
+        && (args.add_split_seg_info
+            || args.kernel
+            || (args.is_kext() && target.name == "arm64")
+            || args.is_dylinker()
+            || (is_dylib && in_shared_cache_path(args.output_install_name())))
+}
+
+/// Whether an install name lies where the dyld shared cache takes
+/// libraries from: /usr/lib, /System/Library or their counterparts
+/// under /Library/Apple.
+pub fn in_shared_cache_path(install_name: &[u8]) -> bool {
+    [
+        &b"/usr/lib/"[..],
+        b"/System/Library/",
+        b"/Library/Apple/usr/lib/",
+        b"/Library/Apple/System/Library/",
+    ]
+    .iter()
+    .any(|dir| install_name.starts_with(dir))
+}
+
+/// The segment alignment: -segalign's, rounded down to a power of two
+/// with a warning as ld-prime does (the last one given wins), else the
+/// page size (4 KiB for a -preload image).
+fn resolve_segment_align(target: &TargetTraits, args: &Args, segalign: Option<u64>) -> u64 {
+    match segalign {
+        // -encryptable gives an image 16 KiB pages for 4 KiB ones, as
+        // iOS has, though ld-prime then makes it no encryptable one
+        // (see resolve_encryptable).
+        None if args.encryptable => target.page_size.max(0x4000),
+        Some(0x1000) if args.encryptable => 0x4000,
+        None if args.preload => 0x1000,
+        None => target.page_size,
+        Some(align) if align.is_power_of_two() => align,
+        Some(align) => {
+            let p2 = 1 << align.ilog2();
+            crate::warn!(
+                "alignment for -segalign 0x{align:X} is not a power of two, using 0x{p2:X}"
+            );
+            p2
+        }
+    }
+}
+
+/// Whether the image is encryptable: an image dyld or the kernel loads
+/// (ld-prime gives a -r or -preload output no LC_ENCRYPTION_INFO_64,
+/// and crashes on a kext), as -encryptable says; macOS images are not
+/// by default. (ld64 made iOS apps encryptable unless $LD_NO_ENCRYPT,
+/// which ld-prime reads but which -encryptable overrides.)
+fn resolve_encryptable(args: &mut Args) {
+    args.encryptable &= !args.relocatable && !args.preload && !args.is_kext();
+}
+
+/// -segprot's (segment, max, init) protections, as ld-prime applies
+/// them: the first one given for a segment wins, and arm64's maximum
+/// is its initial protection (nothing may raise it later there).
+fn resolve_segprots(
+    target: &TargetTraits,
+    segprots: Vec<(Vec<u8>, u8, u8)>,
+) -> Vec<(Vec<u8>, u8, u8)> {
+    let mut out: Vec<(Vec<u8>, u8, u8)> = Vec::new();
+    for (name, max, init) in segprots {
+        if out.iter().all(|(seen, _, _)| *seen != name) {
+            out.push((name, if target.name == "arm64" { init } else { max }, init));
+        }
+    }
+    out
+}
+
+/// -seg_page_size's (segment, size) pairs, as ld-prime takes them: a
+/// size rounds down to a power of two, with a warning; one below the
+/// page size (the segment alignment) is an error but in an object file,
+/// where it means nothing; and the first size given for a segment wins.
+fn resolve_seg_page_sizes(args: &Args, sizes: Vec<(Vec<u8>, u64)>) -> Vec<(Vec<u8>, u64)> {
+    let page = args.segment_align;
+    let mut out: Vec<(Vec<u8>, u64)> = Vec::new();
+    for (name, mut size) in sizes {
+        if size != 0 && !size.is_power_of_two() {
+            size = 1 << size.ilog2();
+            crate::warn!(
+                "-seg_page_size for {} is not a power of two, rounding down to 0x{size:x}",
+                raw(&name)
+            );
+        }
+        if size < page && !args.relocatable {
+            fatal!(
+                "-seg_page_size {} 0x{size:x} can't be smaller than page size (0x{page:x})",
+                raw(&name)
+            );
+        }
+        if out.iter().all(|(seen, _)| *seen != name) {
+            out.push((name, size));
+        }
+    }
+    out
+}
+
+/// __PAGEZERO's size: 4 GiB in a main executable unless -pagezero_size
+/// says otherwise, which ld-prime takes only for a main executable (not
+/// a -preload one), rounded up to a page, and no more than 4 GiB in one
+/// with chained fixups. A dylib is loaded at an arbitrary address, and
+/// a -preload image copied to wherever its segments say. A -kernel
+/// image, which ld-prime makes position independent for the kernel
+/// collection to slide, has none unless -pagezero_size asks.
+fn resolve_pagezero_size(args: &mut Args, size: Option<u64>) {
+    let has_pagezero = args.output_type == MH_EXECUTE && !args.relocatable && !args.preload;
+    if !has_pagezero && size.is_some_and(|size| size != 0) {
+        fatal!("-pagezero_size can only be used when linking a main executable");
+    }
+    args.pagezero_size = match size {
+        _ if args.output_type != MH_EXECUTE || args.preload => 0,
+        Some(size) => size,
+        None if args.kernel => 0,
+        None => 0x1_0000_0000,
+    };
+    if args.relocatable {
+        return;
+    }
+    let size = args.pagezero_size;
+    let page = args.segment_align;
+    if !size.is_multiple_of(page) {
+        let aligned = size
+            .checked_next_multiple_of(page)
+            .unwrap_or_else(|| fatal!("-pagezero_size 0x{size:X} is too large"));
+        crate::warn!(
+            "-pagezero_size not aligned, rounded up to: {aligned:#x}, use -segalign to change the alignment"
+        );
+        args.pagezero_size = aligned;
+    }
+    if args.fixup_chains && args.pagezero_size > 0x1_0000_0000 {
+        crate::warn!("-pagezero_size is too large, setting it to 4GB");
+        args.pagezero_size = 0x1_0000_0000;
+    }
+}
+
+/// -stack_size and -stack_addr. No dyld starts an executable that starts
+/// from LC_UNIXTHREAD with LC_MAIN's stack size: its stack is a segment
+/// of its own, __UNIXSTACK, which ld64 pins as -segaddr would (unless
+/// one pins it elsewhere) below a top of stack, -stack_addr's or a fixed
+/// one; LC_UNIXTHREAD's stack pointer starts at its end. ld-prime checks
+/// -stack_addr for a multiple of the page size (the segment alignment,
+/// but 4 KiB in an object file) and a size to go with it, then the size
+/// against the most a stack may take on the target and for a main
+/// executable, one that starts from LC_UNIXTHREAD if it has an address,
+/// then for a multiple of the page size and smaller than the address.
+fn resolve_stack(target: &TargetTraits, args: &mut Args, size: Option<u64>, addr: Option<u64>) {
+    if addr == Some(0) {
+        crate::warn!("-stack_addr 0x0 has no effect");
+    }
+    let addr = addr.filter(|&addr| addr != 0);
+    if let Some(addr) = addr {
+        let page = if args.relocatable { 0x1000 } else { args.segment_align };
+        if !addr.is_multiple_of(page) {
+            fatal!("-stack_addr (0x{addr:08X}) must be multiples of page size (0x{page:08X})");
+        }
+        if size.unwrap_or(0) == 0 {
+            fatal!("-stack_addr must be used with -stack_size");
+        }
+    }
+    let Some(size) = size else { return };
+    if size == 0 {
+        crate::warn!("-stack_size 0x0 has no effect");
+        return;
+    }
+    let macos_x86_64 = target.name == "x86_64" && args.platform == PLATFORM_MACOS;
+    if macos_x86_64 && size > 0x100_0000_0000 {
+        fatal!("-stack_size must be <= 1TB on x86_64 macOS");
+    }
+    if !macos_x86_64 && size > 0x2000_0000 {
+        fatal!("-stack_size must be <= 512MB on {} platforms", target.name);
+    }
+    if args.output_type != MH_EXECUTE || args.relocatable || args.preload {
+        fatal!("-stack_size option can only be used when linking a main executable");
+    }
+    if addr.is_some() && !args.unixthread {
+        fatal!("-stack_addr can't be used with modern executables");
+    }
+    let page = args.segment_align;
+    if !size.is_multiple_of(page) {
+        fatal!("-stack_size (0x{size:08X}) must be multiples of page size (0x{page:08X})");
+    }
+    let default_top = if macos_x86_64 { 0x7fff_5c00_0000 } else { 0x1_2000_0000 };
+    let top = addr.unwrap_or(default_top);
+    if size > top {
+        fatal!("-stack_size (0x{size:08X}) must be smaller than -stack_addr (0x{top:08X})");
+    }
+    args.stack_size = size;
+    if args.unixthread && args.segaddr(b"__UNIXSTACK").is_none() {
+        args.segaddrs.push((b"__UNIXSTACK".to_vec(), top - size));
+    }
+}
+
+/// Whether ld-prime gives the image __DATA_CONST, the segment dyld makes
+/// read-only once it has applied the fixups, when neither -data_const
+/// nor -no_data_const says. An image no dyld loads has one only if
+/// bound for the shared region: nothing else would make it read-only.
+/// A non-PIE executable, which keeps its classic layout, has none; an
+/// image bound for the shared region and firmware have one. On macOS,
+/// ld64 gives one from its version2019Fall (10.15) on, but not for
+/// 10.15.4 up to 10.16, and not with -no_pie, even where the option is
+/// otherwise ignored (an arm64 executable, a dylib or a bundle).
+fn default_data_const(args: &Args, pie: Option<bool>) -> bool {
+    if args.without_dyld() {
+        return args.shared_region;
+    }
+    if args.output_type == MH_EXECUTE && !args.pie {
+        return false;
+    }
+    if args.shared_region || args.platform == PLATFORM_FIRMWARE {
+        return true;
+    }
+    let minos = args.platform_minos;
+    pie != Some(false)
+        && minos >= encode_version(10, 15, 0)
+        && !(encode_version(10, 15, 4)..encode_version(10, 16, 0)).contains(&minos)
+}
+
+/// A kext (ld64's kKextBundle, MH_KEXT_BUNDLE) is linked into the
+/// kernel by kmutil, which resolves its undefined symbols against the
+/// kernel's and other kexts' exports: ld64 treats them as dynamically
+/// looked up. On arm64 its code gets a __TEXT_EXEC segment of its own
+/// (-text_exec) and, as the kext is bound for the shared region,
+/// __DATA_CONST (-data_const).
+fn resolve_kext(target: &TargetTraits, args: &mut Args) {
+    if !args.is_kext() {
+        return;
+    }
+    args.undefined_dynamic_lookup = true;
+    args.text_exec |= target.name == "arm64";
+}
+
+/// In an image dyld loads, __DATA_CONST is one of the standard
+/// segments, and ld-prime puts it right before __DATA where
+/// -segment_order names that alone, with a warning. Only an image that
+/// may lay itself out orders its segments (see custom_layout).
+fn complete_segment_order(args: &mut Args) {
+    let has = |name: &[u8]| args.segment_order.iter().position(|s| s == name);
+    if !args.without_dyld()
+        && args.data_const
+        && has(b"__DATA_CONST").is_none()
+        && let Some(i) = has(b"__DATA")
+    {
+        crate::warn!(
+            "-segment_order lists __DATA, but not __DATA_CONST, assuming standard order. list __DATA_CONST explicitly or disable the segment using -no_data_const"
+        );
+        args.segment_order.insert(i, b"__DATA_CONST".to_vec());
+    }
+    if !args.segment_order.is_empty() && !custom_layout(args) {
+        fatal!(
+            "-segment_order can only be used with -preload, -static, or with -platform_version \"firmware\"/\"sepOS\""
+        );
+    }
+}
+
+/// Whether the command line may lay out the image's segments and
+/// sections: an image no dyld loads (a -static or a -preload one) or
+/// firmware (ld-prime also allows sepOS, which mold has not).
+fn custom_layout(args: &Args) -> bool {
+    args.static_link || args.platform == PLATFORM_FIRMWARE
+}
+
+/// -image_base (or -seg1addr) sets __TEXT's address, for an image that
+/// stays where it was linked. A -segaddr for __TEXT names the same
+/// address, and the two must agree (a non-PIE -static image takes the
+/// -segaddr's, with a warning). dyld slides a PIE executable wherever
+/// it likes, and ld-prime ignores the base for one with a warning; it
+/// ignores it too for any other image dyld loads with chained fixups (a
+/// non-PIE executable only when -fixup_chains asks for them). A pinned
+/// __TEXT stays where it is even then: in a dylib the other segments
+/// still follow it, while in a PIE executable they go from __PAGEZERO's
+/// end and so below it, out of order (passes::place_segments).
+fn resolve_image_base(args: &mut Args) {
+    // Before anything else looks at it, ld-prime rounds a base up to a
+    // page: 4 KiB in an object file, which is loaded nowhere.
+    let align = if args.relocatable { 0x1000 } else { args.segment_align };
+    if let Some(base) = args.image_base
+        && !base.is_multiple_of(align)
+    {
+        let aligned = base
+            .checked_next_multiple_of(align)
+            .unwrap_or_else(|| fatal!("base address 0x{base:X} is too large"));
+        crate::warn!(
+            "base address 0x{base:X} is not properly aligned. Changing it to 0x{aligned:X}"
+        );
+        args.image_base = Some(aligned);
+    }
+    // It takes a zero base as none at all.
+    if args.image_base == Some(0) {
+        args.image_base = None;
+    }
+    if args.relocatable {
+        args.image_base = None;
+        return;
+    }
+
+    let text = args.segaddr(b"__TEXT");
+    if let (Some(base), Some(text)) = (args.image_base, text)
+        && base != text
+    {
+        if !args.static_link || args.pie {
+            fatal!("-image_base and -segaddr __TEXT must match");
+        }
+        crate::warn!(
+            "-image_base and -segaddr __TEXT must match, changing image base to {text:#x}"
+        );
+    }
+    let Some(base) = text.or(args.image_base) else { return };
+    args.image_base = Some(base);
+
+    if args.output_type == MH_EXECUTE && args.pie && !args.static_link {
+        crate::warn!("Linking with PIE, -image_base will be ignored");
+        args.image_base = None;
+    } else if !args.static_link && args.fixup_chains {
+        crate::warn!("prefered load addresses (-seg1addr) are disabled with chained fixups");
+        args.image_base = text;
+    }
+}
+
+/// What ld-prime makes of a pointer dyld fixes up that is not 8-aligned
+/// (see chunks::chained_fixups::check_pointer_alignment), in an image
+/// dyld loads: what -unaligned_pointers says, else a warning where the
+/// image has chained fixups or its deployment target would, else
+/// nothing. An arm64 image with chained fixups, or bound for the shared
+/// region, fails on one whatever the option says, with a warning if it
+/// says warning. (An x86-64 one gives chained fixups up instead.)
+fn resolve_unaligned_pointers(
+    target: &TargetTraits,
+    args: &Args,
+    treatment: Option<Treatment>,
+) -> Treatment {
+    if args.relocatable || args.without_dyld() {
+        return Treatment::Suppress;
+    }
+    if target.name == "arm64" && (args.fixup_chains || args.shared_region) {
+        if treatment == Some(Treatment::Warning) {
+            match args.fixup_chains {
+                true => {
+                    crate::warn!("unaligned pointer errors are fatal when using chained fixups")
+                }
+                false => crate::warn!("unaligned pointer errors are fatal in OS binaries"),
+            }
+        }
+        return Treatment::Error;
+    }
+    let new_os = is_new_os(target.name, args.output_type, args.platform, args.platform_minos);
+    treatment.unwrap_or(match args.fixup_chains || new_os {
+        true => Treatment::Warning,
+        false => Treatment::Suppress,
+    })
 }
 
 /// Refuses the options that can't go together, or with the target or
@@ -2935,241 +3639,9 @@ fn check_options(target: &TargetTraits, args: &mut Args, st: &ParseState) {
     }
 }
 
-/// Resolves how the image's pointers are fixed up as it loads: by
-/// chained fixups, dyld's opcodes or the legacy LINKEDIT's relocations
-/// (or not at all, in an image no dyld loads), bound lazily or not; and
-/// whether it is position independent, emits its initializers as
-/// offsets, or may fix up read-only segments.
-fn resolve_fixups(target: &TargetTraits, args: &mut Args, st: &mut ParseState) {
-    // kmutil links a kext by its relocations and slides a -kernel
-    // image by its local ones: ld-prime takes neither -fixup_chains nor
-    // -no_fixup_chains for them.
-    if args.is_kext() || args.kernel {
-        st.fixup_chains = None;
-    }
-    args.pie = resolve_pie(target, args, st.pie, st.fixup_chains);
-    args.fixup_chains = resolve_fixup_chains(target, args, st.fixup_chains);
-    args.no_fixup_chains = st.fixup_chains == Some(false);
-    args.fixup_chains_section = st.chain_starts.is_some() && args.static_link && args.fixup_chains;
-    args.chain_starts_kind = st.chain_starts.unwrap_or(0);
-    // ld64 binds lazily below the chained-fixups deployment targets
-    // unless -bind_at_load.
-    args.lazy_binding =
-        !args.relocatable && !args.without_dyld() && !args.fixup_chains && !args.bind_at_load;
-    args.legacy_linkedit = resolve_legacy_linkedit(target, args);
-    // ld-prime emits initializers as offsets implicitly with chained
-    // fixups: the point of chains is a fixup-free __DATA_CONST, and
-    // absolute initializer pointers would drag rebases back in. It
-    // follows -fixup_chains or the deployment target even when
-    // -undefined dynamic_lookup sends the fixups themselves back to
-    // classic dyld info; only -no_fixup_chains keeps __mod_init_func.
-    // Not so for an image whose initializers dyld never runs, a
-    // -static one or a kext (XNU runs the kernel's __mod_init_func
-    // itself, and a kext's): it converts only with -init_offsets.
-    args.init_offsets |= !args.without_dyld()
-        && st.fixup_chains.unwrap_or_else(|| chained_fixups_by_default(target, args));
-    args.text_relocs = resolve_text_relocs(target, args, st.read_only_relocs);
-    check_fixup_sections(args, st.fixup_chains, st.chain_starts.is_some(), st.rebase_section);
-}
-
-/// Whether an install name lies where the dyld shared cache takes
-/// libraries from: /usr/lib, /System/Library or their counterparts
-/// under /Library/Apple.
-pub fn in_shared_cache_path(install_name: &[u8]) -> bool {
-    [
-        &b"/usr/lib/"[..],
-        b"/System/Library/",
-        b"/Library/Apple/usr/lib/",
-        b"/Library/Apple/System/Library/",
-    ]
-    .iter()
-    .any(|dir| install_name.starts_with(dir))
-}
-
-/// Decides whether the image is bound for the dyld shared cache or a
-/// kernel collection (ld64's fSharedRegionEligible): with
-/// -add_split_seg_info or -kernel, an arm64 kext, dyld, or a dylib
-/// installed where the cache takes libraries from, unless
-/// -not_for_dyld_shared_cache, or -debug_variant for a dylib. Such an
-/// image records its references between sections
-/// (LC_SEGMENT_SPLIT_INFO), so ld64 leaves its code as compiled (no
-/// optimization hints); it may not look symbols up dynamically, since
-/// the cache builder binds every one to the dylib that exports it (see
-/// check_dynamic_lookup); nor may it have small objc stubs, on either
-/// architecture; and ld-prime warns about run paths, which an OS
-/// library must not need. (check_dylib_use refuses a flat namespace.)
-fn resolve_shared_region(target: &TargetTraits, args: &mut Args) {
-    args.shared_region = shared_region_eligible(target, args);
-    if !args.shared_region {
-        return;
-    }
-    args.ignore_optimization_hints = true;
-    if !args.rpaths.is_empty() {
-        crate::warn!(
-            "OS dylibs should not add rpaths (linker option: -rpath) (Xcode build setting: \
-             LD_RUNPATH_SEARCH_PATHS)"
-        );
-    }
-    // Nor be found by run path, as a dylib -add_split_seg_info makes
-    // eligible may be.
-    let install_name = args.install_name.as_deref().unwrap_or_default();
-    if args.output_type == MH_DYLIB && install_name.starts_with(b"@rpath") {
-        crate::warn!(
-            "OS dylibs should not use @rpath for -install_name. Use absolute path instead"
-        );
-    }
-    if args.objc_stubs_small {
-        fatal!("Shared cache eligible dylibs cannot use '-objc_stubs_small'");
-    }
-}
-
-/// ld-prime's checks of -U and -undefined dynamic_lookup: -U is
-/// redundant with dynamic_lookup, and with it ignored, for the entry
-/// point too, which must otherwise resolve in the link, as an initial
-/// undefine; and an image bound for the shared region may use neither
-/// (see resolve_shared_region), but a kext, which looks up every import.
-fn check_dynamic_lookup(args: &Args) {
-    let dynamic_lookup = args.undefined_dynamic_lookup;
-    if dynamic_lookup && !args.allowed_undefined.is_empty() {
-        crate::warn!("-U option is redundant when using -undefined dynamic_lookup");
-    } else if args.has_entry_point() && args.allowed_undefined.contains(&args.entry) {
-        fatal!(
-            "{} is an entry point and can't be used with -U for dynamic lookup",
-            crate::error::raw(&args.entry)
-        );
-    }
-    if args.shared_region
-        && (dynamic_lookup || !args.allowed_undefined.is_empty())
-        && !args.is_kext()
-    {
-        fatal!(
-            "Shared cache eligible dylibs cannot use '-undefined dynamic_lookup' or '-U' to find \
-             symbols. Remove these options or opt out of the shared cache using the build \
-             setting 'LD_SHARED_CACHE_ELIGIBLE=NO' (or linker flag '-not_for_dyld_shared_cache')"
-        );
-    }
-}
-
-/// Whether the image is bound for the shared region: see
-/// resolve_shared_region.
-fn shared_region_eligible(target: &TargetTraits, args: &Args) -> bool {
-    let is_dylib = args.output_type == MH_DYLIB;
-    !args.not_for_dyld_shared_cache
-        && !(is_dylib && args.debug_variant)
-        && (args.add_split_seg_info
-            || args.kernel
-            || (args.is_kext() && target.name == "arm64")
-            || args.is_dylinker()
-            || (is_dylib && in_shared_cache_path(args.output_install_name())))
-}
-
-/// What ld-prime makes of a pointer dyld fixes up that is not 8-aligned
-/// (see chunks::chained_fixups::check_pointer_alignment), in an image
-/// dyld loads: what -unaligned_pointers says, else a warning where the
-/// image has chained fixups or its deployment target would, else
-/// nothing. An arm64 image with chained fixups, or bound for the shared
-/// region, fails on one whatever the option says, with a warning if it
-/// says warning. (An x86-64 one gives chained fixups up instead.)
-fn resolve_unaligned_pointers(
-    target: &TargetTraits,
-    args: &Args,
-    treatment: Option<Treatment>,
-) -> Treatment {
-    if args.relocatable || args.without_dyld() {
-        return Treatment::Suppress;
-    }
-    if target.name == "arm64" && (args.fixup_chains || args.shared_region) {
-        if treatment == Some(Treatment::Warning) {
-            match args.fixup_chains {
-                true => {
-                    crate::warn!("unaligned pointer errors are fatal when using chained fixups")
-                }
-                false => crate::warn!("unaligned pointer errors are fatal in OS binaries"),
-            }
-        }
-        return Treatment::Error;
-    }
-    let new_os = is_new_os(target.name, args.output_type, args.platform, args.platform_minos);
-    treatment.unwrap_or(match args.fixup_chains || new_os {
-        true => Treatment::Warning,
-        false => Treatment::Suppress,
-    })
-}
-
-/// A kext (ld64's kKextBundle, MH_KEXT_BUNDLE) is linked into the
-/// kernel by kmutil, which resolves its undefined symbols against the
-/// kernel's and other kexts' exports: ld64 treats them as dynamically
-/// looked up. On arm64 its code gets a __TEXT_EXEC segment of its own
-/// (-text_exec) and, as the kext is bound for the shared region,
-/// __DATA_CONST (-data_const).
-fn resolve_kext(target: &TargetTraits, args: &mut Args) {
-    if !args.is_kext() {
-        return;
-    }
-    args.undefined_dynamic_lookup = true;
-    args.text_exec |= target.name == "arm64";
-}
-
-impl Args {
-    pub fn is_kext(&self) -> bool {
-        self.output_type == MH_KEXT_BUNDLE
-    }
-
-    /// Whether the image is dyld itself (ld64's kDyld, MH_DYLINKER),
-    /// which the kernel maps next to a main executable and starts: it
-    /// loads no dylib, and slides itself by its fixups before it loads
-    /// anything else.
-    pub fn is_dylinker(&self) -> bool {
-        self.output_type == MH_DYLINKER
-    }
-
-    /// Whether the image starts at an entry point (-e): a main
-    /// executable, or dyld.
-    pub fn has_entry_point(&self) -> bool {
-        (self.output_type == MH_EXECUTE && !self.relocatable) || self.is_dylinker()
-    }
-
-    /// Whether the image may link dylibs: not an image no dyld loads,
-    /// with nothing to load them, nor dyld, which is what loads them.
-    /// ld-prime searches -l for archives alone in either, and ignores a
-    /// dylib named outright.
-    pub fn links_dylibs(&self) -> bool {
-        !self.without_dyld() && !self.is_dylinker()
-    }
-
-    /// Whether no dyld loads the image: a -static one, which loads (and
-    /// slides) itself, or a kext, which kmutil links into the kernel
-    /// by its relocations.
-    pub fn without_dyld(&self) -> bool {
-        self.static_link || self.is_kext()
-    }
-
-    /// Whether the image gets __unwind_info, the table the unwinder
-    /// looks a function up in: not a -r output, which carries the
-    /// objects' __compact_unwind records instead, nor an image no dyld
-    /// loads or one linked with -no_compact_unwind, which unwind by
-    /// their __eh_frame alone and so keep every FDE.
-    pub fn unwind_info(&self) -> bool {
-        !self.relocatable && !self.without_dyld() && !self.no_compact_unwind
-    }
-
-    /// Whether the FDEs of the functions that have compact unwind
-    /// records reach the output too: in an image without __unwind_info
-    /// for the records, and, as ld-prime keeps them, in one for a macOS
-    /// before 10.9, whose unwinders ld64 still gave the FDEs (its
-    /// -keep_dwarf_unwind default).
-    pub fn keeps_all_fdes(&self) -> bool {
-        !self.unwind_info()
-            || (self.platform == PLATFORM_MACOS && self.platform_minos < encode_version(10, 9, 0))
-    }
-
-    /// The output's install name: -install_name, else -final_output,
-    /// else the output path.
-    pub fn output_install_name(&self) -> &[u8] {
-        self.install_name
-            .as_deref()
-            .or(self.final_output.as_deref())
-            .unwrap_or(crate::util::path_bytes(&self.output))
+fn check_segment_order(args: &Args) {
+    if !args.segment_order.is_empty() && args.segment_order.len() < 2 {
+        fatal!("-segment_order should specifify at least two segments");
     }
 }
 
@@ -3206,25 +3678,6 @@ fn check_output_kind(args: &mut Args, pie: Option<bool>) {
     }
 }
 
-/// Rejects in a relocatable object what only a final image lays out:
-/// the moves of symbols to other segments - but -dirty_data_list's,
-/// which ld-prime ignores there - and the __DATA_CONST split, which the
-/// link that consumes it decides.
-fn check_relocatable(args: &Args, data_const: Option<bool>) {
-    if !args.relocatable {
-        return;
-    }
-    if !args.move_to_rw.is_empty() {
-        fatal!("-move_to_rw_segment not supported with -r");
-    }
-    if !args.move_to_ro.is_empty() {
-        fatal!("-move_to_ro_segment not supported with -r");
-    }
-    if data_const == Some(true) {
-        fatal!("-data_const not supported with -r");
-    }
-}
-
 /// Rejects the options at odds with where the image goes: a flat
 /// namespace in one bound for the shared cache, whose builder binds
 /// each import to the dylib that exports it once and for all (dyld,
@@ -3249,385 +3702,22 @@ fn check_dylib_use(target: &TargetTraits, args: &Args) {
     }
 }
 
-/// -stack_size and -stack_addr. No dyld starts an executable that starts
-/// from LC_UNIXTHREAD with LC_MAIN's stack size: its stack is a segment
-/// of its own, __UNIXSTACK, which ld64 pins as -segaddr would (unless
-/// one pins it elsewhere) below a top of stack, -stack_addr's or a fixed
-/// one; LC_UNIXTHREAD's stack pointer starts at its end. ld-prime checks
-/// -stack_addr for a multiple of the page size (the segment alignment,
-/// but 4 KiB in an object file) and a size to go with it, then the size
-/// against the most a stack may take on the target and for a main
-/// executable, one that starts from LC_UNIXTHREAD if it has an address,
-/// then for a multiple of the page size and smaller than the address.
-fn resolve_stack(target: &TargetTraits, args: &mut Args, size: Option<u64>, addr: Option<u64>) {
-    if addr == Some(0) {
-        crate::warn!("-stack_addr 0x0 has no effect");
-    }
-    let addr = addr.filter(|&addr| addr != 0);
-    if let Some(addr) = addr {
-        let page = if args.relocatable { 0x1000 } else { args.segment_align };
-        if !addr.is_multiple_of(page) {
-            fatal!("-stack_addr (0x{addr:08X}) must be multiples of page size (0x{page:08X})");
-        }
-        if size.unwrap_or(0) == 0 {
-            fatal!("-stack_addr must be used with -stack_size");
-        }
-    }
-    let Some(size) = size else { return };
-    if size == 0 {
-        crate::warn!("-stack_size 0x0 has no effect");
+/// Rejects in a relocatable object what only a final image lays out:
+/// the moves of symbols to other segments - but -dirty_data_list's,
+/// which ld-prime ignores there - and the __DATA_CONST split, which the
+/// link that consumes it decides.
+fn check_relocatable(args: &Args, data_const: Option<bool>) {
+    if !args.relocatable {
         return;
     }
-    let macos_x86_64 = target.name == "x86_64" && args.platform == PLATFORM_MACOS;
-    if macos_x86_64 && size > 0x100_0000_0000 {
-        fatal!("-stack_size must be <= 1TB on x86_64 macOS");
+    if !args.move_to_rw.is_empty() {
+        fatal!("-move_to_rw_segment not supported with -r");
     }
-    if !macos_x86_64 && size > 0x2000_0000 {
-        fatal!("-stack_size must be <= 512MB on {} platforms", target.name);
+    if !args.move_to_ro.is_empty() {
+        fatal!("-move_to_ro_segment not supported with -r");
     }
-    if args.output_type != MH_EXECUTE || args.relocatable || args.preload {
-        fatal!("-stack_size option can only be used when linking a main executable");
-    }
-    if addr.is_some() && !args.unixthread {
-        fatal!("-stack_addr can't be used with modern executables");
-    }
-    let page = args.segment_align;
-    if !size.is_multiple_of(page) {
-        fatal!("-stack_size (0x{size:08X}) must be multiples of page size (0x{page:08X})");
-    }
-    let default_top = if macos_x86_64 { 0x7fff_5c00_0000 } else { 0x1_2000_0000 };
-    let top = addr.unwrap_or(default_top);
-    if size > top {
-        fatal!("-stack_size (0x{size:08X}) must be smaller than -stack_addr (0x{top:08X})");
-    }
-    args.stack_size = size;
-    if args.unixthread && args.segaddr(b"__UNIXSTACK").is_none() {
-        args.segaddrs.push((b"__UNIXSTACK".to_vec(), top - size));
-    }
-}
-
-/// Whether an executable is position independent (MH_PIE). It is
-/// unless -no_pie says otherwise, which arm64 ignores (arm64 macOS runs
-/// PIE executables only) and which ld-prime deprecates from the OS
-/// versions that default to chained fixups. An x86-64 one is PIE by
-/// default from macOS 10.6 on, as ld64 made it, and only with -pie for
-/// an older macOS. A -static image (a kernel) is PIE only with -pie or
-/// -kernel, or with -fixup_chains, whose chains exist to slide it.
-fn resolve_pie(
-    target: &TargetTraits,
-    args: &Args,
-    pie: Option<bool>,
-    fixup_chains: Option<bool>,
-) -> bool {
-    match pie {
-        Some(false) if args.output_type == MH_EXECUTE && !args.static_link && !args.relocatable => {
-            if is_new_os(target.name, MH_EXECUTE, args.platform, args.platform_minos) {
-                crate::warn!("-no_pie is deprecated when targeting new OS versions");
-            }
-            if target.name == "arm64" {
-                crate::warn!("-no_pie ignored for arm64*");
-            }
-            target.name == "arm64"
-        }
-        Some(pie) => pie,
-        None => {
-            (!args.static_link && !is_before_x86_64_macos_10_6(target, args))
-                || args.kernel
-                || fixup_chains == Some(true)
-        }
-    }
-}
-
-/// Whether the image is for x86-64 macOS before 10.6.
-fn is_before_x86_64_macos_10_6(target: &TargetTraits, args: &Args) -> bool {
-    target.name == "x86_64"
-        && args.platform == PLATFORM_MACOS
-        && args.platform_minos < encode_version(10, 6, 0)
-}
-
-/// Whether an image dyld loads goes without LC_DYLD_INFO, the opcode
-/// streams that came with macOS 10.6, as ld-prime links one for x86-64
-/// macOS before that (arm64 macOS has none so old). Its legacy LINKEDIT
-/// gives dyld the same facts as older dyld read them: what each GOT
-/// slot and lazy pointer binds to by the indirect symbol table, what
-/// data pointers bind to by external relocations, and what pointers
-/// slide by local relocations. dyld binds a lazy pointer on the first
-/// call through it, entering dyld_stub_binding_helper, which crt1.o
-/// (dylib1.o, bundle1.o) defines, from the pointer's stub helper entry.
-fn resolve_legacy_linkedit(target: &TargetTraits, args: &Args) -> bool {
-    is_before_x86_64_macos_10_6(target, args)
-        && !args.relocatable
-        && !args.without_dyld()
-        && !args.fixup_chains
-}
-
-/// Whether the image is laid out for chained fixups (see
-/// Args::fixup_chains).
-fn resolve_fixup_chains(target: &TargetTraits, args: &Args, fixup_chains: Option<bool>) -> bool {
-    // A static executable has no dyld: it has no chains unless
-    // -fixup_chains asks for them, which its own loader then walks
-    // (a -kernel image cannot). A kext has none either: kmutil
-    // links it into the kernel by its relocations.
-    if args.is_kext() {
-        return false;
-    }
-    if args.static_link {
-        return fixup_chains == Some(true);
-    }
-    // ld-prime's defaults: chained fixups from macOS 12 on arm64 and
-    // from macOS 13 on x86_64 (below that, classic dyld info with
-    // lazy binding), and never under -undefined dynamic_lookup or
-    // suppress - only an explicit -fixup_chains overrides that.
-    fixup_chains.unwrap_or_else(|| {
-        !args.undefined_dynamic_lookup && chained_fixups_by_default(target, args)
-    })
-}
-
-/// Whether the image defaults to chained fixups: its deployment target
-/// is new enough, and it is not a non-PIE executable, which ld-prime
-/// gives classic dyld info whatever the target.
-fn chained_fixups_by_default(target: &TargetTraits, args: &Args) -> bool {
-    (args.pie || args.output_type != MH_EXECUTE)
-        && is_new_os(target.name, args.output_type, args.platform, args.platform_minos)
-}
-
-/// Whether ld-prime gives the image __DATA_CONST, the segment dyld makes
-/// read-only once it has applied the fixups, when neither -data_const
-/// nor -no_data_const says. An image no dyld loads has one only if
-/// bound for the shared region: nothing else would make it read-only.
-/// A non-PIE executable, which keeps its classic layout, has none; an
-/// image bound for the shared region and firmware have one. On macOS,
-/// ld64 gives one from its version2019Fall (10.15) on, but not for
-/// 10.15.4 up to 10.16, and not with -no_pie, even where the option is
-/// otherwise ignored (an arm64 executable, a dylib or a bundle).
-fn default_data_const(args: &Args, pie: Option<bool>) -> bool {
-    if args.without_dyld() {
-        return args.shared_region;
-    }
-    if args.output_type == MH_EXECUTE && !args.pie {
-        return false;
-    }
-    if args.shared_region || args.platform == PLATFORM_FIRMWARE {
-        return true;
-    }
-    let minos = args.platform_minos;
-    pie != Some(false)
-        && minos >= encode_version(10, 15, 0)
-        && !(encode_version(10, 15, 4)..encode_version(10, 16, 0)).contains(&minos)
-}
-
-/// Whether the command line may lay out the image's segments and
-/// sections: an image no dyld loads (a -static or a -preload one) or
-/// firmware (ld-prime also allows sepOS, which mold has not).
-fn custom_layout(args: &Args) -> bool {
-    args.static_link || args.platform == PLATFORM_FIRMWARE
-}
-
-fn check_segment_order(args: &Args) {
-    if !args.segment_order.is_empty() && args.segment_order.len() < 2 {
-        fatal!("-segment_order should specifify at least two segments");
-    }
-}
-
-/// In an image dyld loads, __DATA_CONST is one of the standard
-/// segments, and ld-prime puts it right before __DATA where
-/// -segment_order names that alone, with a warning. Only an image that
-/// may lay itself out orders its segments (see custom_layout).
-fn complete_segment_order(args: &mut Args) {
-    let has = |name: &[u8]| args.segment_order.iter().position(|s| s == name);
-    if !args.without_dyld()
-        && args.data_const
-        && has(b"__DATA_CONST").is_none()
-        && let Some(i) = has(b"__DATA")
-    {
-        crate::warn!(
-            "-segment_order lists __DATA, but not __DATA_CONST, assuming standard order. list __DATA_CONST explicitly or disable the segment using -no_data_const"
-        );
-        args.segment_order.insert(i, b"__DATA_CONST".to_vec());
-    }
-    if !args.segment_order.is_empty() && !custom_layout(args) {
-        fatal!(
-            "-segment_order can only be used with -preload, -static, or with -platform_version \"firmware\"/\"sepOS\""
-        );
-    }
-}
-
-/// dyld may order its sections too, though not its segments.
-fn check_section_order(args: &Args) {
-    if !args.section_order.is_empty() && !custom_layout(args) && !args.is_dylinker() {
-        fatal!(
-            "-section_order can only be used with -preload, -dylinker, -static, or with -platform_version \"firmware\"/\"sepOS\""
-        );
-    }
-}
-
-/// ld-prime deprecates -flat_namespace on every platform but macOS, and
-/// takes -read_only_relocs only where it may allow text relocations.
-fn warn_platform_options(target: &TargetTraits, args: &Args, read_only_relocs: bool) {
-    if args.flat_namespace && args.platform == PLATFORM_FIRMWARE {
-        crate::warn!("-flat_namespace is deprecated on firmware");
-    }
-    if read_only_relocs && !read_only_relocs_apply(target, args) {
-        crate::warn!("-read_only_relocs relocs cannot be used in this configuration");
-    }
-}
-
-/// Whether -read_only_relocs decides on text relocations: in firmware,
-/// in an image no dyld loads but an arm64 kext, and in -r (which has
-/// none).
-fn read_only_relocs_apply(target: &TargetTraits, args: &Args) -> bool {
-    args.relocatable
-        || args.static_link
-        || args.platform == PLATFORM_FIRMWARE
-        || (args.is_kext() && target.name == "x86_64")
-}
-
-/// Whether a pointer may need a fixup in a segment mapped without write
-/// permission, which the loader would have to make writable (a text
-/// relocation). ld-prime allows one by default only in an x86-64 kext
-/// or non-PIE executable. -read_only_relocs warning or suppress allows
-/// one where the option applies, and error refuses it; elsewhere the
-/// option, ignored with a warning, leaves none allowed.
-fn resolve_text_relocs(target: &TargetTraits, args: &Args, read_only_relocs: Option<bool>) -> bool {
-    match read_only_relocs {
-        Some(allow) => allow && read_only_relocs_apply(target, args),
-        None => {
-            target.name == "x86_64"
-                && (args.is_kext() || (args.output_type == MH_EXECUTE && !args.pie))
-        }
-    }
-}
-
-/// -segaddr's (segment, address) pins, one per segment: ld-prime takes
-/// the last address given for a segment, with a warning.
-fn resolve_segaddrs(segaddrs: Vec<(Vec<u8>, u64)>) -> Vec<(Vec<u8>, u64)> {
-    let mut out: Vec<(Vec<u8>, u64)> = Vec::new();
-    for (name, addr) in segaddrs {
-        match out.iter_mut().find(|(seen, _)| *seen == name) {
-            Some((_, old)) if *old == addr => {
-                crate::warn!("-segaddr {} used more than once", raw(&name))
-            }
-            Some((_, old)) => {
-                crate::warn!("-segaddr {} has conflicting values, using 0x{addr:X}", raw(&name));
-                *old = addr;
-            }
-            None => out.push((name, addr)),
-        }
-    }
-    out
-}
-
-/// -segprot's (segment, max, init) protections, as ld-prime applies
-/// them: the first one given for a segment wins, and arm64's maximum
-/// is its initial protection (nothing may raise it later there).
-fn resolve_segprots(
-    target: &TargetTraits,
-    segprots: Vec<(Vec<u8>, u8, u8)>,
-) -> Vec<(Vec<u8>, u8, u8)> {
-    let mut out: Vec<(Vec<u8>, u8, u8)> = Vec::new();
-    for (name, max, init) in segprots {
-        if out.iter().all(|(seen, _, _)| *seen != name) {
-            out.push((name, if target.name == "arm64" { init } else { max }, init));
-        }
-    }
-    out
-}
-
-/// The segment alignment: -segalign's, rounded down to a power of two
-/// with a warning as ld-prime does (the last one given wins), else the
-/// page size (4 KiB for a -preload image).
-fn resolve_segment_align(target: &TargetTraits, args: &Args, segalign: Option<u64>) -> u64 {
-    match segalign {
-        // -encryptable gives an image 16 KiB pages for 4 KiB ones, as
-        // iOS has, though ld-prime then makes it no encryptable one
-        // (see resolve_encryptable).
-        None if args.encryptable => target.page_size.max(0x4000),
-        Some(0x1000) if args.encryptable => 0x4000,
-        None if args.preload => 0x1000,
-        None => target.page_size,
-        Some(align) if align.is_power_of_two() => align,
-        Some(align) => {
-            let p2 = 1 << align.ilog2();
-            crate::warn!(
-                "alignment for -segalign 0x{align:X} is not a power of two, using 0x{p2:X}"
-            );
-            p2
-        }
-    }
-}
-
-/// Whether the image is encryptable: an image dyld or the kernel loads
-/// (ld-prime gives a -r or -preload output no LC_ENCRYPTION_INFO_64,
-/// and crashes on a kext), as -encryptable says; macOS images are not
-/// by default. (ld64 made iOS apps encryptable unless $LD_NO_ENCRYPT,
-/// which ld-prime reads but which -encryptable overrides.)
-fn resolve_encryptable(args: &mut Args) {
-    args.encryptable &= !args.relocatable && !args.preload && !args.is_kext();
-}
-
-/// -seg_page_size's (segment, size) pairs, as ld-prime takes them: a
-/// size rounds down to a power of two, with a warning; one below the
-/// page size (the segment alignment) is an error but in an object file,
-/// where it means nothing; and the first size given for a segment wins.
-fn resolve_seg_page_sizes(args: &Args, sizes: Vec<(Vec<u8>, u64)>) -> Vec<(Vec<u8>, u64)> {
-    let page = args.segment_align;
-    let mut out: Vec<(Vec<u8>, u64)> = Vec::new();
-    for (name, mut size) in sizes {
-        if size != 0 && !size.is_power_of_two() {
-            size = 1 << size.ilog2();
-            crate::warn!(
-                "-seg_page_size for {} is not a power of two, rounding down to 0x{size:x}",
-                raw(&name)
-            );
-        }
-        if size < page && !args.relocatable {
-            fatal!(
-                "-seg_page_size {} 0x{size:x} can't be smaller than page size (0x{page:x})",
-                raw(&name)
-            );
-        }
-        if out.iter().all(|(seen, _)| *seen != name) {
-            out.push((name, size));
-        }
-    }
-    out
-}
-
-/// __PAGEZERO's size: 4 GiB in a main executable unless -pagezero_size
-/// says otherwise, which ld-prime takes only for a main executable (not
-/// a -preload one), rounded up to a page, and no more than 4 GiB in one
-/// with chained fixups. A dylib is loaded at an arbitrary address, and
-/// a -preload image copied to wherever its segments say. A -kernel
-/// image, which ld-prime makes position independent for the kernel
-/// collection to slide, has none unless -pagezero_size asks.
-fn resolve_pagezero_size(args: &mut Args, size: Option<u64>) {
-    let has_pagezero = args.output_type == MH_EXECUTE && !args.relocatable && !args.preload;
-    if !has_pagezero && size.is_some_and(|size| size != 0) {
-        fatal!("-pagezero_size can only be used when linking a main executable");
-    }
-    args.pagezero_size = match size {
-        _ if args.output_type != MH_EXECUTE || args.preload => 0,
-        Some(size) => size,
-        None if args.kernel => 0,
-        None => 0x1_0000_0000,
-    };
-    if args.relocatable {
-        return;
-    }
-    let size = args.pagezero_size;
-    let page = args.segment_align;
-    if !size.is_multiple_of(page) {
-        let aligned = size
-            .checked_next_multiple_of(page)
-            .unwrap_or_else(|| fatal!("-pagezero_size 0x{size:X} is too large"));
-        crate::warn!(
-            "-pagezero_size not aligned, rounded up to: {aligned:#x}, use -segalign to change the alignment"
-        );
-        args.pagezero_size = aligned;
-    }
-    if args.fixup_chains && args.pagezero_size > 0x1_0000_0000 {
-        crate::warn!("-pagezero_size is too large, setting it to 4GB");
-        args.pagezero_size = 0x1_0000_0000;
+    if data_const == Some(true) {
+        fatal!("-data_const not supported with -r");
     }
 }
 
@@ -3656,141 +3746,49 @@ fn check_segaddrs(args: &Args) {
     }
 }
 
-/// -image_base (or -seg1addr) sets __TEXT's address, for an image that
-/// stays where it was linked. A -segaddr for __TEXT names the same
-/// address, and the two must agree (a non-PIE -static image takes the
-/// -segaddr's, with a warning). dyld slides a PIE executable wherever
-/// it likes, and ld-prime ignores the base for one with a warning; it
-/// ignores it too for any other image dyld loads with chained fixups (a
-/// non-PIE executable only when -fixup_chains asks for them). A pinned
-/// __TEXT stays where it is even then: in a dylib the other segments
-/// still follow it, while in a PIE executable they go from __PAGEZERO's
-/// end and so below it, out of order (passes::place_segments).
-fn resolve_image_base(args: &mut Args) {
-    // Before anything else looks at it, ld-prime rounds a base up to a
-    // page: 4 KiB in an object file, which is loaded nowhere.
-    let align = if args.relocatable { 0x1000 } else { args.segment_align };
-    if let Some(base) = args.image_base
-        && !base.is_multiple_of(align)
-    {
-        let aligned = base
-            .checked_next_multiple_of(align)
-            .unwrap_or_else(|| fatal!("base address 0x{base:X} is too large"));
-        crate::warn!(
-            "base address 0x{base:X} is not properly aligned. Changing it to 0x{aligned:X}"
-        );
-        args.image_base = Some(aligned);
-    }
-    // It takes a zero base as none at all.
-    if args.image_base == Some(0) {
-        args.image_base = None;
-    }
-    if args.relocatable {
-        args.image_base = None;
-        return;
-    }
-
-    let text = args.segaddr(b"__TEXT");
-    if let (Some(base), Some(text)) = (args.image_base, text)
-        && base != text
-    {
-        if !args.static_link || args.pie {
-            fatal!("-image_base and -segaddr __TEXT must match");
-        }
-        crate::warn!(
-            "-image_base and -segaddr __TEXT must match, changing image base to {text:#x}"
+/// dyld may order its sections too, though not its segments.
+fn check_section_order(args: &Args) {
+    if !args.section_order.is_empty() && !custom_layout(args) && !args.is_dylinker() {
+        fatal!(
+            "-section_order can only be used with -preload, -dylinker, -static, or with -platform_version \"firmware\"/\"sepOS\""
         );
     }
-    let Some(base) = text.or(args.image_base) else { return };
-    args.image_base = Some(base);
+}
 
-    if args.output_type == MH_EXECUTE && args.pie && !args.static_link {
-        crate::warn!("Linking with PIE, -image_base will be ignored");
-        args.image_base = None;
-    } else if !args.static_link && args.fixup_chains {
-        crate::warn!("prefered load addresses (-seg1addr) are disabled with chained fixups");
-        args.image_base = text;
+/// ld-prime deprecates -flat_namespace on every platform but macOS, and
+/// takes -read_only_relocs only where it may allow text relocations.
+fn warn_platform_options(target: &TargetTraits, args: &Args, read_only_relocs: bool) {
+    if args.flat_namespace && args.platform == PLATFORM_FIRMWARE {
+        crate::warn!("-flat_namespace is deprecated on firmware");
+    }
+    if read_only_relocs && !read_only_relocs_apply(target, args) {
+        crate::warn!("-read_only_relocs relocs cannot be used in this configuration");
     }
 }
 
-/// Without -arch, ld-prime links for the target of the first object
-/// file named on the command line: a Mach-O object's CPU type, or a
-/// bitcode file's target triple. Archives, dylibs and universal files
-/// don't count, and without such an object there is no target.
-fn detect_target(args: &Args) -> &'static str {
-    for input in &args.inputs {
-        let (InputArg::File(path) | InputArg::Listed(path)) = input else { continue };
-        let Some(mf) = open_for_target(path) else { continue };
-        match get_file_type(mf) {
-            FileType::Object => {
-                if let Some(name) = crate::filetype::get_macho_target(mf.data()) {
-                    return name;
-                }
-            }
-            FileType::LlvmBitcode => {
-                let plugin = crate::lto::load_plugin(args.lto_library.as_deref());
-                let triple = crate::lto::target_triple(&plugin, mf.data(), &mf.name);
-                return triple_arch(triple.split('-').next().unwrap_or_default(), &triple);
-            }
-            _ => {}
-        }
+/// ld-prime's checks of -U and -undefined dynamic_lookup: -U is
+/// redundant with dynamic_lookup, and with it ignored, for the entry
+/// point too, which must otherwise resolve in the link, as an initial
+/// undefine; and an image bound for the shared region may use neither
+/// (see resolve_shared_region), but a kext, which looks up every import.
+fn check_dynamic_lookup(args: &Args) {
+    let dynamic_lookup = args.undefined_dynamic_lookup;
+    if dynamic_lookup && !args.allowed_undefined.is_empty() {
+        crate::warn!("-U option is redundant when using -undefined dynamic_lookup");
+    } else if args.has_entry_point() && args.allowed_undefined.contains(&args.entry) {
+        fatal!(
+            "{} is an entry point and can't be used with -U for dynamic lookup",
+            crate::error::raw(&args.entry)
+        );
     }
-    fatal!("Missing -arch option");
-}
-
-/// An input file ld-prime reads before the link proper to work out the
-/// target (see detect_target and infer_platform): None for an empty
-/// one, which says nothing. A file it can't map stops it, in words that
-/// name no input.
-fn open_for_target(path: &Path) -> Option<&'static MappedFile> {
-    match MappedFile::try_open(path) {
-        Ok(mf) => (mf.size() > 0).then_some(mf),
-        Err(e) => fatal!("{}", crate::error::raw(&crate::passes::unreadable_file(path, &e))),
-    }
-}
-
-/// Without -platform_version (or -macos_version_min or -target),
-/// ld-prime links for what the first object file named on the command
-/// line that has a platform load command was built for: its platform,
-/// minimum OS and SDK versions, whatever later objects say (one built
-/// for a newer OS draws a warning, one for another platform an error).
-/// Archive members, universal files and dylibs don't count, nor does a
-/// bitcode file unless no Mach-O object does: then the first one's
-/// target triple names the platform and OS version, and no SDK. A final
-/// image must have a platform; a -r or -preload output may be for none.
-fn infer_platform(args: &mut Args) {
-    let mut bitcode = None;
-    for input in &args.inputs {
-        let (InputArg::File(path) | InputArg::Listed(path)) = input else { continue };
-        let Some(mf) = open_for_target(path) else { continue };
-        match get_file_type(mf) {
-            FileType::Object => {
-                let Some(v) = PlatformVersion::of_object(mf.data()) else {
-                    continue;
-                };
-                if v.platform != PLATFORM_MACOS && v.platform != PLATFORM_FIRMWARE {
-                    fatal!(
-                        "{}: unsupported platform: {}",
-                        mf.name.raw(),
-                        platform_name(v.platform)
-                    );
-                }
-                args.platform = v.platform;
-                args.platform_minos = v.minos;
-                args.platform_sdk = v.sdk;
-                return;
-            }
-            FileType::LlvmBitcode => {
-                bitcode.get_or_insert(mf);
-            }
-            _ => {}
-        }
-    }
-    if let Some(mf) = bitcode {
-        let plugin = crate::lto::load_plugin(args.lto_library.as_deref());
-        let triple = crate::lto::target_triple(&plugin, mf.data(), &mf.name);
-        (_, args.platform, args.platform_minos) = parse_triple(&triple);
-    } else if !args.relocatable && !args.preload {
-        fatal!("Missing -platform_version option");
+    if args.shared_region
+        && (dynamic_lookup || !args.allowed_undefined.is_empty())
+        && !args.is_kext()
+    {
+        fatal!(
+            "Shared cache eligible dylibs cannot use '-undefined dynamic_lookup' or '-U' to find \
+             symbols. Remove these options or opt out of the shared cache using the build \
+             setting 'LD_SHARED_CACHE_ELIGIBLE=NO' (or linker flag '-not_for_dyld_shared_cache')"
+        );
     }
 }
