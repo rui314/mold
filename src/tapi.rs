@@ -36,6 +36,9 @@ pub struct TbdFile {
     /// .tbd files; a TLV can only be referenced through TLV
     /// relocations).
     pub tlv_exports: Vec<&'static [u8]>,
+    /// The exports that are linker directives ("$ld$..."), in order,
+    /// found as the file is parsed (see find_ld_symbols).
+    pub ld_symbols: Vec<&'static [u8]>,
     /// The umbrella the library belongs to (parent-umbrella), and the
     /// clients it lets link it directly (allowable-clients).
     pub parent_umbrella: Option<&'static [u8]>,
@@ -276,11 +279,23 @@ pub fn parse(mf: &MappedFile, arch: &'static str, platform: u32) -> Option<TbdFi
     // TBD version 5 is JSON (tapi's current output, and what Xcode
     // writes for the "eager linking" stubs of frameworks built in the
     // same workspace); versions 1-4 are YAML.
-    if text.trim_start().starts_with('{') {
+    let mut tbd = if text.trim_start().starts_with('{') {
         parse_json(&mf.name, text, arch, platform)
     } else {
         parse_yaml(&mf.name, text, arch, platform)
-    }
+    }?;
+    find_ld_symbols(&mut tbd);
+    tbd.documents.iter_mut().for_each(find_ld_symbols);
+    Some(tbd)
+}
+
+/// Notes a library's linker directives among its exports, which the
+/// link reads before it takes the library: stubs are parsed in
+/// parallel ahead of the serial loop loading them (see prefetch), and
+/// an SDK framework's stub has tens of thousands of exports, few or
+/// none of them directives.
+fn find_ld_symbols(tbd: &mut TbdFile) {
+    tbd.ld_symbols = tbd.exports.iter().copied().filter(|n| n.starts_with(b"$ld$")).collect();
 }
 
 /// Parses a TBD v1-4 file: YAML documents, the first the library itself

@@ -3838,9 +3838,15 @@ impl LdSymbols {
 
 /// Applies a .tbd's "$ld$..." export names (see LdSymbols) to it.
 fn interpret_ld_symbols<E: Target>(ctx: &Context<E>, tbd: &mut tapi::TbdFile) -> LdDirectives {
-    let ld = LdSymbols::read(ctx, &tbd.exports);
-    tbd.exports.retain(|n| ld.keeps(n));
-    tbd.weak_exports.retain(|n| ld.keeps(n));
+    let directives = std::mem::take(&mut tbd.ld_symbols);
+    let ld = LdSymbols::read(ctx, &directives);
+    // Without a directive among the exports there is none to drop and
+    // none that hides one (see LdSymbols::keeps).
+    let is_directive = |n: &&[u8]| n.starts_with(b"$ld$");
+    if !directives.is_empty() || tbd.weak_exports.iter().any(is_directive) {
+        tbd.exports.retain(|n| ld.keeps(n));
+        tbd.weak_exports.retain(|n| ld.keeps(n));
+    }
     tbd.exports.extend(&ld.added);
     if let Some(name) = ld.renamed_install_name() {
         tbd.install_name = name;
@@ -3965,7 +3971,7 @@ pub fn exported_classes<E: Target>(
     let (install_name, ld, exports) = match get_file_type(mf) {
         FileType::Tapi => {
             let tbd = read_tbd(ctx, mf)?;
-            let ld = LdSymbols::read(ctx, &tbd.exports);
+            let ld = LdSymbols::read(ctx, &tbd.ld_symbols);
             let exports = [tbd.exports, tbd.weak_exports, tbd.tlv_exports].concat();
             (tbd.install_name.to_vec(), ld, exports)
         }
