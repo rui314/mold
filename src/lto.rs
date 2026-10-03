@@ -49,7 +49,6 @@ pub struct Plugin {
     pub codegen_write_merged_modules: unsafe extern "C" fn(*mut c_void, *const c_char) -> bool,
     pub codegen_optimize: unsafe extern "C" fn(*mut c_void) -> bool,
     pub codegen_compile_optimized: unsafe extern "C" fn(*mut c_void, *mut usize) -> *const c_void,
-    pub get_version: unsafe extern "C" fn() -> *const c_char,
     pub module_is_thinlto: unsafe extern "C" fn(*mut c_void) -> bool,
     pub thinlto_debug_options: unsafe extern "C" fn(*const *const c_char, c_int),
     pub thinlto_create_codegen: unsafe extern "C" fn() -> *mut c_void,
@@ -87,12 +86,6 @@ impl Plugin {
     pub fn error_message(&self) -> RawBuf {
         // SAFETY: libLTO returns a NUL-terminated string or null.
         unsafe { c_string(self.get_error_message).unwrap_or_else(|| "unknown error".into()) }
-    }
-
-    /// The library's version, as ld-prime quotes it when LTO fails.
-    pub fn version(&self) -> RawBuf {
-        // SAFETY: as for error_message.
-        unsafe { c_string(self.get_version).unwrap_or_default() }
     }
 }
 
@@ -190,7 +183,6 @@ pub fn load_plugin(path: Option<&Path>) -> Plugin {
             codegen_write_merged_modules: dlsym(handle, c"lto_codegen_write_merged_modules"),
             codegen_optimize: dlsym(handle, c"lto_codegen_optimize"),
             codegen_compile_optimized: dlsym(handle, c"lto_codegen_compile_optimized"),
-            get_version: dlsym(handle, c"lto_get_version"),
             module_is_thinlto: dlsym(handle, c"lto_module_is_thinlto"),
             thinlto_debug_options: dlsym(handle, c"thinlto_debug_options"),
             thinlto_create_codegen: dlsym(handle, c"thinlto_create_codegen"),
@@ -483,9 +475,8 @@ pub unsafe fn compile_thin(
         if objects.is_empty() {
             fatal!(
                 "could not do ThinLTO codegen (thinlto_codegen_process didn't produce any \
-                 object): '{}', using libLTO version '{}'",
-                plugin.error_message(),
-                plugin.version()
+                 object): '{}'",
+                plugin.error_message()
             );
         }
         if let Some(output) = opts.save_temps {
