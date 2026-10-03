@@ -757,22 +757,10 @@ pub fn merge_objc_categories<E: Target>(ctx: &mut Context<E>) {
         let own = ListRefs::of_class(ctx, class);
         let cat_lists: Vec<ListRefs> =
             class.cats.iter().map(|&ci| ListRefs::of_category(ctx, cats[ci].isec)).collect();
-        let ro_ok = ro_rewritable(ctx, class);
-        let lists = match merge_lists(ctx, &own, &cat_lists, relative) {
-            Some(lists) if ro_ok => lists,
-            lists => {
-                if std::env::var_os("MOLD_OBJC_DEBUG").is_some() {
-                    eprintln!(
-                        "category merging: class at {:?} with {} categories skipped (lists in shape: {}, ro reachable: {})",
-                        class.cls,
-                        class.cats.len(),
-                        lists.is_some(),
-                        ro_ok
-                    );
-                }
-                continue;
-            }
-        };
+        if !ro_rewritable(ctx, class) {
+            continue;
+        }
+        let Some(lists) = merge_lists(ctx, &own, &cat_lists, relative) else { continue };
 
         // Write the merged lists, named after the class and its
         // categories, and drop the lists they supersede.
