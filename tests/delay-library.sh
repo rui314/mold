@@ -24,7 +24,8 @@ $CC -o $t/libfoo.dylib -shared $t/foo.o -Wl,-install_name,@rpath/libfoo.dylib
 $CC -o $t/libqux.dylib -shared $t/qux.o -Wl,-install_name,@rpath/libqux.dylib
 
 # leaf() saves no link register, so its GOT load branches to a helper
-# of its own, which branches back.
+# of its own, which branches back. bar is both called, through its stub,
+# and loaded from the GOT, whose slot the stub jumps through.
 cat <<EOF | $CC -o $t/a.o -c -xc - -O1
 #include <stdio.h>
 extern int fdata;
@@ -33,7 +34,8 @@ __attribute__((noinline)) int leaf(void) { return fdata; }
 int main() {
   printf("start\n");
   int n = leaf();
-  printf("%d %d %d\n", n, foo(), bar(4));
+  int (*volatile fp)(int) = bar;
+  printf("%d %d %d %d\n", n, foo(), bar(4), fp(5));
   printf("%d\n", qux());
 }
 EOF
@@ -58,7 +60,7 @@ fi
 
 # The dylibs' initializers run as the program first uses them.
 $t/exe > $t/out
-printf 'start\nfoo loaded\n5 3 5\nqux loaded\n4\n' | cmp - $t/out
+printf 'start\nfoo loaded\n5 3 5 6\nqux loaded\n4\n' | cmp - $t/out
 
 # Only calls and GOT loads can be delayed; a pointer in data, which dyld
 # binds at launch, is refused.

@@ -13,7 +13,7 @@ use crate::chunks::delay_init::{DelayHelper, DelayStub, DelayUse, DlopenHelper};
 use crate::context::Context;
 use crate::input_files::FileId;
 use crate::macho::*;
-use crate::symbol::{NO_IDX, SymbolId};
+use crate::symbol::SymbolId;
 use crate::target::{LazyRef, Target};
 use crate::util::leak_bytes;
 
@@ -160,9 +160,8 @@ fn add_cstring<E: Target>(ctx: &mut Context<E>, s: &[u8]) -> u32 {
     (ctx.isecs.len() - 1) as u32
 }
 
-/// Makes a stub for each symbol something calls, by name. A stub jumps
-/// through a __got slot of its own when GOT loads of the symbol read
-/// one, as in ld-prime, and through that one otherwise.
+/// Makes a stub for each symbol something calls, by name, which jumps
+/// through the symbol's __got slot.
 fn create_delay_stubs<E: Target>(
     ctx: &mut Context<E>,
     uses: &[DelayUseSite],
@@ -173,16 +172,8 @@ fn create_delay_stubs<E: Target>(
     called.sort_unstable_by_key(|&id| ctx.symbols[id].name());
     called.dedup();
     for (i, &id) in called.iter().enumerate() {
-        let got = match ctx.sym_aux(id).got_idx {
-            NO_IDX => {
-                crate::passes::add_got(ctx, id);
-                ctx.sym_aux(id).got_idx
-            }
-            _ => {
-                ctx.got.got_syms.push(id);
-                ctx.got.got_syms.len() as u32 - 1
-            }
-        };
+        crate::passes::add_got(ctx, id);
+        let got = ctx.sym_aux(id).got_idx;
         ctx.sym_aux_mut(id).delay_stub_idx = i as u32;
         let dlopen = dlopen_of[dlopen_name(ctx, id)];
         let name = leak_bytes([ctx.symbols[id].name(), b"$delayInitStub"].concat());
