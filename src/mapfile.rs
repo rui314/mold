@@ -1,5 +1,6 @@
-//! -map file output: a report of where every object file, section and
-//! symbol ended up, in ld64's format.
+//! The link's reports: the -map file (where every object file, section
+//! and symbol ended up, in ld64's format), -sdk_imports with the API list
+//! it may be limited to, -dependency_info and the trace files.
 
 use std::borrow::Cow;
 use std::io::Write;
@@ -16,6 +17,43 @@ use crate::macho::*;
 use crate::symbol::SymbolId;
 use crate::target::Target;
 use crate::util::path_bytes;
+
+/// The API list -sdk_imports_api_list names: its version goes into the
+/// -sdk_imports report, and its "apis" are the only imports the report
+/// lists.
+#[derive(Clone, Debug, Default)]
+pub struct ApiList {
+    pub version: i32,
+    pub apis: hashbrown::HashSet<Vec<u8>>,
+}
+
+/// Reads an API list, a JSON object: its "version", an integer (or a
+/// string of one), and the strings of its "apis" array, of which there
+/// must be one at least.
+pub fn read_api_list(path: &Path) -> ApiList {
+    let fail = |what: &dyn std::fmt::Display| -> ! {
+        crate::fatal!("-sdk_imports_api_list invalid list at {}: {what}", path.raw());
+    };
+    let data = std::fs::read(path).unwrap_or_else(|e| fail(&crate::error::strerror(&e)));
+    let root: Value = serde_json::from_slice(&data).unwrap_or_else(|e| fail(&e));
+    let version = match &root["version"] {
+        Value::Number(n) => n.as_i64(),
+        Value::String(s) => s.parse().ok(),
+        _ => None,
+    };
+    let Some(version) = version.and_then(|v| i32::try_from(v).ok()) else {
+        fail(&"no version");
+    };
+    let apis: hashbrown::HashSet<Vec<u8>> = (root["apis"].as_array().into_iter().flatten())
+        .filter_map(Value::as_str)
+        .filter(|name| !name.is_empty())
+        .map(|name| name.as_bytes().to_vec())
+        .collect();
+    if apis.is_empty() {
+        fail(&"no APIs listed");
+    }
+    ApiList { version, apis }
+}
 
 /// Xcode's version-1 API import report. Despite its name, sdkImports
 /// includes imports from non-SDK dylibs too, grouped by install name in

@@ -282,7 +282,7 @@ pub struct Args {
     pub sdk_imports: Option<PathBuf>,
     /// -sdk_imports_api_list: the APIs the report lists, of all the
     /// imports, and the list's version, which it records.
-    pub sdk_imports_api_list: Option<crate::api_list::ApiList>,
+    pub sdk_imports_api_list: Option<crate::mapfile::ApiList>,
     /// Whether the image is laid out for chained fixups rather than
     /// classic dyld info (its imports bound by no lazy pointer):
     /// -fixup_chains / -no_fixup_chains, resolved for the deployment
@@ -2226,7 +2226,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-sdk_imports" => args.sdk_imports = Some(cur.next_path(name)),
             // ld-prime reads the list as it reads the option.
             b"-sdk_imports_api_list" => {
-                let list = crate::api_list::read(&cur.next_path(name));
+                let list = crate::mapfile::read_api_list(&cur.next_path(name));
                 args.sdk_imports_api_list = Some(list);
             }
 
