@@ -2,8 +2,7 @@
 source "$(dirname "$0")"/common.inc
 
 # ld-prime ignores the options of ld64 and older linkers that no longer
-# mean anything, with a warning for each once it has read them all, in
-# command-line order, which a -w anywhere silences.
+# mean anything, with a warning for each, which a -w anywhere silences.
 echo 'int main() { return 0; }' | $CC -o $t/a.o -c -xc - -mmacosx-version-min=14.0
 sdk=$(xcrun --show-sdk-path)
 link() {
@@ -35,8 +34,8 @@ for opt in -kext_objects_dir -multiply_defined -sdk_version -seg_addr_table -Y; 
 done
 
 link -X -s -multiply_defined suppress -segprot __FOO rz r -Si -b 2> $t/log
-[ "$(grep -o -- "-[A-Za-z_]* is obsolete\|letter 'z'" $t/log | tr '\n' ' ')" = \
-  "-s is obsolete letter 'z' -Si is obsolete -X is obsolete -multiply_defined is obsolete -b is obsolete " ]
+[ "$(grep -o -- "-[A-Za-z_]* is obsolete\|letter 'z'" $t/log | sort | tr '\n' ' ')" = \
+  "-Si is obsolete -X is obsolete -b is obsolete -multiply_defined is obsolete -s is obsolete letter 'z' " ]
 
 # (ld-prime warns of -s, -Si and -Sn as it reads them, so that only a
 # -w before them silences those.)

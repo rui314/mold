@@ -60,14 +60,11 @@ done
 not link -max_code_deduplicate_passes '' 2> $t/log
 grep -q -- '-max_code_deduplicate_passes.*missing' $t/log
 
-# -x86_64_layout_emulation is for arm64 links: another gets a warning
-# once every option is read, before the obsolete options'.
-link -x86_64_layout_emulation -X 2> $t/log
+# -x86_64_layout_emulation is for arm64 links: another gets a warning.
+link -x86_64_layout_emulation 2> $t/log
 if [ $ARCH = arm64 ]; then
   not grep -q "ignoring -x86_64_layout_emulation" $t/log
 else
   grep -q 'warning: ignoring -x86_64_layout_emulation option, it can only be used with -arch arm64' \
     $t/log
-  [ "$(grep -n layout_emulation $t/log | tail -1 | cut -d: -f1)" -lt \
-    "$(grep -n 'is obsolete' $t/log | cut -d: -f1)" ]
 fi

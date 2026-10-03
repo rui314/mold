@@ -1836,11 +1836,6 @@ struct ParseState<'a> {
     export_choice: Option<ExportChoice>,
     reexports_listed: bool,
     force_weakness_listed: bool,
-    /// The warnings about the obsolete options given, which ld-prime
-    /// ignores with a warning once it has read them all.
-    obsolete: Vec<String>,
-    /// The options ld-prime doesn't know, each followed by a space.
-    unknown: Vec<u8>,
 }
 
 /// The symbol name patterns the options give, which parse_args compiles
@@ -2164,10 +2159,9 @@ fn read_alias_list(list: &Path, aliases: &mut Vec<(Vec<u8>, Vec<u8>)>) {
 
 /// An option no other arm of parse_args names: one with its argument
 /// joined to its name (-lfoo, -weak-lfoo, -L<dir>, -F<dir>),
-/// -debug_snapshot with its mode, an optimization level, or one ld-prime
-/// doesn't know, which it reports with the others once it has read them
-/// all (see finish_options).
-fn read_joined_option(cur: &mut ArgCursor, args: &mut Args, st: &mut ParseState, raw: &[u8]) {
+/// -debug_snapshot with its mode, an optimization level, or an unknown
+/// one.
+fn read_joined_option(cur: &mut ArgCursor, args: &mut Args, raw: &[u8]) {
     if let Some(&(prefix, kind)) =
         JOINED_LIBRARY_OPTIONS.iter().find(|(prefix, _)| raw.starts_with(prefix.as_bytes()))
     {
@@ -2197,8 +2191,7 @@ fn read_joined_option(cur: &mut ArgCursor, args: &mut Args, st: &mut ParseState,
         // deduplication, which here is on unless -no_deduplicate,
         // whatever the level.
     } else {
-        st.unknown.extend_from_slice(raw);
-        st.unknown.push(b' ');
+        fatal!("unknown command line option: {}", crate::error::raw(raw));
     }
 }
 
@@ -2910,31 +2903,25 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     "option '-no_dead_strip_inits_and_terms' is obsolete, use '-dead_strip' instead"
                 );
             }
-            // ld64 set MH_DEAD_STRIPPABLE_DYLIB for this, asking the
-            // linker of a client to drop the dylib's load command if it
-            // bound nothing from it. ld-prime neither sets nor honors
-            // the flag.
-            b"-mark_dead_strippable_dylib" => st.obsolete.push(format!("{name} is obsolete")),
-            // ld64 took what @executable_path stands for in a dylib's
-            // re-exports from this. ld-prime expands none, and ignores
-            // the option with a warning.
-            b"-executable_path" => {
-                cur.arg_or_empty(name);
-                st.obsolete.push(format!("{name} is obsolete"));
-            }
             // What ld64 and its predecessors took for prebinding, the
             // two-level namespace hints, multiple modules, Objective-C
-            // garbage collection, kext object files and the classic ld's
-            // -X, -m, -b and -Sp: ld-prime ignores them all, with a
-            // warning once it has read every option. The other old
-            // symbol stripping flags, -s, -Si and -Sn, it warns about as
-            // it reads them.
+            // garbage collection, kext object files, the classic ld's
+            // symbol stripping (-s, -Si, -Sn, -Sp) and its -X, -m and
+            // -b; and MH_DEAD_STRIPPABLE_DYLIB (asking the linker of a
+            // client to drop the dylib's load command if it bound
+            // nothing from it), what @executable_path stands for in a
+            // dylib's re-exports, and the FDEs of functions with compact
+            // unwind records, which ld64 kept for a target before macOS
+            // 10.9 (ld-prime goes by the target alone).
             b"-allow_simulator_linking_to_macosx_dylibs"
             | b"-b"
+            | b"-keep_dwarf_unwind"
             | b"-m"
             | b"-M"
+            | b"-mark_dead_strippable_dylib"
             | b"-new_linker"
             | b"-no_arch_warnings"
+            | b"-no_keep_dwarf_unwind"
             | b"-no_kext_objects"
             | b"-no_new_main"
             | b"-nomultidefs"
@@ -2942,16 +2929,18 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             | b"-objc_gc_compaction"
             | b"-objc_gc_only"
             | b"-prebind"
+            | b"-s"
+            | b"-Si"
             | b"-single_module"
+            | b"-Sn"
             | b"-Sp"
             | b"-twolevel_namespace_hints"
-            | b"-X" => st.obsolete.push(format!("{name} is obsolete")),
-            b"-kext_objects_dir" | b"-multiply_defined" | b"-sdk_version" | b"-seg_addr_table"
-            | b"-Y" => {
+            | b"-X" => crate::warn!("{name} is obsolete"),
+            b"-executable_path" | b"-kext_objects_dir" | b"-multiply_defined" | b"-sdk_version"
+            | b"-seg_addr_table" | b"-Y" => {
                 cur.arg_or_empty(name);
-                st.obsolete.push(format!("{name} is obsolete"));
+                crate::warn!("{name} is obsolete");
             }
-            b"-s" | b"-Si" | b"-Sn" => crate::warn!("{name} is obsolete"),
             // Bitcode bundles went with Xcode 14, and ld-prime ignores
             // the options that asked for one, as it does -ld_classic,
             // which once picked ld64 over it. -ld_new picks ld-prime,
@@ -2960,20 +2949,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             | b"-bitcode_hide_symbols"
             | b"-bitcode_process_mode"
             | b"-bitcode_symbol_map"
-            | b"-bitcode_verify" => {
-                st.obsolete.push(format!("{name} is no longer supported and will be ignored"))
-            }
-            b"-ld_classic" => {
-                crate::warn!("-ld_classic is no longer supported and will be ignored")
-            }
-            b"-ld_prime" => st.obsolete.push("-ld_prime is deprecated, use -ld_new instead".into()),
+            | b"-bitcode_verify"
+            | b"-ld_classic" => crate::warn!("{name} is no longer supported and will be ignored"),
+            b"-ld_prime" => crate::warn!("-ld_prime is deprecated, use -ld_new instead"),
             b"-ld_new" => {}
-            // ld64 kept the FDEs of functions with compact unwind
-            // records for a target before macOS 10.9 (iOS 7), or as
-            // these said. ld-prime goes by the target alone.
-            b"-keep_dwarf_unwind" | b"-no_keep_dwarf_unwind" => {
-                st.obsolete.push(format!("{name} is obsolete"))
-            }
             // ld64's switches for passes ld-prime doesn't run: the
             // labels a -r output gave the FDEs in __eh_frame, the
             // ordering of initializer functions within __text, and
@@ -2988,7 +2967,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // ld-prime skips an empty argument, which names no file: a
             // build system's empty variable, or '' in a response file.
             b"" => {}
-            raw if raw.starts_with(b"-") => read_joined_option(&mut cur, &mut args, &mut st, raw),
+            raw if raw.starts_with(b"-") => read_joined_option(&mut cur, &mut args, raw),
             _ => args.inputs.push(input_file(opt)),
         }
     }
@@ -3028,17 +3007,12 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
 }
 
 /// What ld-prime does once it has read the last option, before it looks
-/// at the inputs: it vets -lto_library, reports the options it doesn't
-/// know, and reads the environment variables that stand in for options.
+/// at the inputs: it vets -lto_library, and reads the environment
+/// variables that stand in for options.
 fn finish_options(args: &mut Args, st: &mut ParseState) {
     args.lto_library = resolve_lto_library(std::mem::take(&mut st.lto_libraries));
-    // ld-prime reports the options it doesn't know together, once it
-    // has read the others (and given their warnings).
-    if !st.unknown.is_empty() {
-        fatal!("unknown options: {}", crate::error::raw(&st.unknown));
-    }
-    // Then it reads -objc_class_ro_signing_mismatch's environment
-    // variable, as it would the option.
+    // -objc_class_ro_signing_mismatch's environment variable is read as
+    // the option would be.
     let env = "LD_OBJC_CLASS_RO_SIGNING_MISMATCH";
     if let Some(val) = std::env::var_os(env) {
         if val.is_empty() {
@@ -3391,9 +3365,6 @@ fn check_last(target: &TargetTraits, args: &mut Args, st: &ParseState) {
         args.output_type == MH_DYLIB && args.output_install_name().starts_with(b"/usr/lib/");
     if st.force_weakness_listed && !usr_lib {
         crate::warn!("-force_symbols_[not_]weak_list is deprecated");
-    }
-    for msg in &st.obsolete {
-        crate::warn!("{msg}");
     }
     // ld-prime leaves this one out under -w, -fatal_warnings or not.
     if !args.has_entry_point() && st.explicit_entry && !args.suppress_warnings {

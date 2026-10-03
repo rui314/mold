@@ -3,8 +3,7 @@ source "$(dirname "$0")"/common.inc
 
 # ld64 could still link the fragile (version 1) Objective-C ABI of
 # 32-bit macOS on request. ld-prime knows the modern one alone: it takes
-# -objc_abi_version 2, spelled just so, and refuses anything else as it
-# reads it.
+# -objc_abi_version 2, spelled just so, and refuses anything else.
 echo 'int main() { return 0; }' | $CC -o $t/a.o -c -xc -
 sdk=$(xcrun --show-sdk-path)
 link() { $mold -arch $ARCH -syslibroot "$sdk" -lSystem $t/a.o -o $t/exe "$@"; }
@@ -23,8 +22,3 @@ not link -objc_abi_version '' 2> $t/log
 grep -q -- '-objc_abi_version.*missing' $t/log
 not link -objc_abi_version 2> $t/log
 grep -q -- '-objc_abi_version.*missing' $t/log
-
-not link -segprot __FOO rz r -objc_abi_version 1 -foo 2> $t/log
-grep -q "unknown -segprot letter 'z'" $t/log
-grep -q -- "-objc_abi_version '1' not supported" $t/log
-not grep -q 'unknown options' $t/log

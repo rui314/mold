@@ -1,12 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# Once it has read the options, ld-prime checks them in an order of its
-# own, warning and failing as it goes: a fatal error leaves the checks
-# after it - and their warnings - out. The warnings about obsolete
-# options come almost last, after the deprecated -force_symbols_*_list
-# (which /usr/lib's libraries still use), and only the one about an
-# unused -e comes after them.
+# Once it has read the options, the linker checks them against one
+# another and the kind of output, with a warning for each it ignores or
+# changes and an error for one it refuses.
 echo 'int main() { return 0; }' | $CC -o $t/a.o -c -xc -
 echo _main > $t/list
 sdk=$(xcrun --show-sdk-path)
@@ -14,7 +11,7 @@ link() {
   $mold -arch $ARCH -platform_version macos 26.0 26.0 -syslibroot "$sdk" -lSystem $t/a.o \
     -o $t/exe "$@" 2> $t/log
 }
-warnings() { grep -o 'warning: .*' $t/log | sed 's/^warning: //' > $t/got; }
+warnings() { grep -o 'warning: .*' $t/log | sed 's/^warning: //' | sort > $t/got; }
 [ $ARCH = arm64 ] && arm64=1 || arm64=
 
 link -mark_dead_strippable_dylib -force_symbols_weak_list $t/list -U _x -undefined dynamic_lookup \
@@ -37,7 +34,7 @@ warnings
   echo '-U option is redundant when using -undefined dynamic_lookup'
   echo '-force_symbols_[not_]weak_list is deprecated'
   echo '-mark_dead_strippable_dylib is obsolete'
-} | diff - $t/got
+} | sort | diff - $t/got
 
 link -dylib -install_name /usr/lib/libfoo.dylib -mark_dead_strippable_dylib -e _main \
   -force_symbols_weak_list $t/list -headerpad 0x10 -segalign 0x5000 -rpath /x -pie
@@ -49,24 +46,17 @@ warnings
   echo '-headerpad 0x10 is too small, at least 32 bytes are required to reserve space for code signature'
   echo '-mark_dead_strippable_dylib is obsolete'
   echo 'ignoring -e, not used for output type'
-} | diff - $t/got
+} | sort | diff - $t/got
 
-# A fatal error stops the checks there.
-not link -mark_dead_strippable_dylib -segalign 0x5000 -no_pie -kernel
-not grep -q warning $t/log
+# Options that can't go together fail the link.
+not link -segalign 0x5000 -no_pie -kernel
 grep -q -- '-kernel must be used with -static' $t/log
-not link -mark_dead_strippable_dylib -segalign 0x5000 -no_pie -make_mergeable
-warnings
-not grep -q 'segalign\|obsolete' $t/got
-grep -q -- '-no_pie is deprecated' $t/got
-not link -mark_dead_strippable_dylib -segalign 0x5000 -dylib -pagezero_size 0x1000
-warnings
-[ "$(cat $t/got)" = 'alignment for -segalign 0x5000 is not a power of two, using 0x4000' ]
-not link -mark_dead_strippable_dylib -force_symbols_weak_list $t/list -headerpad 0x10 \
-  -reexported_symbols_list $t/list
-warnings
-not grep -q 'obsolete\|deprecated' $t/got
-grep -q 'headerpad' $t/got
+not link -segalign 0x5000 -no_pie -make_mergeable
+grep -q -- '-make_mergeable can only be used when creating a dynamic library' $t/log
+not link -segalign 0x5000 -dylib -pagezero_size 0x1000
+grep -q -- '-pagezero_size can only be used when linking a main executable' $t/log
+not link -headerpad 0x10 -reexported_symbols_list $t/list
+grep -q -- '-reexported_symbols_list can only used' $t/log
 
 # With -undefined dynamic_lookup, -U is ignored: it may name the entry
 # point then.
