@@ -130,6 +130,19 @@ pub fn split_once(bytes: &[u8], sep: u8) -> Option<(&[u8], &[u8])> {
     Some((&bytes[..i], &bytes[i + 1..]))
 }
 
+/// Makes room in one of the link's arenas (the symbols, the subsections,
+/// ...) for `additional` more elements, with an eighth of the whole to
+/// spare when it grows: the auto-link rounds append a few objects' worth
+/// to arenas the command line's objects filled exactly, which they would
+/// take by copying themselves whole (the 57 MB of symbols and 82 MB of
+/// subsections of ASan iTerm2, 10 ms). The room left over costs address
+/// space until it is written.
+pub fn reserve_arena<T>(v: &mut Vec<T>, additional: usize) {
+    if v.capacity() - v.len() < additional {
+        v.reserve_exact(additional + (v.len() + additional) / 8);
+    }
+}
+
 /// Leaks a byte string for the rest of the process's lifetime: names
 /// in the output string table outlive every data structure of a link,
 /// and the process exits as soon as the link is done.

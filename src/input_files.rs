@@ -1814,10 +1814,11 @@ pub fn integrate_objects<E: Target>(
     }
 }
 
-/// Reserves room in `v` for runs of `lens` elements after its own and
-/// returns them, uninitialized, for the caller to fill in parallel.
+/// Reserves room in an arena `v` for runs of `lens` elements after its
+/// own and returns them, uninitialized, for the caller to fill in
+/// parallel.
 fn spare_ranges<'a, T>(v: &'a mut Vec<T>, lens: &[usize]) -> Vec<&'a mut [MaybeUninit<T>]> {
-    v.reserve(lens.iter().sum());
+    crate::util::reserve_arena(v, lens.iter().sum());
     let mut spare = v.spare_capacity_mut();
     let mut ranges = Vec::with_capacity(lens.len());
     for &len in lens {
