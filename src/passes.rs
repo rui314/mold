@@ -23,7 +23,7 @@ use crate::macho::*;
 use crate::mapped_file::MappedFile;
 use crate::mergeable::MergedLibrary;
 use crate::objc::{DataBlob, DataField};
-use crate::output_sections::{data_seg, header_segment};
+use crate::output_sections::header_segment;
 use crate::symbol::SymbolId;
 use crate::tapi;
 use crate::target::RelocClass;
@@ -5473,90 +5473,6 @@ pub(crate) fn add_got<E: Target>(ctx: &mut Context<E>, id: crate::symbol::Symbol
         ctx.sym_aux_mut(id).got_idx = ctx.got.got_syms.len() as u32;
         ctx.got.got_syms.push(id);
     }
-}
-
-/// Replaces input subsections, each an 8-byte pointer to a symbol, by
-/// the symbol's GOT entry: each by a synthetic subsection standing for
-/// the entry, placed once __got is, so what refers to the input slot
-/// reads the entry. A stand-in is not alive: the __got chunk writes the
-/// slot, and the input slot's local symbol is not emitted. `slots`
-/// pairs an input slot with its symbol.
-pub(crate) fn absorb_got_slots<E: Target>(
-    ctx: &mut Context<E>,
-    slots: Vec<(u32, crate::symbol::SymbolId)>,
-) {
-    if slots.is_empty() {
-        return;
-    }
-    let sect = ctx.add_synthetic_section(MachSection {
-        sectname: bytes_to_name(b"__got"),
-        segname: bytes_to_name(data_seg(ctx)),
-        p2align: 3,
-        flags: S_NON_LAZY_SYMBOL_POINTERS,
-        ..Default::default()
-    });
-    for (slot, id) in slots {
-        add_got(ctx, id);
-        let synth = crate::objc::add_slot_stand_in(ctx, sect);
-        ctx.isecs[slot as usize].replacement = synth;
-        ctx.got.stand_ins.push((synth, id));
-    }
-}
-
-/// Moves the slots of each input __DATA,__got into the GOT. ld-prime
-/// reads such a section, whatever its type, as non-lazy pointers, and
-/// makes each slot an entry of its own __got, named in the indirect
-/// symbol table; mold makes each the entry of the symbol it points at,
-/// which a load through the GOT may share. A slot that is no plain
-/// pointer to a symbol (one with an addend, or to a place in a
-/// section) keeps its bytes and relocation in a slot of its own after
-/// the symbols' (see GotSection::input_slots), as ld-prime's does; so
-/// does a constant, on which ld-prime crashes.
-pub fn fold_input_got<E: Target>(ctx: &mut Context<E>) {
-    if ctx.args.relocatable {
-        return;
-    }
-    let is_got = |hdr: &MachSection| hdr.segname() == b"__DATA" && hdr.sectname() == b"__got";
-    let mut slots = Vec::new();
-    let mut input_slots = Vec::new();
-    for obj in ctx.objs.iter().filter(|obj| obj.is_alive) {
-        if !obj.sect_hdrs.iter().any(is_got) {
-            continue;
-        }
-        for &i in &obj.subsecs {
-            let isec = &ctx.isecs[i];
-            if !isec.is_alive()
-                || isec.replacement != crate::input_sections::NO_REPLACEMENT
-                || !is_got(ctx.hdr_of(isec))
-            {
-                continue;
-            }
-            match pointer_target(ctx, i as usize) {
-                Some(idx) => slots.push((i, obj.symbols[idx as usize])),
-                None => input_slots.push(i),
-            }
-        }
-    }
-    absorb_got_slots(ctx, slots);
-    for &i in &input_slots {
-        ctx.isecs[i as usize].set_placed();
-    }
-    ctx.got.input_slots = input_slots;
-}
-
-/// The symbol, by its index in the object, that subsection `i` is a
-/// pointer to: 8 bytes an 8-byte absolute relocation of the symbol
-/// fills, with no addend.
-pub(crate) fn pointer_target<E: Target>(ctx: &Context<E>, i: usize) -> Option<u32> {
-    let [rel] = ctx.isec_relocs(i) else { return None };
-    let RelocTarget::Sym(idx) = rel.target() else { return None };
-    let plain = E::classify_reloc(rel.r_type) == RelocClass::Plain
-        && ctx.isecs[i].size == 8
-        && rel.size == 8
-        && !rel.is_pcrel
-        && !rel.is_subtracted
-        && rel.addend == 0;
-    plain.then_some(idx)
 }
 
 /// Makes what the image reaches the symbols of the dylibs dyld loads

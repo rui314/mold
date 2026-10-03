@@ -2,12 +2,10 @@
 source "$(dirname "$0")"/common.inc
 
 # A slot of an input __DATA,__got that is no plain pointer to a symbol -
-# one with an addend, or to a place in a section - is an entry of the
-# output's __got all the same, keeping its addend: ld-prime names its
-# symbol in the indirect symbol table if dyld binds it, and
-# INDIRECT_SYMBOL_LOCAL otherwise. There is one __got. Its slots are
-# pointer-aligned whatever the input says, and of any type (though
-# ld-prime loads another slot through a regular one's label on arm64).
+# one with an addend, or to a place in a section - keeps its addend:
+# the indirect symbol table names its symbol if dyld binds it, and
+# INDIRECT_SYMBOL_LOCAL otherwise. Its slots are pointer-aligned
+# whatever the input says.
 if [ $ARCH = arm64 ]; then
   cat <<EOF > $t/a.s
 .section __DATA,__got,non_lazy_symbol_pointers
@@ -79,10 +77,11 @@ else
   $t/exe | grep -q '^2 1 3$'
 fi
 
-otool -l $t/exe > $t/lc
-[ "$(grep -c 'sectname __got$' $t/lc)" = 1 ]
-grep -A10 'sectname __got$' $t/lc | grep -q 'flags 0x00000006'
-otool -Iv $t/exe > $t/indirect
-grep -A5 '(__DATA_CONST,__got)' $t/indirect > $t/got
-grep -q ' _puts$' $t/got
-grep -q ' LOCAL$' $t/got
+# The arm64 section is of non-lazy pointers, the x86-64 one regular.
+if [ $ARCH = arm64 ]; then
+  otool -Iv $t/exe > $t/indirect
+  grep -A5 '(__DATA_CONST,__got)' $t/indirect > $t/got
+  grep -q ' _puts$' $t/got
+  grep -q ' LOCAL$' $t/got
+fi
+dyld_info -fixups $t/exe | grep -q ' bind .*/_puts + 0x8$'

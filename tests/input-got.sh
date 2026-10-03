@@ -1,12 +1,13 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# ld-prime reads an input __DATA,__got, whatever its type, as GOT slots
-# and makes them entries of its own __got, named in the indirect symbol
-# table; mold makes each slot the entry of the symbol it points at. A
-# -r output keeps the slots data their relocations fill: one of
-# non-lazy pointers would need the indirect symbol table, and neither
-# linker takes an object that has one.
+# An input __DATA,__got is a section of the image like any other: of
+# non-lazy pointers, its slots are named in the indirect symbol table,
+# and dyld binds or slides them; of another type, its pointers are
+# data. (ld-prime makes its slots entries of its own __got.) A -r output
+# keeps the slots data their relocations fill: one of non-lazy pointers
+# would need the indirect symbol table, and neither linker takes an
+# object that has one.
 if [ $ARCH = arm64 ]; then
   cat <<EOF > $t/a.s
 .section __DATA,__got,non_lazy_symbol_pointers
@@ -96,12 +97,9 @@ if [ $ARCH = x86_64 ] || $mold -v 2>&1 | grep -q mold-macho; then
     $CC --ld-path=$mold -o $t/exe-$obj $t/$obj.o $t/b.o
     $t/exe-$obj > $t/out
     printf 'hello\nworld\n42\n' | cmp - $t/out
-    otool -l $t/exe-$obj > $t/lc
-    [ "$(grep -c 'sectname __got$' $t/lc)" = 1 ]
-    grep -A9 'sectname __got$' $t/lc | grep -q 'flags 0x00000006'
     otool -Iv $t/exe-$obj > $t/indirect
     grep -q ' _puts$' $t/indirect
-    grep -q ' LOCAL$' $t/indirect
+    if [ $obj = a ]; then grep -q ' LOCAL$' $t/indirect; fi
   done
 fi
 

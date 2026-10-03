@@ -59,11 +59,7 @@ fn entries<E: Target>(ctx: &Context<E>, id: ChunkId) -> Vec<Option<SymbolId>> {
         ChunkId::LazyPtrs => {
             ctx.stubs.lazy.iter().map(|&i| Some(ctx.stubs.symbols[i as usize])).collect()
         }
-        ChunkId::Got => {
-            let mut vec = got_slots(&got.got_syms[..got.weak_start]);
-            vec.extend(got.input_slots.iter().flat_map(|&isec| input_slots(ctx, isec as usize)));
-            vec
-        }
+        ChunkId::Got => got_slots(&got.got_syms[..got.weak_start]),
         ChunkId::WeakGot => got_slots(&got.got_syms[got.weak_start..]),
         ChunkId::Output(osec) => {
             let members = &ctx.output_section(osec).members;

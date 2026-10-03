@@ -413,7 +413,7 @@ fn output_section_flags(segname: &[u8], sectname: &[u8], input: u32, relocatable
 /// so a regular __objc_methname is C strings and a list typed as
 /// strings or literals is pointers still. __objc_selrefs keeps its own
 /// type, which says whether its references merge, and __DATA,__got,
-/// GOT slots whatever its type (see fold_input_got), its own, which
+/// GOT slots whatever its type, its own, which
 /// says whether the object asks for an indirect-symbol GOT (see
 /// check_sections); but neither is ever split into strings or
 /// literals. Superclass and protocol references keep the
@@ -469,8 +469,7 @@ fn is_standard_section(segname: &[u8], sectname: &[u8], flags: u32) -> bool {
 /// has the table's type - a __TEXT,__const or __DATA,__data an
 /// assembler nop landed in is plain data again, a regular __text
 /// code - and its own otherwise (a regular __cstring holds no literals
-/// to merge). (A final image has no input __got left: its slots are
-/// the GOT's, see fold_input_got.)
+/// to merge).
 fn input_section_flags(segname: &[u8], sectname: &[u8], flags: u32) -> u32 {
     match standard_section_flags(segname, sectname) {
         Some(table) if table & SECTION_TYPE == flags & SECTION_TYPE => table,
@@ -1779,13 +1778,9 @@ fn add_stub_and_got_chunks<E: Target>(ctx: &mut Context<E>) {
 
     let got = &mut ctx.got;
     let weak = got.got_syms.len() - got.weak_start;
-    let slots = got.weak_start + got.input_slots.len();
+    let slots = got.weak_start;
     got.hdr.size = slots as u64 * 8;
     got.weak_hdr.size = weak as u64 * 8;
-    for (j, &i) in got.input_slots.iter().enumerate() {
-        ctx.isecs[i as usize].offset = ((got.weak_start + j) * 8) as u32;
-        ctx.isecs[i as usize].set_output_section(ChunkId::Got);
-    }
     let seg = data_seg(ctx);
     // A kext's are plain data to ld-prime (indexed into the indirect
     // symbol table all the same), and so are a -static image's, but for
@@ -1799,12 +1794,6 @@ fn add_stub_and_got_chunks<E: Target>(ctx: &mut Context<E>) {
             hdr.flags = flags;
             ctx.chunks.push(id);
         }
-    }
-    for i in 0..ctx.got.stand_ins.len() {
-        let (slot, id) = ctx.got.stand_ins[i];
-        let (chunk, off) = ctx.got.slot_place(ctx.sym_aux(id).got_idx as usize);
-        ctx.isecs[slot as usize].offset = off as u32;
-        ctx.isecs[slot as usize].set_output_section(chunk);
     }
 }
 

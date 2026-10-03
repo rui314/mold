@@ -16,7 +16,6 @@ use crate::target::Target;
 
 const CT_METHOD_NAME: u8 = 12;
 const CT_METHOD_LIST: u8 = 15;
-const CT_CLASS_REF: u8 = 33;
 const CT_SELECTOR_REF: u8 = 35;
 const CT_CLASS_LISTS: [u8; 2] = [40, 44];
 const CT_CATEGORY_LISTS: [u8; 3] = [41, 45, 70];
@@ -24,26 +23,13 @@ const CT_CATEGORY_LISTS: [u8; 3] = [41, 45, 70];
 impl<E: Target> Builder<'_, E> {
     /// The entries of the metadata the link made: the selector
     /// references (see add_selref_entries), and, after the imports, the
-    /// class references the GOT took over, the method lists in the
-    /// relative form and category merging's records. Returns the
+    /// method lists in the relative form and category merging's
+    /// records. Returns the
     /// selector reference slots, in the order of the __objc_selrefs
     /// tail.
     pub(super) fn add_objc_entries(&mut self) -> Vec<To> {
         let ctx = self.ctx;
         let slots = self.add_selref_entries();
-        for &(stand_in, id) in &ctx.got.stand_ins {
-            // An input GOT slot's is the slot's entry (see
-            // add_isec_entry).
-            if self.isec_entry.contains_key(&stand_in) {
-                continue;
-            }
-            let mut entry = coalesced(CT_CLASS_REF, 8, 3);
-            entry.content =
-                self.isec_content(&ctx.isecs[stand_in], ctx.hdr_of(&ctx.isecs[stand_in]));
-            let (to, addend) = self.sym_target(id);
-            entry.fixups.push(OutFixup::new(0, to, fk::PTR64, addend));
-            self.add_linker_isec_entry(stand_in, entry, None);
-        }
         let names = self.synthetic_names();
         for list in &ctx.objc_methlist.lists {
             let isec = &ctx.isecs[list.isec];

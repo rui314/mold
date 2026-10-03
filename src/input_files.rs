@@ -525,7 +525,7 @@ fn is_discarded_section(hdr: &MachSection) -> bool {
 /// compilers emit __literal16 with p2align 3 for a 16-byte constant whose
 /// type is only 8-aligned, and rely on the linker to place it where a
 /// 16-byte load can reach it. An initializer, terminator or non-lazy
-/// symbol pointer, a GOT slot of any type (see fold_input_got), a
+/// symbol pointer, a GOT slot of any type, a
 /// CFString constant and a pointer-auth slot are aligned to a pointer,
 /// even from a section that claims less or more, in a -r output as in an
 /// image; a thread-local variable descriptor (from a section clang aligns

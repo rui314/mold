@@ -419,11 +419,7 @@ impl<'a, E: Target> Builder<'a, E> {
             return;
         }
         let hdr = ctx.hdr_of(isec);
-        // A slot of an input __DATA,__got the link moved into its GOT
-        // (see passes::fold_input_got) is an entry in its place all the
-        // same, as ld-prime records it, with the bytes of the GOT slot.
-        let got_slot = isec.replacement != NO_REPLACEMENT && is_input_got(hdr);
-        if isec.replacement != NO_REPLACEMENT && !got_slot {
+        if isec.replacement != NO_REPLACEMENT {
             return self.add_folded_function(obj, id, debug);
         }
         if !has_entries(hdr) {
@@ -457,13 +453,9 @@ impl<'a, E: Target> Builder<'a, E> {
         if !isec.is_record() {
             entry.modulus = (isec.input_addr & ((1 << isec.p2align) - 1)) as u16;
         }
-        let placed = if got_slot { &ctx.isecs[isec.replacement] } else { isec };
-        entry.content = self.isec_content(placed, ctx.hdr_of(placed));
+        entry.content = self.isec_content(isec, hdr);
         let entry_idx = self.push_records(entry, id, record_size(hdr));
         self.isec_entry.insert(id, To::Entry(entry_idx));
-        if got_slot {
-            self.isec_entry.insert(isec.replacement, To::Entry(entry_idx));
-        }
         if let Some(i) = label {
             self.sym_entry.insert(obj.symbols[i], To::Entry(entry_idx));
         }
@@ -1194,8 +1186,7 @@ fn has_entries(hdr: &MachSection) -> bool {
         && !crate::input_files::is_objc_image_info(hdr)
 }
 
-/// Whether a section is an object's __DATA,__got, whose slots the link
-/// moves into its GOT (see passes::fold_input_got).
+/// Whether a section is an object's __DATA,__got.
 fn is_input_got(hdr: &MachSection) -> bool {
     hdr.segname() == b"__DATA" && hdr.sectname() == b"__got"
 }
