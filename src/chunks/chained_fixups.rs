@@ -321,11 +321,9 @@ const MAX_CHAIN_STRIDE: u64 = 0xfff * 4;
 /// The chains of an image whose starts __TEXT,__chain_starts lists
 /// (-fixup_chains_section): each segment's fixups chain on from the
 /// first, a chain ending where the next fixup is out of its stride's
-/// reach - ld-prime cuts none at a page, as dyld would need. Returns
-/// each chain's start, an offset from the image's address, and the
-/// room ld-prime makes for them: as many starts as there would be if
-/// every section's fixups chained apart from the next section's.
-pub fn section_chain_starts<E: Target>(ctx: &Context<E>) -> (Vec<u32>, usize) {
+/// reach - none is cut at a page, as dyld would need. Returns each
+/// chain's start, an offset from the image's address.
+pub fn section_chain_starts<E: Target>(ctx: &Context<E>) -> Vec<u32> {
     // The first fixups of the chains of those in [start, end).
     fn chains(addrs: &[u64], start: u64, end: u64) -> impl Iterator<Item = u64> + '_ {
         let lo = addrs.partition_point(|&a| a < start);
@@ -337,16 +335,10 @@ pub fn section_chain_starts<E: Target>(ctx: &Context<E>) -> (Vec<u32>, usize) {
     let (fixups, _) = collect_fixups(ctx);
     let addrs: Vec<u64> = fixups.iter().map(|&(addr, ..)| addr).collect();
     let base = ctx.mach_header.hdr.addr;
-    let starts = (ctx.segments.iter())
+    (ctx.segments.iter())
         .flat_map(|seg| chains(&addrs, seg.cmd.vmaddr, seg.cmd.vmaddr + seg.cmd.vmsize))
         .map(|addr| addr.wrapping_sub(base) as u32)
-        .collect();
-    let room = (ctx.chunks.iter())
-        .map(|&id| ctx.chunk_header(id))
-        .filter(|hdr| hdr.is_sect)
-        .map(|hdr| chains(&addrs, hdr.addr, hdr.addr + hdr.size).count())
-        .sum();
-    (starts, room)
+        .collect()
 }
 
 /// Writes the fixup chains into the copied output: every fixup word is

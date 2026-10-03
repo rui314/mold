@@ -6598,8 +6598,8 @@ fn finish_chain_starts<E: Target>(ctx: &mut Context<E>) -> bool {
     if !ctx.args.fixup_chains_section {
         return true;
     }
-    let (starts, room) = chunks::chained_fixups::section_chain_starts(ctx);
-    let size = chunks::chain_starts::ChainStartsSection::size(room);
+    let starts = chunks::chained_fixups::section_chain_starts(ctx);
+    let size = chunks::chain_starts::ChainStartsSection::size(starts.len());
     let fits = size == ctx.chain_starts.hdr.size;
     ctx.chain_starts.hdr.size = size;
     ctx.chain_starts.starts = starts;

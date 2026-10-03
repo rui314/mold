@@ -7,9 +7,8 @@ source "$(dirname "$0")"/common.inc
 # pointer format, the number of chains, and each chain's start as an
 # offset from the image's address. A chain runs through a segment's
 # fixups as far as its 12-bit stride reaches, across pages and
-# sections; the section has room for as many starts as if each
-# section's fixups chained apart. Its reserved1 says 1 for the first
-# option, 2 for the second, which ld-prime refuses to switch between.
+# sections. Its reserved1 says 1 for the first option, 2 for the
+# second, which ld-prime refuses to switch between.
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .text
 .globl _start
@@ -35,7 +34,7 @@ _d0:
 EOF
 
 # The words of __TEXT,__chain_starts: the format, the count, and the
-# starts as offsets from __DATA's start (0 for an unused one).
+# starts as offsets from __DATA's start.
 starts() {
   python3 - $1 <<'EOF'
 import struct, sys
@@ -64,7 +63,7 @@ not grep -q LC_DYLD_CHAINED_FIXUPS $t/lc
 if [ $ARCH = arm64 ]; then
   # 0x4000 is beyond the stride from 0x3010; __const and __FOO follow
   # the chain of the last __data fixup and start their own.
-  [ "$(starts $t/exe)" = '6 3 0x0 0x8018 0xc000 0' ]
+  [ "$(starts $t/exe)" = '6 3 0x0 0x8018 0xc000' ]
 fi
 dyld_info -fixups $t/exe > $t/fixups
 [ "$(grep -c rebase $t/fixups)" = 6 ]

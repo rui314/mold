@@ -8,8 +8,8 @@ use crate::target::Target;
 
 /// __TEXT,__chain_starts: a dyld_chained_starts_offsets - the chains'
 /// pointer format, their count, then each chain's first fixup as an
-/// offset from the image's address, and zeros for the room ld-prime
-/// leaves (see chained_fixups::section_chain_starts).
+/// offset from the image's address (see
+/// chained_fixups::section_chain_starts).
 #[derive(Debug)]
 pub struct ChainStartsSection {
     pub hdr: ChunkHeader,
@@ -25,7 +25,7 @@ impl ChainStartsSection {
         Self { hdr, starts: Vec::new() }
     }
 
-    /// The section's size with room for `n` chains.
+    /// The section's size for `n` chains.
     pub fn size(n: usize) -> u64 {
         8 + n as u64 * 4
     }
