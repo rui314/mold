@@ -4511,10 +4511,11 @@ fn assign_dylib_ordinals<E: Target>(ctx: &mut Context<E>) -> Vec<usize> {
     order
 }
 
-/// Drops the dylibs no symbol binds to that the link may drop (under
-/// -dead_strip_dylibs, or auto-linked), makes those every reference to
-/// which is weak load weakly, and gives the rest their load commands'
-/// ordinals, by which bind records name them.
+/// Drops the dylibs no symbol binds to that the link may drop (any under
+/// -dead_strip_dylibs, else those it brought in itself: auto-linked, or
+/// loaded as another dylib's public re-export), makes those every
+/// reference to which is weak load weakly, and gives the rest their
+/// load commands' ordinals, by which bind records name them.
 pub fn dead_strip_dylibs<E: Target>(ctx: &mut Context<E>) {
     // An auto-linked dylib is stripped even without -dead_strip_dylibs,
     // as ld64 treats its option as a hint: NetNewsWire's auto-link
@@ -4641,10 +4642,10 @@ pub fn bind_private_reexports_to_image<E: Target>(ctx: &mut Context<E>) {
 /// it: an executable other than a -static one, or a dylib or bundle,
 /// -static or not. Any dylib left after -dead_strip_dylibs, the bundle
 /// loader included, will do, libSystem or not, but a lazy one, which
-/// has no load command, won't. ld-prime does the same
-/// and, like ld64, lets off libsystem_kernel, which libSystem is built
-/// on, and any link with an exit-asm.o (a stopgap for rdar://39514191).
-/// Firmware has no libSystem to link.
+/// has no load command, won't. ld-prime does the same and, like ld64,
+/// lets off libsystem_kernel, which libSystem is built on, and any link
+/// with an exit-asm.o (a stopgap for rdar://39514191). Firmware has no
+/// libSystem to link.
 fn check_libsystem_linked<E: Target>(ctx: &Context<E>) {
     if ctx.args.platform == crate::macho::PLATFORM_FIRMWARE {
         return;
