@@ -131,12 +131,14 @@ not $CC --ld-path=$mold -shared -o $t/d.dylib $t/d.o -Wl,-no_fixup_chains \
   -Wl,-segaddr,__TEXT,0x200000000 -Wl,-segaddr,__AAA,0x100000000 2> $t/log15
 grep -q 'segment __AAA address is out of order' $t/log15
 
-# ld-prime checks for overlaps before it places the segments, with each
-# one that floats right after the one before it: __BBB after __AAA runs
-# into __CCC, where it would have moved out of the way.
-not link -o $t/exe16 -segaddr __AAA 0x300000000 -segaddr __CCC 0x300008000 2> $t/log16
-bbb="__BBB(0x300008000-$(hex "0x300008000 + $page"))"
-grep -q "custom segments overlap: $bbb __CCC(0x300008000-$(hex "0x300008000 + $page"))" $t/log16
+# Overlaps are checked once the segments are placed: __BBB, after
+# __AAA, floats out of the way of __CCC. (ld-prime checks before it
+# places them, each floating one right after the one before it, and
+# refuses this.)
+link -o $t/exe16 -segaddr __AAA 0x300000000 -segaddr __CCC 0x300008000
+[ $(hex $(addr $t/exe16 __CCC)) = 0x300008000 ]
+[ $(($(end $t/exe16 __BBB))) -le $((0x300008000)) ] ||
+  [ $(($(addr $t/exe16 __BBB))) -ge $(($(end $t/exe16 __CCC))) ]
 
 # A -static image's mach header moves with -rename_segment __TEXT, and
 # a -segaddr for its new segment places it; -image_base then only

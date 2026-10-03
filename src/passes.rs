@@ -5682,8 +5682,8 @@ fn lay_out_segments<E: Target>(ctx: &mut Context<E>) -> u64 {
         };
         addr = vmaddr + segment_span(ctx, &ctx.segments[seg_idx]);
     }
-    check_segment_overlaps(ctx);
     place_segments(ctx);
+    check_segment_overlaps(ctx);
     crate::error::checkpoint();
     fileoff
 }
@@ -6010,29 +6010,12 @@ fn move_segment<E: Target>(ctx: &mut Context<E>, seg_idx: usize, addr: u64) {
     }
 }
 
-/// ld-prime refuses segments that overlap, which takes a -segaddr (or
-/// an -image_base inside __PAGEZERO). It reports the first such pair,
-/// as it lays them out before it places them (see place_segments): each
-/// segment where -segaddr pins it, or right after the one before it, so
-/// that a segment after a pinned one runs into the next pinned one
-/// where place_segments would move it out of the way. Left out are
-/// empty segments and __LINKEDIT, sized last.
+/// Refuses segments that overlap once placed (see place_segments),
+/// which only -segaddr pins (or an -image_base inside __PAGEZERO) can
+/// make. Left out are empty segments and __LINKEDIT, sized last.
 fn check_segment_overlaps<E: Target>(ctx: &Context<E>) {
     let segs = &ctx.segments[..ctx.segments.len() - 1];
-    let header_seg = in_place_segment(ctx);
-    let mut addrs = Vec::with_capacity(segs.len());
-    let mut next = ctx.image_base();
-    for (i, seg) in segs.iter().enumerate() {
-        let addr = if seg.name == b"__PAGEZERO" || Some(seg.name) == header_seg {
-            seg.cmd.vmaddr
-        } else {
-            ctx.args.segaddr(seg.name).unwrap_or(align_to(next, segment_start_align(ctx, i)))
-        };
-        addrs.push(addr);
-        next = addr + segment_span(ctx, seg);
-    }
-
-    let span = |i: usize| addrs[i]..addrs[i] + segs[i].cmd.vmsize;
+    let span = |i: usize| segs[i].cmd.vmaddr..segs[i].cmd.vmaddr + segs[i].cmd.vmsize;
     for i in 0..segs.len() {
         for j in i + 1..segs.len() {
             let (a, b) = (span(i), span(j));
