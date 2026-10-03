@@ -847,6 +847,199 @@ fn load_owner<E: Target>(ctx: &mut Context<E>, sym_id: SymbolId, queue: &mut Vec
     }
 }
 
+/// The objects check_input_versions has checked, and the Objective-C
+/// image info flags they merge to (see check_objc_flags).
+#[derive(Default)]
+pub struct CheckedInputs {
+    objs: Vec<bool>,
+    objc: Option<u32>,
+}
+
+/// Warns if a dylib with install name `install_name` was built for an
+/// OS version, `built_for`, newer than the link's.
+fn warn_newer_dylib<E: Target>(ctx: &Context<E>, install_name: &[u8], built_for: u32) {
+    let minos = ctx.args.platform_minos;
+    if minos != 0 && built_for > minos {
+        crate::warn!(
+            "building for {}-{}, but linking with dylib '{}' which was built for newer version {}",
+            platform_name(ctx.args.platform),
+            format_version(minos),
+            raw(install_name),
+            format_version(built_for)
+        );
+    }
+}
+
+/// Checks the deployment target and the Objective-C image info of each
+/// live object `checked` doesn't cover yet. Unused archive members must
+/// not cause errors or warnings. The driver calls this before LTO, so
+/// that bitcode built for another platform stops the link before it is
+/// compiled, and again for the objects LTO made or pulled in.
+pub fn check_input_versions<E: Target>(ctx: &Context<E>, checked: &mut CheckedInputs) {
+    checked.objs.resize(ctx.objs.len(), false);
+    for (i, obj) in ctx.objs.iter().enumerate() {
+        // The hook for the classes of mergeable libraries is the
+        // linker's, for any macOS.
+        if !obj.is_alive || checked.objs[i] || ctx.is_bundle_hook(i) {
+            continue;
+        }
+        checked.objs[i] = true;
+        // A -r or -preload output for no platform takes any object.
+        if ctx.args.platform != 0 {
+            check_object_version(ctx, i);
+        }
+        if let Some(flags) = obj.objc_image_info {
+            checked.objc = Some(check_objc_flags(ctx, checked.objc, flags, obj.mf));
+        }
+    }
+}
+
+/// Warns of each dylib the link names that was built for a newer OS
+/// version than the link's, but not one only re-exported, nor one of
+/// the SDK, built for newer OS versions as a matter of course. (A
+/// dylib built for another platform is refused as it is read; see
+/// input_files::check_dylib_platforms.)
+pub fn warn_newer_dylibs<E: Target>(ctx: &Context<E>) {
+    for dylib in ctx.dylibs.iter().filter(|d| !d.is_implicit && !d.in_sdk) {
+        warn_newer_dylib(ctx, &dylib.install_name, dylib.minos);
+    }
+}
+
+/// Checks the deployment target of object `i` (see
+/// check_input_versions).
+fn check_object_version<E: Target>(ctx: &Context<E>, i: usize) {
+    let obj = &ctx.objs[i];
+    let (platform, minos) = (ctx.args.platform, ctx.args.platform_minos);
+    // An object may declare more than one platform; use the deployment
+    // target for the platform being linked. ld-prime takes one with no
+    // version command (an old one, or one assembled for no OS) for
+    // macOS, with a warning in a macOS link. The object the linker
+    // synthesizes has none either.
+    let Some(first) = obj.platform_versions.first() else {
+        if platform == crate::macho::PLATFORM_MACOS && !ctx.is_internal(i) {
+            crate::warn!(
+                "no platform load command found in '{}', assuming: macOS",
+                obj.mf.name.raw()
+            );
+        }
+        return;
+    };
+    let Some(version) = obj.platform_versions.iter().find(|v| v.platform == platform) else {
+        // Firmware takes code built for any platform.
+        if platform == crate::macho::PLATFORM_FIRMWARE {
+            return;
+        }
+        fatal!(
+            "building for '{}', but linking in object file ({}) built for '{}'",
+            platform_name(platform),
+            obj.mf.name.raw(),
+            platform_name(first.platform)
+        );
+    };
+
+    // A merged mergeable dylib is a dylib to this check.
+    let merged = ctx.merged_libraries.iter().find(|lib| std::ptr::eq(lib.obj, obj.mf));
+    if let Some(lib) = merged {
+        warn_newer_dylib(ctx, &lib.install_name, lib.minos);
+        return;
+    }
+
+    // The SDK version used to compile an input does not constrain its
+    // use. -deployment_target_mismatches error makes the first object
+    // for a newer OS fail the link, and suppress keeps quiet.
+    if minos != 0 && version.minos > minos {
+        let msg = format_args!(
+            "object file ({}) was built for newer '{}' version ({}) than being linked ({})",
+            obj.mf.name.raw(),
+            platform_name(version.platform),
+            format_version(version.minos),
+            format_version(minos)
+        );
+        match ctx.args.deployment_target_mismatches {
+            Treatment::Warning => crate::warn!("{msg}"),
+            Treatment::Error => fatal!("{msg}"),
+            Treatment::Suppress => {}
+        }
+    }
+}
+
+/// __objc_imageinfo's flag of an image whose categories may have class
+/// properties: every object's record has it, or the image's has not.
+const OBJC_HAS_CATEGORY_CLASS_PROPERTIES: u32 = 0x40;
+
+/// Merges the Objective-C image info `flags` of an object into those
+/// of the objects checked before it, `merged`, with ld-prime's
+/// diagnostics. The first Swift ABI version stays: another one
+/// fails the link (or with $LD_WARN_ON_SWIFT_ABI_VERSION_MISMATCHES
+/// draws a warning). And an object that has category class properties
+/// where those before don't, or lacks them where those before have
+/// them, draws a warning - each one that differs from the merged flags,
+/// which lose the bit at the first.
+fn check_objc_flags<E: Target>(
+    ctx: &Context<E>,
+    merged: Option<u32>,
+    flags: u32,
+    mf: &MappedFile,
+) -> u32 {
+    let Some(merged) = merged else { return flags };
+    let (first, abi) = ((merged >> 8) & 0xff, (flags >> 8) & 0xff);
+    if first != 0 && abi != 0 && abi != first {
+        let (first, file) = (swift_abi_name(first), mf.name.raw());
+        if ctx.args.warn_swift_abi_mismatches {
+            crate::warn!(
+                "{file} compiled with a different Swift ABI version ({}), than previous files \
+                 ({first})",
+                swift_abi_name(abi)
+            );
+        } else {
+            fatal!(
+                "not all .o files built with the same Swift ABI version. Started with ({first}), \
+                 now found ({}) in {file}",
+                swift_abi_name(abi)
+            );
+        }
+    }
+    let cat = flags & OBJC_HAS_CATEGORY_CLASS_PROPERTIES;
+    if cat != merged & OBJC_HAS_CATEGORY_CLASS_PROPERTIES {
+        crate::warn!(
+            "mixed ObjC ABI, {} compiled {} category class properties",
+            mf.name.raw(),
+            if cat != 0 { "with" } else { "without" }
+        );
+    }
+    merge_objc_flags(merged, flags)
+}
+
+/// The Objective-C image info flags of objects whose flags so far are
+/// `merged`, and of an object with `flags`, as ld-prime merges them:
+/// the first Swift ABI version given stays, the Swift language version
+/// is the oldest given, and the image's categories may have class
+/// properties if every object's may.
+pub(crate) fn merge_objc_flags(merged: u32, flags: u32) -> u32 {
+    let abi = if merged & 0xff00 != 0 { merged & 0xff00 } else { flags & 0xff00 };
+    let lang = match (merged >> 16, flags >> 16) {
+        (0, lang) | (lang, 0) => lang,
+        (a, b) => a.min(b),
+    };
+    (lang << 16) | abi | (merged & flags & OBJC_HAS_CATEGORY_CLASS_PROPERTIES)
+}
+
+/// A Swift ABI version, the byte of __objc_imageinfo's flags that holds
+/// it, as ld-prime names it.
+fn swift_abi_name(v: u32) -> String {
+    let name = match v {
+        1 => "1.0",
+        2 => "1.1",
+        3 => "2.0",
+        4 => "3.0",
+        5 => "4.0",
+        6 => "4.1/4.2",
+        7 => "5 or later",
+        _ => return format!("unknown ABI version 0x{v:02X}"),
+    };
+    name.to_string()
+}
+
 /// Whether a -r link takes in bitcode and nothing else, none of it
 /// built for ThinLTO: ld-prime then writes the modules merged into one
 /// bitcode file rather than an object, so that the final link still
@@ -1255,72 +1448,111 @@ fn lto_object_path(path: &Path) -> PathBuf {
     PathBuf::from(path)
 }
 
-/// The tentative definitions (common symbols) no definition replaced,
-/// in the order the objects' symbol tables first declare them.
-fn common_symbols_in_order<E: Target>(ctx: &Context<E>) -> Vec<SymbolId> {
-    let mut seen = hashbrown::HashSet::new();
-    let mut out = Vec::new();
-    for obj in ctx.objs.iter().filter(|obj| obj.is_alive) {
-        let r = obj.global_range();
-        for (nlist, &id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
-            let sym = &ctx.symbols[id];
-            if nlist.is_common() && sym.is_common() && !sym.is_defined() && seen.insert(id) {
-                out.push(id);
-            }
+/// Hides the subsections of archive members that resolution left
+/// dead, so nothing of theirs reaches the output.
+pub fn remove_unreachable_files<E: Target>(ctx: &mut Context<E>) {
+    for isec in ctx.isecs.iter_mut() {
+        if !ctx.objs[isec.file as usize].is_alive {
+            isec.set_alive(false);
         }
     }
-    out
+
+    // Unwind records and FDEs of dead files go too, remapping the
+    // record-to-FDE links around the removals.
+    let mut fde_map = vec![usize::MAX; ctx.fdes.len()];
+    let mut kept_fdes = Vec::new();
+    let fdes = std::mem::take(&mut ctx.fdes);
+    for (i, fde) in fdes.into_iter().enumerate() {
+        if ctx.isecs[fde.isec].is_alive() {
+            fde_map[i] = kept_fdes.len();
+            kept_fdes.push(fde);
+        }
+    }
+    ctx.fdes = kept_fdes;
+    let isecs = &ctx.isecs;
+    let map = &fde_map;
+    ctx.unwind_records.retain_mut(|rec| {
+        if !isecs[rec.isec as usize].is_alive() {
+            return false;
+        }
+        if rec.fde_idx != crate::input_files::UNWIND_NONE {
+            rec.fde_idx = map[rec.fde_idx as usize] as u32;
+        }
+        true
+    });
+    refresh_unwind_ranges(ctx);
 }
 
-/// Converts surviving tentative definitions (common symbols) into real
-/// definitions in a synthetic __DATA,__common zero-fill section.
-pub fn convert_common_symbols<E: Target>(ctx: &mut Context<E>) {
-    let internal = ctx.internal_obj.expect("internal object not created yet") as u32;
-    for i in common_symbols_in_order(ctx) {
-        let sym = &ctx.symbols[i];
-        let size = sym.value;
-        // An alignment the object gave (.comm's third operand) is kept;
-        // without one, ld64 aligns the symbol to its size rounded up to
-        // a power of two, at most -max_default_common_align's (a
-        // 100000-byte array asks for 32KB by default, which the page
-        // then caps with a warning).
-        let p2align = if sym.common_p2align != 0 || size == 0 {
-            sym.common_p2align
-        } else {
-            (size.next_power_of_two().trailing_zeros() as u8).min(ctx.args.max_default_common_align)
-        };
+/// Rebuilds each subsection's compact-unwind record range after the
+/// records vector was compacted; the records stay grouped by
+/// subsection, so one walk over runs restores every range.
+pub fn refresh_unwind_ranges<E: Target>(ctx: &mut Context<E>) {
+    let mut i = 0;
+    while i < ctx.unwind_records.len() {
+        let isec = ctx.unwind_records[i].isec;
+        let start = i;
+        while i < ctx.unwind_records.len() && ctx.unwind_records[i].isec == isec {
+            i += 1;
+        }
+        ctx.isecs[isec as usize].unwind_offset = start as u32;
+        ctx.isecs[isec as usize].nunwind = (i - start) as u32;
+    }
+}
 
-        let (file, shndx) = ctx.add_synthetic_section(MachSection {
-            sectname: bytes_to_name(b"__common"),
-            segname: bytes_to_name(b"__DATA"),
-            size,
-            p2align: p2align as u32,
-            flags: S_ZEROFILL,
-            ..Default::default()
-        });
-        ctx.isecs.push(InputSection {
-            file,
-            shndx,
-            p2align,
-            input_addr: 0,
-            size: size as u32,
-            contents: 0,
-            rel_offset: 0,
-            nrels: 0,
-            output_section: u32::MAX,
-            offset: 0,
-            flags: InputSection::flags_alive(),
-            replacement: crate::input_sections::NO_REPLACEMENT,
-            unwind_offset: 0,
-            nunwind: 0,
-        });
+/// Whether -remove_swift_reflection_metadata_sections drops an input
+/// section: Swift's field descriptors, associated type records and the
+/// names they give (but not the type references), in any segment.
+pub(crate) fn is_swift_reflection_section(hdr: &MachSection) -> bool {
+    matches!(hdr.sectname(), b"__swift5_fieldmd" | b"__swift5_assocty" | b"__swift5_reflstr")
+}
 
-        let sym = &mut ctx.symbols[i];
-        sym.set_file(FileId::Obj(internal));
-        sym.set_input_section(Some((ctx.isecs.len() - 1) as u32));
-        sym.value = 0;
-        sym.set_is_common(false);
-        sym.set_is_extern(true);
+/// -remove_swift_reflection_metadata_sections: drops the Swift
+/// reflection metadata from a final image and a -r output alike, as
+/// ld-prime drops its subsections as it reads them, before anything can
+/// keep them alive. What still refers to them is an error (see
+/// check_removed_swift_metadata_refs).
+pub fn remove_swift_reflection_metadata<E: Target>(ctx: &mut Context<E>) {
+    if !ctx.args.remove_swift_reflection_metadata_sections {
+        return;
+    }
+    let removed: Vec<usize> = (0..ctx.isecs.len())
+        .filter(|&i| is_swift_reflection_section(ctx.hdr_of(&ctx.isecs[i])))
+        .collect();
+    for i in removed {
+        ctx.isecs[i].set_alive(false);
+    }
+}
+
+/// Reports each live reference to the Swift reflection metadata that
+/// -remove_swift_reflection_metadata_sections dropped - such as a type
+/// descriptor's to its field descriptor, which every Swift type has -
+/// whose target so has no address. (ld-prime fails a final link at the
+/// first by address as it writes it, and crashes on a pointer or in a
+/// -r link.)
+pub fn check_removed_swift_metadata_refs<E: Target>(ctx: &Context<E>) {
+    if !ctx.args.remove_swift_reflection_metadata_sections {
+        return;
+    }
+    let removed = |isec: usize| {
+        let isec = &ctx.isecs[ctx.resolve_isec(isec)];
+        !isec.is_alive() && is_swift_reflection_section(ctx.hdr_of(isec))
+    };
+    let live = |isec: &InputSection| {
+        isec.is_alive() && isec.replacement == crate::input_sections::NO_REPLACEMENT
+    };
+    for (i, isec) in ctx.isecs.iter().enumerate().filter(|(_, isec)| live(isec)) {
+        for rel in ctx.isec_relocs(i) {
+            let file = isec.file as usize;
+            let target = match ctx.reloc_target_sym(file, rel) {
+                Some(id) => ctx.symbols[id].input_section().map(|t| t as usize),
+                None => ctx.reloc_target_isec(file, rel),
+            };
+            if target.is_some_and(removed) {
+                let target = ctx.reloc_target_name(file, rel);
+                let msg = format_args!("target '{}' does not have address", raw(&target));
+                ctx.fixup_error(i, rel.offset, msg);
+            }
+        }
     }
 }
 
@@ -1463,304 +1695,72 @@ fn initializers<E: Target>(ctx: &Context<E>) -> Vec<(&[u8], error::Raw<'_>)> {
     vec
 }
 
-/// The objects check_input_versions has checked, and the Objective-C
-/// image info flags they merge to (see check_objc_flags).
-#[derive(Default)]
-pub struct CheckedInputs {
-    objs: Vec<bool>,
-    objc: Option<u32>,
-}
-
-/// Warns if a dylib with install name `install_name` was built for an
-/// OS version, `built_for`, newer than the link's.
-fn warn_newer_dylib<E: Target>(ctx: &Context<E>, install_name: &[u8], built_for: u32) {
-    let minos = ctx.args.platform_minos;
-    if minos != 0 && built_for > minos {
-        crate::warn!(
-            "building for {}-{}, but linking with dylib '{}' which was built for newer version {}",
-            platform_name(ctx.args.platform),
-            format_version(minos),
-            raw(install_name),
-            format_version(built_for)
-        );
-    }
-}
-
-/// Checks the deployment target and the Objective-C image info of each
-/// live object `checked` doesn't cover yet. Unused archive members must
-/// not cause errors or warnings. The driver calls this before LTO, so
-/// that bitcode built for another platform stops the link before it is
-/// compiled, and again for the objects LTO made or pulled in.
-pub fn check_input_versions<E: Target>(ctx: &Context<E>, checked: &mut CheckedInputs) {
-    checked.objs.resize(ctx.objs.len(), false);
-    for (i, obj) in ctx.objs.iter().enumerate() {
-        // The hook for the classes of mergeable libraries is the
-        // linker's, for any macOS.
-        if !obj.is_alive || checked.objs[i] || ctx.is_bundle_hook(i) {
-            continue;
-        }
-        checked.objs[i] = true;
-        // A -r or -preload output for no platform takes any object.
-        if ctx.args.platform != 0 {
-            check_object_version(ctx, i);
-        }
-        if let Some(flags) = obj.objc_image_info {
-            checked.objc = Some(check_objc_flags(ctx, checked.objc, flags, obj.mf));
-        }
-    }
-}
-
-/// Warns of each dylib the link names that was built for a newer OS
-/// version than the link's, but not one only re-exported, nor one of
-/// the SDK, built for newer OS versions as a matter of course. (A
-/// dylib built for another platform is refused as it is read; see
-/// input_files::check_dylib_platforms.)
-pub fn warn_newer_dylibs<E: Target>(ctx: &Context<E>) {
-    for dylib in ctx.dylibs.iter().filter(|d| !d.is_implicit && !d.in_sdk) {
-        warn_newer_dylib(ctx, &dylib.install_name, dylib.minos);
-    }
-}
-
-/// Checks the deployment target of object `i` (see
-/// check_input_versions).
-fn check_object_version<E: Target>(ctx: &Context<E>, i: usize) {
-    let obj = &ctx.objs[i];
-    let (platform, minos) = (ctx.args.platform, ctx.args.platform_minos);
-    // An object may declare more than one platform; use the deployment
-    // target for the platform being linked. ld-prime takes one with no
-    // version command (an old one, or one assembled for no OS) for
-    // macOS, with a warning in a macOS link. The object the linker
-    // synthesizes has none either.
-    let Some(first) = obj.platform_versions.first() else {
-        if platform == crate::macho::PLATFORM_MACOS && !ctx.is_internal(i) {
-            crate::warn!(
-                "no platform load command found in '{}', assuming: macOS",
-                obj.mf.name.raw()
-            );
-        }
-        return;
-    };
-    let Some(version) = obj.platform_versions.iter().find(|v| v.platform == platform) else {
-        // Firmware takes code built for any platform.
-        if platform == crate::macho::PLATFORM_FIRMWARE {
-            return;
-        }
-        fatal!(
-            "building for '{}', but linking in object file ({}) built for '{}'",
-            platform_name(platform),
-            obj.mf.name.raw(),
-            platform_name(first.platform)
-        );
-    };
-
-    // A merged mergeable dylib is a dylib to this check.
-    let merged = ctx.merged_libraries.iter().find(|lib| std::ptr::eq(lib.obj, obj.mf));
-    if let Some(lib) = merged {
-        warn_newer_dylib(ctx, &lib.install_name, lib.minos);
-        return;
-    }
-
-    // The SDK version used to compile an input does not constrain its
-    // use. -deployment_target_mismatches error makes the first object
-    // for a newer OS fail the link, and suppress keeps quiet.
-    if minos != 0 && version.minos > minos {
-        let msg = format_args!(
-            "object file ({}) was built for newer '{}' version ({}) than being linked ({})",
-            obj.mf.name.raw(),
-            platform_name(version.platform),
-            format_version(version.minos),
-            format_version(minos)
-        );
-        match ctx.args.deployment_target_mismatches {
-            Treatment::Warning => crate::warn!("{msg}"),
-            Treatment::Error => fatal!("{msg}"),
-            Treatment::Suppress => {}
-        }
-    }
-}
-
-/// __objc_imageinfo's flag of an image whose categories may have class
-/// properties: every object's record has it, or the image's has not.
-const OBJC_HAS_CATEGORY_CLASS_PROPERTIES: u32 = 0x40;
-
-/// Merges the Objective-C image info `flags` of an object into those
-/// of the objects checked before it, `merged`, with ld-prime's
-/// diagnostics. The first Swift ABI version stays: another one
-/// fails the link (or with $LD_WARN_ON_SWIFT_ABI_VERSION_MISMATCHES
-/// draws a warning). And an object that has category class properties
-/// where those before don't, or lacks them where those before have
-/// them, draws a warning - each one that differs from the merged flags,
-/// which lose the bit at the first.
-fn check_objc_flags<E: Target>(
-    ctx: &Context<E>,
-    merged: Option<u32>,
-    flags: u32,
-    mf: &MappedFile,
-) -> u32 {
-    let Some(merged) = merged else { return flags };
-    let (first, abi) = ((merged >> 8) & 0xff, (flags >> 8) & 0xff);
-    if first != 0 && abi != 0 && abi != first {
-        let (first, file) = (swift_abi_name(first), mf.name.raw());
-        if ctx.args.warn_swift_abi_mismatches {
-            crate::warn!(
-                "{file} compiled with a different Swift ABI version ({}), than previous files \
-                 ({first})",
-                swift_abi_name(abi)
-            );
-        } else {
-            fatal!(
-                "not all .o files built with the same Swift ABI version. Started with ({first}), \
-                 now found ({}) in {file}",
-                swift_abi_name(abi)
-            );
-        }
-    }
-    let cat = flags & OBJC_HAS_CATEGORY_CLASS_PROPERTIES;
-    if cat != merged & OBJC_HAS_CATEGORY_CLASS_PROPERTIES {
-        crate::warn!(
-            "mixed ObjC ABI, {} compiled {} category class properties",
-            mf.name.raw(),
-            if cat != 0 { "with" } else { "without" }
-        );
-    }
-    merge_objc_flags(merged, flags)
-}
-
-/// The Objective-C image info flags of objects whose flags so far are
-/// `merged`, and of an object with `flags`, as ld-prime merges them:
-/// the first Swift ABI version given stays, the Swift language version
-/// is the oldest given, and the image's categories may have class
-/// properties if every object's may.
-pub(crate) fn merge_objc_flags(merged: u32, flags: u32) -> u32 {
-    let abi = if merged & 0xff00 != 0 { merged & 0xff00 } else { flags & 0xff00 };
-    let lang = match (merged >> 16, flags >> 16) {
-        (0, lang) | (lang, 0) => lang,
-        (a, b) => a.min(b),
-    };
-    (lang << 16) | abi | (merged & flags & OBJC_HAS_CATEGORY_CLASS_PROPERTIES)
-}
-
-/// A Swift ABI version, the byte of __objc_imageinfo's flags that holds
-/// it, as ld-prime names it.
-fn swift_abi_name(v: u32) -> String {
-    let name = match v {
-        1 => "1.0",
-        2 => "1.1",
-        3 => "2.0",
-        4 => "3.0",
-        5 => "4.0",
-        6 => "4.1/4.2",
-        7 => "5 or later",
-        _ => return format!("unknown ABI version 0x{v:02X}"),
-    };
-    name.to_string()
-}
-
-/// Whether -remove_swift_reflection_metadata_sections drops an input
-/// section: Swift's field descriptors, associated type records and the
-/// names they give (but not the type references), in any segment.
-pub(crate) fn is_swift_reflection_section(hdr: &MachSection) -> bool {
-    matches!(hdr.sectname(), b"__swift5_fieldmd" | b"__swift5_assocty" | b"__swift5_reflstr")
-}
-
-/// -remove_swift_reflection_metadata_sections: drops the Swift
-/// reflection metadata from a final image and a -r output alike, as
-/// ld-prime drops its subsections as it reads them, before anything can
-/// keep them alive. What still refers to them is an error (see
-/// check_removed_swift_metadata_refs).
-pub fn remove_swift_reflection_metadata<E: Target>(ctx: &mut Context<E>) {
-    if !ctx.args.remove_swift_reflection_metadata_sections {
-        return;
-    }
-    let removed: Vec<usize> = (0..ctx.isecs.len())
-        .filter(|&i| is_swift_reflection_section(ctx.hdr_of(&ctx.isecs[i])))
-        .collect();
-    for i in removed {
-        ctx.isecs[i].set_alive(false);
-    }
-}
-
-/// Reports each live reference to the Swift reflection metadata that
-/// -remove_swift_reflection_metadata_sections dropped - such as a type
-/// descriptor's to its field descriptor, which every Swift type has -
-/// whose target so has no address. (ld-prime fails a final link at the
-/// first by address as it writes it, and crashes on a pointer or in a
-/// -r link.)
-pub fn check_removed_swift_metadata_refs<E: Target>(ctx: &Context<E>) {
-    if !ctx.args.remove_swift_reflection_metadata_sections {
-        return;
-    }
-    let removed = |isec: usize| {
-        let isec = &ctx.isecs[ctx.resolve_isec(isec)];
-        !isec.is_alive() && is_swift_reflection_section(ctx.hdr_of(isec))
-    };
-    let live = |isec: &InputSection| {
-        isec.is_alive() && isec.replacement == crate::input_sections::NO_REPLACEMENT
-    };
-    for (i, isec) in ctx.isecs.iter().enumerate().filter(|(_, isec)| live(isec)) {
-        for rel in ctx.isec_relocs(i) {
-            let file = isec.file as usize;
-            let target = match ctx.reloc_target_sym(file, rel) {
-                Some(id) => ctx.symbols[id].input_section().map(|t| t as usize),
-                None => ctx.reloc_target_isec(file, rel),
-            };
-            if target.is_some_and(removed) {
-                let target = ctx.reloc_target_name(file, rel);
-                let msg = format_args!("target '{}' does not have address", raw(&target));
-                ctx.fixup_error(i, rel.offset, msg);
+/// The tentative definitions (common symbols) no definition replaced,
+/// in the order the objects' symbol tables first declare them.
+fn common_symbols_in_order<E: Target>(ctx: &Context<E>) -> Vec<SymbolId> {
+    let mut seen = hashbrown::HashSet::new();
+    let mut out = Vec::new();
+    for obj in ctx.objs.iter().filter(|obj| obj.is_alive) {
+        let r = obj.global_range();
+        for (nlist, &id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
+            let sym = &ctx.symbols[id];
+            if nlist.is_common() && sym.is_common() && !sym.is_defined() && seen.insert(id) {
+                out.push(id);
             }
         }
     }
+    out
 }
 
-/// Hides the subsections of archive members that resolution left
-/// dead, so nothing of theirs reaches the output.
-pub fn remove_unreachable_files<E: Target>(ctx: &mut Context<E>) {
-    for isec in ctx.isecs.iter_mut() {
-        if !ctx.objs[isec.file as usize].is_alive {
-            isec.set_alive(false);
-        }
-    }
+/// Converts surviving tentative definitions (common symbols) into real
+/// definitions in a synthetic __DATA,__common zero-fill section.
+pub fn convert_common_symbols<E: Target>(ctx: &mut Context<E>) {
+    let internal = ctx.internal_obj.expect("internal object not created yet") as u32;
+    for i in common_symbols_in_order(ctx) {
+        let sym = &ctx.symbols[i];
+        let size = sym.value;
+        // An alignment the object gave (.comm's third operand) is kept;
+        // without one, ld64 aligns the symbol to its size rounded up to
+        // a power of two, at most -max_default_common_align's (a
+        // 100000-byte array asks for 32KB by default, which the page
+        // then caps with a warning).
+        let p2align = if sym.common_p2align != 0 || size == 0 {
+            sym.common_p2align
+        } else {
+            (size.next_power_of_two().trailing_zeros() as u8).min(ctx.args.max_default_common_align)
+        };
 
-    // Unwind records and FDEs of dead files go too, remapping the
-    // record-to-FDE links around the removals.
-    let mut fde_map = vec![usize::MAX; ctx.fdes.len()];
-    let mut kept_fdes = Vec::new();
-    let fdes = std::mem::take(&mut ctx.fdes);
-    for (i, fde) in fdes.into_iter().enumerate() {
-        if ctx.isecs[fde.isec].is_alive() {
-            fde_map[i] = kept_fdes.len();
-            kept_fdes.push(fde);
-        }
-    }
-    ctx.fdes = kept_fdes;
-    let isecs = &ctx.isecs;
-    let map = &fde_map;
-    ctx.unwind_records.retain_mut(|rec| {
-        if !isecs[rec.isec as usize].is_alive() {
-            return false;
-        }
-        if rec.fde_idx != crate::input_files::UNWIND_NONE {
-            rec.fde_idx = map[rec.fde_idx as usize] as u32;
-        }
-        true
-    });
-    refresh_unwind_ranges(ctx);
-}
+        let (file, shndx) = ctx.add_synthetic_section(MachSection {
+            sectname: bytes_to_name(b"__common"),
+            segname: bytes_to_name(b"__DATA"),
+            size,
+            p2align: p2align as u32,
+            flags: S_ZEROFILL,
+            ..Default::default()
+        });
+        ctx.isecs.push(InputSection {
+            file,
+            shndx,
+            p2align,
+            input_addr: 0,
+            size: size as u32,
+            contents: 0,
+            rel_offset: 0,
+            nrels: 0,
+            output_section: u32::MAX,
+            offset: 0,
+            flags: InputSection::flags_alive(),
+            replacement: crate::input_sections::NO_REPLACEMENT,
+            unwind_offset: 0,
+            nunwind: 0,
+        });
 
-/// Rebuilds each subsection's compact-unwind record range after the
-/// records vector was compacted; the records stay grouped by
-/// subsection, so one walk over runs restores every range.
-pub fn refresh_unwind_ranges<E: Target>(ctx: &mut Context<E>) {
-    let mut i = 0;
-    while i < ctx.unwind_records.len() {
-        let isec = ctx.unwind_records[i].isec;
-        let start = i;
-        while i < ctx.unwind_records.len() && ctx.unwind_records[i].isec == isec {
-            i += 1;
-        }
-        ctx.isecs[isec as usize].unwind_offset = start as u32;
-        ctx.isecs[isec as usize].nunwind = (i - start) as u32;
+        let sym = &mut ctx.symbols[i];
+        sym.set_file(FileId::Obj(internal));
+        sym.set_input_section(Some((ctx.isecs.len() - 1) as u32));
+        sym.value = 0;
+        sym.set_is_common(false);
+        sym.set_is_extern(true);
     }
 }
 
