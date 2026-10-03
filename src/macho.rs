@@ -382,10 +382,6 @@ impl NList {
         self.n_type & N_TYPE
     }
 
-    pub fn is_undef(&self) -> bool {
-        !self.is_stab() && self.n_type() == N_UNDF && self.is_extern()
-    }
-
     pub fn is_common(&self) -> bool {
         !self.is_stab() && self.n_type() == N_UNDF && self.is_extern() && self.n_value != 0
     }
