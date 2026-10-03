@@ -7,7 +7,7 @@ use rayon::prelude::*;
 
 use crate::chunks::init_offsets::InitFunc;
 use crate::chunks::{self, ChunkHeader, ChunkId, OutputSegment, mach_header_size};
-use crate::cmdline::Treatment;
+use crate::cmdline::{Args, Treatment};
 use crate::context::Context;
 use crate::error;
 use crate::error::RawPath;
@@ -20,7 +20,7 @@ use crate::macho::*;
 use crate::mapped_file::MappedFile;
 use crate::objc::{DataBlob, DataField};
 use crate::output_sections::header_segment;
-use crate::symbol::{NO_IDX, SymbolId};
+use crate::symbol::{NO_IDX, Symbol, SymbolId};
 use crate::target::RelocClass;
 use crate::target::Target;
 use crate::util::{align_to, path_bytes, split_once};
@@ -190,37 +190,38 @@ pub fn create_internal_file<E: Target>(ctx: &mut Context<E>) {
 pub fn resolve_symbols<E: Target>(ctx: &mut Context<E>) {
     intern_command_line_symbols(ctx);
     loop {
-        clear_claims(ctx);
-        let tentative = do_resolve(ctx, false);
+        clear_symbols(ctx);
+        let tentative = resolve_symbols_pass(ctx, false);
         if !mark_live_objects(ctx, &tentative) {
             break;
         }
     }
-    clear_claims(ctx);
-    do_resolve(ctx, true);
+    clear_symbols(ctx);
+    resolve_symbols_pass(ctx, true);
     claim_locals(ctx);
 }
 
-/// Symbols the command line names (-e, -u) exist even when no object
-/// mentions them, so that a dylib export can claim them: an app
-/// extension's entry point, _NSExtensionMain, lives in Foundation and
-/// nothing in the extension references it.
+/// The symbols the command line names, which count as referenced: the
+/// -u ones, the entry point of an image that has one (not of a -r
+/// output, whose output type is still the executable default: it would
+/// carry a spurious undefined _main), and the -alias bases (Xcode
+/// aliases an app extension's debug dylib entry point to Foundation's
+/// _NSExtensionMain).
+fn command_line_symbols(args: &Args) -> impl Iterator<Item = &[u8]> {
+    let entry = args.has_entry_point().then_some(args.entry.as_slice());
+    let aliased = args.aliases.iter().map(|(existing, _)| existing.as_slice());
+    args.forced_undefined.iter().map(Vec::as_slice).chain(entry).chain(aliased)
+}
+
+/// Symbols the command line names exist even when no object mentions
+/// them, so that a dylib export can claim them: an app extension's
+/// entry point, _NSExtensionMain, lives in Foundation and nothing in the
+/// extension references it. So do the runtime routines LTO may come to
+/// call, so that a library can provide them.
 fn intern_command_line_symbols<E: Target>(ctx: &mut Context<E>) {
-    let mut named: Vec<&[u8]> = ctx.args.forced_undefined.iter().map(Vec::as_slice).collect();
-    // Not for -r, whose output type is still the executable default: the
-    // relocatable output would carry a spurious undefined _main.
-    if ctx.args.has_entry_point() {
-        named.push(ctx.args.entry.as_slice());
-    }
-    // -alias bases too: Xcode aliases an app extension's debug dylib
-    // entry point to Foundation's _NSExtensionMain.
-    named.extend(ctx.args.aliases.iter().map(|(existing, _)| existing.as_slice()));
-    // So are the runtime routines LTO may come to call, so that a
-    // library can provide them.
-    if may_softload_runtime_routines(ctx) {
-        named.extend(LTO_RUNTIME_ROUTINES);
-    }
-    let new: Vec<&'static [u8]> = (named.into_iter())
+    let softloaded = may_softload_runtime_routines(ctx).then_some(LTO_RUNTIME_ROUTINES);
+    let new: Vec<&'static [u8]> = command_line_symbols(&ctx.args)
+        .chain(softloaded.into_iter().flatten())
         .filter(|name| ctx.symbols.get(name).is_none())
         .map(|name| crate::util::leak_bytes(name.to_vec()))
         .collect();
@@ -270,10 +271,7 @@ fn claim_locals<E: Target>(ctx: &mut Context<E>) {
     // A local symbol belongs to exactly one object (locals get fresh
     // slots, never interned), so the per-object claims write disjoint
     // symbols and the objects proceed in parallel.
-    struct SlotPtr(*mut crate::symbol::Symbol);
-    unsafe impl Sync for SlotPtr {}
-    let ptr = SlotPtr(ctx.symbols.syms.as_mut_ptr());
-    let ptr = &ptr;
+    let syms = SymbolSlots::new(&mut ctx.symbols.syms);
     let isecs = &ctx.isecs;
     ctx.objs.par_iter().enumerate().for_each(|(obj_idx, obj)| {
         for i in obj.local_range() {
@@ -282,21 +280,24 @@ fn claim_locals<E: Target>(ctx: &mut Context<E>) {
                 continue;
             }
             // SAFETY: disjoint per object, as above.
-            let sym = unsafe { &mut *ptr.0.add(obj.symbols[i] as usize) };
+            let sym = unsafe { syms.get(obj.symbols[i]) };
+            let file = FileId::Obj(obj_idx as u32);
             match nlist.n_type() {
                 N_ABS => {
-                    sym.set_file(FileId::Obj((obj_idx) as u32));
+                    sym.set_file(file);
                     sym.set_input_section(None);
                     sym.value = nlist.n_value;
                 }
                 N_SECT => {
-                    if let Some((isec, off)) = crate::input_files::find_symbol_subsec(
+                    let subsecs = &obj.subsecs;
+                    let found = input_files::find_symbol_subsec(
                         isecs,
-                        &obj.subsecs,
+                        subsecs,
                         nlist.n_sect,
                         nlist.n_value,
-                    ) {
-                        sym.set_file(FileId::Obj((obj_idx) as u32));
+                    );
+                    if let Some((isec, off)) = found {
+                        sym.set_file(file);
                         sym.set_input_section(Some(isec as u32));
                         sym.value = off;
                         sym.set_no_dead_strip(
@@ -311,7 +312,35 @@ fn claim_locals<E: Target>(ctx: &mut Context<E>) {
     });
 }
 
-fn clear_claims<E: Target>(ctx: &mut Context<E>) {
+/// The symbol table's slots, for a parallel loop that writes each symbol
+/// from one thread at most.
+struct SymbolSlots<'a> {
+    ptr: *mut Symbol,
+    _marker: std::marker::PhantomData<&'a mut [Symbol]>,
+}
+
+unsafe impl Sync for SymbolSlots<'_> {}
+
+impl<'a> SymbolSlots<'a> {
+    fn new(syms: &'a mut [Symbol]) -> Self {
+        Self { ptr: syms.as_mut_ptr(), _marker: std::marker::PhantomData }
+    }
+
+    /// Symbol `id`.
+    ///
+    /// # Safety
+    ///
+    /// No other thread may access the symbol while the result lives.
+    #[allow(clippy::mut_from_ref)]
+    unsafe fn get(&self, id: SymbolId) -> &mut Symbol {
+        // SAFETY: the caller has the symbol to itself.
+        unsafe { &mut *self.ptr.add(id as usize) }
+    }
+}
+
+/// Resets the resolution of every symbol a file claimed, and of every
+/// common one, for a resolution round to start over.
+fn clear_symbols<E: Target>(ctx: &mut Context<E>) {
     ctx.symbols.syms.par_iter_mut().for_each(|sym| {
         if matches!(sym.file(), Some(FileId::Obj(_)) | Some(FileId::Dylib(_))) || sym.is_common() {
             sym.clear_file();
@@ -330,12 +359,11 @@ fn clear_claims<E: Target>(ctx: &mut Context<E>) {
 }
 
 /// One resolution round over the objects - all of them, or with
-/// `only_alive` just the live ones - like mold's resolve_symbols_pass:
-/// definitions race for each symbol by rank and the winners claim it,
-/// common symbols merge, and dylib exports claim what the objects
-/// leave undefined. Returns the symbols a live object has a tentative
-/// definition of.
-fn do_resolve<E: Target>(ctx: &mut Context<E>, only_alive: bool) -> Tentative {
+/// `only_alive` just the live ones: definitions race for each symbol by
+/// rank and the winners claim it, common symbols merge, and dylib
+/// exports claim what the objects leave undefined. Returns the symbols
+/// a live object has a tentative definition of.
+fn resolve_symbols_pass<E: Target>(ctx: &mut Context<E>, only_alive: bool) -> Tentative {
     use std::sync::atomic::Ordering;
 
     let refs = collect_references(ctx, only_alive);
@@ -415,13 +443,7 @@ fn collect_references<E: Target>(ctx: &Context<E>, only_alive: bool) -> Referenc
         }
     });
 
-    let named = ctx
-        .args
-        .forced_undefined
-        .iter()
-        .chain(ctx.args.has_entry_point().then_some(&ctx.args.entry))
-        .chain(ctx.args.aliases.iter().map(|(existing, _)| existing));
-    for name in named {
+    for name in command_line_symbols(&ctx.args) {
         if let Some(id) = ctx.symbols.get(name) {
             refs.used[id as usize].store(true, Ordering::Relaxed);
         }
@@ -561,90 +583,87 @@ fn claim_definitions<E: Target>(
     tentative: &Tentative,
 ) {
     use std::sync::atomic::Ordering;
-    struct SymsPtr(*mut crate::symbol::Symbol);
-    unsafe impl Sync for SymsPtr {}
-    let syms_ptr = SymsPtr(ctx.symbols.syms.as_mut_ptr());
-    let syms_ptr = &syms_ptr;
+    let syms = SymbolSlots::new(&mut ctx.symbols.syms);
     let isecs = &ctx.isecs;
     let autolink_priority = ctx.autolink_priority;
-
-    ctx.objs.par_iter().enumerate().filter(|(_, obj)| !only_alive || obj.is_alive).for_each(
-        |(obj_idx, obj)| {
-            let r = obj.global_range();
-            for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
-                let tentative = overrides_tentative(obj, sym_id, tentative);
-                let rank = definition_rank(isecs, obj, nlist, tentative, autolink_priority);
-                let Some(rank) = rank else {
-                    continue;
-                };
-                let won = best[sym_id as usize].load(Ordering::Relaxed);
-                if won != rank {
-                    continue;
-                }
-                // SAFETY: this object holds the unique minimum rank
-                // for sym_id, so no other thread writes this slot.
-                let sym = unsafe { &mut *syms_ptr.0.add(sym_id as usize) };
-                sym.set_is_extern(true);
-                sym.set_is_imported(false);
-                sym.set_is_common(false);
-                sym.set_is_weak_def(nlist.n_desc & N_WEAK_DEF != 0);
-                sym.set_is_private_extern(nlist.n_type & N_PEXT != 0 || obj.hidden);
-                sym.set_no_dead_strip(
-                    nlist.n_desc & (N_NO_DEAD_STRIP | REFERENCED_DYNAMICALLY) != 0,
-                );
-                sym.set_is_referenced_dynamically(
-                    nlist.n_type() == N_SECT
-                        && nlist.n_desc & (REFERENCED_DYNAMICALLY | N_WEAK_DEF)
-                            == REFERENCED_DYNAMICALLY,
-                );
-                sym.set_is_alt_entry(nlist.n_desc & N_ALT_ENTRY != 0);
-
-                match nlist.n_type() {
-                    N_ABS => {
-                        sym.set_file(FileId::Obj((obj_idx) as u32));
-                        sym.set_input_section(None);
-                        sym.value = nlist.n_value;
-                    }
-                    N_SECT => {
-                        sym.set_file(FileId::Obj((obj_idx) as u32));
-                        match crate::input_files::find_symbol_subsec(
-                            isecs,
-                            &obj.subsecs,
-                            nlist.n_sect,
-                            nlist.n_value,
-                        ) {
-                            Some((isec, off)) => {
-                                sym.set_input_section(Some(isec as u32));
-                                sym.value = off;
-                            }
-                            None => {
-                                // A symbol in a discarded (debug)
-                                // section resolves as if undefined.
-                                sym.clear_file();
-                                best[sym_id as usize].store(u64::MAX, Ordering::Relaxed);
-                            }
-                        }
-                    }
-                    N_UNDF if !obj.is_alive => {
-                        // A lazy member's tentative definition claims
-                        // the symbol for the member, for the liveness
-                        // walk to load it.
-                        sym.set_file(FileId::Obj((obj_idx) as u32));
-                        sym.set_input_section(None);
-                        sym.value = 0;
-                    }
-                    N_UNDF => {
-                        // A common symbol takes a tentative claim.
-                        sym.clear_file();
-                        sym.set_is_common(true);
-                        sym.value = nlist.n_value;
-                        sym.common_p2align = ((nlist.n_desc >> 8) & 0xf) as u8;
-                    }
-                    _ => unreachable!(),
-                }
+    let objs = ctx.objs.par_iter().enumerate().filter(|(_, obj)| !only_alive || obj.is_alive);
+    objs.for_each(|(obj_idx, obj)| {
+        let r = obj.global_range();
+        for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
+            let tentative = overrides_tentative(obj, sym_id, tentative);
+            let rank = definition_rank(isecs, obj, nlist, tentative, autolink_priority);
+            let Some(rank) = rank else { continue };
+            if best[sym_id as usize].load(Ordering::Relaxed) != rank {
+                continue;
             }
-        },
+            // SAFETY: this object holds the unique minimum rank for
+            // sym_id, so no other thread writes this slot.
+            let sym = unsafe { syms.get(sym_id) };
+            if !claim_definition(sym, obj_idx, obj, nlist, isecs) {
+                best[sym_id as usize].store(u64::MAX, Ordering::Relaxed);
+            }
+        }
+    });
+}
+
+/// Makes `sym` what `nlist` of object `obj_idx`, the definition that
+/// won the race for it, defines. Returns false for a symbol in a section
+/// that was discarded (debug info), which resolves as if undefined.
+fn claim_definition(
+    sym: &mut Symbol,
+    obj_idx: usize,
+    obj: &input_files::ObjectFile,
+    nlist: &NList,
+    isecs: &[InputSection],
+) -> bool {
+    sym.set_is_extern(true);
+    sym.set_is_imported(false);
+    sym.set_is_common(false);
+    sym.set_is_weak_def(nlist.n_desc & N_WEAK_DEF != 0);
+    sym.set_is_private_extern(nlist.n_type & N_PEXT != 0 || obj.hidden);
+    sym.set_no_dead_strip(nlist.n_desc & (N_NO_DEAD_STRIP | REFERENCED_DYNAMICALLY) != 0);
+    sym.set_is_referenced_dynamically(
+        nlist.n_type() == N_SECT
+            && nlist.n_desc & (REFERENCED_DYNAMICALLY | N_WEAK_DEF) == REFERENCED_DYNAMICALLY,
     );
+    sym.set_is_alt_entry(nlist.n_desc & N_ALT_ENTRY != 0);
+
+    let file = FileId::Obj(obj_idx as u32);
+    match nlist.n_type() {
+        N_ABS => {
+            sym.set_file(file);
+            sym.set_input_section(None);
+            sym.value = nlist.n_value;
+        }
+        N_SECT => {
+            let subsecs = &obj.subsecs;
+            let found =
+                input_files::find_symbol_subsec(isecs, subsecs, nlist.n_sect, nlist.n_value);
+            let Some((isec, off)) = found else {
+                sym.clear_file();
+                return false;
+            };
+            sym.set_file(file);
+            sym.set_input_section(Some(isec as u32));
+            sym.value = off;
+        }
+        // A lazy member's tentative definition claims the symbol for the
+        // member, for the liveness walk to load it.
+        N_UNDF if !obj.is_alive => {
+            sym.set_file(file);
+            sym.set_input_section(None);
+            sym.value = 0;
+        }
+        // A live common symbol takes a tentative claim.
+        N_UNDF => {
+            sym.clear_file();
+            sym.set_is_common(true);
+            sym.value = nlist.n_value;
+            sym.common_p2align = ((nlist.n_desc >> 8) & 0xf) as u8;
+        }
+        _ => unreachable!(),
+    }
+    true
 }
 
 /// The tentative definitions of live objects, in input order: (symbol,
@@ -978,9 +997,7 @@ fn lto_roots<E: Target>(ctx: &Context<E>) -> Vec<&[u8]> {
         if native_refs[i].load(Ordering::Relaxed)
             || flags[i].load(Ordering::Relaxed) & outside != 0
             || exported(i as SymbolId)
-            || (ctx.args.has_entry_point() && name == ctx.args.entry.as_slice())
-            || ctx.args.forced_undefined.iter().any(|n| n.as_slice() == name)
-            || ctx.args.aliases.iter().any(|(existing, _)| existing.as_slice() == name)
+            || command_line_symbols(&ctx.args).any(|named| named == name)
         {
             roots.push(name);
         }
