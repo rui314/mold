@@ -942,8 +942,9 @@ impl<'a, E: Target> Builder<'a, E> {
         }
     }
 
+    /// The entries of an object's compact unwind records, hidden and
+    /// anonymous.
     fn object_unwind_entries(&self, obj: &ObjectFile, sect: usize) -> Vec<OutEntry> {
-        let ctx = self.ctx;
         let hdr = &obj.sect_hdrs[sect];
         let data = obj.mf.data();
         let contents = &data[hdr.offset as usize..][..hdr.size as usize];
@@ -963,22 +964,9 @@ impl<'a, E: Target> Builder<'a, E> {
                 entry.fixups.push(OutFixup::new(r.offset - start, to, kind, addend));
             }
             // The record of a function not kept goes with it.
-            if !entry.fixups.iter().any(|f| f.offset == 0) {
-                continue;
+            if entry.fixups.iter().any(|f| f.offset == 0) {
+                out.push(entry);
             }
-            let addr = hdr.addr + start as u64;
-            let label = obj.nlists.iter().zip(&obj.symbols).find(|(n, _)| {
-                !n.is_stab()
-                    && n.n_type() == N_SECT
-                    && n.n_sect as usize == sect + 1
-                    && n.n_value == addr
-            });
-            if let Some((_, &id)) = label {
-                entry.name = Some(ctx.symbols[id].name());
-                entry.scope = 0;
-                entry.kind = kind::REGULAR;
-            }
-            out.push(entry);
         }
         out
     }
