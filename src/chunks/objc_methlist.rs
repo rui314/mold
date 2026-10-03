@@ -11,7 +11,9 @@ use crate::target::Target;
 #[derive(Debug)]
 pub struct ObjcMethlistSection {
     pub hdr: ChunkHeader,
-    /// The rewritten lists, each with its synthetic subsection here.
+    /// The rewritten lists, each with its synthetic subsection here, in
+    /// the order of their subsections (each list is added with the
+    /// subsection made for it).
     pub lists: Vec<ObjcMethList>,
 }
 

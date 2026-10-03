@@ -1081,6 +1081,10 @@ pub fn merge_objc_categories<E: Target>(ctx: &mut Context<E>) {
 
     rebuild_category_lists(ctx, &catlists, &cats);
 
+    // The rewritten method lists the merged ones superseded, dead now,
+    // leave __objc_methlist, in one pass rather than one per list.
+    ctx.objc_methlist.lists.retain(|l| ctx.isecs[l.isec as usize].is_alive());
+
     // Classes that absorbed a +load category become non-lazy.
     for cls in nonlazy_classes {
         add_data_blob(
@@ -1351,8 +1355,9 @@ fn read_method_list<E: Target>(
     if off != 0 {
         return None;
     }
-    if let Some(list) = ctx.objc_methlist.lists.iter().find(|l| l.isec == isec) {
-        return Some(list.methods.clone());
+    let lists = &ctx.objc_methlist.lists;
+    if let Ok(k) = lists.binary_search_by_key(&isec, |l| l.isec) {
+        return Some(lists[k].methods.clone());
     }
     if relative {
         return None;
@@ -1537,7 +1542,9 @@ fn add_property_list<E: Target>(ctx: &mut Context<E>, props: &[(ObjcRef, ObjcRef
 
 /// Drops the lists the merged ones supersede - the class's own of each
 /// kind merged, and all of the categories' - as ld64's output keeps
-/// only the merged lists (which carry the names).
+/// only the merged lists (which carry the names). A method list
+/// convert_objc_method_lists rewrote leaves __objc_methlist once every
+/// class has merged.
 fn drop_superseded_lists<E: Target>(
     ctx: &mut Context<E>,
     own: &ListRefs,
@@ -1545,10 +1552,10 @@ fn drop_superseded_lists<E: Target>(
     cats: &[ListRefs],
 ) {
     if merged.imethods.is_some() {
-        drop_method_list(ctx, own.imethods);
+        drop_list(ctx, own.imethods);
     }
     if merged.cmethods.is_some() {
-        drop_method_list(ctx, own.cmethods);
+        drop_list(ctx, own.cmethods);
     }
     // The metaclass points at the merged protocol list too.
     if merged.protocols.is_some() {
@@ -1562,8 +1569,8 @@ fn drop_superseded_lists<E: Target>(
         drop_list(ctx, own.cprops);
     }
     for c in cats {
-        drop_method_list(ctx, c.imethods);
-        drop_method_list(ctx, c.cmethods);
+        drop_list(ctx, c.imethods);
+        drop_list(ctx, c.cmethods);
         drop_list(ctx, c.protocols);
         drop_list(ctx, c.iprops);
         drop_list(ctx, c.cprops);
@@ -1572,15 +1579,6 @@ fn drop_superseded_lists<E: Target>(
 
 fn drop_list<E: Target>(ctx: &mut Context<E>, list: Option<ObjcRef>) {
     if let Some((isec, 0)) = list.and_then(|r| objc_ref_location(ctx, r)) {
-        ctx.isecs[isec as usize].set_alive(false);
-    }
-}
-
-/// Drops a method list, which __objc_methlist no longer writes either
-/// if it is one convert_objc_method_lists rewrote.
-fn drop_method_list<E: Target>(ctx: &mut Context<E>, list: Option<ObjcRef>) {
-    if let Some((isec, 0)) = list.and_then(|r| objc_ref_location(ctx, r)) {
-        ctx.objc_methlist.lists.retain(|l| l.isec != isec);
         ctx.isecs[isec as usize].set_alive(false);
     }
 }
