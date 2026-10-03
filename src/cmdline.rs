@@ -1152,16 +1152,16 @@ fn add_initial_undefines(undefs: &mut Vec<Vec<u8>>, entries: impl IntoIterator<I
     undefs.extend(entries.into_iter().filter_map(|entry| exact_name(entry.as_ref())));
 }
 
-/// Adds a symbol list's entries to `glob` with `value`: the names they
-/// spell (see exact_name), and the patterns - a malformed one, such as
-/// `_a[`, matching nothing, as ld-prime takes it without a word.
-fn add_patterns(glob: &mut GlobBuilder, entries: impl IntoIterator<Item: AsRef<[u8]>>, value: i64) {
+/// Adds a symbol list's entries to `glob`: the names they spell (see
+/// exact_name), and the patterns - a malformed one, such as `_a[`,
+/// matching nothing, as ld-prime takes it without a word.
+fn add_patterns(glob: &mut GlobBuilder, entries: impl IntoIterator<Item: AsRef<[u8]>>) {
     for entry in entries {
         let entry = entry.as_ref();
         match exact_name(entry) {
-            Some(name) => glob.add_literal(&name, value),
+            Some(name) => glob.add_literal(&name, 0),
             None => {
-                glob.add(entry, value);
+                glob.add(entry, 0);
             }
         }
     }
@@ -1184,7 +1184,9 @@ fn symbol_move(opt: &str, segment: &[u8], path: &Path) -> SymbolMove {
     for entry in read_symbol_list(opt, path) {
         match exact_name(&entry) {
             Some(name) => symbols.add_literal(&name, 1),
-            None => add_patterns(&mut symbols, [entry], 0),
+            None => {
+                symbols.add(&entry, 0);
+            }
         }
     }
     SymbolMove { segment: segment.to_vec(), symbols: symbols.build() }
@@ -1770,16 +1772,11 @@ fn read_alias_list(list: &Path, aliases: &mut Vec<(Vec<u8>, Vec<u8>)>) {
             Vec::new()
         }
     };
-    for line in lines(&contents) {
-        let line = line.split(|&c| c == b'#').next().unwrap_or_default();
-        let line = trim_space(line);
-        if line.is_empty() {
-            continue;
-        }
+    for line in symbol_list(&contents) {
         let mut it = line.split(|&c| is_space(c)).filter(|w| !w.is_empty());
         match (it.next(), it.next()) {
             (Some(existing), Some(new)) => aliases.push((existing.to_vec(), new.to_vec())),
-            _ => fatal!("malformed -alias_list line: {}", crate::error::raw(line)),
+            _ => fatal!("malformed -alias_list line: {}", raw(&line)),
         }
     }
 }
@@ -2063,21 +2060,21 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 check_export_choice(&mut st.export_choice, ExportChoice::Exported, name);
                 let pat = cur.next_arg(name).as_bytes();
                 add_initial_undefines(&mut args.forced_undefined, [pat]);
-                add_patterns(st.lists.exported_symbols.get_or_insert_default(), [pat], 0);
+                add_patterns(st.lists.exported_symbols.get_or_insert_default(), [pat]);
             }
             b"-exported_symbols_list" => {
                 check_export_choice(&mut st.export_choice, ExportChoice::Exported, name);
                 let names = cur.next_symbol_list(name);
                 add_initial_undefines(&mut args.forced_undefined, &names);
-                add_patterns(st.lists.exported_symbols.get_or_insert_default(), &names, 0);
+                add_patterns(st.lists.exported_symbols.get_or_insert_default(), &names);
             }
             b"-unexported_symbol" => {
                 check_export_choice(&mut st.export_choice, ExportChoice::Unexported, name);
-                add_patterns(&mut st.lists.unexported_symbols, [cur.next_arg(name).as_bytes()], 0)
+                add_patterns(&mut st.lists.unexported_symbols, [cur.next_arg(name).as_bytes()])
             }
             b"-unexported_symbols_list" => {
                 check_export_choice(&mut st.export_choice, ExportChoice::Unexported, name);
-                add_patterns(&mut st.lists.unexported_symbols, cur.next_symbol_list(name), 0);
+                add_patterns(&mut st.lists.unexported_symbols, cur.next_symbol_list(name));
             }
             b"-no_exported_symbols" => {
                 check_export_choice(&mut st.export_choice, ExportChoice::None, name);
@@ -2091,7 +2088,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 // wanted by ld-prime's "<initial-undefines>", as a -u
                 // name is. Patterns only match existing symbols.
                 add_initial_undefines(&mut args.forced_undefined, &names);
-                add_patterns(&mut st.lists.reexported_symbols, &names, 0);
+                add_patterns(&mut st.lists.reexported_symbols, &names);
             }
             b"-export_dynamic" => args.export_dynamic = true,
             b"-keep_private_externs" => args.keep_private_externs = true,
@@ -2106,11 +2103,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-x" => args.strip_locals = true,
             b"-S" => args.strip_debug = true,
             b"-non_global_symbols_strip_list" => {
-                add_patterns(&mut st.lists.local_strip_list, cur.next_symbol_list(name), 0);
+                add_patterns(&mut st.lists.local_strip_list, cur.next_symbol_list(name));
             }
             b"-non_global_symbols_no_strip_list" => {
                 let names = cur.next_symbol_list(name);
-                add_patterns(st.lists.local_keep_list.get_or_insert_default(), &names, 0);
+                add_patterns(st.lists.local_keep_list.get_or_insert_default(), &names);
             }
             b"-flat_namespace" => args.flat_namespace = true,
             b"-twolevel_namespace" => args.flat_namespace = false,
@@ -2125,7 +2122,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-interposable" => st.lists.interposable_all = true,
             b"-interposable_list" => {
                 let names = cur.next_symbol_list(name);
-                add_patterns(st.lists.interposable_list.get_or_insert_default(), &names, 0);
+                add_patterns(st.lists.interposable_list.get_or_insert_default(), &names);
             }
             b"-warn_weak_exports" => args.warn_weak_exports = true,
             b"-no_weak_exports" => args.no_weak_exports = true,
@@ -2146,7 +2143,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     "-force_symbols_weak_list" => &mut st.lists.force_weak,
                     _ => &mut st.lists.force_not_weak,
                 };
-                add_patterns(glob, &names, 0);
+                add_patterns(glob, &names);
                 st.force_weakness_listed = true;
             }
             b"-commons" => {
@@ -2165,10 +2162,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 st.max_default_common_align = Some(align);
             }
             b"-keep_duplicate" => {
-                add_patterns(&mut st.lists.keep_duplicates, [cur.next_arg(name).as_bytes()], 0);
+                add_patterns(&mut st.lists.keep_duplicates, [cur.next_arg(name).as_bytes()]);
             }
             b"-keep_duplicates_list" => {
-                add_patterns(&mut st.lists.keep_duplicates, cur.next_symbol_list(name), 0);
+                add_patterns(&mut st.lists.keep_duplicates, cur.next_symbol_list(name));
             }
             b"-allow_dead_duplicates" => args.allow_dead_duplicates = true,
             // For duplicate symbols ld-prime would only warn of, which
@@ -2501,9 +2498,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"--print-dependencies" => args.print_dependencies = true,
             b"-print_statistics" => args.perf = true,
             b"-why_load" | b"-whyload" => args.why_load = true,
-            b"-why_live" => {
-                add_patterns(&mut st.lists.why_live, [cur.next_arg(name).as_bytes()], 0)
-            }
+            b"-why_live" => add_patterns(&mut st.lists.why_live, [cur.next_arg(name).as_bytes()]),
             b"-t" => args.trace = true,
             b"-trace_symbol_layout" => args.trace_symbol_layout = true,
             b"-trace_symbol_layout_file" => {
