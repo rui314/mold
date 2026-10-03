@@ -926,10 +926,9 @@ fn header_pad<E: Target>(ctx: &Context<E>) -> u64 {
     pad
 }
 
+/// Writes the mach header and the load commands.
 pub fn copy_mach_header<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let cmds = create_load_commands(ctx);
-
-    let is_static_executable = ctx.args.output_type == MH_EXECUTE && ctx.args.static_link;
     let hdr = MachHeader {
         magic: MH_MAGIC_64,
         cputype: E::CPUTYPE,
@@ -937,47 +936,42 @@ pub fn copy_mach_header<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
         filetype: if ctx.args.preload { MH_PRELOAD } else { ctx.args.output_type },
         ncmds: cmds.len() as u32,
         sizeofcmds: cmds.iter().map(Vec::len).sum::<usize>() as u32,
-        // Under -flat_namespace every import is a flat lookup that
-        // dyld resolves at load, so ld64 does not claim MH_NOUNDEFS.
-        flags: if is_static_executable {
-            MH_NOUNDEFS
-        } else if ctx.args.flat_namespace {
-            MH_DYLDLINK
-        } else {
-            MH_NOUNDEFS | MH_DYLDLINK | MH_TWOLEVEL
-        },
+        flags: mach_header_flags(ctx),
         reserved: 0,
     };
+    hdr.write_to(buf);
 
-    let mut hdr = hdr;
+    let mut off = size_of::<MachHeader>();
+    for cmd in &cmds {
+        buf[off..off + cmd.len()].copy_from_slice(cmd);
+        off += cmd.len();
+    }
+}
+
+/// The mach header's flags: what the image asks of dyld and promises
+/// it.
+fn mach_header_flags<E: Target>(ctx: &Context<E>) -> u32 {
+    // Under -flat_namespace every import is a flat lookup that dyld
+    // resolves at load, so ld64 does not claim MH_NOUNDEFS.
+    let mut flags = if ctx.args.output_type == MH_EXECUTE && ctx.args.static_link {
+        MH_NOUNDEFS
+    } else if ctx.args.flat_namespace {
+        MH_DYLDLINK
+    } else {
+        MH_NOUNDEFS | MH_DYLDLINK | MH_TWOLEVEL
+    };
     match ctx.args.output_type {
-        MH_EXECUTE if ctx.args.pie => hdr.flags |= MH_PIE,
-        MH_DYLIB if !ctx.dylibs.iter().any(|d| d.is_reexported) => {
-            hdr.flags |= MH_NO_REEXPORTED_DYLIBS
-        }
+        MH_EXECUTE if ctx.args.pie => flags |= MH_PIE,
+        MH_DYLIB if !ctx.dylibs.iter().any(|d| d.is_reexported) => flags |= MH_NO_REEXPORTED_DYLIBS,
         _ => {}
     }
     // -simulator_support: a macOS dylib that dyld may load into a
     // simulator process too (ld-prime marks no other kind of image).
     if ctx.args.simulator_support && ctx.args.output_type == MH_DYLIB {
-        hdr.flags |= MH_SIM_SUPPORT;
+        flags |= MH_SIM_SUPPORT;
     }
-    // MH_BINDS_TO_WEAK: the image binds to a symbol some dylib
-    // defines weakly, or to one of its own coalescable weak
-    // definitions (dyld must then consider weak coalescing when it
-    // binds). ld-prime sets it on an executable calling a dylib's
-    // weak definition, and on any image with weak-lookup binds.
-    if ctx.symbols.syms.par_iter().any(|sym| match sym.file() {
-        Some(FileId::Dylib(idx)) => {
-            idx != u32::MAX
-                && sym.is_used()
-                && ctx.dylibs[idx as usize].weak_exports.contains(sym.name())
-        }
-        _ => false,
-    }) || ctx.chained_fixups.imports.iter().any(|&(id, _)| ctx.binds_weak_lookup(id))
-        || !ctx.weak_bind_info.contents.is_empty()
-    {
-        hdr.flags |= MH_BINDS_TO_WEAK;
+    if binds_to_weak(ctx) {
+        flags |= MH_BINDS_TO_WEAK;
     }
     // MH_WEAK_DEFINES advertises exported weak symbols (auto-hidden and
     // private-extern weak definitions don't count, since no other
@@ -988,10 +982,10 @@ pub fn copy_mach_header<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     // dylib whose only weak definition nothing calls still gets
     // 0x118085), since another image's copy may replace it.
     if (0..ctx.symbols.syms.len()).into_par_iter().any(|i| ctx.exports_weak_def(i as u32)) {
-        hdr.flags |= MH_WEAK_DEFINES | MH_BINDS_TO_WEAK;
+        flags |= MH_WEAK_DEFINES | MH_BINDS_TO_WEAK;
     }
     if (0..ctx.symbols.syms.len()).into_par_iter().any(|i| ctx.overrides_weak_export(i as u32)) {
-        hdr.flags |= MH_WEAK_DEFINES;
+        flags |= MH_WEAK_DEFINES;
     }
     // -bind_at_load makes the stubs bind through the GOT instead of
     // lazily; ld-prime does not set MH_BINDATLOAD for it (dyld binds
@@ -999,25 +993,38 @@ pub fn copy_mach_header<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     // may be linked into an app extension; ld-prime sets it on dylibs
     // only, not on an executable or a bundle.
     if ctx.args.application_extension && ctx.args.output_type == MH_DYLIB {
-        hdr.flags |= MH_APP_EXTENSION_SAFE;
+        flags |= MH_APP_EXTENSION_SAFE;
     }
     if ctx.args.no_dynamic_access {
-        hdr.flags |= MH_NOFIXPREBINDING;
+        flags |= MH_NOFIXPREBINDING;
     }
     if ctx
         .chunks
         .iter()
         .any(|&id| ctx.chunk_header(id).flags & SECTION_TYPE == S_THREAD_LOCAL_VARIABLES)
     {
-        hdr.flags |= MH_HAS_TLV_DESCRIPTORS;
+        flags |= MH_HAS_TLV_DESCRIPTORS;
     }
-    hdr.write_to(buf);
+    flags
+}
 
-    let mut off = size_of::<MachHeader>();
-    for cmd in &cmds {
-        buf[off..off + cmd.len()].copy_from_slice(cmd);
-        off += cmd.len();
-    }
+/// Whether the image binds to a symbol some dylib defines weakly, or to
+/// one of its own coalescable weak definitions (MH_BINDS_TO_WEAK: dyld
+/// must then consider weak coalescing when it binds). ld-prime sets it
+/// on an executable calling a dylib's weak definition, and on any image
+/// with weak-lookup binds.
+fn binds_to_weak<E: Target>(ctx: &Context<E>) -> bool {
+    let uses_weak_export = ctx.symbols.syms.par_iter().any(|sym| match sym.file() {
+        Some(FileId::Dylib(idx)) => {
+            idx != u32::MAX
+                && sym.is_used()
+                && ctx.dylibs[idx as usize].weak_exports.contains(sym.name())
+        }
+        _ => false,
+    });
+    uses_weak_export
+        || ctx.chained_fixups.imports.iter().any(|&(id, _)| ctx.binds_weak_lookup(id))
+        || !ctx.weak_bind_info.contents.is_empty()
 }
 
 /// Writes the UUID into the LC_UUID command of a header that
