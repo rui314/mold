@@ -567,7 +567,8 @@ fn merge_common_symbols<E: Target>(
 
 /// Dylib exports claim the referenced symbols that no object defines,
 /// or that only a lazy archive member does; an earlier dylib beats a
-/// later archive member and vice versa (see dylib_ranks).
+/// later archive member and vice versa (see dylib_ranks). Of the dylibs
+/// that export a symbol, the first in search order claims it.
 fn claim_dylib_exports<E: Target>(
     ctx: &mut Context<E>,
     used: &[std::sync::atomic::AtomicBool],
@@ -575,16 +576,19 @@ fn claim_dylib_exports<E: Target>(
     tentative: &Tentative,
 ) {
     use std::sync::atomic::Ordering;
+    collect_dylib_symbols(ctx);
     let dylibs = &ctx.dylibs;
     let providers = merged_providers(dylibs);
     let ranks = dylib_ranks(dylibs);
     let order = dylib_search_order(&ranks, 0);
+    let first = first_exporters(dylibs, ctx.symbols.syms.len(), &order);
     // A live tentative definition (a common symbol) beats a dylib's
     // but under -commons use_dylibs, even where it is an archive
     // member's that would override it.
     let use_dylibs = ctx.args.commons == crate::cmdline::CommonsMode::UseDylibs;
     ctx.symbols.syms.par_iter_mut().enumerate().for_each(|(i, sym)| {
-        if !used[i].load(Ordering::Relaxed) {
+        let pos = first[i].load(Ordering::Relaxed);
+        if pos == u32::MAX || !used[i].load(Ordering::Relaxed) {
             return;
         }
         let won = best[i].load(Ordering::Relaxed);
@@ -597,29 +601,71 @@ fn claim_dylib_exports<E: Target>(
         if crate::dtrace::is_dtrace_symbol(sym.name()) {
             return;
         }
-        for &dylib_idx in &order {
-            if ranks[dylib_idx] >= won {
-                break;
-            }
-            let dylib = &dylibs[dylib_idx];
-            if dylib.exports.contains(sym.name()) {
-                if sym.is_common() {
-                    sym.set_is_common(false);
-                    sym.value = 0;
-                    sym.common_p2align = 0;
-                }
-                let owner = import_from_dylib(sym, dylibs, &providers, dylib_idx);
-                // -weak_framework / -weak_library / -weak-l: every
-                // import from the library is a weak import (ld64 binds
-                // it weak-import and marks it N_WEAK_REF), whatever the
-                // references say.
-                if dylibs[owner].is_weak {
-                    sym.set_is_weak_ref(true);
-                }
-                break;
-            }
+        let dylib_idx = order[pos as usize];
+        if ranks[dylib_idx] >= won {
+            return;
+        }
+        if sym.is_common() {
+            sym.set_is_common(false);
+            sym.value = 0;
+            sym.common_p2align = 0;
+        }
+        let owner = import_from_dylib(sym, dylibs, &providers, dylib_idx);
+        // -weak_framework / -weak_library / -weak-l: every import from
+        // the library is a weak import (ld64 binds it weak-import and
+        // marks it N_WEAK_REF), whatever the references say.
+        if dylibs[owner].is_weak {
+            sym.set_is_weak_ref(true);
         }
     });
+}
+
+/// Brings each dylib's symbols (DylibFile::symbols) up to date with the
+/// symbol table: a dylib new to resolution looks up each of its
+/// exports, and one that collected its symbols before checks the global
+/// symbols interned since. mold interns a shared library's symbols as
+/// it reads the library; a Mach-O dylib exports far more than a link
+/// uses (an SDK framework's stub tens of thousands of symbols), so only
+/// the ones the inputs name are kept.
+fn collect_dylib_symbols<E: Target>(ctx: &mut Context<E>) {
+    let num_syms = ctx.symbols.syms.len();
+    let symbols = &ctx.symbols;
+    let seen = ctx.dylibs.iter().filter_map(|d| d.symbols_seen).min().unwrap_or(num_syms);
+    let interned: Vec<SymbolId> = (seen as SymbolId..num_syms as SymbolId)
+        .into_par_iter()
+        .filter(|&id| symbols.get(symbols[id].name()) == Some(id))
+        .collect();
+    ctx.dylibs.par_iter_mut().for_each(|dylib| {
+        match dylib.symbols_seen {
+            None => dylib.symbols = dylib.exports.iter().filter_map(|n| symbols.get(n)).collect(),
+            Some(seen) => {
+                let new = interned.iter().filter(|&&id| id as usize >= seen);
+                let exported = new.filter(|&&id| dylib.exports.contains(symbols[id].name()));
+                dylib.symbols.extend(exported);
+            }
+        }
+        dylib.symbols_seen = Some(num_syms);
+    });
+}
+
+/// For each symbol, the place in `order` of the first of those dylibs
+/// that exports it, u32::MAX if none does: each dylib races the place
+/// into the symbols it exports with an atomic minimum, as each of
+/// mold's shared libraries resolves its own symbols by rank.
+fn first_exporters(
+    dylibs: &[input_files::DylibFile],
+    num_syms: usize,
+    order: &[usize],
+) -> Vec<std::sync::atomic::AtomicU32> {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    let first: Vec<AtomicU32> =
+        (0..num_syms).into_par_iter().map(|_| AtomicU32::new(u32::MAX)).collect();
+    order.par_iter().enumerate().for_each(|(pos, &dylib_idx)| {
+        for &id in &dylibs[dylib_idx].symbols {
+            first[id as usize].fetch_min(pos as u32, Ordering::Relaxed);
+        }
+    });
+    first
 }
 
 /// For each dylib, the dylibs of the link it merged as private
@@ -685,16 +731,18 @@ fn import_from_dylib(
 /// can steal nothing - a full re-resolution would reach exactly this
 /// outcome, at many times the cost.
 pub(crate) fn claim_new_dylibs<E: Target>(ctx: &mut Context<E>, first: usize) {
+    use std::sync::atomic::Ordering;
+    collect_dylib_symbols(ctx);
     let dylibs = &ctx.dylibs;
     let providers = merged_providers(dylibs);
     let order = dylib_search_order(&dylib_ranks(dylibs), first);
-    ctx.symbols.syms.par_iter_mut().for_each(|sym| {
-        if !sym.is_used() || sym.is_defined() {
+    let exporters = first_exporters(dylibs, ctx.symbols.syms.len(), &order);
+    ctx.symbols.syms.par_iter_mut().enumerate().for_each(|(i, sym)| {
+        let pos = exporters[i].load(Ordering::Relaxed);
+        if pos == u32::MAX || !sym.is_used() || sym.is_defined() {
             return;
         }
-        if let Some(&dylib_idx) = order.iter().find(|&&i| dylibs[i].exports.contains(sym.name())) {
-            import_from_dylib(sym, dylibs, &providers, dylib_idx);
-        }
+        import_from_dylib(sym, dylibs, &providers, order[pos as usize]);
     });
 }
 

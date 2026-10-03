@@ -539,6 +539,13 @@ pub struct DylibFile {
     /// re-exporting dylib.
     pub is_implicit: bool,
     pub exports: hashbrown::HashSet<&'static [u8]>,
+    /// The symbols of the link it exports - those of its exports that
+    /// the inputs name - by which it takes part in resolution as mold's
+    /// SharedFile does by its own symbols, and the size of the symbol
+    /// table they were collected from (see
+    /// passes::collect_dylib_symbols).
+    pub symbols: Vec<SymbolId>,
+    pub symbols_seen: Option<usize>,
     /// Exports that are weak definitions: binding to one sets
     /// MH_BINDS_TO_WEAK on the client image.
     pub weak_exports: hashbrown::HashSet<&'static [u8]>,
@@ -591,6 +598,8 @@ impl DylibFile {
             is_autolinked: false,
             is_implicit: false,
             exports: hashbrown::HashSet::new(),
+            symbols: Vec::new(),
+            symbols_seen: None,
             weak_exports: hashbrown::HashSet::new(),
             has_weak_defs: false,
             tlv_exports: hashbrown::HashSet::new(),
