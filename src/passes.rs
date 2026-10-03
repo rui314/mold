@@ -4180,10 +4180,7 @@ pub fn print_dependencies<E: Target>(ctx: &Context<E>) {
     if !ctx.args.print_dependencies {
         return;
     }
-    for obj in &ctx.objs {
-        if !obj.is_alive {
-            continue;
-        }
+    for (obj_idx, obj) in ctx.objs.iter().enumerate().filter(|(_, obj)| obj.is_alive) {
         let r = obj.global_range();
         for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
             if nlist.is_stab() || nlist.n_type() != N_UNDF || nlist.is_common() {
@@ -4193,7 +4190,7 @@ pub fn print_dependencies<E: Target>(ctx: &Context<E>) {
             let provider = match sym.file() {
                 Some(FileId::Obj(idx)) => {
                     let idx = idx as usize;
-                    if !ctx.objs[idx].is_alive || std::ptr::eq(&raw const ctx.objs[idx], obj) {
+                    if !ctx.objs[idx].is_alive || idx == obj_idx {
                         continue;
                     }
                     ctx.objs[idx].mf.name.raw()
