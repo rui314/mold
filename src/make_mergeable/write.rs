@@ -318,10 +318,11 @@ impl MergeableRecord {
         let mut names = 0u32;
         for (i, entry) in self.entries.iter().enumerate() {
             let at = entries_at + i * ENTRY_SIZE;
-            let content: i32 = match entry.content {
+            let content = match entry.content {
                 Content::None => -1,
+                // The offset goes in once the record has its place.
                 Content::Image(fileoff) => {
-                    image.push(((at + 0x18) as u32, fileoff));
+                    image.push(((at + 24) as u32, fileoff));
                     0
                 }
                 Content::Pool(bytes) => {
@@ -336,24 +337,12 @@ impl MergeableRecord {
                     off as i32
                 }
             };
-            let name = match entry.name {
-                Some(_) => {
-                    names += 1;
-                    names - 1
-                }
-                None => 0xff_ffff,
-            };
-            w.put32(at, i as u32);
-            w.put32(at + 4, entry.fixups.len() as u32);
-            w.put32(at + 8, self.first_fixup[i]);
-            w.put32(at + 12, name);
-            w.put32(at + 16, entry.flags());
-            w.put32(at + 20, entry.size);
-            w.put32(at + 24, content as u32);
-            w.out[at + 0x1c] = entry.dylib.unwrap_or(0xff);
-            w.out[at + 0x1d] = entry.p2align;
-            w.out[at + 0x1e..at + 0x20].copy_from_slice(&entry.modulus.to_le_bytes());
-            w.out[at + 0x20..at + 0x22].copy_from_slice(&entry.debug.to_le_bytes());
+            let name = entry.name.map(|_| {
+                names += 1;
+                names - 1
+            });
+            let fixups = (entry.fixups.len() as u32, self.first_fixup[i]);
+            entry.write(&mut w.out[at..at + ENTRY_SIZE], i as u32, fixups, name, content);
         }
         w.table(header::CONTENT_POOL, pool, w.out.len() - pool);
         (image, pool as u32)

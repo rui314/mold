@@ -29,7 +29,7 @@ use crate::input_files::{FileId, ObjectFile};
 use crate::input_sections::{InputSection, NO_REPLACEMENT, Reloc, RelocTarget};
 use crate::macho::*;
 use crate::mergeable::{
-    CustomSection, Fixup, ctype, fk, header, kind, scope, standard_content_type,
+    CustomSection, Entry, Fixup, ctype, fk, header, kind, scope, standard_content_type,
 };
 use crate::symbol::SymbolId;
 use crate::target::Target;
@@ -134,27 +134,8 @@ impl OutFixup {
     }
 }
 
-#[derive(Clone, Debug)]
-struct OutEntry {
-    name: Option<&'static [u8]>,
-    scope: u8,
-    kind: u8,
-    content_type: u8,
-    cold: bool,
-    dds_if_refs_live: bool,
-    no_dead_strip: bool,
-    /// An import's strength: 1 weak, 2 strong.
-    import: u8,
-    custom_section: Option<u8>,
-    size: u32,
-    content: Content,
-    /// An import's library, by its index among the dependencies.
-    dylib: Option<u8>,
-    p2align: u8,
-    modulus: u16,
-    debug: u16,
-    fixups: Vec<OutFixup>,
-}
+/// An entry as the writer makes it: where its bytes are, and its fixups.
+type OutEntry = Entry<Content, Vec<OutFixup>>;
 
 impl OutEntry {
     fn new(scope: u8, kind: u8, content_type: u8) -> Self {
@@ -176,19 +157,6 @@ impl OutEntry {
             debug: 0,
             fixups: Vec::new(),
         }
-    }
-
-    /// The flags word: scope, kind, content type, the dead-strip and
-    /// import bits and the custom section.
-    fn flags(&self) -> u32 {
-        self.scope as u32
-            | (self.kind as u32) << 3
-            | (self.content_type as u32) << 8
-            | (self.cold as u32) << 15
-            | (self.dds_if_refs_live as u32) << 16
-            | (self.no_dead_strip as u32) << 17
-            | (self.import as u32) << 19
-            | (self.custom_section.unwrap_or(0xff) as u32) << 21
     }
 }
 

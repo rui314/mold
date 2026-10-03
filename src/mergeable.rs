@@ -213,29 +213,81 @@ pub(crate) fn extras_usage(kind: u16) -> u8 {
 }
 
 /// An entry of the record: a subsection, a symbol or an import of the
-/// mergeable dylib's objects.
+/// mergeable dylib's objects. `C` and `F` are where its bytes and its
+/// fixups are: for the reader, the bytes (none for zero fill, or what
+/// the linker made) and a range of MergeableRecord::fixups; for the
+/// writer, see make_mergeable::OutEntry.
 #[derive(Clone, Debug)]
-pub struct Entry {
+pub struct Entry<C = Option<&'static [u8]>, F = std::ops::Range<usize>> {
     pub name: Option<&'static [u8]>,
     pub scope: u8,
     pub kind: u8,
     pub content_type: u8,
     pub cold: bool,
+    /// Live if what refers to it is (an unwind record, an alias).
+    pub dds_if_refs_live: bool,
     pub no_dead_strip: bool,
     /// An import's strength: 1 a weak import, 2 a strong one, 0 none
     /// given.
     pub import: u8,
-    pub custom_section: Option<usize>,
+    /// An index into the custom sections.
+    pub custom_section: Option<u8>,
     pub size: u32,
-    /// The bytes, or none for zero fill (or what the linker made).
-    pub content: Option<&'static [u8]>,
-    /// An import's library, by index into MergeableRecord::dylibs.
-    pub dylib: Option<usize>,
+    pub content: C,
+    /// An import's library, by index into the dylibs the mergeable one
+    /// links.
+    pub dylib: Option<u8>,
     pub p2align: u8,
     pub modulus: u16,
-    /// 1-based index into MergeableRecord::debug_infos, 0 for none.
+    /// 1-based index into the debug notes, 0 for none.
     pub debug: u16,
-    pub fixups: std::ops::Range<usize>,
+    pub fixups: F,
+}
+
+/// An entry's name's index in its 40 bytes when it has none.
+const NO_NAME: u32 = 0xff_ffff;
+
+impl<C, F> Entry<C, F> {
+    /// The flags word: the scope (bits 0-2), kind (3-7) and content
+    /// type (8-14), whether it is cold (15), live if what refers to it
+    /// is (16) or never dead stripped (17), an import's strength
+    /// (19-20) and the custom section (21-28, 0xff for none).
+    fn flags(&self) -> u32 {
+        self.scope as u32
+            | (self.kind as u32) << 3
+            | (self.content_type as u32) << 8
+            | (self.cold as u32) << 15
+            | (self.dds_if_refs_live as u32) << 16
+            | (self.no_dead_strip as u32) << 17
+            | (self.import as u32) << 19
+            | (self.custom_section.unwrap_or(0xff) as u32) << 21
+    }
+
+    /// Writes the entry's 40 bytes (see Reader::entry): its index, the
+    /// count and first index of its fixups, its name's index among the
+    /// named entries, its flags word, its size and its content's offset
+    /// from the content pool (-1 for none), then its import's library
+    /// (0xff for none), alignment, modulus and debug notes.
+    pub(crate) fn write(
+        &self,
+        out: &mut [u8],
+        index: u32,
+        fixups: (u32, u32),
+        name: Option<u32>,
+        content: i32,
+    ) {
+        out[0..4].copy_from_slice(&index.to_le_bytes());
+        out[4..8].copy_from_slice(&fixups.0.to_le_bytes());
+        out[8..12].copy_from_slice(&fixups.1.to_le_bytes());
+        out[12..16].copy_from_slice(&name.unwrap_or(NO_NAME).to_le_bytes());
+        out[16..20].copy_from_slice(&self.flags().to_le_bytes());
+        out[20..24].copy_from_slice(&self.size.to_le_bytes());
+        out[24..28].copy_from_slice(&content.to_le_bytes());
+        out[0x1c] = self.dylib.unwrap_or(0xff);
+        out[0x1d] = self.p2align;
+        out[0x1e..0x20].copy_from_slice(&self.modulus.to_le_bytes());
+        out[0x20..0x22].copy_from_slice(&self.debug.to_le_bytes());
+    }
 }
 
 /// A fixup of an entry: its place, target and addend, and what its kind
@@ -484,9 +536,10 @@ impl MergeableRecord {
             .collect();
         for entry in &self.entries {
             let (Some(dylib), Some(name)) = (entry.dylib, entry.name) else { continue };
-            deps[dylib].exports.push(name);
+            let dep = &mut deps[dylib as usize];
+            dep.exports.push(name);
             if entry.kind == kind::DYLIB_EXPORT_WEAK_DEF {
-                deps[dylib].weak_exports.push(name);
+                dep.weak_exports.push(name);
             }
         }
         deps
@@ -596,42 +649,43 @@ impl Reader<'_> {
 
     fn entries(&self, symbols: &[&'static [u8]]) -> Vec<Entry> {
         let table = self.array(header::ENTRIES, ENTRY_SIZE);
+        table.chunks(ENTRY_SIZE).map(|c| self.entry(c, symbols)).collect()
+    }
+
+    /// Reads an entry's 40 bytes (see Entry::write), its name by its
+    /// index into `symbols`, its bytes from the content pool.
+    fn entry(&self, c: &[u8], symbols: &[&'static [u8]]) -> Entry {
+        let (nfixups, first_fixup) = (read32(c, 4) as usize, read32(c, 8) as usize);
+        let name = match read32(c, 12) {
+            NO_NAME => None,
+            n => Some(symbols[n as usize]),
+        };
+        let flags = read32(c, 16);
+        let size = read32(c, 20);
         let (pool, _) = self.table(header::CONTENT_POOL);
-        table
-            .chunks(ENTRY_SIZE)
-            .map(|c| {
-                let nfix = read32(c, 4) as usize;
-                let first = read32(c, 8) as usize;
-                let name = match read32(c, 12) {
-                    0xff_ffff => None,
-                    n => Some(symbols[n as usize]),
-                };
-                let flags = read32(c, 16);
-                let size = read32(c, 20);
-                let content = match read32(c, 24) as i32 {
-                    -1 => None,
-                    off => Some(self.string_at(pool, off as i64, size as usize)),
-                };
-                let custom = (flags >> 21) as u8;
-                Entry {
-                    name,
-                    scope: (flags & 7) as u8,
-                    kind: ((flags >> 3) & 0x1f) as u8,
-                    content_type: ((flags >> 8) & 0x7f) as u8,
-                    cold: flags & (1 << 15) != 0,
-                    no_dead_strip: flags & (1 << 17) != 0,
-                    import: ((flags >> 19) & 3) as u8,
-                    custom_section: (custom != 0xff).then_some(custom as usize),
-                    size,
-                    content,
-                    dylib: (c[0x1c] != 0xff).then_some(c[0x1c] as usize),
-                    p2align: c[0x1d],
-                    modulus: read16(c, 0x1e),
-                    debug: read16(c, 0x20),
-                    fixups: first..first + nfix,
-                }
-            })
-            .collect()
+        let content = match read32(c, 24) as i32 {
+            -1 => None,
+            off => Some(self.string_at(pool, off as i64, size as usize)),
+        };
+        let custom = (flags >> 21) as u8;
+        Entry {
+            name,
+            scope: (flags & 7) as u8,
+            kind: ((flags >> 3) & 0x1f) as u8,
+            content_type: ((flags >> 8) & 0x7f) as u8,
+            cold: flags & (1 << 15) != 0,
+            dds_if_refs_live: flags & (1 << 16) != 0,
+            no_dead_strip: flags & (1 << 17) != 0,
+            import: ((flags >> 19) & 3) as u8,
+            custom_section: (custom != 0xff).then_some(custom),
+            size,
+            content,
+            dylib: (c[0x1c] != 0xff).then_some(c[0x1c]),
+            p2align: c[0x1d],
+            modulus: read16(c, 0x1e),
+            debug: read16(c, 0x20),
+            fixups: first_fixup..first_fixup + nfixups,
+        }
     }
 }
 
@@ -901,7 +955,7 @@ impl<E: Target> Synth<'_, E> {
     /// standard one of its content type.
     fn section_key(&self, entry: &Entry, path: &Path) -> SectionKey {
         if let Some(idx) = entry.custom_section {
-            let s = &self.rec.sections[idx];
+            let s = &self.rec.sections[idx as usize];
             return (s.segname, s.sectname, s.flags);
         }
         match standard_section(entry.content_type) {
