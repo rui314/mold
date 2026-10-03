@@ -449,37 +449,30 @@ fn create_segment_cmd<E: Target>(ctx: &Context<E>, seg: &OutputSegment) -> Vec<u
 }
 
 fn create_dyld_info_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
-    let mut cmd = DyldInfoCommand {
+    // Each table's offset and size, both 0 for an empty one.
+    let place = |hdr: &ChunkHeader| match hdr.size {
+        0 => (0, 0),
+        size => (hdr.fileoff as u32, size as u32),
+    };
+    let (rebase_off, rebase_size) = place(&ctx.rebase_info.hdr);
+    let (bind_off, bind_size) = place(&ctx.bind_info.hdr);
+    let (weak_bind_off, weak_bind_size) = place(&ctx.weak_bind_info.hdr);
+    let (lazy_bind_off, lazy_bind_size) = place(&ctx.lazy_bind_info.hdr);
+    let (export_off, export_size) = place(&ctx.export_trie.hdr);
+    to_vec(&DyldInfoCommand {
         cmd: LC_DYLD_INFO_ONLY,
         cmdsize: size_of::<DyldInfoCommand>() as u32,
-        ..Default::default()
-    };
-    let hdr = &ctx.rebase_info.hdr;
-    if hdr.size > 0 {
-        cmd.rebase_off = hdr.fileoff as u32;
-        cmd.rebase_size = hdr.size as u32;
-    }
-    let hdr = &ctx.bind_info.hdr;
-    if hdr.size > 0 {
-        cmd.bind_off = hdr.fileoff as u32;
-        cmd.bind_size = hdr.size as u32;
-    }
-    let hdr = &ctx.weak_bind_info.hdr;
-    if hdr.size > 0 {
-        cmd.weak_bind_off = hdr.fileoff as u32;
-        cmd.weak_bind_size = hdr.size as u32;
-    }
-    let hdr = &ctx.lazy_bind_info.hdr;
-    if hdr.size > 0 {
-        cmd.lazy_bind_off = hdr.fileoff as u32;
-        cmd.lazy_bind_size = hdr.size as u32;
-    }
-    let hdr = &ctx.export_trie.hdr;
-    if hdr.size > 0 {
-        cmd.export_off = hdr.fileoff as u32;
-        cmd.export_size = hdr.size as u32;
-    }
-    to_vec(&cmd)
+        rebase_off,
+        rebase_size,
+        bind_off,
+        bind_size,
+        weak_bind_off,
+        weak_bind_size,
+        lazy_bind_off,
+        lazy_bind_size,
+        export_off,
+        export_size,
+    })
 }
 
 fn create_symtab_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
