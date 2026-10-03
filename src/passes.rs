@@ -4846,14 +4846,7 @@ pub(crate) fn add_branch_target<E: Target>(ctx: &mut Context<E>, id: crate::symb
         return;
     }
     if ctx.binds_as_import(id) {
-        // A stub jumps through the symbol's lazy pointer, or, without
-        // lazy binding, its GOT slot.
-        add_stub(ctx, id);
-        if ctx.args.lazy_binding {
-            ensure_stub_binder(ctx);
-        } else {
-            add_got(ctx, id);
-        }
+        add_import_stub(ctx, id);
     }
 }
 
@@ -4880,6 +4873,17 @@ pub fn scan_unwind_personalities<E: Target>(ctx: &mut Context<E>) {
         ctx.unwind_records.iter().filter_map(|rec| rec.personality()).collect();
     personalities.extend(ctx.fdes.iter().filter_map(|fde| ctx.cies[fde.cie as usize].personality));
     for id in personalities {
+        add_got(ctx, id);
+    }
+}
+
+/// Gives an import a stub, which jumps through the import's lazy
+/// pointer, or, without lazy binding, its GOT slot.
+pub(crate) fn add_import_stub<E: Target>(ctx: &mut Context<E>, id: SymbolId) {
+    add_stub(ctx, id);
+    if ctx.args.lazy_binding {
+        ensure_stub_binder(ctx);
+    } else {
         add_got(ctx, id);
     }
 }
@@ -4934,12 +4938,7 @@ pub fn create_lazy_loads<E: Target>(ctx: &mut Context<E>) {
         let Some(id) = id else {
             fatal!("lazy-load dylibs need __dyld_lazy_load, which no loaded dylib exports");
         };
-        add_stub(ctx, id);
-        if ctx.args.lazy_binding {
-            ensure_stub_binder(ctx);
-        } else {
-            add_got(ctx, id);
-        }
+        add_import_stub(ctx, id);
         ctx.lazy_helpers.dyld_lazy_load = Some(id);
     }
 }
@@ -6279,12 +6278,7 @@ pub fn add_entry_stub<E: Target>(ctx: &mut Context<E>) {
     if let Some(id) = ctx.symbols.get(&ctx.args.entry)
         && ctx.symbols[id].is_imported()
     {
-        add_stub(ctx, id);
-        if ctx.args.lazy_binding {
-            ensure_stub_binder(ctx);
-        } else {
-            add_got(ctx, id);
-        }
+        add_import_stub(ctx, id);
     }
 }
 
@@ -6295,15 +6289,13 @@ pub fn add_entry_stub<E: Target>(ctx: &mut Context<E>) {
 /// finds it in - given a GOT slot, and __dyld_private (the word
 /// dyld_stub_binder is handed, ld64 puts it in __DATA,__data) is
 /// synthesized. Once, on the first stub.
-pub(crate) fn ensure_stub_binder<E: Target>(ctx: &mut Context<E>) {
+fn ensure_stub_binder<E: Target>(ctx: &mut Context<E>) {
     // Legacy LINKEDIT's helper enters dyld through crt1.o's
     // dyld_stub_binding_helper instead (see resolve_stub_binder).
     if ctx.stub_helper.dyld_stub_binder.is_some() || ctx.args.legacy_linkedit {
         return;
     }
-    let name = b"dyld_stub_binder";
-    let id = bind_linker_import(ctx, name).or_else(|| look_up_linker_import(ctx, name));
-    let Some(id) = id else {
+    let Some(id) = bind_linker_import(ctx, b"dyld_stub_binder") else {
         fatal!("lazy binding needs dyld_stub_binder, which no loaded dylib exports");
     };
     ctx.symbols[id].set_is_used(true);
@@ -6348,38 +6340,23 @@ pub(crate) fn add_data_word<E: Target>(ctx: &mut Context<E>, size: u32) -> u32 {
 }
 
 /// Binds a symbol the linker's own code calls (dyld_stub_binder,
-/// __dyld_lazy_load) to the first loaded dylib that exports it, unless
-/// something in the link defines it.
-fn bind_linker_import<E: Target>(
-    ctx: &mut Context<E>,
-    name: &'static [u8],
-) -> Option<crate::symbol::SymbolId> {
-    let dylib = ctx.dylibs.iter().position(|d| d.exports.contains(name))?;
-    let id = ctx.symbols.intern(name);
-    let sym = &mut ctx.symbols[id];
-    if !sym.is_defined() {
-        sym.set_file(FileId::Dylib(dylib as u32));
-        sym.set_is_imported(true);
-        sym.set_is_extern(true);
-        sym.set_input_section(None);
-    }
-    Some(id)
-}
-
-/// Makes a symbol the linker's own code calls one dyld looks up, if the
-/// image may look it up so.
-fn look_up_linker_import<E: Target>(
-    ctx: &mut Context<E>,
-    name: &'static [u8],
-) -> Option<crate::symbol::SymbolId> {
+/// __dyld_lazy_load), unless something in the link defines it, to the
+/// first loaded dylib that exports it - or, if none does and the image
+/// may look the symbol up dynamically (-undefined dynamic_lookup, -U),
+/// to whatever image dyld finds it in. None if neither.
+fn bind_linker_import<E: Target>(ctx: &mut Context<E>, name: &'static [u8]) -> Option<SymbolId> {
     let args = &ctx.args;
-    if !args.undefined_dynamic_lookup && !args.allowed_undefined.iter().any(|n| n == name) {
-        return None;
-    }
+    let looked_up =
+        args.undefined_dynamic_lookup || args.allowed_undefined.iter().any(|n| n == name);
+    let dylib = match ctx.dylibs.iter().position(|d| d.exports.contains(name)) {
+        Some(i) => i as u32,
+        None if looked_up => u32::MAX,
+        None => return None,
+    };
     let id = ctx.symbols.intern(name);
     let sym = &mut ctx.symbols[id];
     if !sym.is_defined() {
-        sym.set_file(FileId::Dylib(u32::MAX));
+        sym.set_file(FileId::Dylib(dylib));
         sym.set_is_imported(true);
         sym.set_is_extern(true);
         sym.set_input_section(None);
@@ -6411,10 +6388,7 @@ pub fn bind_dyld_lazy_load<E: Target>(ctx: &mut Context<E>) {
     let uses_lazy = (0..ctx.symbols.syms.len() as crate::symbol::SymbolId)
         .into_par_iter()
         .any(|id| ctx_ref.symbols[id].is_used() && ctx_ref.is_lazy_import(id));
-    let name = b"__dyld_lazy_load";
-    if uses_lazy
-        && let Some(id) = bind_linker_import(ctx, name).or_else(|| look_up_linker_import(ctx, name))
-    {
+    if uses_lazy && let Some(id) = bind_linker_import(ctx, b"__dyld_lazy_load") {
         ctx.symbols[id].set_is_used(true);
     }
 }
