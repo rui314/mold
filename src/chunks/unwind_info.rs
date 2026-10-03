@@ -155,9 +155,17 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
     // between two functions does not keep them apart. ld-prime keeps
     // each entry of encoding 0, code without unwind info, though, and
     // each in DWARF mode (alike only if their FDEs are out of reach).
+    // An x86-64 entry in "stack immediate indirect" mode gives where the
+    // stack size is in the function as an offset from the entry's start,
+    // so it can't cover a second function either (ld64's
+    // encodingCannotBeMerged).
+    let stack_ind = |enc: u32| {
+        E::CPUTYPE == CPU_TYPE_X86_64 && enc & UNWIND_MODE_MASK == UNWIND_X86_64_MODE_STACK_IND
+    };
     records.dedup_by(|rec, last| {
         rec.encoding != 0
             && rec.encoding & UNWIND_MODE_MASK != E::UNWIND_MODE_DWARF
+            && !stack_ind(rec.encoding)
             && last.encoding == rec.encoding
             && last.personality() == rec.personality()
             && last.lsda().is_none()

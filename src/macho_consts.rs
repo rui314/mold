@@ -292,6 +292,7 @@ pub const UNWIND_HAS_LSDA: u32 = 0x4000_0000;
 pub const UNWIND_PERSONALITY_MASK: u32 = 0x3000_0000;
 pub const UNWIND_MODE_MASK: u32 = 0x0f00_0000;
 pub const UNWIND_ARM64_MODE_DWARF: u32 = 0x0300_0000;
+pub const UNWIND_X86_64_MODE_STACK_IND: u32 = 0x0300_0000;
 pub const UNWIND_X86_64_MODE_DWARF: u32 = 0x0400_0000;
 
 // Export trie symbol flags
