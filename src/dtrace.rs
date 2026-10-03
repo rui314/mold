@@ -89,23 +89,17 @@ pub struct DofSection {
     pub sites: Vec<u32>,
 }
 
-/// Whether a branch to symbol `sym` from subsection `isec` is a probe
-/// site, and of which kind: a branch from code to a probe or an
-/// is-enabled test, in a link that makes DOF. Another branch to a
-/// DTrace symbol goes to address 0, as ld-prime has it.
+/// Whether a branch to symbol `sym` is a probe site, and of which kind:
+/// a branch to a probe or an is-enabled test, in a link that makes DOF.
+/// Another branch to a DTrace symbol goes to address 0, as ld-prime has
+/// it.
 #[inline]
-pub fn site_kind<E: Target>(ctx: &Context<E>, isec: usize, sym: SymbolId) -> Option<SiteKind> {
+pub fn site_kind<E: Target>(ctx: &Context<E>, sym: SymbolId) -> Option<SiteKind> {
     let sym = &ctx.symbols[sym];
-    if sym.is_defined() || !ctx.args.dtrace_dof || !is_code(ctx, isec) {
+    if sym.is_defined() || !ctx.args.dtrace_dof {
         return None;
     }
     site_kind_of(sym.name())
-}
-
-/// ld-prime looks for probe sites in the subsections whose content is
-/// code, those of a section of only instructions.
-fn is_code<E: Target>(ctx: &Context<E>, isec: usize) -> bool {
-    ctx.hdr_of(&ctx.isecs[isec]).flags & S_ATTR_PURE_INSTRUCTIONS != 0
 }
 
 /// A probe site: a branch to a probe or an is-enabled test, at offset
@@ -187,7 +181,7 @@ fn collect_sites<E: Target>(ctx: &Context<E>) -> Option<Vec<Site>> {
         .into_par_iter()
         .filter(|&i| {
             let isec = &ctx.isecs[i];
-            isec.is_alive() && isec.replacement == NO_REPLACEMENT && is_code(ctx, i)
+            isec.is_alive() && isec.replacement == NO_REPLACEMENT
         })
         .flat_map_iter(|i| {
             let file = ctx.isecs[i].file as usize;

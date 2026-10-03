@@ -144,11 +144,11 @@ fn report_ldst_alignment(ctx: &Context<Arm64>, isec: usize, r: &Reloc, size: u32
 const NOP: u32 = 0xd503_201f;
 
 /// What the bl or b of a DTrace probe site becomes, if relocation `r`
-/// of subsection `isec` is one (see dtrace): a nop, or for an
-/// is-enabled test "movz x0, #0", its result false.
-fn dtrace_site_insn(ctx: &Context<Arm64>, obj: usize, isec: usize, r: &Reloc) -> Option<u32> {
+/// is one (see dtrace): a nop, or for an is-enabled test "movz x0, #0",
+/// its result false.
+fn dtrace_site_insn(ctx: &Context<Arm64>, obj: usize, r: &Reloc) -> Option<u32> {
     let id = ctx.reloc_target_sym(obj, r)?;
-    match crate::dtrace::site_kind(ctx, isec, id)? {
+    match crate::dtrace::site_kind(ctx, id)? {
         SiteKind::Probe => Some(NOP),
         SiteKind::IsEnabled => Some(0xd280_0000),
     }
@@ -1300,7 +1300,7 @@ impl Target for Arm64 {
                 }
                 ARM64_RELOC_BRANCH26 => {
                     // A DTrace probe site does nothing (see dtrace).
-                    if let Some(insn) = dtrace_site_insn(ctx, obj, isec_id, r) {
+                    if let Some(insn) = dtrace_site_insn(ctx, obj, r) {
                         write32(loc, insn);
                         i += 1;
                         continue;

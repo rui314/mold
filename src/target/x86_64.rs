@@ -67,17 +67,12 @@ fn write64(loc: &mut [u8], val: u64) {
 }
 
 /// What the call or jmp of a DTrace probe site becomes, from its opcode
-/// on, if relocation `r` of subsection `isec` is one (see dtrace): a
-/// nop and a 4-byte nop, or for an is-enabled test "xorl %eax, %eax"
-/// (its result false) and nops.
-fn dtrace_site_code(
-    ctx: &Context<X86_64>,
-    obj: usize,
-    isec: usize,
-    r: &Reloc,
-) -> Option<&'static [u8; 5]> {
+/// on, if relocation `r` is one (see dtrace): a nop and a 4-byte nop,
+/// or for an is-enabled test "xorl %eax, %eax" (its result false) and
+/// nops.
+fn dtrace_site_code(ctx: &Context<X86_64>, obj: usize, r: &Reloc) -> Option<&'static [u8; 5]> {
     let id = ctx.reloc_target_sym(obj, r)?;
-    match crate::dtrace::site_kind(ctx, isec, id)? {
+    match crate::dtrace::site_kind(ctx, id)? {
         SiteKind::Probe => Some(&[0x90, 0x0f, 0x1f, 0x40, 0x00]),
         SiteKind::IsEnabled => Some(&[0x33, 0xc0, 0x90, 0x90, 0x90]),
     }
@@ -641,7 +636,7 @@ impl Target for X86_64 {
             // A DTrace probe site does nothing (see dtrace).
             if r.r_type == X86_64_RELOC_BRANCH
                 && r.size == 4
-                && let Some(code) = dtrace_site_code(ctx, obj, isec_id, r)
+                && let Some(code) = dtrace_site_code(ctx, obj, r)
             {
                 let at = r.offset as usize - 1;
                 buf[at..at + 5].copy_from_slice(code);
