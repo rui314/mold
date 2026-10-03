@@ -548,21 +548,17 @@ impl<'a, E: Target> Builder<'a, E> {
         (ctype::CUSTOM, Some(idx as u8))
     }
 
-    /// The fixups of the objects' entries, from their relocations.
+    /// The fixups of the objects' entries, from their relocations: each
+    /// subsection's, from the first of its entries (see place_fixups).
     fn add_object_fixups(&mut self) {
-        let mut i = 0;
-        while i < self.entries.len() {
-            let Some(id) = self.entry_isec[i] else {
-                i += 1;
+        for i in 0..self.entries.len() {
+            let Some(id) = self.entry_isec[i] else { continue };
+            if i > 0 && self.entry_isec[i - 1] == Some(id) {
                 continue;
-            };
+            }
             let fixups = self.isec_fixups(id as usize);
             for (k, f) in self.place_fixups(id, fixups) {
                 self.entries[i + k].fixups.push(f);
-            }
-            i += 1;
-            while i < self.entries.len() && self.entry_isec[i] == Some(id) {
-                i += 1;
             }
         }
     }
