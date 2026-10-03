@@ -269,8 +269,6 @@ struct Builder<'a, E: Target> {
     folded: Vec<(u32, u32)>,
     sections: Vec<CustomSection>,
     debug: Vec<DebugRecord>,
-    /// Each object's debug notes, by its 1-based index, 0 for none.
-    obj_debug: Vec<u16>,
 }
 
 impl<'a, E: Target> Builder<'a, E> {
@@ -286,7 +284,6 @@ impl<'a, E: Target> Builder<'a, E> {
             folded: Vec::new(),
             sections: Vec::new(),
             debug: Vec::new(),
-            obj_debug: vec![0; ctx.objs.len()],
         }
     }
 
@@ -346,7 +343,6 @@ impl<'a, E: Target> Builder<'a, E> {
                 continue;
             }
             let debug = self.add_debug_record(obj);
-            self.obj_debug[obj_idx] = debug;
             let mut subsecs = obj.subsecs.clone();
             subsecs.sort_by_key(|&id| (ctx.isecs[id].shndx, ctx.isecs[id].input_addr));
             for id in subsecs {

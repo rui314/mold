@@ -5,7 +5,7 @@
 //! objc stubs and of the lists - and the slots it leaves for lists a
 //! merging link may add.
 
-use hashbrown::{HashMap, HashSet};
+use hashbrown::HashSet;
 
 use super::{
     Builder, CT_DATA, Content, OutEntry, OutFixup, To, record_size, standard_content_type,
@@ -24,17 +24,15 @@ impl<E: Target> Builder<'_, E> {
     /// The entries of the metadata the link made: the selector
     /// references (see add_selref_entries), and, after the imports, the
     /// method lists in the relative form and category merging's
-    /// records. Returns the
-    /// selector reference slots, in the order of the __objc_selrefs
-    /// tail.
+    /// records, which go by no name (fixups refer to entries by index).
+    /// Returns the selector reference slots, in the order of the
+    /// __objc_selrefs tail.
     pub(super) fn add_objc_entries(&mut self) -> Vec<To> {
         let ctx = self.ctx;
         let slots = self.add_selref_entries();
-        let names = self.synthetic_names();
         for list in &ctx.objc_methlist.lists {
             let isec = &ctx.isecs[list.isec];
-            let mut entry = OutEntry::new(0, kind::REGULAR, CT_METHOD_LIST);
-            entry.name = names.get(&list.isec).map(|&(s, _)| s);
+            let mut entry = OutEntry::new(0, kind::ANON, CT_METHOD_LIST);
             entry.size = isec.size;
             entry.p2align = 3;
             entry.content = self.isec_content(isec, ctx.hdr_of(isec));
@@ -42,7 +40,7 @@ impl<E: Target> Builder<'_, E> {
         }
         for blob in &ctx.data_blobs {
             if ctx.isecs[blob.isec].is_alive() {
-                self.add_data_blob_entry(blob.isec, names.get(&blob.isec).copied());
+                self.add_data_blob_entry(blob.isec);
             }
         }
         slots
@@ -72,22 +70,12 @@ impl<E: Target> Builder<'_, E> {
     }
 
     /// The entry of a record category merging wrote (the entries of its
-    /// records, if it is a list), named as the record it replaced.
-    fn add_data_blob_entry(&mut self, isec: u32, name: Option<(&'static [u8], u16)>) {
+    /// records, if it is a list).
+    fn add_data_blob_entry(&mut self, isec: u32) {
         let ctx = self.ctx;
         let hdr = ctx.hdr_of(&ctx.isecs[isec]);
         let content_type = standard_content_type(hdr).unwrap_or(CT_DATA);
-        let mut entry = match name {
-            Some((name, debug)) => {
-                let mut entry = OutEntry::new(0, kind::REGULAR, content_type);
-                entry.name = Some(name);
-                if crate::chunks::symtab::has_stabs(hdr) {
-                    entry.debug = debug;
-                }
-                entry
-            }
-            None => OutEntry::new(0, kind::ANON, content_type),
-        };
+        let mut entry = OutEntry::new(0, kind::ANON, content_type);
         entry.no_dead_strip = hdr.flags & crate::macho::S_ATTR_NO_DEAD_STRIP != 0;
         entry.size = ctx.isecs[isec].size;
         entry.p2align = ctx.isecs[isec].p2align;
@@ -112,46 +100,6 @@ impl<E: Target> Builder<'_, E> {
         self.isec_entry.insert(isec, To::Tail(self.tail.len() as u32));
         let entries = self.split_records(isec, entry, record);
         self.tail.extend(entries);
-    }
-
-    /// The names of the records the link made: those the objects'
-    /// symbols moved to (a rewritten method list keeps its name), and
-    /// those it named itself (a merged list); each with the debug notes
-    /// of the object of the symbol.
-    fn synthetic_names(&self) -> HashMap<u32, (&'static [u8], u16)> {
-        let ctx = self.ctx;
-        let made: HashSet<u32> = (ctx.objc_methlist.lists.iter().map(|l| l.isec))
-            .chain(ctx.data_blobs.iter().map(|b| b.isec))
-            .collect();
-        let mut names: HashMap<u32, (&'static [u8], u16)> = HashMap::new();
-        if made.is_empty() {
-            return names;
-        }
-        for &(name, isec) in &ctx.extra_local_syms {
-            names.entry(isec).or_insert((name, 0));
-        }
-        // A rewritten record's symbols name its replacement; a label the
-        // assembler made does only if nothing else does.
-        for sym in &ctx.symbols.syms {
-            let Some(isec) = sym.input_section() else { continue };
-            let isec = ctx.resolve_isec(isec as usize) as u32;
-            if sym.value != 0 || !made.contains(&isec) {
-                continue;
-            }
-            let name = sym.name();
-            let label = crate::input_files::is_private_label(name);
-            match names.get(&isec) {
-                Some(&(old, _)) if label || !crate::input_files::is_private_label(old) => {}
-                _ => {
-                    let debug = match sym.file() {
-                        Some(crate::input_files::FileId::Obj(o)) => self.obj_debug[o as usize],
-                        _ => 0,
-                    };
-                    names.insert(isec, (name, debug));
-                }
-            }
-        }
-        names
     }
 
     /// The fixups of the records the link made, from the references
