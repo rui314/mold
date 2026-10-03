@@ -421,20 +421,6 @@ fn create_segment_cmd<E: Target>(ctx: &Context<E>, seg: &OutputSegment) -> Vec<u
     if seg.name == b"__DATA_CONST" && (!ctx.args.shared_region || ctx.args.is_dylinker()) {
         cmd.flags = SG_READ_ONLY;
     }
-    // A segment of nothing but sections the command line made
-    // (-sectcreate contents or -add_empty_section anchors) has nothing
-    // to relocate; ld-prime flags it SG_NORELOC. Not so an empty
-    // section a `section$start$` boundary symbol conjured, any input
-    // section, or a segment of no sections at all such as __PAGEZERO.
-    if !seg.chunks.is_empty()
-        && seg.chunks.iter().all(|&id| match id {
-            ChunkId::SectCreate(i) => ctx.sectcreate_sections[i as usize].from_option,
-            _ => false,
-        })
-    {
-        cmd.flags |= SG_NORELOC;
-    }
-
     let mut buf = to_vec(&cmd);
     for hdr in sects {
         let mut sect = MachSection {

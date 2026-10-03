@@ -1233,7 +1233,7 @@ fn place_sectcreate_inputs<E: Target>(ctx: &mut Context<E>) {
                 let own = (ctx.sectcreate_sections.iter())
                     .position(|s| s.hdr.segname == name.0 && s.hdr.sectname == name.1);
                 let section = own.unwrap_or_else(|| {
-                    ctx.sectcreate_sections.push(SectCreateSection::new(name.0, name.1, &[], true));
+                    ctx.sectcreate_sections.push(SectCreateSection::new(name.0, name.1, &[]));
                     contents.push(Vec::new());
                     contents.len() - 1
                 });
@@ -1677,7 +1677,7 @@ fn add_boundary_sections<E: Target>(ctx: &mut Context<E>) {
             let hdr = ctx.chunk_header(id);
             hdr.is_sect && hdr.segname == seg && hdr.sectname == sect
         }) {
-            let mut sec = SectCreateSection::new(seg, sect, &[], false);
+            let mut sec = SectCreateSection::new(seg, sect, &[]);
             sec.hdr.flags = flags;
             add_sectcreate(ctx, sec);
         }

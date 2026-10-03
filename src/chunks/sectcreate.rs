@@ -14,21 +14,13 @@ pub struct SectCreateSection {
     pub hdr: ChunkHeader,
     /// The options' contents, in file order.
     pub contents: &'static [u8],
-    /// Made by -sectcreate or -add_empty_section rather than for a
-    /// boundary symbol.
-    pub from_option: bool,
 }
 
 impl SectCreateSection {
-    pub fn new(
-        segname: &'static [u8],
-        sectname: &'static [u8],
-        contents: &'static [u8],
-        from_option: bool,
-    ) -> Self {
+    pub fn new(segname: &'static [u8], sectname: &'static [u8], contents: &'static [u8]) -> Self {
         let mut hdr = ChunkHeader::new(segname, sectname);
         hdr.size = contents.len() as u64;
-        Self { hdr, contents, from_option }
+        Self { hdr, contents }
     }
 }
 
