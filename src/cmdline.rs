@@ -1628,121 +1628,108 @@ fn sectcreate_name(kind: &str, name: &[u8], warnings: &mut OptionWarnings) -> Ve
     cut
 }
 
-/// Splits a response file into arguments, as ld-prime does: at runs of
-/// spaces, tabs, newlines and carriage returns (vertical tabs and form
-/// feeds are argument bytes). A backslash takes the next byte as it is,
-/// and single or double quotes take the bytes up to the matching one,
-/// backslashes still escaping - so '' is an empty argument. The text
-/// ends at the first NUL byte, ending an open quote or a trailing
-/// backslash with it.
-fn split_response_file(data: &'static [u8]) -> Vec<Cow<'static, OsStr>> {
-    let data = &data[..memchr::memchr(0, data).unwrap_or(data.len())];
-    let is_sep = |c: u8| matches!(c, b' ' | b'\t' | b'\n' | b'\r');
-    let mut args = Vec::new();
+/// The response file an argument names, if it names one: an argument
+/// starting with '@', but a dylib path starting "@rpath", "@loader_path"
+/// or "@executable_path", wherever it is, even an option's argument.
+fn response_file(arg: &[u8]) -> Option<&Path> {
+    const DYLIB_PATHS: [&[u8]; 3] = [b"@rpath", b"@loader_path", b"@executable_path"];
+    if DYLIB_PATHS.iter().any(|prefix| arg.starts_with(prefix)) {
+        return None;
+    }
+    arg.strip_prefix(b"@").map(|path| Path::new(os_str(path)))
+}
+
+// If a command line argument is in the form of `@path/to/some/file`
+// (i.e. it starts with an atsign), the linker reads the given file and
+// interprets its contents as a list of command line arguments. A file
+// containing command line arguments is called a "response file".
+//
+// A response file is often used to pass a very large number of arguments
+// to the linker without exceeding the kernel's command line length limit.
+//
+// This function opens a given file, tokenizes its contents, and returns a
+// list of tokens.
+fn read_response_file(path: &Path, depth: usize) -> Vec<Cow<'static, OsStr>> {
+    if depth > 10 {
+        fatal!("{}: response file nesting too deep", path.raw());
+    }
+
+    let data = MappedFile::must_open(path).data();
+
+    // Arguments are passed on as C strings, e.g. to the LTO plugin, so they
+    // must not contain a NUL byte. Arguments given by the OS never do.
+    if data.contains(&0) {
+        fatal!("{}: response file contains a NUL byte", path.raw());
+    }
+
+    let mut expanded = Vec::new();
     let mut i = 0;
-    loop {
-        while i < data.len() && is_sep(data[i]) {
+
+    while i < data.len() {
+        if is_space(data[i]) {
             i += 1;
+            continue;
         }
-        if i >= data.len() {
-            return args;
-        }
-        // Plain arguments borrow the file's bytes, which live for the
-        // whole link. Copy only when removing quotes or backslashes.
+
+        // Plain tokens can borrow the mapping, which lives for the complete
+        // link. Copy only when removing quotes or backslashes.
         let start = i;
-        while i < data.len() && !is_sep(data[i]) && !matches!(data[i], b'\\' | b'\'' | b'"') {
+        while i < data.len() && !is_space(data[i]) && !matches!(data[i], b'\\' | b'\'' | b'"') {
             i += 1;
         }
-        let mut arg = Cow::Borrowed(&data[start..i]);
-        while i < data.len() && !is_sep(data[i]) {
-            match data[i] {
-                b'\\' => {
-                    arg.to_mut().extend(data.get(i + 1));
-                    i += 2;
+        let mut tok = Cow::Borrowed(&data[start..i]);
+        let mut quote = None;
+        while i < data.len() {
+            let c = data[i];
+            if c == b'\\' {
+                if i + 1 == data.len() {
+                    fatal!("{}: premature end of input", path.raw());
                 }
-                quote @ (b'\'' | b'"') => {
-                    i += 1;
-                    while i < data.len() && data[i] != quote {
-                        if data[i] == b'\\' {
-                            i += 1;
-                        }
-                        arg.to_mut().extend(data.get(i));
-                        i += 1;
-                    }
-                    i += 1;
+                tok.to_mut().push(data[i + 1]);
+                i += 2;
+            } else if let Some(q) = quote {
+                if c == q {
+                    quote = None;
+                } else {
+                    tok.to_mut().push(c);
                 }
-                c => {
-                    arg.to_mut().push(c);
-                    i += 1;
-                }
+                i += 1;
+            } else if c == b'\'' || c == b'"' {
+                quote = Some(c);
+                i += 1;
+            } else if is_space(c) {
+                break;
+            } else {
+                tok.to_mut().push(c);
+                i += 1;
             }
         }
-        args.push(match arg {
-            Cow::Borrowed(bytes) => Cow::Borrowed(os_str(bytes)),
-            Cow::Owned(bytes) => Cow::Owned(OsString::from_vec(bytes)),
-        });
+        if quote.is_some() {
+            fatal!("{}: premature end of input", path.raw());
+        }
+        if let Some(nested) = response_file(&tok) {
+            expanded.extend(read_response_file(nested, depth + 1));
+        } else {
+            expanded.push(match tok {
+                Cow::Borrowed(bytes) => Cow::Borrowed(os_str(bytes)),
+                Cow::Owned(bytes) => Cow::Owned(OsString::from_vec(bytes)),
+            });
+        }
     }
+    expanded
 }
 
-/// Replaces each "@file" argument with the arguments the file holds
-/// (see split_response_file), those of a "@file" among them in turn, as
-/// ld-prime does. Build systems pass thousands of input files this way,
-/// past the kernel's limit on a command line's length. A dylib path
-/// starting "@rpath", "@loader_path" or "@executable_path" is no
-/// response file; any other "@" argument is, wherever it is, even an
-/// option's argument. ld-prime names a file by its real path where it
-/// has one, and reads none twice: a second "@" naming one, nested or
-/// not, is an error. A file it can't open draws a warning, the argument
-/// staying as it is (a file to link, to fail as one); one it can't
-/// read, such as a directory, is an error.
+// Replace "@path/to/some/text/file" with its file contents.
 pub fn expand_response_files(argv: Vec<OsString>) -> Vec<Cow<'static, OsStr>> {
     let mut args = Vec::new();
-    let mut loaded = hashbrown::HashSet::new();
     for arg in argv {
-        expand_response_file(Cow::Owned(arg), &mut loaded, &mut args);
+        if let Some(path) = response_file(arg.as_bytes()) {
+            args.extend(read_response_file(path, 1));
+        } else {
+            args.push(Cow::Owned(arg));
+        }
     }
     args
-}
-
-/// Appends `arg` to `args`, or the arguments of the response file it
-/// names (see expand_response_files).
-fn expand_response_file(
-    arg: Cow<'static, OsStr>,
-    loaded: &mut hashbrown::HashSet<PathBuf>,
-    args: &mut Vec<Cow<'static, OsStr>>,
-) {
-    const DYLIB_PATHS: [&[u8]; 3] = [b"@rpath", b"@loader_path", b"@executable_path"];
-    let bytes = arg.as_bytes();
-    let Some(path) = bytes.strip_prefix(b"@") else {
-        args.push(arg);
-        return;
-    };
-    if DYLIB_PATHS.iter().any(|prefix| bytes.starts_with(prefix)) {
-        args.push(arg);
-        return;
-    }
-    let path = Path::new(os_str(path));
-    let path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    if !loaded.insert(path.clone()) {
-        fatal!("recursively loading {}", path.raw());
-    }
-    let mut file = match std::fs::File::open(&path) {
-        Ok(file) => file,
-        Err(e) => {
-            let errno = crate::error::errno_text(&e);
-            crate::warn!("response file '{}' could not be opened, {errno}", path.raw());
-            args.push(arg);
-            return;
-        }
-    };
-    let mut data = Vec::new();
-    if let Err(e) = std::io::Read::read_to_end(&mut file, &mut data) {
-        let errno = crate::error::errno_text(&e);
-        fatal!("response file '{}' could not be read, {errno}", path.raw());
-    }
-    for arg in split_response_file(Vec::leak(data)) {
-        expand_response_file(arg, loaded, args);
-    }
 }
 
 /// Reads a -filelist file: one input path per line, in whatever bytes

@@ -1,18 +1,13 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-# ld-prime reads any argument starting with '@' as a response file, an
-# option's argument too, but a dylib path's @rpath, @loader_path or
-# @executable_path. One it can't open draws a warning, the argument
-# staying as it is; one it can't read is an error, and so is reading
-# one twice, nested or not, by its real path.
+# Any argument starting with '@' names a response file, whose arguments
+# take its place, an option's argument too - but a dylib path starting
+# @rpath, @loader_path or @executable_path. A response file splits at
+# white space, quotes and backslashes as a shell's words do, and may
+# name others in turn.
 echo 'int main() { return 0; }' | $CC -o $t/a.o -c -xc -
 link() { $CC --ld-path=$mold -o $t/exe $t/a.o "$@"; }
-dir=$(cd $t && pwd -P)
-
-link -Wl,-rpath,@$t/none 2> $t/log
-grep -F "warning: response file '$t/none' could not be opened, errno=2 (No such file or directory)" $t/log
-otool -l $t/exe | grep -F "path @$t/none "
 
 mkdir -p $t/rpath
 echo '-dead_strip' > $t/rpath/x
@@ -20,32 +15,48 @@ echo '-dead_strip' > $t/rpath/x
 not grep -F 'response file' $t/log
 otool -l $t/exe | grep -F 'path @rpath/x '
 
-not link -Wl,@$t/rpath 2> $t/log
-grep -F "response file '$dir/rpath' could not be read, errno=21 (Is a directory)" $t/log
-
-echo '-dead_strip' > $t/rsp1
-not link -Wl,@$t/rsp1,@$t/rsp1 2> $t/log
-grep -F "recursively loading $dir/rsp1" $t/log
+echo "$t/rpath" > $t/rsp0
+link -Wl,-rpath,@$t/rsp0
+otool -l $t/exe | grep -F "path $t/rpath "
 
 echo "@$t/rsp3" > $t/rsp2
 echo '-dead_strip' > $t/rsp3
 link -Wl,@$t/rsp2
-not link -Wl,@$t/rsp2,@$t/rsp3 2> $t/log
-grep -F "recursively loading $dir/rsp3" $t/log
 
-# Arguments split at spaces, tabs, newlines and carriage returns alone;
-# a quote left open or a backslash at the end ends with the file, and
-# so does a NUL byte.
 cat <<EOF | $CC -o $t/b.o -c -xc -
 int foo_bar() { return 0; }
 int main() { return 0; }
 EOF
-printf -- "-u\v_foo_bar" > $t/rsp4
-not $CC --ld-path=$mold -o $t/exe $t/b.o -Wl,@$t/rsp4 2> $t/log
-grep -F 'unknown option' $t/log
-printf -- "-exported_symbol '_foo_bar" > $t/rsp5
+printf -- "-exported_symbol\t'_foo_bar'\n" > $t/rsp4
+$CC --ld-path=$mold -o $t/exe $t/b.o -Wl,@$t/rsp4
+nm -gU $t/exe > $t/syms
+grep -q ' _foo_bar$' $t/syms
+not grep -q ' _main$' $t/syms
+printf -- '-exported_symbol "_foo"_ba\\r' > $t/rsp5
 $CC --ld-path=$mold -o $t/exe $t/b.o -Wl,@$t/rsp5
-printf -- '-exported_symbol _foo_ba\\r\\' > $t/rsp6
-$CC --ld-path=$mold -o $t/exe $t/b.o -Wl,@$t/rsp6
-printf -- '-exported_symbol _foo_bar\0-unknown' > $t/rsp7
-$CC --ld-path=$mold -o $t/exe $t/b.o -Wl,@$t/rsp7
+grep -q ' _foo_bar$' <(nm -gU $t/exe)
+
+# A response file may be named twice. One that can't be read, one that
+# names itself, an open quote or a backslash at the end, and a NUL byte,
+# which no argument may hold, are errors. (ld-prime refuses a file named
+# twice, and goes on in each of the other cases, warning of a file it
+# can't open.)
+if $mold -v 2> /dev/null | grep -q mold-macho; then
+  link -Wl,@$t/rsp2,@$t/rsp3
+  not link -Wl,@$t/none 2> $t/log
+  grep -qF "$t/none" $t/log
+  not link -Wl,@$t/rpath 2> $t/log
+  grep -qF "$t/rpath" $t/log
+  echo "@$t/rsp6" > $t/rsp6
+  not link -Wl,@$t/rsp6 2> $t/log
+  grep -q 'response file nesting too deep' $t/log
+  printf -- "-exported_symbol '_foo_bar" > $t/rsp7
+  not $CC --ld-path=$mold -o $t/exe $t/b.o -Wl,@$t/rsp7 2> $t/log
+  grep -q 'premature end of input' $t/log
+  printf -- '-exported_symbol _foo_bar\\' > $t/rsp8
+  not $CC --ld-path=$mold -o $t/exe $t/b.o -Wl,@$t/rsp8 2> $t/log
+  grep -q 'premature end of input' $t/log
+  printf -- '-exported_symbol _foo_bar\0-dead_strip' > $t/rsp9
+  not $CC --ld-path=$mold -o $t/exe $t/b.o -Wl,@$t/rsp9 2> $t/log
+  grep -q 'response file contains a NUL byte' $t/log
+fi
