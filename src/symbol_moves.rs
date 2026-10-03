@@ -280,20 +280,14 @@ fn subsec_named<'a, E: Target>(
     if nlist.is_stab()
         || !matches!(nlist.n_type(), N_SECT | N_ABS)
         || sym.file() != Some(FileId::Obj(obj as u32))
+        || (!nlist.is_extern() && !keep_local_symbol(sym.name()))
     {
         return None;
     }
-    let isec = sym.input_section();
-    if !nlist.is_extern() && !keep_local_symbol(sym.name()) {
-        return None;
-    }
-    let Some(isec) = isec else {
-        return Some(Subsec {
-            isec: None,
-            segment: b"",
-            content: Content::Data,
-            tlv_template: false,
-        });
+    // An absolute symbol is a subsection of its own, in no segment.
+    let Some(isec) = sym.input_section() else {
+        let content = Content::Data;
+        return Some(Subsec { isec: None, segment: b"", content, tlv_template: false });
     };
     let kept = ctx.resolve_isec(isec as usize);
     if !ctx.isecs[kept].is_alive() {
