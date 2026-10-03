@@ -4394,56 +4394,36 @@ pub fn print_trace<E: Target>(ctx: &Context<E>) {
     let _ = std::io::Write::write_all(&mut std::io::stdout(), &out);
 }
 
-/// -why_load reports what dragged each archive member into the link:
-/// "_symbol forced load of archive.a(member.o)", in ld64's wording.
-/// Members loaded unconditionally (-all_load, -force_load) are
-/// reported with the option as the reason. ld-prime says so as it
-/// resolves the symbols, so of each round of resolution the members it
-/// loads: those but the `explained` ones. Returns the objects loaded by
-/// then.
-pub fn print_why_load<E: Target>(ctx: &Context<E>, explained: &[bool]) -> Vec<bool> {
-    // A bitcode member LTO compiled counts, though no longer live.
-    let compiled: hashbrown::HashSet<usize> = ctx.lto_inputs.iter().map(|i| i.obj).collect();
-    let loaded: Vec<bool> =
-        ctx.objs.iter().enumerate().map(|(i, obj)| obj.is_alive || compiled.contains(&i)).collect();
+/// -why_load reports, on stderr, what dragged each archive member into
+/// the link, in input order: "'_symbol' caused load of
+/// archive.a(member.o)", or the option that loads it whole, -force_load
+/// (or -all_load, which says -force_load) or -ObjC. A bitcode member
+/// LTO compiled counts, though no longer live.
+pub fn print_why_load<E: Target>(ctx: &Context<E>) {
     if !ctx.args.why_load {
-        return loaded;
+        return;
     }
-    // ld-prime reports, on stderr, the members an option loads as it
-    // parses the archives - an archive's last member first; archives
-    // parsed in parallel interleave - before resolution names the ones
-    // a symbol pulled in. -all_load counts as -force_load; -ObjC names
-    // itself.
-    let members = || {
-        let new = |i: usize| loaded[i] && !explained.get(i).is_some_and(|&e| e);
-        ctx.objs.iter().enumerate().filter(move |&(i, obj)| new(i) && obj.mf.parent.is_some())
-    };
-    let forced: Vec<&input_files::ObjectFile> =
-        members().filter(|(idx, _)| !ctx.why_load.contains_key(idx)).map(|(_, obj)| obj).collect();
-    for run in forced.chunk_by(|a, b| std::ptr::eq(a.mf.parent.unwrap(), b.mf.parent.unwrap())) {
-        let archive = run[0].mf.parent.unwrap();
-        let option = if ctx.args.all_load || ctx.force_loaded.contains(&archive.name) {
-            "-force_load"
-        } else {
-            "-ObjC"
-        };
-        for obj in run.iter().rev() {
-            crate::error::notice(format_args!(
-                "{option} caused load of {}",
-                resolved_file_name(obj.mf)
-            ));
+    let compiled: hashbrown::HashSet<usize> = ctx.lto_inputs.iter().map(|i| i.obj).collect();
+    for (i, obj) in ctx.objs.iter().enumerate() {
+        let Some(archive) = obj.mf.parent else { continue };
+        if !obj.is_alive && !compiled.contains(&i) {
+            continue;
+        }
+        let file = obj.mf.name.raw();
+        match ctx.why_load.get(&i) {
+            Some(name) => {
+                crate::error::notice(format_args!("'{}' caused load of {file}", raw(name)))
+            }
+            None => {
+                let option = if ctx.args.all_load || ctx.force_loaded.contains(&archive.name) {
+                    "-force_load"
+                } else {
+                    "-ObjC"
+                };
+                crate::error::notice(format_args!("{option} caused load of {file}"));
+            }
         }
     }
-    for (idx, obj) in members() {
-        if let Some(name) = ctx.why_load.get(&idx) {
-            crate::error::notice(format_args!(
-                "'{}' caused load of {}",
-                raw(name),
-                resolved_file_name(obj.mf)
-            ));
-        }
-    }
-    loaded
 }
 
 /// A file name for diagnostics: the object's path. Archive members

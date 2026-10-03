@@ -86,15 +86,13 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
             passes::Autolinked::Objects => {}
         }
     }
-    // ld-prime says why it loads each archive member as it resolves the
-    // symbols, then checks the inputs it uses.
-    let explained = passes::print_why_load(&ctx, &[]);
     let mut checked = passes::CheckedInputs::default();
     passes::check_input_versions(&ctx, &mut checked);
     passes::check_bitcode_duplicates(&ctx);
     crate::error::checkpoint();
     if ctx.args.relocatable && passes::links_only_bitcode(&ctx) {
         t.stop();
+        passes::print_why_load(&ctx);
         passes::write_merged_bitcode(&ctx);
         crate::error::checkpoint();
         crate::mapfile::write_dependency_info(&ctx);
@@ -115,10 +113,10 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
                 passes::Autolinked::Objects => {}
             }
         }
-        passes::print_why_load(&ctx, &explained);
         passes::check_input_versions(&ctx, &mut checked);
         passes::keep_bitcode_imports(&mut ctx);
     }
+    passes::print_why_load(&ctx);
     passes::warn_newer_dylibs(&ctx);
     crate::error::checkpoint();
     t.stop();
