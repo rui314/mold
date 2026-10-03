@@ -27,11 +27,11 @@
 //! as long as that entry stays within reach of the batches that follow;
 //! gather_thunk_addresses records each symbol's entry addresses so that
 //! applying an out-of-range branch just picks the one within reach.
-//! mold also trims the entries that turn out unneeded
-//! once addresses are final (remove_redundant_thunks) and lays the
-//! section out again; ours does not, as the rescan of every branch and
-//! the second __TEXT placement (which re-encodes __unwind_info) cost 5%
-//! of a debug clang link. The extra entries are dead code.
+//! mold also trims the entries that turn out unneeded once addresses
+//! are final (remove_redundant_thunks) and lays the section out again;
+//! ours does not, as the rescan of every branch and the second __TEXT
+//! placement (which re-encodes __unwind_info) cost 5% of a debug clang
+//! link. The extra entries are dead code.
 
 use rayon::prelude::*;
 
