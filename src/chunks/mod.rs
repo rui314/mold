@@ -358,13 +358,15 @@ fn to_vec(record: &impl FileRecord) -> Vec<u8> {
     record.as_bytes().to_vec()
 }
 
-/// Appends a NUL-terminated string, padding the command to 8 bytes.
-fn append_string(buf: &mut Vec<u8>, s: &[u8]) {
+/// Ends a load command with its NUL-terminated string, padded to 8
+/// bytes, and sets its cmdsize.
+fn append_string(mut buf: Vec<u8>, s: &[u8]) -> Vec<u8> {
     buf.extend_from_slice(s);
     buf.push(0);
-    while !buf.len().is_multiple_of(8) {
-        buf.push(0);
-    }
+    buf.resize(buf.len().next_multiple_of(8), 0);
+    let size = buf.len() as u32;
+    buf[4..8].copy_from_slice(&size.to_le_bytes());
+    buf
 }
 
 /// A segment's maxprot and initprot in the output.
@@ -636,10 +638,7 @@ fn create_load_dylib_cmd(dylib: &crate::input_files::DylibFile) -> Vec<u8> {
     if flags != 0 {
         buf.extend_from_slice(&flags.to_le_bytes());
     }
-    append_string(&mut buf, &dylib.install_name);
-    let size = buf.len() as u32;
-    buf[4..8].copy_from_slice(&size.to_le_bytes());
-    buf
+    append_string(buf, &dylib.install_name)
 }
 
 /// The install name a dylib output records in LC_ID_DYLIB: -install_name,
@@ -661,11 +660,7 @@ fn create_id_dylib_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
         current_version: ctx.args.current_version,
         compatibility_version: ctx.args.compatibility_version,
     };
-    let mut buf = to_vec(&cmd);
-    append_string(&mut buf, name);
-    let size = buf.len() as u32;
-    buf[4..8].copy_from_slice(&size.to_le_bytes());
-    buf
+    append_string(to_vec(&cmd), name)
 }
 
 // LC_RPATH, LC_SUB_FRAMEWORK and the dylinker commands share the
@@ -675,11 +670,7 @@ fn create_id_dylib_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
 fn create_string_cmd(kind: u32, path: &[u8]) -> Vec<u8> {
     let cmd =
         DylinkerCommand { cmd: kind, cmdsize: 0, nameoff: size_of::<DylinkerCommand>() as u32 };
-    let mut buf = to_vec(&cmd);
-    append_string(&mut buf, path);
-    let size = buf.len() as u32;
-    buf[4..8].copy_from_slice(&size.to_le_bytes());
-    buf
+    append_string(to_vec(&cmd), path)
 }
 
 fn create_main_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
