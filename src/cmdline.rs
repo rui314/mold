@@ -1163,15 +1163,6 @@ fn hex_number(val: &str) -> Option<u64> {
     u64::from_str_radix(digits, 16).ok()
 }
 
-/// The decimal argument of an option, of the ThinLTO cache and the like.
-fn parse_decimal<T: std::str::FromStr>(opt: &str, val: &str) -> T {
-    val.parse().unwrap_or_else(|_| fatal!("invalid argument for {opt}"))
-}
-
-fn parse_hex(opt: &str, val: &str) -> u64 {
-    hex_number(val).unwrap_or_else(|| fatal!("{opt}: not a hexadecimal number: {val}"))
-}
-
 /// Parses a -segprot protection: the letters r, w and x in either
 /// case, and '-' for none. ld-prime warns about any other byte and
 /// ignores it, so a non-ASCII letter draws a warning for each of its
@@ -1506,6 +1497,17 @@ impl<'a> ArgCursor<'a> {
         self.next_arg(opt).as_bytes().to_vec()
     }
 
+    /// A hexadecimal argument (see hex_number).
+    fn next_hex(&mut self, opt: &str) -> u64 {
+        let val = self.next_text(opt);
+        hex_number(val).unwrap_or_else(|| fatal!("{opt}: not a hexadecimal number: {val}"))
+    }
+
+    /// A decimal argument, of the ThinLTO cache options and the like.
+    fn next_decimal<T: std::str::FromStr>(&mut self, opt: &str) -> T {
+        self.next_text(opt).parse().unwrap_or_else(|_| fatal!("invalid argument for {opt}"))
+    }
+
     /// The entries of the symbol list file an option names.
     fn next_symbol_list(&mut self, opt: &str) -> Vec<Vec<u8>> {
         read_symbol_list(opt, &self.next_path(opt))
@@ -1597,7 +1599,7 @@ fn read_segment_order(cur: &mut ArgCursor, args: &mut Args, opt: &str) {
 /// -seg_page_size <segment> <size>.
 fn read_seg_page_size(cur: &mut ArgCursor, st: &mut ParseState, opt: &str) {
     let seg = cur.next_bytes(opt);
-    let size = parse_hex(opt, cur.next_text(opt));
+    let size = cur.next_hex(opt);
     if size > u32::MAX as u64 {
         fatal!("-seg_page_size {size}: size too big");
     }
@@ -1643,7 +1645,7 @@ fn read_add_empty_section(cur: &mut ArgCursor, args: &mut Args, opt: &str) {
 fn read_sectalign(cur: &mut ArgCursor, args: &mut Args, opt: &str) {
     let seg = cur.next_bytes(opt);
     let sect = cur.next_bytes(opt);
-    let align = parse_hex(opt, cur.next_text(opt));
+    let align = cur.next_hex(opt);
     if align > u32::MAX as u64 {
         fatal!("-sectalign {align}: alignment too big");
     }
@@ -2115,7 +2117,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // the callers of those the one before folded, up to this
             // many (none limits it); mold folds them in one go.
             b"-max_code_deduplicate_passes" => {
-                parse_decimal::<u64>(name, cur.next_text(name));
+                cur.next_decimal::<u64>(name);
             }
             b"-order_file" => args.order_files.push(cur.next_path(name)),
             // ld64's order file for one section, -sectorder <segment>
@@ -2140,17 +2142,15 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
 
             // The segments and sections: their addresses, protections, order
             // and contents.
-            b"-pagezero_size" => st.pagezero_size = Some(parse_hex(name, cur.next_text(name))),
-            b"-image_base" | b"-seg1addr" => {
-                args.image_base = Some(parse_hex(name, cur.next_text(name)));
-            }
+            b"-pagezero_size" => st.pagezero_size = Some(cur.next_hex(name)),
+            b"-image_base" | b"-seg1addr" => args.image_base = Some(cur.next_hex(name)),
             b"-segaddr" => {
                 let seg = cur.next_bytes(name);
-                let addr = parse_hex(name, cur.next_text(name));
+                let addr = cur.next_hex(name);
                 args.segaddrs.push((seg, addr));
             }
             b"-segalign" => {
-                let align = parse_hex(name, cur.next_text(name));
+                let align = cur.next_hex(name);
                 if align == 0 || align > u32::MAX as u64 {
                     fatal!("-segalign {align:#x}: alignment out of range");
                 }
@@ -2197,7 +2197,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 args.remove_swift_reflection_metadata_sections = true
             }
             b"-headerpad" => {
-                let size = parse_hex(name, cur.next_text(name));
+                let size = cur.next_hex(name);
                 if size > u32::MAX as u64 {
                     fatal!("-headerpad size too large");
                 }
@@ -2362,14 +2362,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // The ThinLTO cache, as libLTO takes it: a pruning interval
             // of -1 never prunes.
             b"-cache_path_lto" => args.lto_cache_dir = Some(cur.next_path(name)),
-            b"-prune_interval_lto" => {
-                args.lto_cache_prune_interval = Some(parse_decimal(name, cur.next_text(name)));
-            }
-            b"-prune_after_lto" => {
-                args.lto_cache_expiration = parse_decimal(name, cur.next_text(name));
-            }
+            b"-prune_interval_lto" => args.lto_cache_prune_interval = Some(cur.next_decimal(name)),
+            b"-prune_after_lto" => args.lto_cache_expiration = cur.next_decimal(name),
             b"-max_relative_cache_size_lto" => {
-                let value = parse_decimal(name, cur.next_text(name));
+                let value = cur.next_decimal(name);
                 if value > 100 {
                     fatal!("Expect a value between 0 and 100 for -max_relative_cache_size_lto");
                 }
