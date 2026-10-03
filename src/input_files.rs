@@ -450,10 +450,6 @@ pub struct DylibFile {
     /// The install names of the private libraries this dylib re-exports,
     /// whose exports are merged into its own.
     pub merged_reexports: Vec<Vec<u8>>,
-    /// Those libraries as the files ld-prime reads them from, to which
-    /// it attributes the symbols they define, when asked for (see
-    /// Args::merged_files).
-    pub merged_files: Vec<MergedFile>,
     /// The public libraries it re-exports, directly or through private
     /// ones, which are dylibs of the link of their own (see
     /// passes::dylib_ranks).
@@ -491,15 +487,6 @@ pub struct ReexportEdge {
     pub dylib: usize,
     pub hops: u32,
     pub via: Vec<u8>,
-}
-
-/// A private library a dylib re-exports, merged into it: the file
-/// ld-prime reads it from (the stub's own inlined document names none),
-/// with its exports.
-#[derive(Debug)]
-pub struct MergedFile {
-    pub path: PathBuf,
-    pub exports: Vec<&'static [u8]>,
 }
 
 /// Returns true for sections that don't become part of the output image.
@@ -2793,15 +2780,6 @@ fn load_reexports<E: Target>(
     let mut edges = Vec::new();
     let mut visited = std::collections::HashSet::new();
     let mut merged = Vec::new();
-    let mut merged_files = Vec::new();
-    let notes = ctx.args.merged_files;
-    let mut record = |path: &Path, exports: Vec<&'static [u8]>| {
-        merged_files.push(MergedFile { path: path.to_path_buf(), exports });
-    };
-    let all_exports = |tbd: &tapi::TbdFile| -> Vec<&'static [u8]> {
-        let all = [&tbd.exports, &tbd.weak_exports, &tbd.tlv_exports];
-        all.into_iter().flatten().copied().collect()
-    };
     while let Some(r) = walk.queue.pop() {
         let ReexportRef { name, loader_dir, loader_rpaths, hops, via } = r;
         if !visited.insert(name.clone()) {
@@ -2822,9 +2800,6 @@ fn load_reexports<E: Target>(
                 walk.exports.extend(loaded.exports.iter().copied());
                 walk.tlv_exports.extend(loaded.tlv_exports.iter().copied());
                 walk.weak_exports.extend(loaded.weak_exports.iter().copied());
-                if notes {
-                    record(&loaded.path, loaded.exports.iter().copied().collect());
-                }
                 merged.push(name);
             }
             continue;
@@ -2856,11 +2831,6 @@ fn load_reexports<E: Target>(
                 continue;
             }
             walk.moved.extend(interpret_ld_symbols(ctx, &mut doc).moved);
-            if notes {
-                let found = resolve_dylib_ref(ctx, &name, &loader_dir, &loader_rpaths, true);
-                let path = found.map_or(Path::new(crate::util::os_str(&name)), |mf| &mf.name);
-                record(path, all_exports(&doc));
-            }
             walk.merge_tbd(doc, &loader_dir, &loader_rpaths, hops);
             merged.push(name);
             continue;
@@ -2898,9 +2868,6 @@ fn load_reexports<E: Target>(
                 }
                 merged.push(dep_tbd.install_name.to_vec());
                 walk.moved.extend(interpret_ld_symbols(ctx, &mut dep_tbd).moved);
-                if notes {
-                    record(&dep.name, all_exports(&dep_tbd));
-                }
                 walk.merge_tbd(dep_tbd, &dir_of(&dep.name), &[], hops);
             }
             _ => {
@@ -2926,15 +2893,12 @@ fn load_reexports<E: Target>(
                 check_dylib_platform(ctx, binary);
                 let mut dylib = read_dylib_binary(binary);
                 walk.moved.extend(interpret_binary_ld_symbols(ctx, &mut dylib).moved);
-                if notes {
-                    record(&dep.name, dylib.exports.clone());
-                }
                 walk.merge_binary(dylib, &found.install_name, &dir_of(&dep.name), hops);
                 merged.push(found.install_name);
             }
         }
     }
-    LoadedReexports { merged, merged_files, moved: walk.moved, edges }
+    LoadedReexports { merged, moved: walk.moved, edges }
 }
 
 /// A library a dylib re-exports, as load_reexports walks it: its
@@ -2976,7 +2940,6 @@ impl ReexportRef {
 /// libraries loaded as dylibs of their own.
 struct LoadedReexports {
     merged: Vec<Vec<u8>>,
-    merged_files: Vec<MergedFile>,
     moved: Vec<MovedExport>,
     edges: Vec<ReexportEdge>,
 }
@@ -3277,7 +3240,6 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
             has_weak_defs,
             tlv_exports,
             merged_reexports: loaded.merged,
-            merged_files: loaded.merged_files,
             reexported: loaded.edges,
             moved_exports,
             name_source,
@@ -3485,7 +3447,6 @@ pub fn parse_bundle_loader<E: Target>(ctx: &mut Context<E>, mf: &'static MappedF
             has_weak_defs: false,
             tlv_exports,
             merged_reexports: Vec::new(),
-            merged_files: Vec::new(),
             reexported: Vec::new(),
             moved_exports: hashbrown::HashMap::new(),
             name_source: NameSource::Own,
@@ -4180,7 +4141,6 @@ fn register_tbd<E: Target>(
             has_weak_defs,
             tlv_exports,
             merged_reexports: loaded.merged,
-            merged_files: loaded.merged_files,
             reexported: loaded.edges,
             moved_exports,
             name_source,
@@ -4238,7 +4198,6 @@ fn add_moved_dylibs<E: Target>(
                     has_weak_defs: false,
                     tlv_exports: hashbrown::HashSet::new(),
                     merged_reexports: Vec::new(),
-                    merged_files: Vec::new(),
                     reexported: Vec::new(),
                     moved_exports: hashbrown::HashMap::new(),
                     name_source: NameSource::Moved,
@@ -4290,7 +4249,6 @@ pub fn add_merged_dependency<E: Target>(ctx: &mut Context<E>, dep: crate::mergea
         weak_exports,
         tlv_exports: hashbrown::HashSet::new(),
         merged_reexports: Vec::new(),
-        merged_files: Vec::new(),
         reexported: Vec::new(),
         moved_exports: hashbrown::HashMap::new(),
         name_source: NameSource::Own,
@@ -4327,7 +4285,6 @@ fn add_dylib<E: Target>(ctx: &mut Context<E>, dylib: DylibFile) -> usize {
         }
         existing.exports.extend(dylib.exports);
         existing.merged_reexports.extend(dylib.merged_reexports);
-        existing.merged_files.extend(dylib.merged_files);
         existing.reexported.extend(dylib.reexported);
         existing.moved_exports.extend(dylib.moved_exports);
         return idx;

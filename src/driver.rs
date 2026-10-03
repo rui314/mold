@@ -121,7 +121,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     crate::error::checkpoint();
     t.stop();
     bundle_hook::create_class_table(&mut ctx);
-    passes::check_common_conflicts(&mut ctx);
+    passes::check_common_conflicts(&ctx);
     let t = ctx.timer("remove_unreachable_files");
     passes::remove_unreachable_files(&mut ctx);
     drop(t);
@@ -195,8 +195,6 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     passes::check_duplicate_symbols(&ctx);
     crate::error::checkpoint();
     passes::check_poisoned_symbols(&ctx);
-    crate::error::checkpoint();
-    passes::report_common_conflict(&ctx);
     crate::error::checkpoint();
     passes::warn_unused_dylibs(&ctx);
     passes::warn_redundant_reexports(&ctx);

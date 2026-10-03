@@ -594,12 +594,6 @@ pub struct Args {
     /// -why_live: for each matching symbol, print the reference chain
     /// that kept it alive through -dead_strip ("*" wildcards allowed).
     pub why_live: Glob,
-    /// Whether the link notes the files of the private libraries a
-    /// dylib re-exports and merges (DylibFile::merged_files), which
-    /// gathering costs: -why_live lists them, and the diagnostics of
-    /// tentative definitions a dylib defines too, and of re-exports a
-    /// library the image re-exports whole makes redundant, name them.
-    pub merged_files: bool,
     /// -alias/-alias_list: (existing, new) symbol aliases to define.
     pub aliases: Vec<(Vec<u8>, Vec<u8>)>,
     /// -sectalign: (segment, section, p2align), the alignment of an
@@ -929,7 +923,6 @@ impl Default for Args {
             print_dependencies: false,
             why_load: false,
             why_live: Glob::new(),
-            merged_files: false,
             aliases: Vec::new(),
             sectalign: Vec::new(),
             allowable_clients: Vec::new(),
@@ -2824,7 +2817,6 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
 
     resolve_defaults(target, &mut args, &st);
     std::mem::take(&mut st.lists).build(&mut args);
-    args.merged_files = notes_merged_files(&args);
     check_arch_options(target, &mut args, &st);
     resolve_env_source_version(&mut args, &st);
     resolve_options(target, &mut args, &mut st);
@@ -2993,21 +2985,6 @@ impl SymbolLists {
         }
         args.interposable = self.interposable_list.map(GlobBuilder::build);
     }
-}
-
-/// Whether the link notes the files of the private libraries a dylib
-/// re-exports and merges: see Args::merged_files.
-fn notes_merged_files(args: &Args) -> bool {
-    let lists_reexports = args.exported_symbols.is_some() || !args.reexported_symbols.is_empty();
-    let reexports_library = !args.sub_libraries.is_empty()
-        || !args.sub_umbrellas.is_empty()
-        || args.inputs.iter().any(|input| {
-            matches!(input, InputArg::Library(LibraryKind::Reexport | LibraryKind::NoMerge, _))
-        });
-    !args.why_live.is_empty()
-        || args.warn_commons
-        || args.commons == CommonsMode::Error
-        || (lists_reexports && reexports_library)
 }
 
 /// The architecture options ld-prime checks against the target, and the

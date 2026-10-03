@@ -143,10 +143,6 @@ pub struct Context<E: Target> {
     /// The files only -possible-l and the like name, which load with
     /// the auto-linked libraries (see passes::load_autolink_deps).
     pub possible_files: Vec<std::path::PathBuf>,
-    /// Under -commons error, the first tentative definition a dylib
-    /// defines too, as ld-prime reports it once it has found no
-    /// duplicate symbol (see passes::check_common_conflicts).
-    pub common_conflict: Option<crate::error::Message>,
     /// The files -dylib_file names for re-exported libraries that are
     /// no libraries, to load as inputs (see collect_indirect_files).
     pub indirect_files: Vec<&'static crate::mapped_file::MappedFile>,
@@ -292,7 +288,6 @@ impl<E: Target> Context<E> {
             cmdline_linker_options: None,
             autolink_misses: Vec::new(),
             possible_files: Vec::new(),
-            common_conflict: None,
             indirect_files: Vec::new(),
             merged_dependencies: Vec::new(),
             merged_libraries: Vec::new(),

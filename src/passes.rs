@@ -3956,98 +3956,47 @@ pub fn check_poisoned_symbols<E: Target>(ctx: &Context<E>) {
     error!("{}", raw(&msg));
 }
 
-/// The tentative definitions (common symbols) left after resolution
-/// that a dylib of the link defines too, by name: the object whose
-/// definition won (the first of the largest) and the files of the
-/// dylibs, in the order the link loaded them.
-fn common_conflicts<E: Target>(
-    ctx: &Context<E>,
-) -> Vec<(SymbolId, error::RawBuf, Vec<error::RawBuf>)> {
-    let mut found: Vec<(SymbolId, Vec<usize>)> = (0..ctx.symbols.syms.len() as u32)
-        .into_par_iter()
-        .filter(|&id| ctx.symbols[id].is_common() && !ctx.symbols[id].is_defined())
-        .filter_map(|id| {
-            let name = ctx.symbols[id].name();
-            let dylibs: Vec<usize> =
-                (0..ctx.dylibs.len()).filter(|&i| ctx.dylibs[i].exports.contains(name)).collect();
-            (!dylibs.is_empty()).then_some((id, dylibs))
-        })
-        .collect();
-    found.par_sort_unstable_by_key(|&(id, _)| ctx.symbols[id].name());
-    found
-        .into_iter()
-        .map(|(id, dylibs)| {
-            let size = ctx.symbols[id].value;
-            let obj = ctx.objs.iter().find(|obj| {
-                obj.is_alive
-                    && obj.nlists.iter().zip(&obj.symbols).any(|(nlist, &sym)| {
-                        sym == id && nlist.is_common() && nlist.n_value == size
-                    })
-            });
-            let obj = obj.map_or(error::RawBuf::default(), |obj| resolved_file_name(obj.mf));
-            let dylibs = dylibs
-                .into_iter()
-                .map(|i| {
-                    let file = defining_file(ctx, &ctx.dylibs[i], ctx.symbols[id].name());
-                    error::RawBuf(path_bytes(&file).to_vec())
-                })
-                .collect();
-            (id, obj, dylibs)
-        })
-        .collect()
-}
-
-/// The file, by its real path, that defines a dylib's export, as
-/// ld-prime names it: a private library the dylib re-exports and
-/// merges, or for a library a stub inlines as a public re-export, the
-/// file ld-prime would find for it, if any; else the dylib's own.
-fn defining_file<E: Target>(
-    ctx: &Context<E>,
-    dylib: &input_files::DylibFile,
-    name: &[u8],
-) -> PathBuf {
-    let merged = dylib.merged_files.iter().find(|file| file.exports.contains(&name));
-    let file = match (merged, dylib.is_implicit) {
-        (Some(file), _) => Some(&file.path),
-        (None, true) => input_files::find_reexport(ctx, &dylib.install_name).map(|mf| &mf.name),
-        (None, false) => None,
-    };
-    real_path(file.unwrap_or(&dylib.path)).0
-}
-
-/// -warn_commons: ld-prime warns, as it resolves symbols, of each
-/// tentative definition it keeps over a dylib's definition of the name
-/// (by default; a missing `extern` in a header makes one), once for
-/// each such dylib. Under -commons error it notes the first such one
-/// for report_common_conflict.
-pub fn check_common_conflicts<E: Target>(ctx: &mut Context<E>) {
+/// -warn_commons warns of each tentative definition (common symbol)
+/// the link keeps over a dylib's definition of the name (by default; a
+/// missing `extern` in a header makes one), once for each such dylib,
+/// and -commons error refuses one.
+pub fn check_common_conflicts<E: Target>(ctx: &Context<E>) {
     use crate::cmdline::CommonsMode;
+    let error = ctx.args.commons == CommonsMode::Error;
     let warn = ctx.args.warn_commons && ctx.args.commons == CommonsMode::IgnoreDylibs;
-    if !warn && ctx.args.commons != CommonsMode::Error {
+    if !warn && !error {
         return;
     }
-    for (id, obj, dylibs) in common_conflicts(ctx) {
-        let name = raw(ctx.symbols[id].name());
-        if !warn {
-            ctx.common_conflict = Some(error::render(format_args!(
-                "common symbol '{name}' ({obj}) conflicts with definition from dylib '{name}' ({})",
-                dylibs[0]
-            )));
-            return;
+    let mut commons: Vec<SymbolId> = (0..ctx.symbols.syms.len() as u32)
+        .into_par_iter()
+        .filter(|&id| ctx.symbols[id].is_common() && !ctx.symbols[id].is_defined())
+        .collect();
+    commons.par_sort_unstable_by_key(|&id| ctx.symbols[id].name());
+    for id in commons {
+        let sym = &ctx.symbols[id];
+        let mut dylibs = ctx.dylibs.iter().filter(|d| d.exports.contains(sym.name())).peekable();
+        if dylibs.peek().is_none() {
+            continue;
         }
+        // The first object declaring it.
+        let declares = |obj: &&input_files::ObjectFile| {
+            obj.is_alive
+                && (obj.nlists.iter().zip(&obj.symbols)).any(|(n, &s)| s == id && n.is_common())
+        };
+        let Some(obj) = ctx.objs.iter().find(declares) else { continue };
+        let (name, obj) = (raw(sym.name()), obj.mf.name.raw());
         for dylib in dylibs {
-            crate::warn!(
-                "using common symbol '{name}' ({obj}) and ignoring definition from dylib '{name}' ({dylib})"
-            );
+            let dylib = dylib.path.raw();
+            if error {
+                error!(
+                    "common symbol '{name}' ({obj}) conflicts with definition from dylib '{name}' ({dylib})"
+                );
+            } else {
+                crate::warn!(
+                    "using common symbol '{name}' ({obj}) and ignoring definition from dylib '{name}' ({dylib})"
+                );
+            }
         }
-    }
-}
-
-/// -commons error fails the link on the first tentative definition a
-/// dylib defines too, once ld-prime has found no duplicate symbol.
-pub fn report_common_conflict<E: Target>(ctx: &Context<E>) {
-    if let Some(msg) = &ctx.common_conflict {
-        error!("{}", raw(msg));
     }
 }
 
@@ -5597,19 +5546,17 @@ pub fn create_symbol_reexports<E: Target>(ctx: &mut Context<E>) {
 
 /// ld-prime adds nothing to the exports for a symbol an export list
 /// would re-export that a library the image re-exports whole exports
-/// already, but warns of each, naming the file that defines it - once
-/// the link has turned out to be sound. It groups the warnings by file;
-/// here the files come in path order and each one's symbols by name.
+/// already, but warns of each, naming that library's file. The
+/// warnings come by symbol name.
 pub fn warn_redundant_reexports<E: Target>(ctx: &Context<E>) {
-    let mut found: Vec<(PathBuf, &[u8])> = (ctx.redundant_reexports.iter())
+    let mut found: Vec<(&[u8], &Path)> = (ctx.redundant_reexports.iter())
         .filter_map(|&id| {
             let Some(FileId::Dylib(d)) = ctx.symbols[id].file() else { return None };
-            let name = ctx.symbols[id].name();
-            Some((defining_file(ctx, &ctx.dylibs[d as usize], name), name))
+            Some((ctx.symbols[id].name(), ctx.dylibs[d as usize].path.as_path()))
         })
         .collect();
     found.sort();
-    for (file, name) in found {
+    for (name, file) in found {
         let name = raw(name);
         crate::warn!(
             "explicit re-export for symbol '{name}' is redundant because it is already re-exported from dylib '{}'",

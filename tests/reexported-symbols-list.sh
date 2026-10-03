@@ -62,8 +62,7 @@ echo 'int foo() { return 42; }' |
 printf '_foo\n_baz\n' > $t/list5
 $CC --ld-path=$mold -dynamiclib $t/a.o -o $t/libredundant.dylib \
   -Wl,-reexport_library,$t/libbar.dylib -Wl,-reexported_symbols_list,$t/list5 2> $t/log5
-real=$(cd $t && pwd -P)
-grep -qF "warning: explicit re-export for symbol '_baz' is redundant because it is already re-exported from dylib '$real/libbaz.dylib'" $t/log5
-grep -qF "warning: explicit re-export for symbol '_foo' is redundant because it is already re-exported from dylib '$real/libbar.dylib'" $t/log5
+grep -qF "warning: explicit re-export for symbol '_baz' is redundant because it is already re-exported from dylib '$t/libbar.dylib'" $t/log5
+grep -qF "warning: explicit re-export for symbol '_foo' is redundant because it is already re-exported from dylib '$t/libbar.dylib'" $t/log5
 dyld_info -exports $t/libredundant.dylib > $t/exports5
 not grep -q re-export $t/exports5
