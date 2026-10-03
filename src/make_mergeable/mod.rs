@@ -129,9 +129,6 @@ enum To {
     Entry(u32),
     Tail(u32),
     Sym(SymbolId),
-    /// The entry before the one of the fixup: an alias's target, made
-    /// with it.
-    Prev,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -1030,10 +1027,10 @@ impl<'a, E: Target> Builder<'a, E> {
         let mut sym_entries: Vec<OutEntry> = Vec::new();
         let mut sym_index: HashMap<SymbolId, usize> = HashMap::new();
         for (id, dep) in self.referenced_syms(&deps) {
-            match dep {
-                Some(dylib) => sym_entries.push(import_entry(ctx, id, dylib)),
-                None => sym_entries.extend(undefine_entries(ctx, id)),
-            }
+            sym_entries.push(match dep {
+                Some(dylib) => import_entry(ctx, id, dylib),
+                None => undefine_entry(ctx, id),
+            });
             sym_index.insert(id, sym_entries.len() - 1);
         }
         let order = self.final_order(sym_entries.len());
@@ -1042,23 +1039,21 @@ impl<'a, E: Target> Builder<'a, E> {
         for (i, &(list, j)) in order.iter().enumerate() {
             index[list][j] = i as u32;
         }
-        let number = |to: To, me: u32| match to {
+        let number = |to: To| match to {
             To::Entry(a) => index[0][a as usize],
             To::Tail(t) => index[1][t as usize],
             To::Sym(id) => index[2][sym_index[&id]],
-            To::Prev => me - 1,
         };
         let lists = [&self.entries, &self.tail, &sym_entries];
         let mut entries: Vec<OutEntry> =
             order.iter().map(|&(list, j)| lists[list][j].clone()).collect();
         let mut fixups = Vec::new();
         let mut first_fixup = Vec::with_capacity(entries.len());
-        for (i, entry) in entries.iter_mut().enumerate() {
+        for entry in &mut entries {
             first_fixup.push(fixups.len() as u32);
             entry.fixups.sort_by_key(|f| f.offset);
             for f in &entry.fixups {
-                let from = f.from.map_or(0, |to| number(to, i as u32));
-                fixups.push((*f, number(f.target, i as u32), from));
+                fixups.push((*f, number(f.target), f.from.map_or(0, number)));
             }
         }
         MergeableRecord {
@@ -1261,10 +1256,9 @@ fn named_entry<E: Target>(
     entry
 }
 
-/// The entries of a symbol the objects refer to that no object defines:
+/// The entry of a symbol the objects refer to that no object defines:
 /// one the linker defines, or one left to dynamic lookup.
-/// ___dso_handle is ld-prime's alias of the image's start.
-fn undefine_entries<E: Target>(ctx: &Context<E>, id: SymbolId) -> Vec<OutEntry> {
+fn undefine_entry<E: Target>(ctx: &Context<E>, id: SymbolId) -> OutEntry {
     let sym = &ctx.symbols[id];
     let kind = if sym.is_weak_ref() && !sym.is_defined() {
         kind::UNDEFINE_WEAK_IMPORT
@@ -1272,15 +1266,8 @@ fn undefine_entries<E: Target>(ctx: &Context<E>, id: SymbolId) -> Vec<OutEntry> 
         kind::UNDEFINE
     };
     let mut entry = OutEntry::new(scope::GLOBAL, kind, CT_NONE);
-    if sym.name() == b"___dso_handle" {
-        entry.name = Some(b"segment$start$__TEXT");
-        let mut alias = OutEntry::new(scope::HIDDEN, kind::ALIAS, CT_NONE);
-        alias.name = Some(b"___dso_handle");
-        alias.fixups.push(OutFixup::new(0, To::Prev, fk::ALIAS_OF, 0));
-        return vec![entry, alias];
-    }
     entry.name = Some(sym.name());
-    vec![entry]
+    entry
 }
 
 /// An import's entry: the library's export, weak if it defines it so,
