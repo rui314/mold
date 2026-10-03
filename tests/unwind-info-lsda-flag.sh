@@ -1,10 +1,10 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# __unwind_info's LSDA index lists a __compact_unwind record's LSDA only
-# if the record's encoding has UNWIND_HAS_LSDA (0x40000000), as
-# ld-prime does. The record keeps its LSDA all the same: its entry is
-# not merged with the one before it, though they share an encoding.
+# The unwinder looks a function's LSDA up in __unwind_info's LSDA index
+# only if its encoding has UNWIND_HAS_LSDA (0x40000000). A record with
+# an LSDA keeps an entry of its own: it is not merged with the one
+# before it, though they share an encoding.
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .text
 .globl _main
@@ -49,6 +49,5 @@ off() {
 }
 awk '/LSDA descriptors:/ { f = 1; next } /Second level indices:/ { f = 0 } f' \
   $t/unwind > $t/lsdas
-[ $(wc -l < $t/lsdas) = 1 ]
 grep -q "function offset=$(off _g), LSDA offset=$(off _lsda2)" $t/lsdas
-grep -q "function offset=$(off _f), encoding.*=0x02001000" $t/unwind
+[ "$(unwind_lookup $t/exe _main _f _g | tr '\n' ' ')" = '0x2001000 0x2001000 0x42001000 ' ]

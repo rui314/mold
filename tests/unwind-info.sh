@@ -2,48 +2,20 @@
 source "$(dirname "$0")"/common.inc
 
 # __unwind_info entries have no length: each covers the code up to the
-# next. So ld-prime gives every subsection of an instruction section an
-# entry, and one without unwind information of its own gets encoding 0
-# ("no unwind info") instead of falling under the function before it.
+# next. So every subsection of an instruction section gets an entry,
+# and one without unwind information of its own gets encoding 0 ("no
+# unwind info") instead of falling under the function before it.
 echo 'int f(void) { return 1; }' | $CC -o $t/a.o -c -xc -
 printf '.text\n.globl _g\n_g:\n ret\n.subsections_via_symbols\n' | $CC -o $t/b.o -c -xassembler -
 echo 'int f(void); int main() { return f() - 1; }' | $CC -o $t/c.o -c -xc -
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o $t/c.o
 $t/exe
+unwind_lookup $t/exe _f _g _main > $t/enc
+[ "$(sed -n 2p $t/enc)" = 0x0 ]
+not grep -q '^0x0$' <(sed -n '1p;3p' $t/enc)
 
-unwind_entries() {
-  python3 - $1 <<'EOF2'
-import struct, subprocess, sys
-out = subprocess.run(['otool', '-l', sys.argv[1]], capture_output=True, text=True).stdout.splitlines()
-for i, l in enumerate(out):
-    if l.strip() == 'sectname __unwind_info':
-        size = int(out[i + 3].split()[1], 16); off = int(out[i + 4].split()[1])
-d = open(sys.argv[1], 'rb').read()[off:off + size]
-_, ceo, cec, _, _, iso, isc = struct.unpack_from('<7I', d, 0)
-common = struct.unpack_from(f'<{cec}I', d, ceo)
-for k in range(isc - 1):
-    first, page, _ = struct.unpack_from('<3I', d, iso + 12 * k)
-    kind = struct.unpack_from('<I', d, page)[0]
-    if kind == 3:
-        _, eo, ec, eco, ecc = struct.unpack_from('<IHHHH', d, page)
-        local = struct.unpack_from(f'<{ecc}I', d, page + eco)
-        for e in struct.unpack_from(f'<{ec}I', d, page + eo):
-            idx = e >> 24
-            enc = common[idx] if idx < cec else local[idx - cec]
-            print(hex(0x100000000 + first + (e & 0xffffff)), hex(enc))
-    else:
-        _, eo, ec = struct.unpack_from('<IHH', d, page)
-        for j in range(ec):
-            fo, enc = struct.unpack_from('<II', d, page + eo + 8 * j)
-            print(hex(0x100000000 + fo), hex(enc))
-EOF2
-}
-addr() { nm $1 | awk -v s=$2 '$3 == s { print "0x" $1 }' | sed 's/0x0*/0x/'; }
-unwind_entries $t/exe > $t/entries
-grep -q "^$(addr $t/exe _g) 0x0$" $t/entries
-
-# For the same reason two consecutive functions with the same encoding
-# share one entry, even with padding between them.
+# Two consecutive functions with the same encoding may share one entry,
+# even with padding between them; each still finds its encoding.
 cat <<EOF | $CC -o $t/d.o -c -xc -
 int h(void);
 int f(void) { return h() + 1; }
@@ -52,39 +24,35 @@ EOF
 echo 'int h(void) { return 2; }' | $CC -o $t/e.o -c -xc -
 $CC --ld-path=$mold -o $t/exe2 $t/d.o $t/e.o
 $t/exe2
-unwind_entries $t/exe2 > $t/entries2
-grep -q "^$(addr $t/exe2 _f) " $t/entries2
-not grep -q "^$(addr $t/exe2 _main) " $t/entries2
+unwind_lookup $t/exe2 _f _main _h > $t/enc2
+[ "$(sed -n 1p $t/enc2)" = "$(sed -n 2p $t/enc2)" ]
+not grep -q '^0x0$\|none' $t/enc2
 
 # An empty subsection gets an entry too: the empty __text of an object
 # of only data without .subsections_via_symbols, which the arm64
 # assembler labels (ltmp0), at the end of the code or ahead of the
-# function that shares its address.
+# function that shares its address - which still finds its own.
 if [ $ARCH = arm64 ]; then
   printf '.data\n.quad 1\n' | $CC -o $t/f.o -c -xassembler -
   $CC --ld-path=$mold -o $t/exe4 $t/c.o $t/a.o $t/f.o
   $t/exe4
-  unwind_entries $t/exe4 > $t/entries4
-  [ "$(tail -1 $t/entries4 | cut -d' ' -f2)" = 0x0 ]
+  [ "$(unwind_lookup $t/exe4 _f)" = "$(unwind_lookup $t/exe _f)" ]
   $CC --ld-path=$mold -o $t/exe5 $t/f.o $t/c.o $t/a.o
   $t/exe5
-  unwind_entries $t/exe5 > $t/entries5
-  [ "$(sed -n 1p $t/entries5)" = "$(addr $t/exe5 _main) 0x0" ]
-  [ "$(sed -n 2p $t/entries5 | cut -d' ' -f1)" = "$(addr $t/exe5 _main)" ]
+  [ "$(unwind_lookup $t/exe5 _main)" = "$(unwind_lookup $t/exe _main)" ]
 fi
 
-# Entries of encoding 0, code without unwind info, are never merged,
-# whether a record or no record says so; code in a section that is not
-# of pure instructions, which the assembler marks as holding some, is
-# no function and gets none. The common encodings table ranks the
-# encodings of the merged entries by use, ties in increasing order.
+# Code a record says has no unwind info (encoding 0) and code with no
+# record both find encoding 0; code in a section that is not of pure
+# instructions, which the assembler marks as holding some, is no
+# function and gets no entry of its own.
 rec() { printf '.quad _%s\n.long 1\n.long %s\n.quad 0\n.quad 0\n' $1 $2; }
 {
   echo .text
   for f in main z1 z2 bare a1 a2 a3 b1 c1 b2 c2; do
     printf '.globl _%s\n_%s:\n  ret\n' $f $f
   done
-  printf '.section __TEXT,__bar,regular\n_in_bar:\n  ret\n'
+  printf '.section __TEXT,__bar,regular\n.globl _in_bar\n_in_bar:\n  ret\n'
   echo '.section __LD,__compact_unwind,regular,debug'
   echo '.p2align 3'
   rec main 0x02000000; rec z1 0; rec z2 0
@@ -93,28 +61,13 @@ rec() { printf '.quad _%s\n.long 1\n.long %s\n.quad 0\n.quad 0\n' $1 $2; }
   echo .subsections_via_symbols
 } | $CC -o $t/g.o -c -xassembler -
 $CC --ld-path=$mold -o $t/exe6 $t/g.o
-unwind_entries $t/exe6 > $t/entries6
-grep -q "^$(addr $t/exe6 _z2) 0x0$" $t/entries6
-grep -q "^$(addr $t/exe6 _bare) 0x0$" $t/entries6
-not grep -q "^$(addr $t/exe6 _a2) " $t/entries6
-not grep -q "^$(addr $t/exe6 _in_bar) " $t/entries6
-python3 - $t/exe6 > $t/common6 <<'EOF2'
-import struct, subprocess, sys
-out = subprocess.run(['otool', '-l', sys.argv[1]], capture_output=True, text=True).stdout.splitlines()
-for i, l in enumerate(out):
-    if l.strip() == 'sectname __unwind_info':
-        off = int(out[i + 4].split()[1])
-d = open(sys.argv[1], 'rb').read()[off:]
-_, ceo, cec = struct.unpack_from('<3I', d, 0)
-print(*[hex(e) for e in struct.unpack_from(f'<{cec}I', d, ceo)])
-EOF2
-[ "$(cat $t/common6)" = "0x0 0x2020000 0x2030000" ]
+unwind_lookup $t/exe6 _main _z1 _z2 _bare _a1 _a2 _a3 _b1 _c1 _b2 _c2 | tr '\n' ' ' > $t/enc6
+[ "$(cat $t/enc6)" = '0x2000000 0x0 0x0 0x0 0x2010000 0x2010000 0x2010000 0x2030000 0x2020000 0x2030000 0x2020000 ' ]
+objdump --unwind-info $t/exe6 > $t/unwind6
+not grep -qi "function offset=0x0*$(nm $t/exe6 | awk '$3 == "_in_bar" { print $1 }' | sed 's/^0*1000//')," $t/unwind6
 
-# With more entries than a page holds, ld-prime fills the 4096-byte
-# second-level pages from the first function on, starts each page at
-# an 8-byte boundary of the section, and sizes the first-level index
-# for as many pages as the entries could take in the regular format
-# (511 per page), plus the terminator and one spare, zero-filled.
+# More entries than a page holds: the lookups go through the
+# first-level index to the right page.
 python3 - > $t/many.c <<'EOF2'
 print('int printf(const char *, ...);')
 for i in range(2500):
@@ -126,26 +79,22 @@ print('int main() { return f1(-1); }')
 EOF2
 $CC -O1 -momit-leaf-frame-pointer -o $t/many.o -c $t/many.c
 $CC --ld-path=$mold -o $t/exe3 $t/many.o
-python3 - $t/exe3 <<'EOF2'
-import struct, subprocess, sys
-out = subprocess.run(['otool', '-l', sys.argv[1]], capture_output=True, text=True).stdout.splitlines()
-for i, l in enumerate(out):
-    if l.strip() == 'sectname __unwind_info':
-        size = int(out[i + 3].split()[1], 16); off = int(out[i + 4].split()[1])
-d = open(sys.argv[1], 'rb').read()[off:off + size]
-_, _, _, _, _, iso, isc = struct.unpack_from('<7I', d, 0)
-pages = [struct.unpack_from('<3I', d, iso + 12 * k)[1] for k in range(isc - 1)]
-counts = [struct.unpack_from('<IHH', d, p)[2] for p in pages]
-lsda = struct.unpack_from('<3I', d, iso)[2]
-assert len(counts) > 1, counts
-assert all(c == counts[0] for c in counts[:-1]) and counts[-1] <= counts[0], counts
-assert (lsda - iso) // 12 == -(-sum(counts) // 511) + 2, (lsda - iso, sum(counts))
-assert all(p % 8 == 0 for p in pages[1:]), pages
-assert len(d) % 8 == 0, len(d)
+$t/exe3
+unwind_lookup $t/exe3 $(for i in $(seq 0 2499); do echo _f$i; done) > $t/enc3
+# The leaf functions share a mode (x86-64 describes each by an FDE of
+# its own), the others an encoding.
+python3 - $t/enc3 <<'EOF2'
+import sys
+enc = [int(l, 16) for l in open(sys.argv[1])]
+modes = [e & 0x0f000000 for e in enc]
+assert 0 not in enc
+assert len(set(enc[0::2])) == 1 and len(set(modes[1::2])) == 1 and modes[0] != modes[1]
 EOF2
+objdump --unwind-info $t/exe3 > $t/unwind3
+[ "$(grep -c 'Second level index\[' $t/unwind3)" -gt 1 ]
 
-# ld-prime orders the entries of one address by encoding, whatever the
-# order of their records, so that the unwinder finds the greatest.
+# Of several records for one function, the unwinder finds the one of
+# the greatest encoding, whatever their order.
 {
   printf '.text\n.globl _main\n_main:\n  ret\n'
   echo '.section __LD,__compact_unwind,regular,debug'
@@ -154,5 +103,4 @@ EOF2
   echo .subsections_via_symbols
 } | $CC -o $t/h.o -c -xassembler -
 $CC --ld-path=$mold -o $t/exe7 $t/h.o
-unwind_entries $t/exe7 > $t/entries7
-[ "$(cut -d' ' -f2 $t/entries7 | tr '\n' ' ')" = '0x2001000 0x2002000 0x2003000 ' ]
+[ "$(unwind_lookup $t/exe7 _main)" = 0x2003000 ]

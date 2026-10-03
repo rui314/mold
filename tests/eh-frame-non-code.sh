@@ -67,10 +67,11 @@ carried() {
   dwarfdump --eh-frame $t/$1 | grep -q "FDE cie=.* pc=0*$f\.\.\."
   objdump --unwind-info $t/$1 > $t/$1.unwind
   not grep -qi "function offset=0x0*${f: -5}," $t/$1.unwind
-  # The FDE still gets the image an __unwind_info, which lists the
-  # code: _main, with no unwind info of its own (encoding 0).
-  local m=$(nm $t/$1 | awk '$3 == "_main" { print $1 }' | sed 's/^0*//')
-  grep -qi "function offset=0x0*${m: -5}, encoding.*=0x00000000" $t/$1.unwind
+  # _main has no unwind info: an __unwind_info entry of encoding 0, or
+  # no table at all.
+  if otool -l $t/$1 | grep -q 'sectname __unwind_info'; then
+    [ "$(unwind_lookup $t/$1 _main)" = 0x0 ]
+  fi
   $mold -r -arch $ARCH -o $t/$1-r.o $t/$1.o 2> $t/$1-r.log
   warned $t/$1-r.log $2 $t/$1.o
   dwarfdump --eh-frame $t/$1-r.o | grep -q 'FDE cie='

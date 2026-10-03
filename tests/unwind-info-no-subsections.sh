@@ -1,13 +1,12 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# Without .subsections_via_symbols a section is one subsection to
-# dead-strip and to order, but ld-prime still cuts it at its labels for
-# __unwind_info, and each piece without a compact unwind record of its
-# own gets an entry of encoding 0 ("no unwind info"), so that it does
-# not fall under the record of the function before it. Here _g lies
-# between the records of _f and _h: unwound by _f's frame rules, its
-# caller would be wrong, so the unwinder stops at it instead.
+# Without .subsections_via_symbols a section is one subsection of
+# several functions: the code past a compact unwind record's length up
+# to the next record gets an entry of encoding 0 ("no unwind info"),
+# so that it does not fall under the record of the function before it.
+# Here _g lies between the records of _f and _h: unwound by _f's frame
+# rules, its caller would be wrong, so the unwinder stops at it instead.
 cat <<EOF | $CC -o $t/a.o -c -xc -
 #include <dlfcn.h>
 #include <stdio.h>
@@ -95,17 +94,17 @@ $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o
 [ "$($t/exe)" = 'trace f main ' ]
 [ "$($t/exe g)" = 'trace ' ]
 
-# Each label starts a piece, an alternate entry point's too; of two
-# labels at one place the first names an empty piece, as does one at
-# the section's end. A record anywhere in a piece is the piece's, so the
-# start of _a, whose record is past it, gets no entry. Encoding 0 is
-# used often enough to be a common encoding.
+# The code ahead of the first record has no unwind info either.
+# (ld-prime cuts such a section at its labels instead: the code of _a
+# ahead of its record gets _main's encoding there.)
 if [ $ARCH = arm64 ]; then ret=ret; n=4; else ret=retq; n=1; fi
 rec() { printf '.quad %s\n.long %s\n.long %s\n.quad 0\n.quad 0\n' $1 $n $2; }
 cat <<EOF | $CC -o $t/c.o -c -xassembler -
 .text
 .globl _main
 .p2align 2
+_x:
+  $ret
 _main:
   $ret
 _a:
@@ -127,18 +126,7 @@ $(rec _a+$n 0x02002000)
 $(rec _e 0x02003000)
 EOF
 $CC --ld-path=$mold -o $t/exe2 $t/c.o
-objdump --unwind-info $t/exe2 > $t/unwind
-main=$(nm $t/exe2 | awk '$3 == "_main" { print $1 }')
-sed -En 's/.*function offset=0x([0-9a-f]+), encoding\[[0-9]+\]=(0x[0-9a-f]+)$/\1 \2/p' $t/unwind |
-  while read off enc; do echo $(((0x$off + 0x100000000 - 0x$main) / n)) $enc; done > $t/entries
-cat > $t/expected <<EOF
-0 0x02001000
-2 0x02002000
-3 0x00000000
-4 0x00000000
-5 0x00000000
-5 0x02003000
-6 0x00000000
-EOF
-diff $t/expected $t/entries
-grep -A1 'Common encodings: (count = 1)' $t/unwind | grep -q 'encoding\[0\]: 0x00000000'
+[ "$(unwind_lookup $t/exe2 _x _main _a _b _c _d _e | tr '\n' ' ')" = \
+  '0x0 0x2001000 0x0 0x0 0x0 0x2003000 0x2003000 ' ]
+a=$(nm $t/exe2 | awk '$3 == "_a" { print $1 }')
+[ "$(unwind_lookup $t/exe2 $(printf '0x%x' $((0x$a + n))))" = 0x2002000 ]

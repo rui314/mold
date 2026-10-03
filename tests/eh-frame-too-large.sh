@@ -4,8 +4,7 @@ source "$(dirname "$0")"/common.inc
 # An __unwind_info entry in DWARF mode has 24 bits for the offset of
 # the function's FDE in __eh_frame. ld-prime gives an FDE beyond their
 # reach offset 0 - the unwinder then looks for it through the whole
-# section - keeps such entries apart and out of the common encodings,
-# and warns, unless -no_warn_eh_frame_too_large. Here a CIE padded with
+# section - and warns, unless -no_warn_eh_frame_too_large. Here a CIE padded with
 # 16 MiB of DW_CFA_nops puts the FDEs of _f and _g past it.
 if [ $ARCH = arm64 ]; then
   ret=ret ra=30 sp='0x0c, 31, 0' dwarf=3
@@ -39,9 +38,7 @@ EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o 2> $t/log
 grep -Fq 'warning: __eh_frame section too large (max 16MB) to encode dwarf unwind offsets in compact unwind table, performance of exception handling might be affected' $t/log
-objdump --unwind-info $t/exe > $t/unwind
-[ "$(grep -c "encoding\[[0-9]*\]=0x0${dwarf}000000$" $t/unwind)" = 2 ]
-grep -q 'Common encodings: (count = 0)' $t/unwind
+[ "$(unwind_lookup $t/exe _f _g | tr '\n' ' ')" = "0x${dwarf}000000 0x${dwarf}000000 " ]
 
 $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-no_warn_eh_frame_too_large 2> $t/log2
 not grep -q __eh_frame $t/log2

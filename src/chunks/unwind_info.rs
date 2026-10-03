@@ -4,7 +4,6 @@
 use rayon::prelude::*;
 
 use crate::chunks::ChunkHeader;
-use crate::chunks::sectcreate::InputPlace;
 use crate::context::Context;
 use crate::input_files::UnwindRecord;
 use crate::input_sections::InputSection;
@@ -76,16 +75,12 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 /// and the copy phase fills the cells at offsets 28, 32, ... once the
 /// GOT has its address.
 pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId>) {
-    let mut records: Vec<crate::input_files::UnwindRecord> = ctx
+    let mut records: Vec<UnwindRecord> = ctx
         .unwind_records
         .par_iter()
         .filter(|rec| {
-            // A folded copy's record is gone, but for one that kept its
-            // FDE (see output_sections::kept_fdes_of).
-            ctx.isecs[rec.isec as usize].is_alive()
-                && (ctx.isecs[rec.isec as usize].replacement
-                    == crate::input_sections::NO_REPLACEMENT
-                    || rec.fde().is_some())
+            let isec = &ctx.isecs[rec.isec as usize];
+            isec.is_alive() && isec.replacement == crate::input_sections::NO_REPLACEMENT
         })
         .cloned()
         .collect();
@@ -95,35 +90,25 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
     }
 
     let base = ctx.mach_header.hdr.addr;
-    let func_addr = |r: &crate::input_files::UnwindRecord| {
-        ctx.isec_addr(r.isec as usize) + r.input_offset as u64
-    };
+    let func_addr = |r: &UnwindRecord| ctx.isec_addr(r.isec as usize) + r.input_offset as u64;
 
     // A DWARF-mode record's encoding holds its FDE's offset in
     // __eh_frame in the low 24 bits, or 0 if they can't hold it, as in
     // ld-prime (which warns, see lay_out_eh_frame): the unwinder then
-    // looks for the FDE through the whole section. Its personality and
-    // LSDA are the FDE's, which ld-prime lists in the tables below as a
-    // compact record's, though the unwinder reads them from the FDE.
+    // looks for the FDE through the whole section. It takes the
+    // personality and the LSDA from the FDE.
     for rec in &mut records {
         if let Some(fde) = rec.fde() {
             let off = ctx.fdes[fde].output_offset;
             rec.encoding = E::UNWIND_MODE_DWARF | if off <= MAX_FDE_OFFSET { off } else { 0 };
-            if let Some(p) = function_personality(ctx, rec) {
-                rec.personality_sym = p;
-            }
-            if let Some((isec, off)) = function_lsda(ctx, rec) {
-                (rec.lsda_isec, rec.lsda_off) = (isec as u32, off);
-                rec.encoding |= UNWIND_HAS_LSDA;
-            }
         }
     }
 
-    // ld-prime orders the entries of one address by encoding: an empty
-    // subsection's of encoding 0 comes before the function sharing its
-    // address, and of two records for a function (or one at a
-    // section's end and the next section's first), the greater
-    // encoding, which the unwinder finds, comes last.
+    // Of the entries of one address, the unwinder finds the last: an
+    // empty subsection's of encoding 0 comes before the function
+    // sharing its address, and of two records for a function (or one
+    // at a section's end and the next section's first), the greater
+    // encoding comes last.
     records.par_sort_by_key(|r| (func_addr(r), r.encoding));
 
     // Assign personality indices, encoded in bits 28-29 of the
@@ -152,120 +137,59 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
 
     // Merge consecutive records with identical contents. An entry has no
     // length - it covers the code up to the next one - so the padding
-    // between two functions does not keep them apart. ld-prime keeps
-    // each entry of encoding 0, code without unwind info, though, and
-    // each in DWARF mode (alike only if their FDEs are out of reach).
-    // An x86-64 entry in "stack immediate indirect" mode gives where the
-    // stack size is in the function as an offset from the entry's start,
-    // so it can't cover a second function either (ld64's
-    // encodingCannotBeMerged).
+    // between two functions does not keep them apart. An x86-64 entry in
+    // "stack immediate indirect" mode gives where the stack size is in
+    // the function as an offset from the entry's start, so it can't
+    // cover a second function (ld64's encodingCannotBeMerged).
     let stack_ind = |enc: u32| {
         E::CPUTYPE == CPU_TYPE_X86_64 && enc & UNWIND_MODE_MASK == UNWIND_X86_64_MODE_STACK_IND
     };
     records.dedup_by(|rec, last| {
-        rec.encoding != 0
-            && rec.encoding & UNWIND_MODE_MASK != E::UNWIND_MODE_DWARF
-            && !stack_ind(rec.encoding)
+        !stack_ind(rec.encoding)
             && last.encoding == rec.encoding
             && last.personality() == rec.personality()
             && last.lsda().is_none()
             && rec.lsda().is_none()
     });
 
-    // The common encodings table: the encodings the merged entries use
-    // more than once, most frequent first and equally frequent ones in
-    // increasing order, up to 127 of them (a compressed entry's 8-bit
-    // index names a common encoding below the table's count and a
-    // page-local one above it). ld64 fills it the same way; a one-off
-    // encoding stays page-local, as does every DWARF-mode one, even
-    // one that several FDEs out of reach share.
-    let common: Vec<(u32, usize)> = {
-        let mut freq: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
-        for rec in records.iter().filter(|r| r.encoding & UNWIND_MODE_MASK != E::UNWIND_MODE_DWARF)
-        {
-            *freq.entry(rec.encoding).or_default() += 1;
-        }
-        let mut all: Vec<(u32, usize)> = freq.into_iter().collect();
-        all.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
-        all.into_iter().filter(|&(_, n)| n > 1).take(127).collect()
-    };
-    let common_idx: std::collections::HashMap<u32, u32> =
-        common.iter().enumerate().map(|(i, &(e, _))| (e, i as u32)).collect();
-
-    // Second-level pages, 4096 bytes each, filled from the start of the
-    // record list as ld-prime does (so the last page is the partial
-    // one). A compressed page holds 32-bit entries (a 24-bit offset from
-    // the page's first function and an 8-bit encoding index) plus its
-    // page-local encodings, in order of first use; a regular page 8-byte
-    // entries. Each page takes the format that holds more of the
-    // remaining records.
+    // Second-level pages, compressed: 32-bit entries (a 24-bit offset
+    // from the page's first function and an 8-bit index into the page's
+    // encodings, listed after the entries in order of first use). A page
+    // ends at 4096 bytes, at 2^24 bytes of code, or at 256 encodings.
     const PAGE_SIZE: usize = 4096;
-    const COMPRESSED_HDR: usize = 12;
-    const REGULAR_HDR: usize = 8;
-    const REGULAR_ENTRIES: usize = (PAGE_SIZE - REGULAR_HDR) / 8;
-    struct Page {
-        start: usize,
-        end: usize,
-        compressed: bool,
-        encodings: Vec<u32>,
-    }
-    let mut pages: Vec<Page> = Vec::new();
+    const PAGE_HDR: usize = 12;
+    let mut pages: Vec<(usize, usize, Vec<u32>)> = Vec::new();
     let mut start = 0;
     while start < records.len() {
         let first_addr = func_addr(&records[start]);
         let mut encs: Vec<u32> = Vec::new();
-        let mut n = 0;
         let mut i = start;
         while i < records.len() {
-            let rec = &records[i];
-            let is_common = common_idx.contains_key(&rec.encoding);
-            let new_enc = !is_common && !encs.contains(&rec.encoding);
-            if new_enc && common.len() + encs.len() + 1 > 256 {
+            let enc = records[i].encoding;
+            let new_enc = !encs.contains(&enc) as usize;
+            if encs.len() + new_enc > 256
+                || PAGE_HDR + (i - start + 1 + encs.len() + new_enc) * 4 > PAGE_SIZE
+                || func_addr(&records[i]) - first_addr >= 1 << 24
+            {
                 break;
             }
-            let encs_len = encs.len() + new_enc as usize;
-            if COMPRESSED_HDR + (n + 1) * 4 + encs_len * 4 > PAGE_SIZE {
-                break;
+            if new_enc == 1 {
+                encs.push(enc);
             }
-            if func_addr(rec) - first_addr >= (1 << 24) {
-                break;
-            }
-            if new_enc {
-                encs.push(rec.encoding);
-            }
-            n += 1;
             i += 1;
         }
-        let regular = (records.len() - start).min(REGULAR_ENTRIES);
-        if n >= regular {
-            pages.push(Page { start, end: start + n, compressed: true, encodings: encs });
-            start += n;
-        } else {
-            pages.push(Page {
-                start,
-                end: start + regular,
-                compressed: false,
-                encodings: Vec::new(),
-            });
-            start += regular;
-        }
+        pages.push((start, i, encs));
+        start = i;
     }
 
-    // The LSDA index lists a record's LSDA only if its encoding says it
-    // has one (UNWIND_HAS_LSDA), as ld-prime does; a record with an
-    // LSDA is kept apart from its neighbors above all the same.
-    let listed_lsda = |r: &UnwindRecord| r.lsda().filter(|_| r.encoding & UNWIND_HAS_LSDA != 0);
-    let num_lsda = records.iter().filter(|r| listed_lsda(r).is_some()).count();
+    let num_lsda = records.iter().filter(|r| r.lsda().is_some()).count();
 
-    // Compute the layout of the section. ld-prime sizes the first-level
-    // index before it picks page formats, for the most pages the records
-    // could take (all regular) plus the terminator and one spare, and
-    // leaves the entries it doesn't use zero.
-    let common_off = 28;
-    let personality_off = common_off + common.len() * 4;
+    // The layout of the section: the header, no common encodings, the
+    // personalities, the first-level index (a row per page and a
+    // terminator), the LSDA index, then the pages.
+    let personality_off = 28;
     let page1_off = personality_off + personalities.len() * 4;
-    let index_len = (records.len().div_ceil(REGULAR_ENTRIES) + 2) * 12;
-    let lsda_off = page1_off + index_len;
+    let lsda_off = page1_off + (pages.len() + 1) * 12;
     let page2_off = lsda_off + num_lsda * 8;
 
     let push32 = |buf: &mut Vec<u8>, val: u32| buf.extend_from_slice(&val.to_le_bytes());
@@ -273,15 +197,12 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
 
     let mut buf = Vec::new();
     push32(&mut buf, UNWIND_SECTION_VERSION);
-    push32(&mut buf, common_off as u32);
-    push32(&mut buf, common.len() as u32);
+    push32(&mut buf, personality_off as u32);
+    push32(&mut buf, 0);
     push32(&mut buf, personality_off as u32);
     push32(&mut buf, personalities.len() as u32);
     push32(&mut buf, page1_off as u32);
     push32(&mut buf, pages.len() as u32 + 1);
-    for &(enc, _) in &common {
-        push32(&mut buf, enc);
-    }
 
     // Personalities are image-relative pointers to the functions' GOT
     // slots, patched in by the copy phase (see above).
@@ -299,49 +220,31 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
     }
     let outs: Vec<PageOut> = pages
         .par_iter()
-        .map(|page| {
-            let span = &records[page.start..page.end];
+        .map(|(start, end, encs)| {
+            let span = &records[*start..*end];
             let mut page2 = Vec::new();
             let mut lsda = Vec::new();
             for rec in span {
-                if let Some((isec, off)) = listed_lsda(rec) {
+                if let Some((isec, off)) = rec.lsda() {
                     push32(&mut lsda, func_addr(rec).wrapping_sub(base) as u32);
                     push32(&mut lsda, (ctx.isec_addr(isec) + off as u64).wrapping_sub(base) as u32);
                 }
             }
 
-            if page.compressed {
-                push32(&mut page2, UNWIND_SECOND_LEVEL_COMPRESSED);
-                push16(&mut page2, COMPRESSED_HDR as u16); // entries offset
-                push16(&mut page2, span.len() as u16);
-                push16(&mut page2, (COMPRESSED_HDR + span.len() * 4) as u16); // encodings offset
-                push16(&mut page2, page.encodings.len() as u16);
-                let page_base = func_addr(&span[0]);
-                for rec in span {
-                    let enc_idx = match common_idx.get(&rec.encoding) {
-                        Some(&i) => i,
-                        None => {
-                            common.len() as u32
-                                + page.encodings.iter().position(|&e| e == rec.encoding).unwrap()
-                                    as u32
-                        }
-                    };
-                    let entry = (func_addr(rec) - page_base) as u32 | enc_idx << 24;
-                    push32(&mut page2, entry);
-                }
-                for enc in &page.encodings {
-                    push32(&mut page2, *enc);
-                }
-            } else {
-                push32(&mut page2, UNWIND_SECOND_LEVEL_REGULAR);
-                push16(&mut page2, REGULAR_HDR as u16);
-                push16(&mut page2, span.len() as u16);
-                for rec in span {
-                    push32(&mut page2, func_addr(rec).wrapping_sub(base) as u32);
-                    push32(&mut page2, rec.encoding);
-                }
+            push32(&mut page2, UNWIND_SECOND_LEVEL_COMPRESSED);
+            push16(&mut page2, PAGE_HDR as u16); // entries offset
+            push16(&mut page2, span.len() as u16);
+            push16(&mut page2, (PAGE_HDR + span.len() * 4) as u16); // encodings offset
+            push16(&mut page2, encs.len() as u16);
+            let page_base = func_addr(&span[0]);
+            for rec in span {
+                let idx = encs.iter().position(|&e| e == rec.encoding).unwrap() as u32;
+                push32(&mut page2, (func_addr(rec) - page_base) as u32 | idx << 24);
             }
-            PageOut { page2, lsda, first: func_addr(&span[0]).wrapping_sub(base) as u32 }
+            for &enc in encs {
+                push32(&mut page2, enc);
+            }
+            PageOut { page2, lsda, first: page_base.wrapping_sub(base) as u32 }
         })
         .collect();
 
@@ -354,16 +257,12 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
         push32(&mut page1, (lsda_off + lsda.len()) as u32);
         lsda.extend_from_slice(&out.lsda);
         page2.extend_from_slice(&out.page2);
-        // ld-prime ends each page at an 8-byte boundary of the section.
-        let end = page2_off + page2.len();
-        page2.resize(page2.len() + end.next_multiple_of(8) - end, 0);
     }
 
     // The terminating first-level entry.
     push32(&mut page1, (end + 1).wrapping_sub(base) as u32);
     push32(&mut page1, 0);
     push32(&mut page1, (lsda_off + lsda.len()) as u32);
-    page1.resize(index_len, 0);
 
     buf.extend_from_slice(&page1);
     buf.extend_from_slice(&lsda);
@@ -371,12 +270,10 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
     (buf, personalities)
 }
 
-/// Whether the image has __unwind_info: ld-prime writes it for any
-/// unwind info, an FDE of a function that gets no entry of its own
-/// (not being code) too, listing each code subsection then.
+/// Whether the image has __unwind_info: whether any of its functions
+/// has unwind info.
 pub fn is_needed<E: Target>(ctx: &Context<E>) -> bool {
     !ctx.unwind_records.is_empty()
-        || (!ctx.fdes.is_empty() && ctx.isecs.par_iter().any(|isec| is_code_subsec(ctx, isec)))
 }
 
 /// Whether __unwind_info covers addresses outside __TEXT, its own
@@ -421,34 +318,26 @@ pub(crate) fn function_lsda<E: Target>(
     })
 }
 
-/// Records for the code that has no unwind information: ld-prime gives
-/// every subsection of a code section - an output section of pure
-/// instructions, not one the assembler marked as holding some - an
-/// entry, encoding 0 ("none") for one without a record of its own, so
-/// that it does not fall under the unwind rules of the function before
-/// it - an empty subsection too, such as the empty __text of an object
-/// with only data.
-///
-/// A record anywhere in a subsection is the subsection's: its start
-/// then gets no entry, and the code ahead of the record falls under the
-/// entry before. To ld-prime an alternate entry point starts a
-/// subsection of its own, so a record at one is not that of mold's
-/// subsection holding it. Without MH_SUBSECTIONS_VIA_SYMBOLS a section
-/// is one subsection, but ld-prime still splits it at its labels (see
-/// unsplit_bare_subsecs).
+/// Records for the code that has no unwind information: every
+/// subsection of a code section - an output section of pure
+/// instructions, not one the assembler marked as holding some - gets an
+/// entry, encoding 0 ("none") where no record of its own starts, so that
+/// it does not fall under the unwind rules of the function before it -
+/// an empty subsection too, such as the empty __text of an object with
+/// only data. A section of an object without MH_SUBSECTIONS_VIA_SYMBOLS
+/// is one subsection of several functions: the code past each record's
+/// length up to the next record has no unwind information either.
 fn bare_code_records<E: Target>(ctx: &Context<E>, records: &[UnwindRecord]) -> Vec<UnwindRecord> {
     use std::collections::HashMap;
 
-    // Where each subsection's first record is, and for a section of an
-    // object without subsections, where each of its records is and how
-    // much code it spans.
-    let mut first: HashMap<u32, u32> = HashMap::new();
-    let mut unsplit: HashMap<u32, Vec<(u32, u32)>> = HashMap::new();
+    // Where each subsection's records start, and, in a section without
+    // subsections, where they end.
+    let mut starts: HashMap<u32, Vec<u32>> = HashMap::new();
+    let mut ends: HashMap<u32, Vec<u32>> = HashMap::new();
     for rec in records {
-        let off = first.entry(rec.isec).or_insert(rec.input_offset);
-        *off = (*off).min(rec.input_offset);
+        starts.entry(rec.isec).or_default().push(rec.input_offset);
         if !ctx.objs[ctx.isecs[rec.isec as usize].file as usize].subsections_via_symbols {
-            unsplit.entry(rec.isec).or_default().push((rec.input_offset, rec.code_len));
+            ends.entry(rec.isec).or_default().push(rec.input_offset + rec.code_len);
         }
     }
 
@@ -458,29 +347,24 @@ fn bare_code_records<E: Target>(ctx: &Context<E>, records: &[UnwindRecord]) -> V
         .filter(|&(_, isec)| is_code_subsec(ctx, isec))
         .flat_map_iter(|(i, isec)| {
             let i = i as u32;
-            let obj = &ctx.objs[isec.file as usize];
-            let pieces = if obj.subsections_via_symbols {
-                let bare = match first.get(&i) {
-                    None => true,
-                    Some(0) => false,
-                    Some(&off) => first_alt_entry(obj, isec) <= off,
-                };
-                if bare { vec![(0, isec.size)] } else { Vec::new() }
-            } else {
-                unsplit_bare_subsecs(obj, isec, unsplit.get(&i).map_or(&[], Vec::as_slice))
-            };
-            pieces.into_iter().map(move |(off, size)| bare_record(i, off, size))
+            let starts = starts.get(&i).map_or(&[][..], Vec::as_slice);
+            let ends = ends.get(&i).map_or(&[][..], Vec::as_slice);
+            let ends = ends.iter().copied().filter(|&off| off < isec.size);
+            std::iter::once(0)
+                .chain(ends)
+                .filter(|off| !starts.contains(off))
+                .map(move |off| bare_record(i, off))
         })
         .collect()
 }
 
 /// The record of a piece of code with no unwind information.
-fn bare_record(isec: u32, off: u32, size: u32) -> UnwindRecord {
+fn bare_record(isec: u32, off: u32) -> UnwindRecord {
     use crate::input_files::UNWIND_NONE;
     UnwindRecord {
         isec,
         input_offset: off,
-        code_len: size,
+        code_len: 0,
         encoding: 0,
         personality_sym: UNWIND_NONE,
         lsda_isec: UNWIND_NONE,
@@ -489,97 +373,11 @@ fn bare_record(isec: u32, off: u32, size: u32) -> UnwindRecord {
     }
 }
 
-/// The offset of the first alternate entry point (N_ALT_ENTRY) inside
-/// a subsection, or u32::MAX if it has none.
-fn first_alt_entry(obj: &crate::input_files::ObjectFile, isec: &InputSection) -> u32 {
-    let lo = isec.input_addr as u64;
-    obj.nlists
-        .iter()
-        .filter(|n| {
-            !n.is_stab()
-                && n.n_type() == N_SECT
-                && n.n_desc & N_ALT_ENTRY != 0
-                && n.n_sect as u32 == isec.shndx + 1
-                && lo < n.n_value
-                && n.n_value < lo + isec.size as u64
-        })
-        .map(|n| (n.n_value - lo) as u32)
-        .min()
-        .unwrap_or(u32::MAX)
-}
-
-/// The subsections ld-prime makes of a section of an object without
-/// MH_SUBSECTIONS_VIA_SYMBOLS, as (offset, size), that have none of the
-/// records of `records` (offset, length). ld-prime splits such a
-/// section at each label past its start, an alternate entry point's
-/// too, as if symbols split it: the labels at its start name its first
-/// subsection, and of several labels at one place, all but the last
-/// name empty subsections (all do at its end).
-///
-/// ld-prime goes by the labels alone, so a label inside a function,
-/// within the length of the function's record, gets encoding 0 too,
-/// and the code past it can't be unwound. Such a label gets no entry
-/// here, leaving the record the whole of its code (a section that
-/// can't be split is one function there).
-fn unsplit_bare_subsecs(
-    obj: &crate::input_files::ObjectFile,
-    isec: &InputSection,
-    records: &[(u32, u32)],
-) -> Vec<(u32, u32)> {
-    let lo = isec.input_addr as u64;
-    let mut labels: Vec<u32> = obj
-        .nlists
-        .iter()
-        .filter(|n| {
-            !n.is_stab()
-                && n.n_type() == N_SECT
-                && n.n_sect as u32 == isec.shndx + 1
-                && lo < n.n_value
-                && n.n_value <= lo + isec.size as u64
-        })
-        .map(|n| (n.n_value - lo) as u32)
-        .collect();
-    labels.sort_unstable();
-    let mut records = records.to_vec();
-    records.sort_unstable();
-    // How far the records up to each one reach.
-    let reach: Vec<u64> = records
-        .iter()
-        .scan(0, |end, &(off, len)| {
-            *end = (*end).max(off as u64 + len as u64);
-            Some(*end)
-        })
-        .collect();
-
-    // A subsection has the records from its start to the next label;
-    // the last one, those at the section's end too.
-    (0..=labels.len())
-        .filter_map(|k| {
-            let start = if k == 0 { 0 } else { labels[k - 1] };
-            let next = labels.get(k).copied();
-            let i = records.partition_point(|&(off, _)| off < start);
-            let in_function = i > 0 && reach[i - 1] > start as u64;
-            let has_record = records.get(i).is_some_and(|&(off, _)| next.is_none_or(|n| off < n));
-            (!has_record && !in_function).then(|| (start, next.unwrap_or(isec.size) - start))
-        })
-        .collect()
-}
-
-/// Whether a subsection is one of a code section, which ld-prime gives
-/// an entry whatever its unwind info (see bare_code_records): an
-/// input's, a -sectcreate option's, or the empty one it keeps
-/// __dyld_lazy_load alive from.
-fn is_code_subsec<E: Target>(ctx: &Context<E>, isec: &crate::input_sections::InputSection) -> bool {
-    let is_own = |id: u32| ctx.isecs.get(id as usize).is_some_and(|k| std::ptr::eq(k, isec));
-    let is_sectcreate = || {
-        (ctx.sectcreate_inputs.iter())
-            .any(|a| matches!(a.place, InputPlace::Isec(id) if is_own(id)))
-    };
+/// Whether a subsection is one of a code section, which gets an entry
+/// whatever its unwind info (see bare_code_records).
+fn is_code_subsec<E: Target>(ctx: &Context<E>, isec: &InputSection) -> bool {
     isec.is_alive()
         && isec.replacement == crate::input_sections::NO_REPLACEMENT
-        && (!ctx.is_internal(isec.file as usize)
-            || is_own(ctx.lazy_helpers.keep_alive)
-            || is_sectcreate())
         && isec
             .output_section()
             .is_some_and(|id| ctx.chunk_header(id).flags & S_ATTR_PURE_INSTRUCTIONS != 0)
