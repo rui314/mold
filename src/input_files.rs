@@ -2726,18 +2726,6 @@ pub fn trace_file<E: Target>(ctx: &mut Context<E>, name: &[u8]) {
     }
 }
 
-/// Takes back the -t line of a library loaded as another's re-export
-/// that a naming finds at another path (libobjc.tbd for Foundation's
-/// libobjc.A.tbd): ld-prime lists the dylib by the naming's file.
-pub fn untrace_file<E: Target>(ctx: &mut Context<E>, name: &[u8]) {
-    if ctx.args.trace {
-        let name = trace_name(name);
-        if let Some(i) = ctx.traced_files.iter().position(|traced| *traced == name) {
-            ctx.traced_files.remove(i);
-        }
-    }
-}
-
 pub fn trace_name(name: &[u8]) -> Vec<u8> {
     without_fat_arch(name)
 }

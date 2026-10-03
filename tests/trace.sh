@@ -55,11 +55,11 @@ grep -q '^/usr/local/lib/libB.dylib$' $t/log
 [ "$(grep -c 'lib.a(a.o)$' $t/log)" = 1 ]
 
 # A library loaded as another's re-export (Foundation's libobjc.A.tbd)
-# that a naming finds at another path (-lobjc's libobjc.tbd, a symlink
-# to it) is listed by the naming's file alone.
+# is listed, and a naming of it at another path (-lobjc's libobjc.tbd,
+# a symlink to it) is listed too. (ld-prime lists the naming's file
+# alone.)
 echo 'int main() { return 0; }' | $CC -o $t/c.o -c -xc -
 $CC --ld-path=$mold -o $t/exe2 $t/c.o -framework Foundation -Wl,-t > $t/log2
 grep -q '/usr/lib/libobjc.A.tbd$' $t/log2
 $CC --ld-path=$mold -o $t/exe3 $t/c.o -framework Foundation -lobjc -Wl,-t > $t/log3
 grep -q '/usr/lib/libobjc.tbd$' $t/log3
-not grep -q 'libobjc.A.tbd' $t/log3

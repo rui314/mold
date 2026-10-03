@@ -650,10 +650,6 @@ fn collect_file<E: Target>(
             }
             // One named before by another path keeps what that said.
             if idx >= first || ctx.dylibs[idx].is_implicit {
-                if ctx.dylibs[idx].path != mf.name {
-                    let path = ctx.dylibs[idx].path.clone();
-                    input_files::untrace_file(ctx, path_bytes(&path));
-                }
                 name_dylib(ctx, idx, rc);
             } else if !rc.autolinked {
                 ctx.dylib_renamings.push((ctx.priority_counter, idx, &mf.name));
