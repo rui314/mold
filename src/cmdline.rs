@@ -794,6 +794,8 @@ pub struct Args {
 }
 
 impl Args {
+    /// Whether the image is a kext (ld64's kKextBundle, MH_KEXT_BUNDLE),
+    /// which kmutil links into the kernel (see resolve_kext).
     pub fn is_kext(&self) -> bool {
         self.output_type == MH_KEXT_BUNDLE
     }
