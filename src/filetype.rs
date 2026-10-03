@@ -19,27 +19,26 @@ pub enum FileType {
     LlvmBitcode,
 }
 
-/// Returns the target name of a Mach-O file, or `None` if it is not a
-/// 64-bit Mach-O file for a CPU type we recognize.
-pub fn get_macho_target(data: &[u8]) -> Option<&'static str> {
+/// The mach header of a 64-bit Mach-O file, or `None` if `data` is not
+/// one.
+fn macho_header(data: &[u8]) -> Option<MachHeader> {
     if data.len() < size_of::<MachHeader>() {
         return None;
     }
     let hdr = MachHeader::read_from(data);
-    if hdr.magic != MH_MAGIC_64 {
-        return None;
-    }
-    crate::target::cputype_name(hdr.cputype)
+    (hdr.magic == MH_MAGIC_64).then_some(hdr)
+}
+
+/// Returns the target name of a Mach-O file, or `None` if it is not a
+/// 64-bit Mach-O file for a CPU type we recognize.
+pub fn get_macho_target(data: &[u8]) -> Option<&'static str> {
+    crate::target::cputype_name(macho_header(data)?.cputype)
 }
 
 /// Returns the file type (MH_EXECUTE, MH_BUNDLE, ...) of a 64-bit
 /// Mach-O file, or `None` if it is not one.
 pub fn get_macho_filetype(data: &[u8]) -> Option<u32> {
-    if data.len() < size_of::<MachHeader>() {
-        return None;
-    }
-    let hdr = MachHeader::read_from(data);
-    (hdr.magic == MH_MAGIC_64).then_some(hdr.filetype)
+    macho_header(data).map(|hdr| hdr.filetype)
 }
 
 pub fn get_file_type(mf: &MappedFile) -> FileType {
@@ -72,19 +71,16 @@ pub fn get_file_type(mf: &MappedFile) -> FileType {
         return FileType::LlvmBitcode;
     }
 
-    if data.len() >= size_of::<MachHeader>() {
-        let hdr = MachHeader::read_from(data);
-        if hdr.magic == MH_MAGIC_64 {
-            return match hdr.filetype {
-                MH_OBJECT => FileType::Object,
-                MH_DYLIB => FileType::Dylib,
-                _ => FileType::Unknown,
-            };
-        }
-        if hdr.magic.swap_bytes() == FAT_MAGIC {
-            return FileType::Fat;
-        }
+    if let Some(hdr) = macho_header(data) {
+        return match hdr.filetype {
+            MH_OBJECT => FileType::Object,
+            MH_DYLIB => FileType::Dylib,
+            _ => FileType::Unknown,
+        };
     }
-
+    // A universal file's header is big-endian.
+    if data.len() >= size_of::<MachHeader>() && data.starts_with(&FAT_MAGIC.to_be_bytes()) {
+        return FileType::Fat;
+    }
     FileType::Unknown
 }
