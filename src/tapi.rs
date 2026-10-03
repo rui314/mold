@@ -248,10 +248,9 @@ fn parse_version(val: &str) -> u32 {
     crate::macho::encode_version(major, minor, patch)
 }
 
-/// Parses a .tbd file, keeping each of its documents apart.
-/// A memoized parse. Stub parsing is pure string work over the mapped
-/// file, so results are cached by the file's address and the link's
-/// architecture and platform. The big SDK stubs (libSystem's tree,
+/// Parses a .tbd file as `parse` does, memoized. Stub parsing is pure
+/// string work over the mapped file, so results are cached by the
+/// file's address and the link's architecture and platform. The big SDK stubs (libSystem's tree,
 /// framework umbrellas) can be parsed once, in parallel, by prefetch()
 /// before the serial input loop needs them.
 pub fn parse_cached(mf: &'static MappedFile, arch: &'static str, platform: u32) -> Option<TbdFile> {

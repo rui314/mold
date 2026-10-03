@@ -123,16 +123,15 @@ impl Reloc {
     }
 }
 
+/// Sentinel for `InputSection::replacement`: no surviving copy.
+pub const NO_REPLACEMENT: u32 = u32::MAX;
+
 /// A subsection of an input object file's section.
 ///
 /// Mach-O linking granularity is the subsection: objects are built with
 /// MH_SUBSECTIONS_VIA_SYMBOLS, and each section is split at its symbols,
-/// so that unreferenced pieces can be dead-stripped. `hdr` is the
-/// containing section's header; `input_addr` and `size` delimit this
-/// piece of it.
-/// Sentinel for `InputSection::replacement`: no surviving copy.
-pub const NO_REPLACEMENT: u32 = u32::MAX;
-
+/// so that unreferenced pieces can be dead-stripped. `shndx` names the
+/// containing section; `input_addr` and `size` delimit this piece of it.
 #[derive(Debug)]
 pub struct InputSection {
     /// Index of the object file this section came from (u32 to keep the
@@ -256,7 +255,6 @@ impl InputSection {
     pub fn set_placed(&mut self) {
         *self.flags.get_mut() |= IS_PLACED;
     }
-    #[inline]
     /// The next output offset at or after `off` where this subsection
     /// may start. ld64 keeps each subsection at the offset it had within
     /// its input section modulo the section's alignment (an 8-byte
@@ -274,6 +272,7 @@ impl InputSection {
     /// 16-byte boundary. Its input offset is not a constraint the
     /// compiler meant, and a 16-byte load through a scaled PAGEOFF12
     /// immediate can only address a 16-aligned slot.
+    #[inline]
     pub fn align_offset(&self, off: u64) -> u64 {
         let align = 1u64 << self.p2align;
         if self.flags.load(std::sync::atomic::Ordering::Relaxed) & NO_MODULUS != 0 {
@@ -358,16 +357,15 @@ impl InputSection {
     }
 
     /// This subsection's bytes. Empty for a zero-fill or empty section;
-    /// otherwise the `size` bytes at `data_ptr` (which point into the
+    /// otherwise the `size` bytes at `contents` (which point into the
     /// mmap'd input, so they live for the whole link).
     #[inline]
     pub fn data(&self) -> &'static [u8] {
         if self.contents == 0 {
             &[]
         } else {
-            // SAFETY: for a non-empty section data_ptr is the start of
-            // `size` valid bytes in the leaked/mmap'd input, and every
-            // such section is built with size == contents.len().
+            // SAFETY: for a non-empty section `contents` is the start of
+            // `size` valid bytes in the leaked/mmap'd input.
             unsafe { std::slice::from_raw_parts(self.contents as *const u8, self.size as usize) }
         }
     }

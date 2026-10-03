@@ -2693,10 +2693,6 @@ pub fn warn_fat_missing_arch<E: Target>(ctx: &Context<E>, mf: &MappedFile) {
     ignore_foreign_file(ctx, mf, &why);
 }
 
-/// Parses a Mach-O dylib binary: its identity from LC_ID_DYLIB and its
-/// exported symbols. The defined-external range of the symbol table
-/// serves as the export list; the authoritative source is the export
-/// trie, but the symbol table matches it for the dylibs we link against.
 /// Whether a re-exported dylib at this install path may be bound to
 /// directly: ld64's "public location" rule. /usr/lib/lib*.dylib (not
 /// /usr/lib/system/) and a top-level /System/Library/Frameworks
