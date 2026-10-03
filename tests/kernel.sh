@@ -54,13 +54,11 @@ fi
 start=$(nm $t/exe | awk '$3 == "__start" { print $1 }')
 dyld_info -function_starts $t/exe | grep -qi "0x$start *__start"
 
-# The split info: data pointers, and on x86-64 the FDE's CIE pointer
-# (recorded against the FDE) and function.
+# The split info: data pointers, and on x86-64 the FDE's function.
 dyld_info -shared_region $t/exe > $t/split
 grep -Eq '__DATA +__data .* __DATA +__data .* 2$' $t/split
 if [ $ARCH = x86_64 ]; then
   grep -Eq '__TEXT +__eh_frame .* __TEXT +__text .* 4$' $t/split
-  grep -Eq '__TEXT +__eh_frame .* __TEXT +__eh_frame .* 3$' $t/split
 fi
 
 $mold -arch $ARCH -static -kernel -e __start -not_for_dyld_shared_cache $t/a.o -o $t/exe2

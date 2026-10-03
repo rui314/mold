@@ -279,19 +279,6 @@ impl<'a, E: Target> Places<'a, E> {
         self.chunk(chunk, off)
     }
 
-    /// Where a GOT slot of a symbol of this image points. ld-prime
-    /// takes a slot holding the mach header's address as pointing
-    /// before the first section.
-    fn got_target(&self, id: SymbolId) -> Option<Place> {
-        match self.own_sym(id)? {
-            (0, off) => {
-                let &(start, _, n) = self.sects.first()?;
-                Some((n, (self.header_addr + off).wrapping_sub(start)))
-            }
-            place => Some(place),
-        }
-    }
-
     /// The place of an image offset (in __unwind_info): the section it
     /// lies in, or for the index's sentinel, one past the end of the
     /// last function, the section that function ends.
@@ -344,7 +331,6 @@ impl<'a, E: Target> Places<'a, E> {
             return;
         };
         let hdr = ctx.chunk_header(chunk);
-        let is_code = hdr.flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0;
         let rels = ctx.isec_relocs(id);
         let mut i = 0;
         while i < rels.len() {
@@ -397,8 +383,7 @@ impl<'a, E: Target> Places<'a, E> {
                         SplitRef::Branch26 => DYLD_CACHE_ADJ_V2_ARM64_BR26,
                         _ => DYLD_CACHE_ADJ_V2_DELTA_32,
                     };
-                    let anywhere = split == SplitRef::PcRel32 && !is_code;
-                    if to.is_some_and(|to| to.0 != from.0 || anywhere) {
+                    if to.is_some_and(|to| to.0 != from.0) {
                         push(out, from, kind, to);
                     }
                 }
@@ -455,7 +440,7 @@ impl<'a, E: Target> Places<'a, E> {
             self.pcrel(out, self.chunk(ChunkId::StubHelper, binder), to);
         }
         for (i, &id) in ctx.got.got_syms.iter().enumerate() {
-            push(out, self.got_index(i), DYLD_CACHE_ADJ_V2_POINTER_64, self.got_target(id));
+            push(out, self.got_index(i), DYLD_CACHE_ADJ_V2_POINTER_64, self.own_sym(id));
         }
         for osec in &ctx.output_sections {
             for thunk in &osec.thunks {
@@ -678,8 +663,8 @@ impl<'a, E: Target> Places<'a, E> {
     }
 
     /// __eh_frame: each CIE's personality pointer (to its GOT slot),
-    /// and each FDE's CIE pointer (which ld-prime records against the
-    /// FDE itself), function and LSDA.
+    /// and each FDE's function and LSDA. (An FDE's CIE pointer stays in
+    /// the section.)
     fn eh_frame_entries(&self, out: &mut Vec<Entry>) {
         let ctx = self.ctx;
         if !ctx.chunks.contains(&ChunkId::EhFrame) {
@@ -695,7 +680,6 @@ impl<'a, E: Target> Places<'a, E> {
         for fde in &ctx.fdes {
             let off = fde.output_offset as u64;
             let cie = &ctx.cies[fde.cie as usize];
-            push(out, at(off + 4), DYLD_CACHE_ADJ_V2_DELTA_32, Some(at(off)));
             let func = self.isec(fde.isec as usize).map(|(n, o)| (n, o + fde.func_offset as u64));
             let kind = match cie.pc_size() {
                 4 => DYLD_CACHE_ADJ_V2_DELTA_32,

@@ -50,7 +50,7 @@ pub enum SplitRef {
     PageOff,
     Branch26,
     /// A 32-bit PC-relative displacement: recorded when it reaches
-    /// another section, or anywhere from outside code.
+    /// another section.
     PcRel32,
 }
 
