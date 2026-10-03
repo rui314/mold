@@ -45,7 +45,7 @@ fi
 
 for obj in b c; do
   not $CC --ld-path=$mold -shared -o $t/$obj.dylib $t/$obj.o $t/libx.dylib 2> $t/log
-  grep -q "fixup error (kind=.*) at '_f'.* target '_x' does not have address" $t/log
+  grep -q "$t/$obj.o: _f+0x[0-9a-f]*: target '_x' does not have address" $t/log
   not $CC --ld-path=$mold -o $t/$obj.exe $t/$obj.o $t/libx.dylib -Wl,-e,_f 2> $t/log
-  grep -q "fixup error (kind=.*) at '_f'.* target '_x' does not have address" $t/log
+  grep -q "$t/$obj.o: _f+0x[0-9a-f]*: target '_x' does not have address" $t/log
 done

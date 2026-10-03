@@ -54,51 +54,16 @@ fn adrp_reaches(hi: u64, lo: u64) -> bool {
     (-(1 << 32)..1 << 32).contains(&delta)
 }
 
-/// Checks that the ADRP of relocation `i` of subsection `isec`, at `p`,
-/// reaches its target `t`, named `name`, and reports it as ld-prime does
-/// if not. ld-prime names the fixup after the instructions it makes of
-/// the reference: the ADRP alone or with the instruction taking its page
-/// offset ("lo12", "ldr"), an addend, a GOT or TLV load it relaxed
-/// ("elide") or not. It names a GOT slot ''.
-fn check_adrp(ctx: &Context<Arm64>, isec: usize, rels: &[Reloc], i: usize, p: u64, t: u64) {
+/// Checks that the ADRP of relocation `r` of subsection `isec`, at `p`,
+/// reaches the page of `t`, its target or the GOT slot it loads.
+fn check_adrp(ctx: &Context<Arm64>, isec: usize, r: &Reloc, p: u64, t: u64) {
     if adrp_reaches(t, p) {
         return;
     }
-    let obj = ctx.isecs[isec].file as usize;
-    let r = &rels[i];
-    let lo12 = |r_type: u8| {
-        rels[i + 1..]
-            .iter()
-            .any(|q| q.r_type == r_type && q.target == r.target && q.addend == r.addend)
-    };
-    let relaxed = || {
-        ctx.reloc_target_sym(obj, r).is_some_and(|id| match r.r_type {
-            ARM64_RELOC_GOT_LOAD_PAGE21 => relaxes_got_load(ctx, isec, id),
-            _ => ctx.can_relax_got(id),
-        })
-    };
-    let (kind, name) = match r.r_type {
-        ARM64_RELOC_PAGE21 => {
-            let kind = match (lo12(ARM64_RELOC_PAGEOFF12), r.addend != 0) {
-                (true, false) => "arm64_adrp_lo12",
-                (true, true) => "arm64_adrp_lo12_addend",
-                (false, false) => "arm64_adrp",
-                (false, true) => "arm64_adrp_addend",
-            };
-            (kind, ctx.fixup_target_name(obj, r))
-        }
-        ARM64_RELOC_GOT_LOAD_PAGE21 => match (lo12(ARM64_RELOC_GOT_LOAD_PAGEOFF12), relaxed()) {
-            (true, true) => ("arm64_was_adrp_ldr_got_elide_got", ctx.fixup_target_name(obj, r)),
-            (true, false) => ("arm64_was_adrp_ldr_got_load_got", &b""[..]),
-            (false, true) => ("arm64_was_adrp_got_elide_got", ctx.fixup_target_name(obj, r)),
-            (false, false) => ("arm64_was_adrp_got_use_got", &b""[..]),
-        },
-        _ if relaxed() => ("arm64_was_adrp_tlv_elide_got", ctx.fixup_target_name(obj, r)),
-        _ => ("arm64_was_adrp_tlv_load_got", &b""[..]),
-    };
-    let name = crate::error::raw(name);
+    let name = ctx.reloc_target_name(ctx.isecs[isec].file as usize, r);
+    let name = crate::error::raw(&name);
     let msg = format_args!("ADRP out of range, from 0x{p:08X} to 0x{t:08X} ('{name}')");
-    ctx.fixup_error(isec, r.offset, kind, msg);
+    ctx.fixup_error(isec, r.offset, msg);
 }
 
 /// Whether a GOT load from subsection `isec` of symbol `id` relaxes to
@@ -159,21 +124,14 @@ fn write_add_ldst(loc: &mut [u8], val: u64) -> Result<(), u32> {
 }
 
 /// Reports an LDR or STR, relocation `r` of subsection `isec`, whose
-/// target its access size doesn't divide, as ld-prime does, naming the
-/// target (a GOT slot has no name).
-fn report_ldst_alignment(
-    ctx: &Context<Arm64>,
-    isec: usize,
-    r: &Reloc,
-    kind: &str,
-    target: &[u8],
-    size: u32,
-) {
-    let target = crate::error::raw(target);
+/// target (or the GOT slot it loads) its access size doesn't divide.
+fn report_ldst_alignment(ctx: &Context<Arm64>, isec: usize, r: &Reloc, size: u32) {
+    let target = ctx.reloc_target_name(ctx.isecs[isec].file as usize, r);
+    let target = crate::error::raw(&target);
     let msg = format_args!(
         "target '{target}' not {size}-byte aligned, which is required by LDR/STR instruction"
     );
-    ctx.fixup_error(isec, r.offset, kind, msg);
+    ctx.fixup_error(isec, r.offset, msg);
 }
 
 // Linker optimization hints (LC_LINKER_OPTIMIZATION_HINT). A compiler
@@ -698,27 +656,6 @@ fn apply_hints(ctx: &Context<Arm64>, buf: &mut [u8]) {
     });
 }
 
-/// Reports the offset half of a GOT load, relocation `i` of subsection
-/// `isec` (whose bytes are `buf`), that ld-prime can't relax: neither
-/// an ldr nor a 64-bit add. ld-prime makes a load one fixup with the
-/// GOT adrp before it that sets its base register, and names that.
-fn report_got_pageoff(ctx: &Context<Arm64>, isec: usize, rels: &[Reloc], i: usize, buf: &[u8]) {
-    let r = &rels[i];
-    let load = parse_ldst(read32(&buf[r.offset as usize..])).filter(|ls| !ls.is_store);
-    let adrp = load.and_then(|ls| {
-        rels[..i].iter().rev().find(|adrp| {
-            adrp.r_type == ARM64_RELOC_GOT_LOAD_PAGE21
-                && adrp.target == r.target
-                && read32(&buf[adrp.offset as usize..]) & 0x1f == ls.base
-        })
-    });
-    let msg = format_args!("non-LDR instruction");
-    match adrp {
-        Some(adrp) => ctx.fixup_error(isec, adrp.offset, "arm64_was_adrp_ldr_got_elide_got", msg),
-        None => ctx.fixup_error(isec, r.offset, "arm64_was_ld12_got_elide_got", msg),
-    }
-}
-
 /// Encodes the instructions of a delay-init stub or helper at `base`
 /// that refer to other places, by the index of the instruction.
 struct DelayInsn {
@@ -872,10 +809,10 @@ impl Target for Arm64 {
             let ent_addr = addr + i as u64 * 12;
             let ptr_addr = ctx.stub_ptr_addr(i, sym);
             if !adrp_reaches(ptr_addr, ent_addr) {
-                let msg = format_args!(
-                    "ADRP out of range, from 0x{ent_addr:08X} to 0x{ptr_addr:08X} ('')"
+                crate::error!(
+                    "stub for {}: ADRP out of range, from 0x{ent_addr:08X} to its pointer at 0x{ptr_addr:08X}",
+                    ctx.symbols[sym]
                 );
-                ctx.stub_fixup_error(i, 0, "arm64_adrp_lo12", msg);
             }
 
             // adrp x16, $ptr@PAGE; ldr x16, [x16, $ptr@PAGEOFF]; br x16
@@ -1398,18 +1335,13 @@ impl Target for Arm64 {
                                 val = thunk.wrapping_sub(p) as i64
                             }
                             _ => {
-                                let kind = if a != 0 { "arm64_b26_addend" } else { "arm64_b26" };
-                                // A shim is a stub, named ''.
-                                let name = match shim {
-                                    Some(_) => b"",
-                                    None => ctx.branch_target_name(obj, r),
-                                };
-                                let name = crate::error::raw(name);
+                                let name = ctx.reloc_target_name(obj, r);
+                                let name = crate::error::raw(&name);
                                 let msg = format_args!(
                                     "B/BL out of range (displacement={val}, max is +/-128MB), \
                                      from 0x{p:08X} to 0x{t:08X} ('{name}')"
                                 );
-                                ctx.fixup_error(isec_id, r.offset, kind, msg);
+                                ctx.fixup_error(isec_id, r.offset, msg);
                             }
                         }
                     }
@@ -1422,7 +1354,7 @@ impl Target for Arm64 {
                 ARM64_RELOC_TLVP_LOAD_PAGE21 => {
                     let id = ctx.reloc_target_sym(obj, r).unwrap();
                     let target = if ctx.can_relax_got(id) { s } else { ctx.sym_got_addr(id) };
-                    check_adrp(ctx, isec_id, rels, i, p, target.wrapping_add_signed(a));
+                    check_adrp(ctx, isec_id, r, p, target.wrapping_add_signed(a));
                     write_adrp(loc, target.wrapping_add_signed(a), p);
                 }
                 ARM64_RELOC_TLVP_LOAD_PAGEOFF12 => {
@@ -1430,8 +1362,7 @@ impl Target for Arm64 {
                     if !ctx.can_relax_got(id) {
                         let t = ctx.sym_got_addr(id);
                         if let Err(size) = write_add_ldst(loc, t.wrapping_add_signed(a)) {
-                            let kind = "arm64_was_ld12_tlv_load_got";
-                            report_ldst_alignment(ctx, isec_id, r, kind, b"", size);
+                            report_ldst_alignment(ctx, isec_id, r, size);
                         }
                     } else {
                         // ld-prime relaxes an ldr of either width.
@@ -1442,14 +1373,13 @@ impl Target for Arm64 {
                                 0x9100_0000 | (insn & 0x3ff) | ((target as u32 & 0xfff) << 10);
                             write32(loc, add);
                         } else {
-                            let msg = format_args!("non-LDR instruction");
-                            ctx.fixup_error(isec_id, r.offset, "arm64_was_ld12_tlv_elide_got", msg);
+                            ctx.fixup_error(isec_id, r.offset, format_args!("non-LDR instruction"));
                         }
                     }
                 }
                 ARM64_RELOC_PAGE21 => {
-                    if ctx.target_has_address(obj, isec_id, r, "arm64_adrp") {
-                        check_adrp(ctx, isec_id, rels, i, p, s.wrapping_add_signed(a));
+                    if ctx.target_has_address(obj, isec_id, r) {
+                        check_adrp(ctx, isec_id, r, p, s.wrapping_add_signed(a));
                         write_adrp(loc, s.wrapping_add_signed(a), p);
                     }
                 }
@@ -1457,11 +1387,10 @@ impl Target for Arm64 {
                 // whose adrp it hasn't paired with it, and truncates
                 // the others.)
                 ARM64_RELOC_PAGEOFF12 => {
-                    if ctx.target_has_address(obj, isec_id, r, "arm64_lo12")
+                    if ctx.target_has_address(obj, isec_id, r)
                         && let Err(size) = write_add_ldst(loc, s.wrapping_add_signed(a))
                     {
-                        let target = ctx.symbols[ctx.reloc_target_sym(obj, r).unwrap()].name();
-                        report_ldst_alignment(ctx, isec_id, r, "arm64_lo12", target, size);
+                        report_ldst_alignment(ctx, isec_id, r, size);
                     }
                 }
                 // A GOT load of a lazy dylib's symbol calls its load
@@ -1504,7 +1433,7 @@ impl Target for Arm64 {
                     let id = ctx.reloc_target_sym(obj, r).unwrap();
                     let target =
                         if relaxes_got_load(ctx, isec_id, id) { s } else { ctx.sym_got_addr(id) };
-                    check_adrp(ctx, isec_id, rels, i, p, target.wrapping_add_signed(a));
+                    check_adrp(ctx, isec_id, r, p, target.wrapping_add_signed(a));
                     write_adrp(loc, target.wrapping_add_signed(a), p);
                 }
                 ARM64_RELOC_GOT_LOAD_PAGEOFF12 => {
@@ -1512,8 +1441,7 @@ impl Target for Arm64 {
                     if !relaxes_got_load(ctx, isec_id, id) {
                         let g = ctx.sym_got_addr(id);
                         if let Err(size) = write_add_ldst(loc, g.wrapping_add_signed(a)) {
-                            let kind = "arm64_was_ld12_got_load_got";
-                            report_ldst_alignment(ctx, isec_id, r, kind, b"", size);
+                            report_ldst_alignment(ctx, isec_id, r, size);
                         }
                     } else {
                         let insn = read32(loc);
@@ -1523,7 +1451,7 @@ impl Target for Arm64 {
                                 0x9100_0000 | (insn & 0x3ff) | ((target as u32 & 0xfff) << 10);
                             write32(loc, add);
                         } else {
-                            report_got_pageoff(ctx, isec_id, rels, i, buf);
+                            ctx.fixup_error(isec_id, r.offset, format_args!("non-LDR instruction"));
                         }
                     }
                 }

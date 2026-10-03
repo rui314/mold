@@ -3,11 +3,11 @@ source "$(dirname "$0")"/common.inc
 
 # An initializer that dyld binds - a library's function, or one left
 # to dynamic lookup - has no offset in the image, so __init_offsets
-# can't hold it: ld-prime fails the link as it writes the offsets, with
-# a fixup error of the first such in its "inits-file", where the k-th
-# initializer's offset is subsection anon-(2k+1), and prints the
-# layout. __mod_init_func's absolute pointers (-no_fixup_chains) bind
-# such an initializer.
+# can't hold it: the link fails as the offsets are written, naming each
+# such initializer and its place among them. (ld-prime names the first
+# by its subsection of its "inits-file", the k-th initializer's offset
+# anon-(2k+1), and prints the layout.) __mod_init_func's absolute
+# pointers (-no_fixup_chains) bind such an initializer.
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .section __DATA,__mod_init_func,mod_init_funcs
 .p2align 3
@@ -35,25 +35,14 @@ _main: ret
 EOF
 
 not $CC --ld-path=$mold -o $t/exe $t/b.o 2> $t/log
-grep -q "fixup error (kind=imageOffset32) at 'anon-3' from inits-file, target '_puts' does not have address" $t/log
-not grep -q _printf $t/log
-
-# A fixup error ends the link after the layout, which ld-prime prints:
-# each segment in load command order, and its sections.
-sed -n '/^final section layout:$/,$p' $t/log > $t/layout
-grep -Eq '^    __TEXT +addr=0x[0-9a-f]{9}, size=0x[0-9a-f]{9}, fileOffset=0x0{8}, fileSize=0x[0-9a-f]{8}$' $t/layout
-grep -Eq '^        __init_offsets +addr=0x[0-9a-f]{9}, size=0x00000000c, fileOffset=0x[0-9a-f]{8} \(zerofill=0\)$' $t/layout
-grep -q '^    __LINKEDIT ' $t/layout
-# The symbol table lists the initializers' imports all the same, as the
-# size of __LINKEDIT shows.
-if [ $ARCH = arm64 ]; then size=0x00000210; else size=0x000000f8; fi
-grep -q "^    __LINKEDIT .*, fileSize=$size$" $t/layout
+grep -q "__init_offsets entry 1: target '_puts' does not have address" $t/log
+grep -q "__init_offsets entry 2: target '_printf' does not have address" $t/log
 
 not $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o -Wl,-U,_undef 2> $t/log
-grep -q "at 'anon-5' from inits-file, target '_undef' does not have address" $t/log
+grep -q "__init_offsets entry [0-9]*: target '_undef' does not have address" $t/log
 
 not $CC --ld-path=$mold -o $t/exe $t/b.o $t/a.o -Wl,-U,_undef 2> $t/log
-grep -q "at 'anon-3' from inits-file, target '_puts' does not have address" $t/log
+grep -q "__init_offsets entry [0-9]*: target '_puts' does not have address" $t/log
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o -Wl,-U,_undef -Wl,-no_fixup_chains
 otool -l $t/exe | grep -q 'sectname __mod_init_func'

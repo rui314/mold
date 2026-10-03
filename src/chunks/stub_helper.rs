@@ -24,9 +24,6 @@ pub struct StubHelperSection {
     /// In legacy LINKEDIT (Args::legacy_linkedit), what the entries
     /// jump to instead: crt1.o's dyld_stub_binding_helper, if defined.
     pub binding_helper: Option<SymbolId>,
-    /// N of 'anon-N', ld-prime's name for the first entry in the error
-    /// for a missing dyld_stub_binding_helper (see finish_stubs).
-    pub first_entry_anon: usize,
 }
 
 impl StubHelperSection {
@@ -34,13 +31,7 @@ impl StubHelperSection {
         let mut hdr = ChunkHeader::new(b"__TEXT", b"__stub_helper");
         hdr.flags = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
         hdr.p2align = 2;
-        Self {
-            hdr,
-            dyld_stub_binder: None,
-            dyld_private_isec: u32::MAX,
-            binding_helper: None,
-            first_entry_anon: 0,
-        }
+        Self { hdr, dyld_stub_binder: None, dyld_private_isec: u32::MAX, binding_helper: None }
     }
 }
 

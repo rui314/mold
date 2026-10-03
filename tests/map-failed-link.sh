@@ -28,10 +28,10 @@ EOF
 
 reports() { echo "-Wl,-map,$t/$1.map -Wl,-dependency_info,$t/$1.dep"; }
 
-# A reference to Swift metadata the option dropped is a fixup error.
+# A reference to Swift metadata the option dropped is an error.
 not $CC --ld-path=$mold -o $t/exe1 $t/a.o -Wl,-remove_swift_reflection_metadata_sections \
   $(reports 1) 2> $t/log1
-grep -q "at '_desc'+0x4 from a.o, target '_fm1' does not have address" $t/log1
+grep -q "$t/a.o: _desc+0x4: target '_fm1' does not have address" $t/log1
 grep -q '^\[  1\] .*/a.o$' $t/1.map
 grep -q a.o $t/1.dep
 [ ! -e $t/exe1 ]

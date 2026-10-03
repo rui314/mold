@@ -1371,16 +1371,6 @@ pub fn has_merged_subsecs(sect: &MachSection) -> bool {
     is_literal_section(sect) && !(sect.segname() == b"__DATA" && is_pointer_list(sect))
 }
 
-/// Whether a section's subsections are its literals or fixed-size
-/// records, whatever its labels (see initialize_sections).
-pub fn is_record_section(sect: &MachSection) -> bool {
-    is_literal_section(sect)
-        || matches!(
-            sect.section_type(),
-            S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS | S_NON_LAZY_SYMBOL_POINTERS
-        )
-}
-
 /// Whether a __DATA section is one of pointers the linker takes one by
 /// one: class, superclass and protocol references, or GOT slots.
 fn is_pointer_list(sect: &MachSection) -> bool {

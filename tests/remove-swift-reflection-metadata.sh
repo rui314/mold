@@ -55,5 +55,4 @@ _fm1: .long 0
 .subsections_via_symbols
 EOF
 not $CC --ld-path=$mold -o $t/exe $t/b.o -Wl,-remove_swift_reflection_metadata_sections 2> $t/log
-grep -q "at '_desc'+0x4 from b.o, target '_fm1' does not have address" $t/log
-[ "$(grep -c 'fixup error' $t/log)" = 1 ]
+grep -q "$t/b.o: _desc+0x4: target '_fm1' does not have address" $t/log

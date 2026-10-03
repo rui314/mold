@@ -41,7 +41,7 @@ $mold -arch x86_64 -preload -e _g -o $t/f $t/a.o $t/ext.o
 
 # Above it (after the default 4 GiB __PAGEZERO) it overflows.
 not $mold -arch x86_64 -static -e _g -o $t/g $t/a.o $t/ext.o 2> $t/log
-grep -qF "fixup error (kind=ptr32) at '_g'+0x8 from a.o, 32-bit pointer oveflow" $t/log
+grep -qF "$t/a.o: _g+0x8: 32-bit pointer overflow" $t/log
 
 # One where any pointer would be a text relocation ld-prime lists as
 # one. With chained fixups a 32-bit pointer elsewhere then fails the

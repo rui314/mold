@@ -43,7 +43,7 @@ grep -v '^+' $t/log3 | grep -A1 _nosuch | grep -q 'the command line'
 
 # An offset can't reach a function in another image.
 not $CC --ld-path=$mold -o $t/lib4.dylib -shared $t/a.o -Wl,-init,_puts 2> $t/log4
-grep -q "fixup error (kind=imageOffset32) at 'anon-1' from inits-file, target '_puts' does not have address" $t/log4
+grep -q "__init_offsets entry 0: target '_puts' does not have address" $t/log4
 
 # Nor does an absolute symbol. (ld-prime takes the low 32 bits of its
 # value for the offset.)

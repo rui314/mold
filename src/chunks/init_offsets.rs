@@ -40,19 +40,18 @@ impl Default for InitOffsetsSection {
     }
 }
 
-/// Writes the offsets. One of an initializer dyld binds is a fixup
-/// error, as in ld-prime, which makes each offset a subsection of its
-/// "inits-file", the k-th initializer's anon-(2k+1), and fails the link
-/// at the first.
+/// Writes the offsets. An initializer dyld binds has no offset in the
+/// image: that is an error.
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     for (i, &func) in ctx.init_offsets.init_funcs.iter().enumerate() {
         let val = match func {
             InitFunc::Local(isec, off) => ctx.isec_addr(isec) + off - ctx.mach_header.hdr.addr,
             InitFunc::Imported(id) => {
-                let msg = format_args!("target '{}' does not have address", ctx.symbols[id]);
-                let (ordinal, fileoff) = (2 * i + 1, ctx.init_offsets.hdr.fileoff + i as u64 * 4);
-                ctx.synthetic_fixup_error("inits-file", ordinal, fileoff, 0, "imageOffset32", msg);
-                return;
+                crate::error!(
+                    "__init_offsets entry {i}: target '{}' does not have address",
+                    ctx.symbols[id]
+                );
+                continue;
             }
         };
         buf[i * 4..i * 4 + 4].copy_from_slice(&(val as u32).to_le_bytes());

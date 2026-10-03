@@ -976,13 +976,13 @@ impl<E: Target> Context<E> {
         }
     }
 
-    /// The symbol that names subsection `id` in ld-prime's diagnostics:
-    /// of those at its start, the one input_files::subsec_name_rank
-    /// ranks first. ld-prime merges a literal by its content (see
-    /// input_files::has_merged_subsecs): the labels a compiler or
-    /// assembler makes for itself (see input_files::is_private_label)
-    /// name none, and but for an ltmpN, one takes the literal's bytes
-    /// from a symbol beside it, leaving it unnamed (see subsec_ordinal).
+    /// The symbol that names subsection `id`: of those at its start, the
+    /// one input_files::subsec_name_rank ranks first. A literal merged by
+    /// its content (see input_files::has_merged_subsecs) is named by none
+    /// of the labels a compiler or assembler makes for itself (see
+    /// input_files::is_private_label), and by nothing at all if one but
+    /// an ltmpN is among them, as ld-prime has it (mergeable records name
+    /// their entries so).
     pub fn subsec_label(&self, id: usize) -> Option<&'static [u8]> {
         let isec = &self.isecs[id];
         let obj = &self.objs[isec.file as usize];
@@ -1025,262 +1025,53 @@ impl<E: Target> Context<E> {
             .map(|(i, _, _)| i)
     }
 
-    /// The name ld-prime gives subsection `id` in a diagnostic: its
-    /// label, or else "anon-N" for the object's Nth subsection (see
-    /// subsec_ordinal).
+    /// The name of subsection `id` in a diagnostic: its label (see
+    /// subsec_label), or else its section and its offset there,
+    /// "__TEXT,__cstring+0x10".
     pub fn subsec_name(&self, id: usize) -> std::borrow::Cow<'static, [u8]> {
-        match self.subsec_label(id) {
-            Some(name) => name.into(),
-            None => format!("anon-{}", self.subsec_ordinal(id)).into_bytes().into(),
+        if let Some(name) = self.subsec_label(id) {
+            return name.into();
         }
+        let isec = &self.isecs[id];
+        let hdr = self.hdr_of(isec);
+        let (seg, sect) = (crate::error::raw(hdr.segname()), crate::error::raw(hdr.sectname()));
+        let off = isec.input_addr as u64 - hdr.addr;
+        crate::error::render(format_args!("{seg},{sect}+0x{off:x}")).into()
     }
 
-    /// The number ld-prime gives subsection `id` among its object's
-    /// subsections, the N of an unnamed one's "anon-N". It numbers them
-    /// section by section in section header order, and by address within
-    /// a section, but it splits an object differently from mold. It
-    /// makes no subsection of an empty section no label is in, of
-    /// __eh_frame and __objc_imageinfo, or of the sections it drops (the
-    /// __DWARF and __LLVM segments, and __LD's but __compact_unwind,
-    /// which it splits into a subsection per 32-byte record). Besides
-    /// the subsections mold has too, ld-prime makes a zero-size one of
-    /// each label that names none: a second label at a place, numbered
-    /// before the subsection with the bytes (which an L label takes on a
-    /// literal), and one inside a subsection - an alternate entry point,
-    /// or in an object without subsections any label past a section's
-    /// start - but for a literal's or a fixed-size record's. An arm64
-    /// assembler's ltmpN counts only in an object without subsections,
-    /// and after a literal's subsection or a class reference's, which
-    /// ld-prime coalesces by content too.
-    pub fn subsec_ordinal(&self, id: usize) -> usize {
-        use crate::input_files::{has_merged_subsecs, is_record_section};
-        let obj = &self.objs[self.isecs[id].file as usize];
-        let split = obj.subsections_via_symbols;
-
-        // The object's labels, by section and address: (section,
-        // address, where ld-prime puts the label's subsection among those
-        // of the labels at one place, whether it is an alternate entry
-        // point).
-        let mut labels: Vec<(u32, u64, u8, bool)> = obj
-            .nlists
-            .iter()
-            .zip(&obj.symbols)
-            .filter(|(n, _)| !n.is_stab() && n.n_type() == crate::macho::N_SECT && n.n_sect != 0)
-            .filter_map(|(n, &sym)| {
-                let name = self.symbols[sym].name();
-                let order = if name.starts_with(b"ltmp") {
-                    2
-                } else {
-                    crate::input_files::is_private_label(name) as u8
-                };
-                let alt_entry = n.n_desc & crate::macho::N_ALT_ENTRY != 0;
-                (order != 2 || !split).then_some((n.n_sect as u32 - 1, n.n_value, order, alt_entry))
-            })
-            .collect();
-        labels.sort_unstable();
-
-        let mut subs = obj.subsecs.clone();
-        subs.sort_unstable_by_key(|&i| (self.isecs[i].shndx, self.isecs[i].input_addr));
-
-        let mut n = 0;
-        for (shndx, hdr) in obj.sect_hdrs.iter().enumerate() {
-            let shndx = shndx as u32;
-            if (hdr.segname(), hdr.sectname()) == (b"__LD", b"__compact_unwind") {
-                n += (hdr.size / 32) as usize;
-                continue;
+    /// How a diagnostic names the target of relocation `rel` of object
+    /// `obj`: its symbol, or the subsection it points to.
+    pub fn reloc_target_name(&self, obj: usize, rel: &Reloc) -> std::borrow::Cow<'static, [u8]> {
+        match rel.target() {
+            RelocTarget::Sym(idx) => {
+                self.symbols[self.objs[obj].symbols[idx as usize]].name().into()
             }
-            if hdr.segname() == b"__LLVM" {
-                continue;
-            }
-            let lo = subs.partition_point(|&i| self.isecs[i].shndx < shndx);
-            let hi = subs.partition_point(|&i| self.isecs[i].shndx <= shndx);
-            let sect_subs = &subs[lo..hi];
-            let lo = labels.partition_point(|l| l.0 < shndx);
-            let hi = labels.partition_point(|l| l.0 <= shndx);
-            let sect_labels = &labels[lo..hi];
-            let merged = has_merged_subsecs(hdr) || hdr.sectname() == b"__objc_classrefs";
-            let records = is_record_section(hdr);
-            for (j, &sub) in sect_subs.iter().enumerate() {
-                let isec = &self.isecs[sub];
-                let start = isec.input_addr as u64;
-                let at_start = sect_labels.iter().filter(|l| l.1 == start);
-                let k = at_start.clone().count();
-                let (count, content) = if merged {
-                    let beside = at_start.filter(|l| l.2 != 2).count();
-                    (k.max(1), beside.saturating_sub(1))
-                } else {
-                    let end = match sect_subs.get(j + 1) {
-                        Some(&next) => self.isecs[next].input_addr as u64,
-                        None => hdr.addr + hdr.size + 1,
-                    };
-                    let inner = sect_labels
-                        .iter()
-                        .filter(|l| start < l.1 && l.1 < end && (l.3 || !split) && !records)
-                        .count();
-                    (k.max((isec.size > 0) as usize) + inner, k.saturating_sub(1))
-                };
-                if sub as usize == id {
-                    return n + content;
-                }
-                n += count;
-            }
+            RelocTarget::Section(idx) => self.subsec_name(idx as usize),
         }
-        n
-    }
-
-    /// Reports that stub `i` can't reach its pointer, as ld-prime does:
-    /// a fixup error in the stub's subsection of its "stubs-got-file",
-    /// whose first stub is anon-2 (anon-6 with lazy binding, the stub
-    /// helper's subsections first). `off` is the offset of the field in
-    /// the stub.
-    pub fn stub_fixup_error(&self, i: usize, off: u32, kind: &str, msg: std::fmt::Arguments) {
-        let ordinal = if self.stubs.lazy.is_empty() { 2 } else { 6 } + i;
-        let fileoff = self.stubs.hdr.fileoff + i as u64 * E::STUB_SIZE;
-        self.synthetic_fixup_error("stubs-got-file", ordinal, fileoff, off, kind, msg);
-    }
-
-    /// Reports a relocation that can't be applied `off` bytes into
-    /// anon-`ordinal` of `file`, one of the files ld-prime makes its own
-    /// subsections in, as it does (see fixup_error). The subsection is
-    /// `fileoff` bytes into the output file.
-    pub fn synthetic_fixup_error(
-        &self,
-        file: &str,
-        ordinal: usize,
-        fileoff: u64,
-        off: u32,
-        kind: &str,
-        msg: std::fmt::Arguments,
-    ) {
-        let at = fileoff + off as u64;
-        match off {
-            0 => crate::layout_error_at!(
-                at,
-                "fixup error (kind={kind}) at 'anon-{ordinal}' from {file}, {msg}"
-            ),
-            _ => crate::layout_error_at!(
-                at,
-                "fixup error (kind={kind}) at 'anon-{ordinal}'+0x{off:X} from {file}, {msg}"
-            ),
-        }
-    }
-
-    /// How a fixup error names the target of relocation `rel` of object
-    /// `obj`: by its symbol, or else by the label of the subsection it
-    /// points into, if that has one - as for a label an assembler made for
-    /// itself on a literal (see literal_label_target).
-    pub fn fixup_target_name(&self, obj: usize, rel: &Reloc) -> &'static [u8] {
-        match self.literal_label_target(obj, rel) {
-            Some(isec) => self.subsec_label(isec).unwrap_or_default(),
-            None => match rel.target() {
-                RelocTarget::Sym(idx) => self.symbols[self.objs[obj].symbols[idx as usize]].name(),
-                RelocTarget::Section(idx) => self.subsec_label(idx as usize).unwrap_or_default(),
-            },
-        }
-    }
-
-    /// How a fixup error names the target of branch `rel` of object
-    /// `obj`: a branch through a stub (to an import, or to a definition
-    /// dyld may interpose; see branch_target_addr) goes to a subsection
-    /// of ld-prime's "stubs-got-file", which has no name, as a GOT slot
-    /// hasn't. Any other target is named as by fixup_target_name.
-    pub fn branch_target_name(&self, obj: usize, rel: &Reloc) -> &'static [u8] {
-        match self.reloc_target_sym(obj, rel) {
-            Some(id)
-                if self.sym_aux(id).stub_idx != crate::symbol::NO_IDX
-                    && (self.symbols[id].is_imported() || self.is_interposable(id)) =>
-            {
-                b""
-            }
-            _ => self.fixup_target_name(obj, rel),
-        }
-    }
-
-    /// How a text-relocation diagnostic names the target of relocation
-    /// `rel` of object `obj`: by its symbol, or else by the subsection
-    /// it points into - as for a label an assembler made for itself on a
-    /// literal (see literal_label_target). A class reference slot is a
-    /// subsection no label names, whatever labels it has: the copy of it
-    /// ld-prime keeps.
-    pub fn text_reloc_target_name(
-        &self,
-        obj: usize,
-        rel: &Reloc,
-    ) -> std::borrow::Cow<'static, [u8]> {
-        if let Some(isec) = self.reloc_target_isec(obj, rel)
-            && self.hdr_of(&self.isecs[isec]).sectname() == b"__objc_classrefs"
-        {
-            let ordinal = self.subsec_ordinal(self.resolve_isec(isec));
-            return format!("anon-{ordinal}").into_bytes().into();
-        }
-        match self.literal_label_target(obj, rel) {
-            Some(isec) => self.subsec_name(isec),
-            None => match rel.target() {
-                RelocTarget::Sym(idx) => {
-                    self.symbols[self.objs[obj].symbols[idx as usize]].name().into()
-                }
-                RelocTarget::Section(idx) => self.subsec_name(idx as usize),
-            },
-        }
-    }
-
-    /// The literal (subsection of object `obj`) relocation `rel` points
-    /// into through a label a compiler or assembler made for itself (see
-    /// input_files::is_private_label) on literals ld-prime merges by
-    /// content, which it takes for a reference to the literal: an arm64
-    /// assembler refers to a literal by such a label, and an addend.
-    fn literal_label_target(&self, obj: usize, rel: &Reloc) -> Option<usize> {
-        let RelocTarget::Sym(idx) = rel.target() else { return None };
-        let obj = &self.objs[obj];
-        let nlist = obj.nlists.get(idx as usize)?;
-        let name = self.symbols[obj.symbols[idx as usize]].name();
-        if nlist.is_stab()
-            || nlist.n_type() != crate::macho::N_SECT
-            || !crate::input_files::is_private_label(name)
-            || !crate::input_files::has_merged_subsecs(&obj.sect_hdrs[nlist.n_sect as usize - 1])
-        {
-            return None;
-        }
-        let addr = nlist.n_value.wrapping_add_signed(rel.addend);
-        crate::input_files::find_subsec(&self.isecs, &obj.subsecs, addr).map(|(id, _)| id)
     }
 
     /// Reports a relocation that can't be applied where it is, `offset`
-    /// bytes into subsection `isec`, as ld-prime does: naming the fixup's
-    /// kind as ld-prime calls it, and the object by its leaf name (an
-    /// archive member's archive[index](member)).
-    pub fn fixup_error(&self, isec: usize, offset: u32, kind: &str, msg: std::fmt::Arguments) {
-        let sec = &self.isecs[isec];
-        let obj = &self.objs[sec.file as usize];
-        let path = crate::util::path_bytes(&obj.mf.name);
-        let file = crate::error::raw(path.rsplit(|&c| c == b'/').next().unwrap_or_default());
+    /// bytes into subsection `isec`.
+    pub fn fixup_error(&self, isec: usize, offset: u32, msg: std::fmt::Arguments) {
+        let file =
+            crate::error::RawPath::raw(self.objs[self.isecs[isec].file as usize].mf.name.as_path());
         let name = self.subsec_name(isec);
         let name = crate::error::raw(&name);
-        let osec = self.chunk_header(sec.output_section().unwrap());
-        let at = osec.fileoff + sec.offset as u64 + offset as u64;
-        if offset == 0 {
-            crate::layout_error_at!(at, "fixup error (kind={kind}) at '{name}' from {file}, {msg}");
-        } else {
-            crate::layout_error_at!(
-                at,
-                "fixup error (kind={kind}) at '{name}'+0x{offset:X} from {file}, {msg}"
-            );
-        }
+        crate::error!("{file}: {name}+0x{offset:x}: {msg}");
     }
 
     /// Whether the target of relocation `r` of subsection `isec`, of
     /// object `obj`, has an address in the image, as a PC-relative
     /// reference that goes through no stub or GOT slot needs (an
     /// x86-64 RIP-relative one, an arm64 adrp or the offset into its
-    /// page): an import has none, which ld-prime reports as a fixup
-    /// error (named `kind`), and so does this.
-    pub fn target_has_address(&self, obj: usize, isec: usize, r: &Reloc, kind: &str) -> bool {
+    /// page): an import has none, which is an error.
+    pub fn target_has_address(&self, obj: usize, isec: usize, r: &Reloc) -> bool {
         let Some(id) = self.reloc_target_sym(obj, r).filter(|&id| self.symbols[id].is_imported())
         else {
             return true;
         };
         let msg = format_args!("target '{}' does not have address", self.symbols[id]);
-        self.fixup_error(isec, r.offset, kind, msg);
+        self.fixup_error(isec, r.offset, msg);
         false
     }
 
@@ -1312,9 +1103,8 @@ impl<E: Target> Context<E> {
         }
     }
 
-    /// Names the place `offset` bytes into subsection `isec` as
-    /// ld-prime's other diagnostics do: "'NAME'+0xOFF (path)", with the
-    /// object's full path.
+    /// Names the place `offset` bytes into subsection `isec`:
+    /// "'NAME'+0xOFF (path)".
     pub fn subsec_ref(&self, isec: usize, offset: u32) -> crate::error::Message {
         let path =
             crate::error::RawPath::raw(self.objs[self.isecs[isec].file as usize].mf.name.as_path());

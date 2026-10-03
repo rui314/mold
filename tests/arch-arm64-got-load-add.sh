@@ -61,12 +61,12 @@ not grep -q 'sectname __got' $t/lc
 # add w0, w0: refused, at the add.
 python3 $t/insn.py $t/a.o $t/addw.o 6 0x3ff 0x11000000
 not $CC --ld-path=$mold -o $t/exe2 $t/addw.o 2> $t/log
-grep -qF "fixup error (kind=arm64_was_ld12_got_elide_got) at '_main'+0x4 from addw.o, non-LDR instruction" $t/log
+grep -qF "$t/addw.o: _main+0x4: non-LDR instruction" $t/log
 
-# ldr d0, [x0]: refused, at the adrp it pairs with.
+# ldr d0, [x0]: refused too. (ld-prime names the adrp it pairs with.)
 python3 $t/insn.py $t/a.o $t/ldrd.o 6 0x3ff 0xfd400000
 not $CC --ld-path=$mold -o $t/exe3 $t/ldrd.o 2> $t/log
-grep -qF "fixup error (kind=arm64_was_adrp_ldr_got_elide_got) at '_main' from ldrd.o, non-LDR instruction" $t/log
+grep -qF "$t/ldrd.o: _main+0x4: non-LDR instruction" $t/log
 
 # The same of a dylib's symbol keeps the GOT slot: the add takes its
 # address.
@@ -100,5 +100,4 @@ $t/exe4 || code=$?
 [ $code = 7 ]
 python3 $t/insn.py $t/d.o $t/ldrb.o 9 0x3fffff 0x39400000
 not $CC --ld-path=$mold -o $t/exe5 $t/ldrb.o 2> $t/log
-grep -qF "fixup error (kind=arm64_was_ld12_tlv_elide_got) at '_main'" $t/log
-grep -qF "from ldrb.o, non-LDR instruction" $t/log
+grep -q "$t/ldrb.o: _main+0x[0-9a-f]*: non-LDR instruction" $t/log

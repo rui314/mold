@@ -3267,13 +3267,8 @@ pub fn check_removed_swift_metadata_refs<E: Target>(ctx: &Context<E>) {
     let Some((i, isec, rel)) = first else {
         return;
     };
-    let target = raw(ctx.fixup_target_name(isec.file as usize, rel));
-    ctx.fixup_error(
-        i,
-        rel.offset,
-        "reference",
-        format_args!("target '{target}' does not have address"),
-    );
+    let target = ctx.reloc_target_name(isec.file as usize, rel);
+    ctx.fixup_error(i, rel.offset, format_args!("target '{}' does not have address", raw(&target)));
 }
 
 /// Hides the subsections of archive members that resolution left
@@ -5219,14 +5214,6 @@ pub fn finish_stubs<E: Target>(ctx: &mut Context<E>) {
         true => (0..stubs.len() as u32).filter(|&i| lazy(stubs[i as usize])).collect(),
         false => Vec::new(),
     };
-    // ld-prime names what it makes for each symbol called through a
-    // stub - the stub, the lazy pointer and the helper entry - 'anon-N',
-    // three in a row, in the order the link first calls the symbols. An
-    // error at the first helper entry names the third of its symbol's.
-    if ctx.args.legacy_linkedit && ctx.stub_helper.binding_helper.is_none() {
-        let first = stubs.iter().position(|&id| lazy(id));
-        ctx.stub_helper.first_entry_anon = first.map_or(0, |i| 3 * i + 2);
-    }
     ctx.stubs.lazy = lazy_stubs;
 }
 
@@ -5691,7 +5678,7 @@ fn report_text_relocs<E: Target>(ctx: &Context<E>) {
             osec = Some(isec.output_section);
         }
         let rel = &ctx.isec_relocs(id as usize)[i as usize];
-        let target = ctx.text_reloc_target_name(isec.file as usize, rel);
+        let target = ctx.reloc_target_name(isec.file as usize, rel);
         crate::error::notice(format_args!(
             "  text-relocation in {} to '{}'",
             raw(&ctx.subsec_ref(id as usize, rel.offset)),

@@ -123,27 +123,20 @@ fn is_supported(r: &MachRel) -> bool {
 }
 
 /// The displacement a 32-bit pc-relative fixup, relocation `r` of
-/// subsection `isec` at `p`, holds to reach `t`: from the end of the
-/// instruction, past the field and the immediate after it a SIGNED_1/2/4
-/// counts. One that doesn't fit is a fixup error of ld-prime's `kind`,
-/// naming the target `name`.
-fn rip32_displacement(
-    ctx: &Context<X86_64>,
-    isec: usize,
-    r: &Reloc,
-    kind: &str,
-    p: u64,
-    t: u64,
-    name: &[u8],
-) -> u32 {
+/// subsection `isec` at `p`, holds to reach `t` (its target, or the
+/// target's stub or GOT slot): from the end of the instruction, past the
+/// field and the immediate after it a SIGNED_1/2/4 counts. One that
+/// doesn't fit is an error.
+fn rip32_displacement(ctx: &Context<X86_64>, isec: usize, r: &Reloc, p: u64, t: u64) -> u32 {
     let disp = t.wrapping_sub(p + 4).wrapping_sub(reloc_bias(r.r_type) as u64) as i64;
     if i32::try_from(disp).is_err() {
-        let name = crate::error::raw(name);
+        let name = ctx.reloc_target_name(ctx.isecs[isec].file as usize, r);
+        let name = crate::error::raw(&name);
         let msg = format_args!(
             "32-bit RIP-relative reference out of range (displacement={disp}, max is +/-2GB), \
              from 0x{p:08X} to 0x{t:08X} ('{name}')"
         );
-        ctx.fixup_error(isec, r.offset, kind, msg);
+        ctx.fixup_error(isec, r.offset, msg);
     }
     disp as u32
 }
@@ -164,14 +157,13 @@ fn write_branch8(
     let sym = &ctx.symbols[sym];
     let val = t.wrapping_sub(p + 1) as i64;
     if sym.is_imported() {
-        let msg = format_args!("target '{sym}' does not have address");
-        ctx.fixup_error(isec, r.offset, "x86_64_branch8", msg);
+        ctx.fixup_error(isec, r.offset, format_args!("target '{sym}' does not have address"));
     } else if !(-128..128).contains(&val) {
         let msg = format_args!(
             "8-bit branch out of range (displacement={val}, max is +/-127), \
              from 0x{p:X} to 0x{t:X} ('{sym}')"
         );
-        ctx.fixup_error(isec, r.offset, "x86_64_branch8", msg);
+        ctx.fixup_error(isec, r.offset, msg);
     }
     loc[0] = val as u8;
 }
@@ -185,10 +177,7 @@ fn write_branch8(
 fn write_legacy_stub_helper(ctx: &Context<X86_64>, addr: u64, buf: &mut [u8]) {
     let helper = ctx.stub_helper.binding_helper.map(|id| ctx.sym_addr(id));
     if helper.is_none() {
-        let anon = ctx.stub_helper.first_entry_anon;
-        let msg = format_args!("target 'dyld_stub_binding_helper' does not have address");
-        let fileoff = ctx.stub_helper.hdr.fileoff;
-        ctx.synthetic_fixup_error("stubs-got-file", anon, fileoff, 8, "x86_64_call", msg);
+        crate::error!("stub helper: target 'dyld_stub_binding_helper' does not have address");
     }
     for i in 0..ctx.stubs.lazy.len() {
         let ent = &mut buf[i * 12..];
@@ -274,11 +263,11 @@ impl Target for X86_64 {
             let disp = ptr_addr.wrapping_sub(ent_addr + 6) as i64;
             if i32::try_from(disp).is_err() {
                 let p = ent_addr + 2;
-                let msg = format_args!(
-                    "32-bit RIP-relative reference out of range (displacement={disp}, max is \
-                     +/-2GB), from 0x{p:08X} to 0x{ptr_addr:08X} ('')"
+                crate::error!(
+                    "stub for {}: 32-bit RIP-relative reference out of range (displacement={disp}, \
+                     max is +/-2GB), from 0x{p:08X} to its pointer at 0x{ptr_addr:08X}",
+                    ctx.symbols[sym]
                 );
-                ctx.stub_fixup_error(i, 2, "x86_64_rip", msg);
             }
 
             // jmp *ptr(%rip)
@@ -610,14 +599,9 @@ impl Target for X86_64 {
                     Some(op) if *op == 0x8b => *op = 0x8d,
                     Some(op) if *op == 0x8d => {}
                     _ => {
-                        let kind = if r.r_type == X86_64_RELOC_TLV {
-                            "x86_64_was_rip_tlv_elide_got"
-                        } else {
-                            "x86_64_was_rip_got_load_elide_got"
-                        };
                         let msg =
                             format_args!("GOT load fixup does not point to a movq instruction");
-                        ctx.fixup_error(isec_id, r.offset, kind, msg);
+                        ctx.fixup_error(isec_id, r.offset, msg);
                     }
                 }
             }
@@ -680,8 +664,11 @@ impl Target for X86_64 {
                     let val = s.wrapping_add_signed(a);
                     if ctx.args.static_link {
                         if val > u32::MAX as u64 {
-                            let msg = format_args!("32-bit pointer oveflow");
-                            ctx.fixup_error(isec_id, r.offset, "ptr32", msg);
+                            ctx.fixup_error(
+                                isec_id,
+                                r.offset,
+                                format_args!("32-bit pointer overflow"),
+                            );
                         }
                     } else if ctx.text_reloc_ranges.iter().any(|range| range.contains(&p)) {
                         ctx.check_text_reloc(isec_id, rels, i, p);
@@ -734,63 +721,35 @@ impl Target for X86_64 {
                 {
                     write32(loc, a as u32);
                 }
-                // A pc-relative fixup that can't reach is an error
-                // named after what ld-prime makes of the reference: a
-                // call, a plain one, or a GOT or TLV load that it
-                // relaxed ("elide") or not. It names a GOT slot and a
-                // stub ''.
+                // A pc-relative fixup that can't reach is an error.
                 X86_64_RELOC_BRANCH => {
                     let s = match ctx.reloc_target_sym(obj, r) {
                         Some(id) => ctx.branch_target_addr(id),
                         None => s,
                     };
-                    let name = ctx.branch_target_name(obj, r);
                     let t = s.wrapping_add_signed(a);
-                    write32(loc, rip32_displacement(ctx, isec_id, r, "x86_64_call", p, t, name));
+                    write32(loc, rip32_displacement(ctx, isec_id, r, p, t));
                 }
                 X86_64_RELOC_SIGNED
                 | X86_64_RELOC_SIGNED_1
                 | X86_64_RELOC_SIGNED_2
                 | X86_64_RELOC_SIGNED_4 => {
-                    let kind = match r.r_type {
-                        X86_64_RELOC_SIGNED => "x86_64_rip",
-                        X86_64_RELOC_SIGNED_1 => "x86_64_rip1",
-                        X86_64_RELOC_SIGNED_2 => "x86_64_rip2",
-                        _ => "x86_64_rip4",
-                    };
-                    if ctx.target_has_address(obj, isec_id, r, kind) {
-                        let (t, name) = (s.wrapping_add_signed(a), ctx.fixup_target_name(obj, r));
-                        write32(loc, rip32_displacement(ctx, isec_id, r, kind, p, t, name));
+                    if ctx.target_has_address(obj, isec_id, r) {
+                        let t = s.wrapping_add_signed(a);
+                        write32(loc, rip32_displacement(ctx, isec_id, r, p, t));
                     }
-                }
-                X86_64_RELOC_GOT_LOAD if relaxed_got_load => {
-                    let kind = "x86_64_was_rip_got_load_elide_got";
-                    let (t, name) = (s.wrapping_add_signed(a), ctx.fixup_target_name(obj, r));
-                    write32(loc, rip32_displacement(ctx, isec_id, r, kind, p, t, name));
-                }
-                X86_64_RELOC_GOT_LOAD | X86_64_RELOC_GOT => {
-                    let g = ctx.sym_got_addr(ctx.reloc_target_sym(obj, r).unwrap());
-                    let kind = if r.r_type == X86_64_RELOC_GOT {
-                        "x86_64_rip_got"
-                    } else {
-                        "x86_64_was_rip_got_load_load_got"
-                    };
-                    let t = g.wrapping_add_signed(a);
-                    write32(loc, rip32_displacement(ctx, isec_id, r, kind, p, t, b""));
                 }
                 // A local thread-local's TLV load relaxes just like a
                 // GOT load: the movq of the descriptor's GOT slot
                 // becomes a leaq of the __thread_vars descriptor itself.
-                X86_64_RELOC_TLV if relaxed_got_load => {
-                    let kind = "x86_64_was_rip_tlv_elide_got";
-                    let (t, name) = (s.wrapping_add_signed(a), ctx.fixup_target_name(obj, r));
-                    write32(loc, rip32_displacement(ctx, isec_id, r, kind, p, t, name));
+                X86_64_RELOC_GOT_LOAD | X86_64_RELOC_TLV if relaxed_got_load => {
+                    let t = s.wrapping_add_signed(a);
+                    write32(loc, rip32_displacement(ctx, isec_id, r, p, t));
                 }
-                X86_64_RELOC_TLV => {
+                X86_64_RELOC_GOT_LOAD | X86_64_RELOC_GOT | X86_64_RELOC_TLV => {
                     let g = ctx.sym_got_addr(ctx.reloc_target_sym(obj, r).unwrap());
-                    let kind = "x86_64_was_rip_tlv_load_got";
                     let t = g.wrapping_add_signed(a);
-                    write32(loc, rip32_displacement(ctx, isec_id, r, kind, p, t, b""));
+                    write32(loc, rip32_displacement(ctx, isec_id, r, p, t));
                 }
                 _ => fatal!("unsupported relocation type: {}", r.r_type),
             }

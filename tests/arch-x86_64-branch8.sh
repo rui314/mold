@@ -66,7 +66,7 @@ _g:
 EOF
 python3 $t/patch.py $t/f.o $t/f1.o
 not $CC --ld-path=$mold -o $t/exe $t/f1.o 2> $t/log
-grep -Eq "fixup error \(kind=x86_64_branch8\) at '_main'\+0x6 from f1.o, 8-bit branch out of range \(displacement=306, max is \+/-127\), from 0x[0-9A-F]+ to 0x[0-9A-F]+ \('_g'\)" $t/log
+grep -Eq "$t/f1.o: _main\+0x6: 8-bit branch out of range \(displacement=306, max is \+/-127\), from 0x[0-9A-F]+ to 0x[0-9A-F]+ \('_g'\)" $t/log
 
 cat <<EOF | $CC -o $t/ext.o -c -xc -
 int ext = 42;
@@ -82,8 +82,4 @@ _main:
 EOF
 python3 $t/patch.py $t/g.o $t/g1.o
 not $CC --ld-path=$mold -o $t/exe $t/g1.o $t/libext.dylib 2> $t/log
-grep -qF "fixup error (kind=x86_64_branch8) at '_main'+0x1 from g1.o, target '_ext' does not have address" $t/log
-# It takes no stub, nor a GOT slot for one: the section layout
-# printed with the error has neither.
-grep -q '^final section layout:' $t/log
-not grep -q '__stubs\|__got' $t/log
+grep -qF "$t/g1.o: _main+0x1: target '_ext' does not have address" $t/log

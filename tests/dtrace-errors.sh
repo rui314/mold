@@ -77,8 +77,8 @@ main nodof "$call "'___dtrace_probe$p$x$v1' ".reference $stab" ".reference $type
 $CC --ld-path=$mold -o $t/exe $t/nodof.o
 not $CC --ld-path=$mold -o $t/exe $t/nodof.o -Wl,-no_dtrace_dof 2> $t/log
 if [ $ARCH = arm64 ]; then
-  grep -qF "fixup error (kind=arm64_b26) at '_main' from nodof.o, B/BL out of range" $t/log
+  grep -qF "$t/nodof.o: _main+0x0: B/BL out of range" $t/log
 else
-  grep -qF "fixup error (kind=x86_64_call) at '_main'+0x1 from nodof.o, 32-bit RIP-relative" $t/log
+  grep -qF "$t/nodof.o: _main+0x1: 32-bit RIP-relative" $t/log
 fi
 grep -qF "to 0x00000000 ('___dtrace_probe\$p\$x\$v1')" $t/log

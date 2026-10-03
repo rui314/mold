@@ -59,7 +59,7 @@ not grep -q 'sectname __got' $t/lc
 # addq: refused.
 python3 $t/opcode.py $t/a.o $t/add.o 3 0x03
 not $CC --ld-path=$mold -o $t/exe2 $t/add.o 2> $t/log
-grep -qF "fixup error (kind=x86_64_was_rip_got_load_elide_got) at '_get'+0x3 from add.o, GOT load fixup does not point to a movq instruction" $t/log
+grep -qF "$t/add.o: _get+0x3: GOT load fixup does not point to a movq instruction" $t/log
 
 # The same load of a dylib's symbol goes through the GOT.
 cat <<EOF | $CC -o $t/b.o -c -xc -
@@ -84,5 +84,4 @@ int get_tv(void) { return tv; }
 EOF
 python3 $t/opcode.py $t/d.o $t/d-add.o 9 0x03
 not $CC --ld-path=$mold -shared -o $t/libd.dylib $t/d-add.o 2> $t/log
-grep -qF "fixup error (kind=x86_64_was_rip_tlv_elide_got) at '_get_tv'" $t/log
-grep -qF "from d-add.o, GOT load fixup does not point to a movq instruction" $t/log
+grep -q "$t/d-add.o: _get_tv+0x[0-9a-f]*: GOT load fixup does not point to a movq instruction" $t/log

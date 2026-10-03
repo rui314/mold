@@ -108,7 +108,7 @@ lCPI0_0: .quad 7
 .subsections_via_symbols
 EOF
 not $CC --ld-path=$mold -o $t/exe17 $t/main.o $t/g.o 2> $t/log17
-grep -qF "  text-relocation in '_g' ($dir/g.o) to 'anon-1'" $t/log17
+grep -qF "  text-relocation in '_g' ($dir/g.o) to 'lCPI0_0'" $t/log17
 
 # A segment -segprot makes read-only counts too.
 cat <<EOF | $CC -o $t/e.o -c -xassembler -
@@ -142,9 +142,7 @@ grep -q 'Found illegal text-relocations' $t/log12
 # ld-prime allows them by default in an x86-64 kext and non-PIE
 # executable, not in an arm64 kext, where it also ignores the option.
 if [ $ARCH = x86_64 ]; then
-  # Subsections count in address order, each C string one (arm64
-  # objects name a section's first subsection by an ltmp symbol
-  # instead).
+  # A subsection no symbol names goes by its section and offset.
   cat <<EOF | $CC -o $t/f.o -c -xassembler -
 .text
 .p2align 3
@@ -161,7 +159,7 @@ L5: .quad 0
 .subsections_via_symbols
 EOF
   not $CC --ld-path=$mold -o $t/exe16 $t/main.o $t/f.o 2> $t/log16
-  grep -qF "  text-relocation in 'anon-0'+0x8 ($dir/f.o) to 'anon-4'" $t/log16
+  grep -qF "  text-relocation in '__TEXT,__text+0x0'+0x8 ($dir/f.o) to '__DATA,__data+0x0'" $t/log16
 
   $mold -arch x86_64 -kext -o $t/kext1 $t/b.o
   not $mold -arch x86_64 -kext -o $t/kext2 $t/b.o -read_only_relocs error 2> $t/log14

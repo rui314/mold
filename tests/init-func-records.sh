@@ -1,10 +1,11 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# ld-prime makes each initializer or terminator pointer a subsection of
-# its own: its diagnostics name the pointer's subsection (anon-N, the
-# Nth of the object's subsections), each needs a relocation of its own,
-# and a -r output lists the pointers' relocations in their order.
+# Each initializer or terminator pointer is a subsection of its own:
+# diagnostics name it by its section and offset, each needs a relocation
+# of its own, and a -r output lists the pointers' relocations in their
+# order. (ld-prime names it "anon-N", the Nth of the object's
+# subsections.)
 cat <<EOF | $CC -o $t/main.o -c -xc -
 int main() { return 0; }
 EOF
@@ -38,7 +39,7 @@ _g: ret
 .subsections_via_symbols
 EOF
 not $CC --ld-path=$mold -o $t/exe $t/main.o $t/b.o -Wl,-no_fixup_chains 2> $t/log
-grep -q "text-relocation in 'anon-3' (.*/b.o) to '_g'" $t/log
+grep -q "text-relocation in '__TEXT,__myinit+0x8' (.*/b.o) to '_g'" $t/log
 
 cat <<EOF | $CC -o $t/c.o -c -xassembler -
 .section __DATA,__mod_init_func,mod_init_funcs
