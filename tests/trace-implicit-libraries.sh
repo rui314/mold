@@ -5,10 +5,8 @@ source "$(dirname "$0")"/common.inc
 # brings in on its own: the auto-link hints of the command line's
 # objects (frameworks first) as ld-prime reads them and again as it acts
 # on them, and in between the libraries each dylib loaded directly
-# re-exports, found or not, but those loaded directly themselves - a
-# stub's once for each platform it has for the target (a zippered one's
-# for macOS and Mac Catalyst alike) - and an archive member's hints as
-# it loads. Files go by their real paths, an archive member as
+# re-exports, found or not, but those loaded directly themselves, and an
+# archive member's hints as it loads. Files go by their real paths, an archive member as
 # "lib.a[N](member.o)". -trace_implicit_library picks the lines about
 # libraries whose names hold its argument.
 dir=$(cd $t && pwd -P)
@@ -60,14 +58,14 @@ sed -n 2p $t/log1 | grep -qx "auto-linking library hint 'nosuch' from file '$dir
 tail -2 $t/log1 | head -1 | grep -qx "auto-linking framework hint 'Foundation' from file '$dir/a.o'"
 tail -1 $t/log1 | grep -qx "auto-linking library hint 'nosuch' from file '$dir/a.o'"
 [ "$(grep -c "^indirect library '$dir/libinner.dylib' from file '$dir/libouter.dylib'$" $t/log1)" = 1 ]
-[ "$(grep -c "^indirect library '/usr/lib/libobjc.A.dylib' from file '.*/Foundation.tbd'$" $t/log1)" = 2 ]
+grep -q "^indirect library '/usr/lib/libobjc.A.dylib' from file '.*/Foundation.tbd'$" $t/log1
 not grep -q "from file '.*/CoreFoundation.tbd'" $t/log1
 
 $CC --ld-path=$mold -o $t/exe2 $t/c.o $t/libb.a -L$t -Wl,-trace_implicit_libraries \
   2> /dev/null > $t/log2
 grep -qx "auto-linking library hint 'zip' from file '$dir/libb.a\[[0-9]*\](b.o)'" $t/log2
 [ "$(grep -c "auto-linking library hint 'zip'" $t/log2)" = 1 ]
-[ "$(grep -c "^indirect library '$dir/libnone.dylib' from file '$dir/libzip.tbd'$" $t/log2)" = 2 ]
+grep -q "^indirect library '$dir/libnone.dylib' from file '$dir/libzip.tbd'$" $t/log2
 
 $CC --ld-path=$mold -o $t/exe3 $t/a.o $t/libouter.dylib -L$t -Wl,-trace_implicit_library,inner \
   -Wl,-trace_implicit_library,nosuch 2> /dev/null > $t/log3

@@ -2785,19 +2785,15 @@ fn note_reexport_file<E: Target>(ctx: &mut Context<E>, path: &Path) {
     }
 }
 
-/// A dylib whose re-exports load_reexports loads: its install name,
-/// its file, and how many platforms it has for the target (one for a
-/// binary; see trace_reexports).
+/// A dylib whose re-exports load_reexports loads: its install name and
+/// its file.
 struct ReexportParent<'a> {
     install_name: &'a [u8],
     path: &'a Path,
-    platforms: usize,
 }
 
 /// Notes for -trace_implicit_libraries the libraries `names` that
-/// `parent` re-exports: a stub's once for each platform it has for the
-/// target (a zippered one's for macOS and Mac Catalyst alike), a
-/// binary's once.
+/// `parent` re-exports.
 fn trace_reexports<'a, E: Target>(
     ctx: &mut Context<E>,
     parent: &ReexportParent,
@@ -2815,10 +2811,8 @@ fn trace_reexports<'a, E: Target>(
             crate::error::raw(name),
             file.raw()
         ));
-        for _ in 0..parent.platforms {
-            let (parent, name) = (parent.install_name.to_vec(), name.to_vec());
-            ctx.implicit_trace.push(ImplicitTrace::Reexport { parent, name, line: line.clone() });
-        }
+        let (parent, name) = (parent.install_name.to_vec(), name.to_vec());
+        ctx.implicit_trace.push(ImplicitTrace::Reexport { parent, name, line });
     }
 }
 
@@ -3281,7 +3275,7 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
     // and rpaths, since @loader_path and @rpath in an install name are
     // relative to the referrer.
     let reexports = ReexportRef::of(reexports, &install_name, &dir_of(&mf.name), &rpaths, 0);
-    let parent = ReexportParent { install_name: &install_name, path: &mf.name, platforms: 1 };
+    let parent = ReexportParent { install_name: &install_name, path: &mf.name };
     let loaded = load_reexports(
         ctx,
         reexports,
@@ -4185,7 +4179,7 @@ fn register_tbd<E: Target>(
     let names = tbd.reexports.into_iter().map(<[u8]>::to_vec).collect();
     let name = tbd.install_name;
     let reexports = ReexportRef::of(names, name, &dir_of(path), &[], 0);
-    let parent = ReexportParent { install_name: name, path, platforms: tbd.platforms.len() };
+    let parent = ReexportParent { install_name: name, path };
     let loaded = load_reexports(
         ctx,
         reexports,
