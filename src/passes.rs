@@ -6108,89 +6108,29 @@ fn is_pin_no_base<E: Target>(ctx: &Context<E>, segname: &[u8]) -> bool {
         && (ctx.args.output_type == MH_EXECUTE || ctx.args.fixup_chains)
 }
 
-/// Builds the __LINKEDIT tables, once every other address is final.
+/// Builds the __LINKEDIT tables, once every other address is final
+/// (the symbol table needs none at all). They are independent of one
+/// another, so they build as one parallel task group; layout_segment
+/// then places each by the size its contents give it.
 fn build_linkedit_tables<E: Target>(ctx: &mut Context<E>) {
-    // The LINKEDIT tables are independent of one another and
-    // every address they read is final (the symbol table needs
-    // none at all), so they build as one parallel task group;
-    // layout_segment just consumes the cached bytes.
-    // sold sizes its __LINKEDIT members with the same
-    // parallel-for.
-    enum Streams {
-        Chained(chunks::chained_fixups::ChainedFixups),
-        Classic(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u32>),
-    }
-    let use_chained = ctx.use_chained_fixups();
     let shared = &*ctx;
-    // The defined globals, sorted by name, feed both the
-    // symbol table and the export trie (identical filters);
-    // sort once and share - on a debug link this is hundreds
-    // of thousands of long mangled names.
-    // The name sort feeds only the symtab and the trie, so it
-    // runs inside their arm of the task group and the fixup
-    // streams, function starts and data-in-code build under it.
-    let sorted_globals_of = || -> Vec<crate::symbol::SymbolId> {
-        let _t = shared.timer("globals_sort");
-        {
-            let mut v: Vec<crate::symbol::SymbolId> = (0..shared.symbols.syms.len())
-                .into_par_iter()
-                .filter(|&i| {
-                    let sym = &shared.symbols[i];
-                    sym.is_extern()
-                        && !sym.is_private_extern()
-                        && matches!(sym.file(), Some(FileId::Obj(_)))
-                        && sym
-                            .input_section()
-                            .map(|i| i as usize)
-                            .is_none_or(|isec| shared.isecs[shared.resolve_isec(isec)].is_alive())
-                })
-                .map(|i| i as u32)
-                .collect();
-            v.par_sort_unstable_by_key(|&i| crate::util::name_sort_key(shared.symbols[i].name()));
-            v
-        }
-    };
-    let ((symtab, trie), (streams, (starts, dice))) = rayon::join(
+    let ((symtab, trie), (fixups, (starts, (dice, split)))) = rayon::join(
         || {
-            let sorted_globals = sorted_globals_of();
-            let sorted_globals = &sorted_globals;
+            let globals = sorted_globals(shared);
             rayon::join(
                 || {
                     let _t = shared.timer("symtab");
-                    chunks::symtab::create_output_symtab(shared, sorted_globals)
+                    chunks::symtab::create_output_symtab(shared, &globals)
                 },
                 || {
                     let _t = shared.timer("trie_encode");
-                    chunks::export_trie::encode_export_trie(shared, sorted_globals)
+                    chunks::export_trie::encode_export_trie(shared, &globals)
                 },
             )
         },
         || {
             rayon::join(
-                || {
-                    if use_chained {
-                        let _t = shared.timer("chained_fixups");
-                        if let Some(chained) = chunks::chained_fixups::build_chained_fixups(shared)
-                        {
-                            return Streams::Chained(chained);
-                        }
-                    } else {
-                        chunks::chained_fixups::check_classic_pointers(shared);
-                    }
-                    let (rebase, bind) = rayon::join(
-                        || {
-                            let _t = shared.timer("rebase_info");
-                            chunks::rebase_info::build(shared)
-                        },
-                        || {
-                            let _t = shared.timer("bind_info");
-                            chunks::bind_info::build(shared)
-                        },
-                    );
-                    let (lazy, lazy_offsets) = chunks::lazy_bind_info::build(shared);
-                    let weak = chunks::weak_bind_info::build(shared);
-                    Streams::Classic(rebase, bind, weak, lazy, lazy_offsets)
-                },
+                || build_fixups(shared),
                 || {
                     rayon::join(
                         || {
@@ -6200,17 +6140,14 @@ fn build_linkedit_tables<E: Target>(ctx: &mut Context<E>) {
                         || {
                             let _t = shared.timer("data_in_code");
                             let dice = chunks::data_in_code::build(shared, |hdr| hdr.fileoff);
-                            let split = chunks::split_info::build(shared);
-                            (dice, split)
+                            (dice, chunks::split_info::build(shared))
                         },
                     )
                 },
             )
         },
     );
-    // Each table's size follows from its contents; layout_segment
-    // places them.
-    let (dice, split) = dice;
+
     ctx.symtab = symtab;
     ctx.symtab.hdr.size = (ctx.symtab.len() * size_of::<NList>()) as u64;
     ctx.strtab.hdr.size = ctx.symtab.strtab_size as u64;
@@ -6218,8 +6155,8 @@ fn build_linkedit_tables<E: Target>(ctx: &mut Context<E>) {
     ctx.data_in_code.entries = dice;
     ctx.split_info.hdr.size = split.len() as u64;
     ctx.split_info.contents = split;
-    match streams {
-        Streams::Chained((contents, fixups, imports, ordinals)) => {
+    match fixups {
+        Fixups::Chained((contents, fixups, imports, ordinals)) => {
             let sec = &mut ctx.chained_fixups;
             sec.hdr.size = contents.len() as u64;
             sec.contents = contents;
@@ -6227,17 +6164,17 @@ fn build_linkedit_tables<E: Target>(ctx: &mut Context<E>) {
             sec.imports = imports;
             sec.ordinals = ordinals;
         }
-        Streams::Classic(rebase, bind, weak, lazy, lazy_offsets) => {
-            // An image laid out for chains may fall back to these.
-            ctx.chained_fixups.disabled = use_chained;
+        Fixups::Classic { rebase, bind, weak_bind, lazy_bind, lazy_offsets } => {
+            // An image laid out for chains falls back to these.
+            ctx.chained_fixups.disabled = ctx.args.fixup_chains;
             ctx.rebase_info.hdr.size = rebase.len() as u64;
             ctx.rebase_info.contents = rebase;
             ctx.bind_info.hdr.size = bind.len() as u64;
             ctx.bind_info.contents = bind;
-            ctx.weak_bind_info.hdr.size = weak.len() as u64;
-            ctx.weak_bind_info.contents = weak;
-            ctx.lazy_bind_info.hdr.size = lazy.len() as u64;
-            ctx.lazy_bind_info.contents = lazy;
+            ctx.weak_bind_info.hdr.size = weak_bind.len() as u64;
+            ctx.weak_bind_info.contents = weak_bind;
+            ctx.lazy_bind_info.hdr.size = lazy_bind.len() as u64;
+            ctx.lazy_bind_info.contents = lazy_bind;
             ctx.lazy_bind_info.offsets = lazy_offsets;
         }
     }
@@ -6250,6 +6187,66 @@ fn build_linkedit_tables<E: Target>(ctx: &mut Context<E>) {
         let _t = ctx.timer("mergeable_record");
         crate::make_mergeable::build(ctx);
     }
+}
+
+/// The defined globals the output keeps, sorted by name, which both the
+/// symbol table and the export trie list: sorted once for the two, as a
+/// debug link has hundreds of thousands of long mangled names.
+fn sorted_globals<E: Target>(ctx: &Context<E>) -> Vec<SymbolId> {
+    let _t = ctx.timer("globals_sort");
+    let mut globals: Vec<SymbolId> = (0..ctx.symbols.syms.len() as SymbolId)
+        .into_par_iter()
+        .filter(|&id| {
+            let sym = &ctx.symbols[id];
+            sym.is_extern()
+                && !sym.is_private_extern()
+                && matches!(sym.file(), Some(FileId::Obj(_)))
+                && (sym.input_section())
+                    .is_none_or(|isec| ctx.isecs[ctx.resolve_isec(isec as usize)].is_alive())
+        })
+        .collect();
+    globals.par_sort_unstable_by_key(|&id| crate::util::name_sort_key(ctx.symbols[id].name()));
+    globals
+}
+
+/// The fixups dyld applies, as __LINKEDIT encodes them: chained, or the
+/// classic dyld opcodes (with the offsets of the lazy binds in theirs).
+enum Fixups {
+    Chained(chunks::chained_fixups::ChainedFixups),
+    Classic {
+        rebase: Vec<u8>,
+        bind: Vec<u8>,
+        weak_bind: Vec<u8>,
+        lazy_bind: Vec<u8>,
+        lazy_offsets: Vec<u32>,
+    },
+}
+
+/// Encodes the fixups: chained if the image uses chained fixups and
+/// every pointer suits them (see build_chained_fixups), else as the
+/// classic dyld opcodes.
+fn build_fixups<E: Target>(ctx: &Context<E>) -> Fixups {
+    if ctx.use_chained_fixups() {
+        let _t = ctx.timer("chained_fixups");
+        if let Some(chained) = chunks::chained_fixups::build_chained_fixups(ctx) {
+            return Fixups::Chained(chained);
+        }
+    } else {
+        chunks::chained_fixups::check_classic_pointers(ctx);
+    }
+    let (rebase, bind) = rayon::join(
+        || {
+            let _t = ctx.timer("rebase_info");
+            chunks::rebase_info::build(ctx)
+        },
+        || {
+            let _t = ctx.timer("bind_info");
+            chunks::bind_info::build(ctx)
+        },
+    );
+    let (lazy_bind, lazy_offsets) = chunks::lazy_bind_info::build(ctx);
+    let weak_bind = chunks::weak_bind_info::build(ctx);
+    Fixups::Classic { rebase, bind, weak_bind, lazy_bind, lazy_offsets }
 }
 
 /// Resolves the entry point symbol.
