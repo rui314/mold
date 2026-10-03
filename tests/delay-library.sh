@@ -68,7 +68,7 @@ int *p = &fdata;
 int main() { return *p; }
 EOF
 not $CC --ld-path=$mold -o $t/exe2 $t/b.o -L$t -Wl,-delay-lfoo 2> $t/log
-grep -q "ptr64 use of '_fdata' in '_p' cannot be delayed." $t/log
+grep -q "use of '_fdata' in '_p' cannot be delayed." $t/log
 
 # A delayed dylib the program doesn't use keeps its load command, and
 # _dlopen is still imported; -dead_strip_dylibs drops the dylib.

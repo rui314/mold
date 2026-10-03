@@ -510,11 +510,9 @@ impl Target for X86_64 {
 
     fn lazy_ref(r: &Reloc, data: &[u8]) -> crate::target::LazyRef {
         use crate::target::LazyRef;
-        let diff = if r.size == 8 { "diff64" } else { "diff32" };
         let off = r.offset as usize;
         match r.r_type {
             X86_64_RELOC_BRANCH if r.size == 4 => LazyRef::Call,
-            X86_64_RELOC_BRANCH => LazyRef::Unsupported("x86_64_branch8"),
             X86_64_RELOC_GOT_LOAD => LazyRef::Load,
             // cmpq $0, sym@GOTPCREL(%rip)
             X86_64_RELOC_GOT
@@ -524,18 +522,7 @@ impl Target for X86_64 {
             {
                 LazyRef::Cmp
             }
-            X86_64_RELOC_GOT => LazyRef::Unsupported("x86_64_rip_got"),
-            X86_64_RELOC_UNSIGNED | X86_64_RELOC_SUBTRACTOR if r.is_subtracted => {
-                LazyRef::Unsupported(diff)
-            }
-            X86_64_RELOC_SUBTRACTOR => LazyRef::Unsupported(diff),
-            X86_64_RELOC_UNSIGNED if r.size == 8 => LazyRef::Unsupported("ptr64"),
-            X86_64_RELOC_UNSIGNED => LazyRef::Unsupported("ptr32"),
-            X86_64_RELOC_TLV => LazyRef::Unsupported("x86_64_rip_tlv_load"),
-            X86_64_RELOC_SIGNED_1 => LazyRef::Unsupported("x86_64_rip1"),
-            X86_64_RELOC_SIGNED_2 => LazyRef::Unsupported("x86_64_rip2"),
-            X86_64_RELOC_SIGNED_4 => LazyRef::Unsupported("x86_64_rip4"),
-            _ => LazyRef::Unsupported("x86_64_rip"),
+            _ => LazyRef::Unsupported,
         }
     }
 

@@ -79,7 +79,9 @@ fn delay_uses<E: Target>(ctx: &Context<E>) -> Vec<DelayUseSite> {
         })
         .collect();
     for &(isec, _, id, how) in &uses {
-        let LazyRef::Unsupported(kind) = how else { continue };
+        if how != LazyRef::Unsupported {
+            continue;
+        }
         let sym = &ctx.symbols[id];
         let sec = &ctx.isecs[isec as usize];
         let hdr = ctx.hdr_of(sec);
@@ -100,7 +102,7 @@ fn delay_uses<E: Target>(ctx: &Context<E>) -> Vec<DelayUseSite> {
             ctx.subsec_name(isec as usize)
         };
         let subsec = crate::error::raw(&subsec);
-        crate::error!("{kind} use of '{sym}' in '{subsec}' cannot be delayed.");
+        crate::error!("use of '{sym}' in '{subsec}' cannot be delayed.");
     }
     crate::error::checkpoint();
     uses
@@ -124,7 +126,7 @@ fn create_dlopen_helpers<E: Target>(
 ) -> hashbrown::HashMap<Vec<u8>, u32> {
     let mut names: Vec<Vec<u8>> = uses
         .iter()
-        .filter(|u| !matches!(u.3, LazyRef::Slot | LazyRef::Unsupported(_)))
+        .filter(|u| !matches!(u.3, LazyRef::Slot | LazyRef::Unsupported))
         .map(|u| dlopen_name(ctx, u.2).to_vec())
         .collect();
     names.sort_unstable();

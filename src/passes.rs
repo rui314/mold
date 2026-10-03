@@ -3478,12 +3478,13 @@ pub fn check_removed_swift_metadata_refs<E: Target>(ctx: &Context<E>) {
     let Some((i, isec, rel)) = first else {
         return;
     };
-    let kind = match E::lazy_ref(rel, isec.data()) {
-        crate::target::LazyRef::Unsupported(kind) => kind,
-        _ => "branch",
-    };
     let target = raw(ctx.fixup_target_name(isec.file as usize, rel));
-    ctx.fixup_error(i, rel.offset, kind, format_args!("target '{target}' does not have address"));
+    ctx.fixup_error(
+        i,
+        rel.offset,
+        "reference",
+        format_args!("target '{target}' does not have address"),
+    );
 }
 
 /// Hides the subsections of archive members that resolution left
@@ -5667,7 +5668,7 @@ fn lazy_uses<E: Target>(ctx: &Context<E>) -> Vec<LazyUseSite> {
         })
         .collect();
     for &(isec, _, id, how) in &uses {
-        if let crate::target::LazyRef::Unsupported(kind) = how {
+        if how == crate::target::LazyRef::Unsupported {
             let sym = &ctx.symbols[id];
             let sec = &ctx.isecs[isec as usize];
             let split = ctx.objs[sec.file as usize].subsections_via_symbols;
@@ -5677,7 +5678,7 @@ fn lazy_uses<E: Target>(ctx: &Context<E>) -> Vec<LazyUseSite> {
                 ctx.subsec_name(isec as usize)
             };
             let subsec = raw(&subsec);
-            crate::error!("{kind} use of '{sym}' in '{subsec}' cannot be lazy loaded.");
+            crate::error!("use of '{sym}' in '{subsec}' cannot be lazy loaded.");
         }
     }
     // A stub or GOT slot another pass made for one (an unwind
@@ -5687,7 +5688,7 @@ fn lazy_uses<E: Target>(ctx: &Context<E>) -> Vec<LazyUseSite> {
     for &id in ctx.stubs.symbols.iter().chain(&ctx.got.got_syms) {
         if ctx.is_lazy_import(id) {
             let sym = &ctx.symbols[id];
-            crate::error!("ptr64 use of '{sym}' in 'anon' cannot be lazy loaded.");
+            crate::error!("use of '{sym}' in 'anon' cannot be lazy loaded.");
         }
     }
     crate::error::checkpoint();
@@ -5798,7 +5799,7 @@ fn create_lazy_helpers<E: Target>(
                 let (reg, own) = E::lazy_load_site(ctx.isecs[isec as usize].data(), offset);
                 LazyUse::Load { reg, site: own.then_some((isec, offset)) }
             }
-            LazyRef::Slot | LazyRef::Unsupported(_) => continue,
+            LazyRef::Slot | LazyRef::Unsupported => continue,
         };
         let i = *index.entry((id, kind)).or_insert_with(|| {
             let sym = ctx.symbols[id].name();

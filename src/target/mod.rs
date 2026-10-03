@@ -71,9 +71,10 @@ pub enum LazyRef {
     /// x86-64's cmpq $0 of the GOT slot: it calls a compare helper
     /// instead.
     Cmp,
-    /// A reference ld-prime cannot make lazy or delay, by the name its
-    /// error gives the fixup.
-    Unsupported(&'static str),
+    /// A reference that can't be made lazy or delayed: a pointer or a
+    /// difference, which dyld would have to fill in at launch, or a
+    /// form of instruction no helper stands in for.
+    Unsupported,
 }
 
 /// One form of a relocation record - its pcrel, length (log2 of the

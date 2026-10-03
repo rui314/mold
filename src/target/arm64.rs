@@ -1246,22 +1246,11 @@ impl Target for Arm64 {
 
     fn lazy_ref(r: &Reloc, _data: &[u8]) -> crate::target::LazyRef {
         use crate::target::LazyRef;
-        let diff = if r.size == 8 { "diff64" } else { "diff32" };
         match r.r_type {
             ARM64_RELOC_BRANCH26 => LazyRef::Call,
             ARM64_RELOC_GOT_LOAD_PAGE21 => LazyRef::Load,
             ARM64_RELOC_GOT_LOAD_PAGEOFF12 => LazyRef::Slot,
-            ARM64_RELOC_UNSIGNED | ARM64_RELOC_SUBTRACTOR if r.is_subtracted => {
-                LazyRef::Unsupported(diff)
-            }
-            ARM64_RELOC_SUBTRACTOR => LazyRef::Unsupported(diff),
-            ARM64_RELOC_UNSIGNED if r.size == 8 => LazyRef::Unsupported("ptr64"),
-            ARM64_RELOC_UNSIGNED => LazyRef::Unsupported("ptr32"),
-            ARM64_RELOC_POINTER_TO_GOT => LazyRef::Unsupported("pcrel32_to_got"),
-            ARM64_RELOC_TLVP_LOAD_PAGE21 => LazyRef::Unsupported("arm64_adrp_tlv"),
-            ARM64_RELOC_TLVP_LOAD_PAGEOFF12 => LazyRef::Unsupported("arm64_ld12_tlv"),
-            ARM64_RELOC_PAGE21 => LazyRef::Unsupported("arm64_adrp"),
-            _ => LazyRef::Unsupported("arm64_lo12"),
+            _ => LazyRef::Unsupported,
         }
     }
 
