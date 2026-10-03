@@ -3783,8 +3783,8 @@ impl LdSymbols {
         for &name in names {
             let Some(rest) = name.strip_prefix(b"$ld$") else { continue };
             if let Some(rest) = rest.strip_prefix(b"previous$") {
-                let Some(p) = PreviousDirective::parse(rest) else { continue };
-                if p.platform != ctx.args.platform || minos < p.lo || p.hi <= minos {
+                let Some(p) = PreviousDirective::parse(rest, ctx.args.platform) else { continue };
+                if minos < p.lo || p.hi <= minos {
                     continue;
                 }
                 if p.sym.is_empty() {
@@ -3920,29 +3920,34 @@ fn interpret_binary_ld_symbols<E: Target>(
 /// An $ld$previous directive:
 /// <install name>$<compat>$<platform>$<lo>$<hi>[$[<sym>[$]]], the
 /// symbol - which may itself contain '$', as Swift's do - less a final
-/// '$'. None if a field doesn't parse.
+/// '$'.
 struct PreviousDirective {
     install_name: &'static [u8],
     version: Option<u32>,
-    platform: u32,
     lo: u32,
     hi: u32,
     sym: &'static [u8],
 }
 
 impl PreviousDirective {
-    fn parse(rest: &'static [u8]) -> Option<Self> {
-        let mut f = rest.splitn(6, |&c| c == b'$');
-        let (install_name, compat, platform) = (f.next()?, f.next()?, f.next()?);
-        let (lo, hi) = (f.next()?, f.next()?);
-        let sym = f.next().unwrap_or_default();
-        if install_name.is_empty() {
+    /// Reads a directive for `platform`; None for one for another
+    /// platform (half of SwiftUICore's 30,000 are for Mac Catalyst), or
+    /// one with a field that doesn't parse.
+    fn parse(rest: &'static [u8], platform: u32) -> Option<Self> {
+        use crate::util::split_once;
+        let (install_name, rest) = split_once(rest, b'$')?;
+        let (compat, rest) = split_once(rest, b'$')?;
+        let (for_platform, rest) = split_once(rest, b'$')?;
+        let (lo, rest) = split_once(rest, b'$')?;
+        let (hi, sym) = split_once(rest, b'$').unwrap_or((rest, b""));
+        if install_name.is_empty()
+            || std::str::from_utf8(for_platform).ok()?.parse::<u32>().ok()? != platform
+        {
             return None;
         }
         Some(Self {
             install_name,
             version: if compat.is_empty() { None } else { Some(directive_version(compat)?) },
-            platform: std::str::from_utf8(platform).ok()?.parse().ok()?,
             lo: directive_version(lo)?,
             hi: directive_version(hi)?,
             sym: sym.strip_suffix(b"$").unwrap_or(sym),
