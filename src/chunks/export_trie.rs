@@ -69,12 +69,11 @@ struct TrieNode {
     children: Vec<(&'static [u8], Self)>,
     /// The exported symbol ending here, if any.
     export: Option<Export>,
-    offset: usize,
-    /// Pre-order index, assigned by flatten; lets the sizing pass name
-    /// a child by index without a pointer hash map.
+    /// Pre-order index, assigned by number_nodes; lets the later passes
+    /// name a child by index without a pointer hash map.
     index: u32,
     /// Node count of this subtree (including this node), so that
-    /// flatten can hand every subtree a disjoint slot range.
+    /// number_nodes can hand every subtree a disjoint slot range.
     size: u32,
 }
 
@@ -126,40 +125,6 @@ fn uleb_len(mut val: u64) -> usize {
     len
 }
 
-/// Places the trie's nodes as ld-prime lays them out, given each node's
-/// size apart from its child-offset ULEBs and its children, by pre-order
-/// index (the root is 0). The root comes first, with room for each child
-/// offset at its widest (5 bytes, a u32's ULEB128) since it is written
-/// before its children are placed; the unused bytes stay zero after its
-/// last edge. The other nodes follow in post-order, a node after its
-/// subtrees, so its children's offsets and thus its own size are known
-/// when it is placed. Returns the offsets, the sizes and the total.
-fn place_nodes(fixed: &[usize], kids: &[Vec<u32>]) -> (Vec<u32>, Vec<u32>, u32) {
-    let mut offs = vec![0u32; fixed.len()];
-    let mut sizes = vec![0u32; fixed.len()];
-    sizes[0] = (fixed[0] + 5 * kids[0].len()) as u32;
-    let mut off = sizes[0];
-    // An explicit stack of (node, next child to visit): tries of long
-    // mangled names nest deeply.
-    let mut stack: Vec<(usize, usize)> = Vec::new();
-    for &top in &kids[0] {
-        stack.push((top as usize, 0));
-        while let Some(&(node, next)) = stack.last() {
-            if let Some(&child) = kids[node].get(next) {
-                stack.last_mut().unwrap().1 += 1;
-                stack.push((child as usize, 0));
-                continue;
-            }
-            stack.pop();
-            let edges: usize = kids[node].iter().map(|&c| uleb_len(offs[c as usize] as u64)).sum();
-            offs[node] = off;
-            sizes[node] = (fixed[node] + edges) as u32;
-            off += sizes[node];
-        }
-    }
-    (offs, sizes, off)
-}
-
 /// Encodes the export trie: dyld's index of the image's exported
 /// symbols. It is a radix tree; each node holds an optional terminal
 /// payload (flags and the symbol's image-relative address, both ULEB128)
@@ -174,13 +139,31 @@ pub fn encode_export_trie<E: Target>(ctx: &Context<E>, sorted_globals: &[SymbolI
     if ctx.args.without_dyld() {
         return Vec::new();
     }
-    let base = ctx.mach_header.hdr.addr;
+    let exports = exports(ctx, sorted_globals);
+    // Nothing exported: an empty root node (terminal size 0, no
+    // children), padded to 8 bytes as ld-prime writes it.
+    if exports.is_empty() {
+        return vec![0; 8];
+    }
 
-    // The caller hands over the defined globals already sorted by
-    // name - the same list the symbol table emits, with what the
-    // export lists leave out already made private extern - so the
-    // trie never sorts.
-    let exports: Vec<(&'static [u8], Export)> = sorted_globals
+    let mut root = build_trie(&exports, 0);
+    let nodes = number_nodes(&mut root);
+    let placement = place_nodes(&nodes);
+    let mut buf = write_nodes(&nodes, &placement);
+    buf.resize(buf.len().next_multiple_of(8), 0);
+    buf
+}
+
+/// The trie's entries, in name order. The caller hands over the
+/// defined globals already sorted by name - the same list the symbol
+/// table emits, with what the export lists leave out already made
+/// private extern - so the trie never sorts.
+fn exports<E: Target>(
+    ctx: &Context<E>,
+    sorted_globals: &[SymbolId],
+) -> Vec<(&'static [u8], Export)> {
+    let base = ctx.mach_header.hdr.addr;
+    sorted_globals
         .par_iter()
         .filter_map(|&id| {
             let sym = &ctx.symbols[id];
@@ -213,23 +196,18 @@ pub fn encode_export_trie<E: Target>(ctx: &Context<E>, sorted_globals: &[SymbolI
             };
             Some((sym.name(), Export::Addr { flags, addr }))
         })
-        .collect();
-    // Nothing exported: an empty root node (terminal size 0, no
-    // children), padded to 8 bytes as ld-prime writes it.
-    if exports.is_empty() {
-        return vec![0; 8];
-    }
+        .collect()
+}
 
-    let mut root = build_trie(&exports, 0);
-
-    // Nodes in pre-order, as raw pointers to sidestep the borrow of the
-    // recursive structure. Two parallel passes in mold's prefix-sum
-    // shape: count every subtree, then each subtree writes its
-    // pre-order run into its own disjoint slot range of one
-    // preallocated array - no appending or copying, and the pre-order
-    // index is simply the slot number. Fan-out happens at nodes with
-    // many children (the second level: every Mach-O name starts with
-    // '_', so the root has one child).
+/// Numbers the trie's nodes in pre-order (TrieNode::index), sorting each
+/// node's children by label, and returns them in that order. Two
+/// parallel passes in mold's prefix-sum shape: count every subtree, then
+/// each subtree stores its pre-order run into its own disjoint slot
+/// range of one preallocated array - no appending or copying, and the
+/// pre-order index is simply the slot number. Fan-out happens at nodes
+/// with many children (the second level: every Mach-O name starts with
+/// '_', so the root has one child).
+fn number_nodes(root: &mut TrieNode) -> Vec<&TrieNode> {
     const FANOUT: usize = 8;
     fn count(node: &mut TrieNode) -> u32 {
         node.children.sort_by(|a, b| a.0.cmp(b.0));
@@ -241,7 +219,9 @@ pub fn encode_export_trie<E: Target>(ctx: &Context<E>, sorted_globals: &[SymbolI
         node.size = 1 + below;
         node.size
     }
-    struct Slots(*mut *mut TrieNode);
+    // The nodes as raw pointers until every index is stamped, which
+    // borrows them mutably.
+    struct Slots(*mut *const TrieNode);
     unsafe impl Sync for Slots {}
     fn fill(node: &mut TrieNode, base: u32, slots: &Slots) {
         node.index = base;
@@ -269,27 +249,37 @@ pub fn encode_export_trie<E: Target>(ctx: &Context<E>, sorted_globals: &[SymbolI
             }
         }
     }
-    let total = count(&mut root) as usize;
-    let mut nodes: Vec<*mut TrieNode> = vec![std::ptr::null_mut(); total];
-    fill(&mut root, 0, &Slots(nodes.as_mut_ptr()));
-    debug_assert!(nodes.iter().all(|p| !p.is_null()));
+    let total = count(root) as usize;
+    let mut nodes: Vec<*const TrieNode> = vec![std::ptr::null(); total];
+    fill(root, 0, &Slots(nodes.as_mut_ptr()));
+    // SAFETY: fill stored a pointer to every node of `root`, which
+    // stays borrowed, and unchanged, as long as the references live.
+    nodes.into_iter().map(|p| unsafe { &*p }).collect()
+}
 
+/// Where place_nodes puts the nodes: each one's offset and size, by
+/// pre-order index, the nodes in file order, and the trie's size.
+struct Placement {
+    offs: Vec<u32>,
+    sizes: Vec<u32>,
+    order: Vec<u32>,
+    total: u32,
+}
+
+/// Places the trie's nodes, given in pre-order, as ld-prime lays them
+/// out. The root comes first, with room for each child offset at its
+/// widest (5 bytes, a u32's ULEB128) since it is written before its
+/// children are placed; the unused bytes stay zero after its last edge.
+/// The other nodes follow in post-order, a node after its subtrees, so
+/// its children's offsets and thus its own size are known when it is
+/// placed.
+fn place_nodes(nodes: &[&TrieNode]) -> Placement {
     // Each node's size apart from its child-offset ULEBs, and the
-    // pre-order indices of its children. flatten stamped every node's
-    // index, so a child names itself by index with no pointer hash map,
-    // and the whole pass is a pure per-node map that runs in parallel.
-    struct NodePtr(*mut TrieNode);
-    unsafe impl Sync for NodePtr {}
-    let node_ptrs: Vec<NodePtr> = nodes.iter().map(|&p| NodePtr(p)).collect();
-    let (fixed, kids): (Vec<usize>, Vec<Vec<u32>>) = node_ptrs
+    // pre-order indices of its children: a pure per-node map.
+    let (fixed, kids): (Vec<usize>, Vec<Vec<u32>>) = nodes
         .par_iter()
-        .map(|np| {
-            // SAFETY: nodes live in `root`, which outlives this function.
-            let node = unsafe { &*np.0 };
-            let terminal_size = match node.export {
-                Some(export) => export.terminal_size(),
-                None => 0,
-            };
+        .map(|node| {
+            let terminal_size = node.export.map_or(0, Export::terminal_size);
             let mut f = uleb_len(terminal_size as u64) + terminal_size + 1;
             let mut k = Vec::with_capacity(node.children.len());
             for (label, child) in &node.children {
@@ -299,82 +289,104 @@ pub fn encode_export_trie<E: Target>(ctx: &Context<E>, sorted_globals: &[SymbolI
             (f, k)
         })
         .unzip();
-    let (offs, sizes, total) = place_nodes(&fixed, &kids);
-    for (i, &node) in nodes.iter().enumerate() {
-        // SAFETY: as above; each node written once.
-        unsafe { (*node).offset = offs[i] as usize };
-    }
 
-    // Emit every node into its final slot in parallel. Node i owns the
-    // byte range [offs[i], offs[i] + sizes[i]), the ranges are disjoint
-    // and cover the buffer, and each node reads only its children's
-    // offsets (already final) - so all writes are independent. On a big Rust debug link the trie is tens of MB, so
-    // this is the difference between a serial and a parallel memcpy.
-    fn write_uleb_at(dst: &mut [u8], mut pos: usize, mut val: u64) -> usize {
-        let start = pos;
-        loop {
-            let mut b = (val & 0x7f) as u8;
-            val >>= 7;
-            if val != 0 {
-                b |= 0x80;
+    let mut offs = vec![0u32; nodes.len()];
+    let mut sizes = vec![0u32; nodes.len()];
+    let mut order = Vec::with_capacity(nodes.len());
+    sizes[0] = (fixed[0] + 5 * kids[0].len()) as u32;
+    order.push(0);
+    let mut off = sizes[0];
+    // An explicit stack of (node, next child to visit): tries of long
+    // mangled names nest deeply.
+    let mut stack: Vec<(usize, usize)> = Vec::new();
+    for &top in &kids[0] {
+        stack.push((top as usize, 0));
+        while let Some(&(node, next)) = stack.last() {
+            if let Some(&child) = kids[node].get(next) {
+                stack.last_mut().unwrap().1 += 1;
+                stack.push((child as usize, 0));
+                continue;
             }
-            dst[pos] = b;
-            pos += 1;
-            if val == 0 {
-                break;
-            }
+            stack.pop();
+            let edges: usize = kids[node].iter().map(|&c| uleb_len(offs[c as usize] as u64)).sum();
+            offs[node] = off;
+            sizes[node] = (fixed[node] + edges) as u32;
+            order.push(node as u32);
+            off += sizes[node];
         }
-        pos - start
     }
-    let mut buf = vec![0u8; total as usize];
-    {
-        struct BufPtr(*mut u8);
-        unsafe impl Sync for BufPtr {}
-        let bp = BufPtr(buf.as_mut_ptr());
-        let bp = &bp;
-        node_ptrs.par_iter().enumerate().for_each(|(i, np)| {
-            let node = unsafe { &*np.0 };
-            let start = offs[i] as usize;
-            let end = start + sizes[i] as usize;
-            // SAFETY: the [start, end) ranges are disjoint across nodes
-            // and lie within the allocation of length `total`.
-            let dst = unsafe { std::slice::from_raw_parts_mut(bp.0.add(start), end - start) };
-            let mut p = 0;
-            match node.export {
-                Some(export @ Export::Addr { flags, addr }) => {
-                    p += write_uleb_at(dst, p, export.terminal_size() as u64);
-                    p += write_uleb_at(dst, p, flags as u64);
-                    p += write_uleb_at(dst, p, addr);
-                }
-                Some(export @ Export::Reexport { ordinal, name }) => {
-                    p += write_uleb_at(dst, p, export.terminal_size() as u64);
-                    p += write_uleb_at(dst, p, EXPORT_SYMBOL_FLAGS_REEXPORT as u64);
-                    p += write_uleb_at(dst, p, ordinal as u64);
-                    dst[p..p + name.len()].copy_from_slice(name);
-                    p += name.len();
-                    dst[p] = 0;
-                    p += 1;
-                }
-                None => {
-                    dst[p] = 0;
-                    p += 1;
-                }
-            }
-            dst[p] = node.children.len() as u8;
-            p += 1;
-            for (label, child) in &node.children {
-                dst[p..p + label.len()].copy_from_slice(label);
-                p += label.len();
-                dst[p] = 0;
-                p += 1;
-                p += write_uleb_at(dst, p, child.offset as u64);
-            }
-            // The root's unused reserved offset bytes stay zero.
-            debug_assert!(if i == 0 { p <= end - start } else { p == end - start });
-        });
-    }
-    while !buf.len().is_multiple_of(8) {
-        buf.push(0);
-    }
+    Placement { offs, sizes, order, total: off }
+}
+
+/// Writes the placed nodes, each on a core of its own into its slice of
+/// the trie: on a big Rust debug link the trie is tens of MB.
+fn write_nodes(nodes: &[&TrieNode], placement: &Placement) -> Vec<u8> {
+    let mut buf = vec![0u8; placement.total as usize];
+    // The nodes' slices, cut off one after another in file order.
+    let mut rest = buf.as_mut_slice();
+    let slices: Vec<(&TrieNode, &mut [u8])> = (placement.order.iter())
+        .map(|&i| {
+            let size = placement.sizes[i as usize] as usize;
+            (nodes[i as usize], rest.split_off_mut(..size).unwrap())
+        })
+        .collect();
+    slices.into_par_iter().for_each(|(node, dst)| write_node(node, &placement.offs, dst));
     buf
+}
+
+/// Writes a node: its terminal - its size, then the export's flags and
+/// address, or a re-export's flags, ordinal and name - or a 0, then the
+/// count of its edges, each a NUL-terminated label and the child's
+/// offset in `offs`.
+fn write_node(node: &TrieNode, offs: &[u32], dst: &mut [u8]) {
+    let mut p = 0;
+    match node.export {
+        Some(export @ Export::Addr { flags, addr }) => {
+            p += write_uleb_at(dst, p, export.terminal_size() as u64);
+            p += write_uleb_at(dst, p, flags as u64);
+            p += write_uleb_at(dst, p, addr);
+        }
+        Some(export @ Export::Reexport { ordinal, name }) => {
+            p += write_uleb_at(dst, p, export.terminal_size() as u64);
+            p += write_uleb_at(dst, p, EXPORT_SYMBOL_FLAGS_REEXPORT as u64);
+            p += write_uleb_at(dst, p, ordinal as u64);
+            dst[p..p + name.len()].copy_from_slice(name);
+            p += name.len();
+            dst[p] = 0;
+            p += 1;
+        }
+        None => {
+            dst[p] = 0;
+            p += 1;
+        }
+    }
+    dst[p] = node.children.len() as u8;
+    p += 1;
+    for (label, child) in &node.children {
+        dst[p..p + label.len()].copy_from_slice(label);
+        p += label.len();
+        dst[p] = 0;
+        p += 1;
+        p += write_uleb_at(dst, p, offs[child.index as usize] as u64);
+    }
+    // The root's unused reserved offset bytes stay zero.
+    debug_assert!(if node.index == 0 { p <= dst.len() } else { p == dst.len() });
+}
+
+/// Writes `val` in ULEB128 at `dst[pos..]`, returning its length.
+fn write_uleb_at(dst: &mut [u8], mut pos: usize, mut val: u64) -> usize {
+    let start = pos;
+    loop {
+        let mut b = (val & 0x7f) as u8;
+        val >>= 7;
+        if val != 0 {
+            b |= 0x80;
+        }
+        dst[pos] = b;
+        pos += 1;
+        if val == 0 {
+            break;
+        }
+    }
+    pos - start
 }
