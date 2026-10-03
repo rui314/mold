@@ -1499,23 +1499,12 @@ enum ExportChoice {
 }
 
 /// ld64 takes one way to choose the exports, and rejects an option of
-/// another with a message named after the option that comes second.
+/// another.
 fn check_export_choice(seen: &mut Option<ExportChoice>, choice: ExportChoice, opt: &str) {
     if seen.is_some_and(|seen| seen != choice) {
-        match opt {
-            "-exported_symbol" => {
-                fatal!("-exported_symbol cannot be used with -unexported_symbol*")
-            }
-            "-unexported_symbol" => {
-                fatal!("-unexported_symbol cannot be used with -exported_symbol*")
-            }
-            "-no_exported_symbols" => {
-                fatal!("-no_exported_symbols cannot be used with -[un]exported_symbol*")
-            }
-            _ => fatal!(
-                "{opt}: -exported_symbol*, -unexported_symbol* and -no_exported_symbols cannot be used together"
-            ),
-        }
+        fatal!(
+            "{opt}: -exported_symbol*, -unexported_symbol* and -no_exported_symbols cannot be used together"
+        );
     }
     *seen = Some(choice);
 }
