@@ -268,7 +268,7 @@ impl<'a> Prober<'a> {
 
     /// Whether there is a file at `path`.
     pub fn exists(&self, path: &Path) -> bool {
-        let found = path.exists();
+        let found = file_exists(path);
         if !found && let Some(missing) = self.missing {
             missing.lock().unwrap().push(path.to_path_buf());
         }
@@ -307,6 +307,22 @@ impl<'a> Prober<'a> {
         }
         Some(path.to_path_buf())
     }
+}
+
+/// Whether there is a file at `path`, memoized: a search made ahead of
+/// time looks for the files that the one it stands for looks for again
+/// (a library a stub re-exports, as the stub is prefetched and as it
+/// loads), and a stat(2) of a path in an SDK walks its 15 or so
+/// components each time.
+fn file_exists(path: &Path) -> bool {
+    type Found = hashbrown::HashMap<PathBuf, bool>;
+    static FOUND: std::sync::Mutex<Option<Found>> = std::sync::Mutex::new(None);
+    if let Some(&found) = FOUND.lock().unwrap().get_or_insert_with(Found::new).get(path) {
+        return found;
+    }
+    let found = path.exists();
+    FOUND.lock().unwrap().get_or_insert_with(Found::new).insert(path.to_path_buf(), found);
+    found
 }
 
 /// What a search made ahead of time, in parallel with others, noted and
