@@ -51,6 +51,38 @@ pub(crate) const SECTION_SIZE: usize = 44;
 pub(crate) const DYLIB_INFO_SIZE: usize = 0x88;
 pub(crate) const DEBUG_INFO_SIZE: usize = 0x98;
 
+/// Where the header has its fields: the target, the flags, the place of
+/// the image around the record, and the tables, each by its offset in
+/// the record and its count (or a pool's size) after it.
+pub(crate) mod header {
+    pub const CPUTYPE: usize = 0x14;
+    pub const CPUSUBTYPE: usize = 0x18;
+    pub const PLATFORM: usize = 0x1c;
+    pub const MINOS: usize = 0x20;
+    pub const SDK: usize = 0x24;
+    pub const FLAGS: usize = 0x28;
+    /// The image's offset from the record (negative), and its size.
+    pub const IMAGE: usize = 0x54;
+    /// The record's own size.
+    pub const SIZE: usize = 0x5c;
+    pub const ENTRIES: usize = 0x60;
+    pub const FIXUPS: usize = 0x68;
+    pub const LARGE_ADDENDS: usize = 0x70;
+    pub const SECTIONS: usize = 0x78;
+    pub const LINKER_OPTIONS: usize = 0x80;
+    pub const NAMES: usize = 0x88;
+    pub const NAME_POOL: usize = 0x90;
+    pub const CONTENT_POOL: usize = 0x98;
+    pub const CSTRING_POOL: usize = 0xa0;
+    /// The dylib's own info: its offset and size.
+    pub const OWN_DYLIB: usize = 0xa8;
+    /// The infos of the dylibs it links, and their total size after the
+    /// count.
+    pub const DYLIBS: usize = 0xb0;
+    /// The debug notes, and their total size after the count.
+    pub const DEBUG_INFOS: usize = 0xbc;
+}
+
 /// An entry's kind (bits 3-7 of its flags word).
 pub mod kind {
     pub const REGULAR: u8 = 0;
@@ -335,10 +367,10 @@ impl MergeableRecord {
         let r = Reader { file, base, blob };
         let symbols = r.symbol_names();
         let large_addends: Vec<i64> =
-            r.array(0x70, 8).chunks(8).map(|c| read64(c, 0) as i64).collect();
+            r.array(header::LARGE_ADDENDS, 8).chunks(8).map(|c| read64(c, 0) as i64).collect();
         let fixups = r.fixups(&large_addends);
         let sections: Vec<CustomSection> = r
-            .array(0x78, SECTION_SIZE)
+            .array(header::SECTIONS, SECTION_SIZE)
             .chunks(SECTION_SIZE)
             .map(|c| CustomSection {
                 segname: c[8..24].try_into().unwrap(),
@@ -346,17 +378,18 @@ impl MergeableRecord {
                 flags: read32(c, 4),
             })
             .collect();
-        let (own, _) = r.dylib_info(read32(blob, 0xa8) as usize);
-        let dylibs = r.dylib_infos(read32(blob, 0xb0) as usize, read32(blob, 0xb4) as usize);
+        let (own, _) = r.dylib_info(r.table(header::OWN_DYLIB).0);
+        let (at, count) = r.table(header::DYLIBS);
+        let dylibs = r.dylib_infos(at, count);
         let debug_infos = r.debug_infos();
         let entries = r.entries(&symbols);
         Self {
-            cputype: read32(blob, 0x14),
-            cpusubtype: read32(blob, 0x18),
-            platform: read32(blob, 0x1c),
-            minos: read32(blob, 0x20),
-            sdk: read32(blob, 0x24),
-            flags: read64(blob, 0x28),
+            cputype: read32(blob, header::CPUTYPE),
+            cpusubtype: read32(blob, header::CPUSUBTYPE),
+            platform: read32(blob, header::PLATFORM),
+            minos: read32(blob, header::MINOS),
+            sdk: read32(blob, header::SDK),
+            flags: read64(blob, header::FLAGS),
             entries,
             fixups,
             sections,
@@ -404,10 +437,15 @@ struct Reader<'a> {
 }
 
 impl Reader<'_> {
-    /// A table the header gives by offset and count at `field`.
+    /// A table's offset in the record and its count (or a pool's
+    /// size), which the header has at `field`.
+    fn table(&self, field: usize) -> (usize, usize) {
+        (read32(self.blob, field) as usize, read32(self.blob, field + 4) as usize)
+    }
+
+    /// The bytes of a table of `elem`-byte elements (see table).
     fn array(&self, field: usize, elem: usize) -> &[u8] {
-        let off = read32(self.blob, field) as usize;
-        let count = read32(self.blob, field + 4) as usize;
+        let (off, count) = self.table(field);
         &self.blob[off..off + count * elem]
     }
 
@@ -428,8 +466,7 @@ impl Reader<'_> {
     }
 
     fn symbol_names(&self) -> Vec<&'static [u8]> {
-        let first = read32(self.blob, 0x88) as usize;
-        let count = read32(self.blob, 0x8c) as usize;
+        let (first, count) = self.table(header::NAMES);
         (0..count)
             .map(|i| {
                 let at = first + i * 16;
@@ -440,7 +477,7 @@ impl Reader<'_> {
     }
 
     fn fixups(&self, large_addends: &[i64]) -> Vec<Fixup> {
-        let table = self.array(0x68, FIXUP_SIZE);
+        let table = self.array(header::FIXUPS, FIXUP_SIZE);
         table
             .chunks(FIXUP_SIZE)
             .map(|c| {
@@ -496,8 +533,7 @@ impl Reader<'_> {
     }
 
     fn debug_infos(&self) -> Vec<DebugInfo> {
-        let first = read32(self.blob, 0xbc) as usize;
-        let count = read32(self.blob, 0xc0) as usize;
+        let (first, count) = self.table(header::DEBUG_INFOS);
         (0..count)
             .map(|i| {
                 let at = first + i * DEBUG_INFO_SIZE;
@@ -512,8 +548,8 @@ impl Reader<'_> {
     }
 
     fn entries(&self, symbols: &[&'static [u8]]) -> Vec<Entry> {
-        let table = self.array(0x60, ENTRY_SIZE);
-        let pool = read32(self.blob, 0x98) as usize;
+        let table = self.array(header::ENTRIES, ENTRY_SIZE);
+        let (pool, _) = self.table(header::CONTENT_POOL);
         table
             .chunks(ENTRY_SIZE)
             .map(|c| {

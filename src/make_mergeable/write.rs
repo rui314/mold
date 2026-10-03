@@ -3,6 +3,10 @@
 use super::{Content, DylibRecord, MergeableRecord, OutFixup};
 use crate::context::Context;
 use crate::macho::*;
+use crate::mergeable::{
+    DEBUG_INFO_SIZE, DYLIB_INFO_SIZE, ENTRY_SIZE, FIXUP_SIZE, HEADER_SIZE, MAGIC, SECTION_SIZE,
+    header,
+};
 use crate::target::Target;
 
 /// libc++'s std::hash of a string (its CityHash64,
@@ -193,25 +197,24 @@ impl MergeableRecord {
     /// name records, this dylib's info, its dependencies', the debug
     /// notes, the C string pool, the name pool and the content pool.
     pub(super) fn serialize<E: Target>(&self, ctx: &Context<E>) -> Serialized {
-        use crate::mergeable::{DEBUG_INFO_SIZE, ENTRY_SIZE, HEADER_SIZE};
         let mut w = Writer { out: vec![0; HEADER_SIZE], cstrings: Vec::new() };
         self.write_header::<E>(&mut w, ctx);
         let entries_at = w.reserve(self.entries.len() * ENTRY_SIZE);
-        w.table(0x60, entries_at, self.entries.len());
+        w.table(header::ENTRIES, entries_at, self.entries.len());
         self.write_fixups(&mut w);
         self.write_sections(&mut w);
         let options_at = w.align(8);
-        w.table(0x80, options_at, 0);
+        w.table(header::LINKER_OPTIONS, options_at, 0);
         let names: Vec<&[u8]> = self.entries.iter().filter_map(|e| e.name).collect();
         let names_at = w.reserve(names.len() * 16);
-        w.table(0x88, names_at, names.len());
+        w.table(header::NAMES, names_at, names.len());
         self.write_dylib_infos(&mut w);
         let debug_at = w.align(8);
         for d in &self.debug {
             write_debug_record(&mut w, d);
         }
-        w.table(0xbc, debug_at, self.debug.len());
-        w.put32(0xc4, (self.debug.len() * DEBUG_INFO_SIZE) as u32);
+        w.table(header::DEBUG_INFOS, debug_at, self.debug.len());
+        w.put32(header::DEBUG_INFOS + 8, (self.debug.len() * DEBUG_INFO_SIZE) as u32);
 
         let pool = w.align(8);
         // (An empty string is none: its record stays zero.)
@@ -220,23 +223,23 @@ impl MergeableRecord {
                 w.add_string(at, &s, s.len() as u64);
             }
         }
-        w.table(0xa0, pool, w.out.len() - pool);
+        w.table(header::CSTRING_POOL, pool, w.out.len() - pool);
         let pool = w.align(8);
         for (i, name) in names.iter().enumerate() {
             w.add_string(names_at + i * 16, name, name_hash(name));
         }
-        w.table(0x90, pool, w.out.len() - pool);
+        w.table(header::NAME_POOL, pool, w.out.len() - pool);
 
         let (image_contents, pool_offset) = self.write_entries(&mut w, entries_at);
         let total = w.out.len() as u32;
-        w.put32(0x5c, total);
+        w.put32(header::SIZE, total);
         Serialized { bytes: w.out, image_contents, pool_offset }
     }
 
     /// The header's identification: the magic, the versions of the
     /// formats, the largest kinds used, the target and the flags.
     fn write_header<E: Target>(&self, w: &mut Writer, ctx: &Context<E>) {
-        w.out[..8].copy_from_slice(crate::mergeable::MAGIC);
+        w.out[..8].copy_from_slice(MAGIC);
         w.out[8..10].copy_from_slice(&3u16.to_le_bytes());
         w.out[10] = 2;
         w.out[11] = 2;
@@ -248,19 +251,18 @@ impl MergeableRecord {
         };
         w.out[14..16].copy_from_slice(&max_kind(false).to_le_bytes());
         w.out[16..18].copy_from_slice(&max_kind(true).to_le_bytes());
-        w.put32(0x14, E::CPUTYPE);
-        w.put32(0x18, E::CPUSUBTYPE);
-        w.put32(0x1c, ctx.args.platform);
-        w.put32(0x20, ctx.args.platform_minos);
-        w.put32(0x24, ctx.args.platform_sdk);
-        w.put64(0x28, self.flags);
+        w.put32(header::CPUTYPE, E::CPUTYPE);
+        w.put32(header::CPUSUBTYPE, E::CPUSUBTYPE);
+        w.put32(header::PLATFORM, ctx.args.platform);
+        w.put32(header::MINOS, ctx.args.platform_minos);
+        w.put32(header::SDK, ctx.args.platform_sdk);
+        w.put64(header::FLAGS, self.flags);
     }
 
     /// The fixups, and the addends too large for theirs, each once.
     fn write_fixups(&self, w: &mut Writer) {
-        use crate::mergeable::FIXUP_SIZE;
         let at = w.reserve(self.fixups.len() * FIXUP_SIZE);
-        w.table(0x68, at, self.fixups.len());
+        w.table(header::FIXUPS, at, self.fixups.len());
         let mut large: Vec<i64> = Vec::new();
         for (i, &(f, target, from)) in self.fixups.iter().enumerate() {
             let at = at + i * FIXUP_SIZE;
@@ -274,7 +276,7 @@ impl MergeableRecord {
         for v in &large {
             w.out.extend_from_slice(&v.to_le_bytes());
         }
-        w.table(0x70, at, large.len());
+        w.table(header::LARGE_ADDENDS, at, large.len());
     }
 
     /// The custom sections: the protection of the segment, the flags,
@@ -282,7 +284,7 @@ impl MergeableRecord {
     fn write_sections(&self, w: &mut Writer) {
         let at = w.align(8);
         for s in &self.sections {
-            let mut rec = [0u8; crate::mergeable::SECTION_SIZE];
+            let mut rec = [0u8; SECTION_SIZE];
             let prot: u32 = if s.segname == bytes_to_name(b"__TEXT") { 5 } else { 3 };
             rec[0..4].copy_from_slice(&prot.to_le_bytes());
             rec[4..8].copy_from_slice(&s.flags.to_le_bytes());
@@ -290,28 +292,27 @@ impl MergeableRecord {
             rec[26..42].copy_from_slice(&s.sectname);
             w.out.extend_from_slice(&rec);
         }
-        w.table(0x78, at, self.sections.len());
+        w.table(header::SECTIONS, at, self.sections.len());
     }
 
     /// This dylib's identity, then each of its dependencies'.
     fn write_dylib_infos(&self, w: &mut Writer) {
         let at = w.align(8);
         write_dylib_record(w, &self.own);
-        w.table(0xa8, at, w.out.len() - at);
+        w.table(header::OWN_DYLIB, at, w.out.len() - at);
         let at = w.align(8);
         for d in &self.deps {
             write_dylib_record(w, d);
         }
         let size = w.align(8) - at;
-        w.table(0xb0, at, self.deps.len());
-        w.put32(0xb8, size as u32);
+        w.table(header::DYLIBS, at, self.deps.len());
+        w.put32(header::DYLIBS + 8, size as u32);
     }
 
     /// The entries, and the content pool after everything else: the
     /// bytes the image has none of, each at its alignment. Returns the
     /// entries whose bytes are the image's, and the pool's offset.
     fn write_entries(&self, w: &mut Writer, entries_at: usize) -> (Vec<(u32, u64)>, u32) {
-        use crate::mergeable::ENTRY_SIZE;
         let pool_align = (self.entries.iter())
             .filter(|e| matches!(e.content, Content::Pool(_)))
             .map(|a| 1usize << a.p2align)
@@ -358,7 +359,7 @@ impl MergeableRecord {
             w.out[at + 0x1e..at + 0x20].copy_from_slice(&entry.modulus.to_le_bytes());
             w.out[at + 0x20..at + 0x22].copy_from_slice(&entry.debug.to_le_bytes());
         }
-        w.table(0x98, pool, w.out.len() - pool);
+        w.table(header::CONTENT_POOL, pool, w.out.len() - pool);
         (image, pool as u32)
     }
 }
@@ -368,7 +369,7 @@ impl MergeableRecord {
 /// and name (N_SO), its path (N_OSO), and this dylib's install name.
 fn write_debug_record(w: &mut Writer, d: &super::DebugRecord) {
     let at = w.out.len();
-    w.out.resize(at + crate::mergeable::DEBUG_INFO_SIZE, 0);
+    w.out.resize(at + DEBUG_INFO_SIZE, 0);
     w.put32(at, d.mtime);
     w.out[at + 4] = d.cpusubtype;
     let strings = [&d.source_dir, &d.source_name, &d.object_path, &d.install_name];
@@ -382,7 +383,7 @@ fn write_debug_record(w: &mut Writer, d: &super::DebugRecord) {
 /// ld-prime leaves empty), each of strings for the pool.
 fn write_dylib_record(w: &mut Writer, d: &DylibRecord) {
     let at = w.out.len();
-    w.out.resize(at + crate::mergeable::DYLIB_INFO_SIZE, 0);
+    w.out.resize(at + DYLIB_INFO_SIZE, 0);
     w.put32(at, d.current_version);
     w.put32(at + 4, d.compatibility_version);
     w.cstrings.push((at + 8, d.install_name.clone()));

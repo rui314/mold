@@ -28,7 +28,7 @@ use crate::fatal;
 use crate::input_files::{FileId, ObjectFile};
 use crate::input_sections::{InputSection, NO_REPLACEMENT, Reloc, RelocTarget};
 use crate::macho::*;
-use crate::mergeable::{CustomSection, ctype, fk, kind, scope, standard_content_type};
+use crate::mergeable::{CustomSection, ctype, fk, header, kind, scope, standard_content_type};
 use crate::symbol::SymbolId;
 use crate::target::Target;
 
@@ -78,8 +78,9 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
         let off = (fileoff as i64 - pool) as i32;
         buf[at as usize..at as usize + 4].copy_from_slice(&off.to_le_bytes());
     }
-    buf[0x54..0x58].copy_from_slice(&(-(sec.hdr.fileoff as i32)).to_le_bytes());
-    buf[0x58..0x5c].copy_from_slice(&(ctx.output_size as u32).to_le_bytes());
+    let image = header::IMAGE;
+    buf[image..image + 4].copy_from_slice(&(-(sec.hdr.fileoff as i32)).to_le_bytes());
+    buf[image + 4..image + 8].copy_from_slice(&(ctx.output_size as u32).to_le_bytes());
 }
 
 /// Builds the record, once the sections have their places in the file.
