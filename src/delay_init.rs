@@ -97,8 +97,7 @@ fn dlopen_name<E: Target>(ctx: &Context<E>, id: SymbolId) -> &[u8] {
 /// Gives each dylib the stubs and helpers dlopen() its dlopen helper,
 /// by install name: the helper's flag word in __data (ahead of
 /// __dyld_private) and the install name's C string, after the inputs'
-/// in __cstring. ld-prime merges an input's copy of the string into its
-/// own. Returns the helper of each install name.
+/// in __cstring. Returns the helper of each install name.
 fn create_dlopen_helpers<E: Target>(
     ctx: &mut Context<E>,
     uses: &[DelayUseSite],
@@ -114,7 +113,6 @@ fn create_dlopen_helpers<E: Target>(
         return Default::default();
     }
 
-    let copies = input_cstrings(ctx, &names);
     let mut dlopen_of = hashbrown::HashMap::new();
     for (i, install_name) in names.into_iter().enumerate() {
         let leaf = install_name.rsplit(|&c| c == b'/').next().unwrap_or(&install_name);
@@ -123,16 +121,10 @@ fn create_dlopen_helpers<E: Target>(
         let flag = crate::passes::add_data_word(ctx, 4);
         ctx.extra_local_syms.push((flag_name, flag));
         let string = add_cstring(ctx, &install_name);
-        for &(copy, _) in copies.iter().filter(|&&(_, j)| j == i) {
-            ctx.isecs[copy as usize].replacement = string;
-        }
         dlopen_of.insert(install_name.clone(), i as u32);
         let offset = 0;
         let helper = DlopenHelper { install_name, name, flag_name, flag, string, offset };
         ctx.delay_init.dlopens.push(helper);
-    }
-    if !copies.is_empty() {
-        crate::passes::redirect_symbols_to_replacements(ctx);
     }
     let private = ctx.stub_helper.dyld_private_isec;
     if let Some(i) = ctx.data_blobs.iter().position(|b| b.isec == private) {
@@ -140,32 +132,6 @@ fn create_dlopen_helpers<E: Target>(
         ctx.data_blobs.push(blob);
     }
     dlopen_of
-}
-
-/// The inputs' __cstring literals that spell one of `names`, with the
-/// index of the name.
-fn input_cstrings<E: Target>(ctx: &Context<E>, names: &[Vec<u8>]) -> Vec<(u32, usize)> {
-    let mut found = Vec::new();
-    for (i, isec) in ctx.isecs.iter().enumerate() {
-        if !isec.is_alive()
-            || ctx.is_internal(isec.file as usize)
-            || isec.replacement != crate::input_sections::NO_REPLACEMENT
-        {
-            continue;
-        }
-        let hdr = ctx.hdr_of(isec);
-        if hdr.segname() != b"__TEXT"
-            || hdr.sectname() != b"__cstring"
-            || hdr.section_type() != S_CSTRING_LITERALS
-        {
-            continue;
-        }
-        let Some(data) = isec.data().strip_suffix(b"\0") else { continue };
-        if let Some(j) = names.iter().position(|n| n.as_slice() == data) {
-            found.push((i as u32, j));
-        }
-    }
-    found
 }
 
 /// Synthesizes a C string in __TEXT,__cstring, after the inputs', and
