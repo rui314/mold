@@ -517,10 +517,6 @@ fn create_dysymtab_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     to_vec(&cmd)
 }
 
-fn create_function_starts_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
-    create_linkedit_data_cmd(LC_FUNCTION_STARTS, &ctx.function_starts.hdr)
-}
-
 fn create_uuid_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     let cmd = UuidCommand {
         cmd: LC_UUID,
@@ -641,14 +637,7 @@ fn create_load_dylib_cmd(dylib: &crate::input_files::DylibFile) -> Vec<u8> {
     append_string(buf, &dylib.install_name)
 }
 
-/// The install name a dylib output records in LC_ID_DYLIB: -install_name,
-/// else -final_output, else the output path.
-pub fn output_install_name<E: Target>(ctx: &Context<E>) -> &[u8] {
-    ctx.args.output_install_name()
-}
-
 fn create_id_dylib_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
-    let name = output_install_name(ctx);
     let cmd = DylibCommand {
         cmd: LC_ID_DYLIB,
         cmdsize: 0,
@@ -660,7 +649,7 @@ fn create_id_dylib_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
         current_version: ctx.args.current_version,
         compatibility_version: ctx.args.compatibility_version,
     };
-    append_string(to_vec(&cmd), name)
+    append_string(to_vec(&cmd), ctx.args.output_install_name())
 }
 
 // LC_RPATH, LC_SUB_FRAMEWORK and the dylinker commands share the
@@ -743,10 +732,6 @@ fn create_encryption_info_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
         buf.extend_from_slice(&word.to_le_bytes());
     }
     buf
-}
-
-fn create_code_signature_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
-    create_linkedit_data_cmd(LC_CODE_SIGNATURE, &ctx.code_signature.hdr)
 }
 
 fn create_linkedit_data_cmd(cmd: u32, hdr: &ChunkHeader) -> Vec<u8> {
@@ -887,7 +872,7 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
     // Also present with no functions at all (an 8-byte empty table),
     // as ld-prime writes it; -no_function_starts drops it.
     if ctx.args.function_starts {
-        vec.push(create_function_starts_cmd(ctx));
+        vec.push(create_linkedit_data_cmd(LC_FUNCTION_STARTS, &ctx.function_starts.hdr));
     }
 
     // ld64 always writes LC_DATA_IN_CODE, even with no entries;
@@ -899,7 +884,7 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
         vec.push(create_linkedit_data_cmd(LC_ATOM_INFO, &ctx.mergeable_record.hdr));
     }
     if ctx.chunks.contains(&ChunkId::CodeSignature) {
-        vec.push(create_code_signature_cmd(ctx));
+        vec.push(create_linkedit_data_cmd(LC_CODE_SIGNATURE, &ctx.code_signature.hdr));
     }
     vec
 }
