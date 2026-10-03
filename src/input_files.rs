@@ -430,10 +430,6 @@ pub struct DylibFile {
     /// libraries are not loaded this way; their symbols bind to the
     /// re-exporting dylib.
     pub is_implicit: bool,
-    /// Always u32::MAX: load commands follow the order of naming (see
-    /// passes::assign_dylib_ordinals). Its last reader is the lazy-load
-    /// tables' sort in passes::create_lazy_load_slots.
-    pub load_order: u32,
     pub exports: hashbrown::HashSet<&'static [u8]>,
     /// Exports that are weak definitions: binding to one sets
     /// MH_BINDS_TO_WEAK on the client image.
@@ -3202,7 +3198,6 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
             named_at: None,
             is_autolinked: false,
             is_implicit: false,
-            load_order: u32::MAX,
             exports,
             weak_exports,
             has_weak_defs,
@@ -3408,7 +3403,6 @@ pub fn parse_bundle_loader<E: Target>(ctx: &mut Context<E>, mf: &'static MappedF
             named_at: None,
             is_autolinked: false,
             is_implicit: false,
-            load_order: u32::MAX,
             exports,
             weak_exports: hashbrown::HashSet::new(),
             has_weak_defs: false,
@@ -4102,7 +4096,6 @@ fn register_tbd<E: Target>(
             named_at: None,
             is_autolinked: false,
             is_implicit: false,
-            load_order: u32::MAX,
             exports,
             weak_exports,
             has_weak_defs,
@@ -4158,7 +4151,6 @@ fn add_moved_dylibs<E: Target>(
                     named_at: None,
                     is_autolinked: false,
                     is_implicit: true,
-                    load_order: u32::MAX,
                     exports: hashbrown::HashSet::new(),
                     weak_exports: hashbrown::HashSet::new(),
                     has_weak_defs: false,
@@ -4207,7 +4199,6 @@ pub fn add_merged_dependency<E: Target>(ctx: &mut Context<E>, dep: crate::mergea
         named_at: None,
         is_autolinked: false,
         is_implicit: false,
-        load_order: u32::MAX,
         exports: dep.exports.into_iter().collect(),
         has_weak_defs: !weak_exports.is_empty(),
         weak_exports,
