@@ -2545,10 +2545,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     crate::error::set_suppress_warnings(args.suppress_warnings);
     crate::error::release_held();
 
+    check_arch_options(target, &mut args, &st);
     resolve_defaults(target, &mut args, &st);
     std::mem::take(&mut st.lists).build(&mut args);
-    check_arch_options(target, &mut args, &st);
-    resolve_env_source_version(&mut args, &st);
     resolve_options(target, &mut args, &mut st);
     check_options(target, &mut args, &st);
     args
@@ -2726,6 +2725,28 @@ fn infer_platform(args: &mut Args) {
     }
 }
 
+/// The architecture options ld-prime checks against the target, and the
+/// environment variables it reads for them.
+fn check_arch_options(target: &TargetTraits, args: &mut Args, st: &ParseState) {
+    if st.arch_variant {
+        fatal!("-arch_variant is not supported with -arch {}", target.name);
+    }
+    let env_subtypes = std::env::var_os("LD_DYLIB_CPU_SUBTYPES_MUST_MATCH");
+    if let Some(list) = st.dylib_subtype_list.or(env_subtypes.as_deref().map(OsStrExt::as_bytes)) {
+        args.dylib_subtypes_must_match = names_cpu_family(list, target.name);
+    }
+}
+
+/// Whether a ':'-separated list of architecture names, as
+/// -no_allow_dylib_sub_type_mismatches and
+/// $LD_DYLIB_CPU_SUBTYPES_MUST_MATCH give one, names one of the CPU
+/// type of `target`: arm64 and its variants (arm64e, arm64e.v1, ...)
+/// but arm64_32, or x86_64 and x86_64h.
+fn names_cpu_family(list: &[u8], target: &str) -> bool {
+    list.split(|&c| c == b':')
+        .any(|name| name.starts_with(target.as_bytes()) && !name.starts_with(b"arm64_32"))
+}
+
 /// Resolves the options whose defaults depend on the target and the
 /// kind of output, as ld-prime does once it knows them: the code
 /// tables, the source version, the signature, the Objective-C
@@ -2737,13 +2758,20 @@ fn resolve_defaults(target: &TargetTraits, args: &mut Args, st: &ParseState) {
     args.function_starts = st.function_starts.unwrap_or(!args.without_dyld());
     args.data_in_code_info = st.data_in_code_info.unwrap_or(!args.without_dyld());
     // LC_SOURCE_VERSION came with macOS 10.8; ld-prime gives an image
-    // for an older one none.
+    // for an older one none. The build system's source version stands in
+    // for -source_version's unless -no_source_version says there is
+    // none (ld-prime reads it even where there is none anyway).
+    let number = match st.source_version_number {
+        Some(number) => number,
+        None if st.source_version != Some(false) => env_source_version(),
+        None => 0,
+    };
     args.source_version = st
         .source_version
         .unwrap_or(
             args.platform != PLATFORM_MACOS || args.platform_minos >= encode_version(10, 8, 0),
         )
-        .then_some(st.source_version_number.unwrap_or(0));
+        .then_some(number);
 
     // ld-prime signs arm64 macOS images by default and leaves x86_64
     // ones unsigned (Intel Macs and Rosetta run unsigned code), and a
@@ -2807,6 +2835,20 @@ fn resolve_defaults(target: &TargetTraits, args: &mut Args, st: &ParseState) {
     }
 }
 
+/// The source version the build system gives in
+/// $RC_ProjectSourceVersion, which ld-prime takes when -source_version
+/// gives none, and takes for 0 with a warning when malformed.
+fn env_source_version() -> u64 {
+    let Some(env) = std::env::var_os("RC_ProjectSourceVersion") else {
+        return 0;
+    };
+    env.to_str().and_then(parse_source_version).unwrap_or_else(|| {
+        let env = env.raw();
+        crate::warn!("$RC_ProjectSourceVersion: malformed 64-bit a.b.c.d.e version number: {env}");
+        0
+    })
+}
+
 impl SymbolLists {
     /// Compiles the lists into Args's matchers.
     fn build(mut self, args: &mut Args) {
@@ -2825,54 +2867,6 @@ impl SymbolLists {
         }
         args.interposable = self.interposable_list.map(GlobBuilder::build);
     }
-}
-
-/// The architecture options ld-prime checks against the target, and the
-/// environment variables it reads for them.
-fn check_arch_options(target: &TargetTraits, args: &mut Args, st: &ParseState) {
-    if st.arch_variant {
-        fatal!("-arch_variant is not supported with -arch {}", target.name);
-    }
-    let env_subtypes = std::env::var_os("LD_DYLIB_CPU_SUBTYPES_MUST_MATCH");
-    if let Some(list) = st.dylib_subtype_list.or(env_subtypes.as_deref().map(OsStrExt::as_bytes)) {
-        args.dylib_subtypes_must_match = names_cpu_family(list, target.name);
-    }
-}
-
-/// Whether a ':'-separated list of architecture names, as
-/// -no_allow_dylib_sub_type_mismatches and
-/// $LD_DYLIB_CPU_SUBTYPES_MUST_MATCH give one, names one of the CPU
-/// type of `target`: arm64 and its variants (arm64e, arm64e.v1, ...)
-/// but arm64_32, or x86_64 and x86_64h.
-fn names_cpu_family(list: &[u8], target: &str) -> bool {
-    list.split(|&c| c == b':')
-        .any(|name| name.starts_with(target.as_bytes()) && !name.starts_with(b"arm64_32"))
-}
-
-/// The build system's source version stands in for -source_version
-/// unless -no_source_version says there is none (ld-prime reads it
-/// even where there is none anyway).
-fn resolve_env_source_version(args: &mut Args, st: &ParseState) {
-    if st.source_version != Some(false) && st.source_version_number.is_none() {
-        let version = env_source_version();
-        if let Some(v) = &mut args.source_version {
-            *v = version;
-        }
-    }
-}
-
-/// The source version the build system gives in
-/// $RC_ProjectSourceVersion, which ld-prime takes when -source_version
-/// gives none, and takes for 0 with a warning when malformed.
-fn env_source_version() -> u64 {
-    let Some(env) = std::env::var_os("RC_ProjectSourceVersion") else {
-        return 0;
-    };
-    env.to_str().and_then(parse_source_version).unwrap_or_else(|| {
-        let env = env.raw();
-        crate::warn!("$RC_ProjectSourceVersion: malformed 64-bit a.b.c.d.e version number: {env}");
-        0
-    })
 }
 
 /// Resolves the options whose values depend on one another, on the
