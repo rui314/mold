@@ -3472,9 +3472,6 @@ pub(crate) fn redirect_symbols_to_replacements<E: Target>(ctx: &mut Context<E>) 
     });
 }
 
-/// Reports references to symbols that are still unresolved; with
-/// `-undefined dynamic_lookup` they become flat-namespace imports that
-/// dyld resolves against any loaded image at run time.
 /// Auto-hides eligible weak definitions. Compilers mark a weak
 /// definition whose address is never observed with
 /// .weak_def_can_be_hidden (nlist n_desc carries N_WEAK_DEF and
@@ -4044,6 +4041,10 @@ pub fn check_weak_exports<E: Target>(ctx: &Context<E>) {
     }
 }
 
+/// Reports references to symbols that are still unresolved; with
+/// `-undefined dynamic_lookup` (or -U naming one) they become
+/// flat-namespace imports that dyld resolves against any loaded image
+/// at run time.
 pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
     use std::sync::atomic::Ordering;
     // An alive object may name a symbol undefined that nothing refers
@@ -4053,18 +4054,16 @@ pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
     // -undefined dynamic_lookup. Most links have no undefined symbol at
     // all, so the relocations are looked at only when there is one.
     // A DTrace symbol is never defined (see dtrace).
-    let mut undef: Vec<usize> = (0..ctx.symbols.syms.len())
+    let undef: Vec<SymbolId> = (0..ctx.symbols.syms.len() as SymbolId)
         .into_par_iter()
-        .filter(|&i| {
-            let sym = &ctx.symbols.syms[i];
+        .filter(|&id| {
+            let sym = &ctx.symbols[id];
             sym.is_used() && !sym.is_defined() && !crate::dtrace::is_dtrace_symbol(sym.name())
         })
         .collect();
     if undef.is_empty() {
         return;
     }
-    // ld-prime reports them by name.
-    undef.par_sort_unstable_by_key(|&i| ctx.symbols.syms[i].name());
     let referenced = referenced_symbols(ctx);
     // A name the command line insists on must resolve, even under
     // -undefined dynamic_lookup or -U: -u, the entry point, a name an
@@ -4072,68 +4071,66 @@ pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
     // itself counts as defined.
     let entry = ctx.args.has_entry_point().then_some(&ctx.args.entry);
     let bases = ctx.args.aliases.iter().map(|(base, _)| base);
-    let initial: hashbrown::HashSet<crate::symbol::SymbolId> = (ctx.args.forced_undefined.iter())
+    let initial: hashbrown::HashSet<SymbolId> = (ctx.args.forced_undefined.iter())
         .chain(entry)
         .chain(bases)
         .filter_map(|name| ctx.symbols.get(name))
         .collect();
-    let aliases: hashbrown::HashSet<crate::symbol::SymbolId> =
+    let aliases: hashbrown::HashSet<SymbolId> =
         ctx.args.aliases.iter().filter_map(|(_, alias)| ctx.symbols.get(alias)).collect();
 
-    // Errors name a file that wants the symbol; the map from symbol to
-    // referencing object is built only once an error is certain.
-    let mut referencers: Option<std::collections::HashMap<crate::symbol::SymbolId, usize>> = None;
-    let mut who_wants = |ctx: &Context<E>, id: crate::symbol::SymbolId| -> error::RawBuf {
-        let map = referencers.get_or_insert_with(|| {
-            let mut map = std::collections::HashMap::new();
-            for (obj_idx, obj) in ctx.objs.iter().enumerate() {
-                if !obj.is_alive {
-                    continue;
-                }
-                let r = obj.global_range();
-                for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
-                    if !nlist.is_stab() && nlist.n_type() == N_UNDF && !nlist.is_common() {
-                        map.entry(sym_id).or_insert(obj_idx);
-                    }
-                }
-            }
-            map
-        });
-        match map.get(&id) {
-            Some(&obj_idx) => error::RawBuf::from(ctx.objs[obj_idx].mf.name.as_path()),
+    // A -static image has no dyld to look a symbol up at run time, so
+    // ld-prime lets none stay undefined, whatever -undefined or -U say.
+    let args = &ctx.args;
+    let may_look_up = |id: SymbolId| {
+        !args.static_link
+            && (args.undefined_dynamic_lookup
+                || args.allowed_undefined.iter().any(|n| n.as_slice() == ctx.symbols[id].name()))
+            && !initial.contains(&id)
+    };
+    let (imports, mut errors): (Vec<SymbolId>, Vec<SymbolId>) = (undef.into_iter())
+        .filter(|&id| referenced[id as usize].load(Ordering::Relaxed) && !aliases.contains(&id))
+        .partition(|&id| may_look_up(id));
+    for id in imports {
+        let sym = &mut ctx.symbols[id];
+        sym.set_file(FileId::Dylib(u32::MAX));
+        sym.set_is_imported(true);
+        sym.set_is_extern(true);
+    }
+    if errors.is_empty() {
+        return;
+    }
+
+    // ld-prime points at the auto-linked libraries it could not find
+    // first, and then reports the symbols by name, each with a file that
+    // wants it.
+    for msg in std::mem::take(&mut ctx.autolink_misses) {
+        crate::warn!("{}", raw(&msg));
+    }
+    errors.par_sort_unstable_by_key(|&id| ctx.symbols[id].name());
+    let referencers = first_referencers(ctx);
+    for id in errors {
+        let file: error::RawBuf = match referencers.get(&id) {
+            Some(&obj) => ctx.objs[obj].mf.name.as_path().into(),
             None if initial.contains(&id) => "the command line".into(),
             None => "<synthesized>".into(),
-        }
-    };
+        };
+        error!("undefined symbol: {}: {}", file, ctx.symbols[id]);
+    }
+}
 
-    for i in undef {
-        let sym = &ctx.symbols[i];
-        if referenced[i].load(Ordering::Relaxed)
-            && !aliases.contains(&(i as crate::symbol::SymbolId))
-        {
-            // A -static image has no dyld to look a symbol up at run
-            // time, so ld-prime lets none stay undefined, whatever
-            // -undefined or -U say.
-            let allowed = !ctx.args.static_link
-                && (ctx.args.undefined_dynamic_lookup
-                    || ctx.args.allowed_undefined.iter().any(|n| n.as_slice() == sym.name()))
-                && !initial.contains(&(i as crate::symbol::SymbolId));
-            if allowed {
-                let sym = &mut ctx.symbols[i];
-                sym.set_file(FileId::Dylib((usize::MAX) as u32));
-                sym.set_is_imported(true);
-                sym.set_is_extern(true);
-            } else {
-                // ld-prime points at the auto-linked libraries it could
-                // not find first.
-                for msg in std::mem::take(&mut ctx.autolink_misses) {
-                    crate::warn!("{}", raw(&msg));
-                }
-                let file = who_wants(ctx, i as u32);
-                error!("undefined symbol: {}: {}", file, ctx.symbols[i]);
+/// The first live object that names each symbol undefined.
+fn first_referencers<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<SymbolId, usize> {
+    let mut map = hashbrown::HashMap::new();
+    for (obj_idx, obj) in ctx.objs.iter().enumerate().filter(|(_, obj)| obj.is_alive) {
+        let r = obj.global_range();
+        for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
+            if !nlist.is_stab() && nlist.n_type() == N_UNDF && !nlist.is_common() {
+                map.entry(sym_id).or_insert(obj_idx);
             }
         }
     }
+    map
 }
 
 /// The symbols something in the output refers to: the target of a live
