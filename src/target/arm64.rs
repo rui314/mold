@@ -65,11 +65,14 @@ fn check_adrp(ctx: &Context<Arm64>, isec: usize, r: &Reloc, p: u64, t: u64) {
     ctx.fixup_error(isec, r.offset, msg);
 }
 
-/// Whether a GOT load from subsection `isec` of symbol `id` relaxes to
-/// computing the symbol's address, as ld-prime relaxes one unless dyld
-/// fills the slot or the symbol is 4 GiB away (see branch_shims).
-fn relaxes_got_load(ctx: &Context<Arm64>, isec: usize, id: crate::symbol::SymbolId) -> bool {
-    ctx.can_relax_got(id) && !branch_shims::is_far(ctx, isec, id)
+/// Whether a GOT or TLV load, relocation `r` of subsection `isec` of
+/// symbol `id`, relaxes to computing the address of the symbol (of a
+/// thread-local's __thread_vars descriptor), as ld-prime relaxes one
+/// unless dyld fills the slot or, for a GOT load, the symbol is 4 GiB
+/// away (see branch_shims).
+fn relaxes_load(ctx: &Context<Arm64>, isec: usize, r: &Reloc, id: crate::symbol::SymbolId) -> bool {
+    let tlv = matches!(r.r_type, ARM64_RELOC_TLVP_LOAD_PAGE21 | ARM64_RELOC_TLVP_LOAD_PAGEOFF12);
+    ctx.can_relax_got(id) && (tlv || !branch_shims::is_far(ctx, isec, id))
 }
 
 /// Whether an instruction is "ldr Xt|Wt, [Xn, #imm]".
@@ -1342,36 +1345,6 @@ impl Target for Arm64 {
                     }
                     write32(loc, (read32(loc) & !B_IMM) | bits(val as u64, 27, 2) as u32);
                 }
-                // A TLV load of a thread-local nothing binds at run time
-                // relaxes like a GOT load: the adrp retargets to the
-                // __thread_vars descriptor's page and the ldr becomes an
-                // add. Others load the descriptor's address from __got.
-                ARM64_RELOC_TLVP_LOAD_PAGE21 => {
-                    let id = ctx.reloc_target_sym(obj, r).unwrap();
-                    let target = if ctx.can_relax_got(id) { s } else { ctx.sym_got_addr(id) };
-                    check_adrp(ctx, isec_id, r, p, target.wrapping_add_signed(a));
-                    write_adrp(loc, target.wrapping_add_signed(a), p);
-                }
-                ARM64_RELOC_TLVP_LOAD_PAGEOFF12 => {
-                    let id = ctx.reloc_target_sym(obj, r).unwrap();
-                    if !ctx.can_relax_got(id) {
-                        let t = ctx.sym_got_addr(id);
-                        if let Err(size) = write_add_ldst(loc, t.wrapping_add_signed(a)) {
-                            report_ldst_alignment(ctx, isec_id, r, size);
-                        }
-                    } else {
-                        // ld-prime relaxes an ldr of either width.
-                        let insn = read32(loc);
-                        if is_ldr_imm(insn) {
-                            let target = s.wrapping_add_signed(a);
-                            let add =
-                                0x9100_0000 | (insn & 0x3ff) | ((target as u32 & 0xfff) << 10);
-                            write32(loc, add);
-                        } else {
-                            ctx.fixup_error(isec_id, r.offset, format_args!("non-LDR instruction"));
-                        }
-                    }
-                }
                 ARM64_RELOC_PAGE21 => {
                     if ctx.target_has_address(obj, isec_id, r) {
                         check_adrp(ctx, isec_id, r, p, s.wrapping_add_signed(a));
@@ -1399,29 +1372,35 @@ impl Target for Arm64 {
                     let op = if own { 0x1400_0000 } else { 0x9400_0000 };
                     write32(loc, op | bits(helper.wrapping_sub(p), 27, 2) as u32);
                 }
-                // A GOT load of a local symbol relaxes to computing
-                // the address directly (see relaxes_got_load): the adrp
-                // retargets from the slot's page to the symbol's, and
-                // the ldr becomes "add Xn, Xm, #pageoff". ld-prime takes
-                // a 64-bit add as one already, and refuses any other
-                // instruction.
-                ARM64_RELOC_GOT_LOAD_PAGE21 => {
+                // A GOT load of a local symbol relaxes to computing the
+                // address directly (see relaxes_load): the adrp retargets
+                // from the slot's page to the symbol's, and the ldr
+                // becomes "add Xn, Xm, #pageoff". So does a TLV load of a
+                // thread-local nothing binds at run time, to its
+                // __thread_vars descriptor. Other loads keep loading the
+                // address from __got.
+                ARM64_RELOC_GOT_LOAD_PAGE21 | ARM64_RELOC_TLVP_LOAD_PAGE21 => {
                     let id = ctx.reloc_target_sym(obj, r).unwrap();
-                    let target =
-                        if relaxes_got_load(ctx, isec_id, id) { s } else { ctx.sym_got_addr(id) };
-                    check_adrp(ctx, isec_id, r, p, target.wrapping_add_signed(a));
-                    write_adrp(loc, target.wrapping_add_signed(a), p);
+                    let t =
+                        if relaxes_load(ctx, isec_id, r, id) { s } else { ctx.sym_got_addr(id) };
+                    check_adrp(ctx, isec_id, r, p, t.wrapping_add_signed(a));
+                    write_adrp(loc, t.wrapping_add_signed(a), p);
                 }
-                ARM64_RELOC_GOT_LOAD_PAGEOFF12 => {
+                // ld-prime relaxes an ldr of either width, takes a GOT
+                // load's 64-bit add as one relaxed already, and refuses
+                // any other instruction.
+                ARM64_RELOC_GOT_LOAD_PAGEOFF12 | ARM64_RELOC_TLVP_LOAD_PAGEOFF12 => {
                     let id = ctx.reloc_target_sym(obj, r).unwrap();
-                    if !relaxes_got_load(ctx, isec_id, id) {
+                    if !relaxes_load(ctx, isec_id, r, id) {
                         let g = ctx.sym_got_addr(id);
                         if let Err(size) = write_add_ldst(loc, g.wrapping_add_signed(a)) {
                             report_ldst_alignment(ctx, isec_id, r, size);
                         }
                     } else {
                         let insn = read32(loc);
-                        if is_ldr_imm(insn) || insn & 0xffc0_0000 == 0x9100_0000 {
+                        let is_add = r.r_type == ARM64_RELOC_GOT_LOAD_PAGEOFF12
+                            && insn & 0xffc0_0000 == 0x9100_0000;
+                        if is_ldr_imm(insn) || is_add {
                             let target = s.wrapping_add_signed(a);
                             let add =
                                 0x9100_0000 | (insn & 0x3ff) | ((target as u32 & 0xfff) << 10);
