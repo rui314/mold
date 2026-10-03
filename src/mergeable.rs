@@ -1024,13 +1024,7 @@ impl<E: Target> Synth<'_, E> {
             if target.is_none_or(|t| t.kind == kind::ANON_PLACEHOLDER) {
                 continue;
             }
-            let Some(sym) = self.target_sym(f.target) else {
-                fatal!(
-                    "{}: fixup of entry {i} at 0x{:x} has a target with no symbol",
-                    path.raw(),
-                    f.offset
-                );
-            };
+            let sym = self.target_sym(f.target).expect("a fixup's target has a symbol");
             let off = (entry_off + f.offset as u64) as u32;
             let mut out = Vec::new();
             let ok = if Self::is_arm64() {
