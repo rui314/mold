@@ -874,7 +874,6 @@ fn live_bitcode_modules<E: Target>(
 /// Writes a -r link of bitcode alone as one merged bitcode file (see
 /// links_only_bitcode). ld-prime warns, then fails, if libLTO can't.
 pub fn write_merged_bitcode<E: Target>(ctx: &Context<E>) {
-    crate::error::checkpoint();
     let plugin = ctx.lto_plugin.unwrap();
     let modules: Vec<_> = live_bitcode_modules(ctx).collect();
     let roots = lto_roots(ctx);
@@ -1043,9 +1042,6 @@ pub fn has_lto_obj<E: Target>(ctx: &Context<E>) -> bool {
 /// same symbols to preserve. -flto-codegen-only has ThinLTO compile
 /// every module, unoptimized.
 pub fn do_lto<E: Target>(ctx: &mut Context<E>) {
-    // ld-prime compiles nothing for a link that already failed, say on
-    // a bitcode file built for another platform.
-    crate::error::checkpoint();
     let plugin = ctx.lto_plugin.unwrap();
 
     let mut objects = Vec::new();
