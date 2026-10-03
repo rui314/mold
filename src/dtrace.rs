@@ -29,7 +29,7 @@ use rayon::prelude::*;
 
 use crate::context::Context;
 use crate::error::raw;
-use crate::input_sections::{InputSection, NO_REPLACEMENT, Reloc, RelocTarget};
+use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
 use crate::symbol::SymbolId;
 use crate::target::{RelocClass, Target};
@@ -262,20 +262,9 @@ fn add_dof_section<E: Target>(ctx: &mut Context<E>, name: &[u8], dof: Dof, sites
     let nrels = relocs.len() as u32 - rel_offset;
     let bytes: &'static [u8] = Vec::leak(dof.bytes);
     ctx.isecs.push(InputSection {
-        file,
-        shndx,
-        p2align: 0,
-        input_addr: 0,
-        size: bytes.len() as u32,
-        contents: bytes.as_ptr() as usize,
         rel_offset,
         nrels,
-        output_section: u32::MAX,
-        offset: 0,
-        flags: InputSection::flags_alive(),
-        replacement: NO_REPLACEMENT,
-        unwind_offset: 0,
-        nunwind: 0,
+        ..InputSection::new(file, shndx, 0, bytes.len() as u32, bytes)
     });
     ctx.dof_sections.push(DofSection { sites: sites.iter().map(|s| s.isec).collect() });
 }

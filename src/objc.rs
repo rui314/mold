@@ -123,20 +123,9 @@ fn add_placed_isec<E: Target>(
 ) -> u32 {
     let (file, shndx) = sect;
     ctx.isecs.push(InputSection {
-        file,
-        shndx,
-        p2align,
-        input_addr: 0,
-        size: size as u32,
-        contents: 0,
-        rel_offset: 0,
-        nrels: 0,
-        output_section: u32::MAX,
         offset: offset as u32,
         flags: InputSection::flags_placed(),
-        replacement: crate::input_sections::NO_REPLACEMENT,
-        unwind_offset: 0,
-        nunwind: 0,
+        ..InputSection::new(file, shndx, p2align, size as u32, &[])
     });
     (ctx.isecs.len() - 1) as u32
 }

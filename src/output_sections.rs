@@ -1292,20 +1292,9 @@ fn add_sectcreate_isec<E: Target>(
     });
     let id = ctx.isecs.len() as u32;
     ctx.isecs.push(InputSection {
-        file,
-        shndx,
-        p2align: 0,
-        input_addr: 0,
-        size: data.len() as u32,
-        contents: if data.is_empty() { 0 } else { data.as_ptr() as usize },
-        rel_offset: 0,
-        nrels: 0,
         output_section: ChunkId::Output(osec).pack(),
-        offset: 0,
         flags: InputSection::flags_placed(),
-        replacement: crate::input_sections::NO_REPLACEMENT,
-        unwind_offset: 0,
-        nunwind: 0,
+        ..InputSection::new(file, shndx, 0, data.len() as u32, data)
     });
     ctx.output_section_mut(osec).members.push(id);
     id

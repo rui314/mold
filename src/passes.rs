@@ -1735,22 +1735,7 @@ pub fn convert_common_symbols<E: Target>(ctx: &mut Context<E>) {
             flags: S_ZEROFILL,
             ..Default::default()
         });
-        ctx.isecs.push(InputSection {
-            file,
-            shndx,
-            p2align,
-            input_addr: 0,
-            size: size as u32,
-            contents: 0,
-            rel_offset: 0,
-            nrels: 0,
-            output_section: u32::MAX,
-            offset: 0,
-            flags: InputSection::flags_alive(),
-            replacement: crate::input_sections::NO_REPLACEMENT,
-            unwind_offset: 0,
-            nunwind: 0,
-        });
+        ctx.isecs.push(InputSection::new(file, shndx, p2align, size as u32, &[]));
 
         let sym = &mut ctx.symbols[i];
         sym.set_file(FileId::Obj(internal));
@@ -4443,20 +4428,8 @@ pub(crate) fn add_data_word<E: Target>(ctx: &mut Context<E>, size: u32) -> u32 {
         ..Default::default()
     });
     ctx.isecs.push(InputSection {
-        file,
-        shndx,
-        p2align,
-        input_addr: 0,
-        size,
-        contents: 0,
-        rel_offset: 0,
-        nrels: 0,
-        output_section: u32::MAX,
-        offset: 0,
         flags: InputSection::flags_placed(),
-        replacement: NO_REPLACEMENT,
-        unwind_offset: 0,
-        nunwind: 0,
+        ..InputSection::new(file, shndx, p2align, size, &[])
     });
     let isec = (ctx.isecs.len() - 1) as u32;
     let fields = vec![DataField::Bytes(vec![0; size as usize])];

@@ -217,6 +217,29 @@ const IS_LABELED: u8 = 1 << 4;
 const IS_ADDRESS_TAKEN: u8 = 1 << 5;
 
 impl InputSection {
+    /// A live subsection of section `shndx` of object `file`: `size`
+    /// bytes, `data` (empty for zero-fill), aligned to 2^`p2align`, at
+    /// input address 0, with no relocations and no place in the output
+    /// yet. The callers set what differs.
+    pub fn new(file: u32, shndx: u32, p2align: u8, size: u32, data: &'static [u8]) -> Self {
+        Self {
+            file,
+            shndx,
+            p2align,
+            input_addr: 0,
+            size,
+            contents: if data.is_empty() { 0 } else { data.as_ptr() as usize },
+            rel_offset: 0,
+            nrels: 0,
+            output_section: u32::MAX,
+            offset: 0,
+            flags: Self::flags_alive(),
+            replacement: NO_REPLACEMENT,
+            unwind_offset: 0,
+            nunwind: 0,
+        }
+    }
+
     /// The initial flag word of a live section.
     pub fn flags_alive() -> std::sync::atomic::AtomicU8 {
         std::sync::atomic::AtomicU8::new(IS_ALIVE)

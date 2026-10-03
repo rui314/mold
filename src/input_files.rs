@@ -1262,17 +1262,9 @@ impl StagedObject {
                     &data[lo as usize..(lo + (end - start)) as usize]
                 };
                 let size = end - start;
+                let p2align = record_p2align.unwrap_or(sect.p2align as u8);
                 self.isecs.push(InputSection {
-                    file: u32::MAX,
-                    shndx: i as u32,
-                    p2align: record_p2align.unwrap_or(sect.p2align as u8),
                     input_addr: start as u32,
-                    size: size as u32,
-                    contents: if contents.is_empty() { 0 } else { contents.as_ptr() as usize },
-                    rel_offset: 0,
-                    nrels: 0,
-                    output_section: u32::MAX,
-                    offset: 0,
                     flags: if bare[i] {
                         InputSection::flags_dead()
                     } else if record_p2align.is_some() {
@@ -1280,9 +1272,7 @@ impl StagedObject {
                     } else {
                         InputSection::flags_alive()
                     },
-                    replacement: crate::input_sections::NO_REPLACEMENT,
-                    unwind_offset: 0,
-                    nunwind: 0,
+                    ..InputSection::new(u32::MAX, i as u32, p2align, size as u32, contents)
                 });
             }
             sect_isecs[i] = first..self.isecs.len();

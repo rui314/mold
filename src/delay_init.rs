@@ -118,21 +118,10 @@ fn add_cstring<E: Target>(ctx: &mut Context<E>, s: &[u8]) -> u32 {
     let mut bytes = s.to_vec();
     bytes.push(0);
     let bytes: &'static [u8] = Vec::leak(bytes);
-    ctx.isecs.push(crate::input_sections::InputSection {
-        file,
-        shndx,
-        p2align: 0,
-        input_addr: 0,
-        size: bytes.len() as u32,
-        contents: bytes.as_ptr() as usize,
-        rel_offset: 0,
-        nrels: 0,
-        output_section: u32::MAX,
-        offset: 0,
-        flags: crate::input_sections::InputSection::flags_alive_no_modulus(),
-        replacement: crate::input_sections::NO_REPLACEMENT,
-        unwind_offset: 0,
-        nunwind: 0,
+    use crate::input_sections::InputSection;
+    ctx.isecs.push(InputSection {
+        flags: InputSection::flags_alive_no_modulus(),
+        ..InputSection::new(file, shndx, 0, bytes.len() as u32, bytes)
     });
     (ctx.isecs.len() - 1) as u32
 }
