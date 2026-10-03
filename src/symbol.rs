@@ -89,6 +89,19 @@ const _: () = assert!(std::mem::size_of::<Symbol>() == 40);
 pub const NONE: u32 = u32::MAX;
 
 impl Symbol {
+    pub(crate) fn new(name: &'static [u8]) -> Self {
+        Self {
+            name_ptr: name.as_ptr() as usize,
+            name_len: u32::try_from(name.len()).expect("symbol name is larger than 4 GiB"),
+            file: SymbolFile::none(),
+            isec: NONE,
+            value: 0,
+            aux_idx: NONE,
+            flags: std::sync::atomic::AtomicU16::new(0),
+            common_p2align: 0,
+        }
+    }
+
     /// The name, the bytes the string table holds: any but NUL, UTF-8
     /// or not, as a symbol name is to ld-prime (and to mold).
     #[inline]
@@ -113,6 +126,10 @@ impl Symbol {
     #[inline]
     pub fn clear_file(&mut self) {
         self.file = SymbolFile::none();
+    }
+
+    pub fn is_defined(&self) -> bool {
+        self.file.get().is_some()
     }
 
     #[inline]
@@ -309,25 +326,6 @@ pub static NONE_AUX: SymAux = SymAux::NONE;
 impl Default for SymAux {
     fn default() -> Self {
         Self::NONE
-    }
-}
-
-impl Symbol {
-    pub(crate) fn new(name: &'static [u8]) -> Self {
-        Self {
-            name_ptr: name.as_ptr() as usize,
-            name_len: u32::try_from(name.len()).expect("symbol name is larger than 4 GiB"),
-            file: SymbolFile::none(),
-            isec: NONE,
-            value: 0,
-            aux_idx: NONE,
-            flags: std::sync::atomic::AtomicU16::new(0),
-            common_p2align: 0,
-        }
-    }
-
-    pub fn is_defined(&self) -> bool {
-        self.file.get().is_some()
     }
 }
 
