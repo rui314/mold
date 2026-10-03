@@ -59,25 +59,23 @@ struct Reader<'a> {
 }
 
 impl<'a> Reader<'a> {
+    /// The next `n` bytes, which the reader moves past.
+    fn take(&mut self, n: usize) -> Option<&'a [u8]> {
+        let bytes = self.data.get(self.pos..self.pos.checked_add(n)?)?;
+        self.pos += n;
+        Some(bytes)
+    }
     fn u8(&mut self) -> Option<u8> {
-        let v = *self.data.get(self.pos)?;
-        self.pos += 1;
-        Some(v)
+        Some(self.take(1)?[0])
     }
     fn u16(&mut self) -> Option<u16> {
-        let b = self.data.get(self.pos..self.pos + 2)?;
-        self.pos += 2;
-        Some(u16::from_le_bytes(b.try_into().unwrap()))
+        Some(u16::from_le_bytes(self.take(2)?.try_into().unwrap()))
     }
     fn u32(&mut self) -> Option<u32> {
-        let b = self.data.get(self.pos..self.pos + 4)?;
-        self.pos += 4;
-        Some(u32::from_le_bytes(b.try_into().unwrap()))
+        Some(u32::from_le_bytes(self.take(4)?.try_into().unwrap()))
     }
     fn u64(&mut self) -> Option<u64> {
-        let b = self.data.get(self.pos..self.pos + 8)?;
-        self.pos += 8;
-        Some(u64::from_le_bytes(b.try_into().unwrap()))
+        Some(u64::from_le_bytes(self.take(8)?.try_into().unwrap()))
     }
     fn uleb(&mut self) -> Option<u64> {
         let mut val = 0u64;
@@ -111,11 +109,7 @@ impl<'a> Reader<'a> {
         }
     }
     fn skip(&mut self, n: usize) -> Option<()> {
-        if self.pos + n > self.data.len() {
-            return None;
-        }
-        self.pos += n;
-        Some(())
+        self.take(n).map(|_| ())
     }
     fn cstr(&mut self) -> Option<&'a [u8]> {
         let rest = self.data.get(self.pos..)?;
@@ -125,10 +119,9 @@ impl<'a> Reader<'a> {
     }
 }
 
+/// The NUL-terminated string at `off` in a string section.
 fn cstr_at(data: &[u8], off: usize) -> Option<&[u8]> {
-    let rest = data.get(off..)?;
-    let n = rest.iter().position(|&b| b == 0)?;
-    Some(&rest[..n])
+    Reader { data, pos: off }.cstr()
 }
 
 /// What an attribute's value came as: a string, a string-section
