@@ -4722,8 +4722,6 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
         .flat_map_iter(|isec| {
             input_files::isec_relocs_of(&ctx_ref.objs, isec).iter().filter_map(move |rel| {
                 let id = ctx_ref.reloc_target_sym(isec.file as usize, rel)?;
-                // A GOT load of a local symbol needs no slot at all:
-                // it relaxes, or ld-prime refuses the instruction.
                 let mut class = E::classify_reloc(rel.r_type);
                 // A one-byte branch (x86-64's jmp rel8) reaches only
                 // code near it, so it takes no stub: one to an import
@@ -4774,6 +4772,8 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
         match class {
             RelocClass::Branch => add_branch_target(ctx, id),
             RelocClass::Got => add_got(ctx, id),
+            // A GOT load of a local symbol needs no slot at all: it
+            // relaxes, or ld-prime refuses the instruction.
             RelocClass::GotLoad if !ctx.can_relax_got(id) => add_got(ctx, id),
             // A TLV load relaxes to the descriptor's address like a GOT
             // load; one dyld must fill - an imported thread-local, or a
