@@ -246,6 +246,34 @@ pub(crate) fn list_entries<E: Target>(
     (0..size).step_by(8).map(move |off| objc_pointer_at(ctx, isec, off))
 }
 
+/// The live subsections of the input sections named one of `names`, in
+/// subsection order, each with the index of its section's name. The
+/// objects' section headers say which sections those are, a file at a
+/// time in parallel, so that only their subsections are visited (found
+/// by address among the object's), not all of the link's.
+fn subsecs_of_sections<E: Target>(ctx: &Context<E>, names: &[&[u8]]) -> Vec<(u32, usize)> {
+    let mut found: Vec<(u32, usize)> = (ctx.objs.par_iter().enumerate())
+        .filter(|&(i, _)| !ctx.is_internal(i))
+        .flat_map_iter(|(_, obj)| {
+            let sects = obj.sect_hdrs.iter().enumerate().filter_map(|(shndx, hdr)| {
+                Some((shndx as u32, hdr, names.iter().position(|&name| hdr.sectname_is(name))?))
+            });
+            sects.flat_map(move |(shndx, hdr, kind)| {
+                let isec = |id: &u32| &ctx.isecs[*id as usize];
+                let start =
+                    obj.subsecs.partition_point(|id| (isec(id).input_addr as u64) < hdr.addr);
+                obj.subsecs[start..]
+                    .iter()
+                    .take_while(move |id| isec(id).input_addr as u64 <= hdr.addr + hdr.size)
+                    .filter(move |id| isec(id).shndx == shndx && isec(id).is_alive())
+                    .map(move |&id| (id, kind))
+            })
+        })
+        .collect();
+    found.sort_unstable();
+    found
+}
+
 /// A class's ro data: class_t.data at offset 32, whose low two bits a
 /// Swift class uses as flags (FAST_IS_SWIFT_STABLE), so the record
 /// itself sits at the pointer with those bits cleared.
@@ -1116,17 +1144,9 @@ fn defined_classes<E: Target>(
 ) -> (Vec<DefinedClass>, hashbrown::HashMap<(u32, u64), usize>) {
     let mut classes: Vec<DefinedClass> = Vec::new();
     let mut class_idx = hashbrown::HashMap::new();
-    for i in 0..ctx.isecs.len() {
-        let isec = &ctx.isecs[i];
-        if !isec.is_alive() || ctx.is_internal(isec.file as usize) {
-            continue;
-        }
-        let nonlazy = match ctx.hdr_of(isec).sectname() {
-            b"__objc_classlist" => false,
-            b"__objc_nlclslist" => true,
-            _ => continue,
-        };
-        for cls in list_entries(ctx, i as u32).filter_map(|r| objc_ref_location(ctx, r?)) {
+    for (i, kind) in subsecs_of_sections(ctx, &[b"__objc_classlist", b"__objc_nlclslist"]) {
+        let nonlazy = kind == 1;
+        for cls in list_entries(ctx, i).filter_map(|r| objc_ref_location(ctx, r?)) {
             // class_t: isa (the metaclass), superclass, cache, vtable,
             // data (the ro).
             let ro = objc_class_ro(ctx, cls);
@@ -1173,18 +1193,10 @@ fn find_categories<E: Target>(
     let mut cats: Vec<Category> = Vec::new();
     let mut cat_idx: hashbrown::HashMap<u32, usize> = hashbrown::HashMap::new();
     let mut lists = Vec::new();
-    for i in 0..ctx.isecs.len() {
-        let isec = &ctx.isecs[i];
-        if !isec.is_alive() || ctx.is_internal(isec.file as usize) {
-            continue;
-        }
-        let nonlazy = match ctx.hdr_of(isec).sectname() {
-            b"__objc_catlist" => false,
-            b"__objc_nlcatlist" => true,
-            _ => continue,
-        };
-        let mut list = CategoryList { isec: i as u32, nonlazy, entries: Vec::new() };
-        for r in list_entries(ctx, i as u32) {
+    for (i, kind) in subsecs_of_sections(ctx, &[b"__objc_catlist", b"__objc_nlcatlist"]) {
+        let nonlazy = kind == 1;
+        let mut list = CategoryList { isec: i, nonlazy, entries: Vec::new() };
+        for r in list_entries(ctx, i) {
             let r = r.unwrap_or(ObjcRef::Null);
             let ci = category_and_class(ctx, r, class_idx).and_then(|(cat, class)| {
                 if let Some(&ci) = cat_idx.get(&cat) {
