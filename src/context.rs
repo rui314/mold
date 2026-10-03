@@ -278,9 +278,6 @@ pub struct Context<E: Target> {
     /// The 32-bit pointers an image dyld loads can't have (see
     /// passes::report_32bit_pointer), as (subsection, offset) pairs.
     pub pointers32: std::sync::Mutex<Vec<(u32, u32)>>,
-    /// Deduplication map for literal elements: (section type, contents)
-    /// to the surviving subsection.
-    pub literals: std::collections::HashMap<(u32, &'static [u8]), usize>,
     /// The output's UUID, computed from its contents.
     pub uuid: std::sync::Mutex<[u8; 16]>,
     /// The resolved address of the entry point symbol.
@@ -385,7 +382,6 @@ impl<E: Target> Context<E> {
             text_reloc_ranges: Vec::new(),
             text_relocs: std::sync::Mutex::new(Vec::new()),
             pointers32: std::sync::Mutex::new(Vec::new()),
-            literals: std::collections::HashMap::new(),
             uuid: std::sync::Mutex::new([0; 16]),
             entry_addr: 0,
             init_routine: None,
