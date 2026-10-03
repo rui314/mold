@@ -1,20 +1,28 @@
 #!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
-echo 'int main() { return 0; }' | $CC -c -xc - -o $t/a.o
+lto_library=$(dirname "$(xcrun -f clang)")/../lib/libLTO.dylib
 sdk=$(xcrun --show-sdk-path)
+cat <<EOF | $CC -flto -c -xc - -o $t/a.o
+#include <stdio.h>
+int main() { printf("Hello\n"); }
+EOF
+link() { $mold -arch $ARCH -platform_version macos 13.0 13.0 -syslibroot $sdk -lSystem "$@"; }
 
-# ld-prime runs itself again to load the library in place of its own,
-# which must be named libLTO.dylib for that - every one given.
-not $mold -arch $ARCH -platform_version macos 13.0 13.0 -syslibroot $sdk -lSystem \
-  -lto_library $t/libfoo.dylib -lto_library $t/libLTO.dylib $t/a.o \
-  -o $t/exe 2> $t/log1
-grep -q -- "-lto_library library filename must be 'libLTO.dylib'" $t/log1
+# -lto_library names the libLTO that compiles the bitcode; the last one
+# counts. (ld-prime takes only a file named libLTO.dylib, and ignores
+# one that doesn't exist with a warning.)
+if $mold -v 2> /dev/null | grep -q mold-macho; then
+  cp $lto_library $t/libfoo.dylib
+  link -lto_library $t/nosuch.dylib -lto_library $t/libfoo.dylib $t/a.o -o $t/exe
+  $t/exe | grep -q Hello
 
-# The last one counts, and is ignored with a warning if it does not
-# exist.
-$mold -arch $ARCH -platform_version macos 13.0 13.0 -syslibroot $sdk -lSystem \
-  -lto_library $t/x/libLTO.dylib -lto_library $t/y/libLTO.dylib $t/a.o \
-  -o $t/exe 2> $t/log2
-grep -q "warning: ignoring -lto_library '$t/y/libLTO.dylib', file does not exist" $t/log2
-not grep -q "$t/x/" $t/log2
+  # A library that can't be loaded fails a link with bitcode.
+  not link -lto_library $t/libfoo.dylib -lto_library $t/nosuch.dylib $t/a.o -o $t/exe \
+    2> $t/log
+  grep -qF "$t/nosuch.dylib" $t/log
+fi
+
+# A link without bitcode loads none.
+echo 'int main() { return 0; }' | $CC -c -xc - -o $t/b.o
+link -lto_library $t/x/libLTO.dylib $t/b.o -o $t/exe

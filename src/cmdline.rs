@@ -350,7 +350,7 @@ pub struct Args {
     /// image no dyld loads (which has no fixups unless asked for them)
     /// classic rebase and weak-bind opcodes.
     pub no_fixup_chains: bool,
-    /// The libLTO to load for bitcode inputs (-lto_library).
+    /// The libLTO to load for bitcode inputs: the last -lto_library.
     pub lto_library: Option<PathBuf>,
     /// -mcpu: the CPU libLTO compiles the bitcode for.
     pub lto_cpu: Option<String>,
@@ -1731,7 +1731,6 @@ struct ParseState<'a> {
     stack_size: Option<u64>,
     stack_addr: Option<u64>,
     x86_64_layout_emulation: bool,
-    lto_libraries: Vec<PathBuf>,
     lto_softload: Option<bool>,
     lists: SymbolLists,
     export_choice: Option<ExportChoice>,
@@ -2695,7 +2694,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
 
             // Link-time optimization.
-            b"-lto_library" => st.lto_libraries.push(cur.next_path(name)),
+            b"-lto_library" => args.lto_library = Some(cur.next_path(name)),
             b"-mcpu" => args.lto_cpu = Some(cur.next_text(name).to_string()),
             b"-mllvm" => args.mllvm.push(cur.next_bytes(name)),
             b"-save-temps" => args.save_temps = true,
@@ -2873,7 +2872,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         }
     }
 
-    finish_options(&mut args, &mut st);
+    finish_options(&mut args);
     set_output_kind(&mut args, st.kind);
     if let Some(triple) = st.target_triple {
         apply_target_triple(&mut args, triple);
@@ -2903,11 +2902,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     args
 }
 
-/// What ld-prime does once it has read the last option, before it looks
-/// at the inputs: it vets -lto_library, and reads the environment
-/// variables that stand in for options.
-fn finish_options(args: &mut Args, st: &mut ParseState) {
-    args.lto_library = resolve_lto_library(std::mem::take(&mut st.lto_libraries));
+/// Reads the environment variables that stand in for options, once
+/// the options are read.
+fn finish_options(args: &mut Args) {
     // -objc_class_ro_signing_mismatch's environment variable is read as
     // the option would be.
     let env = "LD_OBJC_CLASS_RO_SIGNING_MISMATCH";
@@ -4051,23 +4048,6 @@ fn resolve_image_base(args: &mut Args) {
         crate::warn!("prefered load addresses (-seg1addr) are disabled with chained fixups");
         args.image_base = text;
     }
-}
-
-/// ld-prime vets -lto_library before the rest of the command line: it
-/// loads the library in place of its own by running itself again with
-/// the library's directory first in the dynamic loader's search path,
-/// so every one given must be named libLTO.dylib. The last one counts,
-/// unless no such file exists - then ld-prime warns and keeps its own.
-fn resolve_lto_library(mut paths: Vec<PathBuf>) -> Option<PathBuf> {
-    if paths.iter().any(|path| path.file_name() != Some(OsStr::new("libLTO.dylib"))) {
-        fatal!("-lto_library library filename must be 'libLTO.dylib'");
-    }
-    let path = paths.pop()?;
-    if std::fs::metadata(&path).is_err() {
-        crate::warn!("ignoring -lto_library '{}', file does not exist", path.raw());
-        return None;
-    }
-    Some(path)
 }
 
 /// Without -arch, ld-prime links for the target of the first object
