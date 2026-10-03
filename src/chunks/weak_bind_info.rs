@@ -2,7 +2,8 @@
 //! another image's copy of one of this image's weak definitions wins
 //! coalescing.
 
-use crate::chunks::{ChunkHeader, bind_info, rebase_info};
+use crate::chunks::bind_info::{self, Op};
+use crate::chunks::{ChunkHeader, rebase_info};
 use crate::context::Context;
 use crate::macho::*;
 use crate::target::Target;
@@ -77,13 +78,10 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     overrides.sort_by(|&a, &b| ctx.symbols[a].name().cmp(ctx.symbols[b].name()));
     binds.sort_by(|a, b| ctx.symbols[a.0].name().cmp(ctx.symbols[b.0].name()).then(a.1.cmp(&b.1)));
 
-    let mut buf = Vec::new();
-    for id in overrides {
-        buf.push(BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM | BIND_SYMBOL_FLAGS_NON_WEAK_DEFINITION);
-        buf.extend_from_slice(ctx.symbols[id].name());
-        buf.push(0);
-    }
+    let flags = BIND_SYMBOL_FLAGS_NON_WEAK_DEFINITION;
+    let mut ops: Vec<Op> =
+        overrides.iter().map(|&id| Op::Symbol(ctx.symbols[id].name(), flags)).collect();
     let binds: Vec<_> = binds.into_iter().map(|(id, addr)| (addr, id, 0)).collect();
-    let ops = bind_info::bind_ops(ctx, &binds, |_| None, |_| 0);
-    bind_info::encode(ops, buf)
+    ops.extend(bind_info::bind_ops(ctx, &binds, |_| None, |_| 0));
+    bind_info::encode(ops)
 }

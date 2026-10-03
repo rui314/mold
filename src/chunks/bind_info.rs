@@ -80,48 +80,53 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     let flags = |id: crate::symbol::SymbolId| {
         if ctx.symbols[id].is_weak_ref() { BIND_SYMBOL_FLAGS_WEAK_IMPORT } else { 0 }
     };
-    encode(bind_ops(ctx, &binds, |id| Some(ordinal(id)), flags), Vec::new())
+    encode(bind_ops(ctx, &binds, |id| Some(ordinal(id)), flags))
 }
 
-/// Encodes bind opcodes after `buf`'s, ending the stream.
-pub(crate) fn encode(ops: Vec<Op>, mut buf: Vec<u8>) -> Vec<u8> {
+/// Encodes a stream of bind opcodes, ending it.
+pub(crate) fn encode(ops: Vec<Op>) -> Vec<u8> {
+    let mut buf = Vec::new();
     for op in ops {
-        match op {
-            Op::Dylib(ord) if ord <= 0 => {
-                buf.push(BIND_OPCODE_SET_DYLIB_SPECIAL_IMM | (ord & 0xf) as u8)
-            }
-            Op::Dylib(ord) if ord < 16 => buf.push(BIND_OPCODE_SET_DYLIB_ORDINAL_IMM | ord as u8),
-            Op::Dylib(ord) => {
-                buf.push(BIND_OPCODE_SET_DYLIB_ORDINAL_ULEB);
-                encode_uleb(&mut buf, ord as u64);
-            }
-            Op::Symbol(name, flags) => {
-                buf.push(BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM | flags);
-                buf.extend_from_slice(name);
-                buf.push(0);
-            }
-            Op::Type => buf.push(BIND_OPCODE_SET_TYPE_IMM | BIND_TYPE_POINTER),
-            Op::SegOffset(seg, off) => {
-                buf.push(BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB | seg as u8);
-                encode_uleb(&mut buf, off);
-            }
-            Op::AddAddr(delta) => {
-                buf.push(BIND_OPCODE_ADD_ADDR_ULEB);
-                encode_uleb(&mut buf, delta);
-            }
-            Op::Addend(addend) => {
-                buf.push(BIND_OPCODE_SET_ADDEND_SLEB);
-                crate::util::encode_sleb(&mut buf, addend);
-            }
-            Op::Bind => buf.push(BIND_OPCODE_DO_BIND),
-        }
+        encode_op(&mut buf, op);
     }
-
     buf.push(BIND_OPCODE_DONE);
     while !buf.len().is_multiple_of(8) {
         buf.push(0);
     }
     buf
+}
+
+/// Appends a bind opcode.
+pub(crate) fn encode_op(buf: &mut Vec<u8>, op: Op) {
+    match op {
+        Op::Dylib(ord) if ord <= 0 => {
+            buf.push(BIND_OPCODE_SET_DYLIB_SPECIAL_IMM | (ord & 0xf) as u8)
+        }
+        Op::Dylib(ord) if ord < 16 => buf.push(BIND_OPCODE_SET_DYLIB_ORDINAL_IMM | ord as u8),
+        Op::Dylib(ord) => {
+            buf.push(BIND_OPCODE_SET_DYLIB_ORDINAL_ULEB);
+            encode_uleb(buf, ord as u64);
+        }
+        Op::Symbol(name, flags) => {
+            buf.push(BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM | flags);
+            buf.extend_from_slice(name);
+            buf.push(0);
+        }
+        Op::Type => buf.push(BIND_OPCODE_SET_TYPE_IMM | BIND_TYPE_POINTER),
+        Op::SegOffset(seg, off) => {
+            buf.push(BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB | seg as u8);
+            encode_uleb(buf, off);
+        }
+        Op::AddAddr(delta) => {
+            buf.push(BIND_OPCODE_ADD_ADDR_ULEB);
+            encode_uleb(buf, delta);
+        }
+        Op::Addend(addend) => {
+            buf.push(BIND_OPCODE_SET_ADDEND_SLEB);
+            crate::util::encode_sleb(buf, addend);
+        }
+        Op::Bind => buf.push(BIND_OPCODE_DO_BIND),
+    }
 }
 
 /// A bind opcode before encoding.
