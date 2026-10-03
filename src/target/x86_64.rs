@@ -11,7 +11,7 @@ use crate::fatal;
 use crate::input_sections::{Reloc, RelocTarget};
 use crate::macho::*;
 use crate::symbol::SymbolId;
-use crate::target::{SplitRef, Target, has_reloc_form, reloc_form};
+use crate::target::{SplitRef, Target, has_reloc_form, load_helper, reloc_form};
 
 #[derive(Clone, Copy, Default)]
 pub struct X86_64;
@@ -600,32 +600,14 @@ impl Target for X86_64 {
                     }
                 }
             }
-            // So does one of a delay-init dylib's symbol (see
-            // DelayUse).
+            // A GOT load or compare of a lazy or delay-init dylib's
+            // symbol becomes a call of its helper, nops filling the rest
+            // of the movq or cmpq (see LazyUse and DelayUse).
             if matches!(r.r_type, X86_64_RELOC_GOT_LOAD | X86_64_RELOC_GOT)
-                && !ctx.delay_init.sites.is_empty()
-                && let Some(&helper) = ctx.delay_init.sites.get(&(isec_id as u32, r.offset))
+                && let Some((helper, _)) = load_helper(ctx, isec_id, r)
             {
                 let at = r.offset as usize - 3;
-                let disp =
-                    ctx.delay_helper_addr(helper as usize).wrapping_sub(base + at as u64 + 5);
-                buf[at] = 0xe8;
-                write32(&mut buf[at + 1..], disp as u32);
-                let end = r.offset as usize + if r.r_type == X86_64_RELOC_GOT { 5 } else { 4 };
-                buf[at + 5..end].fill(0x90);
-                i += 1;
-                continue;
-            }
-            // A GOT load or compare of a lazy dylib's symbol becomes a
-            // call of its helper, nops filling the rest of the movq or
-            // cmpq (see LazyUse).
-            if matches!(r.r_type, X86_64_RELOC_GOT_LOAD | X86_64_RELOC_GOT)
-                && !ctx.lazy_helpers.sites.is_empty()
-                && ctx.reloc_target_sym(obj, r).is_some_and(|id| ctx.is_lazy_import(id))
-            {
-                let helper = ctx.lazy_helpers.site_helper(isec_id, r.offset);
-                let at = r.offset as usize - 3;
-                let disp = ctx.lazy_helper_addr(helper).wrapping_sub(base + at as u64 + 5);
+                let disp = helper.wrapping_sub(base + at as u64 + 5);
                 buf[at] = 0xe8;
                 write32(&mut buf[at + 1..], disp as u32);
                 let end = r.offset as usize + if r.r_type == X86_64_RELOC_GOT { 5 } else { 4 };

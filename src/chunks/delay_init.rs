@@ -130,12 +130,6 @@ impl DelayInit {
             dlopen_sym: None,
         }
     }
-
-    /// The helper a rewritten GOT load at `offset` of subsection `isec`
-    /// goes to.
-    pub fn site_helper(&self, isec: usize, offset: u32) -> usize {
-        self.sites[&(isec as u32, offset)] as usize
-    }
 }
 
 impl Default for DelayInit {

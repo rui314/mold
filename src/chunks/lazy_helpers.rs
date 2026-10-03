@@ -78,12 +78,6 @@ impl LazyHelpersSection {
         hdr.flags = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
         Self { hdr, helpers: Vec::new(), sites: Default::default(), dyld_lazy_load: None }
     }
-
-    /// The helper a rewritten GOT load at `offset` of subsection `isec`
-    /// goes to.
-    pub fn site_helper(&self, isec: usize, offset: u32) -> usize {
-        self.sites[&(isec as u32, offset)] as usize
-    }
 }
 
 impl Default for LazyHelpersSection {

@@ -14,7 +14,7 @@ use crate::fatal;
 use crate::input_files::ObjectFile;
 use crate::input_sections::{Reloc, RelocTarget};
 use crate::macho::*;
-use crate::target::{SplitRef, Target, has_reloc_form, reloc_form};
+use crate::target::{SplitRef, Target, has_reloc_form, load_helper, reloc_form};
 use crate::util::{bits, sign_extend};
 
 #[derive(Clone, Copy, Default)]
@@ -1393,35 +1393,16 @@ impl Target for Arm64 {
                         report_ldst_alignment(ctx, isec_id, r, size);
                     }
                 }
-                // A GOT load of a lazy dylib's symbol calls its load
-                // helper in place of the adrp, or in frameless code
-                // branches to one of its own (see LazyUse::Load); the
-                // ldr then loads from the helper's slot.
+                // A GOT load of a lazy or delay-init dylib's symbol calls
+                // its load helper in place of the adrp, or in frameless
+                // code branches to one of its own (see LazyUse::Load and
+                // DelayUse::Load). The ldr then loads from the lazy
+                // helper's slot, or the symbol's __got slot.
                 ARM64_RELOC_GOT_LOAD_PAGE21
-                    if !ctx.lazy_helpers.sites.is_empty()
-                        && ctx.is_lazy_import(ctx.reloc_target_sym(obj, r).unwrap()) =>
+                    if let Some((helper, own)) = load_helper(ctx, isec_id, r) =>
                 {
-                    let helper = ctx.lazy_helpers.site_helper(isec_id, r.offset);
-                    let op = match ctx.lazy_helpers.helpers[helper].kind {
-                        LazyUse::Load { site: Some(_), .. } => 0x1400_0000,
-                        _ => 0x9400_0000,
-                    };
-                    let val = ctx.lazy_helper_addr(helper).wrapping_sub(p);
-                    write32(loc, op | bits(val, 27, 2) as u32);
-                }
-                // So does one of a delay-init dylib's symbol, but the
-                // ldr then loads from the symbol's __got slot.
-                ARM64_RELOC_GOT_LOAD_PAGE21
-                    if !ctx.delay_init.sites.is_empty()
-                        && ctx.is_delay_import(ctx.reloc_target_sym(obj, r).unwrap()) =>
-                {
-                    let helper = ctx.delay_init.site_helper(isec_id, r.offset);
-                    let op = match ctx.delay_init.helpers[helper].kind {
-                        DelayUse::Load { site: Some(_), .. } => 0x1400_0000,
-                        _ => 0x9400_0000,
-                    };
-                    let val = ctx.delay_helper_addr(helper).wrapping_sub(p);
-                    write32(loc, op | bits(val, 27, 2) as u32);
+                    let op = if own { 0x1400_0000 } else { 0x9400_0000 };
+                    write32(loc, op | bits(helper.wrapping_sub(p), 27, 2) as u32);
                 }
                 // A GOT load of a local symbol relaxes to computing
                 // the address directly (see relaxes_got_load): the adrp
