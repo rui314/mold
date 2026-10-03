@@ -5,8 +5,8 @@ source "$(dirname "$0")"/common.inc
 # line of library options. It links the libraries, frameworks and
 # archives they name (-hidden-l hides an archive's symbols as on the
 # command line); it drops unknown words and options missing their
-# argument with a warning, then the weak, re-exported and upward forms
-# with another, and search paths silently.
+# argument with a warning, the weak, re-exported and upward forms with
+# another, and search paths silently.
 cat <<EOF | $CC -o $t/a.o -c -x assembler -
 .linker_option "-foo", "bar"
 .linker_option "-weak_framework", "Foundation"
@@ -33,10 +33,11 @@ grep -q "unexpected linker option from object file ignored: '-weak_framework Fou
 not grep -q -- -L/nonexistent $t/log
 nm -m $t/libx.dylib | grep -q 'non-external (was a private external) _baz'
 
-# ld-prime reads them twice: as it reads an object the link loads from
-# the start, then for every object it loads once it has checked the
-# inputs' versions (after their warnings), each time with warnings.
-cat <<EOF | $CC -o $t/e.o -c -x assembler - -mmacosx-version-min=99.0
+# Each object the link loads is warned of once, an archive member only
+# if it is loaded. (ld-prime warns twice of an object the link loads
+# from the start: as it reads it, and again once it has resolved the
+# symbols.)
+cat <<EOF | $CC -o $t/e.o -c -x assembler -
 .globl _e
 _e: ret
 .linker_option "-eee"
@@ -46,21 +47,22 @@ cat <<EOF | $CC -o $t/f.o -c -x assembler -
 _f: ret
 .linker_option "-fff"
 EOF
+cat <<EOF | $CC -o $t/h.o -c -x assembler -
+.globl _h
+_h: ret
+.linker_option "-hhh"
+EOF
 rm -f $t/libf.a
-ar rcs $t/libf.a $t/f.o
+ar rcs $t/libf.a $t/f.o $t/h.o
 cat <<EOF | $CC -o $t/g.o -c -x assembler -
 .data
 .p2align 3
 .quad _f
 EOF
 $CC --ld-path=$mold -dynamiclib -o $t/liby.dylib $t/g.o $t/e.o $t/libf.a 2> $t/log6
-grep -o "warning: .*" $t/log6 | sed -e 's/ in .*//' -e 's/ (.*//' > $t/order6
-cat <<EOF | diff - $t/order6
-warning: unknown linker option from object file ignored: '-eee'
-warning: object file
-warning: unknown linker option from object file ignored: '-eee'
-warning: unknown linker option from object file ignored: '-fff'
-EOF
+[ "$(grep -c "unknown linker option from object file ignored: '-eee'" $t/log6)" = 1 ]
+[ "$(grep -c "unknown linker option from object file ignored: '-fff'" $t/log6)" = 1 ]
+not grep -q -- -hhh $t/log6
 
 # A -r link reports them too, and keeps the rest.
 $mold -r -arch $ARCH -o $t/r.o $t/a.o 2> $t/log2

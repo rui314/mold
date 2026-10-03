@@ -143,9 +143,6 @@ pub struct Context<E: Target> {
     /// -add_linker_option's auto-link options, once read as an
     /// object's are (see passes::read_linker_options).
     pub cmdline_linker_options: Option<Vec<Vec<Vec<u8>>>>,
-    /// The warnings about the auto-link options of the objects read
-    /// (see passes::warn_linker_options), by object.
-    pub linker_option_warnings: Vec<(usize, crate::error::Message)>,
     /// The libraries and frameworks auto-link options named that were
     /// not found, as ld-prime reports them if symbols stay undefined.
     pub autolink_misses: Vec<crate::error::Message>,
@@ -305,7 +302,6 @@ impl<E: Target> Context<E> {
             missing_files: Default::default(),
             processed_linker_options: std::collections::HashSet::new(),
             cmdline_linker_options: None,
-            linker_option_warnings: Vec::new(),
             autolink_misses: Vec::new(),
             possible_files: Vec::new(),
             common_conflict: None,

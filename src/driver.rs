@@ -91,7 +91,6 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     let explained = passes::print_why_load(&ctx, &[]);
     let mut checked = passes::CheckedInputs::default();
     passes::check_input_versions(&ctx, &mut checked);
-    passes::warn_linker_options(&mut ctx);
     passes::find_bitcode_duplicates(&mut ctx);
     if ctx.args.relocatable && passes::links_only_bitcode(&ctx) {
         t.stop();
@@ -118,7 +117,6 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
         }
         passes::print_why_load(&ctx, &explained);
         passes::check_input_versions(&ctx, &mut checked);
-        passes::warn_linker_options(&mut ctx);
         passes::keep_bitcode_imports(&mut ctx);
     }
     passes::warn_newer_dylibs(&ctx);
