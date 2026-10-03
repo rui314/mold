@@ -31,6 +31,12 @@ fn write_delay_check(ctx: &Context<X86_64>, ent: &mut [u8], base: u64, dlopen: u
     write32(&mut ent[14..], helper.wrapping_sub(base + 18) as u32);
 }
 
+/// "movq disp32(%rip), %reg" up to its displacement: REX.W (and REX.R
+/// for %r8-%r15), the opcode, and a ModRM of `reg` and RIP-relative.
+fn movq_rip(reg: u8) -> [u8; 3] {
+    [0x48 | (reg >> 3) << 2, 0x8b, 0x05 | (reg & 7) << 3]
+}
+
 /// A dlopen helper, but for the displacements of the leaq of the
 /// install name (at 68), the call of dlopen (75) and the xchgl of the
 /// flag (86).
@@ -345,8 +351,7 @@ impl Target for X86_64 {
                 // jne 1f; (the call); 1: movq slot(%rip), %reg; ret
                 LazyUse::Load { reg, .. } => {
                     ent[7..9].copy_from_slice(&[0x75, 0x1c]);
-                    let rex = 0x48 | (reg >> 3) << 2;
-                    ent[37..44].copy_from_slice(&[rex, 0x8b, 0x05 | (reg & 7) << 3, 0, 0, 0, 0]);
+                    ent[37..40].copy_from_slice(&movq_rip(reg));
                     write32(&mut ent[40..], slot.wrapping_sub(base + 44) as u32);
                     ent[44] = 0xc3;
                     9
@@ -406,8 +411,7 @@ impl Target for X86_64 {
             let slot = ctx.sym_got_addr(h.sym);
             match h.kind {
                 DelayUse::Load { reg, .. } => {
-                    let rex = 0x48 | (reg >> 3) << 2;
-                    ent[19..22].copy_from_slice(&[rex, 0x8b, 0x05 | (reg & 7) << 3]);
+                    ent[19..22].copy_from_slice(&movq_rip(reg));
                     write32(&mut ent[22..], slot.wrapping_sub(base + 26) as u32);
                     ent[26] = 0xc3;
                 }
