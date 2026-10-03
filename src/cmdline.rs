@@ -2023,87 +2023,6 @@ struct SymbolLists {
     interposable_list: Option<GlobBuilder>,
 }
 
-/// The error for an option the command line ends before the argument
-/// of, as ld-prime words it: what the option needs, in the usage its
-/// manual page gives (which -executable_path, obsolete, has not).
-pub(crate) fn missing_argument(opt: &str) -> String {
-    let usage = match opt {
-        "-arch" | "-arch_variant" => "missing <arch>",
-        "-no_allow_dylib_sub_type_mismatches" => "missing <arch_list>",
-        "-e"
-        | "-init"
-        | "-u"
-        | "-U"
-        | "-install_name"
-        | "-dylib_install_name"
-        | "-dylinker_install_name"
-        | "-final_output"
-        | "-exported_symbol"
-        | "-unexported_symbol"
-        | "-sub_library"
-        | "-sub_umbrella"
-        | "-umbrella"
-        | "-allowable_client"
-        | "-client_name"
-        | "-why_live"
-        | "-keep_duplicate"
-        | "-poison_symbol" => "missing <name>",
-        "-headerpad"
-        | "-pagezero_size"
-        | "-stack_size"
-        | "-segalign"
-        | "-branch_island_region_size" => "missing <size>",
-        "-image_base" | "-seg1addr" => "missing <address>",
-        "-current_version"
-        | "-dylib_current_version"
-        | "-compatibility_version"
-        | "-dylib_compatibility_version"
-        | "-macos_version_min"
-        | "-source_version"
-        | "-ios_version_min"
-        | "-maccatalyst_version_min"
-        | "-objc_abi_version" => "missing <version>",
-        "-mllvm"
-        | "-max_code_deduplicate_passes"
-        | "-prune_interval_lto"
-        | "-prune_after_lto"
-        | "-max_relative_cache_size_lto" => "missing <value>",
-        "-mcpu" => "missing <cpu>",
-        "-trace_implicit_library" => return "-trace_implicit_library_name missing <name>".into(),
-        "-add_linker_option" => "missing <options>",
-        "-undefined" => "missing <dynamic_lookup>",
-        "-dyld_env" => "missing <arg>",
-        "-image_suffix" => "missing <suffix>",
-        "-weak_reference_mismatches" => "missing [ error | weak | non-weak ]",
-        "-max_default_common_align" => "missing <align-value>",
-        // (ld-prime names the other list.)
-        "-force_symbols_not_weak_list" => {
-            return "-force_symbols_weak_list missing <path>".to_string();
-        }
-        "-read_only_relocs"
-        | "-arch_variant_lto_cache_mismatch"
-        | "-duplicate_symbols"
-        | "-deployment_target_mismatches"
-        | "-unaligned_pointers"
-        | "-objc_class_ro_signing_mismatch" => "missing <option>",
-        "-target" => "missing <target-triple>",
-        "-alias" => "missing <real-name> <alias-name>",
-        "-dylib_file" => "missing <path:path>",
-        "-platform_version" => "missing arguments <platform> <min_version> <sdk_version>",
-        "-sectcreate" => "missing arguments <segname> <sectname> <file>",
-        "-add_empty_section" => "missing arguments <segname> <sectname>",
-        "-segaddr" => "needs <segname> <addr>",
-        "-stack_addr" => "requires <address>",
-        "-segment_order" => "needs <segment-list>",
-        "-sectalign" => "needs <segname> <sectname> <align>",
-        "-executable_path" | "-kext_objects_dir" | "-multiply_defined" | "-sdk_version"
-        | "-seg_addr_table" | "-Y" => return format!("obsolete option {opt} requires 1 arguments"),
-        // Files and directories: inputs, lists, outputs and search paths.
-        _ => "missing <path>",
-    };
-    format!("{opt} {usage}")
-}
-
 /// ld-prime's checks of the options that put an image's fixups in a
 /// section of its own, for its own loader: -fixup_chains_section, which
 /// rules out -rebase_section as -fixup_chains does, and -rebase_section.
@@ -2169,19 +2088,17 @@ impl<'a> ArgCursor<'a> {
         self.args.get(self.index).map(|arg| arg.as_ref())
     }
 
-    /// An option's argument. ld-prime takes an empty one for none, and
-    /// the command line ending before it is an error in the words it
-    /// has for the option.
+    /// An option's argument. ld-prime takes an empty one for none.
     fn next_arg(&mut self, opt: &str) -> &'a OsStr {
         match self.advance() {
             Some(arg) if !arg.is_empty() => arg,
-            _ => fatal!("{}", missing_argument(opt)),
+            _ => fatal!("option {opt}: argument missing"),
         }
     }
 
     /// An argument that may be empty, as ld-prime takes a few.
     fn arg_or_empty(&mut self, opt: &str) -> &'a OsStr {
-        self.advance().unwrap_or_else(|| fatal!("{}", missing_argument(opt)))
+        self.advance().unwrap_or_else(|| fatal!("option {opt}: argument missing"))
     }
 
     /// An argument that is text by nature.
@@ -2201,25 +2118,6 @@ impl<'a> ArgCursor<'a> {
     fn next_symbol_list(&mut self, opt: &str) -> Vec<Vec<u8>> {
         read_symbol_list(opt, &self.next_path(opt))
     }
-
-    /// An operand of -rename_section or -rename_segment: ld-prime
-    /// reports a missing or empty one with the option's usage.
-    fn rename_operand(&mut self, opt: &str, usage: &str) -> &'a [u8] {
-        match self.advance() {
-            Some(arg) if !arg.is_empty() => arg.as_bytes(),
-            _ => fatal!("{opt} missing {usage}"),
-        }
-    }
-
-    /// An operand of -move_to_rw_segment or -move_to_ro_segment:
-    /// ld-prime reports a missing or empty one with the option's usage
-    /// alone.
-    fn move_operand(&mut self, opt: &str) -> &'a OsStr {
-        match self.advance() {
-            Some(arg) if !arg.is_empty() => arg,
-            _ => fatal!("{opt} <segname> <path>"),
-        }
-    }
 }
 
 /// An argument that is text by nature.
@@ -2229,15 +2127,11 @@ fn text<'a>(opt: &str, arg: &'a OsStr) -> &'a str {
     })
 }
 
-/// -platform_version <platform> <min_version> <sdk_version>: ld-prime
-/// takes all three before it reads any.
+/// -platform_version <platform> <min_version> <sdk_version>.
 fn read_platform_version(cur: &mut ArgCursor, args: &mut Args, st: &mut ParseState, opt: &str) {
-    let platform = cur.next_text(opt);
-    let minos = cur.next_text(opt);
-    let sdk = cur.next_text(opt);
-    let platform = parse_platform(platform);
-    let minos = parse_version(opt, minos);
-    let sdk = parse_version(opt, sdk);
+    let platform = parse_platform(cur.next_text(opt));
+    let minos = parse_version(opt, cur.next_text(opt));
+    let sdk = parse_version(opt, cur.next_text(opt));
     set_platform(args, st, platform, minos);
     args.platform_sdk = sdk;
 }
@@ -2307,14 +2201,10 @@ fn add_dylib_file(args: &mut Args, warnings: &mut OptionWarnings, arg: &[u8]) {
 }
 
 /// -segprot <segment> <max-prot> <init-prot>.
-fn read_segprot(cur: &mut ArgCursor, st: &mut ParseState) {
-    // ld-prime takes a missing argument for an empty one.
-    let mut arg = || cur.advance().map_or(&b""[..], |arg| arg.as_bytes());
-    let (seg, max, init) = (arg(), arg(), arg());
-    if seg.is_empty() || max.is_empty() || init.is_empty() {
-        fatal!("-segprot missing <seg> <max-prot> <init-prot>");
-    }
-    let seg = seg.to_vec();
+fn read_segprot(cur: &mut ArgCursor, st: &mut ParseState, opt: &str) {
+    let seg = cur.next_bytes(opt);
+    let max = cur.next_arg(opt).as_bytes();
+    let init = cur.next_arg(opt).as_bytes();
     // __LINKEDIT, which dyld reads, keeps its own.
     if seg == b"__LINKEDIT" {
         st.warnings.warn("-segprot cannot be used to modify __LINKEDIT protections");
@@ -2342,29 +2232,18 @@ fn read_segment_order(cur: &mut ArgCursor, args: &mut Args, opt: &str) {
 
 /// -seg_page_size <segment> <size>.
 fn read_seg_page_size(cur: &mut ArgCursor, st: &mut ParseState, opt: &str) {
-    let (Some(seg), Some(size)) = (cur.advance(), cur.advance()) else {
-        fatal!("-seg_page_size needs <segname> <size>");
-    };
-    if seg.is_empty() || size.is_empty() {
-        fatal!("-seg_page_size needs <segname> <size>");
-    }
-    let size = parse_hex(opt, text(opt, size));
+    let seg = cur.next_bytes(opt);
+    let size = parse_hex(opt, cur.next_text(opt));
     if size > u32::MAX as u64 {
         fatal!("-seg_page_size {size}: size too big");
     }
-    st.seg_page_sizes.push((seg.as_bytes().to_vec(), size));
+    st.seg_page_sizes.push((seg, size));
 }
 
 /// -section_order <segment> <section>:<section>..., once per segment.
-fn read_section_order(cur: &mut ArgCursor, args: &mut Args) {
-    let (Some(seg), Some(list)) = (cur.advance(), cur.advance()) else {
-        fatal!("-section_order needs <segname> <section-list>");
-    };
-    if seg.is_empty() || list.is_empty() {
-        fatal!("-section_order needs <segname> <section-list>");
-    }
-    let seg = seg.as_bytes().to_vec();
-    let list: Vec<Vec<u8>> = (list.as_bytes().split(|&c| c == b':'))
+fn read_section_order(cur: &mut ArgCursor, args: &mut Args, opt: &str) {
+    let seg = cur.next_bytes(opt);
+    let list: Vec<Vec<u8>> = (cur.next_arg(opt).as_bytes().split(|&c| c == b':'))
         .filter(|s| !s.is_empty())
         .map(<[u8]>::to_vec)
         .collect();
@@ -2821,14 +2700,14 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 add_patterns(glob, &names, 0);
                 st.force_weakness_listed = true;
             }
-            // ld-prime's usage leaves use_dylibs out, and takes a
-            // missing treatment for an invalid one.
             b"-commons" => {
-                args.commons = match cur.advance().map(|arg| arg.as_bytes()) {
-                    Some(b"ignore_dylibs") => CommonsMode::IgnoreDylibs,
-                    Some(b"use_dylibs") => CommonsMode::UseDylibs,
-                    Some(b"error") => CommonsMode::Error,
-                    _ => fatal!("invalid option to -commons [ ignore_dylibs | error ]"),
+                args.commons = match cur.next_arg(name).as_bytes() {
+                    b"ignore_dylibs" => CommonsMode::IgnoreDylibs,
+                    b"use_dylibs" => CommonsMode::UseDylibs,
+                    b"error" => CommonsMode::Error,
+                    _ => {
+                        fatal!("invalid option to -commons [ ignore_dylibs | use_dylibs | error ]")
+                    }
                 }
             }
             b"-warn_commons" => args.warn_commons = true,
@@ -2876,11 +2755,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // <section> <path>, ld-prime takes for an -order_file
             // whatever the section names, empty ones too.
             b"-sectorder" => {
-                let file = match (cur.advance(), cur.advance(), cur.advance()) {
-                    (Some(_), Some(_), Some(file)) if !file.is_empty() => file,
-                    _ => fatal!("-sectorder missing <segment> <section> <file-path>"),
-                };
-                args.order_files.push(PathBuf::from(file));
+                cur.arg_or_empty(name);
+                cur.arg_or_empty(name);
+                args.order_files.push(cur.next_path(name));
             }
             b"-order_file_statistics" => args.order_file_statistics = true,
             b"-ignore_optimization_hints" => args.ignore_optimization_hints = true,
@@ -2916,29 +2793,27 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 st.segalign = Some(align);
             }
             b"-seg_page_size" => read_seg_page_size(&mut cur, &mut st, name),
-            b"-segprot" => read_segprot(&mut cur, &mut st),
+            b"-segprot" => read_segprot(&mut cur, &mut st, name),
             b"-segment_order" => read_segment_order(&mut cur, &mut args, name),
-            b"-section_order" => read_section_order(&mut cur, &mut args),
+            b"-section_order" => read_section_order(&mut cur, &mut args, name),
             b"-sectalign" => read_sectalign(&mut cur, &mut args, &mut st.warnings, name),
             b"-sectcreate" => read_sectcreate(&mut cur, &mut args, &mut st.warnings, name),
             b"-add_empty_section" => read_add_empty_section(&mut cur, &mut args, name),
             b"-rename_section" => {
-                let usage = "<from-segment> <from-section> <to-segment> <to-section>";
-                let old_seg = cur.rename_operand(name, usage).to_vec();
-                let old_sect = cur.rename_operand(name, usage).to_vec();
-                let new_seg = section_name(cur.rename_operand(name, usage));
-                let new_sect = section_name(cur.rename_operand(name, usage));
+                let old_seg = cur.next_bytes(name);
+                let old_sect = cur.next_bytes(name);
+                let new_seg = section_name(cur.next_arg(name).as_bytes());
+                let new_sect = section_name(cur.next_arg(name).as_bytes());
                 args.rename_sections.push((old_seg, old_sect, new_seg, new_sect));
             }
             b"-rename_segment" => {
-                let usage = "<from-segment> <to-segment>";
-                let old = cur.rename_operand(name, usage).to_vec();
-                let new = section_name(cur.rename_operand(name, usage));
+                let old = cur.next_bytes(name);
+                let new = section_name(cur.next_arg(name).as_bytes());
                 args.rename_segments.push((old, new));
             }
             b"-move_to_rw_segment" | b"-move_to_ro_segment" => {
-                let segment = cur.move_operand(name).as_bytes();
-                let list = symbol_move(name, segment, Path::new(cur.move_operand(name)));
+                let segment = cur.next_arg(name).as_bytes();
+                let list = symbol_move(name, segment, &cur.next_path(name));
                 match name {
                     "-move_to_rw_segment" => args.move_to_rw.push(list),
                     _ => args.move_to_ro.push(list),

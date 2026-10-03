@@ -45,4 +45,4 @@ not $CC --ld-path=$mold -o $t/exe7 $t/b.o -F$t/F -framework Nope,_debug 2> $t/lo
 grep -q "framework 'Nope,_debug' not found" $t/log
 
 not $mold -o $t/exe8 $t/b.o -image_suffix 2> $t/log
-grep -q -- '-image_suffix missing <suffix>' $t/log
+grep -q -- '-image_suffix.*missing' $t/log

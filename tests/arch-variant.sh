@@ -18,4 +18,4 @@ not $mold -arch_variant bogus -arch $ARCH -o $t/exe $t/a.o 2> $t/log
 grep -q -- 'unknown -arch name: bogus' $t/log
 
 not $mold -arch $ARCH -o $t/exe $t/a.o -arch_variant 2> $t/log
-grep -q -- '-arch_variant missing <arch>' $t/log
+grep -q -- '-arch_variant.*missing' $t/log

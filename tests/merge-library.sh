@@ -82,7 +82,7 @@ not $CC --ld-path=$mold -o $t/exe $t/main.o -L$t/lib -Wl,-merge-lfoo -Wl,-merge-
 grep -q "warning: ignoring duplicate libraries: '-merge-lfoo'" $t/log12
 for opt in -merge_framework -merge_library -merge-l; do
   not $mold -arch $ARCH -o $t/exe $t/main.o $opt 2> $t/log13
-  grep -q -- "$opt missing <path>" $t/log13
+  grep -q -- "$opt.*missing" $t/log13
 done
 
 # A dylib ld-prime made mergeable is merged into the image, which gets

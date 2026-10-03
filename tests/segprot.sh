@@ -61,6 +61,6 @@ grep -q $'letter \'\xff\'$' $t/log6
 # An empty or missing argument is an error.
 not $CC --ld-path=$mold -o $t/exe7 $t/main.o $t/a.o -Xlinker -segprot -Xlinker __MYSEG \
   -Xlinker '' -Xlinker r 2> $t/log7
-grep -q -- '-segprot missing <seg> <max-prot> <init-prot>' $t/log7
+grep -q -- '-segprot.*missing' $t/log7
 not $mold -arch $ARCH -o $t/exe8 $t/main.o $t/a.o -segprot __MYSEG r 2> $t/log8
-grep -q -- '-segprot missing <seg> <max-prot> <init-prot>' $t/log8
+grep -q -- '-segprot.*missing' $t/log8

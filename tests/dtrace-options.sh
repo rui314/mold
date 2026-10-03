@@ -20,6 +20,6 @@ $mold -r -arch $ARCH -o $t/r2.o $t/a.o -dtrace $t/nonexistent.d -no_dtrace_dof
 cmp $t/r1.o $t/r2.o
 
 not $mold -arch $ARCH -o $t/exe $t/a.o -dtrace 2> $t/log
-grep -q -- '-dtrace missing <path>' $t/log
+grep -q -- '-dtrace.*missing' $t/log
 not $mold -arch $ARCH -o $t/exe $t/a.o -dtrace '' 2> $t/log
-grep -q -- '-dtrace missing <path>' $t/log
+grep -q -- '-dtrace.*missing' $t/log

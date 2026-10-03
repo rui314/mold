@@ -28,7 +28,7 @@ EOF
 $CC --ld-path=$mold -dynamiclib -o $t/libx.dylib $t/main.o $t/a.o -L$t 2> $t/log
 grep -q "unknown linker option from object file ignored: '-foo' in .*/a.o" $t/log
 grep -q "unknown linker option from object file ignored: 'bar' in .*/a.o" $t/log
-grep -q "malformed linker option from object file ignored: '-framework missing <path>', in .*/a.o" $t/log
+grep -q "malformed linker option from object file ignored: '-framework.*missing.*, in .*/a.o" $t/log
 grep -q "unexpected linker option from object file ignored: '-weak_framework Foundation' in .*/a.o" $t/log
 not grep -q -- -L/nonexistent $t/log
 nm -m $t/libx.dylib | grep -q 'non-external (was a private external) _baz'

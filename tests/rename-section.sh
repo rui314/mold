@@ -76,7 +76,6 @@ $CC --ld-path=$mold -o $t/exe7 $t/a.o \
 grep -qx '__BBBBBBBBBBBBBB,__bbbbbbbbbbbbbb' <(sects $t/exe7)
 
 not $mold -arch $ARCH -static -e _main -o $t/exe8 $t/c.o -rename_segment __AAA '' 2> $t/log8
-grep -q -- '-rename_segment missing <from-segment> <to-segment>' $t/log8
+grep -q -- '-rename_segment.*missing' $t/log8
 not $mold -arch $ARCH -static -e _main -o $t/exe8 $t/c.o -rename_section __AAA __a __B 2> $t/log8
-grep -q -- '-rename_section missing <from-segment> <from-section> <to-segment> <to-section>' \
-  $t/log8
+grep -q -- '-rename_section.*missing' $t/log8

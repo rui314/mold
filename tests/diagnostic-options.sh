@@ -29,16 +29,16 @@ for opt in -trace_symbol_layout_file -dot -trace_file -trace_file_shared_cache \
   link $opt $t/report 2> $t/log
   cmp $t/exe $t/exe0
   not link $opt '' 2> $t/log
-  grep -q -- "$opt missing <path>" $t/log
+  grep -q -- "$opt.*missing" $t/log
 done
 link -trace_implicit_library libsystem_c.dylib > /dev/null
 cmp $t/exe $t/exe0
 not link -trace_implicit_library 2> $t/log
-grep -q -- '-trace_implicit_library_name missing <name>' $t/log
+grep -q -- '-trace_implicit_library.*missing' $t/log
 not link -snapshot_dir 2> $t/log
-grep -q -- '-snapshot_dir missing <path>' $t/log
+grep -q -- '-snapshot_dir.*missing' $t/log
 not link -reference_output 2> $t/log
-grep -q -- '-reference_output missing <path>' $t/log
+grep -q -- '-reference_output.*missing' $t/log
 
 mkdir -p $t/snap
 for opt in -debug_snapshot -debug_snapshot= -debug_snapshot=minimal -debug_snapshotminimal; do
@@ -58,7 +58,7 @@ for n in 0x3 '3 ' x; do
   grep -q 'invalid argument for -max_code_deduplicate_passes' $t/log
 done
 not link -max_code_deduplicate_passes '' 2> $t/log
-grep -q -- '-max_code_deduplicate_passes missing <value>' $t/log
+grep -q -- '-max_code_deduplicate_passes.*missing' $t/log
 
 # -x86_64_layout_emulation is for arm64 links: another gets a warning
 # once every option is read, before the obsolete options'.

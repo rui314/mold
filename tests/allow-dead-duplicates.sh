@@ -35,4 +35,4 @@ grep -q '2 duplicate symbols' $t/log
 not $mold -o $t/exe $t/a.o -duplicate_symbols suppress 2> $t/log
 grep -q -- '-duplicate_symbols invalid option (warning | error)' $t/log
 not $mold -o $t/exe $t/a.o -duplicate_symbols 2> $t/log
-grep -q -- '-duplicate_symbols missing <option>' $t/log
+grep -q -- '-duplicate_symbols.*missing' $t/log

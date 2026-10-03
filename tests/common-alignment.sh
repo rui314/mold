@@ -59,7 +59,7 @@ grep -q 'argument for -max_default_common_align (0x8001) must be less than or eq
 not $mold -o $t/exe5 $t/e.o -max_default_common_align 1x 2> $t/log5
 grep -q -- '-max_default_common_align must specify an integer size' $t/log5
 not $mold -o $t/exe5 $t/e.o -max_default_common_align 2> $t/log5
-grep -q -- '-max_default_common_align missing <align-value>' $t/log5
+grep -q -- '-max_default_common_align.*missing' $t/log5
 
 $mold -preload -arch $ARCH -e _main -o $t/exe6 $t/e.o
 [ $(gap $t/exe6) = 256 ]

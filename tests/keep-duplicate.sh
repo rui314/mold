@@ -35,4 +35,4 @@ if [ $ARCH = arm64 ]; then
 fi
 
 not $mold -o $t/exe5 $t/a.o -keep_duplicate 2> $t/log
-grep -q -- '-keep_duplicate missing <name>' $t/log
+grep -q -- '-keep_duplicate.*missing' $t/log

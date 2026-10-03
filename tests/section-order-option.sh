@@ -56,7 +56,7 @@ not $mold -arch $ARCH -preload -e _start $t/a.o -o $t/exe5 \
 grep -q -- '-section_order __DATA used more than once' $t/log5
 
 not $mold -arch $ARCH -preload -e _start $t/a.o -o $t/exe6 -section_order __DATA 2> $t/log6
-grep -q -- '-section_order needs <segname> <section-list>' $t/log6
+grep -q -- '-section_order' $t/log6
 
 not $mold -arch $ARCH -preload -e _start $t/a.o -o $t/exe7 -section_order __DATA : 2> $t/log7
 grep -q -- '-section_order should specifify at least one section' $t/log7

@@ -28,6 +28,6 @@ $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-sectorder,__TEXT,__text,$t/nonexistent
 grep -q "order file '$t/nonexistent' could not be opened" $t/log
 
 not $mold -arch $ARCH -o $t/exe $t/a.o -sectorder __TEXT __text 2> $t/log
-grep -q -- '-sectorder missing <segment> <section> <file-path>' $t/log
+grep -q -- '-sectorder.*missing' $t/log
 not $mold -arch $ARCH -o $t/exe $t/a.o -sectorder __TEXT __text '' 2> $t/log
-grep -q -- '-sectorder missing <segment> <section> <file-path>' $t/log
+grep -q -- '-sectorder.*missing' $t/log

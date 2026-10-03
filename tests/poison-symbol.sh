@@ -49,7 +49,7 @@ $mold -o $t/exe $t/b.o $t/c.o $t/liba.dylib -poison_symbol _baz -lSystem \
   -syslibroot "$(xcrun --show-sdk-path)" -dead_strip
 
 not $mold -o $t/exe $t/b.o -poison_symbol 2> $t/log
-grep -q -- '-poison_symbol missing <name>' $t/log
+grep -q -- '-poison_symbol.*missing' $t/log
 
 # A reference is a relocation, but an adrp and the add or load right
 # after it with its register for the base make one, and a subtracted

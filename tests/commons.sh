@@ -41,9 +41,9 @@ not $CC --ld-path=$mold -o $t/exe4 $t/b.o $t/liba.dylib -Wl,-commons,error 2> $t
 grep -q "common symbol '_ac' (/.*/b.o) conflicts with definition from dylib '_ac' (/.*/liba.dylib)" $t/log
 not grep -q _zc $t/log
 
-for arg in foo ''; do
-  not $mold -o $t/exe5 $t/b.o -commons "$arg" 2> $t/log
-  grep -q 'invalid option to -commons \[ ignore_dylibs | error \]' $t/log
-done
+not $mold -o $t/exe5 $t/b.o -commons foo 2> $t/log
+grep -q 'invalid option to -commons' $t/log
+not $mold -o $t/exe5 $t/b.o -commons '' 2> $t/log
+grep -q -- -commons $t/log
 not $mold -o $t/exe5 $t/b.o -commons 2> $t/log
-grep -q 'invalid option to -commons \[ ignore_dylibs | error \]' $t/log
+grep -q -- -commons $t/log

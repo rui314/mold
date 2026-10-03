@@ -20,9 +20,9 @@ for v in 1 02 2.0 3 ' 2'; do
 done
 
 not link -objc_abi_version '' 2> $t/log
-grep -q -- '-objc_abi_version missing <version>' $t/log
+grep -q -- '-objc_abi_version.*missing' $t/log
 not link -objc_abi_version 2> $t/log
-grep -q -- '-objc_abi_version missing <version>' $t/log
+grep -q -- '-objc_abi_version.*missing' $t/log
 
 not link -segprot __FOO rz r -objc_abi_version 1 -foo 2> $t/log
 grep -q "unknown -segprot letter 'z'" $t/log

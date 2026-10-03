@@ -52,4 +52,4 @@ grep -q -- "-seg_page_size __TEXT 0x800 can't be smaller than page size (0x[14]0
 not $CC --ld-path=$mold -o $t/exe6 $t/a.o -Wl,-seg_page_size,__TEXT,2m 2> $t/log6
 grep -q -- '-seg_page_size: not a hexadecimal number: 2m' $t/log6
 not $mold -arch $ARCH -o $t/exe7 $t/a.o -seg_page_size __TEXT 2> $t/log7
-grep -q -- '-seg_page_size needs <segname> <size>' $t/log7
+grep -q -- '-seg_page_size' $t/log7

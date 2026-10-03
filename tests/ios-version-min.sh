@@ -16,9 +16,9 @@ for opts in '-ios_version_min -ios_version_min' '-iphoneos_version_min -ios_vers
   opt=$1 new=$2
 
   not link -w $opt 2> $t/log
-  grep -q -- "$new missing <version>" $t/log
+  grep -q -- "$new.*missing" $t/log
   not link -w $opt '' 2> $t/log
-  grep -q -- "$new missing <version>" $t/log
+  grep -q -- "$new.*missing" $t/log
   not link -w $opt 1x 2> $t/log
   grep -q -- "$new: malformed 32-bit xxxx.yy.zz version number: '1x'" $t/log
 

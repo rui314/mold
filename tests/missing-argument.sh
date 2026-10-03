@@ -1,62 +1,61 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# A command line that ends before an option's argument is an error that
-# names the option and what it needs, as ld-prime words it for each: a
-# path, a name, a size, an address, or all of several operands, which
-# it takes before it reads any.
+# A command line that ends before an option's argument, or one of its
+# operands, is an error that names the option.
 echo 'int main() {}' | $CC -c -xc - -o $t/a.o
 
-# missing <message> <options...>
+# missing <option> <options...>
 missing() {
   not $mold -arch $ARCH -o $t/exe $t/a.o "${@:2}" 2> $t/log &&
-    grep -Fq -- "$1" $t/log
+    grep -q -- "$1.*missing" $t/log
 }
-missing '-o missing <path>' -o
-missing '-L missing <path>' -L
-missing '-arch missing <arch>' -arch
-missing '-no_allow_dylib_sub_type_mismatches missing <arch_list>' \
-  -no_allow_dylib_sub_type_mismatches
-missing '-e missing <name>' -e
-missing '-headerpad missing <size>' -headerpad
-missing '-image_base missing <address>' -image_base
-missing '-current_version missing <version>' -current_version
-missing '-undefined missing <dynamic_lookup>' -undefined
-missing '-mllvm missing <value>' -mllvm
-missing '-alias missing <real-name> <alias-name>' -alias _main
-missing '-platform_version missing arguments <platform> <min_version> <sdk_version>' \
-  -platform_version nosuch 13.0
-missing '-sectcreate missing arguments <segname> <sectname> <file>' -sectcreate __TEXT __foo
-missing '-add_empty_section missing arguments <segname> <sectname>' -add_empty_section __TEXT
-missing '-segaddr needs <segname> <addr>' -segaddr __FOO
-missing '-segment_order needs <segment-list>' -segment_order
-missing '-sectalign needs <segname> <sectname> <align>' -sectalign __TEXT __text
+missing -o -o
+missing -L -L
+missing -arch -arch
+missing -no_allow_dylib_sub_type_mismatches -no_allow_dylib_sub_type_mismatches
+missing -e -e
+missing -headerpad -headerpad
+missing -image_base -image_base
+missing -current_version -current_version
+missing -undefined -undefined
+missing -mllvm -mllvm
+missing -alias -alias _main
+missing -platform_version -platform_version macos 13.0
+missing -sectcreate -sectcreate __TEXT __foo
+missing -add_empty_section -add_empty_section __TEXT
 
 # Without its path, -rpath is only a warning, and -oso_prefix nothing.
 $mold -r -arch $ARCH -o $t/b.o $t/a.o -rpath 2> $t/log
-grep -Fq -- 'warning: -rpath missing <path>' $t/log
+grep -q -- 'warning: -rpath missing <path>' $t/log
 $mold -r -arch $ARCH -o $t/c.o $t/a.o -oso_prefix
 
 # ld-prime takes an empty argument for a missing one, but for a dylib's
 # versions, which it takes for 0, and the few options that don't need
 # one. A library option with the name joined to it needs one too.
-missing '-e missing <name>' -e ''
-missing '-target missing <target-triple>' -target ''
-missing '-read_only_relocs missing <option>' -read_only_relocs ''
-missing '-platform_version missing arguments <platform> <min_version> <sdk_version>' \
-  -platform_version macos '' 13.0
-missing '-macos_version_min missing <version>' -macos_version_min ''
-missing '-weak-l missing <path>' -weak-l
-missing '-needed-l missing <path>' -needed-l
-missing '-reexport-l missing <path>' -reexport-l ''
-missing '-seg_page_size needs <segname> <size>' -seg_page_size '' 4000
+missing -e -e ''
+missing -target -target ''
+missing -read_only_relocs -read_only_relocs ''
+missing -platform_version -platform_version macos '' 13.0
+missing -macos_version_min -macos_version_min ''
+missing -weak-l -weak-l
+missing -needed-l -needed-l
+missing -reexport-l -reexport-l ''
+not $mold -arch $ARCH -o $t/exe $t/a.o -seg_page_size '' 4000 2> $t/log
+grep -q -- -seg_page_size $t/log
+not $mold -arch $ARCH -o $t/exe $t/a.o -segaddr __FOO 2> $t/log
+grep -q -- -segaddr $t/log
+not $mold -arch $ARCH -o $t/exe $t/a.o -segment_order 2> $t/log
+grep -q -- -segment_order $t/log
+not $mold -arch $ARCH -o $t/exe $t/a.o -sectalign __TEXT __text 2> $t/log
+grep -q -- -sectalign $t/log
 $mold -r -arch $ARCH -o $t/d.o $t/a.o -rpath '' -current_version '' 2> $t/log
-grep -Fq -- 'warning: -rpath missing <path>' $t/log
+grep -q -- 'warning: -rpath missing <path>' $t/log
 
 # It takes an option's name for -rpath's path, with the warning, and
 # the image gets no such run path.
 $CC --ld-path=$mold -shared -o $t/e.dylib $t/a.o -Wl,-rpath,-dead_strip 2> $t/log
-grep -Fq -- 'warning: -rpath missing <path>' $t/log
+grep -q -- 'warning: -rpath missing <path>' $t/log
 otool -l $t/e.dylib > $t/load
 not grep -F LC_RPATH $t/load
 

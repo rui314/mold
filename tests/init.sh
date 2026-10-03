@@ -58,4 +58,4 @@ $mold -arch $ARCH -r -o $t/r.o $t/a.o -init _nosuch
 nm $t/r.o | grep -q ' U _nosuch$'
 
 not $mold -arch $ARCH -dylib -init 2> $t/log5
-grep -q -- '-init missing <name>' $t/log5
+grep -q -- '-init.*missing' $t/log5

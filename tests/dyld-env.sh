@@ -36,7 +36,7 @@ for arg in FOO=bar DYLD_FOO DYLD=1; do
   grep -q "malformed '-dyld_env $arg', arg should be of form 'DYLD_xxx=something'" $t/log
 done
 not $mold -o $t/exe2 $t/b.o -dyld_env 2> $t/log
-grep -q -- '-dyld_env missing <arg>' $t/log
+grep -q -- '-dyld_env.*missing' $t/log
 
 # Only a main executable has one.
 not $CC --ld-path=$mold -o $t/c.dylib -shared $t/a.o -Wl,-dyld_env,DYLD_A=1 2> $t/log

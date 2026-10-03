@@ -30,4 +30,4 @@ not grep -q b.o $t/msgs
 not link -deployment_target_mismatches foo 2> $t/log
 grep -q -- '-deployment_target_mismatches invalid option (warning | error | suppress)' $t/log
 not link -deployment_target_mismatches 2> $t/log
-grep -q -- '-deployment_target_mismatches missing <option>' $t/log
+grep -q -- '-deployment_target_mismatches.*missing' $t/log

@@ -45,4 +45,4 @@ grep -q 'warning: using -sub_library to re-export a framework is deprecated.  Us
 cmds $t/c.dylib | grep -q '^LC_REEXPORT_DYLIB /Library/Frameworks/Fw.framework/Fw$'
 
 not $mold -o $t/c.dylib -dylib $t/b.o -sub_umbrella 2> $t/log
-grep -q -- '-sub_umbrella missing <name>' $t/log
+grep -q -- '-sub_umbrella.*missing' $t/log

@@ -1435,9 +1435,10 @@ fn read_linker_options<F: std::fmt::Display>(
         warnings.borrow_mut().push(error::render(msg));
     };
     let malformed = |opt: &str| {
-        let (usage, file) = (crate::cmdline::missing_argument(opt), file());
-        let msg =
-            format_args!("malformed linker option from object file ignored: '{usage}', in {file}");
+        let file = file();
+        let msg = format_args!(
+            "malformed linker option from object file ignored: '{opt}' missing argument, in {file}"
+        );
         warnings.borrow_mut().push(error::render(msg));
     };
     let mut libs: Vec<Vec<Vec<u8>>> = Vec::new();

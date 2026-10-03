@@ -37,4 +37,4 @@ nm -m $t/c.o | grep _sfoo > $t/sfoo
 not grep -q weak $t/sfoo
 
 not $mold -o $t/d.dylib -dylib $t/a.o -force_symbols_not_weak_list 2> $t/log
-grep -q -- '-force_symbols_weak_list missing <path>' $t/log
+grep -q -- '-force_symbols_.*weak_list.*missing' $t/log

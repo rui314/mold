@@ -45,7 +45,7 @@ grep -q "'-weak-lfoo' and '-reexport-lfoo' cannot be used together" $t/log2
 # Each wants its argument; -no_merge-l looks for a dylib only.
 for opt in -no_merge_framework -no_merge_library -no_merge-l; do
   not $mold -arch $ARCH -o $t/exe $t/main.o $opt 2> $t/log3
-  grep -q -- "$opt missing <path>" $t/log3
+  grep -q -- "$opt.*missing" $t/log3
 done
 ar rcs $t/lib/libbar.a $t/a.o
 not $CC --ld-path=$mold -o $t/exe $t/main.o -L$t/lib -Wl,-no_merge-lbar 2> $t/log4

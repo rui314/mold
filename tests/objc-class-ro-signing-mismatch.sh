@@ -14,7 +14,7 @@ $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-objc_class_ro_signing_mismatch,error
 not $mold -o $t/exe $t/a.o -objc_class_ro_signing_mismatch suppress 2> $t/log
 grep -q -- '-objc_class_ro_signing_mismatch invalid option (warning | error)' $t/log
 not $mold -o $t/exe $t/a.o -objc_class_ro_signing_mismatch 2> $t/log
-grep -q -- '-objc_class_ro_signing_mismatch missing <option>' $t/log
+grep -q -- '-objc_class_ro_signing_mismatch.*missing' $t/log
 
 LD_OBJC_CLASS_RO_SIGNING_MISMATCH=warning $CC --ld-path=$mold -o $t/exe $t/a.o
 LD_OBJC_CLASS_RO_SIGNING_MISMATCH=1 not $mold -o $t/exe $t/a.o 2> $t/log

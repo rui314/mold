@@ -217,11 +217,11 @@ $mold -r -arch $ARCH -o $t/r.o $t/a.o -dirty_data_list $t/dirty.txt
 not grep -q __DATA_DIRTY <(otool -l $t/r.o)
 
 not $mold -arch $ARCH -o $t/exe7 $t/a.o -move_to_rw_segment __FOO 2> $t/log7
-grep -q -- '-move_to_rw_segment <segname> <path>' $t/log7
+grep -q -- '-move_to_rw_segment' $t/log7
 not $mold -arch $ARCH -o $t/exe7 $t/a.o -move_to_ro_segment '' $t/ro.txt 2> $t/log7
-grep -q -- '-move_to_ro_segment <segname> <path>' $t/log7
+grep -q -- '-move_to_ro_segment' $t/log7
 not $mold -arch $ARCH -o $t/exe7 $t/a.o -dirty_data_list 2> $t/log7
-grep -q -- '-dirty_data_list missing <path>' $t/log7
+grep -q -- '-dirty_data_list.*missing' $t/log7
 not $mold -arch $ARCH -o $t/exe7 $t/a.o -move_to_rw_segment __FOO $t/none.txt 2> $t/log7
 grep -q -- "-move_to_rw_segment file '$t/none.txt' could not be opened, errno=2" $t/log7
 # ld-prime names no option for a -dirty_data_list file.

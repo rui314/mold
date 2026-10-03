@@ -27,7 +27,7 @@ $CC --ld-path=$mold -o $t/exe2 $t/c.o -Wl,-save-temps
 $CC -flto --ld-path=$mold -o $t/exe $t/a.o $t/b.o -Wl,-mcpu,bogus 2> $t/log
 grep -q "'bogus' is not a recognized processor for this target" $t/log
 not $mold -arch $ARCH -o $t/exe $t/a.o $t/b.o -mcpu 2> $t/log
-grep -q -- '-mcpu missing <cpu>' $t/log
+grep -q -- '-mcpu.*missing' $t/log
 
 # The ThinLTO cache: ld-prime creates its directory (one level, owner
 # only) and hands libLTO the policy, the numbers read as strtoul reads

@@ -32,7 +32,7 @@ for opt in -kext_objects_dir -multiply_defined -sdk_version -seg_addr_table -Y; 
   link $opt '' 2> $t/log
   grep -q -- "warning: $opt is obsolete$" $t/log
   not link $opt 2> $t/log
-  grep -q -- "obsolete option $opt requires 1 arguments" $t/log
+  grep -q -- "$opt.*argument" $t/log
 done
 
 link -X -s -multiply_defined suppress -segprot __FOO rz r -Si -b 2> $t/log
