@@ -8,6 +8,7 @@ use crate::mergeable::{
     header,
 };
 use crate::target::Target;
+use crate::util::align_to_mod;
 
 /// libc++'s std::hash of a string (its CityHash64,
 /// __murmur2_or_cityhash<size_t, 64>, in the ABI that hashes 4 to 8
@@ -326,13 +327,9 @@ impl MergeableRecord {
                     0
                 }
                 Content::Pool(bytes) => {
-                    let size = w.out.len() - pool;
-                    let align = 1usize << entry.p2align;
-                    let mut off = (size & !(align - 1)) + entry.modulus as usize;
-                    if off < size {
-                        off += align;
-                    }
-                    w.out.resize(pool + off, 0);
+                    let size = (w.out.len() - pool) as u64;
+                    let off = align_to_mod(size, 1 << entry.p2align, entry.modulus as u64);
+                    w.out.resize(pool + off as usize, 0);
                     w.out.extend_from_slice(bytes);
                     off as i32
                 }

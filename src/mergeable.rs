@@ -36,6 +36,7 @@ use crate::fatal;
 use crate::macho::*;
 use crate::mapped_file::MappedFile;
 use crate::target::Target;
+use crate::util::{align_to_mod, sign_extend};
 
 /// What ld-prime's -make_mergeable writes: a record whose entries
 /// point into the image around it ("nldpatom" and "nldprdcr" are the
@@ -460,10 +461,6 @@ fn read64(data: &[u8], off: usize) -> u64 {
     u64::from_le_bytes(data[off..off + 8].try_into().unwrap())
 }
 
-fn sign_extend(val: u64, bits: u32) -> i64 {
-    ((val << (64 - bits)) as i64) >> (64 - bits)
-}
-
 /// Where a dylib's LC_ATOM_INFO data is in its file, if it has one.
 fn record_range(data: &[u8]) -> Option<(usize, usize)> {
     let hdr = MachHeader::read_from(data);
@@ -839,12 +836,8 @@ impl Section {
     /// offset.
     fn append(&mut self, content: Option<&[u8]>, size: u64, p2align: u8, modulus: u64) -> u64 {
         self.p2align = self.p2align.max(p2align);
-        let align = 1u64 << p2align;
         let modulus = if is_record_section(self.flags, &self.sectname) { 0 } else { modulus };
-        let mut off = (self.size & !(align - 1)) + modulus;
-        if off < self.size {
-            off += align;
-        }
+        let off = align_to_mod(self.size, 1 << p2align, modulus);
         self.size = off + size;
         if !is_zerofill(self.flags) {
             self.data.resize(off as usize, 0);
