@@ -151,7 +151,11 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
     // line's.
     if !ctx.args.ignore_auto_link {
         let words = std::slice::from_ref(&ctx.args.linker_options);
-        ctx.cmdline_linker_options = Some(read_linker_options(words, || "command line"));
+        let (opts, warnings) = read_linker_options(words, || "command line");
+        for msg in warnings {
+            crate::warn!("{}", raw(&msg));
+        }
+        ctx.cmdline_linker_options = Some(opts);
     }
     let inputs = std::mem::take(&mut ctx.args.inputs);
     let paths: Vec<Option<PathBuf>> = inputs.iter().map(|arg| find_input(ctx, arg)).collect();
@@ -1371,11 +1375,22 @@ pub fn load_autolink_deps<E: Target>(ctx: &mut Context<E>) -> bool {
         return false;
     }
     let _t = ctx.timer("load_autolink_deps");
-    // Those of objects new to the link are read.
-    for obj in ctx.objs.iter_mut().filter(|obj| obj.is_alive && !obj.linker_options_read) {
-        let mf = obj.mf;
-        obj.linker_options = read_linker_options(&obj.linker_options, || mf.name.raw());
-        obj.linker_options_read = true;
+    // Those of objects new to the link are read, in parallel (a Swift
+    // object has dozens), and warned of in object order.
+    let new: Vec<&mut input_files::ObjectFile> =
+        ctx.objs.iter_mut().filter(|obj| obj.is_alive && !obj.linker_options_read).collect();
+    let warnings: Vec<Vec<error::Message>> = new
+        .into_par_iter()
+        .map(|obj| {
+            let mf = obj.mf;
+            let (opts, warnings) = read_linker_options(&obj.linker_options, || mf.name.raw());
+            obj.linker_options = opts;
+            obj.linker_options_read = true;
+            warnings
+        })
+        .collect();
+    for msg in warnings.iter().flatten() {
+        crate::warn!("{}", raw(msg));
     }
     // ld64 does not act on auto-link options in a -r link: the
     // LC_LINKER_OPTION commands are copied into the output object and
@@ -1499,21 +1514,25 @@ fn prefetch_autolinked_stubs<E: Target>(
 /// warning; search paths and loading modes (-L, -all_load, ...)
 /// silently. What is kept reads the same again. `file` names the object
 /// in the warnings ("command line" for -add_linker_option's, which
-/// ld-prime reads the same way). Returns what is kept.
+/// ld-prime reads the same way). Returns what is kept, and the warnings
+/// for the caller to give.
 fn read_linker_options<F: std::fmt::Display>(
     opts: &[Vec<Vec<u8>>],
     file: impl Fn() -> F,
-) -> Vec<Vec<Vec<u8>>> {
+) -> (Vec<Vec<Vec<u8>>>, Vec<error::Message>) {
     let words: Vec<&[u8]> = opts.iter().flatten().map(Vec::as_slice).collect();
-    let warn = |kind: &str, what: &[u8]| {
+    let mut warnings = Vec::new();
+    let ignored = |kind: &str, what: &[u8]| {
         let (what, file) = (raw(what), file());
-        crate::warn!("{kind} linker option from object file ignored: '{what}' in {file}");
+        error::render(format_args!(
+            "{kind} linker option from object file ignored: '{what}' in {file}"
+        ))
     };
     let malformed = |opt: &str| {
         let file = file();
-        crate::warn!(
+        error::render(format_args!(
             "malformed linker option from object file ignored: '{opt}' missing argument, in {file}"
-        );
+        ))
     };
     let mut libs: Vec<Vec<Vec<u8>>> = Vec::new();
     let mut i = 0;
@@ -1543,17 +1562,17 @@ fn read_linker_options<F: std::fmt::Display>(
                 let arg = words.get(i).filter(|arg| !arg.is_empty());
                 i += 1;
                 let Some(&arg) = arg else {
-                    malformed(std::str::from_utf8(word).unwrap());
+                    warnings.push(malformed(std::str::from_utf8(word).unwrap()));
                     continue;
                 };
                 match word {
                     b"-l" => libs.push(vec![[word, arg].concat()]),
                     b"-weak_framework" | b"-reexport_framework" | b"-upward_framework" => {
-                        warn("unexpected", &[word, b" ", arg].concat())
+                        warnings.push(ignored("unexpected", &[word, b" ", arg].concat()))
                     }
                     b"-weak_library" | b"-reexport_library" | b"-upward_library" => {
                         let kind = word.strip_suffix(b"_library").unwrap();
-                        warn("unexpected", &[kind, b"-l", arg].concat());
+                        warnings.push(ignored("unexpected", &[kind, b"-l", arg].concat()));
                     }
                     b"-syslibroot" | b"-bundle_loader" | b"-L" | b"-F" => {}
                     _ => libs.push(vec![word.to_vec(), arg.to_vec()]),
@@ -1566,15 +1585,17 @@ fn read_linker_options<F: std::fmt::Display>(
                 .chain(["-l", "-L", "-F"])
                 .find(|prefix| word.starts_with(prefix.as_bytes()))
             {
-                Some(prefix) if word.len() == prefix.len() => malformed(prefix),
-                Some("-weak-l" | "-reexport-l" | "-upward-l") => warn("unexpected", word),
+                Some(prefix) if word.len() == prefix.len() => warnings.push(malformed(prefix)),
+                Some("-weak-l" | "-reexport-l" | "-upward-l") => {
+                    warnings.push(ignored("unexpected", word))
+                }
                 Some("-L" | "-F") => {}
                 Some(_) => libs.push(vec![word.to_vec()]),
-                None => warn("unknown", word),
+                None => warnings.push(ignored("unknown", word)),
             },
         }
     }
-    libs
+    (libs, warnings)
 }
 
 /// How to load `path`, the file found for an auto-link option read by
