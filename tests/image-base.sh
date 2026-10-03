@@ -54,10 +54,10 @@ grep -q 'custom segments overlap: __PAGEZERO(0x0-0x100000000) __TEXT(0x100000-' 
 $mold -arch $ARCH -static -e _main $t/a.o -image_base 0x0 -o $t/exe5
 [ "$(text $t/exe5)" = 0x0000000100000000 ]
 
-# arm64 -static -pie counts its relocation addresses from -image_base
-# plus __PAGEZERO's size in ld-prime, and a pointer that ends up more
-# than 2 GiB away from that fails the link: any nonzero base under the
-# default 4 GiB __PAGEZERO. (mold keeps counting from __TEXT.)
+# A -static -pie image's local relocations count their addresses from
+# its first segment, wherever -image_base puts it. (ld-prime counts
+# arm64 addresses from -image_base plus __PAGEZERO's size, and so
+# refuses any nonzero base under the default 4 GiB __PAGEZERO.)
 cat <<EOF2 | $CC -o $t/p.o -c -xassembler -
 .text
 .globl _main
@@ -71,12 +71,8 @@ EOF2
 $mold -arch $ARCH -static -pie -e _main $t/p.o -pagezero_size 0x4000 -image_base 0x200000000 \
   -o $t/exe6
 [ "$(text $t/exe6)" = 0x0000000200000000 ]
-if [ $ARCH = arm64 ]; then
-  not $mold -arch $ARCH -static -pie -e _main $t/p.o -image_base 0x200000000 -o $t/exe7 2> $t/log7
-  grep -q "atom address cannot fit in a fixup at '_arr' (.*/p.o)+8" $t/log7
-else
-  $mold -arch $ARCH -static -pie -e _main $t/p.o -image_base 0x200000000 -o $t/exe7
-fi
+$mold -arch $ARCH -static -pie -e _main $t/p.o -image_base 0x200000000 -o $t/exe7
+[ "$(otool -l $t/exe7 | awk '$1 == "nlocrel" { print $2 }')" = 1 ]
 
 # An object file is loaded nowhere, and ld-prime takes the base of a -r
 # link only to warn when it is not a multiple of 4 KiB.

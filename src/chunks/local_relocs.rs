@@ -30,52 +30,17 @@ impl Default for LocalRelocsSection {
     }
 }
 
-/// Lists the pointers as ld-prime does: subsection by subsection in
-/// address order, each one's from the last to the first, the order an
-/// assembler emits relocations in.
+/// Lists the pointers in address order. A record's r_address is a
+/// signed 32-bit offset from relocation_base, which must reach each.
 pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u64> {
     let mut locs = crate::chunks::rebase_info::rebase_locations(ctx);
-    locs.sort_unstable_by_key(|&(start, addr)| (start, std::cmp::Reverse(addr)));
-    check_fixup_range(ctx, &locs);
-    locs.into_iter().map(|(_, addr)| addr).collect()
-}
-
-/// ld-prime rejects a link where a relocation address, a signed 32-bit
-/// r_address, cannot reach a pointer. It counts the addresses on x86-64
-/// from the first writable segment, as mold does, but on arm64 from
-/// -image_base plus the __PAGEZERO size (or from a __TEXT -segaddr pins,
-/// as ld64's machHeaderVmAddr does) - so with the default 4 GiB
-/// __PAGEZERO, any nonzero -image_base fails. mold counts arm64
-/// addresses from __TEXT, where the image starts, but refuses the same
-/// links.
-fn check_fixup_range<E: Target>(ctx: &Context<E>, locs: &[(u64, u64)]) {
-    let base = if E::CPUTYPE == CPU_TYPE_ARM64 {
-        let image_base = ctx.args.image_base.unwrap_or(0);
-        ctx.args.segaddr(b"__TEXT").unwrap_or(image_base.wrapping_add(ctx.args.pagezero_size))
-    } else {
-        relocation_base(ctx)
-    };
-    let Some(&(start, addr)) =
-        locs.iter().find(|&&(_, addr)| i32::try_from(addr.wrapping_sub(base) as i64).is_err())
-    else {
-        return;
-    };
-    let (name, file) = subsec_name(ctx, start);
-    let name = crate::error::raw(&name);
-    crate::error!("atom address cannot fit in a fixup at '{name}' ({file})+{}", addr - start);
-}
-
-/// The name of the subsection starting at `addr`, and its file, for a
-/// diagnostic.
-fn subsec_name<E: Target>(ctx: &Context<E>, addr: u64) -> (Vec<u8>, crate::error::RawBuf) {
-    for (id, isec) in ctx.isecs.iter().enumerate() {
-        if !isec.is_alive() || ctx.isec_addr(id) != addr {
-            continue;
-        }
-        let obj = &ctx.objs[isec.file as usize];
-        return (ctx.subsec_name(id).into_owned(), crate::passes::resolved_file_name(obj.mf));
+    locs.sort_unstable();
+    let base = relocation_base(ctx);
+    let reaches = |addr: u64| i32::try_from(addr.wrapping_sub(base) as i64).is_ok();
+    if let Some(&addr) = locs.iter().find(|&&addr| !reaches(addr)) {
+        crate::error!("a local relocation can't reach the pointer at {addr:#x} from {base:#x}");
     }
-    (Vec::new(), Default::default())
+    locs
 }
 
 /// Where the relocation addresses count from: the first segment, or on

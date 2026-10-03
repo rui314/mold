@@ -5,7 +5,7 @@ source "$(dirname "$0")"/common.inc
 # the first segment (on x86-64 the first writable one). A pointer in a
 # segment pinned below that, as XNU pins __HIB below the kernel, gets a
 # negative address in the signed 32-bit r_address; one too far away for
-# it fails the link (ld-prime).
+# it fails the link.
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .text
 .globl _main
@@ -31,4 +31,4 @@ grep -qx "$(printf '%08x' $(((h - base) & 0xffffffff)))" $t/words
 
 not $mold -arch $ARCH -static -pie -e _main -pagezero_size 0 -image_base 0xffffff8000200000 \
   -segaddr __HIB 0xffffff0000000000 $t/a.o -o $t/exe2 2> $t/log2
-grep -q "atom address cannot fit in a fixup at '_h' (.*/a.o)+0" $t/log2
+grep -q "local relocation can't reach the pointer at $(printf '%#x' $((0xffffff0000000000)))" $t/log2
