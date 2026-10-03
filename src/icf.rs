@@ -22,7 +22,7 @@
 //! leaves apart; either is correct, and ours is the cheaper to find.
 
 use std::hash::Hash;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 use rayon::prelude::*;
 
@@ -81,30 +81,23 @@ fn finish_digest(hasher: SipHash13_128) -> Digest {
 /// sort. Slots are stamped with the round they were written in and the
 /// table is reused across rounds without clearing (a slot from an
 /// earlier round reads as vacant).
-struct DigestSlot {
-    hi: std::sync::atomic::AtomicU64,
-    lo: std::sync::atomic::AtomicU64,
-    leader: std::sync::atomic::AtomicU32,
-}
 struct DigestMap {
     round: u64,
     mask: usize,
     slots: Vec<DigestSlot>,
 }
+
+#[derive(Default)]
+struct DigestSlot {
+    hi: AtomicU64,
+    lo: AtomicU64,
+    leader: AtomicU32,
+}
+
 impl DigestMap {
     fn new(n: usize) -> Self {
         let len = n.saturating_mul(2).next_power_of_two();
-        Self {
-            round: 1,
-            mask: len - 1,
-            slots: (0..len)
-                .map(|_| DigestSlot {
-                    hi: std::sync::atomic::AtomicU64::new(0),
-                    lo: std::sync::atomic::AtomicU64::new(0),
-                    leader: std::sync::atomic::AtomicU32::new(0),
-                })
-                .collect(),
-        }
+        Self { round: 1, mask: len - 1, slots: (0..len).map(|_| DigestSlot::default()).collect() }
     }
 
     fn next_round(&mut self) {
