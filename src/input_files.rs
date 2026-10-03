@@ -6,7 +6,7 @@ use rayon::prelude::*;
 
 use crate::context::Context;
 use crate::error::RawPath;
-use crate::error::{Message, raw};
+use crate::error::raw;
 use crate::fatal;
 use crate::input_sections::InputSection;
 use crate::macho::*;
@@ -654,9 +654,6 @@ pub struct StagedObject {
     pub unwind: Vec<UnwindRecord>,
     pub cies: Vec<Cie>,
     pub fdes: Vec<Fde>,
-    /// An FDE describes a function in a section of data, which
-    /// ld-prime refuses (see add_fdes).
-    pub data_fde: bool,
     pub objc_image_info: Option<u32>,
     pub has_debug_info: bool,
     /// LC_DATA_IN_CODE entries: (file offset in the object, length,
@@ -964,7 +961,6 @@ pub fn stage_object<E: Target>(
         unwind: Vec::new(),
         cies: Vec::new(),
         fdes: Vec::new(),
-        data_fde: false,
         objc_image_info,
         has_debug_info,
         dice: cmds.dice,
@@ -991,7 +987,7 @@ pub fn stage_object<E: Target>(
         && let Some(hdr) =
             sect_hdrs.iter().find(|s| s.segname() == b"__TEXT" && s.sectname() == b"__eh_frame")
     {
-        obj.data_fde = obj.parse_eh_frame::<E>(hdr, kept_fdes == KeptFdes::All);
+        obj.parse_eh_frame::<E>(hdr, kept_fdes == KeptFdes::All);
     }
     // A DWARF-mode record whose FDE never turned up describes nothing.
     if kept_fdes != KeptFdes::None {
@@ -1000,6 +996,7 @@ pub fn stage_object<E: Target>(
         });
     }
     obj.group_unwind_records();
+    obj.warn_unwind_outside_code();
     obj
 }
 
@@ -1736,25 +1733,6 @@ pub fn integrate_object<E: Target>(ctx: &mut Context<E>, mut staged: StagedObjec
     obj_idx
 }
 
-/// What check_unwind_sections found of an object, to report once the
-/// object's subsections are warned of (see passes::load_pending): the
-/// warnings and, for an FDE in a section of data, the object's name.
-pub struct UnwindCheck {
-    warnings: Vec<Message>,
-    data_fde: Option<crate::error::RawBuf>,
-}
-
-impl UnwindCheck {
-    pub fn report(self) {
-        for msg in self.warnings {
-            crate::warn!("{}", raw(&msg));
-        }
-        if let Some(file) = self.data_fde {
-            fatal!("invalid function target for dwarf unwind in '{file}'");
-        }
-    }
-}
-
 /// Parses one object and adds it to the link immediately.
 pub fn parse_object<E: Target>(
     ctx: &mut Context<E>,
@@ -1764,7 +1742,6 @@ pub fn parse_object<E: Target>(
     let priority = ctx.next_priority();
     let kept_fdes = KeptFdes::of(&ctx.args);
     let staged = stage_object::<E>(mf, alive, false, priority, ctx.args.relocatable, kept_fdes);
-    staged.check_unwind_sections().report();
     integrate_object(ctx, staged)
 }
 
@@ -2182,8 +2159,7 @@ impl StagedObject {
     /// copied through: the linker re-synthesizes it, keeping only FDEs for
     /// functions that have no compact unwind record, patching each CIE's
     /// personality cell to be GOT-relative, and dropping the rest.
-    /// Returns whether an FDE describes a function in a section of data.
-    fn parse_eh_frame<E: Target>(&mut self, hdr: &MachSection, keep_all_fdes: bool) -> bool {
+    fn parse_eh_frame<E: Target>(&mut self, hdr: &MachSection, keep_all_fdes: bool) {
         let mf = self.mf;
         let data = mf.data();
         let rels: Vec<MachRel> = read_array(data, hdr.reloff as usize, hdr.nreloc as usize);
@@ -2256,7 +2232,7 @@ impl StagedObject {
             cie.personality_offset = addr - cie.input_addr;
         }
 
-        self.add_fdes::<E>(&fdes, keep_all_fdes)
+        self.add_fdes::<E>(&fdes, keep_all_fdes);
     }
 
     /// Adds the FDEs of an __eh_frame, given as (input address, bytes,
@@ -2272,16 +2248,10 @@ impl StagedObject {
     /// (see Args::keeps_all_fdes); any other final image has no use for
     /// them.
     ///
-    /// ld-prime unwinds only code. An FDE for a function in a section
-    /// of data it refuses: returns true for that. One in a section of
-    /// no kind it knows it carries, but gives the function no entry of
-    /// __unwind_info. (check_unwind_sections warns about both.)
-    fn add_fdes<E: Target>(
-        &mut self,
-        fdes: &[(u32, &'static [u8], u32)],
-        keep_all_fdes: bool,
-    ) -> bool {
-        let mut data_fde = false;
+    /// Only code is unwound: the FDE of a function in a section that
+    /// is not is carried, but gives the function no entry of
+    /// __unwind_info (see warn_unwind_outside_code).
+    fn add_fdes<E: Target>(&mut self, fdes: &[(u32, &'static [u8], u32)], keep_all_fdes: bool) {
         let mut covered: std::collections::HashSet<(usize, u32)> = std::collections::HashSet::new();
         let mut dwarf_recs: std::collections::HashMap<(usize, u32), usize> =
             std::collections::HashMap::new();
@@ -2310,7 +2280,6 @@ impl StagedObject {
             let func_offset = func_offset as u32;
             let sect = &self.sect_hdrs[self.isecs[isec].shndx as usize];
             let is_code = is_code_section(sect);
-            data_fde |= is_typed_data_section(sect);
             let lsda = self.cies[cie as usize]
                 .lsda_enc
                 .and_then(|enc| self.fde_lsda(rec, input_addr, 8 + 2 * size, enc));
@@ -2361,7 +2330,6 @@ impl StagedObject {
                 fde_idx: fde_idx as u32,
             });
         }
-        data_fde
     }
 
     /// Reads the LSDA pointer of an FDE `rec` at `input_addr` whose
@@ -2386,11 +2354,9 @@ impl StagedObject {
         Some((isec as u32, off as u32))
     }
 
-    /// Checks the object's unwind info as ld-prime does: it warns
-    /// about each section that has unwind info (compact or DWARF) but no
-    /// code, then refuses an FDE for a function in a section of data
-    /// (see add_fdes).
-    pub fn check_unwind_sections(&self) -> UnwindCheck {
+    /// Warns of each section that has unwind info (compact or DWARF) but
+    /// no code.
+    fn warn_unwind_outside_code(&self) {
         let isecs = self.unwind.iter().map(|rec| rec.isec).chain(self.fdes.iter().map(|f| f.isec));
         let mut sects: Vec<u32> = isecs
             .map(|isec| self.isecs[isec as usize].shndx)
@@ -2398,25 +2364,15 @@ impl StagedObject {
             .collect();
         sects.sort_unstable();
         sects.dedup();
-        // The name costs a realpath, and an archive member's a walk of
-        // its archive, so only an object with something to report pays.
-        if sects.is_empty() && !self.data_fde {
-            return UnwindCheck { warnings: Vec::new(), data_fde: None };
+        for shndx in sects {
+            let sect = &self.sect_hdrs[shndx as usize];
+            crate::warn!(
+                "symbols in {},{} ({}) have unwind information, but it's not a code section",
+                raw(sect.segname()),
+                raw(sect.sectname()),
+                self.mf.name.raw()
+            );
         }
-        let file = crate::passes::resolved_file_name(self.mf);
-        let warnings = sects
-            .into_iter()
-            .map(|shndx| {
-                let sect = &self.sect_hdrs[shndx as usize];
-                crate::error::render(format_args!(
-                    "symbols in {},{} ({file}) have unwind information, but it's not a code \
-                     section (missing 'regular,pure_instructions' section flag)",
-                    raw(sect.segname()),
-                    raw(sect.sectname()),
-                ))
-            })
-            .collect();
-        UnwindCheck { warnings, data_fde: self.data_fde.then_some(file) }
     }
 
     /// Fails the link on an initializer or terminator pointer, a
@@ -2441,71 +2397,11 @@ impl StagedObject {
     }
 }
 
-/// Whether ld-prime takes a section for code, which is what unwind info
-/// describes: __TEXT,__text and __TEXT,__StaticInit by their names, and
-/// any other with S_ATTR_PURE_INSTRUCTIONS that is not one it knows for
-/// data.
+/// Whether a section holds code, which is what unwind info describes:
+/// one with instructions, or __TEXT,__text.
 fn is_code_section(hdr: &MachSection) -> bool {
-    matches!((hdr.segname(), hdr.sectname()), (b"__TEXT", b"__text" | b"__StaticInit"))
-        || (hdr.flags & S_ATTR_PURE_INSTRUCTIONS != 0 && !is_typed_data_section(hdr))
-}
-
-/// Whether ld-prime gives a section's contents a kind of their own that
-/// no function has: by the section's type (strings, literals, non-lazy
-/// pointers, zero fill, thread-local data) or, for a regular section,
-/// by a name it knows data by, whatever its attributes. Any other
-/// section that is not code holds contents of no kind it knows, which
-/// an FDE may describe.
-fn is_typed_data_section(hdr: &MachSection) -> bool {
-    match hdr.section_type() {
-        S_ZEROFILL
-        | S_GB_ZEROFILL
-        | S_THREAD_LOCAL_ZEROFILL
-        | S_THREAD_LOCAL_REGULAR
-        | S_CSTRING_LITERALS
-        | S_4BYTE_LITERALS
-        | S_8BYTE_LITERALS
-        | S_16BYTE_LITERALS
-        | S_NON_LAZY_SYMBOL_POINTERS => true,
-        S_REGULAR => matches!(
-            (hdr.segname(), hdr.sectname()),
-            (
-                b"__TEXT",
-                b"__const"
-                    | b"__ustring"
-                    | b"__gcc_except_tab"
-                    | b"__objc_classname"
-                    | b"__objc_methname"
-                    | b"__objc_methtype"
-                    | b"__objc_methlist"
-            ) | (
-                b"__DATA",
-                b"__data"
-                    | b"__const"
-                    | b"__got"
-                    | b"__auth_ptr"
-                    | b"__const_cfobj2"
-                    | b"__objc_data"
-                    | b"__objc_const"
-                    | b"__objc_ivar"
-                    | b"__objc_selrefs"
-                    | b"__objc_classrefs"
-                    | b"__objc_superrefs"
-                    | b"__objc_protorefs"
-                    | b"__objc_protolist"
-                    | b"__objc_nlclslist"
-                    | b"__objc_nlcatlist"
-                    | b"__objc_intobj"
-                    | b"__objc_floatobj"
-                    | b"__objc_doubleobj"
-                    | b"__objc_dateobj"
-                    | b"__objc_dictobj"
-                    | b"__objc_arrayobj"
-                    | b"__objc_arraydata"
-            ) | (b"__LD", b"__func_variants")
-        ),
-        _ => false,
-    }
+    hdr.flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0
+        || (hdr.segname(), hdr.sectname()) == (b"__TEXT", b"__text")
 }
 
 /// Pre-applies an __eh_frame's relocations to its contents, so that the

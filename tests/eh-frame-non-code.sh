@@ -1,14 +1,13 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# Unwind info describes code. ld-prime takes __TEXT,__text and any
-# section with the pure_instructions attribute for code, and warns about
-# every other section some symbol of which has unwind info, compact or
-# DWARF, once a section. An FDE for a function in a section it knows for
-# data - by the section's type, as C strings, or by its name, as
-# __DATA,__data - is then an error; one in a section of no kind it
-# knows is carried into __eh_frame, but gives the function no entry of
-# __unwind_info.
+# Unwind info describes code: a section with instructions, or
+# __TEXT,__text. Of every other section some symbol of which has unwind
+# info, compact or DWARF, the linker warns, once a section; an FDE of a
+# function there is carried into __eh_frame, but gives the function no
+# entry of __unwind_info. (ld-prime takes a section with
+# pure_instructions for code but one it knows for data, and refuses an
+# FDE in a section of data, by type or by name, as __DATA,__data.)
 if [ $ARCH = arm64 ]; then
   ra=30 sp=31
 else
@@ -53,62 +52,64 @@ Lfde_end:
 EOF
 }
 
-# warned <log> <segment,section> <object>: ld-prime names the object by
-# its real path.
+# warned <log> <segment,section> <object>
 warned() {
-  grep -F "symbols in $2 (" $1 | grep -Fq "$3) have unwind information, but it's not a code section (missing 'regular,pure_instructions' section flag)"
+  grep -F "symbols in $2 (" $1 | grep -Fq "$3) have unwind information, but it's not a code section"
 }
 
-# refused <name>: the link fails, in a final link as in a -r one.
-refused() {
-  not $CC --ld-path=$mold -o $t/$1 $t/$1.o 2> $t/$1.log &&
-    grep "invalid function target for dwarf unwind in '" $t/$1.log | grep -Fq "$t/$1.o'" &&
-    not $mold -r -arch $ARCH -o $t/$1-r.o $t/$1.o 2> $t/$1-r.log &&
-    grep -Fq 'invalid function target for dwarf unwind' $t/$1-r.log
+# carried <name> <segment,section>: the image keeps _f's FDE, with no
+# entry of __unwind_info for _f, and a -r output keeps it too, both with
+# the warning.
+carried() {
+  $CC --ld-path=$mold -o $t/$1 $t/$1.o 2> $t/$1.log
+  warned $t/$1.log $2 $t/$1.o
+  local f=$(nm $t/$1 | awk '$3 == "_f" { print $1 }' | sed 's/^0*//')
+  dwarfdump --eh-frame $t/$1 | grep -q "FDE cie=.* pc=0*$f\.\.\."
+  objdump --unwind-info $t/$1 > $t/$1.unwind
+  not grep -qi "function offset=0x0*${f: -5}," $t/$1.unwind
+  # The FDE still gets the image an __unwind_info, which lists the
+  # code: _main, with no unwind info of its own (encoding 0).
+  local m=$(nm $t/$1 | awk '$3 == "_main" { print $1 }' | sed 's/^0*//')
+  grep -qi "function offset=0x0*${m: -5}, encoding.*=0x00000000" $t/$1.unwind
+  $mold -r -arch $ARCH -o $t/$1-r.o $t/$1.o 2> $t/$1-r.log
+  warned $t/$1-r.log $2 $t/$1.o
+  dwarfdump --eh-frame $t/$1-r.o | grep -q 'FDE cie='
 }
-
-obj data .data
-refused data
-warned $t/data.log __DATA,__data $t/data.o
-warned $t/data-r.log __DATA,__data $t/data.o
-
-obj const '.section __TEXT,__const'
-refused const
-obj cstring '.section __TEXT,__cstring,cstring_literals'
-refused cstring
-obj pure '.section __DATA,__data,regular,pure_instructions'
-refused pure
 
 obj bar '.section __DATA,__bar'
-$CC --ld-path=$mold -o $t/bar $t/bar.o 2> $t/bar.log
-warned $t/bar.log __DATA,__bar $t/bar.o
-f=$(nm $t/bar | awk '$3 == "_f" { print $1 }' | sed 's/^0*//')
-dwarfdump --eh-frame $t/bar | grep -q "FDE cie=.* pc=0*$f\.\.\."
-objdump --unwind-info $t/bar > $t/bar.unwind
-not grep -qi "function offset=0x0*${f: -5}," $t/bar.unwind
-# The FDE still gets the image an __unwind_info, which lists the code:
-# _main, with no unwind info of its own (encoding 0).
-m=$(nm $t/bar | awk '$3 == "_main" { print $1 }' | sed 's/^0*//')
-grep -qi "function offset=0x0*${m: -5}, encoding.*=0x00000000" $t/bar.unwind
-$mold -r -arch $ARCH -o $t/bar-r.o $t/bar.o 2> $t/bar-r.log
-warned $t/bar-r.log __DATA,__bar $t/bar.o
-dwarfdump --eh-frame $t/bar-r.o | grep -q 'FDE cie='
+carried bar __DATA,__bar
 
-# A section with no kind of its own and no code, the functions of which
-# have compact unwind: the same warning, once.
+if $mold -v 2> /dev/null | grep -q mold-macho; then
+  obj data .data
+  carried data __DATA,__data
+  obj const '.section __TEXT,__const'
+  carried const __TEXT,__const
+  obj cstring '.section __TEXT,__cstring,cstring_literals'
+  carried cstring __TEXT,__cstring
+
+  # A section with instructions is code, whatever its name.
+  obj pure '.section __DATA,__data,regular,pure_instructions'
+  $CC --ld-path=$mold -o $t/pure $t/pure.o 2> $t/pure.log
+  not grep -q 'unwind information' $t/pure.log
+  f=$(nm $t/pure | awk '$3 == "_f" { print $1 }' | sed 's/^0*//')
+  objdump --unwind-info $t/pure | grep -qi "function offset=0x0*${f: -5},"
+fi
+
+# A section with no code, the functions of which have compact unwind:
+# the same warning, once.
 cat <<EOF | $CC -o $t/compact.o -c -xassembler -
 .section __DATA,__bar
 .globl _g
 .p2align 2
 _g:
   .cfi_startproc
-  ret
+  .long 0
   .cfi_endproc
 .globl _h
 .p2align 2
 _h:
   .cfi_startproc
-  ret
+  .long 0
   .cfi_endproc
 .subsections_via_symbols
 EOF

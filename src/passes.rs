@@ -838,8 +838,7 @@ fn load_pending<E: Target>(ctx: &mut Context<E>, pending: Vec<PendingObject>) {
         .collect();
     drop(t);
     warn_about_sections(&staged);
-    let checks: Vec<(bool, input_files::UnwindCheck)> =
-        staged.par_iter().map(|obj| (obj.alive, obj.check_unwind_sections())).collect();
+    let alive: Vec<bool> = staged.iter().map(|obj| obj.alive).collect();
 
     // Intern every staged object's global names in one parallel batch
     // (mold's sharded symbol table), so the serial integration loop
@@ -874,30 +873,24 @@ fn load_pending<E: Target>(ctx: &mut Context<E>, pending: Vec<PendingObject>) {
     let t = ctx.timer("integrate");
     input_files::integrate_objects(ctx, staged, ids, counts);
     drop(t);
-    warn_about_objects(ctx, first, checks);
+    warn_about_objects(ctx, first, alive);
 }
 
 /// What ld-prime says of each object it has read - those of `ctx.objs`
-/// from `first` on - once it has split it into subsections, by what
-/// `checks` says of each: whether the link loads it from the start, and
-/// its unwind info. It warns of the object's subsections (see
-/// small_pointer_subsecs), then of its unwind info, then of the
+/// from `first` on - once it has split it into subsections, by whether
+/// `alive` says the link loads it from the start. It warns of the
+/// object's subsections (see small_pointer_subsecs), then of the
 /// auto-link options of one the link loads from the start (see
 /// warn_linker_options).
-fn warn_about_objects<E: Target>(
-    ctx: &Context<E>,
-    first: usize,
-    checks: Vec<(bool, input_files::UnwindCheck)>,
-) {
-    let small_subsecs: Vec<Vec<u32>> = (0..checks.len())
+fn warn_about_objects<E: Target>(ctx: &Context<E>, first: usize, alive: Vec<bool>) {
+    let small_subsecs: Vec<Vec<u32>> = (0..alive.len())
         .into_par_iter()
         .map(|i| chunks::chained_fixups::small_pointer_subsecs(ctx, first + i))
         .collect();
-    for (i, ((alive, unwind), subsecs)) in checks.into_iter().zip(small_subsecs).enumerate() {
+    for (i, (alive, subsecs)) in alive.into_iter().zip(small_subsecs).enumerate() {
         for id in subsecs {
             chunks::chained_fixups::warn_small_pointer_subsec(ctx, id);
         }
-        unwind.report();
         if alive && !ctx.args.ignore_auto_link {
             let obj = &ctx.objs[first + i];
             let file = || resolved_file_name(obj.mf);
