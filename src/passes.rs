@@ -4196,7 +4196,7 @@ pub fn print_dependencies<E: Target>(ctx: &Context<E>) {
                     if !ctx.objs[idx].is_alive || std::ptr::eq(&raw const ctx.objs[idx], obj) {
                         continue;
                     }
-                    file_display(&ctx.objs[idx])
+                    ctx.objs[idx].mf.name.raw()
                 }
                 Some(FileId::Dylib(idx)) if idx != u32::MAX => {
                     crate::error::raw(&ctx.dylibs[idx as usize].install_name)
@@ -4204,7 +4204,7 @@ pub fn print_dependencies<E: Target>(ctx: &Context<E>) {
                 _ => continue,
             };
             let line =
-                format_args!("{}\t{}\tu\t{}\n", file_display(obj), provider, raw(sym.name()));
+                format_args!("{}\t{}\tu\t{}\n", obj.mf.name.raw(), provider, raw(sym.name()));
             let _ = std::io::Write::write_all(&mut std::io::stdout(), &error::render(line));
         }
     }
@@ -4257,13 +4257,6 @@ pub fn print_why_load<E: Target>(ctx: &Context<E>) {
             }
         }
     }
-}
-
-/// A file name for diagnostics: the object's path. Archive members
-/// already carry their "archive(member)" form as their mapped-file
-/// name.
-pub(crate) fn file_display(obj: &crate::input_files::ObjectFile) -> error::Raw<'_> {
-    obj.mf.name.raw()
 }
 
 /// A file's real path, and of a fat file's slice the architecture.

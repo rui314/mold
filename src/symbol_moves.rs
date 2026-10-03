@@ -16,7 +16,7 @@ use std::os::unix::ffi::OsStrExt;
 use crate::chunks::symtab::keep_local_symbol;
 use crate::cmdline::SymbolMove;
 use crate::context::Context;
-use crate::error::raw;
+use crate::error::{RawPath, raw};
 use crate::input_files::FileId;
 use crate::macho::*;
 use crate::output_sections::{canonical_section_flags, common_owners};
@@ -129,7 +129,7 @@ pub(crate) fn find_moves<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32,
     let (rw_segs, ro_segs) = (segments(&args.move_to_rw), segments(&args.move_to_ro));
     let warn = |file: SymbolFile, id: SymbolId, subsec: &Subsec, list: &SymbolMove| {
         let file = match file {
-            SymbolFile::Obj(obj) => crate::passes::file_display(&ctx.objs[obj]),
+            SymbolFile::Obj(obj) => ctx.objs[obj].mf.name.raw(),
             SymbolFile::Aliases(_) => raw(b"-alias"),
         };
         let what = if subsec.content == Content::Code { "code" } else { "data" };

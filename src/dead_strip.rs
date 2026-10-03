@@ -19,7 +19,6 @@ use crate::error::{RawPath, notice, raw};
 use crate::input_files::{FileId, is_literal_section};
 use crate::input_sections::{InputSection, RelocTarget};
 use crate::macho::*;
-use crate::passes::file_display;
 use crate::symbol::{Symbol, SymbolId};
 use crate::target::Target;
 
@@ -592,7 +591,7 @@ fn print_why_live<E: Target>(ctx: &Context<E>, redirects: &[usize], why: &[Why])
                 Why::From(id) => {
                     let isec = &ctx.isecs[id as usize];
                     let name = ctx.subsec_name(id as usize);
-                    let file = file_display(&ctx.objs[isec.file as usize]);
+                    let file = ctx.objs[isec.file as usize].mf.name.raw();
                     notice(format_args!("{:indent$}{} from {file}", "", raw(&name)));
                     step = why[id as usize];
                 }
@@ -615,7 +614,7 @@ fn print_why_live<E: Target>(ctx: &Context<E>, redirects: &[usize], why: &[Why])
                 continue;
             };
             if ctx.isecs[isec].is_alive() {
-                notice(format_args!("{} from {}", raw(sym.name()), file_display(obj)));
+                notice(format_args!("{} from {}", raw(sym.name()), obj.mf.name.raw()));
                 print_chain(why[isec]);
             }
         }
