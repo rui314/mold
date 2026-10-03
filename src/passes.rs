@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use rayon::prelude::*;
 
 use crate::chunks::init_offsets::InitFunc;
-use crate::chunks::{self, ChunkHeader, ChunkId, OutputSectionId, OutputSegment, mach_header_size};
+use crate::chunks::{self, ChunkHeader, ChunkId, OutputSegment, mach_header_size};
 use crate::cmdline::{Args, InputArg, LibraryKind, LibraryName, Treatment};
 use crate::context::Context;
 use crate::error;
@@ -5469,20 +5469,9 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
         fileoff = lay_out_segments(ctx);
     }
 
-    // The output sections with range-extension thunks (executable
-    // sections); their entries' addresses are recorded on the symbols
-    // now that the sections are placed.
-    let thunked: Vec<OutputSectionId> = ctx
-        .chunks
-        .iter()
-        .filter_map(|&id| match id {
-            ChunkId::Output(id) if !ctx.output_section(id).thunks.is_empty() => Some(id),
-            _ => None,
-        })
-        .collect();
-    if !thunked.is_empty() {
-        crate::thunks::gather_thunk_addresses(ctx, &thunked);
-    }
+    // The thunk entries' addresses are recorded on their symbols now
+    // that the sections are placed.
+    crate::thunks::gather_thunk_addresses(ctx);
 
     check_segments(ctx);
     check_tlv_template(ctx);

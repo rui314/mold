@@ -423,14 +423,15 @@ fn needs_thunk<E: Target>(
 /// thunk_addrs), in address order, so that applying an out-of-range
 /// branch can pick the entry within reach. mold's
 /// gather_thunk_addresses.
-pub fn gather_thunk_addresses<E: Target>(ctx: &mut Context<E>, osecs: &[OutputSectionId]) {
-    // The sections are read while the symbol tables are written, so
-    // the borrows are split and the addresses recorded as the thunks
-    // are walked, without a temporary list (mold 94e2104).
+pub fn gather_thunk_addresses<E: Target>(ctx: &mut Context<E>) {
+    // The sections are read while the symbols' aux data is written, so
+    // the borrows are split.
+    let chunks = &ctx.chunks;
     let output_sections = &ctx.output_sections;
     let symtab = &mut ctx.symbols;
     let sym_aux = &mut ctx.sym_aux;
-    for &id in osecs {
+    for &id in chunks {
+        let ChunkId::Output(id) = id else { continue };
         let osec = &output_sections[id.index()];
         let base = osec.hdr.addr;
         for thunk in &osec.thunks {
