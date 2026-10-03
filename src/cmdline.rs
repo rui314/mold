@@ -1322,8 +1322,7 @@ fn resolve_delay_init(args: &mut Args) {
 /// Takes the platform and minimum OS version an option names. The last
 /// option wins; ld-prime warns about another minimum version for the
 /// same platform, and about firmware replacing macOS, but refuses
-/// macOS (or another platform) replacing firmware once it has read
-/// every option.
+/// macOS (or another platform) replacing firmware (see check_options).
 fn set_platform(args: &mut Args, st: &mut ParseState, platform: u32, minos: u32) {
     if args.platform == platform && args.platform_minos != minos {
         let (old, new) = (format_version(args.platform_minos), format_version(minos));
@@ -1786,7 +1785,7 @@ enum OutputKind {
 /// What parse_args gathers from the options for the phases after them:
 /// the options it resolves into Args only once it knows the target and
 /// the kind of output (None for one not given), the symbol lists, and
-/// the diagnostics ld-prime gives once it has read every option.
+/// what the checks of the options need.
 #[derive(Default)]
 struct ParseState<'a> {
     kind: OutputKind,
@@ -2992,17 +2991,13 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     crate::error::set_suppress_warnings(args.suppress_warnings);
     crate::error::release_held();
 
-    check_segment_order(&args);
     resolve_defaults(target, &mut args, &st);
     std::mem::take(&mut st.lists).build(&mut args);
     args.merged_files = notes_merged_files(&args);
     check_arch_options(target, &mut args, &st);
     resolve_env_source_version(&mut args, &st);
-    if let Some((old, new)) = st.incompatible_platforms {
-        fatal!("incompatible platforms: {} - {}", platform_name(old), platform_name(new));
-    }
-    check_options(target, &mut args, &mut st);
-    check_last(target, &mut args, &st);
+    resolve_options(target, &mut args, &mut st);
+    check_options(target, &mut args, &st);
     args
 }
 
@@ -3211,60 +3206,22 @@ fn resolve_env_source_version(args: &mut Args, st: &ParseState) {
     }
 }
 
-/// ld-prime checks the options it has read in this order, each
-/// diagnostic in its place: a fatal error stops the checks after it.
-/// It resolves the defaults of some options on the way, from what the
-/// checks before them settled.
-fn check_options(target: &TargetTraits, args: &mut Args, st: &mut ParseState) {
+/// Resolves the options whose values depend on one another, on the
+/// target and on the kind of output, each after those it needs.
+fn resolve_options(target: &TargetTraits, args: &mut Args, st: &mut ParseState) {
     args.segaddrs = resolve_segaddrs(std::mem::take(&mut args.segaddrs));
-    if args.kernel && st.kind != OutputKind::StaticExecutable {
-        fatal!("-kernel must be used with -static");
-    }
-    // Only a bundle has a loader.
-    if st.kind != OutputKind::Bundle
-        && args.inputs.iter().any(|arg| matches!(arg, InputArg::BundleLoader(_)))
-    {
-        fatal!("-bundle_loader can only be used with -bundle");
-    }
     resolve_lazy_load(args);
     resolve_delay_init(args);
-    // ld64 chained a static arm64e image's rebases through its pointers
-    // from a __TEXT,__thread_starts list; ld-prime has chained fixups.
-    if st.threaded_starts {
-        if st.fixup_chains == Some(true) {
-            fatal!(
-                "-fixup_chains*, -rebase_section and -threaded_starts_section can't be used together"
-            );
-        }
-        fatal!("-threaded_starts_section is no longer supported");
-    }
-    check_output_kind(args, st.pie);
+    // The -init function is an initial undefine, as -u would make it
+    // (a -r output keeps it undefined).
+    args.forced_undefined.extend(args.init.clone());
     resolve_fixups(target, args, st);
-    // Only a dylib is mergeable: ld-prime checks so here, and that only
-    // a dylib gets the debug hook right after the next check.
-    if args.make_mergeable && args.output_type != MH_DYLIB {
-        fatal!("-make_mergeable can only be used when creating a dynamic library");
-    }
     // A mergeable dylib's code is linked again where it is merged, by
     // the fixups of the instructions it has, which an applied hint may
     // have rewritten (ld-prime applies none anywhere).
     if args.make_mergeable {
         args.ignore_optimization_hints = true;
     }
-    // What is dead is known only once the final link sees every
-    // reference.
-    if args.relocatable && args.dead_strip {
-        fatal!("-r and -dead_strip cannot be used together");
-    }
-    if args.add_mergeable_debug_hook && args.output_type != MH_DYLIB {
-        fatal!("-add_mergeable_debug_hook can only be used with -dylib");
-    }
-    if st.x86_64_layout_emulation && target.name != "arm64" {
-        crate::warn!(
-            "ignoring -x86_64_layout_emulation option, it can only be used with -arch arm64"
-        );
-    }
-    check_dylib_use(target, args);
     args.objc_stubs_small = st.objc_stubs_small == Some(true);
     resolve_shared_region(target, args);
     resolve_dirty_data(args);
@@ -3284,19 +3241,89 @@ fn check_options(target: &TargetTraits, args: &mut Args, st: &mut ParseState) {
     args.seg_page_sizes = resolve_seg_page_sizes(args, std::mem::take(&mut st.seg_page_sizes));
     resolve_pagezero_size(args);
     resolve_stack(target, args, st.stack_size, st.stack_addr);
-    check_relocatable(args, st.data_const);
     args.const_selrefs = st.const_selrefs.unwrap_or(args.shared_region);
     args.lto_softload = st.lto_softload.unwrap_or(args.static_link || args.preload);
     args.warn_unused_dylibs =
         st.warn_unused_dylibs.unwrap_or(args.shared_region && args.output_type == MH_DYLIB);
     args.data_const = st.data_const.unwrap_or_else(|| default_data_const(args, st.pie));
     resolve_kext(target, args);
-    check_segaddrs(args);
     complete_segment_order(args);
-    check_section_order(args);
     resolve_image_base(args);
     args.unaligned_pointers = resolve_unaligned_pointers(target, args, st.unaligned_pointers);
     args.objc_stubs_small &= target.name == "arm64";
+}
+
+/// Refuses the options that can't go together, or with the target or
+/// the kind of output, and warns of those ignored.
+fn check_options(target: &TargetTraits, args: &mut Args, st: &ParseState) {
+    if let Some((old, new)) = st.incompatible_platforms {
+        fatal!("incompatible platforms: {} - {}", platform_name(old), platform_name(new));
+    }
+    check_segment_order(args);
+    if args.kernel && st.kind != OutputKind::StaticExecutable {
+        fatal!("-kernel must be used with -static");
+    }
+    // Only a bundle has a loader.
+    if st.kind != OutputKind::Bundle
+        && args.inputs.iter().any(|arg| matches!(arg, InputArg::BundleLoader(_)))
+    {
+        fatal!("-bundle_loader can only be used with -bundle");
+    }
+    // ld64 chained a static arm64e image's rebases through its pointers
+    // from a __TEXT,__thread_starts list; ld-prime has chained fixups.
+    if st.threaded_starts {
+        fatal!("-threaded_starts_section is no longer supported");
+    }
+    check_output_kind(args, st.pie);
+    // Only a dylib is mergeable, and only a dylib gets the debug hook.
+    if args.make_mergeable && args.output_type != MH_DYLIB {
+        fatal!("-make_mergeable can only be used when creating a dynamic library");
+    }
+    if args.add_mergeable_debug_hook && args.output_type != MH_DYLIB {
+        fatal!("-add_mergeable_debug_hook can only be used with -dylib");
+    }
+    // What is dead is known only once the final link sees every
+    // reference.
+    if args.relocatable && args.dead_strip {
+        fatal!("-r and -dead_strip cannot be used together");
+    }
+    if st.x86_64_layout_emulation && target.name != "arm64" {
+        crate::warn!(
+            "ignoring -x86_64_layout_emulation option, it can only be used with -arch arm64"
+        );
+    }
+    check_dylib_use(target, args);
+    check_relocatable(args, st.data_const);
+    check_segaddrs(args);
+    check_section_order(args);
+    // An image dyld loads keeps 32 bytes for the command of a code
+    // signature added later (see chunks::header_pad).
+    if let Some(size) = st.headerpad
+        && size < 32
+        && !args.without_dyld()
+        && !args.relocatable
+    {
+        crate::warn!(
+            "-headerpad {size:#x} is too small, at least 32 bytes are required to reserve space for code signature"
+        );
+    }
+    warn_platform_options(target, args, st.read_only_relocs.is_some());
+    check_dynamic_lookup(args);
+    // Only a dylib has exports of others' symbols to publish.
+    if st.reexports_listed && args.output_type != MH_DYLIB {
+        fatal!("-reexported_symbols_list can only used used when created dynamic libraries");
+    }
+    // ld-prime deprecates the lists but for the libraries of /usr/lib,
+    // libSystem's among them, which still use them.
+    let usr_lib =
+        args.output_type == MH_DYLIB && args.output_install_name().starts_with(b"/usr/lib/");
+    if st.force_weakness_listed && !usr_lib {
+        crate::warn!("-force_symbols_[not_]weak_list is deprecated");
+    }
+    // ld-prime leaves this one out under -w, -fatal_warnings or not.
+    if !args.has_entry_point() && st.explicit_entry && !args.suppress_warnings {
+        crate::warn!("ignoring -e, not used for output type");
+    }
 }
 
 /// Resolves how the image's pointers are fixed up as it loads: by
@@ -3336,42 +3363,6 @@ fn resolve_fixups(target: &TargetTraits, args: &mut Args, st: &mut ParseState) {
     check_fixup_sections(args, st.fixup_chains, st.chain_starts.is_some(), st.rebase_section);
 }
 
-/// The checks and warnings ld-prime gives last, once it has resolved
-/// the image's layout.
-fn check_last(target: &TargetTraits, args: &mut Args, st: &ParseState) {
-    // An image dyld loads keeps 32 bytes for the command of a code
-    // signature added later (see chunks::header_pad).
-    if let Some(size) = st.headerpad
-        && size < 32
-        && !args.without_dyld()
-        && !args.relocatable
-    {
-        crate::warn!(
-            "-headerpad {size:#x} is too small, at least 32 bytes are required to reserve space for code signature"
-        );
-    }
-    warn_platform_options(target, args, st.read_only_relocs.is_some());
-    check_dynamic_lookup(args);
-    // So is the -init function an initial undefine, as -u would make
-    // it (a -r output keeps it undefined).
-    args.forced_undefined.extend(args.init.clone());
-    // Only a dylib has exports of others' symbols to publish.
-    if st.reexports_listed && args.output_type != MH_DYLIB {
-        fatal!("-reexported_symbols_list can only used used when created dynamic libraries");
-    }
-    // ld-prime deprecates the lists but for the libraries of /usr/lib,
-    // libSystem's among them, which still use them.
-    let usr_lib =
-        args.output_type == MH_DYLIB && args.output_install_name().starts_with(b"/usr/lib/");
-    if st.force_weakness_listed && !usr_lib {
-        crate::warn!("-force_symbols_[not_]weak_list is deprecated");
-    }
-    // ld-prime leaves this one out under -w, -fatal_warnings or not.
-    if !args.has_entry_point() && st.explicit_entry && !args.suppress_warnings {
-        crate::warn!("ignoring -e, not used for output type");
-    }
-}
-
 /// Whether an install name lies where the dyld shared cache takes
 /// libraries from: /usr/lib, /System/Library or their counterparts
 /// under /Library/Apple.
@@ -3394,11 +3385,10 @@ pub fn in_shared_cache_path(install_name: &[u8]) -> bool {
 /// image records its references between sections
 /// (LC_SEGMENT_SPLIT_INFO), so ld64 leaves its code as compiled (no
 /// optimization hints); it may not look symbols up dynamically, since
-/// the cache builder binds every one to the dylib that exports it (as
-/// ld-prime checks later: check_dynamic_lookup); nor may it have small
-/// objc stubs, on either architecture; and ld-prime warns about run
-/// paths, which an OS library must not need. (A flat namespace it
-/// refuses earlier: check_dylib_use.)
+/// the cache builder binds every one to the dylib that exports it (see
+/// check_dynamic_lookup); nor may it have small objc stubs, on either
+/// architecture; and ld-prime warns about run paths, which an OS
+/// library must not need. (check_dylib_use refuses a flat namespace.)
 fn resolve_shared_region(target: &TargetTraits, args: &mut Args) {
     args.shared_region = shared_region_eligible(target, args);
     if !args.shared_region {
@@ -3474,12 +3464,11 @@ fn resolve_sdk_order_file(args: &mut Args) {
     }
 }
 
-/// ld-prime's checks of -U and -undefined dynamic_lookup, among the last
-/// of the options: -U is redundant with dynamic_lookup, and with it
-/// ignored, for the entry point too, which must otherwise resolve in
-/// the link, as an initial undefine; and an image bound for the shared
-/// region may use neither (see resolve_shared_region), but a kext,
-/// which looks up every import.
+/// ld-prime's checks of -U and -undefined dynamic_lookup: -U is
+/// redundant with dynamic_lookup, and with it ignored, for the entry
+/// point too, which must otherwise resolve in the link, as an initial
+/// undefine; and an image bound for the shared region may use neither
+/// (see resolve_shared_region), but a kext, which looks up every import.
 fn check_dynamic_lookup(args: &Args) {
     let dynamic_lookup = args.undefined_dynamic_lookup;
     if dynamic_lookup && !args.allowed_undefined.is_empty() {
@@ -3625,15 +3614,13 @@ impl Args {
     }
 }
 
-/// Rejects the options the kind of output has no use for, as ld-prime
-/// does early on: only a main executable has a dyld environment and the
-/// MH_PIE flag (one ld-prime ignores in another image dyld loads, with a
-/// warning), and a client name is what a bundle or an executable
-/// presents to the umbrella it links against. Only dyld reads
-/// -no_dynamic_access's mark, and only in what it loads by name. (The
-/// other options only a main executable takes ld-prime checks later:
-/// -pagezero_size in resolve_pagezero_size, -stack_size in
-/// resolve_stack and -e last of all.)
+/// Rejects the options the kind of output has no use for: only a main
+/// executable has a dyld environment and the MH_PIE flag (one ld-prime
+/// ignores in another image dyld loads, with a warning), and a client
+/// name is what a bundle or an executable presents to the umbrella it
+/// links against. Only dyld reads -no_dynamic_access's mark, and only in
+/// what it loads by name. (resolve_pagezero_size and resolve_stack
+/// check the other options only a main executable takes.)
 fn check_output_kind(args: &mut Args, pie: Option<bool>) {
     let main_executable = args.output_type == MH_EXECUTE && !args.relocatable;
     // Only dyld reads LC_DYLD_ENVIRONMENT, and only a main executable's.
@@ -3660,10 +3647,10 @@ fn check_output_kind(args: &mut Args, pie: Option<bool>) {
     }
 }
 
-/// Rejects in a relocatable object what only a final image lays out, as
-/// ld-prime does, in this order: the moves of symbols to other
-/// segments - but -dirty_data_list's, which it ignores there - and the
-/// __DATA_CONST split, which the link that consumes it decides.
+/// Rejects in a relocatable object what only a final image lays out:
+/// the moves of symbols to other segments - but -dirty_data_list's,
+/// which ld-prime ignores there - and the __DATA_CONST split, which the
+/// link that consumes it decides.
 fn check_relocatable(args: &Args, data_const: Option<bool>) {
     if !args.relocatable {
         return;
@@ -3885,9 +3872,8 @@ fn check_segment_order(args: &Args) {
 
 /// In an image dyld loads, __DATA_CONST is one of the standard
 /// segments, and ld-prime puts it right before __DATA where
-/// -segment_order names that alone - with a warning, which comes even
-/// before it refuses the option for an image that may not order its
-/// segments (only firmware may).
+/// -segment_order names that alone, with a warning. Only an image that
+/// may lay itself out orders its segments (see custom_layout).
 fn complete_segment_order(args: &mut Args) {
     let has = |name: &[u8]| args.segment_order.iter().position(|s| s == name);
     if !args.without_dyld()

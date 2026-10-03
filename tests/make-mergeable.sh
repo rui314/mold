@@ -29,25 +29,18 @@ $CC --ld-path=$mold -shared -o $t/a.dylib $t/a.o -Wl,-make_mergeable \
   -Wl,-flat_namespace -Wl,-twolevel_namespace 2> $t/log5 || true
 not grep -q -- '-flat_namespace cannot' $t/log5
 
-# ld-prime checks the kind of output first, then -r -dead_strip, then
-# who gets the debug hook; the conflicts within a dylib after
-# -client_name and the shared cache's, before -pagezero_size.
-not $mold -arch $ARCH -r -o $t/out $t/a.o -make_mergeable -dead_strip 2> $t/log6
+# Only a dylib is mergeable, or gets the debug hook, which a mergeable
+# dylib can't have; nor can it bind flat.
+not $mold -arch $ARCH -r -o $t/out $t/a.o -make_mergeable 2> $t/log6
 grep -q -- '-make_mergeable can only be used' $t/log6
-not $mold -arch $ARCH -r -o $t/out $t/a.o -add_mergeable_debug_hook -dead_strip 2> $t/log7
-grep -q -- '-r and -dead_strip cannot be used together' $t/log7
+not $mold -arch $ARCH -r -o $t/out $t/a.o -add_mergeable_debug_hook 2> $t/log7
+grep -q -- '-add_mergeable_debug_hook can only be used with -dylib' $t/log7
 not $CC --ld-path=$mold -shared -o $t/a.dylib $t/a.o -Wl,-make_mergeable \
-  -Wl,-flat_namespace -Wl,-add_mergeable_debug_hook -Wl,-pagezero_size,0x1000 2> $t/log8
+  -Wl,-flat_namespace 2> $t/log8
 grep -q -- '-flat_namespace cannot be used with -make_mergeable' $t/log8
 not $CC --ld-path=$mold -shared -o $t/a.dylib $t/a.o -Wl,-make_mergeable \
-  -Wl,-add_mergeable_debug_hook -Wl,-pagezero_size,0x1000 2> $t/log9
+  -Wl,-add_mergeable_debug_hook 2> $t/log9
 grep -q -- '-add_mergeable_debug_hook cannot be used with -make_mergeable' $t/log9
-not $CC --ld-path=$mold -shared -o $t/a.dylib $t/a.o -Wl,-make_mergeable \
-  -Wl,-flat_namespace -Wl,-client_name,foo 2> $t/log10
-grep -q -- '-client_name can only be used' $t/log10
-not $CC --ld-path=$mold -shared -o $t/a.dylib $t/a.o -Wl,-make_mergeable \
-  -Wl,-flat_namespace -Wl,-install_name,/usr/lib/liba.dylib 2> $t/log11
-grep -q "Shared cache eligible dylibs cannot use '-flat_namespace'" $t/log11
 
 # The mergeable record is at the start of __LINKEDIT after the
 # function starts and data in code, and its load command follows

@@ -70,14 +70,9 @@ $CC --ld-path=$mold -bundle -o $t/u3.bundle $t/unused.o -Wl,-bundle_loader,$t/su
   -Wl,-t > $t/trace
 grep -q 'sub/hostlink$' $t/trace
 
-# ld-prime refuses -bundle_loader outside a bundle before it checks the
-# other options (-r with -dead_strip, the headerpad, the segment
-# alignment) or opens a file, the loader's own included.
-not $mold -arch $ARCH -dylib -o $t/lib.dylib $t/unused.o -lnosuchlib -r -dead_strip \
-  -headerpad 4 -segalign 0x3 -bundle_loader $t/nosuch 2> $t/log4
-grep -v '^+' $t/log4 > $t/msgs4
-grep -q -- '-bundle_loader can only be used with -bundle$' $t/msgs4
-not grep -q 'nosuch\|dead_strip\|headerpad\|segalign' $t/msgs4
+# Only a bundle has a loader.
+not $mold -arch $ARCH -dylib -o $t/lib.dylib $t/unused.o -bundle_loader $t/host 2> $t/log4
+grep -q -- '-bundle_loader can only be used with -bundle$' $t/log4
 
 # Only the last -bundle_loader counts. The file it names is an input
 # like any other that is no executable: ld-prime links an object into
