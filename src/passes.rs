@@ -5197,48 +5197,63 @@ pub fn warn_redundant_reexports<E: Target>(ctx: &Context<E>) {
     }
 }
 
-/// Defines the symbols the linker itself provides.
+/// Defines the symbols the linker itself provides: those of the mach
+/// header, the -alias names and the layout-boundary symbols.
 pub fn add_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
     let internal = ctx.internal_obj.expect("internal object not created yet") as u32;
     let header_addr = mach_header_addr(ctx);
-    // A -preload image's mach header is in no segment, and nothing
-    // names it.
-    if ctx.args.output_type == MH_EXECUTE && !ctx.args.preload {
-        let id = ctx.symbols.intern(b"__mh_execute_header");
-        let sym = &mut ctx.symbols[id];
-        if !sym.is_defined() {
-            sym.set_file(FileId::Obj(internal));
-            sym.value = header_addr;
-            sym.set_is_extern(true);
-        }
-    }
-
-    // A dylib, a bundle or dyld may find its own mach header by a name
-    // for its kind, which ld-prime defines as it does ___dso_handle
-    // below, out of the symbol table.
+    // An executable exports its mach header as __mh_execute_header,
+    // unless it is a -preload image, whose header is in no segment. A
+    // dylib, a bundle or dyld may find its own by a name for its kind,
+    // which ld-prime defines as it does ___dso_handle, out of the symbol
+    // table.
     let header_name = match ctx.args.output_type {
-        MH_DYLIB => Some(&b"__mh_dylib_header"[..]),
-        MH_BUNDLE => Some(&b"__mh_bundle_header"[..]),
-        MH_DYLINKER => Some(&b"__mh_dylinker_header"[..]),
+        MH_EXECUTE if !ctx.args.preload => Some((&b"__mh_execute_header"[..], true)),
+        MH_DYLIB => Some((&b"__mh_dylib_header"[..], false)),
+        MH_BUNDLE => Some((&b"__mh_bundle_header"[..], false)),
+        MH_DYLINKER => Some((&b"__mh_dylinker_header"[..], false)),
         _ => None,
     };
-    if let Some(name) = header_name {
-        define_header_alias(ctx, name, internal, header_addr);
+    if let Some((name, is_extern)) = header_name {
+        define_header_symbol(ctx, name, internal, header_addr, is_extern);
     }
-
     // ___dso_handle identifies the image; C++ static destructors pass it
     // to __cxa_atexit. It resolves to the mach header but is never
     // exported.
-    define_header_alias(ctx, b"___dso_handle", internal, header_addr);
+    define_header_symbol(ctx, b"___dso_handle", internal, header_addr, false);
 
-    // -alias gives an existing definition a second name: the new
-    // symbol shares the original's subsection and offset, so it lands
-    // at the same address and is exported alongside it. Apple uses
-    // aliases to publish compatibility names (e.g. libSystem's dozens
-    // of $VARIANT names) without touching the source. An undefined
-    // base is reported with the other undefined symbols. Dead
-    // stripping keeps the base (see dead_strip::initial_undefines) but
-    // drops an alias nothing exports or refers to.
+    add_aliases(ctx, internal);
+    claim_boundary_symbols(ctx, internal);
+}
+
+/// Defines `name` at the mach header unless an input does, as a symbol
+/// of the internal object: an external one, or a local one, which the
+/// symbol table leaves out.
+fn define_header_symbol<E: Target>(
+    ctx: &mut Context<E>,
+    name: &'static [u8],
+    internal: u32,
+    addr: u64,
+    is_extern: bool,
+) {
+    let id = ctx.symbols.intern(name);
+    let sym = &mut ctx.symbols[id];
+    if !sym.is_defined() {
+        sym.set_file(FileId::Obj(internal));
+        sym.value = addr;
+        sym.set_is_extern(is_extern);
+    }
+}
+
+/// -alias gives an existing definition a second name: the new symbol
+/// shares the original's subsection and offset, so it lands at the same
+/// address and is exported alongside it. Apple uses aliases to publish
+/// compatibility names (e.g. libSystem's dozens of $VARIANT names)
+/// without touching the source. An undefined base is reported with the
+/// other undefined symbols. Dead stripping keeps the base (see
+/// dead_strip::initial_undefines) but drops an alias nothing exports or
+/// refers to.
+fn add_aliases<E: Target>(ctx: &mut Context<E>, internal: u32) {
     let aliases = std::mem::take(&mut ctx.args.aliases);
     for (existing, new) in &aliases {
         let Some(src) = ctx.symbols.get(existing).filter(|&id| ctx.symbols[id].is_defined()) else {
@@ -5253,23 +5268,22 @@ pub fn add_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
             continue;
         }
         let dst = ctx.symbols.intern(crate::util::leak_bytes(new.clone()));
+        if ctx.symbols[dst].is_defined() {
+            continue;
+        }
         if ctx.symbols[src].is_imported() {
             // An alias of a dylib symbol is an indirect symbol
             // (N_INDR) whose export trie entry re-exports the dylib's
             // symbol under the new name; nothing here has an address.
             // ld64 does this for Xcode's
             // `-alias _NSExtensionMain ___debug_main_executable_dylib_entry_point`.
-            if !ctx.symbols[dst].is_defined() {
-                let sym = &mut ctx.symbols[dst];
-                sym.set_file(FileId::Obj(internal));
-                sym.set_input_section(None);
-                sym.value = 0;
-                sym.set_is_extern(true);
-                ctx.indirect_aliases.push((dst, src));
-            }
-            continue;
-        }
-        if !ctx.symbols[dst].is_defined() {
+            let sym = &mut ctx.symbols[dst];
+            sym.set_file(FileId::Obj(internal));
+            sym.set_input_section(None);
+            sym.value = 0;
+            sym.set_is_extern(true);
+            ctx.indirect_aliases.push((dst, src));
+        } else {
             let (file, isec, value) = {
                 let s = &ctx.symbols[src];
                 (s.file(), s.input_section(), s.value)
@@ -5282,13 +5296,15 @@ pub fn add_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
         }
     }
     ctx.args.aliases = aliases;
+}
 
-    // ld64's layout-boundary symbols: an undefined reference to
-    // section$start$__SEG$__sect (or $end$, or segment$start$__SEG /
-    // segment$end$__SEG) resolves to the boundary's final address, and
-    // wills the named section into existence if nothing else creates
-    // it. Their values can only be known after layout, so they are
-    // claimed here and patched in fix_synthetic_symbols.
+/// Claims ld64's layout-boundary symbols: an undefined reference to
+/// section$start$__SEG$__sect (or $end$, or segment$start$__SEG /
+/// segment$end$__SEG) resolves to the boundary's final address, and
+/// wills the named section into existence if nothing else creates it.
+/// Their values can only be known after layout, so they are patched in
+/// fix_synthetic_symbols.
+fn claim_boundary_symbols<E: Target>(ctx: &mut Context<E>, internal: u32) {
     for id in 0..ctx.symbols.syms.len() {
         let sym = &ctx.symbols[id];
         if !sym.is_used() || sym.is_defined() {
@@ -5310,23 +5326,6 @@ pub fn add_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
         sym.set_file(FileId::Obj(internal));
         sym.set_is_extern(false);
         ctx.boundary_syms.push((id as u32, is_start, seg, sect));
-    }
-}
-
-/// Defines `name` at the mach header unless an input does, as a local
-/// symbol of the internal object, which the symbol table leaves out.
-fn define_header_alias<E: Target>(
-    ctx: &mut Context<E>,
-    name: &'static [u8],
-    internal: u32,
-    addr: u64,
-) {
-    let id = ctx.symbols.intern(name);
-    let sym = &mut ctx.symbols[id];
-    if !sym.is_defined() {
-        sym.set_file(FileId::Obj(internal));
-        sym.value = addr;
-        sym.set_is_extern(false);
     }
 }
 
