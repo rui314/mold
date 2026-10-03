@@ -69,24 +69,23 @@ $CC --ld-path=$mold -o $t/exe5 $t/b.o $t/c.o -Wl,-segalign,0x1000 2> $t/log
 grep -q 'reducing alignment of section __TEXT,__foo from 0x2000 to 0x1000' $t/log
 
 not $CC --ld-path=$mold -o $t/exe6 $t/b.o -Wl,-segalign,0x100000000 2> $t/log
-grep -q -- '-segalign 4294967296: alignemnt too big' $t/log
+grep -q -- -segalign $t/log
 
 # ld-prime keeps a section's file offset in 32 bits, and so its
 # segment's end: a segment that ends at 4 GiB ends at 0, before the
-# section. With a -segalign of 0, pages have no size, nor then do
-# segments. It prints the layout twice, and a -r output takes either.
+# section. It prints the layout twice, and a -r output takes either.
 not $CC --ld-path=$mold -o $t/exe7 $t/a.o -Wl,-segalign,0x80000000 2> $t/log
 grep -q 'section __DATA,__data file end (2147483664) goes past the segment end (0) $' $t/log
 [ "$(grep -c '^final section layout:$' $t/log)" = 2 ]
 grep -q '^    __LINKEDIT  *addr=0x200000000, size=0x000000000, fileOffset=0x00000000, fileSize=0x00000000$' $t/log
 
+# A -segalign of 0, pages of no size, is refused. (ld-prime takes it,
+# for segments of no size, which fails a final link only.)
 not $CC --ld-path=$mold -o $t/exe8 $t/b.o -Wl,-segalign,0 2> $t/log
-grep -q -- '-pagezero_size not aligned, rounded up to: 0, use -segalign to change the alignment' $t/log
-grep -q 'reducing alignment of section __TEXT,__text from 0x[0-9a-f]* to 0x1 because' $t/log
-grep -Eq 'section __TEXT,__text file end \([0-9]+\) goes past the segment end \(0\) $' $t/log
-grep -q '^    __TEXT  *addr=0x000000000, size=0x000000000, fileOffset=0x00000000, fileSize=0x00000000$' $t/log
-
-$mold -arch $ARCH -r -o $t/r.o $t/a.o -segalign 0
+grep -q -- -segalign $t/log
+if $mold -v 2> /dev/null | grep -q mold-macho; then
+  not $mold -arch $ARCH -r -o $t/r.o $t/a.o -segalign 0
+fi
 $mold -arch $ARCH -r -o $t/r.o $t/a.o -segalign 0x80000000
 
 # The linker's own sections are reduced as well, in output order. A

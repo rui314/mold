@@ -50,7 +50,7 @@ grep -q 'unknown debug snapshot mode: full$' $t/log
 not link -debug_snapshot_minimal 2> $t/log
 grep -q 'unknown debug snapshot mode: _minimal$' $t/log
 
-for n in 0 3 ' 3' +3 -3; do
+for n in 0 3; do
   link -max_code_deduplicate_passes "$n"
 done
 for n in 0x3 '3 ' x; do

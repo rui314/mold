@@ -30,9 +30,9 @@ not $mold -arch $ARCH -o $t/exe $t/a.o $t/b.o -mcpu 2> $t/log
 grep -q -- '-mcpu.*missing' $t/log
 
 # The ThinLTO cache: ld-prime creates its directory (one level, owner
-# only) and hands libLTO the policy, the numbers read as strtoul reads
-# them and cut to 32 bits, so -1 never prunes and 4294967296 is 0. It
-# warns, and goes without, if it can't. Merged modules have no cache.
+# only) and hands libLTO the policy, decimal numbers, a pruning interval
+# of -1 never pruning. It warns, and goes without, if it can't. Merged
+# modules have no cache.
 link() { $CC -flto --ld-path=$mold -o $t/exe $t/a.o $t/b.o "$@"; }
 rm -rf $t/cache
 link -Wl,-cache_path_lto,$t/cache,-arch_variant_lto_cache_mismatch,suppress
@@ -44,7 +44,7 @@ int times2(int);
 int main() { printf("%d\n", times2(21)); }'
 thinlink() { $CC -flto=thin --ld-path=$mold -o $t/exe $t/c.o $t/d.o "$@"; }
 thinlink -Wl,-cache_path_lto,$t/cache,-prune_interval_lto,-1,-prune_after_lto,3600 \
-  -Wl,-max_relative_cache_size_lto,4294967296
+  -Wl,-max_relative_cache_size_lto,50
 $t/exe | grep -q '^42$'
 [ "$(stat -f %Lp $t/cache)" = 700 ]
 ls $t/cache | grep -q '^llvmcache-'

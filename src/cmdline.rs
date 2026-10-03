@@ -18,7 +18,7 @@ use crate::input_files::PlatformVersion;
 use crate::macho::*;
 use crate::mapped_file::MappedFile;
 use crate::util::glob::{Glob, GlobBuilder};
-use crate::util::{is_space, lines, os_str, page_align, trim_space};
+use crate::util::{is_space, lines, os_str, trim_space};
 
 /// The Apple ld64 version whose command line this linker implements,
 /// reported by -version_details. Xcode passes flags according to this
@@ -1586,45 +1586,19 @@ fn symbol_list(text: &[u8]) -> Vec<Vec<u8>> {
         .collect()
 }
 
-/// ld64 numeric option arguments are hexadecimal, read as strtoull()
-/// reads them (see parse_unsigned), with or without a 0x prefix.
+/// ld64's numeric option arguments are hexadecimal, with or without a
+/// 0x prefix.
 fn hex_number(val: &str) -> Option<u64> {
-    parse_unsigned(val, 16)
-}
-
-/// The decimal arguments of the options ld64 reads with strtoul().
-/// A ThinLTO cache option's number, truncated to the 32 bits libLTO
-/// takes.
-fn lto_cache_number(name: &str, arg: &OsStr) -> i32 {
-    let value = arg.to_str().and_then(decimal_number);
-    value.unwrap_or_else(|| fatal!("invalid argument for {name}")) as i32
-}
-
-fn decimal_number(val: &str) -> Option<u64> {
-    parse_unsigned(val, 10)
-}
-
-/// A number as strtoull() reads it in base 10 or 16: after white space
-/// and a sign, in hexadecimal with or without a 0x prefix. One too big
-/// is the largest there is, and a negative one wraps around; anything
-/// left over makes it no number.
-fn parse_unsigned(val: &str, radix: u32) -> Option<u64> {
-    let val = val.trim_start_matches(|c: char| c.is_ascii() && is_space(c as u8));
-    let (negative, val) = match val.as_bytes().first() {
-        Some(b'-') => (true, &val[1..]),
-        Some(b'+') => (false, &val[1..]),
-        _ => (false, val),
-    };
-    // "0x" is a prefix only before a digit: alone, it is a 0 and an x.
-    let digits = match val.strip_prefix("0x").or_else(|| val.strip_prefix("0X")) {
-        Some(rest) if radix == 16 && rest.starts_with(|c: char| c.is_ascii_hexdigit()) => rest,
-        _ => val,
-    };
-    if digits.is_empty() || !digits.chars().all(|c| c.is_digit(radix)) {
+    let digits = val.strip_prefix("0x").or_else(|| val.strip_prefix("0X")).unwrap_or(val);
+    if digits.is_empty() || !digits.bytes().all(|c| c.is_ascii_hexdigit()) {
         return None;
     }
-    let num = u64::from_str_radix(digits, radix).unwrap_or(u64::MAX);
-    Some(if negative && num != u64::MAX { num.wrapping_neg() } else { num })
+    u64::from_str_radix(digits, 16).ok()
+}
+
+/// The decimal argument of an option, of the ThinLTO cache and the like.
+fn parse_decimal<T: std::str::FromStr>(opt: &str, val: &str) -> T {
+    val.parse().unwrap_or_else(|_| fatal!("invalid argument for {opt}"))
 }
 
 fn parse_hex(opt: &str, val: &str) -> u64 {
@@ -2667,9 +2641,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // the callers of those the one before folded, up to this
             // many (none limits it); mold folds them in one go.
             b"-max_code_deduplicate_passes" => {
-                if decimal_number(cur.next_text(name)).is_none() {
-                    fatal!("invalid argument for -max_code_deduplicate_passes");
-                }
+                parse_decimal::<u64>(name, cur.next_text(name));
             }
             b"-order_file" => args.order_files.push(cur.next_path(name)),
             // ld64's order file for one section, -sectorder <segment>
@@ -2708,8 +2680,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-segalign" => {
                 let align = parse_hex(name, cur.next_text(name));
-                if align > u32::MAX as u64 {
-                    fatal!("-segalign {align}: alignemnt too big");
+                if align == 0 || align > u32::MAX as u64 {
+                    fatal!("-segalign {align:#x}: alignment out of range");
                 }
                 st.segalign = Some(align);
             }
@@ -2917,19 +2889,17 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-save-temps" => args.save_temps = true,
             b"-flto-codegen-only" => args.lto_codegen_only = true,
             b"-object_path_lto" => args.object_path_lto = Some(cur.next_path(name)),
-            // The ThinLTO cache. ld-prime reads the numbers as strtoul
-            // does and hands libLTO their low 32 bits, as an int or an
-            // unsigned (so -1 never prunes), checking the percentage
-            // only then.
+            // The ThinLTO cache, as libLTO takes it: a pruning interval
+            // of -1 never prunes.
             b"-cache_path_lto" => args.lto_cache_dir = Some(cur.next_path(name)),
             b"-prune_interval_lto" => {
-                args.lto_cache_prune_interval = Some(lto_cache_number(name, cur.next_arg(name)));
+                args.lto_cache_prune_interval = Some(parse_decimal(name, cur.next_text(name)));
             }
             b"-prune_after_lto" => {
-                args.lto_cache_expiration = lto_cache_number(name, cur.next_arg(name)) as u32;
+                args.lto_cache_expiration = parse_decimal(name, cur.next_text(name));
             }
             b"-max_relative_cache_size_lto" => {
-                let value = lto_cache_number(name, cur.next_arg(name)) as u32;
+                let value = parse_decimal(name, cur.next_text(name));
                 if value > 100 {
                     fatal!("Expect a value between 0 and 100 for -max_relative_cache_size_lto");
                 }
@@ -4136,9 +4106,7 @@ fn resolve_segprots(
 
 /// The segment alignment: -segalign's, rounded down to a power of two
 /// with a warning as ld-prime does (the last one given wins), else the
-/// page size (4 KiB for a -preload image). ld-prime takes 0 as it is:
-/// pages of no size, and so segments of none, which fails a final link
-/// (see passes::check_segments).
+/// page size (4 KiB for a -preload image).
 fn resolve_segment_align(target: &TargetTraits, args: &Args, segalign: Option<u64>) -> u64 {
     match segalign {
         // -encryptable gives an image 16 KiB pages for 4 KiB ones, as
@@ -4148,7 +4116,7 @@ fn resolve_segment_align(target: &TargetTraits, args: &Args, segalign: Option<u6
         Some(0x1000) if args.encryptable => 0x4000,
         None if args.preload => 0x1000,
         None => target.page_size,
-        Some(align) if align == 0 || align.is_power_of_two() => align,
+        Some(align) if align.is_power_of_two() => align,
         Some(align) => {
             let p2 = 1 << align.ilog2();
             crate::warn!(
@@ -4197,8 +4165,8 @@ fn resolve_seg_page_sizes(args: &Args, sizes: Vec<(Vec<u8>, u64)>) -> Vec<(Vec<u
 }
 
 /// -pagezero_size, as ld-prime takes it: only for a main executable
-/// (not a -preload one), rounded up to a page (past the top, to 0), and
-/// no more than 4 GiB in an executable with chained fixups. A dylib is
+/// (not a -preload one), rounded up to a page, and no more than 4 GiB
+/// in an executable with chained fixups. A dylib is
 /// loaded at an arbitrary address, and a -preload image copied to
 /// wherever its segments say; only a main executable reserves the low
 /// 4 GiB against NULL dereferences. A -kernel image, which ld-prime
@@ -4218,11 +4186,11 @@ fn resolve_pagezero_size(args: &mut Args) {
     let size = args.pagezero_size;
     let page = args.segment_align;
     if !size.is_multiple_of(page) {
-        let aligned = page_align(size, page);
-        // (As printf's %#llx spells it.)
-        let shown = if aligned == 0 { "0".to_string() } else { format!("{aligned:#x}") };
+        let aligned = size
+            .checked_next_multiple_of(page)
+            .unwrap_or_else(|| fatal!("-pagezero_size 0x{size:X} is too large"));
         crate::warn!(
-            "-pagezero_size not aligned, rounded up to: {shown}, use -segalign to change the alignment"
+            "-pagezero_size not aligned, rounded up to: {aligned:#x}, use -segalign to change the alignment"
         );
         args.pagezero_size = aligned;
     }
@@ -4269,13 +4237,14 @@ fn check_segaddrs(args: &Args) {
 /// end and so below it, out of order (passes::place_segments).
 fn resolve_image_base(args: &mut Args) {
     // Before anything else looks at it, ld-prime rounds a base up to a
-    // page (past the top, to 0): 4 KiB in an object file, which is
-    // loaded nowhere.
+    // page: 4 KiB in an object file, which is loaded nowhere.
     let align = if args.relocatable { 0x1000 } else { args.segment_align };
     if let Some(base) = args.image_base
         && !base.is_multiple_of(align)
     {
-        let aligned = page_align(base, align);
+        let aligned = base
+            .checked_next_multiple_of(align)
+            .unwrap_or_else(|| fatal!("base address 0x{base:X} is too large"));
         crate::warn!(
             "base address 0x{base:X} is not properly aligned. Changing it to 0x{aligned:X}"
         );

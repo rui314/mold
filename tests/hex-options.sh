@@ -1,10 +1,8 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# ld64's numeric option arguments are hexadecimal, read as strtoull()
-# reads them: after white space and a sign, with or without a 0x or 0X
-# prefix, a number too big being the largest there is and a negative
-# one wrapping around. ld-prime reports anything else by option.
+# ld64's numeric option arguments are hexadecimal, with or without a 0x
+# or 0X prefix. Anything else is refused, naming the option.
 cat <<EOF | $CC -o $t/a.o -c -xc -
 int main() {}
 EOF
@@ -23,12 +21,16 @@ grep -q -- '-sectalign: not a hexadecimal number: 10 ' $t/log
 not link -stack_size 0x 2> $t/log
 grep -q -- '-stack_size must specify an integer size' $t/log
 
-link -headerpad ' +0X1000'
+link -headerpad 0X1000
+otool -l $t/exe | grep -A6 'sectname __text' | awk '/offset/{print $2}' > $t/off
+[ "$(cat $t/off)" -gt 4096 ]
+link -headerpad 1000
 otool -l $t/exe | grep -A6 'sectname __text' | awk '/offset/{print $2}' > $t/off
 [ "$(cat $t/off)" -gt 4096 ]
 
-link -pagezero_size -1 2> $t/log
-grep -q -- '-pagezero_size not aligned, rounded up to: 0, use -segalign' $t/log
+# A size is rounded up to a page.
+link -pagezero_size 1001 2> $t/log
+grep -q -- '-pagezero_size not aligned, rounded up to: 0x[0-9a-f]*000, use -segalign' $t/log
 
 # The sizes and alignments must fit in 32 bits.
 not link -headerpad 100000000 2> $t/log

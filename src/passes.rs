@@ -28,7 +28,7 @@ use crate::symbol::SymbolId;
 use crate::tapi;
 use crate::target::RelocClass;
 use crate::target::Target;
-use crate::util::{align_to, page_align, path_bytes, split_once};
+use crate::util::{align_to, path_bytes, split_once};
 
 /// The default library search path: ld64's /usr/lib and /usr/local/lib,
 /// and between them ld-prime's /usr/lib/swift, which it searches for
@@ -6587,7 +6587,7 @@ fn seg_page_size<E: Target>(ctx: &Context<E>, segname: &[u8]) -> u64 {
 /// (the XNU x86-64 kernel starts the segment after __TEXT on a 2 MiB
 /// boundary that way).
 fn segment_span<E: Target>(ctx: &Context<E>, seg: &OutputSegment) -> u64 {
-    page_align(seg.cmd.vmsize, seg_page_size(ctx, seg.name))
+    align_to(seg.cmd.vmsize, seg_page_size(ctx, seg.name))
 }
 
 /// The alignment of a segment's address: a page, or its first section's
@@ -6770,9 +6770,9 @@ fn layout_segment<E: Target>(
         seg.cmd.vmsize = align_to(vm_end - vmaddr, seg_page).max(filesize);
         return seg_fileoff + filesize;
     }
-    seg.cmd.filesize = page_align(filesize, page);
-    seg.cmd.vmsize = page_align(vm_end - vmaddr, page).max(seg.cmd.filesize);
-    seg_fileoff + page_align(seg.cmd.filesize, seg_page)
+    seg.cmd.filesize = align_to(filesize, page);
+    seg.cmd.vmsize = align_to(vm_end - vmaddr, page).max(seg.cmd.filesize);
+    seg_fileoff + align_to(seg.cmd.filesize, seg_page)
 }
 
 /// Gives every segment but __LINKEDIT its address, as ld-prime does:
