@@ -240,21 +240,31 @@ fn warn_duplicate_libraries<E: Target>(ctx: &Context<E>) {
 /// Looks for files as ld-prime does in its searches for inputs, noting
 /// each file it looks for and doesn't find: -dependency_info lists
 /// them, so that a build system links again once one appears. A lookup
-/// made ahead of time, or made again, is quiet, without a warning too.
+/// made again is quiet, without a warning too; one made ahead of time
+/// keeps its notes and warnings for the search it stands for to give
+/// (see ProbeLog).
 pub struct Prober<'a> {
     missing: Option<&'a std::sync::Mutex<Vec<PathBuf>>>,
     quiet: bool,
     prefer_stubs: bool,
+    warnings: Option<&'a std::sync::Mutex<Vec<error::Message>>>,
 }
 
 impl<'a> Prober<'a> {
     pub fn new<E: Target>(ctx: &'a Context<E>) -> Self {
         let missing = ctx.args.dependency_info.is_some().then_some(&ctx.missing_files);
-        Self { missing, quiet: false, prefer_stubs: ctx.args.prefer_stubs }
+        Self { missing, quiet: false, prefer_stubs: ctx.args.prefer_stubs, warnings: None }
     }
 
     pub fn quiet<E: Target>(ctx: &Context<E>) -> Self {
-        Self { missing: None, quiet: true, prefer_stubs: ctx.args.prefer_stubs }
+        Self { missing: None, quiet: true, prefer_stubs: ctx.args.prefer_stubs, warnings: None }
+    }
+
+    /// A prober for a search made ahead of time, which keeps what it
+    /// notes and warns of in `log`.
+    fn recording<E: Target>(ctx: &Context<E>, log: &'a ProbeLog) -> Self {
+        let (missing, warnings) = (Some(&log.missing), Some(&log.warnings));
+        Self { missing, quiet: false, prefer_stubs: ctx.args.prefer_stubs, warnings }
     }
 
     /// Whether there is a file at `path`.
@@ -285,14 +295,39 @@ impl<'a> Prober<'a> {
             return Some(stub);
         }
         if !self.quiet && memchr::memmem::find(stub_bytes, b"/SDKs/Xcode.Internal").is_none() {
-            crate::warn!(
+            let msg = format_args!(
                 "text-based stub file {} and library file {} unexpectedly found. Falling back \
                  to library file for linking.",
                 stub.raw(),
                 path.raw()
             );
+            match self.warnings {
+                Some(warnings) => warnings.lock().unwrap().push(error::render(msg)),
+                None => crate::warn!("{msg}"),
+            }
         }
         Some(path.to_path_buf())
+    }
+}
+
+/// What a search made ahead of time, in parallel with others, noted and
+/// warned of, which the search it stands for gives in its turn.
+#[derive(Default)]
+struct ProbeLog {
+    missing: std::sync::Mutex<Vec<PathBuf>>,
+    warnings: std::sync::Mutex<Vec<error::Message>>,
+}
+
+impl ProbeLog {
+    /// Notes the files the search didn't find, and gives its warnings,
+    /// as the search would have if made now.
+    fn replay<E: Target>(self, ctx: &Context<E>) {
+        if ctx.args.dependency_info.is_some() {
+            ctx.missing_files.lock().unwrap().extend(self.missing.into_inner().unwrap());
+        }
+        for msg in self.warnings.into_inner().unwrap() {
+            crate::warn!("{}", raw(&msg));
+        }
     }
 }
 
@@ -1338,7 +1373,7 @@ fn load_autolinked_libraries<E: Target>(ctx: &mut Context<E>) {
         .cloned()
         .collect();
     pending.sort();
-    prefetch_autolinked_stubs(ctx, &pending);
+    let found = prefetch_autolinked_stubs(ctx, &pending);
     let dylibs_before = ctx.dylibs.len();
     ctx.autolink_priority = ctx.autolink_priority.min(ctx.priority_counter + 1);
 
@@ -1356,9 +1391,10 @@ fn load_autolinked_libraries<E: Target>(ctx: &mut Context<E>) {
     // framework directory holds headers and a module map but no binary
     // (CotEditor's build printed a warning 317 times).
     let mut queue: Vec<PendingObject> = Vec::new();
-    for opt in pending {
+    for (opt, (path, log)) in pending.into_iter().zip(found) {
         ctx.processed_linker_options.insert(opt.clone());
-        let (path, rc) = autolinked_input(ctx, &opt);
+        log.replay(ctx);
+        let rc = autolinked_input(ctx, &opt, path.as_deref());
         if let Some(path) = path
             && let Some(mf) = MappedFile::open(&path)
         {
@@ -1389,14 +1425,22 @@ fn load_autolinked_libraries<E: Target>(ctx: &mut Context<E>) {
     load_pending(ctx, queue);
 }
 
-/// Parses the stubs of the libraries the auto-link options `opts` name
-/// ahead of load_autolink_deps' serial loop (see prefetch_stubs), which
-/// looks for them again, noting the files it doesn't find: this quiet
-/// search notes nothing. Each file is opened by one thread.
-fn prefetch_autolinked_stubs<E: Target>(ctx: &Context<E>, opts: &[Vec<Vec<u8>>]) {
-    let prober = Prober::quiet(ctx);
-    let mut paths: Vec<PathBuf> =
-        opts.par_iter().filter_map(|opt| find_autolinked(ctx, &prober, opt)).collect();
+/// Looks for the libraries the auto-link options `opts` name, in
+/// parallel, and parses their stubs (see prefetch_stubs), ahead of
+/// load_autolinked_libraries' serial loop, which takes the file found
+/// for each option and gives what its search noted and warned of in its
+/// turn. Each file is opened by one thread.
+fn prefetch_autolinked_stubs<E: Target>(
+    ctx: &Context<E>,
+    opts: &[Vec<Vec<u8>>],
+) -> Vec<(Option<PathBuf>, ProbeLog)> {
+    let found: Vec<(Option<PathBuf>, ProbeLog)> = (opts.par_iter())
+        .map(|opt| {
+            let log = ProbeLog::default();
+            (find_autolinked(ctx, &Prober::recording(ctx, &log), opt), log)
+        })
+        .collect();
+    let mut paths: Vec<&PathBuf> = found.iter().filter_map(|(path, _)| path.as_ref()).collect();
     paths.sort_unstable();
     paths.dedup();
     let stubs: Vec<&'static MappedFile> = paths
@@ -1405,6 +1449,7 @@ fn prefetch_autolinked_stubs<E: Target>(ctx: &Context<E>, opts: &[Vec<Vec<u8>>])
         .filter(|mf| get_file_type(mf) == FileType::Tapi)
         .collect();
     prefetch_stubs(ctx, &stubs);
+    found
 }
 
 /// Reads an object's auto-link options (LC_LINKER_OPTION) as ld-prime
@@ -1494,39 +1539,39 @@ fn read_linker_options<F: std::fmt::Display>(
     libs
 }
 
-/// The file an auto-link option read by read_linker_options names, and
-/// how to load it. A library or framework not found is remembered for
-/// passes::report_undef_errors.
+/// How to load `path`, the file found for an auto-link option read by
+/// read_linker_options. A library or framework not found is remembered
+/// for passes::report_undef_errors.
 fn autolinked_input<E: Target>(
     ctx: &mut Context<E>,
     opt: &[Vec<u8>],
-) -> (Option<PathBuf>, ReaderContext) {
+    path: Option<&Path>,
+) -> ReaderContext {
     let rc = ReaderContext { autolinked: true, ..Default::default() };
-    let path = find_autolinked(ctx, &Prober::new(ctx), opt);
     match opt {
         [lib] => {
             if path.is_none() {
                 ctx.autolink_misses.push(missing_hint(false, autolinked_library(lib)));
             }
-            let sdk = path.as_ref().is_some_and(|path| searched_in_sdk(&ctx.args, path));
+            let sdk = path.is_some_and(|path| searched_in_sdk(&ctx.args, path));
             // -force_load_swift_libs loads a Swift library's archive
             // whole, by its file name.
-            let is_swift = |path: &PathBuf| {
+            let is_swift = |path: &Path| {
                 path.file_name().is_some_and(|f| f.as_bytes().starts_with(b"libswift"))
             };
-            let force_load = ctx.args.force_load_swift_libs && path.as_ref().is_some_and(is_swift);
+            let force_load = ctx.args.force_load_swift_libs && path.is_some_and(is_swift);
             let hidden = lib.starts_with(b"-hidden-l");
-            (path, ReaderContext { force_load, hidden, sdk, ..rc })
+            ReaderContext { force_load, hidden, sdk, ..rc }
         }
         [flag, name] if flag.ends_with(b"framework") => {
             if path.is_none() {
                 ctx.autolink_misses.push(missing_hint(true, name));
             }
-            let sdk = path.as_ref().is_some_and(|path| searched_in_sdk(&ctx.args, path));
-            (path, ReaderContext { sdk, ..rc })
+            let sdk = path.is_some_and(|path| searched_in_sdk(&ctx.args, path));
+            ReaderContext { sdk, ..rc }
         }
-        [flag, _] if flag == b"-force_load" => (path, ReaderContext { force_load: true, ..rc }),
-        _ => (path, rc),
+        [flag, _] if flag == b"-force_load" => ReaderContext { force_load: true, ..rc },
+        _ => rc,
     }
 }
 
