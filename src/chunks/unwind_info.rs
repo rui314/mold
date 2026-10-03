@@ -75,6 +75,31 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 /// and the copy phase fills the cells at offsets 28, 32, ... once the
 /// GOT has its address.
 pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId>) {
+    let mut records = table_records(ctx);
+    if records.is_empty() {
+        return (Vec::new(), Vec::new());
+    }
+    let personalities = assign_personalities(&mut records);
+
+    // The table ends where the last function does, as in ld64, however
+    // much of it its unwind record covers.
+    let last = records.last().unwrap();
+    let end = ctx.isec_addr(last.isec as usize) + ctx.isecs[last.isec as usize].size as u64;
+
+    merge_records::<E>(&mut records);
+    let pages = split_pages(ctx, &records);
+    (write_table(ctx, &records, &personalities, &pages, end), personalities)
+}
+
+/// The address of a record's function.
+fn func_addr<E: Target>(ctx: &Context<E>, rec: &UnwindRecord) -> u64 {
+    ctx.isec_addr(rec.isec as usize) + rec.input_offset as u64
+}
+
+/// The records the table lists, sorted by address: those of the live
+/// functions and those of the code with no unwind information (see
+/// bare_code_records).
+fn table_records<E: Target>(ctx: &Context<E>) -> Vec<UnwindRecord> {
     let mut records: Vec<UnwindRecord> = ctx
         .unwind_records
         .par_iter()
@@ -85,12 +110,6 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
         .cloned()
         .collect();
     records.extend(bare_code_records(ctx, &records));
-    if records.is_empty() {
-        return (Vec::new(), Vec::new());
-    }
-
-    let base = ctx.mach_header.hdr.addr;
-    let func_addr = |r: &UnwindRecord| ctx.isec_addr(r.isec as usize) + r.input_offset as u64;
 
     // A DWARF-mode record's encoding holds its FDE's offset in
     // __eh_frame in the low 24 bits, or 0 if they can't hold it, as in
@@ -109,12 +128,17 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
     // sharing its address, and of two records for a function (or one
     // at a section's end and the next section's first), the greater
     // encoding comes last.
-    records.par_sort_by_key(|r| (func_addr(r), r.encoding));
+    records.par_sort_by_key(|r| (func_addr(ctx, r), r.encoding));
+    records
+}
 
-    // Assign personality indices, encoded in bits 28-29 of the
-    // encoding, in order of first use by address.
+/// Gives each record with a personality routine the routine's 1-based
+/// index in the table's array of them, in bits 28-29 of its encoding,
+/// the routines indexed in order of first use by address; returns the
+/// array.
+fn assign_personalities(records: &mut [UnwindRecord]) -> Vec<SymbolId> {
     let mut personalities: Vec<SymbolId> = Vec::new();
-    for rec in &mut records {
+    for rec in records {
         if let Some(p) = rec.personality() {
             let idx = match personalities.iter().position(|&s| s == p) {
                 Some(idx) => idx,
@@ -129,18 +153,16 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
             rec.encoding |= ((idx + 1) as u32) << UNWIND_PERSONALITY_MASK.trailing_zeros();
         }
     }
+    personalities
+}
 
-    // The table ends where the last function does, as in ld64, however
-    // much of it its unwind record covers.
-    let last = records.last().unwrap();
-    let end = ctx.isec_addr(last.isec as usize) + ctx.isecs[last.isec as usize].size as u64;
-
-    // Merge consecutive records with identical contents. An entry has no
-    // length - it covers the code up to the next one - so the padding
-    // between two functions does not keep them apart. An x86-64 entry in
-    // "stack immediate indirect" mode gives where the stack size is in
-    // the function as an offset from the entry's start, so it can't
-    // cover a second function (ld64's encodingCannotBeMerged).
+/// Merges consecutive records with identical contents. An entry has no
+/// length - it covers the code up to the next one - so the padding
+/// between two functions does not keep them apart. An x86-64 entry in
+/// "stack immediate indirect" mode gives where the stack size is in the
+/// function as an offset from the entry's start, so it can't cover a
+/// second function (ld64's encodingCannotBeMerged).
+fn merge_records<E: Target>(records: &mut Vec<UnwindRecord>) {
     let stack_ind = |enc: u32| {
         E::CPUTYPE == CPU_TYPE_X86_64 && enc & UNWIND_MODE_MASK == UNWIND_X86_64_MODE_STACK_IND
     };
@@ -151,17 +173,28 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
             && last.lsda().is_none()
             && rec.lsda().is_none()
     });
+}
 
-    // Second-level pages, compressed: 32-bit entries (a 24-bit offset
-    // from the page's first function and an 8-bit index into the page's
-    // encodings, listed after the entries in order of first use). A page
-    // ends at 4096 bytes, at 2^24 bytes of code, or at 256 encodings.
-    const PAGE_SIZE: usize = 4096;
-    const PAGE_HDR: usize = 12;
-    let mut pages: Vec<(usize, usize, Vec<u32>)> = Vec::new();
+/// A second-level page's size limit, and the size of its header.
+const PAGE_SIZE: usize = 4096;
+const PAGE_HDR: usize = 12;
+
+/// A compressed second-level page: a run of the table's records, and
+/// their encodings in order of first use.
+struct Page {
+    records: std::ops::Range<usize>,
+    encodings: Vec<u32>,
+}
+
+/// Splits the records into compressed second-level pages, of 32-bit
+/// entries: a 24-bit offset from the page's first function and an 8-bit
+/// index into the page's encodings, listed after the entries. A page
+/// ends at 4096 bytes, at 2^24 bytes of code, or at 256 encodings.
+fn split_pages<E: Target>(ctx: &Context<E>, records: &[UnwindRecord]) -> Vec<Page> {
+    let mut pages = Vec::new();
     let mut start = 0;
     while start < records.len() {
-        let first_addr = func_addr(&records[start]);
+        let first_addr = func_addr(ctx, &records[start]);
         let mut encs: Vec<u32> = Vec::new();
         let mut i = start;
         while i < records.len() {
@@ -169,7 +202,7 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
             let new_enc = !encs.contains(&enc) as usize;
             if encs.len() + new_enc > 256
                 || PAGE_HDR + (i - start + 1 + encs.len() + new_enc) * 4 > PAGE_SIZE
-                || func_addr(&records[i]) - first_addr >= 1 << 24
+                || func_addr(ctx, &records[i]) - first_addr >= 1 << 24
             {
                 break;
             }
@@ -178,22 +211,31 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
             }
             i += 1;
         }
-        pages.push((start, i, encs));
+        pages.push(Page { records: start..i, encodings: encs });
         start = i;
     }
+    pages
+}
 
+/// Writes the table: the header, no common encodings, the
+/// personalities (zeros, which copy_buf patches), the first-level index
+/// (a row per page and a terminator, at `end`), the LSDA index, then the
+/// pages.
+fn write_table<E: Target>(
+    ctx: &Context<E>,
+    records: &[UnwindRecord],
+    personalities: &[SymbolId],
+    pages: &[Page],
+    end: u64,
+) -> Vec<u8> {
+    let base = ctx.mach_header.hdr.addr;
     let num_lsda = records.iter().filter(|r| r.lsda().is_some()).count();
-
-    // The layout of the section: the header, no common encodings, the
-    // personalities, the first-level index (a row per page and a
-    // terminator), the LSDA index, then the pages.
     let personality_off = 28;
     let page1_off = personality_off + personalities.len() * 4;
     let lsda_off = page1_off + (pages.len() + 1) * 12;
     let page2_off = lsda_off + num_lsda * 8;
 
     let push32 = |buf: &mut Vec<u8>, val: u32| buf.extend_from_slice(&val.to_le_bytes());
-    let push16 = |buf: &mut Vec<u8>, val: u16| buf.extend_from_slice(&val.to_le_bytes());
 
     let mut buf = Vec::new();
     push32(&mut buf, UNWIND_SECTION_VERSION);
@@ -205,48 +247,16 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
     push32(&mut buf, pages.len() as u32 + 1);
 
     // Personalities are image-relative pointers to the functions' GOT
-    // slots, patched in by the copy phase (see above).
-    for &_sym in &personalities {
+    // slots, patched in by copy_buf.
+    for &_sym in personalities {
         push32(&mut buf, 0);
     }
 
-    // Each second-level page's blob and LSDA rows depend only on its
-    // own records, so the pages build in parallel; the first-level
-    // index is then a serial walk over the blob lengths.
-    struct PageOut {
-        page2: Vec<u8>,
-        lsda: Vec<u8>,
-        first: u32,
-    }
-    let outs: Vec<PageOut> = pages
-        .par_iter()
-        .map(|(start, end, encs)| {
-            let span = &records[*start..*end];
-            let mut page2 = Vec::new();
-            let mut lsda = Vec::new();
-            for rec in span {
-                if let Some((isec, off)) = rec.lsda() {
-                    push32(&mut lsda, func_addr(rec).wrapping_sub(base) as u32);
-                    push32(&mut lsda, (ctx.isec_addr(isec) + off as u64).wrapping_sub(base) as u32);
-                }
-            }
-
-            push32(&mut page2, UNWIND_SECOND_LEVEL_COMPRESSED);
-            push16(&mut page2, PAGE_HDR as u16); // entries offset
-            push16(&mut page2, span.len() as u16);
-            push16(&mut page2, (PAGE_HDR + span.len() * 4) as u16); // encodings offset
-            push16(&mut page2, encs.len() as u16);
-            let page_base = func_addr(&span[0]);
-            for rec in span {
-                let idx = encs.iter().position(|&e| e == rec.encoding).unwrap() as u32;
-                push32(&mut page2, (func_addr(rec) - page_base) as u32 | idx << 24);
-            }
-            for &enc in encs {
-                push32(&mut page2, enc);
-            }
-            PageOut { page2, lsda, first: page_base.wrapping_sub(base) as u32 }
-        })
-        .collect();
+    // Each second-level page and its LSDA rows depend only on its own
+    // records, so the pages are encoded in parallel; the first-level
+    // index is then a serial walk over their lengths.
+    let outs: Vec<EncodedPage> =
+        pages.par_iter().map(|page| encode_page(ctx, records, page)).collect();
 
     let mut page1 = Vec::new();
     let mut lsda = Vec::new();
@@ -267,7 +277,49 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
     buf.extend_from_slice(&page1);
     buf.extend_from_slice(&lsda);
     buf.extend_from_slice(&page2);
-    (buf, personalities)
+    buf
+}
+
+/// A second-level page, encoded, and its rows of the LSDA index
+/// (function, LSDA), each an image offset.
+struct EncodedPage {
+    page2: Vec<u8>,
+    lsda: Vec<u8>,
+    /// The image offset of the page's first function.
+    first: u32,
+}
+
+/// Encodes a compressed second-level page of the table's `records`.
+fn encode_page<E: Target>(ctx: &Context<E>, records: &[UnwindRecord], page: &Page) -> EncodedPage {
+    let base = ctx.mach_header.hdr.addr;
+    let span = &records[page.records.clone()];
+    let encs = &page.encodings;
+    let push32 = |buf: &mut Vec<u8>, val: u32| buf.extend_from_slice(&val.to_le_bytes());
+    let push16 = |buf: &mut Vec<u8>, val: u16| buf.extend_from_slice(&val.to_le_bytes());
+
+    let mut lsda = Vec::new();
+    for rec in span {
+        if let Some((isec, off)) = rec.lsda() {
+            push32(&mut lsda, func_addr(ctx, rec).wrapping_sub(base) as u32);
+            push32(&mut lsda, (ctx.isec_addr(isec) + off as u64).wrapping_sub(base) as u32);
+        }
+    }
+
+    let mut page2 = Vec::new();
+    push32(&mut page2, UNWIND_SECOND_LEVEL_COMPRESSED);
+    push16(&mut page2, PAGE_HDR as u16); // entries offset
+    push16(&mut page2, span.len() as u16);
+    push16(&mut page2, (PAGE_HDR + span.len() * 4) as u16); // encodings offset
+    push16(&mut page2, encs.len() as u16);
+    let page_base = func_addr(ctx, &span[0]);
+    for rec in span {
+        let idx = encs.iter().position(|&e| e == rec.encoding).unwrap() as u32;
+        push32(&mut page2, (func_addr(ctx, rec) - page_base) as u32 | idx << 24);
+    }
+    for &enc in encs {
+        push32(&mut page2, enc);
+    }
+    EncodedPage { page2, lsda, first: page_base.wrapping_sub(base) as u32 }
 }
 
 /// Whether the image has __unwind_info: whether any of its functions
