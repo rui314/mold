@@ -731,46 +731,29 @@ fn first_global_of(nlists: &[NList], dysym: Option<&DysymtabCommand>) -> Option<
     nlists[first..].iter().all(|nl| !is_local(nl)).then_some(first as u32)
 }
 
-/// Which of an object's sections ld-prime ignores: those with no bytes
-/// that define no symbol naming a subsection there. Such a section makes
+/// Which of an object's sections are left out: those with no bytes in
+/// which no symbol naming a subsection is defined. Such a section makes
 /// no output section and takes no part in ordering, in a final link and
-/// in -r alike. An arm64 assembler's ltmpN label names a subsection only
-/// in an object without subsections, so it keeps an empty section there
-/// and nowhere else - but for one of fixed-size records, where no label
-/// at the end names anything.
+/// in -r alike. The arm64 assembler's ltmpN label, which it puts at the
+/// start of every section, names a subsection only in an object without
+/// subsections, so it keeps an empty section there and nowhere else.
 fn bare_sections(
     sect_hdrs: &[MachSection],
     nlists: &[NList],
     strtab: &'static [u8],
     split_ok: bool,
-    record_ends: &[Option<u64>],
 ) -> Vec<bool> {
     let mut bare: Vec<bool> = sect_hdrs.iter().map(|s| s.size == 0).collect();
     for nlist in nlists {
         if !nlist.is_stab()
             && nlist.n_type() == N_SECT
             && let Some(b) = bare.get_mut((nlist.n_sect as usize).wrapping_sub(1))
-            && *b
             && !(split_ok && symbol_name(strtab, nlist).starts_with(b"ltmp"))
-            && !is_at_record_end(record_ends, nlist)
         {
             *b = false;
         }
     }
     bare
-}
-
-/// Where each section of fixed-size records (see record_size) ends.
-fn record_ends(sect_hdrs: &[MachSection]) -> Vec<Option<u64>> {
-    sect_hdrs.iter().map(|hdr| record_size(hdr).map(|_| hdr.addr + hdr.size)).collect()
-}
-
-/// Whether a symbol is at the end of a section of fixed-size records,
-/// where it names no record.
-fn is_at_record_end(record_ends: &[Option<u64>], nlist: &NList) -> bool {
-    !nlist.is_stab()
-        && nlist.n_type() == N_SECT
-        && record_ends.get((nlist.n_sect as usize).wrapping_sub(1)) == Some(&Some(nlist.n_value))
 }
 
 /// The load commands of an object that staging reads: its section
@@ -988,8 +971,7 @@ pub fn stage_object<E: Target>(
         loh: cmds.loh,
     };
 
-    let split_ok = obj.subsections_via_symbols;
-    let bare = bare_sections(sect_hdrs, &obj.nlists, strtab, split_ok, &record_ends(sect_hdrs));
+    let bare = bare_sections(sect_hdrs, &obj.nlists, strtab, obj.subsections_via_symbols);
     if !obj.subsections_via_symbols {
         obj.unweaken_whole_section_names(strtab, relocatable);
     }
