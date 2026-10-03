@@ -930,7 +930,7 @@ fn mark_live_objects<E: Target>(ctx: &mut Context<E>, tentative: &Tentative) -> 
     let mut new_tentative = Tentative::new();
     loop {
         while let Some(obj_idx) = queue.pop() {
-            for i in 0..ctx.objs[obj_idx].nlists.len() {
+            for i in ctx.objs[obj_idx].global_range() {
                 let nlist = ctx.objs[obj_idx].nlists[i];
                 if nlist.is_stab() || !nlist.is_extern() || nlist.n_type() != N_UNDF {
                     continue;
