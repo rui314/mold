@@ -656,13 +656,14 @@ fn apply_hints(ctx: &Context<Arm64>, buf: &mut [u8]) {
     });
 }
 
-/// Encodes the instructions of a delay-init stub or helper at `base`
-/// that refer to other places, by the index of the instruction.
-struct DelayInsn {
+/// Encodes the instructions of a lazy or delay-init helper or stub at
+/// `base` that refer to other places, by the index k of the
+/// instruction (at base + 4k).
+struct HelperInsn {
     base: u64,
 }
 
-impl DelayInsn {
+impl HelperInsn {
     fn pc(&self, k: usize) -> u64 {
         self.base + k as u64 * 4
     }
@@ -677,9 +678,41 @@ impl DelayInsn {
         0x9100_0000 | rd << 5 | rd | (target as u32 & 0xfff) << 10
     }
 
-    /// b or bl (`op`) target
-    fn branch(&self, k: usize, op: u32, target: u64) -> u32 {
-        op | (target.wrapping_sub(self.pc(k)) >> 2) as u32 & B_IMM
+    /// ldr xRT, [xRT, target@PAGEOFF]
+    fn ldr(&self, rt: u32, target: u64) -> u32 {
+        0xf940_0000 | rt << 5 | rt | (bits(target, 11, 3) as u32) << 10
+    }
+
+    /// ldr wRT, [xRT, target@PAGEOFF]
+    fn ldr_w(&self, rt: u32, target: u64) -> u32 {
+        0xb940_0000 | rt << 5 | rt | (bits(target, 11, 2) as u32) << 10
+    }
+
+    /// b target
+    fn b(&self, k: usize, target: u64) -> u32 {
+        0x1400_0000 | (target.wrapping_sub(self.pc(k)) >> 2) as u32 & B_IMM
+    }
+
+    /// bl target
+    fn bl(&self, k: usize, target: u64) -> u32 {
+        0x9400_0000 | (target.wrapping_sub(self.pc(k)) >> 2) as u32 & B_IMM
+    }
+
+    /// A load helper's last instruction, instruction k: ret, or in a
+    /// site's own helper a branch back past the site's adrp (see
+    /// LazyUse::Load).
+    fn ret_or_back(&self, ctx: &Context<Arm64>, k: usize, site: Option<(u32, u32)>) -> u32 {
+        match site {
+            None => 0xd65f_03c0,
+            Some((isec, off)) => self.b(k, ctx.isec_addr(isec as usize) + off as u64 + 4),
+        }
+    }
+}
+
+/// Writes instructions one after another from the start of `loc`.
+fn write_code(loc: &mut [u8], code: &[u32]) {
+    for (loc, &insn) in loc.as_chunks_mut::<4>().0.iter_mut().zip(code) {
+        *loc = insn.to_le_bytes();
     }
 }
 
@@ -892,25 +925,18 @@ impl Target for Arm64 {
         let lazy_load = ctx.sym_stub_addr(ctx.lazy_helpers.dyld_lazy_load.unwrap());
         let header = ctx.mach_header.hdr.addr;
         for h in &ctx.lazy_helpers.helpers {
-            let base = addr + h.offset as u64;
+            let insn = HelperInsn { base: addr + h.offset as u64 };
             let flag = ctx.isec_addr(h.flag as usize);
             let slot = ctx.lazy_load_got.slot_addr(h.slot);
-            // Instruction k is at base + 4k.
-            let pc = |k: usize| base + k as u64 * 4;
-            let adrp = |k: usize, rd: u32, t: u64| 0x9000_0000 | rd | page_offset(t, pc(k));
-            let add = |rd: u32, t: u64| 0x9100_0000 | rd << 5 | rd | (t as u32 & 0xfff) << 10;
-            let branch =
-                |k: usize, op: u32, t: u64| op | (t.wrapping_sub(pc(k)) >> 2) as u32 & B_IMM;
-            let ldr_flag = |rt: u32| 0xb940_0000 | rt << 5 | rt | (bits(flag, 11, 2) as u32) << 10;
             // From instruction k: __dyld_lazy_load(&flag, mach header),
             // by which dyld finds the dylib's record.
             let call = |k: usize| {
                 [
-                    adrp(k, 0, flag),
-                    add(0, flag),
-                    adrp(k + 2, 1, header),
-                    add(1, header),
-                    branch(k + 4, 0x9400_0000, lazy_load),
+                    insn.adrp(k, 0, flag),
+                    insn.add(0, flag),
+                    insn.adrp(k + 2, 1, header),
+                    insn.add(1, header),
+                    insn.bl(k + 4, lazy_load),
                 ]
             };
             let code: [u32; 16] = match h.kind {
@@ -923,13 +949,12 @@ impl Target for Arm64 {
                 //    ldp x1, x0, [sp], #16; b 2b
                 LazyUse::Call => {
                     let [c0, c1, c2, c3, c4] = call(8);
-                    let ldr_slot = 0xf940_0210 | (bits(slot, 11, 3) as u32) << 10;
                     [
-                        adrp(0, 16, flag),
-                        ldr_flag(16),
+                        insn.adrp(0, 16, flag),
+                        insn.ldr_w(16, flag),
                         0x3400_0090,
-                        adrp(3, 16, slot),
-                        ldr_slot,
+                        insn.adrp(3, 16, slot),
+                        insn.ldr(16, slot),
                         0xd61f_0200,
                         0xa9bf_03e1,
                         0xa9bf_7bfd,
@@ -940,7 +965,7 @@ impl Target for Arm64 {
                         c4,
                         0xa8c1_7bfd,
                         0xa8c1_03e1,
-                        branch(15, 0x1400_0000, pc(3)),
+                        insn.b(15, insn.pc(3)),
                     ]
                 }
                 //    adrp xN, flag@PAGE; ldr wN, [xN, flag@PAGEOFF]
@@ -953,16 +978,9 @@ impl Target for Arm64 {
                 LazyUse::Load { reg, site } => {
                     let [c0, c1, c2, c3, c4] = call(6);
                     let rd = reg as u32;
-                    let back = match site {
-                        None => 0xd65f_03c0,
-                        Some((isec, off)) => {
-                            let next = ctx.isec_addr(isec as usize) + off as u64 + 4;
-                            branch(15, 0x1400_0000, next)
-                        }
-                    };
                     [
-                        adrp(0, rd, flag),
-                        ldr_flag(rd),
+                        insn.adrp(0, rd, flag),
+                        insn.ldr_w(rd, flag),
                         0x3500_0180 | rd,
                         0xa9bf_03e1,
                         0xa9bf_47f0,
@@ -975,15 +993,13 @@ impl Target for Arm64 {
                         0xa8c1_7bfd,
                         0xa8c1_47f0,
                         0xa8c1_03e1,
-                        adrp(14, rd, slot),
-                        back,
+                        insn.adrp(14, rd, slot),
+                        insn.ret_or_back(ctx, 15, site),
                     ]
                 }
                 LazyUse::Cmp => unreachable!(),
             };
-            for (k, insn) in code.into_iter().enumerate() {
-                write32(&mut buf[h.offset as usize + k * 4..], insn);
-            }
+            write_code(&mut buf[h.offset as usize..], &code);
         }
     }
 
@@ -997,26 +1013,24 @@ impl Target for Arm64 {
     // 1: adrp x16, slot@PAGE; ldr x16, [x16, slot@PAGEOFF]; br x16
     fn write_delay_stubs(ctx: &Context<Self>, addr: u64, buf: &mut [u8]) {
         for (i, stub) in ctx.delay_init.stubs.iter().enumerate() {
-            let base = addr + i as u64 * Self::DELAY_STUB_SIZE;
+            let off = i * Self::DELAY_STUB_SIZE as usize;
+            let insn = HelperInsn { base: addr + off as u64 };
             let flag = ctx.isec_addr(ctx.delay_init.dlopens[stub.dlopen as usize].flag as usize);
             let helper = ctx.dlopen_helper_addr(stub.dlopen as usize);
             let slot = ctx.got.slot_addr(stub.got as usize);
-            let insn = DelayInsn { base };
             let code = [
                 insn.adrp(0, 16, flag),
                 insn.add(16, flag),
                 0x88df_fe10,
                 0x3500_0090,
                 0xa9bf_7bfd,
-                insn.branch(5, 0x9400_0000, helper),
+                insn.bl(5, helper),
                 0xa8c1_7bfd,
                 insn.adrp(7, 16, slot),
-                0xf940_0210 | (bits(slot, 11, 3) as u32) << 10,
+                insn.ldr(16, slot),
                 0xd61f_0200,
             ];
-            for (k, word) in code.into_iter().enumerate() {
-                write32(&mut buf[i * Self::DELAY_STUB_SIZE as usize + k * 4..], word);
-            }
+            write_code(&mut buf[off..], &code);
         }
     }
 
@@ -1032,46 +1046,34 @@ impl Target for Arm64 {
         let delay = &ctx.delay_init;
         for h in &delay.helpers {
             let DelayUse::Load { reg, site } = h.kind else { unreachable!() };
-            let base = addr + h.offset as u64;
+            let (insn, rd) = (HelperInsn { base: addr + h.offset as u64 }, reg as u32);
             let flag = ctx.isec_addr(delay.dlopens[h.dlopen as usize].flag as usize);
             let helper = ctx.dlopen_helper_addr(h.dlopen as usize);
             let slot = ctx.sym_got_addr(h.sym);
-            let (insn, rd) = (DelayInsn { base }, reg as u32);
-            let back = match site {
-                None => 0xd65f_03c0,
-                Some((isec, off)) => {
-                    let next = ctx.isec_addr(isec as usize) + off as u64 + 4;
-                    insn.branch(8, 0x1400_0000, next)
-                }
-            };
             let code = [
                 insn.adrp(0, rd, flag),
                 insn.add(rd, flag),
                 0x88df_fc00 | rd << 5 | rd,
                 0x3500_0080 | rd,
                 0xa9bf_7bfd,
-                insn.branch(5, 0x9400_0000, helper),
+                insn.bl(5, helper),
                 0xa8c1_7bfd,
                 insn.adrp(7, rd, slot),
-                back,
+                insn.ret_or_back(ctx, 8, site),
             ];
-            for (k, word) in code.into_iter().enumerate() {
-                write32(&mut buf[h.offset as usize + k * 4..], word);
-            }
+            write_code(&mut buf[h.offset as usize..], &code);
         }
         for d in &delay.dlopens {
-            let insn = DelayInsn { base: addr + d.offset as u64 };
+            let insn = HelperInsn { base: addr + d.offset as u64 };
             let (name, flag) = (ctx.isec_addr(d.string as usize), ctx.isec_addr(d.flag as usize));
             let dlopen = ctx.sym_stub_addr(delay.dlopen_sym.unwrap());
             let mut code = DLOPEN_HELPER;
             code[16] = insn.adrp(16, 0, name);
             code[17] = insn.add(0, name);
-            code[19] = insn.branch(19, 0x9400_0000, dlopen);
+            code[19] = insn.bl(19, dlopen);
             code[20] = insn.adrp(20, 1, flag);
             code[21] = insn.add(1, flag);
-            for (k, word) in code.into_iter().enumerate() {
-                write32(&mut buf[d.offset as usize + k * 4..], word);
-            }
+            write_code(&mut buf[d.offset as usize..], &code);
         }
     }
 
