@@ -6694,10 +6694,6 @@ pub(crate) fn ensure_stub_binder<E: Target>(ctx: &mut Context<E>) {
         return;
     }
     let Some(id) = bind_stub_binder(ctx).or_else(|| look_up_stub_binder(ctx)) else {
-        // An image that loads no dylib at all fails the libSystem
-        // check that dead_strip_dylibs would make later, and ld-prime
-        // says so first.
-        check_libsystem_linked(ctx);
         fatal!("lazy binding needs dyld_stub_binder, which no loaded dylib exports");
     };
     ctx.symbols[id].set_is_used(true);

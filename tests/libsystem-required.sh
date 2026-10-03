@@ -56,8 +56,8 @@ cp $t/a.o $t/exit-asm.o
 link -dylib -o $t/l.dylib $t/exit-asm.o
 
 # Before macOS 12, a stub binds lazily, entering dyld through
-# libSystem's dyld_stub_binder, but an image that loads no dylib is
-# refused for that first.
+# libSystem's dyld_stub_binder: an image that loads no dylib is refused.
+# (ld-prime checks for libSystem before it looks for dyld_stub_binder.)
 cat <<EOF2 | $CC -o $t/m.o -c -xc - -mmacosx-version-min=11.0
 void foo(void);
 int main() { foo(); return 0; }
