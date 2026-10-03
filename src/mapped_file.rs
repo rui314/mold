@@ -10,8 +10,9 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, Read};
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 use crate::error::RawPath;
 use crate::fatal;
@@ -22,6 +23,18 @@ use crate::fatal;
 /// by data address.
 static FILE_CACHE: Mutex<Option<HashMap<PathBuf, &'static MappedFile>>> = Mutex::new(None);
 
+/// The contents of the files opened so far, by device and inode, size
+/// and modification time (the inode of a file deleted since may be
+/// another's): a file reached by another path shares them, and so do
+/// the caches keyed by data address. An SDK framework's stub is reached
+/// by two: `-framework Foundation` finds Foundation.framework/
+/// Foundation.tbd, a symbolic link to the Versions/C/Foundation.tbd that
+/// a re-exported install name finds, and tapi::parse_cached parses the
+/// 6 MB file once. A file is read by the first to open it while those
+/// opening it by another path wait.
+type Contents = HashMap<(u64, u64, u64, i64, i64), &'static OnceLock<&'static [u8]>>;
+static CONTENTS: Mutex<Option<Contents>> = Mutex::new(None);
+
 // Files up to this size are read into malloc'ed memory rather than
 // mmap'ed. mmap(2) takes the process's address space lock, so with tens
 // of thousands of input files, the calls serialize at a few microseconds
@@ -29,6 +42,30 @@ static FILE_CACHE: Mutex<Option<HashMap<PathBuf, &'static MappedFile>>> = Mutex:
 // but copying costs memory bandwidth in proportion to the file size, so
 // large files are still mmap'ed.
 const READ_THRESHOLD: u64 = 32 * 1024;
+
+/// The `size` bytes of an open file, read or mapped.
+fn read_contents(file: &File, size: u64, path: &Path) -> &'static [u8] {
+    let display = path.raw();
+    if size == 0 {
+        &[]
+    } else if size <= READ_THRESHOLD {
+        let mut buf = Vec::with_capacity(size as usize);
+        file.take(size)
+            .read_to_end(&mut buf)
+            .unwrap_or_else(|e| fatal!("{display}: read failed: {e}"));
+        if buf.len() as u64 != size {
+            fatal!("{display}: file is shorter than its reported size");
+        }
+        Vec::leak(buf)
+    } else {
+        // SAFETY: the mapping outlives every reference (it is
+        // leaked), and linkers conventionally assume inputs are
+        // not modified during the link.
+        let map = unsafe { memmap2::Mmap::map(file) }
+            .unwrap_or_else(|e| fatal!("{display}: mmap failed: {e}"));
+        Box::leak(Box::new(map))
+    }
+}
 
 // MappedFile represents an input file that is either mmap'ed or read into
 // memory. Either way, its contents are accessible through `data()`.
@@ -58,29 +95,15 @@ impl MappedFile {
         if !metadata.is_file() {
             return Err(io::Error::from(io::ErrorKind::NotFound));
         }
-        let display = path.raw();
-        let size = metadata.len();
-
-        let data: &'static [u8] = if size == 0 {
-            &[]
-        } else if size <= READ_THRESHOLD {
-            let mut buf = Vec::with_capacity(size as usize);
-            (&file)
-                .take(size)
-                .read_to_end(&mut buf)
-                .unwrap_or_else(|e| fatal!("{display}: read failed: {e}"));
-            if buf.len() as u64 != size {
-                fatal!("{display}: file is shorter than its reported size");
-            }
-            Vec::leak(buf)
-        } else {
-            // SAFETY: the mapping outlives every reference (it is
-            // leaked), and linkers conventionally assume inputs are
-            // not modified during the link.
-            let map = unsafe { memmap2::Mmap::map(&file) }
-                .unwrap_or_else(|e| fatal!("{display}: mmap failed: {e}"));
-            Box::leak(Box::new(map))
-        };
+        let md = &metadata;
+        let id = (md.dev(), md.ino(), md.size(), md.mtime(), md.mtime_nsec());
+        let cell: &'static OnceLock<&'static [u8]> = CONTENTS
+            .lock()
+            .unwrap()
+            .get_or_insert_with(HashMap::new)
+            .entry(id)
+            .or_insert_with(|| Box::leak(Box::new(OnceLock::new())));
+        let data = *cell.get_or_init(|| read_contents(&file, metadata.len(), path));
         let mf: &'static Self =
             Box::leak(Box::new(Self { name: path.to_path_buf(), data, parent: None, mtime: None }));
         FILE_CACHE.lock().unwrap().get_or_insert_with(HashMap::new).insert(path.to_path_buf(), mf);
