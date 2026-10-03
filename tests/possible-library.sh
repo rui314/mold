@@ -5,9 +5,9 @@ source "$(dirname "$0")"/common.inc
 # name a library as an auto-link option does, as a hint: it is looked
 # at only after the command line's inputs, gets a load command only if
 # something binds to it (by install name, with the auto-linked ones),
-# and if it isn't there, ld-prime says so only when symbols stay
-# undefined - the libraries before the frameworks. Another option
-# naming the library makes it an input like any other.
+# and if it isn't there, the link says so only when symbols stay
+# undefined. Another option naming the library makes it an input like
+# any other.
 echo 'int foo(void) { return 3; }' | $CC -o $t/foo.o -c -xc -
 echo 'int foo(void) { return 7; }' | $CC -o $t/foo2.o -c -xc -
 $CC -o $t/libfoo.dylib -shared $t/foo.o -Wl,-install_name,/AAA/libfoo.dylib
@@ -42,8 +42,8 @@ $CC --ld-path=$mold -o $t/exe6 $t/a.o -Wl,-possible_framework,None,-possible-lno
 not grep -q 'auto-linked' $t/log6
 
 not $CC --ld-path=$mold -o $t/exe7 $t/b.o -Wl,-possible_framework,None,-possible-lnone 2> $t/log7
-grep -A1 "Could not find or use auto-linked library 'none': library 'none' not found" $t/log7 | \
-  grep -q "Could not find or use auto-linked framework 'None': framework 'None' not found"
+grep -q "Could not find or use auto-linked library 'none': library 'none' not found" $t/log7
+grep -q "Could not find or use auto-linked framework 'None': framework 'None' not found" $t/log7
 
 $CC --ld-path=$mold -o $t/exe8 $t/a.o -L$t \
   -Wl,-possible-lfoo,-possible-lfoo,-possible_library,$t/libfoo.dylib 2> $t/log8

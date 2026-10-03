@@ -55,10 +55,14 @@ $CC --ld-path=$mold -o $t/exe3 $t/a.o -Wl,-alias_list,$t/nosuch.txt 2> $t/log
 says $t/nosuch.txt 'No such file or directory'
 $t/exe3
 
-# ld-prime stops at the first library it doesn't find, looking the
-# libraries up in command-line order (-force_load's among them), and the
-# frameworks only after them: it reports one only.
+# The first library or framework not found, in command-line order
+# (-force_load's among them), stops the link: one is reported. (ld-prime
+# looks the frameworks up only after the libraries.)
 try -framework NoSuch1 -Wl,-force_load,$t/nosuch.a -lnosuch -lnosuch -framework NoSuch2
+grep -v '^+' $t/log > $t/msgs
+[ "$(grep -c 'not found' $t/msgs)" = 1 ]
+grep -q "framework 'NoSuch1' not found" $t/msgs
+try -Wl,-force_load,$t/nosuch.a -lnosuch -lnosuch -framework NoSuch2
 grep -v '^+' $t/log > $t/msgs
 [ "$(grep -c 'not found' $t/msgs)" = 1 ]
 grep -q "library '$t/nosuch.a' not found" $t/msgs
@@ -69,7 +73,7 @@ grep -q "framework 'NoSuch1' not found" $t/msgs
 
 # A bare path ending in .a is a library's, though one in a -filelist is
 # a file's like any other.
-try -framework NoSuch -Wl,$t/nosuch2.o -Wl,$t/nosuch.a
+try -Wl,$t/nosuch2.o -Wl,$t/nosuch.a -framework NoSuch
 grep -q "library '$t/nosuch.a' not found" $t/log
 try -Wl,$t/nosuch.a -lnosuch
 grep -q "library '$t/nosuch.a' not found" $t/log

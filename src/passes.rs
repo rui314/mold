@@ -902,14 +902,10 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
         .collect();
     prefetch_stubs(ctx, &stubs);
 
-    // ld-prime looks for the frameworks after the libraries.
-    for framework in [false, true] {
-        for (arg, path) in inputs.iter().zip(&paths) {
-            if let (InputArg::Library(LibraryKind::Possible, name), None) = (arg, path)
-                && matches!(name, LibraryName::Framework(_)) == framework
-            {
-                ctx.autolink_misses.push(missing_hint(framework, name.as_os_str().as_bytes()));
-            }
+    for (arg, path) in inputs.iter().zip(&paths) {
+        if let (InputArg::Library(LibraryKind::Possible, name), None) = (arg, path) {
+            let framework = matches!(name, LibraryName::Framework(_));
+            ctx.autolink_misses.push(missing_hint(framework, name.as_os_str().as_bytes()));
         }
     }
 
@@ -1204,9 +1200,8 @@ fn library_option(arg: &InputArg) -> Option<(ReaderContext, bool, &OsStr)> {
 /// libfoo. A file also given by bare path, or named by options that
 /// match no other way (`-upward_library libfoo.dylib`), takes nothing
 /// from the other namings: the first to load the file decides (see
-/// collect_file). ld-prime stops at the first library it doesn't find,
-/// -force_load's among them, and at a naming check_naming refuses; it
-/// looks the frameworks up only after all of the libraries.
+/// collect_file). The first library or framework not found, -force_load's
+/// among them, stops the link, as does a naming check_naming refuses.
 fn library_namings(
     args: &Args,
     inputs: &[InputArg],
@@ -1214,15 +1209,11 @@ fn library_namings(
 ) -> Vec<Option<ReaderContext>> {
     let mut merged: hashbrown::HashMap<(bool, &OsStr), ReaderContext> = hashbrown::HashMap::new();
     let mut keys = Vec::with_capacity(inputs.len());
-    let mut missing_framework = None;
     for (arg, path) in inputs.iter().zip(paths) {
         let key = match (library_option(arg), path) {
             // A hint (see missing_hint).
             (Some((rc, _, _)), None) if rc.autolinked => None,
-            (Some((_, true, name)), None) => {
-                missing_framework.get_or_insert(name);
-                None
-            }
+            (Some((_, true, name)), None) => fatal!("framework '{}' not found", name.raw()),
             (Some((_, false, name)), None) => fatal!("library '{}' not found", name.raw()),
             (None, None) => match arg {
                 InputArg::BundleLoader(path) | InputArg::File(path) => {
@@ -1248,17 +1239,12 @@ fn library_namings(
                     );
                 }
                 *all = all.union(ReaderContext { sdk: found_in_sdk(args, arg, path), ..rc });
-                if missing_framework.is_none() {
-                    check_naming(*all, framework, name);
-                }
+                check_naming(*all, framework, name);
                 Some(key)
             }
             (None, _) => None,
         };
         keys.push(key);
-    }
-    if let Some(name) = missing_framework {
-        fatal!("framework '{}' not found", name.raw());
     }
     // The options naming one library make one input, where it is first
     // named; each other input is one of its own.
