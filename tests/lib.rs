@@ -412,9 +412,12 @@ fn prepare_work_dir(mold: &Path) -> io::Result<PathBuf> {
     // writing generated files into the source tree.
     let work_dir = profile_dir.join("mold-test");
     fs::create_dir_all(&work_dir)?;
-    replace_file_link(&mold, &work_dir.join("mold"))?;
-    replace_file_link(&mold, &work_dir.join("ld"))?;
     replace_file_link(&wrapper, &work_dir.join("mold-wrapper.so"))?;
+
+    // FreeBSD defaults to ld.lld on llvm upstream. Override ld is not enough with -B.
+    for name in ["mold", "ld", "ld.lld"] {
+        replace_file_link(&mold, &work_dir.join(name))?;
+    }
     Ok(work_dir)
 }
 
