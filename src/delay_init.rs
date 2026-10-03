@@ -33,7 +33,7 @@ pub fn create_delay_init<E: Target>(ctx: &mut Context<E>) {
         return;
     }
     let uses = delay_uses(ctx);
-    // (A mergeable dylib can't keep them; see passes::create_lazy_loads.)
+    // (A mergeable dylib can't keep them; see lazy_load::create_lazy_loads.)
     if ctx.args.make_mergeable && !uses.is_empty() {
         crate::fatal!(
             "-delay-l/-delay_library/-delay_framework cannot be used with -make_mergeable"

@@ -55,7 +55,7 @@ pub enum SplitRef {
 }
 
 /// How a relocation reaches a symbol of a dylib dyld loads lazily, or
-/// initializes at its first use (see passes::create_lazy_loads and
+/// initializes at its first use (see lazy_load::create_lazy_loads and
 /// delay_init::create_delay_init).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LazyRef {

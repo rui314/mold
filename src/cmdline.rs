@@ -3660,7 +3660,7 @@ fn check_output_kind(args: &mut Args, pie: Option<bool>) {
 /// subsections a two-level image may take in; and the debug hook in a
 /// mergeable dylib, which only a debug build that merges nothing gets.
 /// (A mergeable dylib may name lazy-load and delay-init dylibs, but not
-/// use them; see passes::create_lazy_loads.)
+/// use them; see lazy_load::create_lazy_loads.)
 fn check_dylib_use(args: &Args) {
     if args.flat_namespace && !args.is_dylinker() && args.shared_region {
         fatal!(

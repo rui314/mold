@@ -666,7 +666,7 @@ impl<E: Target> Context<E> {
     }
 
     /// True for a symbol of a dylib dyld loads lazily (see
-    /// passes::create_lazy_loads).
+    /// lazy_load::create_lazy_loads).
     pub fn is_lazy_import(&self, id: SymbolId) -> bool {
         match self.symbols[id].file() {
             Some(FileId::Dylib(d)) => d != u32::MAX && self.dylibs[d as usize].is_lazy,

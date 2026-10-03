@@ -16,6 +16,7 @@ pub(crate) mod filetype;
 pub(crate) mod icf;
 pub(crate) mod input_files;
 pub(crate) mod input_sections;
+pub(crate) mod lazy_load;
 pub(crate) mod lto;
 pub mod macho;
 mod macho_consts;

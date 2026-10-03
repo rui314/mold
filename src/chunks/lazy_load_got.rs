@@ -9,7 +9,7 @@ use crate::target::Target;
 /// __DATA,__lazy_load_got: a slot per lazily loaded symbol (on x86-64,
 /// a second one for its call helper: see Target::LAZY_CALL_OWN_SLOT),
 /// each dylib's together, in the order of the image's first uses (see
-/// passes::create_lazy_load_slots). Each dylib's slots
+/// lazy_load::create_lazy_load_slots). Each dylib's slots
 /// are a chain of DYLD_CHAINED_PTR_64 binds, which
 /// LC_DYLD_CHAINED_FIXUPS does not list: the dylib's
 /// LC_LAZY_LOAD_DYLIB_INFO record points dyld at the chain's first
