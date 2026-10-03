@@ -1,5 +1,6 @@
 //! Input file parsing: object files, dylib stubs and archives.
 
+use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
@@ -1544,98 +1545,119 @@ impl StagedObject {
     }
 }
 
+/// Where a staged object of a batch goes in the global arenas: the
+/// first of its subsections, CIEs, FDEs, unwind records and local
+/// symbols there, and the first of its globals' ids among those
+/// interned for the batch. Prefix sums over the batch (see
+/// integrate_objects).
+#[derive(Clone, Copy)]
+struct ArenaBases {
+    isec: usize,
+    cie: usize,
+    fde: usize,
+    unwind: usize,
+    locals: usize,
+    ids: usize,
+}
+
+impl StagedObject {
+    /// How many local symbols (stabs included) the object has.
+    fn num_locals(&self) -> usize {
+        self.first_global.map_or_else(
+            || self.nlists.iter().filter(|n| n.is_stab() || !n.is_extern()).count(),
+            |g| g as usize,
+        )
+    }
+
+    /// The symbol of each of the object's nlists: its locals' are the
+    /// slots from `first_local` on, its globals' the `ids` interned for
+    /// them, in order.
+    fn symbol_ids(&self, first_local: usize, ids: &[SymbolId]) -> Vec<SymbolId> {
+        let mut syms = Vec::with_capacity(self.nlists.len());
+        let mut next_local = first_local as u32;
+        let mut ids = ids.iter();
+        for nlist in self.nlists.iter() {
+            if nlist.is_stab() || !nlist.is_extern() {
+                syms.push(next_local);
+                next_local += 1;
+            } else {
+                syms.push(*ids.next().unwrap());
+            }
+        }
+        syms
+    }
+
+    /// Hands each subsection its run of the unwind records (see
+    /// group_unwind_records), which start at `base` in the global arena.
+    fn set_unwind_ranges(&mut self, base: usize) {
+        let mut start = 0;
+        for run in self.unwind.chunk_by(|a, b| a.isec == b.isec) {
+            let isec = &mut self.isecs[run[0].isec as usize];
+            isec.unwind_offset = (base + start) as u32;
+            isec.nunwind = run.len() as u32;
+            start += run.len();
+        }
+    }
+}
+
+/// Each staged object's place in the global arenas, after what they
+/// hold already, for objects with `num_locals` local symbols and
+/// `counts` globals each.
+fn arena_bases<E: Target>(
+    ctx: &Context<E>,
+    staged: &[StagedObject],
+    num_locals: &[usize],
+    counts: &[usize],
+) -> Vec<ArenaBases> {
+    let mut next = ArenaBases {
+        isec: ctx.isecs.len(),
+        cie: ctx.cies.len(),
+        fde: ctx.fdes.len(),
+        unwind: ctx.unwind_records.len(),
+        locals: ctx.symbols.syms.len(),
+        ids: 0,
+    };
+    let mut bases = Vec::with_capacity(staged.len());
+    for ((st, &nlocals), &nids) in staged.iter().zip(num_locals).zip(counts) {
+        bases.push(next);
+        next.isec += st.isecs.len();
+        next.cie += st.cies.len();
+        next.fde += st.fdes.len();
+        next.unwind += st.unwind.len();
+        next.locals += nlocals;
+        next.ids += nids;
+    }
+    bases
+}
+
 /// Integrates a whole staging batch at once, mold-style: every
-/// object's arena positions (subsection, CIE, FDE and local-symbol
-/// bases) come from prefix sums over the batch, so the rebasing of
-/// indices - the actual work - runs on all cores, and the serial
-/// remainder is moving the rebased vectors into the global arenas.
-/// Produces exactly the layout the one-at-a-time path would.
+/// object's arena positions come from prefix sums over the batch (see
+/// arena_bases), so the rebasing of indices - the actual work - runs on
+/// all cores, and so does moving the rebased vectors into the global
+/// arenas. `ids` are the symbols interned for the batch's globals,
+/// `counts[i]` of them object i's. Subsections, unwind records, CIEs
+/// and FDEs end up where integrate_object, one object at a time, would
+/// put them.
 pub fn integrate_objects<E: Target>(
     ctx: &mut Context<E>,
     mut staged: Vec<StagedObject>,
-    ids: Vec<crate::symbol::SymbolId>,
+    ids: Vec<SymbolId>,
     counts: Vec<usize>,
 ) {
+    // Counting an object's locals scans its nlists, so on a debug link
+    // (millions of nlists) it runs in parallel; the prefix sums
+    // themselves are a cheap serial walk.
+    let num_locals: Vec<usize> = staged.par_iter().map(StagedObject::num_locals).collect();
+    let bases = arena_bases(ctx, &staged, &num_locals, &counts);
     let obj_base = ctx.objs.len();
-    let mut isec_base = ctx.isecs.len();
-    let mut cie_base = ctx.cies.len();
-    let mut fde_base = ctx.fdes.len();
-    let mut unwind_base = ctx.unwind_records.len();
-    let mut locals_base = ctx.symbols.syms.len();
-    let mut id_base = 0usize;
-
-    struct Bases {
-        isec: usize,
-        cie: usize,
-        fde: usize,
-        unwind: usize,
-        locals: usize,
-        ids: usize,
-    }
-    // The per-object local-symbol counts drive the prefix sum below.
-    // Counting scans every nlist of every object, so on a debug link
-    // (millions of nlists) it runs in parallel; the prefix sum itself
-    // stays a cheap serial arithmetic walk.
-    let n_locals_all: Vec<usize> = staged
-        .par_iter()
-        .map(|st| {
-            st.first_global.map_or_else(
-                || st.nlists.iter().filter(|n| n.is_stab() || !n.is_extern()).count(),
-                |g| g as usize,
-            )
-        })
-        .collect();
-    let mut bases = Vec::with_capacity(staged.len());
-    for (i, (st, &nids)) in staged.iter().zip(&counts).enumerate() {
-        bases.push(Bases {
-            isec: isec_base,
-            cie: cie_base,
-            fde: fde_base,
-            unwind: unwind_base,
-            locals: locals_base,
-            ids: id_base,
-        });
-        isec_base += st.isecs.len();
-        cie_base += st.cies.len();
-        fde_base += st.fdes.len();
-        unwind_base += st.unwind.len();
-        locals_base += n_locals_all[i];
-        id_base += nids;
-    }
 
     // The rebasing, in parallel. Each object's nlists map to symbols
     // first: its locals to the slots its prefix sum reserved (they are
     // initialized below), its globals to the ids interned for the batch.
-    let syms_of: Vec<Vec<crate::symbol::SymbolId>> = staged
-        .par_iter_mut()
-        .enumerate()
-        .map(|(i, st)| {
-            let base = &bases[i];
-            let mut syms = Vec::with_capacity(st.nlists.len());
-            let mut next_local = base.locals as u32;
-            let mut next_id = base.ids;
-            for nlist in st.nlists.iter() {
-                if nlist.is_stab() || !nlist.is_extern() {
-                    syms.push(next_local);
-                    next_local += 1;
-                } else {
-                    syms.push(ids[next_id]);
-                    next_id += 1;
-                }
-            }
-
-            // Hand each subsection its compact-unwind range (records
-            // arrive grouped by function), before the indices rebase.
-            let mut run = 0;
-            while run < st.unwind.len() {
-                let isec = st.unwind[run].isec;
-                let start = run;
-                while run < st.unwind.len() && st.unwind[run].isec == isec {
-                    run += 1;
-                }
-                st.isecs[isec as usize].unwind_offset = (base.unwind + start) as u32;
-                st.isecs[isec as usize].nunwind = (run - start) as u32;
-            }
+    let syms_of: Vec<Vec<SymbolId>> = (staged.par_iter_mut().zip(&bases).enumerate())
+        .map(|(i, (st, base))| {
+            let syms = st.symbol_ids(base.locals, &ids[base.ids..]);
+            st.set_unwind_ranges(base.unwind);
             st.rebase(obj_base + i, base.isec, base.cie, base.fde, &syms);
             syms
         })
@@ -1645,73 +1667,64 @@ pub fn integrate_objects<E: Target>(
     // ranges - mold's ParallelSymbolAllocator contract: the arena is
     // sized up front, each object owns the exclusive range its prefix
     // sum assigned, and init writes every slot in it.
-    {
-        let total_locals = locals_base - ctx.symbols.syms.len();
-        let old_len = ctx.symbols.syms.len();
-        ctx.symbols.syms.reserve(total_locals);
-        struct SlotPtr(*mut crate::symbol::Symbol);
-        unsafe impl Sync for SlotPtr {}
-        let ptr = SlotPtr(ctx.symbols.syms.as_mut_ptr());
-        let ptr = &ptr;
-        staged.par_iter().zip(&bases).for_each(|(st, base)| {
-            let mut slot = base.locals;
-            let r = st.local_range();
-            for (nlist, name) in st.nlists[r.clone()].iter().zip(&st.sym_names[r]) {
-                if nlist.is_stab() || !nlist.is_extern() {
-                    // SAFETY: [base.locals, base.locals+n) ranges
-                    // are disjoint across objects and lie within
-                    // the reserved capacity.
-                    unsafe {
-                        ptr.0.add(slot).write(crate::symbol::Symbol::new(name));
-                    }
-                    slot += 1;
-                }
-            }
-        });
-        // SAFETY: every slot in old_len..old_len+total_locals was
-        // initialized by exactly one object above.
-        unsafe { ctx.symbols.syms.set_len(old_len + total_locals) };
-    }
+    let syms = &mut ctx.symbols.syms;
+    let old_len = syms.len();
+    let slots = spare_ranges(syms, &num_locals);
+    staged.par_iter().zip(slots).for_each(|(st, slots)| {
+        let r = st.local_range();
+        let locals = (st.nlists[r.clone()].iter().zip(&st.sym_names[r]))
+            .filter(|(nlist, _)| nlist.is_stab() || !nlist.is_extern());
+        for (slot, (_, name)) in slots.iter_mut().zip(locals) {
+            slot.write(crate::symbol::Symbol::new(name));
+        }
+    });
+    // SAFETY: the loop above initialized every slot spare_ranges handed
+    // out, each object its own range.
+    unsafe { syms.set_len(old_len + num_locals.iter().sum::<usize>()) };
 
-    // Arena extension: each object's staged vectors move into the
-    // arenas at the exclusive ranges the prefix sums assigned - the
-    // same contract as the local symbols above, so hundreds of
-    // megabytes of subsections move on all cores instead of one.
-    fn par_moves<T: Send>(dst: &mut Vec<T>, parts: Vec<(usize, Vec<T>)>) {
-        struct RawPtr<T>(*mut T);
-        unsafe impl<T> Sync for RawPtr<T> {}
-        let add: usize = parts.iter().map(|(_, v)| v.len()).sum();
-        let old = dst.len();
-        dst.reserve(add);
-        let ptr = RawPtr(dst.as_mut_ptr());
-        let ptr = &ptr;
-        parts.into_par_iter().for_each(|(base, items)| {
-            for (p, item) in (base..).zip(items) {
-                // SAFETY: the ranges are disjoint across parts and lie
-                // within the reserved capacity; every slot is written
-                // exactly once.
-                unsafe { ptr.0.add(p).write(item) };
-            }
-        });
-        unsafe { dst.set_len(old + add) };
-    }
-    macro_rules! take_parts {
-        ($field:ident, $base:ident) => {
-            staged
-                .iter_mut()
-                .zip(&bases)
-                .map(|(st, b)| (b.$base, std::mem::take(&mut st.$field)))
-                .collect()
-        };
-    }
-    par_moves(&mut ctx.isecs, take_parts!(isecs, isec));
-    par_moves(&mut ctx.unwind_records, take_parts!(unwind, unwind));
-    par_moves(&mut ctx.cies, take_parts!(cies, cie));
-    par_moves(&mut ctx.fdes, take_parts!(fdes, fde));
+    // Each object's staged vectors move into the arenas at the ranges
+    // the prefix sums assigned, the same way, so hundreds of megabytes
+    // of subsections move on all cores instead of one.
+    append_in_parallel(&mut ctx.isecs, staged.iter_mut().map(|st| std::mem::take(&mut st.isecs)));
+    append_in_parallel(
+        &mut ctx.unwind_records,
+        staged.iter_mut().map(|st| std::mem::take(&mut st.unwind)),
+    );
+    append_in_parallel(&mut ctx.cies, staged.iter_mut().map(|st| std::mem::take(&mut st.cies)));
+    append_in_parallel(&mut ctx.fdes, staged.iter_mut().map(|st| std::mem::take(&mut st.fdes)));
 
     for (st, syms) in staged.into_iter().zip(syms_of) {
         ctx.objs.push(st.into_object_file(syms));
     }
+}
+
+/// Reserves room in `v` for runs of `lens` elements after its own and
+/// returns them, uninitialized, for the caller to fill in parallel.
+fn spare_ranges<'a, T>(v: &'a mut Vec<T>, lens: &[usize]) -> Vec<&'a mut [MaybeUninit<T>]> {
+    v.reserve(lens.iter().sum());
+    let mut spare = v.spare_capacity_mut();
+    let mut ranges = Vec::with_capacity(lens.len());
+    for &len in lens {
+        let (range, rest) = spare.split_at_mut(len);
+        ranges.push(range);
+        spare = rest;
+    }
+    ranges
+}
+
+/// Appends `parts` to `v`, in order, moving the parts in parallel.
+fn append_in_parallel<T: Send>(v: &mut Vec<T>, parts: impl Iterator<Item = Vec<T>>) {
+    let parts: Vec<Vec<T>> = parts.collect();
+    let lens: Vec<usize> = parts.iter().map(Vec::len).collect();
+    let old_len = v.len();
+    let ranges = spare_ranges(v, &lens);
+    ranges.into_par_iter().zip(parts).for_each(|(range, part)| {
+        for (slot, item) in range.iter_mut().zip(part) {
+            slot.write(item);
+        }
+    });
+    // SAFETY: every slot of the ranges was written above.
+    unsafe { v.set_len(old_len + lens.iter().sum::<usize>()) };
 }
 
 /// Appends a staged object to the global arenas, rebasing its local
@@ -1719,29 +1732,19 @@ pub fn integrate_objects<E: Target>(
 /// batch of one, done serially.
 pub fn integrate_object<E: Target>(ctx: &mut Context<E>, mut staged: StagedObject) -> usize {
     let obj_idx = ctx.objs.len();
-    let isec_base = ctx.isecs.len();
-
-    let mut syms = Vec::with_capacity(staged.nlists.len());
-    for (nlist, name) in staged.nlists.iter().zip(&staged.sym_names) {
-        let id = if nlist.is_stab() || !nlist.is_extern() {
-            ctx.symbols.add_local(name)
-        } else {
-            ctx.symbols.intern(name)
-        };
-        syms.push(id);
-    }
-
-    staged.rebase(obj_idx, isec_base, ctx.cies.len(), ctx.fdes.len(), &syms);
+    let syms: Vec<SymbolId> = (staged.nlists.iter().zip(&staged.sym_names))
+        .map(|(nlist, name)| {
+            if nlist.is_stab() || !nlist.is_extern() {
+                ctx.symbols.add_local(name)
+            } else {
+                ctx.symbols.intern(name)
+            }
+        })
+        .collect();
+    staged.set_unwind_ranges(ctx.unwind_records.len());
+    staged.rebase(obj_idx, ctx.isecs.len(), ctx.cies.len(), ctx.fdes.len(), &syms);
     ctx.isecs.append(&mut staged.isecs);
-    for rec in std::mem::take(&mut staged.unwind) {
-        // Extend or open the subsection's record range (grouped input).
-        let isec = &mut ctx.isecs[rec.isec as usize];
-        if isec.nunwind == 0 {
-            isec.unwind_offset = ctx.unwind_records.len() as u32;
-        }
-        isec.nunwind += 1;
-        ctx.unwind_records.push(rec);
-    }
+    ctx.unwind_records.append(&mut staged.unwind);
     ctx.cies.append(&mut staged.cies);
     ctx.fdes.append(&mut staged.fdes);
     ctx.objs.push(staged.into_object_file(syms));
