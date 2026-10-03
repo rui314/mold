@@ -4,6 +4,7 @@
 //! and segments in the file.
 
 use std::os::unix::ffi::OsStrExt;
+use std::sync::Mutex;
 
 use rayon::prelude::*;
 
@@ -18,12 +19,13 @@ use crate::error::raw;
 use crate::fatal;
 use crate::input_files::FileId;
 use crate::input_files::is_class_or_protocol_ref_name;
-use crate::input_sections::InputSection;
+use crate::input_sections::{InputSection, InputSectionId};
 use crate::macho::*;
 use crate::objc::DataBlob;
 use crate::symbol_moves::{Move, MoveOption};
 use crate::target::Target;
 use crate::util::align_to;
+use crate::util::worker_local::WorkerLocal;
 
 /// The segment for read-only-after-fixup data: __DATA_CONST unless
 /// -no_data_const.
@@ -766,53 +768,158 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
 /// their first members come, and drops the sections the link consumes.
 /// A final image's sections that renames made of zero-fill and
 /// file-backed members alike are then settled.
+///
+/// The members are found in parallel and gathered by block of the arena
+/// (see group_input_sections), and then, as in mold's
+/// create_output_sections, each output section's groups are concatenated
+/// in input order. mold sorts its sections by name; here they are made
+/// in the order of their first members, as ld-prime orders them, which
+/// a -r output keeps.
 fn assign_input_sections<E: Target>(
     ctx: &mut Context<E>,
     text: SectionName,
     moves: &hashbrown::HashMap<u32, Move>,
 ) {
-    let map = SectionMap::new(ctx);
-    let mut table = OutputSectionTable::default();
-    // The subsections of an input section are contiguous in the arena
-    // and go to the same output section, but for those a symbol move
-    // takes elsewhere: the last input section's (file, shndx) and output
-    // section spare all but its first subsection the 32-byte name hash -
-    // on a debug link, millions of lookups.
-    let mut last: Option<((u32, u32), Option<OutputSectionId>)> = None;
-    for i in 0..ctx.isecs.len() {
-        let isec = &ctx.isecs[i];
-        if !isec.is_emitted() || isec.is_placed() {
-            continue;
-        }
-        let sec = (isec.file, isec.shndx);
-        let mv = moves.get(&(i as u32)).copied();
-        let id = match last {
-            Some((last_sec, id)) if last_sec == sec && mv.is_none() => id,
-            _ => {
-                // A copy: the header lives in its object, which stays
-                // borrowed while the section is placed otherwise.
-                let hdr = *ctx.hdr_of(isec);
-                let id = table.get(ctx, map, text, &hdr, mv);
-                if mv.is_none() {
-                    last = Some((sec, id));
-                }
-                id
-            }
-        };
-        let Some(id) = id else {
-            // Consumed by the link: no output section.
-            ctx.isecs[i].set_alive(false);
-            continue;
-        };
+    let (block_groups, table) = group_input_sections(ctx, moves);
 
-        let osec = &mut ctx.output_sections[id.index()];
-        osec.hdr.p2align = osec.hdr.p2align.max(ctx.isecs[i].p2align as u32);
-        osec.members.push(i as u32);
-        ctx.isecs[i].set_output_section(ChunkId::Output(id));
+    // Transpose only the groups that exist, retaining input order.
+    let mut grouped: Vec<Vec<&OutputSectionFileMembers>> =
+        (0..table.fill_kinds.len()).map(|_| Vec::new()).collect();
+    for groups in &block_groups {
+        for (section, members) in groups {
+            grouped[*section].push(members);
+        }
     }
+
+    // Make the output sections in the order their first members come,
+    // each with the flags and the move of its first member (see
+    // add_output_section_for).
+    let mut order: Vec<usize> = (0..grouped.len()).collect();
+    order.sort_by_key(|&section| grouped[section][0].members[0]);
+    let mut ids = vec![OutputSectionId::new(0); grouped.len()];
+    for section in order {
+        let first = grouped[section][0];
+        let hdr = *ctx.hdr_of(&ctx.isecs[first.members[0]]);
+        ids[section] = add_output_section_for(ctx, &hdr, text, first.dest);
+        ctx.output_section_mut(ids[section]).has_tlv_data = table.has_tlv_data[section];
+    }
+
+    // Copy large member vectors in parallel, as well as flattening
+    // different output sections in parallel.
+    let flattened: Vec<(OutputSectionId, Vec<InputSectionId>, u8)> = grouped
+        .into_par_iter()
+        .enumerate()
+        .map(|(section, parts)| {
+            let n = parts.iter().map(|g| g.members.len()).sum();
+            let mut members = vec![0; n];
+            let mut rest = members.as_mut_slice();
+            let mut slices = Vec::with_capacity(parts.len());
+            for g in &parts {
+                slices.push(rest.split_off_mut(..g.members.len()).unwrap());
+            }
+            parts.par_iter().zip(slices).for_each(|(g, slice)| {
+                slice.copy_from_slice(&g.members);
+            });
+            let p2align = parts.iter().map(|g| g.p2align).max().unwrap_or(0);
+            (ids[section], members, p2align)
+        })
+        .collect();
+    for (id, members, p2align) in flattened {
+        let osec = ctx.output_section_mut(id);
+        osec.members = members;
+        osec.hdr.p2align = osec.hdr.p2align.max(p2align as u32);
+    }
+
+    // Point the members at their output sections, a block at a time.
+    ctx.isecs.par_chunks_mut(BLOCK).zip(&block_groups).for_each(|(isecs, groups)| {
+        for (section, group) in groups {
+            for &i in &group.members {
+                isecs[i as usize % BLOCK].set_output_section(ChunkId::Output(ids[*section]));
+            }
+        }
+    });
+
     if !ctx.args.relocatable {
-        resolve_zerofill_conflicts(ctx, &table.fill_kinds);
+        let mut fill_kinds = vec![0; ctx.output_sections.len()];
+        for (section, &kinds) in table.fill_kinds.iter().enumerate() {
+            fill_kinds[ids[section].index()] = kinds;
+        }
+        resolve_zerofill_conflicts(ctx, &fill_kinds);
     }
+}
+
+/// The input sections group_input_sections hands each job: blocks of
+/// the arena take the place of mold's files, as the subsections of all
+/// the files are in one arena.
+const BLOCK: usize = 4096;
+
+/// Finds the output section of each live input section in parallel, as
+/// mold's create_output_sections does, through a cache per worker and a
+/// table shared by all (see OutputSectionTable), where the output
+/// sections are numbered as the workers come to them. Returns the
+/// table, and each block's members by output section, in input order;
+/// drops the input sections the link consumes.
+fn group_input_sections<E: Target>(
+    ctx: &mut Context<E>,
+    moves: &hashbrown::HashMap<u32, Move>,
+) -> (Vec<Vec<(usize, OutputSectionFileMembers)>>, OutputSectionTable) {
+    let map = SectionMap::new(ctx);
+
+    // Keep a cache per worker so it is reused across Rayon jobs. Each
+    // mutex is locked once per block, without contention between workers.
+    let shared = Mutex::new(OutputSectionTable::default());
+    let caches = WorkerLocal::new(WorkerCache::default);
+
+    let Context { isecs, objs, args, .. } = ctx;
+    let block_groups = isecs
+        .par_chunks_mut(BLOCK)
+        .enumerate()
+        .map(|(block, isecs)| {
+            let mut groups: Vec<(usize, OutputSectionFileMembers)> = Vec::new();
+            let mut cache = caches.get();
+            // The subsections of an input section are contiguous in the
+            // arena and go to the same output section, but for those a
+            // symbol move takes elsewhere: the last input section's
+            // (file, shndx) and group spare all but its first subsection
+            // the key's hash - on a debug link, millions of lookups.
+            let mut last: Option<((u32, u32), Option<usize>)> = None;
+            for (i, isec) in (block * BLOCK..).zip(isecs) {
+                if !isec.is_emitted() || isec.is_placed() {
+                    continue;
+                }
+                let sec = (isec.file, isec.shndx);
+                let mv = moves.get(&(i as u32)).copied();
+                let group = match last {
+                    Some((last_sec, group)) if last_sec == sec && mv.is_none() => group,
+                    _ => {
+                        let hdr = &objs[isec.file as usize].sect_hdrs[isec.shndx as usize];
+                        let key = output_section_key(hdr, mv);
+                        let section = *cache
+                            .sections
+                            .entry(key)
+                            .or_insert_with(|| shared.lock().unwrap().get(args, map, hdr, mv, key));
+                        let group = section
+                            .map(|(section, dest)| cache.group(&mut groups, block, section, dest));
+                        if mv.is_none() {
+                            last = Some((sec, group));
+                        }
+                        group
+                    }
+                };
+                let Some(group) = group else {
+                    // Consumed by the link: no output section.
+                    isec.set_alive(false);
+                    continue;
+                };
+                let group = &mut groups[group].1;
+                group.members.push(i as u32);
+                group.p2align = group.p2align.max(isec.p2align);
+            }
+            groups
+        })
+        .collect();
+    drop(caches);
+    (block_groups, shared.into_inner().unwrap())
 }
 
 /// What decides an input section's output section: the raw 16-byte
@@ -822,57 +929,113 @@ fn assign_input_sections<E: Target>(
 /// subsection.
 type OutputSectionKey = ([u8; 16], [u8; 16], u32, Option<(MoveOption, &'static [u8])>);
 
-/// The output sections assign_input_sections makes, by what decides an
-/// input section's, as mold's create_output_sections caches them by
-/// key.
+/// The key of the input sections with header `hdr` whose subsections
+/// the symbol move `mv` takes, if one does (mold's output_section_key).
+fn output_section_key(hdr: &MachSection, mv: Option<Move>) -> OutputSectionKey {
+    (hdr.segname, hdr.sectname, hdr.flags, mv.map(|m| (m.option, m.segment)))
+}
+
+/// A worker's cache (mold's CachedOutputSection, in two parts, as
+/// several keys can lead to one output section): the output section
+/// each key leads to, as numbered in OutputSectionTable, and where its
+/// input sections go (None for those the link consumes); and for each
+/// output section, the block whose members the worker last gathered and
+/// its group there.
+#[derive(Default)]
+struct WorkerCache {
+    sections: hashbrown::HashMap<OutputSectionKey, Option<(usize, Destination)>>,
+    groups: Vec<Option<(usize, usize)>>,
+}
+
+impl WorkerCache {
+    /// The group among `groups` of block `block`'s members of output
+    /// section `section`, made for the first of them, which goes to
+    /// `dest`.
+    fn group(
+        &mut self,
+        groups: &mut Vec<(usize, OutputSectionFileMembers)>,
+        block: usize,
+        section: usize,
+        dest: Destination,
+    ) -> usize {
+        if self.groups.len() <= section {
+            self.groups.resize(section + 1, None);
+        }
+        if let Some((b, group)) = self.groups[section]
+            && b == block
+        {
+            return group;
+        }
+        groups.push((section, OutputSectionFileMembers::new(dest)));
+        self.groups[section] = Some((block, groups.len() - 1));
+        groups.len() - 1
+    }
+}
+
+/// A block's members of an output section, in input order, with the
+/// largest alignment among them and where the first of them goes (mold's
+/// OutputSectionFileMembers).
+struct OutputSectionFileMembers {
+    members: Vec<InputSectionId>,
+    p2align: u8,
+    dest: Destination,
+}
+
+impl OutputSectionFileMembers {
+    fn new(dest: Destination) -> Self {
+        Self { members: Vec::new(), p2align: 0, dest }
+    }
+}
+
+/// The output sections the input sections go to, as the workers of
+/// group_input_sections find them (mold's OutputSectionShared): by key,
+/// then by their (possibly renamed) names, as several keys can land in
+/// one output section. They are numbered as found; assign_input_sections
+/// makes them in the order of their first members.
 #[derive(Default)]
 struct OutputSectionTable {
-    by_key: hashbrown::HashMap<OutputSectionKey, Option<OutputSectionId>>,
-    /// The output sections by their (possibly renamed) names: several
-    /// keys can land in one output section.
-    by_name: hashbrown::HashMap<SectionName, OutputSectionId>,
+    by_key: hashbrown::HashMap<OutputSectionKey, Option<(usize, Destination)>>,
+    by_name: hashbrown::HashMap<SectionName, usize>,
     /// Whether each output section has zero-fill (bit 0) and
     /// file-backed (bit 1) input sections; renames can mix them.
     fill_kinds: Vec<u8>,
+    /// Whether each output section has thread-local input sections.
+    has_tlv_data: Vec<bool>,
 }
 
 impl OutputSectionTable {
-    /// The output section of an input section with header `hdr` whose
-    /// subsection the symbol move `mv` takes, if one does (see
-    /// destination), made for it if it is the first; None for one the
-    /// link consumes.
-    fn get<E: Target>(
+    /// The output section, and where the input sections go (see
+    /// destination), of the input sections with header `hdr` whose
+    /// subsections the symbol move `mv` takes, if one does; None for
+    /// those the link consumes.
+    fn get(
         &mut self,
-        ctx: &mut Context<E>,
+        args: &crate::cmdline::Args,
         map: SectionMap,
-        text: SectionName,
         hdr: &MachSection,
         mv: Option<Move>,
-    ) -> Option<OutputSectionId> {
-        let key = (hdr.segname, hdr.sectname, hdr.flags, mv.map(|m| (m.option, m.segment)));
-        if let Some(&id) = self.by_key.get(&key) {
-            return id;
+        key: OutputSectionKey,
+    ) -> Option<(usize, Destination)> {
+        if let Some(&section) = self.by_key.get(&key) {
+            return section;
         }
-        let id = destination(&ctx.args, map, hdr, mv).map(|dest| {
-            *self
-                .by_name
-                .entry(dest.name)
-                .or_insert_with(|| add_output_section_for(ctx, hdr, text, dest))
-        });
-        self.by_key.insert(key, id);
-
-        // The key holds the section type: note what it brings to the
-        // output section once.
-        if let Some(id) = id {
-            if self.fill_kinds.len() <= id.index() {
-                self.fill_kinds.resize(id.index() + 1, 0);
+        let section = destination(args, map, hdr, mv).map(|dest| {
+            let n = self.by_name.len();
+            let section = *self.by_name.entry(dest.name).or_insert(n);
+            if section == n {
+                self.fill_kinds.push(0);
+                self.has_tlv_data.push(false);
             }
-            self.fill_kinds[id.index()] |= if hdr.is_zerofill() { 1 } else { 2 };
+            // The key holds the section type: note what it brings to
+            // the output section once.
+            self.fill_kinds[section] |= if hdr.is_zerofill() { 1 } else { 2 };
             if matches!(hdr.section_type(), S_THREAD_LOCAL_REGULAR | S_THREAD_LOCAL_ZEROFILL) {
-                ctx.output_section_mut(id).has_tlv_data = true;
+                self.has_tlv_data[section] = true;
             }
-        }
-        id
+            (section, dest)
+        });
+        self.by_key.insert(key, section);
+        section
     }
 }
 
