@@ -3187,7 +3187,14 @@ fn check_fixup_sections(
 /// architecture; and ld-prime warns about run paths, which an OS
 /// library must not need. (check_dylib_use refuses a flat namespace.)
 fn resolve_shared_region(target: &TargetTraits, args: &mut Args) {
-    args.shared_region = shared_region_eligible(target, args);
+    let is_dylib = args.output_type == MH_DYLIB;
+    args.shared_region = !args.not_for_dyld_shared_cache
+        && !(is_dylib && args.debug_variant)
+        && (args.add_split_seg_info
+            || args.kernel
+            || (args.is_kext() && target.name == "arm64")
+            || args.is_dylinker()
+            || (is_dylib && in_shared_cache_path(args.output_install_name())));
     if !args.shared_region {
         return;
     }
@@ -3209,19 +3216,6 @@ fn resolve_shared_region(target: &TargetTraits, args: &mut Args) {
     if args.objc_stubs_small {
         fatal!("Shared cache eligible dylibs cannot use '-objc_stubs_small'");
     }
-}
-
-/// Whether the image is bound for the shared region: see
-/// resolve_shared_region.
-fn shared_region_eligible(target: &TargetTraits, args: &Args) -> bool {
-    let is_dylib = args.output_type == MH_DYLIB;
-    !args.not_for_dyld_shared_cache
-        && !(is_dylib && args.debug_variant)
-        && (args.add_split_seg_info
-            || args.kernel
-            || (args.is_kext() && target.name == "arm64")
-            || args.is_dylinker()
-            || (is_dylib && in_shared_cache_path(args.output_install_name())))
 }
 
 /// Whether an install name lies where the dyld shared cache takes
@@ -3607,7 +3601,7 @@ fn check_options(target: &TargetTraits, args: &mut Args, st: &ParseState) {
             "ignoring -x86_64_layout_emulation option, it can only be used with -arch arm64"
         );
     }
-    check_dylib_use(target, args);
+    check_dylib_use(args);
     check_relocatable(args, st.data_const);
     check_segaddrs(args);
     check_section_order(args);
@@ -3683,8 +3677,8 @@ fn check_output_kind(args: &mut Args, pie: Option<bool>) {
 /// mergeable dylib, which only a debug build that merges nothing gets.
 /// (A mergeable dylib may name lazy-load and delay-init dylibs, but not
 /// use them; see passes::create_lazy_loads.)
-fn check_dylib_use(target: &TargetTraits, args: &Args) {
-    if args.flat_namespace && !args.is_dylinker() && shared_region_eligible(target, args) {
+fn check_dylib_use(args: &Args) {
+    if args.flat_namespace && !args.is_dylinker() && args.shared_region {
         fatal!(
             "Shared cache eligible dylibs cannot use '-flat_namespace'.  Remove '-flat_namespace' \
              or opt out of the shared cache using the build setting 'LD_SHARED_CACHE_ELIGIBLE=NO' \
