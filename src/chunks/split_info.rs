@@ -361,14 +361,9 @@ impl<'a, E: Target> Places<'a, E> {
                     // branch now, and ld-prime keeps an x86-64 one at
                     // its old displacement's place.
                     let site = (id as u32, r.offset);
-                    let lazy = (!ctx.lazy_helpers.sites.is_empty())
-                        .then(|| ctx.lazy_helpers.sites.get(&site))
-                        .flatten()
-                        .map(|&i| self.lazy_helper(i));
-                    let delay = (!ctx.delay_init.sites.is_empty())
-                        .then(|| ctx.delay_init.sites.get(&site))
-                        .flatten()
-                        .map(|&i| self.delay_helper(i as usize));
+                    let lazy = ctx.lazy_helpers.sites.get(&site).map(|&i| self.lazy_helper(i));
+                    let delay =
+                        ctx.delay_init.sites.get(&site).map(|&i| self.delay_helper(i as usize));
                     let (split, to) = match lazy.or(delay) {
                         Some(helper) if split == SplitRef::Page => {
                             (SplitRef::Branch26, Some(helper))
