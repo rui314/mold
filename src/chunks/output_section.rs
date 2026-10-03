@@ -83,35 +83,66 @@ impl OutputSection {
     }
 }
 
+/// Runs `f` in parallel on each member's bytes in `buf`, the output
+/// section's contents, along with the bytes up to the next member, as
+/// mold's for_each_member does: splitting `buf` at member offsets,
+/// rather than indexing it by them, gives each member its own exclusive
+/// slice.
+fn for_each_member<E: Target>(
+    ctx: &Context<E>,
+    osec: &OutputSection,
+    buf: &mut [u8],
+    f: impl Fn(InputSectionId, &mut [u8]) + Sync,
+) {
+    let members = &osec.members;
+    let offset = |i: usize| match members.get(i) {
+        Some(&m) => ctx.isecs[m].offset as usize,
+        None => osec.hdr.size as usize,
+    };
+
+    // The first member starts at its offset modulo its alignment (see
+    // InputSection::align_offset), not necessarily at 0.
+    rayon::iter::split((0..members.len(), &mut buf[offset(0)..]), |(range, buf)| {
+        if range.len() <= 1 {
+            return ((range, buf), None);
+        }
+        let mid = range.start + range.len() / 2;
+        let (left, right) = buf.split_at_mut(offset(mid) - offset(range.start));
+        ((range.start..mid, left), Some((mid..range.end, right)))
+    })
+    .for_each(|(range, mut buf)| {
+        let mut pos = offset(range.start);
+        for i in range {
+            let end = offset(i + 1);
+            let slice = buf.split_off_mut(..end - pos).unwrap();
+            pos = end;
+            f(members[i], slice);
+        }
+    });
+}
+
 pub fn copy_buf<E: Target>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]) {
     let osec = ctx.output_section(id);
+    // Subsections copy and relocate in parallel, as in mold: relocations
+    // only ever write within their own subsection.
+    for_each_member(ctx, osec, buf, |m, slice| {
+        let isec = &ctx.isecs[m];
+        let data = isec.data();
+        if data.is_empty() {
+            return;
+        }
+        let own = &mut slice[..data.len()];
+        own.copy_from_slice(data);
+        let base = osec.hdr.addr + isec.offset as u64;
+        E::apply_relocs(ctx, ctx.isec_relocs(m as usize), m as usize, base, own);
+    });
+
+    // The range-extension thunks, between the members.
     for thunk in &osec.thunks {
         let off = thunk.offset as usize;
         let end = off + thunk.syms.len() * E::THUNK_SIZE as usize;
         E::write_thunk(ctx, osec.hdr.addr + thunk.offset, &thunk.syms, &mut buf[off..end]);
     }
-    // Subsections copy and relocate in parallel, as in mold: each
-    // occupies a disjoint slice of the output section (relocations only
-    // ever write within their own subsection), so the work distributes
-    // freely. A pointer wrapper stands in for the aliasing split rayon
-    // can't express directly.
-    struct BufPtr(*mut u8);
-    unsafe impl Sync for BufPtr {}
-    let bufp = BufPtr(buf.as_mut_ptr());
-    let bufp = &bufp;
-    osec.members.par_iter().for_each(|&id| {
-        let isec = &ctx.isecs[id];
-        if isec.data().is_empty() {
-            return;
-        }
-        let off = isec.offset as usize;
-        // SAFETY: subsections' [offset, +size) ranges are disjoint by
-        // layout, so each iteration touches its own slice.
-        let slice = unsafe { std::slice::from_raw_parts_mut(bufp.0.add(off), isec.data().len()) };
-        slice.copy_from_slice(isec.data());
-        let base = osec.hdr.addr + isec.offset as u64;
-        E::apply_relocs(ctx, ctx.isec_relocs(id as usize), id as usize, base, slice);
-    });
 
     // Synthesized Objective-C records, in the tail or among the members.
     if osec.tail == Tail::DataBlobs || osec.has_blobs {
