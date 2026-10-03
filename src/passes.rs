@@ -6776,20 +6776,16 @@ fn look_up_stub_binder<E: Target>(ctx: &mut Context<E>) -> Option<crate::symbol:
     Some(id)
 }
 
-/// ld-prime makes dyld_stub_binder an initial undefine of an image with
-/// lazy binding, stubs or not, which may stay undefined: the library
-/// exporting it (libSystem's libdyld) counts as used then. Nothing
-/// refers to the symbol until a stub does.
+/// Finds the helper legacy LINKEDIT's stub helper entries jump to. It
+/// binds no dyld_stub_binder: its entries go to dyld_stub_binding_helper,
+/// which crt1.o, dylib1.o or bundle1.o defines; no dylib exports it.
+/// (Otherwise dyld_stub_binder is bound once a stub needs it; see
+/// ensure_stub_binder.)
 pub fn resolve_stub_binder<E: Target>(ctx: &mut Context<E>) {
-    // Legacy LINKEDIT binds no dyld_stub_binder: its stub helper
-    // entries jump to dyld_stub_binding_helper, which crt1.o, dylib1.o
-    // or bundle1.o defines; no dylib exports it.
     if ctx.args.legacy_linkedit {
         let id = ctx.symbols.get(b"dyld_stub_binding_helper");
         let id = id.filter(|&id| ctx.symbols[id].input_section().is_some());
         ctx.stub_helper.binding_helper = id;
-    } else if ctx.args.lazy_binding {
-        bind_stub_binder(ctx);
     }
 }
 
