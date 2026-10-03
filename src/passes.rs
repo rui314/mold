@@ -183,6 +183,7 @@ fn may_softload_runtime_routines<E: Target>(ctx: &Context<E>) -> bool {
 /// each gets its definition directly. Relocations reference them by
 /// symbol index just like externals, so they need locations too.
 fn claim_locals<E: Target>(ctx: &mut Context<E>) {
+    let _t = ctx.timer("claim_locals");
     // A local symbol belongs to exactly one object (locals get fresh
     // slots, never interned), so the per-object claims write disjoint
     // symbols and the objects proceed in parallel.
@@ -249,6 +250,7 @@ impl<'a> SymbolSlots<'a> {
 /// Resets the resolution of every symbol a file claimed, and of every
 /// common one, for a resolution round to start over.
 fn clear_symbols<E: Target>(ctx: &mut Context<E>) {
+    let _t = ctx.timer("clear_symbols");
     ctx.symbols.syms.par_iter_mut().for_each(|sym| {
         if matches!(sym.file(), Some(FileId::Obj(_)) | Some(FileId::Dylib(_))) || sym.is_common() {
             sym.clear_file();
@@ -278,6 +280,7 @@ fn resolve_symbols_pass<E: Target>(
     ranking: &DylibRanking,
 ) -> Tentative {
     use std::sync::atomic::Ordering;
+    let _t = ctx.timer("resolve_symbols_pass");
 
     let refs = collect_references(ctx, only_alive);
     let commons = live_common_symbols(ctx);
@@ -894,6 +897,7 @@ fn dylib_search_order(ranks: &[u64], first: usize) -> Vec<usize> {
 /// a member this walk loads brings waits for the next round. Returns
 /// the symbols of such ones.
 fn mark_live_objects<E: Target>(ctx: &mut Context<E>, tentative: &Tentative) -> Tentative {
+    let _t = ctx.timer("mark_live_objects");
     // Resolution runs in rounds (auto-linking, LTO), and a file live
     // after one stays so, with the -why_load reason it was loaded for.
     let mut queue: Vec<usize> = (0..ctx.objs.len()).filter(|&i| ctx.objs[i].is_alive).collect();

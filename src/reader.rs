@@ -1294,6 +1294,7 @@ pub fn load_autolink_deps<E: Target>(ctx: &mut Context<E>) -> bool {
     if ctx.args.ignore_auto_link {
         return false;
     }
+    let _t = ctx.timer("load_autolink_deps");
     // Those of objects new to the link are read.
     for obj in ctx.objs.iter_mut().filter(|obj| obj.is_alive && !obj.linker_options_read) {
         let mf = obj.mf;
