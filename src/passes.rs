@@ -2805,8 +2805,7 @@ fn lto_object_path(path: &Path) -> PathBuf {
 }
 
 /// The tentative definitions (common symbols) no definition replaced,
-/// in the order ld-prime lays them out: by the objects' symbol tables,
-/// each where the definition that won (the first of the largest) is.
+/// in the order the objects' symbol tables first declare them.
 fn common_symbols_in_order<E: Target>(ctx: &Context<E>) -> Vec<SymbolId> {
     let mut seen = hashbrown::HashSet::new();
     let mut out = Vec::new();
@@ -2814,12 +2813,7 @@ fn common_symbols_in_order<E: Target>(ctx: &Context<E>) -> Vec<SymbolId> {
         let r = obj.global_range();
         for (nlist, &id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
             let sym = &ctx.symbols[id];
-            if nlist.is_common()
-                && sym.is_common()
-                && !sym.is_defined()
-                && nlist.n_value == sym.value
-                && seen.insert(id)
-            {
+            if nlist.is_common() && sym.is_common() && !sym.is_defined() && seen.insert(id) {
                 out.push(id);
             }
         }

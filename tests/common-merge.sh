@@ -39,7 +39,8 @@ nm -m $t/c.dylib | grep -q ' external _t$'
 $CC --ld-path=$mold -shared -o $t/c.dylib $t/b.o $t/a.o
 nm -m $t/c.dylib | grep -q 'non-external (was a private external) _t$'
 
-# The 16 bytes aligned to 4 win over the 8 aligned to 32.
+# The 16 bytes aligned to 4 win over the 8 aligned to 32: __common,
+# holding _pad and _v, is aligned to 4 and holds the 16 bytes.
 cat <<EOF | $CC -o $t/c.o -c -xassembler -
 .comm _pad,1,0
 .comm _v,16,2
@@ -51,8 +52,8 @@ EOF
 echo '.comm _v,8,5' | $CC -o $t/d.o -c -xassembler -
 for order in "$t/c.o $t/d.o" "$t/d.o $t/c.o"; do
   $CC --ld-path=$mold -shared -o $t/e.dylib $order
-  nm $t/e.dylib > $t/log2
-  pad=$(awk '/ _pad$/ { print $1 }' $t/log2)
-  v=$(awk '/ _v$/ { print $1 }' $t/log2)
-  [ $((0x$v - 0x$pad)) = 4 ]
+  otool -l $t/e.dylib > $t/lc2
+  [ "$(awk '$1 == "sectname" { s = $2 } s == "__common" && $1 == "align" { print $2 }' $t/lc2)" = '2^2' ]
+  size=$(awk '$1 == "sectname" { s = $2 } s == "__common" && $1 == "size" { print $2 }' $t/lc2)
+  [ $((size)) -ge 17 ]
 done

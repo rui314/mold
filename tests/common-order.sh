@@ -1,8 +1,11 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# Common symbols are laid out by the objects' symbol tables, each where
-# the tentative definition that wins - the first of the largest - is.
+# Common symbols become zero-fill definitions in __DATA,__common, each
+# as large as its largest tentative definition, whichever object comes
+# first. (ld-prime lays them out by the objects' symbol tables, each
+# where the first of the largest tentative definitions is; mold where
+# the first declaration is.)
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .globl _main
 _main: ret
@@ -17,10 +20,18 @@ cat <<EOF | $CC -o $t/b.o -c -xassembler -
 .comm _c_e, 4
 EOF
 
-$CC --ld-path=$mold -o $t/exe1 $t/a.o $t/b.o
-nm -n $t/exe1 | awk '/ _c_/ { print $3 }' | tr '\n' ' ' > $t/order1
-grep -q '^_c_d _c_a _c_b _c_c _c_e $' $t/order1
+# _c_b takes 16 bytes: the next symbol is at least that far on.
+check() {
+  nm -m $1 | grep -c '(__DATA,__common) external _c_' > $t/count
+  [ "$(cat $t/count)" = 5 ]
+  nm -n $1 | grep ' _c_' | cut -d' ' -f1,3 > $t/syms
+  local b=$(grep -n ' _c_b$' $t/syms | cut -d: -f1)
+  local next=$(sed -n "$((b + 1))p" $t/syms | cut -d' ' -f1)
+  local addr=$(sed -n "${b}p" $t/syms | cut -d' ' -f1)
+  [ -z "$next" ] || [ $((0x$next - 0x$addr)) -ge 16 ]
+}
 
+$CC --ld-path=$mold -o $t/exe1 $t/a.o $t/b.o
+check $t/exe1
 $CC --ld-path=$mold -o $t/exe2 $t/b.o $t/a.o
-nm -n $t/exe2 | awk '/ _c_/ { print $3 }' | tr '\n' ' ' > $t/order2
-grep -q '^_c_a _c_b _c_c _c_e _c_d $' $t/order2
+check $t/exe2
