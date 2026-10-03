@@ -5682,17 +5682,26 @@ fn finish_unwind_info<E: Target>(ctx: &mut Context<E>) -> bool {
     {
         return true;
     }
+    let size = encode_unwind_info(ctx);
+    if size > ctx.unwind_info.hdr.size {
+        ctx.unwind_info.min_size = size;
+        return false;
+    }
+    true
+}
+
+/// Encodes __unwind_info for the addresses its segment has, and returns
+/// its size. The personality cells the encoding cannot know yet (GOT
+/// addresses) come back as a patch list for the copy phase.
+fn encode_unwind_info<E: Target>(ctx: &mut Context<E>) -> u64 {
     let (data, personalities) = {
         let _t = ctx.timer("unwind_encode");
         chunks::unwind_info::encode_unwind_info(ctx)
     };
-    if data.len() as u64 > ctx.unwind_info.hdr.size {
-        ctx.unwind_info.min_size = data.len() as u64;
-        return false;
-    }
+    let size = data.len() as u64;
     ctx.unwind_info.contents = data;
     ctx.unwind_info.personalities = personalities;
-    true
+    size
 }
 
 /// Finds where the chains __TEXT,__chain_starts lists start, which
@@ -5719,7 +5728,6 @@ fn layout_segment<E: Target>(
     fileoff: u64,
     vmaddr: u64,
 ) -> u64 {
-    let page = ctx.args.segment_align;
     if ctx.segments[seg_idx].name == b"__PAGEZERO" {
         let seg = &mut ctx.segments[seg_idx];
         seg.cmd.vmaddr = 0;
@@ -5735,73 +5743,36 @@ fn layout_segment<E: Target>(
         return fileoff;
     }
 
-    let seg_fileoff = fileoff;
     let mut cursor = fileoff;
     let chunk_ids = ctx.segments[seg_idx].chunks.clone();
     let linkedit = ctx.segments[seg_idx].name == b"__LINKEDIT";
 
-    // Regular chunks, in file order
+    // The chunks with file contents, in file order. Aligned is the
+    // address; the file offset keeps its distance from it, which is no
+    // multiple of the alignment where a -preload image's header pages
+    // shift the file. __LINKEDIT's tables, which nothing addresses, are
+    // aligned in the file.
     for &id in &chunk_ids {
         if ctx.chunk_header(id).is_zerofill() {
             continue;
         }
+        let align = 1 << chunk_p2align(ctx, id);
+        let addr = if linkedit {
+            cursor = align_to(cursor, align);
+            vmaddr + (cursor - fileoff)
+        } else {
+            align_to(vmaddr + (cursor - fileoff), align)
+        };
+        cursor = fileoff + (addr - vmaddr);
         let size = match id {
             ChunkId::MachHeader => mach_header_size(ctx),
-            // Encoded once its segment's addresses are known (the
-            // __LINKEDIT tables are built ahead, but __unwind_info
-            // embeds __TEXT offsets); the personality cells the
-            // encoding cannot know yet (GOT addresses) come back as a
-            // patch list for the copy phase.
-            ChunkId::UnwindInfo => {
-                let (data, personalities) = {
-                    let _t = ctx.timer("unwind_encode");
-                    chunks::unwind_info::encode_unwind_info(ctx)
-                };
-                let len = (data.len() as u64).max(ctx.unwind_info.min_size);
-                ctx.unwind_info.contents = data;
-                ctx.unwind_info.personalities = personalities;
-                len
-            }
-            ChunkId::CodeSignature => {
-                cursor = align_to(cursor, 16);
-                chunks::code_signature::size(ctx, cursor)
-            }
+            // Encoded once its segment's addresses are known, as it
+            // embeds __TEXT offsets.
+            ChunkId::UnwindInfo => encode_unwind_info(ctx).max(ctx.unwind_info.min_size),
+            // It holds a hash of every page before it.
+            ChunkId::CodeSignature => chunks::code_signature::size(ctx, cursor),
             _ => ctx.chunk_header(id).size,
         };
-        // ld-prime starts the dyld opcodes, the chained fixups and the
-        // local relocations wherever the table before them ends - the
-        // first of them where __LINKEDIT starts, which a -segalign below
-        // 8 leaves unaligned (each table's size is a multiple of 8).
-        let p2align = match id {
-            ChunkId::RebaseInfo
-            | ChunkId::BindInfo
-            | ChunkId::WeakBindInfo
-            | ChunkId::LazyBindInfo
-            | ChunkId::ChainedFixups
-            | ChunkId::LocalRelocs => 0,
-            ChunkId::Symtab
-            | ChunkId::Strtab
-            | ChunkId::ExportTrie
-            | ChunkId::FunctionStarts
-            | ChunkId::DataInCode
-            | ChunkId::MergeableRecord
-            | ChunkId::SplitInfo
-            | ChunkId::ExternRelocs => 3,
-            ChunkId::IndirectSymtab => 2,
-            ChunkId::CodeSignature => 4,
-            _ => ctx.chunk_header(id).p2align,
-        };
-        // Aligned is the address; the file offset keeps its distance
-        // from it, which is no multiple of the alignment where a
-        // -preload image's header pages shift the file. __LINKEDIT's
-        // tables, which nothing addresses, are aligned in the file.
-        let addr = if linkedit {
-            cursor = align_to(cursor, 1 << p2align);
-            vmaddr + (cursor - seg_fileoff)
-        } else {
-            align_to(vmaddr + (cursor - seg_fileoff), 1 << p2align)
-        };
-        cursor = seg_fileoff + (addr - vmaddr);
         let hdr = ctx.chunk_header_mut(id);
         hdr.fileoff = cursor;
         hdr.addr = addr;
@@ -5809,7 +5780,7 @@ fn layout_segment<E: Target>(
         cursor += size;
     }
 
-    let filesize = cursor - seg_fileoff;
+    let filesize = cursor - fileoff;
     let mut vm_end = vmaddr + filesize;
 
     // Zero-fill chunks occupy address space after the file-backed part
@@ -5829,18 +5800,47 @@ fn layout_segment<E: Target>(
     // other segments are padded to a page boundary in the file, and the
     // next one starts on the segment's -seg_page_size boundary (which
     // ld-prime counts in __LINKEDIT's size, there being no next one).
+    let page = ctx.args.segment_align;
     let seg_page = seg_page_size(ctx, ctx.segments[seg_idx].name);
     let seg = &mut ctx.segments[seg_idx];
     seg.cmd.vmaddr = vmaddr;
-    seg.cmd.fileoff = seg_fileoff;
-    if seg.name == b"__LINKEDIT" {
+    seg.cmd.fileoff = fileoff;
+    if linkedit {
         seg.cmd.filesize = filesize;
         seg.cmd.vmsize = align_to(vm_end - vmaddr, seg_page).max(filesize);
-        return seg_fileoff + filesize;
+        return fileoff + filesize;
     }
     seg.cmd.filesize = align_to(filesize, page);
     seg.cmd.vmsize = align_to(vm_end - vmaddr, page).max(seg.cmd.filesize);
-    seg_fileoff + align_to(seg.cmd.filesize, seg_page)
+    fileoff + align_to(seg.cmd.filesize, seg_page)
+}
+
+/// The alignment a chunk starts on: a section's own, and a __LINKEDIT
+/// table's as ld-prime gives it. ld-prime starts the dyld opcodes, the
+/// chained fixups and the local relocations wherever the table before
+/// them ends - the first of them where __LINKEDIT starts, which a
+/// -segalign below 8 leaves unaligned (each table's size is a multiple
+/// of 8).
+fn chunk_p2align<E: Target>(ctx: &Context<E>, id: ChunkId) -> u32 {
+    match id {
+        ChunkId::RebaseInfo
+        | ChunkId::BindInfo
+        | ChunkId::WeakBindInfo
+        | ChunkId::LazyBindInfo
+        | ChunkId::ChainedFixups
+        | ChunkId::LocalRelocs => 0,
+        ChunkId::Symtab
+        | ChunkId::Strtab
+        | ChunkId::ExportTrie
+        | ChunkId::FunctionStarts
+        | ChunkId::DataInCode
+        | ChunkId::MergeableRecord
+        | ChunkId::SplitInfo
+        | ChunkId::ExternRelocs => 3,
+        ChunkId::IndirectSymtab => 2,
+        ChunkId::CodeSignature => 4,
+        _ => ctx.chunk_header(id).p2align,
+    }
 }
 
 /// Gives every segment but __LINKEDIT its address, as ld-prime does:
