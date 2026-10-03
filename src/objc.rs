@@ -17,6 +17,8 @@
 //! at (objc_ref_location). What they synthesize refers to its targets
 //! by ObjcRef, resolved to an address when the output is written.
 
+use rayon::prelude::*;
+
 use crate::context::Context;
 use crate::input_files::FileId;
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
@@ -514,12 +516,18 @@ pub fn convert_objc_method_lists<E: Target>(ctx: &mut Context<E>) {
         return;
     }
 
+    // The lists are read in parallel; their selectors then get their
+    // references, and the lists their subsections, in list order.
+    let classic: Vec<_> = lists.par_iter().map(|&list| classic_methods(ctx, list)).collect();
     let mut selrefs = SelrefFinder::new(ctx);
     let sect = add_methlist_section(ctx);
     let mut offset: u64 = 0;
     let mut repoint: hashbrown::HashMap<u32, u32> = hashbrown::HashMap::new();
-    for list in lists {
-        let Some(methods) = relative_methods(ctx, list, &mut selrefs) else { continue };
+    for (list, methods) in lists.into_iter().zip(classic) {
+        let Some(methods) = methods else { continue };
+        let methods = (methods.into_iter())
+            .map(|(sel, types, imp)| ObjcMethod { name: selrefs.get(ctx, sel), types, imp })
+            .collect();
         let synth = add_relative_method_list(ctx, sect, &mut offset, methods);
         ctx.isecs[list as usize].replacement = synth;
         repoint.insert(list, synth);
@@ -527,61 +535,72 @@ pub fn convert_objc_method_lists<E: Target>(ctx: &mut Context<E>) {
 
     // The lists' own symbols (__OBJC_$_INSTANCE_METHODS_Foo ...) follow
     // them into __objc_methlist.
-    for id in 0..ctx.symbols.syms.len() {
-        if let Some(isec) = ctx.symbols[id].input_section()
+    ctx.symbols.syms.par_iter_mut().for_each(|sym| {
+        if let Some(isec) = sym.input_section()
             && let Some(&synth) = repoint.get(&isec)
         {
-            ctx.symbols[id].set_input_section(Some(synth));
+            sym.set_input_section(Some(synth));
         }
-    }
+    });
 }
 
 /// Every method list the runtime would visit, each once, in the order
-/// the list sections lead to them.
+/// the list sections lead to them. The subsections of the list sections
+/// are followed in parallel, one not knowing what the others visit, and
+/// the first visit of each list counts.
 fn runtime_method_lists<E: Target>(ctx: &Context<E>) -> Vec<u32> {
-    let mut found = MethodListFinder::default();
-    for i in 0..ctx.isecs.len() {
-        let isec = &ctx.isecs[i];
-        if !isec.is_alive() || ctx.is_internal(isec.file as usize) {
-            continue;
-        }
-        let h = ctx.hdr_of(isec);
-        if !h.segname().starts_with(b"__DATA") {
-            continue;
-        }
-        let records = || list_entries(ctx, i as u32).filter_map(|r| objc_ref_location(ctx, r?));
-        match h.sectname() {
-            b"__objc_classlist" | b"__objc_nlclslist" => {
-                for cls in records() {
-                    found.visit_class(ctx, cls);
-                }
-            }
-            b"__objc_catlist" | b"__objc_catlist2" | b"__objc_nlcatlist" => {
-                // category_t: name, cls, instanceMethods, classMethods.
-                for cat in records() {
-                    found.note(ctx, cat, 16);
-                    found.note(ctx, cat, 24);
-                }
-            }
-            b"__objc_protolist" => {
-                // protocol_t: isa, name, protocols, then the four method
-                // lists.
-                for proto in records() {
-                    for field in [24, 32, 40, 48] {
-                        found.note(ctx, proto, field);
-                    }
-                }
-            }
-            b"__objc_clsrolist" => {
-                // class_ro_t: baseMethods at 32.
-                for ro in records() {
-                    found.note(ctx, ro, 32);
-                }
-            }
-            _ => {}
-        }
+    let found: Vec<Vec<u32>> = (0..ctx.isecs.len() as u32)
+        .into_par_iter()
+        .filter_map(|i| method_lists_of(ctx, i))
+        .collect();
+    let mut seen = hashbrown::HashSet::new();
+    found.into_iter().flatten().filter(|&list| seen.insert(list)).collect()
+}
+
+/// The method lists a subsection of a list section leads to, in order;
+/// None for a subsection of another section.
+fn method_lists_of<E: Target>(ctx: &Context<E>, i: u32) -> Option<Vec<u32>> {
+    let isec = &ctx.isecs[i];
+    if !isec.is_alive() || ctx.is_internal(isec.file as usize) {
+        return None;
     }
-    found.lists
+    let h = ctx.hdr_of(isec);
+    if !h.segname().starts_with(b"__DATA") {
+        return None;
+    }
+    let mut found = MethodListFinder::default();
+    let records = || list_entries(ctx, i).filter_map(|r| objc_ref_location(ctx, r?));
+    match h.sectname() {
+        b"__objc_classlist" | b"__objc_nlclslist" => {
+            for cls in records() {
+                found.visit_class(ctx, cls);
+            }
+        }
+        b"__objc_catlist" | b"__objc_catlist2" | b"__objc_nlcatlist" => {
+            // category_t: name, cls, instanceMethods, classMethods.
+            for cat in records() {
+                found.note(ctx, cat, 16);
+                found.note(ctx, cat, 24);
+            }
+        }
+        b"__objc_protolist" => {
+            // protocol_t: isa, name, protocols, then the four method
+            // lists.
+            for proto in records() {
+                for field in [24, 32, 40, 48] {
+                    found.note(ctx, proto, field);
+                }
+            }
+        }
+        b"__objc_clsrolist" => {
+            // class_ro_t: baseMethods at 32.
+            for ro in records() {
+                found.note(ctx, ro, 32);
+            }
+        }
+        _ => return None,
+    }
+    Some(found.lists)
 }
 
 /// The method lists found so far, and the classes visited.
@@ -636,21 +655,29 @@ struct SelrefFinder {
 }
 
 impl SelrefFinder {
+    /// The inputs' selector references are found in parallel; the first
+    /// to a selector string is the one its relative entries use.
     fn new<E: Target>(ctx: &Context<E>) -> Self {
-        let mut input = hashbrown::HashMap::new();
-        for i in 0..ctx.isecs.len() {
-            let isec = &ctx.isecs[i];
-            if !isec.is_alive() || ctx.is_internal(isec.file as usize) || isec.size != 8 {
-                continue;
-            }
-            let h = ctx.hdr_of(isec);
-            if h.sectname() != b"__objc_selrefs" || h.section_type() != S_LITERAL_POINTERS {
-                continue;
-            }
-            let Some(target) = objc_pointer_at(ctx, i as u32, 0) else { continue };
-            if let Some((name, 0)) = objc_ref_location(ctx, target) {
-                input.entry(name).or_insert(ctx.resolve_isec(i) as u32);
-            }
+        let refs: Vec<(u32, u32)> = (0..ctx.isecs.len() as u32)
+            .into_par_iter()
+            .filter_map(|i| {
+                let isec = &ctx.isecs[i];
+                if !isec.is_alive() || ctx.is_internal(isec.file as usize) || isec.size != 8 {
+                    return None;
+                }
+                let h = ctx.hdr_of(isec);
+                if h.sectname() != b"__objc_selrefs" || h.section_type() != S_LITERAL_POINTERS {
+                    return None;
+                }
+                match objc_ref_location(ctx, objc_pointer_at(ctx, i, 0)?) {
+                    Some((name, 0)) => Some((name, ctx.resolve_isec(i as usize) as u32)),
+                    _ => None,
+                }
+            })
+            .collect();
+        let mut input = hashbrown::HashMap::with_capacity(refs.len());
+        for (name, slot) in refs {
+            input.entry(name).or_insert(slot);
         }
         Self { input, extra: hashbrown::HashMap::new() }
     }
@@ -676,37 +703,28 @@ fn classic_list_header(data: &[u8]) -> Option<(u32, u64)> {
     (8 + 24 * count == data.len() as u64).then_some((entsize_flags, count))
 }
 
-/// The methods of a classic method list as a relative list holds them,
-/// naming a selector reference rather than the selector string; None
-/// if the list is not the whole of its subsection in the classic
-/// 24-byte form, or an entry's selector is not a string in the image.
-fn relative_methods<E: Target>(
-    ctx: &mut Context<E>,
-    list: u32,
-    selrefs: &mut SelrefFinder,
-) -> Option<Vec<ObjcMethod>> {
+/// The methods of a classic method list: each one's selector string
+/// (a subsection), types and implementation; None if the list is not
+/// the whole of its subsection in the classic 24-byte form, or an
+/// entry's selector is not a string in the image - a list left absolute
+/// then, whose selectors need no references.
+fn classic_methods<E: Target>(ctx: &Context<E>, list: u32) -> Option<Vec<(u32, ObjcRef, ObjcRef)>> {
     // Not in the relative form already (the top flag), and 24 bytes an
     // entry.
     let (entsize_flags, count) = classic_list_header(ctx.isecs[list as usize].data())?;
     if entsize_flags & 0x8000_0000 != 0 || entsize_flags & 0xffff != 24 {
         return None;
     }
-    // Every name must be a whole selector string in the image before
-    // any gets a selector reference: a list left absolute needs none.
-    let mut sels = Vec::with_capacity(count as usize);
-    for i in 0..count {
-        let name = objc_pointer_at(ctx, list, 8 + 24 * i);
-        let Some((sel, 0)) = name.and_then(|r| objc_ref_location(ctx, r)) else { return None };
-        sels.push(sel);
-    }
-    let mut methods = Vec::with_capacity(count as usize);
-    for (i, sel) in sels.into_iter().enumerate() {
-        let at = 8 + 24 * i as u64;
-        let types = objc_pointer_at(ctx, list, at + 8).unwrap_or(ObjcRef::Null);
-        let imp = objc_pointer_at(ctx, list, at + 16).unwrap_or(ObjcRef::Null);
-        methods.push(ObjcMethod { name: selrefs.get(ctx, sel), types, imp });
-    }
-    Some(methods)
+    (0..count)
+        .map(|i| {
+            let at = 8 + 24 * i;
+            let name = objc_pointer_at(ctx, list, at);
+            let (sel, 0) = name.and_then(|r| objc_ref_location(ctx, r))? else { return None };
+            let types = objc_pointer_at(ctx, list, at + 8).unwrap_or(ObjcRef::Null);
+            let imp = objc_pointer_at(ctx, list, at + 16).unwrap_or(ObjcRef::Null);
+            Some((sel, types, imp))
+        })
+        .collect()
 }
 
 /// Merges the categories of a class defined in the image into the
