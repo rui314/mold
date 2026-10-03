@@ -27,6 +27,10 @@ enum Token {
 #[derive(Clone, Debug)]
 struct Pattern {
     tokens: Vec<Token>,
+    // Searchers for the literals that follow stars, indexed like `tokens`.
+    // Building a searcher can take longer than searching a symbol name, so
+    // we build them once.
+    finders: Vec<Option<memchr::memmem::Finder<'static>>>,
     value: i64,
 }
 
@@ -113,7 +117,16 @@ impl Pattern {
                 _ => push_char(&mut tokens, c),
             }
         }
-        Some(Self { tokens, value })
+
+        let finders = (0..tokens.len())
+            .map(|i| match &tokens[i] {
+                Token::Str(literal) if i > 0 && matches!(tokens[i - 1], Token::Star) => {
+                    Some(memchr::memmem::Finder::new(literal).into_owned())
+                }
+                _ => None,
+            })
+            .collect();
+        Some(Self { tokens, finders, value })
     }
 
     fn matches(&self, s: &[u8]) -> bool {
@@ -141,13 +154,13 @@ impl Pattern {
                     Token::Star => {
                         next = Some((x + 1, y));
                         y += 1;
-                        if let Some(Token::Str(literal)) = self.tokens.get(y) {
-                            let Some(pos) = memchr::memmem::find(&s[x..], literal) else {
+                        if let Some(Some(finder)) = self.finders.get(y) {
+                            let Some(pos) = finder.find(&s[x..]) else {
                                 return false;
                             };
                             let pos = x + pos;
                             next = Some((pos + 1, y - 1));
-                            x = pos + literal.len();
+                            x = pos + finder.needle().len();
                             y += 1;
                         }
                         continue;
