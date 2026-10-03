@@ -1203,9 +1203,8 @@ fn defined_externals<E: Target>(ctx: &Context<E>) -> Vec<(NList, SymbolId)> {
             let n_type = N_SECT | N_EXT | pext;
             let n_sect = ctx.isec_n_sect(&ctx.isecs[ctx.resolve_isec(input as usize)]);
             // N_WEAK_REF on a definition is .weak_def_can_be_hidden: with
-            // N_WEAK_DEF it lets a final link auto-hide the symbol (ld-prime
-            // makes PLCrashReporter's template instantiations local; ours
-            // stayed exported after the -r prelink lost the marker).
+            // N_WEAK_DEF it lets a final link auto-hide the symbol, which
+            // the -r output must leave it free to do.
             let mut n_desc = desc_of[i].load(Ordering::Relaxed)
                 & (N_WEAK_DEF
                     | N_WEAK_REF

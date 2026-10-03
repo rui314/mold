@@ -1351,8 +1351,8 @@ fn merge_objc_image_info<E: Target>(ctx: &mut Context<E>) {
 fn lay_out_eh_frame<E: Target>(ctx: &mut Context<E>) {
     // FDEs of folded copies duplicate their leader's; drop them, and
     // remap the unwind records' FDE indices around the removals as the
-    // dead-strip pass does (a record left pointing past the shortened
-    // table crashed the encoder).
+    // dead-strip pass does, so that none points past the shortened
+    // table.
     let mut fde_map = vec![usize::MAX; ctx.fdes.len()];
     let mut kept_fdes = Vec::new();
     for (i, fde) in std::mem::take(&mut ctx.fdes).into_iter().enumerate() {
