@@ -870,8 +870,8 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
     }
 
     // Libraries in ordinal order (command-line order, then the
-    // auto-linked ones), then those dyld loads lazily, by their records
-    // (see lazy_load_info).
+    // auto-linked ones), then those dyld loads lazily, one command per
+    // record (see lazy_load_info).
     let mut dylibs: Vec<&crate::input_files::DylibFile> =
         ctx.dylibs.iter().filter(|d| !d.is_bundle_loader && !d.is_lazy).collect();
     dylibs.sort_by_key(|d| d.dylib_idx);
@@ -879,7 +879,7 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
         vec.push(create_load_dylib_cmd(dylib));
     }
     let info = &ctx.lazy_load_info;
-    for d in info.dylibs.iter().rev() {
+    for d in &info.dylibs {
         vec.push(to_vec(&LinkEditDataCommand {
             cmd: LC_LAZY_LOAD_DYLIB_INFO,
             cmdsize: size_of::<LinkEditDataCommand>() as u32,

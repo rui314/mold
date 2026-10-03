@@ -26,11 +26,8 @@ pub struct LazyDylib {
     pub size: u32,
 }
 
-/// Each lazy dylib's record, in the order ld-prime writes them and
-/// their load commands: the reverse of the dylibs' load order. (It
-/// iterates a hash table keyed by the install names, which gives that
-/// order for up to two dylibs; dyld reads each record on its own.) A
-/// record is 32-bit words - the offset of the dylib's install name
+/// Each lazy dylib's record, which a load command of its own points at
+/// (dyld reads each record on its own). A record is 32-bit words - the offset of the dylib's install name
 /// (from the record's start), the image offset of its flag word, the
 /// pointer format of its __lazy_load_got chain in the high half with
 /// flags in the low half (1: a weak dylib, which may be missing), the

@@ -60,7 +60,7 @@ fi
 
 # The record: the install name's offset, the flag's and the first
 # slot's image offsets, the chain's pointer format, and the symbols.
-otool -l $t/exe | grep -A3 'cmd LC_LAZY_LOAD_DYLIB_INFO' | grep dataoff | tail -1 > $t/rec
+otool -l $t/exe | grep -A3 'cmd LC_LAZY_LOAD_DYLIB_INFO' | grep dataoff | head -1 > $t/rec
 off=$(awk '{print $2}' $t/rec)
 xxd -s $off -l 40 -p $t/exe | tr -d '\n' > $t/bytes
 grep -q '^24000000........00000600........0300000018000000' $t/bytes
