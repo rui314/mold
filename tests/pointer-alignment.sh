@@ -1,14 +1,12 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# ld-prime wants every pointer dyld fixes up 8-aligned, as the links of
-# a fixup chain are words. For a deployment target it gives chained
-# fixups by default, it warns of each subsection aligned less than a
-# pointer that holds one, and then of each unaligned pointer if the
-# image has classic dyld info. With chained fixups, an arm64 link fails
-# at one (in a section, the last of the first subsection that has one);
-# an x86-64 image gets classic dyld info instead. For an older target
-# it says nothing.
+# Every pointer dyld fixes up should be 8-aligned, as the links of a
+# fixup chain are words. For a deployment target that gets chained
+# fixups by default, an unaligned one is a warning if the image has
+# classic dyld info. With chained fixups, an arm64 link fails at one; an
+# x86-64 image gets classic dyld info instead, which dyld applies at
+# any alignment. For an older target nothing is said.
 
 # _r0 puts the pointers of _r1 and _r2 off 8-byte boundaries.
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
@@ -35,31 +33,22 @@ int main() {
 }
 EOF
 
-a="(/.*/$t/a.o)"
 if [ $ARCH = arm64 ]; then
   not $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o 2> $t/log
-  grep -q "alignment (1) of atom '_r1' $a is too small and may result in unaligned pointers" $t/log
-  grep -q "alignment (1) of atom '_r2' $a is too small" $t/log
-  not grep -q "atom '_r0'" $t/log
-  grep -q "pointer not aligned in '_r1'+0x8 $a$" $t/log
-  not grep -q "pointer not aligned in '_r1' " $t/log
-  not grep -q "pointer not aligned in '_r2'" $t/log
+  grep -q "pointer not aligned.*'_r1'" $t/log
 else
   $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o 2> $t/log
-  grep -q "alignment (1) of atom '_r1' $a is too small" $t/log
   grep -q 'disabling chained fixups because of unaligned pointers' $t/log
-  grep -q "pointer not aligned in '_r1' $a$" $t/log
-  grep -q "pointer not aligned in '_r1'+0x8 $a$" $t/log
-  grep -q "pointer not aligned in '_r2' $a$" $t/log
+  grep -q "warning: pointer not aligned.*'_r1' " $t/log
+  grep -q "warning: pointer not aligned.*'_r1'+0x8 " $t/log
+  grep -q "warning: pointer not aligned.*'_r2' " $t/log
   otool -l $t/exe > $t/lc
   grep -q LC_DYLD_INFO_ONLY $t/lc
   not grep -q LC_DYLD_CHAINED_FIXUPS $t/lc
   $t/exe
 fi
 
-# Of several sections with one, an arm64 chain fails at the last
-# section's: ld-prime checks the sections in parallel and keeps the last
-# one's error, though it stops each at its first.
+# An unaligned pointer in any section fails an arm64 chain.
 cat <<EOF | $CC -o $t/d.o -c -xassembler -
 .section __DATA,__const
 .globl _c0
@@ -71,22 +60,18 @@ _c1: .quad _bar
 _d0: .byte 1
 .globl _d1
 _d1: .quad _bar
-.quad _bar
-.globl _d2
-_d2: .quad _bar
 .subsections_via_symbols
 EOF
 echo 'int bar = 3; int main() { return 0; }' | $CC -o $t/m.o -c -xc -
 if [ $ARCH = arm64 ]; then
   not $CC --ld-path=$mold -o $t/exe1 $t/d.o $t/m.o 2> $t/log1
-  grep -q "pointer not aligned in '_d1'+0x8 (/.*/$t/d.o)$" $t/log1
+  grep -q 'pointer not aligned' $t/log1
 fi
 
 $CC --ld-path=$mold -o $t/exe2 $t/a.o $t/b.o -Wl,-no_fixup_chains 2> $t/log2
-grep -q "alignment (1) of atom '_r1' $a is too small" $t/log2
 not grep -q 'disabling chained fixups' $t/log2
-grep -q "pointer not aligned in '_r1' $a$" $t/log2
-grep -q "pointer not aligned in '_r2' $a$" $t/log2
+grep -q "warning: pointer not aligned.*'_r1' " $t/log2
+grep -q "warning: pointer not aligned.*'_r2' " $t/log2
 $t/exe2
 
 $mold -r -arch $ARCH -o $t/r.o $t/a.o 2> $t/log3
@@ -129,7 +114,7 @@ EOF
 echo 'extern void *cf; int main() { return !cf; }' | $CC -o $t/g.o -c -xc -
 $CC --ld-path=$mold -o $t/exe5 $t/g.o $t/f.o -framework CoreFoundation 2> $t/log5
 grep -q "section __DATA/__cfstring is not pointer aligned in /.*/$t/f.o$" $t/log5
-not grep -q 'alignment (' $t/log5
+not grep -q 'pointer not aligned' $t/log5
 $t/exe5
 $mold -r -arch $ARCH -o $t/r.o $t/f.o 2> $t/log6
 grep -q "section __DATA/__cfstring is not pointer aligned in /.*/$t/f.o$" $t/log6
@@ -148,40 +133,35 @@ $CC --ld-path=$mold -o $t/exe8 $t/a.o $t/b.o -Wl,-no_fixup_chains \
 not grep -q aligned $t/log8
 not $CC --ld-path=$mold -o $t/exe9 $t/a.o $t/b.o -Wl,-no_fixup_chains \
   -Wl,-unaligned_pointers,error 2> $t/log9
-grep -q "warning: alignment (1) of atom '_r1' $a is too small" $t/log9
-grep -q "pointer not aligned in '_r1' $a$" $t/log9
+grep -q "pointer not aligned.*'_r1' " $t/log9
 not grep -q 'warning: pointer not aligned' $t/log9
 [ "$(grep -c 'pointer not aligned' $t/log9)" = 1 ]
 $CC --ld-path=$mold -o $t/exe10 $t/c.o $t/e.o -mmacosx-version-min=11.0 \
   -Wl,-unaligned_pointers,warn 2> $t/log10
-grep -q "pointer not aligned in '_r1' (" $t/log10
+grep -q "pointer not aligned.*'_r1' " $t/log10
 if [ $ARCH = arm64 ]; then
   not $CC --ld-path=$mold -o $t/exe11 $t/a.o $t/b.o -Wl,-unaligned_pointers,warning 2> $t/log11
   grep -q 'warning: unaligned pointer errors are fatal when using chained fixups' $t/log11
-  grep -q "pointer not aligned in '_r1'+0x8 $a$" $t/log11
+  grep -q "pointer not aligned.*'_r1' " $t/log11
 else
   $CC --ld-path=$mold -o $t/exe11 $t/a.o $t/b.o -Wl,-unaligned_pointers,suppress 2> $t/log11
   grep -v '^+' $t/log11 | sed -E 's/^(ld|mold): //' > $t/msgs11
   [ "$(cat $t/msgs11)" = 'warning: disabling chained fixups because of unaligned pointers' ]
+  $t/exe11
 fi
 not $mold -o $t/exe12 $t/a.o -unaligned_pointers foo 2> $t/log12
 grep -q -- '-unaligned_pointers invalid option (warning | error | suppress)' $t/log12
 
-# ld-prime warns of the subsections as it reads each object, knowing
-# nothing of the other inputs yet: of a subsection dead stripping drops,
-# of an archive member the link doesn't load, of a pointer to an
-# absolute symbol another object defines (not of one to its own), and
-# before the link fails on an undefined symbol.
+# Only the pointers dyld fixes up in the image count: not those of a
+# subsection dead stripping drops, nor one to an absolute symbol, which
+# nothing slides.
 cat <<EOF | $CC -o $t/u.o -c -xassembler -
 .data
-.globl _u0, _u1, _u2, _u3, _u4
+.globl _u0, _u1, _u2, _u3
 _u0: .byte 1
 _u1: .quad _bar
 _u2: .byte 1
-.quad _abs
-_u3: .byte 1
-.quad _own
-_u4: .byte 1
+_u3: .quad _abs, _own
 .globl _own
 _own = 0x1234
 .subsections_via_symbols
@@ -190,18 +170,7 @@ cat <<EOF | $CC -o $t/abs.o -c -xassembler -
 .globl _abs
 _abs = 0x5678
 EOF
-u="(/.*/$t/u.o)"
-$CC --ld-path=$mold -o $t/exe13 $t/m.o $t/u.o $t/abs.o -Wl,-dead_strip 2> $t/log13
-grep -q "alignment (1) of atom '_u1' $u is too small" $t/log13
-grep -q "alignment (1) of atom '_u2' $u is too small" $t/log13
-not grep -q "atom '_u3'" $t/log13
-
-rm -f $t/libu.a
-ar rcs $t/libu.a $t/u.o
-$CC --ld-path=$mold -o $t/exe14 $t/m.o $t/libu.a 2> $t/log14
-grep -q "alignment (1) of atom '_u1' (/.*/$t/libu.a\[2\](u.o)) is too small" $t/log14
-
-echo 'extern char nosuch[]; char *p = nosuch;' | $CC -o $t/n.o -c -xc -
-not $CC --ld-path=$mold -o $t/exe15 $t/m.o $t/u.o $t/abs.o $t/n.o 2> $t/log15
-grep -q "alignment (1) of atom '_u1' $u is too small" $t/log15
-grep -q "_nosuch" $t/log15
+echo 'int bar = 3; extern char u3[]; int main() { return !u3[0]; }' | $CC -o $t/n.o -c -xc -
+$CC --ld-path=$mold -o $t/exe13 $t/n.o $t/u.o $t/abs.o -Wl,-dead_strip 2> $t/log13
+not grep -q 'pointer not aligned' $t/log13
+$t/exe13

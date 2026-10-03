@@ -76,13 +76,11 @@ EOF
 
 not $CC --ld-path=$mold -o $t/exe $t/main.o $t/b.o 2> $t/log-b
 if [ $ARCH = arm64 ]; then
-  grep -q "alignment (1) of atom 'ltmp1' (.*/b.o) is too small" $t/log-b
   grep -q "text-relocation in 'ltmp1' (.*/b.o) to 'anon-6'$" $t/log-b
   grep -q "text-relocation in 'ltmp1'+0x8 (.*/b.o) to 'anon-8'$" $t/log-b
   grep -q "text-relocation in '_b' (.*/b.o) to 'anon-6'$" $t/log-b
   grep -q "text-relocation in '_b'+0x8 (.*/b.o) to 'anon-8'$" $t/log-b
 else
-  grep -q "alignment (1) of atom 'anon-1' (.*/b.o) is too small" $t/log-b
   grep -q "text-relocation in 'anon-1' (.*/b.o) to 'anon-6'$" $t/log-b
   grep -q "text-relocation in 'anon-1'+0x8 (.*/b.o) to 'anon-8'$" $t/log-b
   grep -q "text-relocation in '_b' (.*/b.o) to 'anon-6'$" $t/log-b

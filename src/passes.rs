@@ -874,19 +874,11 @@ fn load_pending<E: Target>(ctx: &mut Context<E>, pending: Vec<PendingObject>) {
 
 /// What ld-prime says of each object it has read - those of `ctx.objs`
 /// from `first` on - once it has split it into subsections, by whether
-/// `alive` says the link loads it from the start. It warns of the
-/// object's subsections (see small_pointer_subsecs), then of the
+/// `alive` says the link loads it from the start: it warns of the
 /// auto-link options of one the link loads from the start (see
 /// warn_linker_options).
 fn warn_about_objects<E: Target>(ctx: &Context<E>, first: usize, alive: Vec<bool>) {
-    let small_subsecs: Vec<Vec<u32>> = (0..alive.len())
-        .into_par_iter()
-        .map(|i| chunks::chained_fixups::small_pointer_subsecs(ctx, first + i))
-        .collect();
-    for (i, (alive, subsecs)) in alive.into_iter().zip(small_subsecs).enumerate() {
-        for id in subsecs {
-            chunks::chained_fixups::warn_small_pointer_subsec(ctx, id);
-        }
+    for (i, alive) in alive.into_iter().enumerate() {
         if alive && !ctx.args.ignore_auto_link {
             let obj = &ctx.objs[first + i];
             let file = || resolved_file_name(obj.mf);
@@ -6410,9 +6402,7 @@ fn report_text_relocs<E: Target>(ctx: &Context<E>) {
             raw(&target)
         ));
     }
-    if report_32bit_pointer(ctx, osec.is_some())
-        || chunks::chained_fixups::report_unaligned_chain_pointer(ctx)
-    {
+    if report_32bit_pointer(ctx, osec.is_some()) {
         return;
     }
     if osec.is_some() {
@@ -7399,11 +7389,9 @@ pub fn copy_chunks<E: Target>(
     drop(t);
     // Relocations that failed to apply fail the link before the fixups
     // are written.
-    chunks::chained_fixups::report_bad_page_size(ctx);
     print_final_layout(ctx);
     report_text_relocs(ctx);
     crate::error::checkpoint();
-    chunks::chained_fixups::report_unaligned_pointers(ctx);
 
     if ctx.use_chained_fixups() {
         let _t = ctx.timer("write_fixup_chains");

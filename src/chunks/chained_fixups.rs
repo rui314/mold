@@ -22,20 +22,13 @@ pub struct ChainedFixupsSection {
     /// Every dynamic fixup location, sorted by address: (address,
     /// bound symbol or None for a rebase, addend).
     pub fixups: Vec<(u64, Option<SymbolId>, u64)>,
-    /// The import table: (symbol, table addend), in ld-prime's order;
-    /// and each entry's index.
+    /// The import table: (symbol, table addend), in the order the binds
+    /// first name them; and each entry's index.
     pub imports: Vec<(SymbolId, u64)>,
     pub ordinals: ImportOrdinals,
     /// Set when an x86-64 image laid out for chained fixups gets classic
     /// dyld info instead, for an unaligned pointer.
     pub disabled: bool,
-    /// The unaligned pointers check_pointer_alignment found, reported
-    /// once relocations are applied (report_unaligned_chain_pointer,
-    /// report_unaligned_pointers).
-    pub unaligned: std::sync::Mutex<Vec<(u32, u64)>>,
-    /// The first segment whose chain pages dyld can't read, for a
-    /// -segalign other than 4 KiB or 16 KiB (see report_bad_page_size).
-    pub bad_page_size: std::sync::Mutex<Option<usize>>,
 }
 
 /// Each import's index in the table, by (symbol, table addend).
@@ -50,8 +43,6 @@ impl ChainedFixupsSection {
             imports: Vec::new(),
             ordinals: std::collections::HashMap::new(),
             disabled: false,
-            unaligned: std::sync::Mutex::new(Vec::new()),
-            bad_page_size: std::sync::Mutex::new(None),
         }
     }
 }
@@ -82,9 +73,9 @@ pub type ChainedFixups = (
     ImportOrdinals,
 );
 
-/// A fixup: its address, the symbol it binds (None for a rebase), the
-/// addend, and the start of the subsection holding it.
-type Fixup = (u64, Option<SymbolId>, u64, u64);
+/// A fixup: its address, the symbol it binds (None for a rebase), and
+/// the addend.
+type Fixup = (u64, Option<SymbolId>, u64);
 
 /// The import-table addend of a bind: addends up to 255 are carried
 /// inline in the fixup word and share the symbol's addend-0 entry.
@@ -92,19 +83,15 @@ fn table_addend(addend: u64) -> u64 {
     if addend <= MAX_INLINE_ADDEND { 0 } else { addend }
 }
 
-/// The import table, in ld-prime's order: an entry per distinct
-/// (symbol, table addend), numbered as it is first met walking the
-/// binds subsection by subsection in address order and, within one,
-/// from the highest offset down. A GOT slot is a subsection of its own.
+/// The import table: an entry per distinct (symbol, table addend), in
+/// the order the binds first name them.
 fn import_table(fixups: &[Fixup]) -> (Vec<(SymbolId, u64)>, ImportOrdinals) {
-    let mut binds: Vec<&Fixup> = fixups.iter().filter(|f| f.1.is_some()).collect();
-    binds.sort_by(|a, b| a.3.cmp(&b.3).then(b.0.cmp(&a.0)));
     let mut imports = Vec::new();
     let mut ordinals = ImportOrdinals::new();
-    for &&(_, sym, addend, _) in &binds {
-        let key = (sym.unwrap(), table_addend(addend));
-        ordinals.entry(key).or_insert_with(|| {
-            imports.push(key);
+    for &(_, sym, addend) in fixups {
+        let Some(sym) = sym else { continue };
+        ordinals.entry((sym, table_addend(addend))).or_insert_with(|| {
+            imports.push((sym, table_addend(addend)));
             imports.len() - 1
         });
     }
@@ -136,14 +123,11 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> Option<ChainedFixups
     // header and a starts table with no pages), as ld64 writes it:
     // dyld reads the format from the load command, and its absence
     // would mean classic dyld info.
-    let (with_subsecs, suspects) = collect_fixups(ctx);
-    let unaligned = with_subsecs.iter().any(|&(addr, ..)| !addr.is_multiple_of(8));
-    if !check_pointer_alignment(ctx, suspects, true, unaligned) {
+    let (fixups, unaligned) = collect_fixups(ctx);
+    if !check_pointer_alignment(ctx, &fixups, unaligned, true) {
         return None;
     }
-    let (dynsyms, ordinals) = import_table(&with_subsecs);
-    let fixups: Vec<(u64, Option<SymbolId>, u64)> =
-        with_subsecs.into_iter().map(|(addr, sym, addend, _)| (addr, sym, addend)).collect();
+    let (dynsyms, ordinals) = import_table(&fixups);
 
     let max_addend = dynsyms.iter().map(|&(_, a)| a).max().unwrap_or(0);
     let import_format = if max_addend == 0 {
@@ -197,21 +181,14 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> Option<ChainedFixups
         let ent = seg_info_table + seg_idx * 4;
         buf[ent..ent + 4].copy_from_slice(&(off as u32).to_le_bytes());
 
-        // A -segalign other than 4KB or 16KB makes arm64 chain pages no
-        // dyld reads: ld-prime lays the image out to the end all the
-        // same, each segment's record (its size shows in the layout it
-        // prints) included, and reports the first segment (see
-        // report_bad_page_size), unless an unaligned pointer in a chain
-        // fails the link first (see check_pointer_alignment).
+        // dyld reads chains only in 4 KiB or 16 KiB pages, which an
+        // arm64 image's -segalign sets.
         let page_size = chain_page_size(ctx);
         if !matches!(page_size, 0x1000 | 0x4000) {
-            let mut bad = ctx.chained_fixups.bad_page_size.lock().unwrap();
-            if bad.is_none() && ctx.chained_fixups.unaligned.lock().unwrap().is_empty() {
-                *bad = Some(seg_idx);
-            }
-            if page_size == 0 {
-                break;
-            }
+            crate::error!(
+                "chained fixups need a -segalign of 0x1000 or 0x4000, not {page_size:#x}"
+            );
+            break;
         }
         let npages = ((fx.last().unwrap().0 + 1 - seg.cmd.vmaddr).div_ceil(page_size)) as usize;
         // The record is 22 bytes of fields plus one u16 per page; its
@@ -307,9 +284,9 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> Option<ChainedFixups
 
 /// The pages the fixup chains of a segment are cut into, from its start:
 /// a chain stays in one page, which dyld takes to be 4 KiB or 16 KiB
-/// long. ld-prime cuts an arm64 image's in its segment alignment (and
-/// refuses any other with fixups), an x86-64 image's in 4 KiB pages
-/// whatever its segment alignment.
+/// long. An arm64 image's are its segment alignment (no other is
+/// accepted with fixups), an x86-64 image's 4 KiB whatever its segment
+/// alignment.
 fn chain_page_size<E: Target>(ctx: &Context<E>) -> u64 {
     if E::CPUTYPE == CPU_TYPE_X86_64 { 0x1000 } else { ctx.args.segment_align }
 }
@@ -417,13 +394,13 @@ pub fn write_fixup_chains<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     }
 }
 
-/// Collects the fixups, with the pointers of subsections aligned less
-/// than a pointer and those at an address no multiple of 8, as
-/// (subsection, address) pairs, for check_pointer_alignment.
+/// Collects the fixups, sorted by address, and those of subsections at
+/// an address no multiple of 8, as (subsection, address) pairs, for
+/// check_pointer_alignment.
 fn collect_fixups<E: Target>(ctx: &Context<E>) -> (Vec<Fixup>, Vec<(u32, u64)>) {
     // Every subsection's fixups are independent; collect them on all
     // cores and sort the union in parallel, as mold does.
-    let suspects = std::sync::Mutex::new(Vec::new());
+    let unaligned = std::sync::Mutex::new(Vec::new());
     let mut fixups: Vec<Fixup> = ctx
         .isecs
         .par_iter()
@@ -433,7 +410,7 @@ fn collect_fixups<E: Target>(ctx: &Context<E>) -> (Vec<Fixup>, Vec<(u32, u64)>) 
         })
         .flat_map_iter(|(id, isec)| {
             let base = ctx.chunk_header(isec.output_section().unwrap()).addr + isec.offset as u64;
-            let suspects = &suspects;
+            let unaligned = &unaligned;
             crate::input_files::isec_relocs_of(&ctx.objs, isec).iter().filter_map(move |rel| {
                 if E::classify_reloc(rel.r_type) != RelocClass::Plain
                     || rel.size != 8
@@ -457,18 +434,18 @@ fn collect_fixups<E: Target>(ctx: &Context<E>) -> (Vec<Fixup>, Vec<(u32, u64)>) 
                             || ctx.binds_to_self(id)
                             || ctx.is_dtrace_pointer_target(id) =>
                     {
-                        Some((addr, Some(id), rel.addend as u64, base))
+                        Some((addr, Some(id), rel.addend as u64))
                     }
                     _ => {
                         if !ctx.reloc_target_is_tls(isec.file as usize, rel) {
-                            Some((addr, None, 0, base))
+                            Some((addr, None, 0))
                         } else {
                             None
                         }
                     }
                 };
-                if fixup.is_some() && (isec.p2align < 3 || !addr.is_multiple_of(8)) {
-                    suspects.lock().unwrap().push((id as u32, addr));
+                if fixup.is_some() && !addr.is_multiple_of(8) {
+                    unaligned.lock().unwrap().push((id as u32, addr));
                 }
                 fixup
             })
@@ -482,27 +459,27 @@ fn collect_fixups<E: Target>(ctx: &Context<E>) -> (Vec<Fixup>, Vec<(u32, u64)>) 
             }
             let sym = Some(id).filter(|&id| ctx.binds_at_runtime(id));
             let slot = ctx.got.slot_addr(i);
-            fixups.push((slot, sym, 0, slot));
+            fixups.push((slot, sym, 0));
         }
     }
     for i in 0..ctx.objc_stubs.symbols.len() + ctx.objc_stubs.extra_selrefs.len() {
         let slot = ctx.objc_selref_addr(i);
-        fixups.push((slot, None, 0, slot));
+        fixups.push((slot, None, 0));
     }
     for (addr, _) in super::rebase_info::data_blob_pointers(ctx) {
-        fixups.push((addr, None, 0, addr));
+        fixups.push((addr, None, 0));
     }
     for (addr, id) in super::rebase_info::data_blob_binds(ctx) {
-        fixups.push((addr, Some(id), 0, addr));
+        fixups.push((addr, Some(id), 0));
     }
     // The pointers of an image nothing slides keep their addresses:
     // its chains hold only binds.
     if super::rebase_info::is_never_slid(ctx) {
-        fixups.retain(|&(_, sym, _, _)| sym.is_some());
+        fixups.retain(|&(_, sym, _)| sym.is_some());
     }
 
-    fixups.par_sort_unstable_by_key(|&(addr, _, _, _)| addr);
-    (fixups, suspects.into_inner().unwrap())
+    fixups.par_sort_unstable_by_key(|&(addr, _, _)| addr);
+    (fixups, unaligned.into_inner().unwrap())
 }
 
 /// The largest addend a chained bind can carry inline; anything bigger
@@ -512,229 +489,46 @@ const MAX_INLINE_ADDEND: u64 = 255;
 /// Checks the pointers of an image with classic dyld info as
 /// check_pointer_alignment does.
 pub fn check_classic_pointers<E: Target>(ctx: &Context<E>) {
-    if checks_pointer_alignment(ctx) {
-        check_pointer_alignment(ctx, collect_fixups(ctx).1, false, false);
+    if ctx.args.unaligned_pointers != Treatment::Suppress {
+        let (fixups, unaligned) = collect_fixups(ctx);
+        check_pointer_alignment(ctx, &fixups, unaligned, false);
     }
 }
 
-/// Whether ld-prime says anything of the pointers dyld fixes up that
-/// are not 8-aligned (see Args::unaligned_pointers).
-fn checks_pointer_alignment<E: Target>(ctx: &Context<E>) -> bool {
-    ctx.args.unaligned_pointers != Treatment::Suppress
-}
-
-/// ld-prime wants each pointer dyld fixes up 8-aligned, as a fixup
-/// chain's links are words: it warns of every subsection aligned less
-/// than a pointer that holds one as it reads the objects (see
-/// small_pointer_subsecs), then, once relocations are applied,
-/// reports the unaligned pointers where the image has classic dyld info
-/// (as -unaligned_pointers says). With chained fixups, arm64 fails the link
-/// at an unaligned pointer of a chain: of the last section that has
-/// one, the first subsection's (in address order), from its last pointer
-/// (the order of an assembler's relocations) - ld-prime checks the
-/// sections in parallel and keeps the last one's error, but stops a
-/// section at its first. x86-64 gives chains up for classic dyld info
-/// instead - with a warning, whatever -unaligned_pointers says - whose
-/// header the load commands fit in as laid out (see header_pad), on an
-/// unaligned pointer of its own too (`unaligned`: a GOT slot a
-/// -segalign below 8 moved off 8 bytes). `suspects` are the pointers
-/// collect_fixups gives; the unaligned ones are left for
-/// report_unaligned_chain_pointer and report_unaligned_pointers.
-/// Returns false for that fallback.
+/// Each pointer dyld fixes up should be 8-aligned, as the links of a
+/// fixup chain are words. Reports the `unaligned` ones of subsections
+/// (but text relocations, which report_text_relocs reports) as
+/// -unaligned_pointers says: arm64 refuses them in chains. An x86-64
+/// image laid out for chains gets classic dyld info instead, on any
+/// unaligned fixup, saying so; its load commands grow by 16 bytes then,
+/// which the header padding holds (see header_pad). Returns false for
+/// that fallback.
 fn check_pointer_alignment<E: Target>(
     ctx: &Context<E>,
-    mut suspects: Vec<(u32, u64)>,
+    fixups: &[Fixup],
+    mut unaligned: Vec<(u32, u64)>,
     chained: bool,
-    unaligned: bool,
 ) -> bool {
-    let quiet = !checks_pointer_alignment(ctx);
-    if (quiet && (!chained || ctx.args.without_dyld())) || suspects.is_empty() && !unaligned {
-        return true;
-    }
-    let subsec_addr = |id: u32| ctx.isec_addr(id as usize);
-    suspects.sort_unstable_by_key(|&(id, addr)| (subsec_addr(id), id, addr));
-    suspects.retain(|&(_, addr)| !addr.is_multiple_of(8));
-    if chained && E::CPUTYPE == CPU_TYPE_ARM64 {
-        // A pointer in a read-only segment is a text relocation, which
-        // no chain holds. One 8-aligned in its segment is fine, though a
-        // -segalign below 8 moved the segment off 8 bytes: the chain
-        // pages fail the link then (see build_chained_fixups).
-        suspects.retain(|&(_, addr)| !ctx.text_reloc_ranges.iter().any(|r| r.contains(&addr)));
-        suspects.retain(|&(_, addr)| !offset_in_segment(ctx, addr).is_multiple_of(8));
-        if let Some(&(id, _)) = suspects.last() {
-            let osec = |id: u32| ctx.isecs[id as usize].output_section();
-            let (first, _) = *suspects.iter().find(|&&(i, _)| osec(i) == osec(id)).unwrap();
-            let &last = suspects.iter().rfind(|&&(id, _)| id == first).unwrap();
-            ctx.chained_fixups.unaligned.lock().unwrap().push(last);
-        }
-        return true;
-    }
-    if suspects.is_empty() && !unaligned {
-        return true;
-    }
-    if chained {
+    unaligned.retain(|&(_, addr)| !ctx.text_reloc_ranges.iter().any(|r| r.contains(&addr)));
+    unaligned.sort_unstable_by_key(|&(_, addr)| addr);
+    let fallback = chained
+        && E::CPUTYPE == CPU_TYPE_X86_64
+        && !ctx.args.without_dyld()
+        && (!unaligned.is_empty() || fixups.iter().any(|&(addr, ..)| !addr.is_multiple_of(8)));
+    if fallback {
         crate::warn!("disabling chained fixups because of unaligned pointers");
     }
-    if !quiet {
-        *ctx.chained_fixups.unaligned.lock().unwrap() = suspects;
-    }
-    !chained
-}
-
-/// The subsections of object `obj` aligned less than a pointer that
-/// hold one, which ld-prime warns of as it reads an object - every
-/// object it reads, archive members the link doesn't use included, but
-/// none it fails to read - unless -unaligned_pointers keeps it quiet
-/// (see Args::unaligned_pointers). It knows nothing yet of the symbols
-/// the pointers point to but those the object defines: a pointer is any
-/// 8-byte absolute relocation, but one to an absolute symbol of the
-/// object. ld-prime makes no subsections of the DWARF, of __LLVM, of
-/// __compact_unwind or of __eh_frame. They come in section order, by
-/// address within a section, as the object's subsections are numbered.
-pub fn small_pointer_subsecs<E: Target>(ctx: &Context<E>, obj: usize) -> Vec<u32> {
-    if ctx.args.unaligned_pointers == Treatment::Suppress {
-        return Vec::new();
-    }
-    let file = &ctx.objs[obj];
-    let is_pointer = |rel: &crate::input_sections::Reloc| {
-        rel.size == 8
-            && E::classify_reloc(rel.r_type) == RelocClass::Plain
-            && !rel.is_pcrel
-            && !rel.is_subtracted
-            && rel.r_type != E::RELOC_SUBTRACTOR
-            && !matches!(rel.target(), crate::input_sections::RelocTarget::Sym(idx)
-                if file.nlists.get(idx as usize).is_some_and(|n| n.n_type() == N_ABS))
-    };
-    let mut subsecs: Vec<u32> = file
-        .subsecs
-        .iter()
-        .copied()
-        .filter(|&id| {
-            let isec = &ctx.isecs[id];
-            let hdr = ctx.hdr_of(isec);
-            isec.p2align < 3
-                && !hdr.segname_is(b"__DWARF")
-                && !hdr.segname_is(b"__LLVM")
-                && !hdr.sectname_is(b"__compact_unwind")
-                && !hdr.sectname_is(b"__eh_frame")
-                && ctx.isec_relocs(id as usize).iter().any(is_pointer)
-        })
-        .collect();
-    subsecs.sort_unstable();
-    subsecs
-}
-
-/// Warns of a subsection small_pointer_subsecs found.
-pub fn warn_small_pointer_subsec<E: Target>(ctx: &Context<E>, id: u32) {
-    crate::warn!(
-        "alignment ({}) of atom {} is too small and may result in unaligned pointers ",
-        1 << ctx.isecs[id].p2align,
-        crate::error::raw(&subsec_location(ctx, id, None))
-    );
-}
-
-/// Fails the link on chain pages dyld can't read (see
-/// build_chained_fixups), as an error in the layout. ld-prime writes the
-/// chains after it has applied the relocations, so a relocation it
-/// can't apply fails the link first.
-pub fn report_bad_page_size<E: Target>(ctx: &Context<E>) {
-    let Some(seg_idx) = *ctx.chained_fixups.bad_page_size.lock().unwrap() else { return };
-    // In pages over 16 KiB, two fixups of one page may be too far apart
-    // for the 12-bit `next` field, which ld-prime finds first as it
-    // chains them: it names the segment of the first and its offset
-    // there.
-    if let Some((seg, off, dist)) = unchainable_fixups(ctx) {
-        let seg = crate::error::raw(seg);
-        crate::layout_error_at!(
-            u64::MAX,
-            "distance between fixups ({dist}) is not encodable in chain for fixup at {seg}+{off:#x}, "
-        );
-        return;
-    }
-    crate::layout_error_at!(
-        u64::MAX,
-        "chained fixups, page_size not 4KB or 16KB in segment #{seg_idx}"
-    );
-}
-
-/// The first fixup of the image that the next one of its page is too
-/// far from to chain to: its segment's name, its offset there, and the
-/// distance.
-fn unchainable_fixups<E: Target>(ctx: &Context<E>) -> Option<(&'static [u8], u64, u64)> {
-    let page_size = chain_page_size(ctx);
-    let fixups = &ctx.chained_fixups.fixups;
-    for seg in &ctx.segments {
-        let lo = fixups.partition_point(|&(a, _, _)| a < seg.cmd.vmaddr);
-        let hi = fixups.partition_point(|&(a, _, _)| a < seg.cmd.vmaddr + seg.cmd.vmsize);
-        let page = |addr: u64| (addr - seg.cmd.vmaddr) / page_size.max(1);
-        for pair in fixups[lo..hi].windows(2) {
-            let (a, b) = (pair[0].0, pair[1].0);
-            if page(a) == page(b) && b - a > MAX_CHAIN_STRIDE {
-                return Some((seg.name, a - seg.cmd.vmaddr, b - a));
-            }
-        }
-    }
-    None
-}
-
-/// Fails the link on the unaligned pointer check_pointer_alignment found
-/// in an arm64 chain, as ld-prime does after applying relocations: once
-/// the text relocations are listed, before they would fail it. Returns
-/// whether there was one.
-pub fn report_unaligned_chain_pointer<E: Target>(ctx: &Context<E>) -> bool {
-    if !ctx.use_chained_fixups() {
-        return false;
-    }
-    let Some(&(id, addr)) = ctx.chained_fixups.unaligned.lock().unwrap().first() else {
-        return false;
-    };
-    let place = subsec_location(ctx, id, Some(addr));
-    crate::error!("pointer not aligned in {}", crate::error::raw(&place));
-    true
-}
-
-/// Reports the unaligned pointers check_pointer_alignment found in an
-/// image with classic dyld info, as ld-prime does when it encodes them:
-/// only once nothing has failed the link, and only of one off 8 bytes
-/// in its segment - not of one a -segalign below 8 moved off with the
-/// segment, which gives chained fixups up all the same. It warns of
-/// each, or under -unaligned_pointers error fails on the first.
-pub fn report_unaligned_pointers<E: Target>(ctx: &Context<E>) {
-    if ctx.use_chained_fixups() {
-        return;
-    }
-    for &(id, addr) in ctx.chained_fixups.unaligned.lock().unwrap().iter() {
-        if offset_in_segment(ctx, addr).is_multiple_of(8) {
-            continue;
-        }
-        let place = subsec_location(ctx, id, Some(addr));
+    for (id, addr) in unaligned {
+        let place = ctx.subsec_ref(id as usize, (addr - ctx.isec_addr(id as usize)) as u32);
         let place = crate::error::raw(&place);
-        if ctx.args.unaligned_pointers == Treatment::Error {
-            crate::error!("pointer not aligned in {place}");
-            return;
+        match ctx.args.unaligned_pointers {
+            Treatment::Error => {
+                crate::error!("pointer not aligned at {addr:#x} in {place}");
+                break;
+            }
+            Treatment::Warning => crate::warn!("pointer not aligned at {addr:#x} in {place}"),
+            Treatment::Suppress => break,
         }
-        crate::warn!("pointer not aligned in {place}");
     }
-}
-
-/// An address's offset from the start of the segment that holds it.
-fn offset_in_segment<E: Target>(ctx: &Context<E>, addr: u64) -> u64 {
-    let seg = ctx
-        .segments
-        .iter()
-        .find(|seg| (seg.cmd.vmaddr..seg.cmd.vmaddr + seg.cmd.vmsize).contains(&addr));
-    addr - seg.map_or(0, |seg| seg.cmd.vmaddr)
-}
-
-/// A place in a subsection as ld-prime names it in a diagnostic: 'name'
-/// of the subsection, +0xoffset of `addr` in it (if not its start), and
-/// its file's real path in parentheses. A subsection is named by a
-/// symbol at its start, an exported one first.
-fn subsec_location<E: Target>(
-    ctx: &Context<E>,
-    isec: u32,
-    addr: Option<u64>,
-) -> crate::error::Message {
-    let off = addr.map_or(0, |addr| addr - ctx.isec_addr(isec as usize));
-    ctx.subsec_ref(isec as usize, off as u32)
+    !fallback
 }
