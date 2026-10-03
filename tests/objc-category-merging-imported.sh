@@ -1,13 +1,10 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# The categories on a class another image defines (NSObject here) merge
-# into the first of them, across objects: its record stays in
-# __objc_catlist, pointing at merged lists of each kind another
-# category has, named after the class and the categories
-# (__OBJC_$_INSTANCE_METHODS_NSObject(A|B|D)); a kind only the first
-# has keeps its own list. The categories of a class one of whose
-# categories has a +load (NSString) don't merge at all.
+# The categories on a class another image defines (NSObject, NSString
+# here) stay categories the runtime attaches at load, each with its
+# methods, protocols and properties. (ld-prime merges them into the
+# first of them, but for a class one of whose categories has a +load.)
 cat <<EOF | $CC -o $t/a.o -c -xobjective-c -fno-objc-arc -
 #import <Foundation/Foundation.h>
 @protocol PB
@@ -81,19 +78,9 @@ EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o $t/c.o -framework Foundation
 $t/exe | grep -q '^1 2 3 5 6 7 4 8 1 1 1$'
-nm $t/exe > $t/nm
-grep -q ' __OBJC_$_CATEGORY_NSObject_$_A$' $t/nm
-not grep -q '__OBJC_$_CATEGORY_NSObject_$_[BD]$' $t/nm
-grep -q ' __OBJC_$_INSTANCE_METHODS_NSObject(A|B|D)$' $t/nm
-grep -q ' __OBJC_$_CLASS_METHODS_NSObject(A|B|D)$' $t/nm
-grep -q ' __OBJC_CLASS_PROTOCOLS_$_NSObject(A|B|D)$' $t/nm
-grep -q ' __OBJC_$_PROP_LIST_NSObject_$_A$' $t/nm
-grep -q ' __OBJC_$_CATEGORY_NSString_$_L$' $t/nm
-grep -q ' __OBJC_$_CATEGORY_NSString_$_N$' $t/nm
-# NSObject(A), NSString(L) and NSString(N).
-otool -l $t/exe | grep -A4 'sectname __objc_catlist$' | grep -q 'size 0x0*18$'
+otool -l $t/exe | grep -A4 'sectname __objc_catlist$' | grep -q 'size 0x0*28$'
 
-# -no_objc_category_merging keeps all five.
+# So with -no_objc_category_merging.
 $CC --ld-path=$mold -o $t/exe2 $t/a.o $t/b.o $t/c.o -framework Foundation \
   -Wl,-no_objc_category_merging
 $t/exe2 | grep -q '^1 2 3 5 6 7 4 8 1 1 1$'

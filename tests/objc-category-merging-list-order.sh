@@ -1,34 +1,49 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# Categories on a class another image defines merge into the first of
-# them. ld-prime drops the merged ones from the category list they were
-# in and keeps the list in its place, so the categories of the objects
-# after it still come after its others: here NSString(A1), NSData(D1)
-# of a.o, then NSArray(R1) of b.o.
+# Merging a category into its class drops it from the category list it
+# was in, which keeps its place among the other objects' lists: the
+# runtime attaches the categories in list order, so the categories of
+# the objects after it still come after its others. Here a.o's list
+# loses Foo(F) but keeps NSString(A1) and NSData(D1) ahead of b.o's
+# NSArray(R1).
 cat <<EOF | $CC -o $t/a.o -c -xobjective-c -
 #import <Foundation/Foundation.h>
+@interface Foo : NSObject @end
+@implementation Foo @end
+@interface Foo (F) - (int)f; @end
+@implementation Foo (F) - (int)f { return 2; } @end
 @interface NSString (A1) - (int)a1; @end
 @implementation NSString (A1) - (int)a1 { return 1; } @end
 @interface NSData (D1) - (int)d1; @end
 @implementation NSData (D1) - (int)d1 { return 3; } @end
-@interface NSString (A3) - (int)a3; @end
-@implementation NSString (A3) - (int)a3 { return 5; } @end
+int foo_f(void) { return [[Foo new] f]; }
 EOF
 cat <<EOF | $CC -o $t/b.o -c -xobjective-c -
 #import <Foundation/Foundation.h>
 @interface NSArray (R1) - (int)r1; @end
 @implementation NSArray (R1) - (int)r1 { return 4; } @end
 EOF
+cat <<EOF | $CC -o $t/m.o -c -xobjective-c -
+#import <Foundation/Foundation.h>
+@interface NSString (A1) - (int)a1; @end
+@interface NSData (D1) - (int)d1; @end
+@interface NSArray (R1) - (int)r1; @end
+int foo_f(void);
+int main() {
+  printf("%d %d %d %d\n", [@"x" a1], foo_f(), [[NSData data] d1], [@[] r1]);
+}
+EOF
 
-$CC --ld-path=$mold -shared -o $t/c.dylib $t/a.o $t/b.o -framework Foundation
-otool -ov $t/c.dylib | sed -n '/__objc_catlist/,/Contents of/p' > $t/log
+$CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o $t/m.o -framework Foundation
+$t/exe | grep -q '^1 2 3 4$'
+otool -ov $t/exe | sed -n '/__objc_catlist/,/Contents of/p' > $t/log
 grep -E '^[0-9a-f]+ ' $t/log | awk '{ print $NF }' | tr '\n' ' ' > $t/order
 [ "$(cat $t/order)" = '__OBJC_$_CATEGORY_NSString_$_A1 __OBJC_$_CATEGORY_NSData_$_D1 __OBJC_$_CATEGORY_NSArray_$_R1 ' ]
 
 # Swift labels its category list _objc_categories, which the symbol
-# table lists as a local at the list, rebuilt or not. (ld-prime lists
-# no name of a list entry.)
+# table lists as a local at the list. (ld-prime lists no name of a
+# list entry.)
 command -v swiftc >/dev/null || exit 0
 [ "$ARCH" = "$(uname -m)" ] || exit 0
 cat <<EOF2 > $t/ext.swift
@@ -44,4 +59,4 @@ nm -m $t/d.dylib > $t/syms
 grep -q '(__DATA_CONST,__objc_catlist) non-external _objc_categories$' $t/syms
 otool -ov $t/d.dylib | sed -n '/__objc_catlist/,/Contents of/p' > $t/log2
 grep -E '^[0-9a-f]+ ' $t/log2 | awk '{ print $NF }' | tr '\n' ' ' > $t/order2
-[ "$(cat $t/order2)" = '__CATEGORY_NSString_$_E __CATEGORY_NSData_$_E ' ]
+[ "$(cat $t/order2)" = '__CATEGORY_NSString_$_E __CATEGORY_NSData_$_E __CATEGORY_NSString_$_E1 ' ]
