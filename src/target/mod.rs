@@ -93,6 +93,20 @@ pub fn has_reloc_form(r: &MachRel, forms: u16) -> bool {
     forms >> ((r.bits >> 24) & 0xf) & 1 != 0
 }
 
+// The targets' little-endian reads and writes of instructions and
+// relocated fields.
+fn read32(loc: &[u8]) -> u32 {
+    u32::from_le_bytes(loc[..4].try_into().unwrap())
+}
+
+fn write32(loc: &mut [u8], val: u32) {
+    loc[..4].copy_from_slice(&val.to_le_bytes());
+}
+
+fn write64(loc: &mut [u8], val: u64) {
+    loc[..8].copy_from_slice(&val.to_le_bytes());
+}
+
 /// Reports relocation record `r` of section `hdr` of object `file`,
 /// which the linker can't apply for the reason `what`.
 #[cold]

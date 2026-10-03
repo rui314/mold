@@ -13,7 +13,10 @@ use crate::fatal;
 use crate::input_files::ObjectFile;
 use crate::input_sections::{Reloc, RelocTarget};
 use crate::macho::*;
-use crate::target::{SplitRef, Target, has_reloc_form, load_helper, reloc_form, section_target};
+use crate::target::{
+    SplitRef, Target, has_reloc_form, load_helper, read32, reloc_form, section_target, write32,
+    write64,
+};
 use crate::util::{bits, sign_extend};
 
 #[derive(Clone, Copy, Default)]
@@ -33,10 +36,6 @@ fn page(val: u64) -> u64 {
 fn page_offset(hi: u64, lo: u64) -> u32 {
     let val = page(hi).wrapping_sub(page(lo));
     ((bits(val, 13, 12) << 29) | (bits(val, 32, 14) << 5)) as u32
-}
-
-fn read32(loc: &[u8]) -> u32 {
-    u32::from_le_bytes(loc[..4].try_into().unwrap())
 }
 
 /// Points the ADRP at `loc`, whose address is `lo`, at `hi`'s page. The
@@ -78,14 +77,6 @@ fn relaxes_load(ctx: &Context<Arm64>, isec: usize, r: &Reloc, id: crate::symbol:
 /// Whether an instruction is "ldr Xt|Wt, [Xn, #imm]".
 fn is_ldr_imm(insn: u32) -> bool {
     insn & 0xbfc0_0000 == 0xb940_0000
-}
-
-fn write32(loc: &mut [u8], val: u32) {
-    loc[..4].copy_from_slice(&val.to_le_bytes());
-}
-
-fn write64(loc: &mut [u8], val: u64) {
-    loc[..8].copy_from_slice(&val.to_le_bytes());
 }
 
 /// Writes an immediate to an ADD, LDR or STR instruction. Fails with

@@ -10,7 +10,9 @@ use crate::fatal;
 use crate::input_sections::{Reloc, RelocTarget};
 use crate::macho::*;
 use crate::symbol::SymbolId;
-use crate::target::{SplitRef, Target, has_reloc_form, load_helper, reloc_form, section_target};
+use crate::target::{
+    SplitRef, Target, has_reloc_form, load_helper, reloc_form, section_target, write32, write64,
+};
 
 #[derive(Clone, Copy, Default)]
 pub struct X86_64;
@@ -56,14 +58,6 @@ const DLOPEN_HELPER: [u8; 153] = [
     0x5d, // pop %rbp
     0xc3, // ret
 ];
-
-fn write32(loc: &mut [u8], val: u32) {
-    loc[..4].copy_from_slice(&val.to_le_bytes());
-}
-
-fn write64(loc: &mut [u8], val: u64) {
-    loc[..8].copy_from_slice(&val.to_le_bytes());
-}
 
 /// What the call or jmp of a DTrace probe site becomes, from its opcode
 /// on, if relocation `r` is one (see dtrace): a nop and a 4-byte nop,
