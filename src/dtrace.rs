@@ -128,7 +128,6 @@ pub fn create_dof_sections<E: Target>(ctx: &mut Context<E>) {
         crate::error!("Unexpected call to dtrace provider undef");
         return;
     };
-    let names = subsec_names(ctx, &sites);
     let infos: Vec<&[u8]> = (syms.iter())
         .map(|&id| ctx.symbols[id].name())
         .filter(|&name| site_kind_of(name).is_none())
@@ -139,7 +138,9 @@ pub fn create_dof_sections<E: Target>(ctx: &mut Context<E>) {
             infos.iter().copied().filter(|&name| provider_of(name) == provider).collect();
         types.sort_unstable();
         let probes: Vec<&[u8]> = sites.iter().map(|s| ctx.symbols[s.sym].name()).collect();
-        let functions: Vec<&[u8]> = sites.iter().map(|s| names[&s.isec]).collect();
+        // A site goes by the function it is in, its subsection's label.
+        let functions: Vec<&[u8]> =
+            sites.iter().map(|s| ctx.subsec_label(s.isec as usize).unwrap_or_default()).collect();
         let dof = match build_dof(&types, &probes, &functions) {
             Ok(dof) => dof,
             // libdtrace's message, then ld-prime's.
@@ -228,35 +229,6 @@ fn sites_by_provider<'a, E: Target>(
         providers[i].1.push(site);
     }
     providers
-}
-
-/// The name of each site's subsection, by subsection, which a site
-/// goes by as the function it is in: its label (see
-/// Context::subsec_label), or "" if it has none. Each object's symbols
-/// are looked through once.
-fn subsec_names<E: Target>(ctx: &Context<E>, sites: &[Site]) -> HashMap<u32, &'static [u8]> {
-    let mut starts: HashMap<u32, HashMap<(u32, u64), u32>> = HashMap::new();
-    for site in sites {
-        let isec = &ctx.isecs[site.isec as usize];
-        let at = (isec.shndx + 1, isec.input_addr as u64);
-        starts.entry(isec.file).or_default().insert(at, site.isec);
-    }
-    let mut best: HashMap<u32, (u8, &'static [u8], usize)> = HashMap::new();
-    for (&file, starts) in &starts {
-        let obj = &ctx.objs[file as usize];
-        for (i, (nlist, &id)) in obj.nlists.iter().zip(&obj.symbols).enumerate() {
-            if nlist.is_stab() || nlist.n_type() != N_SECT {
-                continue;
-            }
-            let Some(&isec) = starts.get(&(nlist.n_sect as u32, nlist.n_value)) else {
-                continue;
-            };
-            let name = ctx.symbols[id].name();
-            let key = (crate::input_files::subsec_name_rank(nlist, name), name, i);
-            best.entry(isec).and_modify(|b| *b = (*b).max(key)).or_insert(key);
-        }
-    }
-    sites.iter().map(|s| (s.isec, best.get(&s.isec).map_or(&[][..], |b| b.1))).collect()
 }
 
 /// The name of a provider's DOF section: "__dof_" and the provider, cut
