@@ -5842,7 +5842,6 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
     // Range-extension thunks go in before the first placement, unless
     // only the placement can tell whether a branch may be out of reach;
     // the code is then placed again with them if it turns out so.
-    crate::thunks::warn_large_subsecs(ctx);
     let need_thunks = crate::thunks::need_thunks(ctx);
     if need_thunks == Some(true) {
         crate::thunks::create_range_extension_thunks(ctx);

@@ -3,25 +3,36 @@ source "$(dirname "$0")"/common.inc
 
 [ "$ARCH" = arm64 ] || skip
 
-# ld-prime puts its branch islands in clusters at most 124 MiB of code
-# apart, each island a b to the next, so a code subsection of that size
-# is one no branch can cross that way; it warns about each. (Our thunks
-# reach 4 GiB, so we can still link a branch across one; ld-prime
-# fails.)
+# A code subsection larger than a branch reaches leaves no place for a
+# thunk between its ends: a branch across it goes through a thunk placed
+# before it, which jumps anywhere within 4 GiB. (ld-prime's branch
+# islands branch to one another by b, so none crosses such a
+# subsection: it warns about the subsection and fails the link.)
 cat <<'EOF' | $CC -o $t/a.o -c -xassembler -
 .text
 .globl _main
 .p2align 2
 _main:
+  stp x29, x30, [sp, #-16]!
+  bl _far
+  ldp x29, x30, [sp], #16
   ret
 .globl _big
 .p2align 2
 _big:
-  .space 0x7c00000
+  .space 0x8400000
+.globl _far
+.p2align 2
+_far:
+  mov w0, #42
+  ret
 .subsections_via_symbols
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o 2> $t/log
-grep -qF "warning: atom '_big' ($(cd $t && pwd -P)/a.o) is larger than the max code size between branch island clusters, this may lead to unreachable branches" $t/log
-[ "$(grep -c 'branch island clusters' $t/log)" = 1 ]
+not grep -q warning $t/log
+nm $t/exe | grep -q ' _far\.island$'
+status=0
+$t/exe || status=$?
+[ $status = 42 ]
 rm -f $t/a.o $t/exe
