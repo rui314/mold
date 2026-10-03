@@ -2366,6 +2366,10 @@ impl<E: Target> ObjectFile<E> {
                 }
             };
 
+            // The section symbol, addend and dummy symbol of the last
+            // relocation redirected to a fragment.
+            let mut last_fragment_ref: Option<(u32, i64, u32)> = None;
+
             for rel in rels.iter_mut() {
                 let record = *rel;
                 let r_sym = record.r_sym() as usize;
@@ -2383,6 +2387,19 @@ impl<E: Target> ObjectFile<E> {
                     } else {
                         E::get_addend(&contents[record.r_offset() as usize..], &record)
                     };
+
+                    // Instruction pairs such as ADRP and ADD on ARM64 refer to
+                    // the same place with two relocations in a row. They can
+                    // share a dummy symbol.
+                    if let Some((sym, last_addend, idx)) = last_fragment_ref
+                        && sym == record.r_sym()
+                        && last_addend == addend
+                    {
+                        rel.set_r_sym(idx);
+                        continue;
+                    }
+                    last_fragment_ref = Some((record.r_sym(), addend, dummy_idx));
+
                     let Some((frag, in_frag_offset)) =
                         m.fragment(esym.st_value().wrapping_add(addend as u64))
                     else {
