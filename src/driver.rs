@@ -73,26 +73,21 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     let t_all = ctx.timer("all");
     crate::subprocess::install_signal_handler();
 
-    // Read every input eagerly, then resolve; loading auto-linked
-    // libraries or the LTO output adds inputs, so resolution repeats
-    // until the input set is stable.
+    // Parse input files
     let t = ctx.timer("read_input_files");
     passes::read_input_files(&mut ctx);
     drop(t);
+
+    // Create a dummy file containing linker-synthesized symbols.
     passes::create_internal_file(&mut ctx);
     crate::error::checkpoint();
+
+    // Resolve symbols by choosing the most appropriate file for each
+    // symbol, then load the libraries the live objects' auto-link
+    // options name, which resolves symbols again as they come in.
     let mut t = ctx.timer("resolve_symbols");
-    loop {
-        passes::resolve_symbols(&mut ctx);
-        match passes::load_autolink_deps(&mut ctx) {
-            passes::Autolinked::Nothing => break,
-            passes::Autolinked::DylibsOnly(first) => {
-                passes::claim_new_dylibs(&mut ctx, first);
-                break;
-            }
-            passes::Autolinked::Objects => {}
-        }
-    }
+    passes::resolve_symbols(&mut ctx);
+    passes::load_autolink_deps(&mut ctx);
     let mut checked = passes::CheckedInputs::default();
     passes::check_input_versions(&ctx, &mut checked);
     passes::check_bitcode_duplicates(&ctx);
@@ -108,20 +103,10 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
         drop(t_all);
         return Ok(0);
     }
-    if passes::do_lto(&mut ctx) {
-        loop {
-            passes::resolve_symbols(&mut ctx);
-            match passes::load_autolink_deps(&mut ctx) {
-                passes::Autolinked::Nothing => break,
-                passes::Autolinked::DylibsOnly(first) => {
-                    passes::claim_new_dylibs(&mut ctx, first);
-                    break;
-                }
-                passes::Autolinked::Objects => {}
-            }
-        }
+    // If there's a bitcode file, do link-time optimization.
+    if passes::has_lto_obj(&ctx) {
+        passes::do_lto(&mut ctx);
         passes::check_input_versions(&ctx, &mut checked);
-        passes::keep_bitcode_imports(&mut ctx);
     }
     passes::print_why_load(&ctx);
     passes::warn_newer_dylibs(&ctx);

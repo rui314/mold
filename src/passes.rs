@@ -1286,23 +1286,6 @@ fn load_bundle_loader<E: Target>(
     }
 }
 
-/// Acts on auto-link options (LC_LINKER_OPTION) of live objects: each
-/// names a library or framework the object needs, as if it had been on
-/// the command line. Swift objects rely on this entirely. Returns true
-/// if new inputs were loaded, in which case resolution must run again.
-/// What a round of auto-linking added to the link.
-pub enum Autolinked {
-    Nothing,
-    /// Only dylibs, starting at this index. A dylib addition cannot
-    /// change object-vs-object resolution (autolinked files get later
-    /// priorities than everything already loaded), so a light claim
-    /// pass replaces a full re-resolution.
-    DylibsOnly(usize),
-    /// Objects, or dylibs that take symbols from ones already claimed:
-    /// resolution runs again.
-    Objects,
-}
-
 /// Reads an object's auto-link options (LC_LINKER_OPTION) as ld-prime
 /// does: their strings in a row, as a command line of library options.
 /// Those naming a library, a framework or an archive to load are kept,
@@ -1471,28 +1454,58 @@ fn missing_hint(framework: bool, name: &[u8]) -> error::Message {
     }
 }
 
-pub fn load_autolink_deps<E: Target>(ctx: &mut Context<E>) -> Autolinked {
+/// Acts on the auto-link options (LC_LINKER_OPTION) of the live
+/// objects, once symbols are resolved: each names a library or
+/// framework the object needs, as if it had been on the command line.
+/// Swift objects rely on this entirely. What the options load may make
+/// more objects live, with options of their own, so symbols resolve
+/// again and the options are read again until they load nothing new.
+pub fn load_autolink_deps<E: Target>(ctx: &mut Context<E>) {
     if ctx.args.ignore_auto_link {
-        return Autolinked::Nothing;
+        return;
     }
-    // Those of objects new to the link are read.
-    for i in 0..ctx.objs.len() {
-        let obj = &mut ctx.objs[i];
-        if obj.is_alive && !obj.linker_options_read {
+    loop {
+        // Those of objects new to the link are read.
+        for obj in ctx.objs.iter_mut().filter(|obj| obj.is_alive && !obj.linker_options_read) {
             let mf = obj.mf;
             obj.linker_options = read_linker_options(&obj.linker_options, || mf.name.raw());
             obj.linker_options_read = true;
         }
+        // ld64 does not act on auto-link options in a -r link: the
+        // LC_LINKER_OPTION commands are copied into the output object
+        // and the final link resolves them. Loading them here would let
+        // the libraries claim symbols that the output must leave
+        // undefined (Xcode's prelink of a Swift package auto-linked
+        // libc++ this way and the -r symbol table then lacked operator
+        // new).
+        if ctx.args.relocatable {
+            return;
+        }
+
+        let (num_objs, num_dylibs) = (ctx.objs.len(), ctx.dylibs.len());
+        load_autolinked_libraries(ctx);
+
+        // New objects change what resolution chose, and so does a new
+        // dylib that an earlier one merged as a private re-export, which
+        // takes its symbols from that one: resolution runs again. Other
+        // new dylibs only claim what is still undefined (see
+        // claim_new_dylibs).
+        let (old, new) = ctx.dylibs.split_at(num_dylibs);
+        let rebinds =
+            new.iter().any(|d| old.iter().any(|o| o.merged_reexports.contains(&d.install_name)));
+        if ctx.objs.len() == num_objs && !rebinds {
+            if ctx.dylibs.len() != num_dylibs {
+                claim_new_dylibs(ctx, num_dylibs);
+            }
+            return;
+        }
+        resolve_symbols(ctx);
     }
-    // ld64 does not act on auto-link options in a -r link: the
-    // LC_LINKER_OPTION commands are copied into the output object and
-    // the final link resolves them. Loading them here would let the
-    // libraries claim symbols that the output must leave undefined
-    // (Xcode's prelink of a Swift package auto-linked libc++ this way
-    // and the -r symbol table then lacked operator new).
-    if ctx.args.relocatable {
-        return Autolinked::Nothing;
-    }
+}
+
+/// Loads the libraries the auto-link options not acted on yet name, and
+/// the first time, those only -possible-l and the like name.
+fn load_autolinked_libraries<E: Target>(ctx: &mut Context<E>) {
     // ld64 acts on the auto-link options as a sorted set, not in the
     // order the objects mention them: its load commands list the
     // auto-linked libraries alphabetically ("-framework AppKit" ...
@@ -1513,6 +1526,12 @@ pub fn load_autolink_deps<E: Target>(ctx: &mut Context<E>) -> Autolinked {
     let dylibs_before = ctx.dylibs.len();
     ctx.autolink_priority = ctx.autolink_priority.min(ctx.priority_counter + 1);
 
+    // A library already in the link as a public re-export (Foundation's
+    // stub brings CoreFoundation) that an auto-link option now names
+    // is a hint like any other auto-linked library: listed only if
+    // something binds to it (ld-prime drops CoreFoundation from a
+    // Swift program that never binds to it).
+    let implicit_before: Vec<bool> = ctx.dylibs.iter().map(|d| d.is_implicit).collect();
     // An auto-link option is a hint, and ld-prime says nothing when it
     // finds no library or framework for one unless symbols are left
     // undefined (see report_undef_errors). Header-only SDK frameworks
@@ -1520,13 +1539,6 @@ pub fn load_autolink_deps<E: Target>(ctx: &mut Context<E>) -> Autolinked {
     // carries `-framework CoreAudioTypes`, whose framework directory
     // holds headers and a module map but no binary (CotEditor's build
     // printed a warning 317 times).
-    let before = (ctx.objs.len(), ctx.dylibs.len());
-    // A library already in the link as a public re-export (Foundation's
-    // stub brings CoreFoundation) that an auto-link option now names
-    // is a hint like any other auto-linked library: listed only if
-    // something binds to it (ld-prime drops CoreFoundation from a
-    // Swift program that never binds to it).
-    let implicit_before: Vec<bool> = ctx.dylibs.iter().map(|d| d.is_implicit).collect();
     let mut queue: Vec<PendingObject> = Vec::new();
     for opt in pending {
         ctx.processed_linker_options.insert(opt.clone());
@@ -1559,18 +1571,6 @@ pub fn load_autolink_deps<E: Target>(ctx: &mut Context<E>) -> Autolinked {
     }
     collect_indirect_files(ctx, &mut queue);
     load_pending(ctx, queue);
-    // A new dylib that an earlier one merged as a private re-export takes
-    // its symbols from that one, which a light claim pass cannot move.
-    let (old, new) = ctx.dylibs.split_at(before.1);
-    let rebinds =
-        new.iter().any(|d| old.iter().any(|o| o.merged_reexports.contains(&d.install_name)));
-    if ctx.objs.len() != before.0 || rebinds {
-        Autolinked::Objects
-    } else if ctx.dylibs.len() != before.1 {
-        Autolinked::DylibsOnly(before.1)
-    } else {
-        Autolinked::Nothing
-    }
 }
 
 /// For each dylib, the dylibs of the link it merged as private
@@ -1635,7 +1635,7 @@ fn import_from_dylib(
 /// carry later priorities than every file already resolved, so they
 /// can steal nothing - a full re-resolution would reach exactly this
 /// outcome, at many times the cost.
-pub fn claim_new_dylibs<E: Target>(ctx: &mut Context<E>, first: usize) {
+fn claim_new_dylibs<E: Target>(ctx: &mut Context<E>, first: usize) {
     let dylibs = &ctx.dylibs;
     let providers = merged_providers(dylibs);
     let order = dylib_search_order(&dylib_ranks(dylibs), first);
@@ -2562,15 +2562,18 @@ struct LtoObject {
     data: Vec<u8>,
 }
 
+/// Whether a live file is bitcode, for LTO to compile.
+pub fn has_lto_obj<E: Target>(ctx: &Context<E>) -> bool {
+    live_bitcode_modules(ctx).next().is_some()
+}
+
 /// Compiles the live bitcode modules to Mach-O objects as ld-prime
 /// does - first the modules built for ThinLTO, an object each, then the
-/// rest merged into one - and replaces the placeholder objects' symbol
-/// claims with the real ones. Both see the same symbols to preserve.
-/// -flto-codegen-only has ThinLTO compile every module, unoptimized.
-pub fn do_lto<E: Target>(ctx: &mut Context<E>) -> bool {
-    if live_bitcode_modules(ctx).next().is_none() {
-        return false;
-    }
+/// rest merged into one - and resolves symbols again with the compiled
+/// objects in place of the bitcode files. Both compilations see the
+/// same symbols to preserve. -flto-codegen-only has ThinLTO compile
+/// every module, unoptimized.
+pub fn do_lto<E: Target>(ctx: &mut Context<E>) {
     // ld-prime compiles nothing for a link that already failed, say on
     // a bitcode file built for another platform.
     crate::error::checkpoint();
@@ -2602,7 +2605,11 @@ pub fn do_lto<E: Target>(ctx: &mut Context<E>) -> bool {
         }
     }
     ctx.lto_objs = first..ctx.objs.len();
-    true
+
+    // Redo name resolution.
+    resolve_symbols(ctx);
+    load_autolink_deps(ctx);
+    keep_bitcode_imports(ctx);
 }
 
 /// Compiles the ThinLTO modules to an object each. libLTO tells the
