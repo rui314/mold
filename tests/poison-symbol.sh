@@ -2,8 +2,8 @@
 source "$(dirname "$0")"/common.inc
 
 # -poison_symbol and -poison_symbols_list (wildcards allowed) fail the
-# link on any live reference to a symbol they name: ld-prime lists each
-# reference as the function it is in and its file's leaf name.
+# link on any live reference to a symbol they name, listing each
+# function that refers to it once. (ld-prime lists each reference.)
 cat <<EOF | $CC -o $t/a.o -c -xc -
 int foo() { return 1; }
 int bar() { return 2; }
@@ -31,13 +31,12 @@ Use of poisoned symbols:
       _baz in c.o
   _foo, referenced from:
       _main in b.o
-      _main in b.o
 
 EOF
 # (ld-prime lists the symbols in no stable order.)
 grep -q '_bar, referenced from:' $t/msgs
 grep -A2 '_bar, referenced from:' $t/msgs | diff - <(sed -n 2,4p $t/expected)
-grep -A2 '_foo, referenced from:' $t/msgs | diff - <(sed -n 5,7p $t/expected)
+grep -A1 '_foo, referenced from:' $t/msgs | diff - <(sed -n 5,6p $t/expected)
 
 echo '_b*' > $t/list
 not $mold -o $t/exe $t/b.o $t/c.o $t/liba.dylib -poison_symbols_list $t/list 2> $t/log
@@ -51,9 +50,7 @@ $mold -o $t/exe $t/b.o $t/c.o $t/liba.dylib -poison_symbol _baz -lSystem \
 not $mold -o $t/exe $t/b.o -poison_symbol 2> $t/log
 grep -q -- '-poison_symbol.*missing' $t/log
 
-# A reference is a relocation, but an adrp and the add or load right
-# after it with its register for the base make one, and a subtracted
-# symbol makes none (ld-prime).
+# A subtracted symbol is no reference.
 cat <<EOF2 | $CC -o $t/d.o -c -xassembler -
 .data
 .globl _d, _garply, _grault
@@ -101,6 +98,6 @@ EOF2
   not $CC --ld-path=$mold -shared -o $t/e.dylib $t/e.o -Wl,-poison_symbol,_qux \
     -Wl,-poison_symbol,_quux -Wl,-poison_symbol,_corge 2> $t/log
   [ $(grep -A3 '_qux, referenced from:' $t/log | grep -c ' _f in e.o$') = 1 ]
-  [ $(grep -A3 '_quux, referenced from:' $t/log | grep -c ' _g in e.o$') = 2 ]
-  [ $(grep -A4 '_corge, referenced from:' $t/log | grep -c ' _h in e.o$') = 3 ]
+  [ $(grep -A3 '_quux, referenced from:' $t/log | grep -c ' _g in e.o$') = 1 ]
+  [ $(grep -A4 '_corge, referenced from:' $t/log | grep -c ' _h in e.o$') = 1 ]
 fi
