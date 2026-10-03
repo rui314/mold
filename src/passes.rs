@@ -18,13 +18,13 @@ use crate::fatal;
 use crate::filetype::{FileType, get_file_type};
 use crate::input_files;
 use crate::input_files::FileId;
-use crate::input_sections::{InputSection, RelocTarget};
+use crate::input_sections::{InputSection, NO_REPLACEMENT, RelocTarget};
 use crate::macho::*;
 use crate::mapped_file::MappedFile;
 use crate::mergeable::MergedLibrary;
 use crate::objc::{DataBlob, DataField};
 use crate::output_sections::header_segment;
-use crate::symbol::SymbolId;
+use crate::symbol::{NO_IDX, SymbolId};
 use crate::tapi;
 use crate::target::RelocClass;
 use crate::target::Target;
@@ -3347,10 +3347,7 @@ pub fn merge_literals<E: Target>(ctx: &mut Context<E>) {
         .par_iter()
         .enumerate()
         .filter_map(|(i, isec)| {
-            if !isec.is_alive()
-                || isec.replacement != crate::input_sections::NO_REPLACEMENT
-                || isec.is_labeled()
-            {
+            if !isec.is_alive() || isec.replacement != NO_REPLACEMENT || isec.is_labeled() {
                 return None;
             }
             let hdr = ctx.hdr_of(isec);
@@ -3462,7 +3459,7 @@ pub(crate) fn redirect_symbols_to_replacements<E: Target>(ctx: &mut Context<E>) 
     ctx.symbols.syms.par_iter_mut().for_each(|sym| {
         if let Some(i) = sym.input_section() {
             let mut r = i as usize;
-            while isecs[r].replacement != crate::input_sections::NO_REPLACEMENT {
+            while isecs[r].replacement != NO_REPLACEMENT {
                 r = isecs[r].replacement as usize;
             }
             if r != i as usize {
@@ -3653,8 +3650,7 @@ pub fn coalesce_weak_defs<E: Target>(ctx: &mut Context<E>) {
     for (loser, winner) in losers.into_iter().flatten() {
         let winner = ctx.resolve_isec(winner);
         let loser = ctx.resolve_isec(loser);
-        if loser != winner && ctx.isecs[loser].replacement == crate::input_sections::NO_REPLACEMENT
-        {
+        if loser != winner && ctx.isecs[loser].replacement == NO_REPLACEMENT {
             ctx.isecs[loser].replacement = winner as u32;
         }
     }
@@ -4122,7 +4118,7 @@ fn referenced_symbols<E: Target>(ctx: &Context<E>) -> Vec<std::sync::atomic::Ato
     let referenced: Vec<AtomicBool> =
         (0..ctx.symbols.syms.len()).map(|_| AtomicBool::new(false)).collect();
     ctx.isecs.par_iter().filter(|isec| isec.is_alive()).for_each(|isec| {
-        for rel in crate::input_files::isec_relocs_of(&ctx.objs, isec) {
+        for rel in input_files::isec_relocs_of(&ctx.objs, isec) {
             if let Some(id) = ctx.reloc_target_sym(isec.file as usize, rel) {
                 referenced[id as usize].store(true, Ordering::Relaxed);
             }
@@ -4182,7 +4178,7 @@ pub fn print_dependencies<E: Target>(ctx: &Context<E>) {
                     ctx.objs[idx].mf.name.raw()
                 }
                 Some(FileId::Dylib(idx)) if idx != u32::MAX => {
-                    crate::error::raw(&ctx.dylibs[idx as usize].install_name)
+                    raw(&ctx.dylibs[idx as usize].install_name)
                 }
                 _ => continue,
             };
@@ -4304,7 +4300,6 @@ pub fn print_implicit_trace<E: Target>(ctx: &Context<E>) {
 /// dylib, each symbol by name, and the files that refer to it strongly
 /// from what the output keeps.
 pub fn check_weak_assertions<E: Target>(ctx: &Context<E>) {
-    use crate::symbol::SymbolId;
     let asserted = |id: SymbolId| match ctx.symbols[id].file() {
         Some(FileId::Dylib(d)) if d != u32::MAX => {
             let dylib = &ctx.dylibs[d as usize];
@@ -4320,13 +4315,13 @@ pub fn check_weak_assertions<E: Target>(ctx: &Context<E>) {
         .into_par_iter()
         .filter(|&i| {
             let isec = &ctx.isecs[i];
-            isec.is_alive() && isec.replacement == crate::input_sections::NO_REPLACEMENT
+            isec.is_alive() && isec.replacement == NO_REPLACEMENT
         })
         .flat_map_iter(|i| {
             let file = ctx.isecs[i].file;
             let obj = &ctx.objs[file as usize];
             ctx.isec_relocs(i).iter().filter_map(move |r| {
-                let crate::input_sections::RelocTarget::Sym(idx) = r.target() else {
+                let RelocTarget::Sym(idx) = r.target() else {
                     return None;
                 };
                 let id = obj.symbols[idx as usize];
@@ -4345,7 +4340,7 @@ pub fn check_weak_assertions<E: Target>(ctx: &Context<E>) {
     else {
         return;
     };
-    let install_name = crate::error::raw(&dylib.install_name);
+    let install_name = raw(&dylib.install_name);
     let mut msg = error::render(format_args!(
         "Found non-weak-imported symbol(s) preventing {install_name} from being weak-linked:"
     ));
@@ -4383,7 +4378,7 @@ fn check_shared_cache_deps<E: Target>(ctx: &Context<E>) {
              ineligible dylib, fix its eligibility, or opt out of the shared cache using the \
              build setting 'LD_SHARED_CACHE_ELIGIBLE=NO' (or linker flag \
              '-not_for_dyld_shared_cache')",
-            crate::error::raw(&dylib.install_name)
+            raw(&dylib.install_name)
         );
     }
 }
@@ -4429,7 +4424,7 @@ pub fn warn_unused_dylibs<E: Target>(ctx: &Context<E>) {
         {
             crate::warn!(
                 "linking with ({}) but not using any symbols from it",
-                crate::error::raw(&dylib.install_name)
+                raw(&dylib.install_name)
             );
         }
     }
@@ -4478,7 +4473,7 @@ fn weaken_moved_imports<E: Target>(ctx: &mut Context<E>) {
 /// both it and SwiftUICore that moved to SwiftUI bind, at SwiftUICore's
 /// if only those of SwiftUICore do.
 fn moved_dylib_twins<E: Target>(ctx: &Context<E>, used: &[bool]) -> Vec<Option<usize>> {
-    use crate::input_files::NameSource;
+    use input_files::NameSource;
     let dylibs = &ctx.dylibs;
     let moved = |i: usize| dylibs[i].name_source == NameSource::Moved;
     let twin = |i: usize, moved_too: bool| {
@@ -4526,7 +4521,7 @@ pub fn dead_strip_dylibs<E: Target>(ctx: &mut Context<E>) {
     // options name 43 frameworks and Swift overlays nothing in it binds
     // to, and ld-prime lists none of them. (ld-prime ignores
     // MH_DEAD_STRIPPABLE_DYLIB, with which ld64 stripped a dylib too.)
-    let strippable = |dylib: &crate::input_files::DylibFile| {
+    let strippable = |dylib: &input_files::DylibFile| {
         ctx.args.dead_strip_dylibs || dylib.is_autolinked || dylib.is_implicit
     };
 
@@ -4581,7 +4576,7 @@ pub fn dead_strip_dylibs<E: Target>(ctx: &mut Context<E>) {
         for &i in &order {
             let dylib = &mut ctx.dylibs[i];
             if dylib.is_upward {
-                let name = crate::error::raw(&dylib.install_name);
+                let name = raw(&dylib.install_name);
                 crate::warn!("ignoring upward dylib option for {name}");
                 dylib.is_upward = false;
             }
@@ -4686,7 +4681,7 @@ pub fn compute_address_significance<E: Target>(ctx: &mut Context<E>) {
     ctx_ref
         .isecs
         .par_iter()
-        .filter(|isec| isec.is_alive() && isec.replacement == crate::input_sections::NO_REPLACEMENT)
+        .filter(|isec| isec.is_alive() && isec.replacement == NO_REPLACEMENT)
         .for_each(|isec| {
             for r in input_files::isec_relocs_of(&ctx_ref.objs, isec) {
                 if E::classify_reloc(r.r_type) != RelocClass::Branch
@@ -4719,12 +4714,12 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
     // loop below stays serial so GOT and stub slots keep their
     // deterministic first-seen order.
     let ctx_ref: &Context<E> = ctx;
-    let classes: Vec<(crate::symbol::SymbolId, RelocClass)> = ctx_ref
+    let classes: Vec<(SymbolId, RelocClass)> = ctx_ref
         .isecs
         .par_iter()
-        .filter(|isec| isec.is_alive() && isec.replacement == crate::input_sections::NO_REPLACEMENT)
+        .filter(|isec| isec.is_alive() && isec.replacement == NO_REPLACEMENT)
         .flat_map_iter(|isec| {
-            crate::input_files::isec_relocs_of(&ctx_ref.objs, isec).iter().filter_map(move |rel| {
+            input_files::isec_relocs_of(&ctx_ref.objs, isec).iter().filter_map(move |rel| {
                 let id = ctx_ref.reloc_target_sym(isec.file as usize, rel)?;
                 // A GOT load of a local symbol needs no slot at all:
                 // it relaxes, or ld-prime refuses the instruction.
@@ -4791,7 +4786,7 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
 }
 
 /// Gives a symbol a call reaches what the call goes through.
-pub(crate) fn add_branch_target<E: Target>(ctx: &mut Context<E>, id: crate::symbol::SymbolId) {
+pub(crate) fn add_branch_target<E: Target>(ctx: &mut Context<E>, id: SymbolId) {
     // A call to a symbol dyld resolves by weak lookup - one of this
     // image's own coalescable weak definitions, or a dylib's weak
     // export - goes through a stub and a GOT slot, never a lazy
@@ -4815,7 +4810,7 @@ pub(crate) fn add_branch_target<E: Target>(ctx: &mut Context<E>, id: crate::symb
 /// True if the symbol resolves to a TLV descriptor: a definition in a
 /// S_THREAD_LOCAL_VARIABLES section, or a dylib export listed as
 /// thread-local. Symbols left to runtime lookup pass as either.
-pub fn is_thread_local_sym<E: Target>(ctx: &Context<E>, id: crate::symbol::SymbolId) -> bool {
+pub fn is_thread_local_sym<E: Target>(ctx: &Context<E>, id: SymbolId) -> bool {
     let sym = &ctx.symbols[id];
     match sym.file() {
         Some(FileId::Obj(_)) => sym.input_section().map(|i| i as usize).is_some_and(|isec| {
@@ -4850,15 +4845,15 @@ pub(crate) fn add_import_stub<E: Target>(ctx: &mut Context<E>, id: SymbolId) {
     }
 }
 
-pub(crate) fn add_stub<E: Target>(ctx: &mut Context<E>, id: crate::symbol::SymbolId) {
-    if ctx.sym_aux(id).stub_idx == crate::symbol::NO_IDX {
+pub(crate) fn add_stub<E: Target>(ctx: &mut Context<E>, id: SymbolId) {
+    if ctx.sym_aux(id).stub_idx == NO_IDX {
         ctx.sym_aux_mut(id).stub_idx = ctx.stubs.symbols.len() as u32;
         ctx.stubs.symbols.push(id);
     }
 }
 
-pub(crate) fn add_got<E: Target>(ctx: &mut Context<E>, id: crate::symbol::SymbolId) {
-    if ctx.sym_aux(id).got_idx == crate::symbol::NO_IDX {
+pub(crate) fn add_got<E: Target>(ctx: &mut Context<E>, id: SymbolId) {
+    if ctx.sym_aux(id).got_idx == NO_IDX {
         ctx.sym_aux_mut(id).got_idx = ctx.got.got_syms.len() as u32;
         ctx.got.got_syms.push(id);
     }
@@ -6057,7 +6052,7 @@ pub(crate) fn add_data_word<E: Target>(ctx: &mut Context<E>, size: u32) -> u32 {
         output_section: u32::MAX,
         offset: 0,
         flags: InputSection::flags_placed(),
-        replacement: crate::input_sections::NO_REPLACEMENT,
+        replacement: NO_REPLACEMENT,
         unwind_offset: 0,
         nunwind: 0,
     });
