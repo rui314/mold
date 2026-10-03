@@ -44,9 +44,6 @@ pub struct MappedFile {
     /// its header records it, or 0 for the object LTO compiled in
     /// memory.
     pub mtime: Option<u64>,
-    /// An object LTO compiled, which ld-prime names in diagnostics as
-    /// it was written (if at all), not by its real path.
-    pub is_lto_output: bool,
 }
 
 impl MappedFile {
@@ -84,13 +81,8 @@ impl MappedFile {
                 .unwrap_or_else(|e| fatal!("{display}: mmap failed: {e}"));
             Box::leak(Box::new(map))
         };
-        let mf: &'static Self = Box::leak(Box::new(Self {
-            name: path.to_path_buf(),
-            data,
-            parent: None,
-            mtime: None,
-            is_lto_output: false,
-        }));
+        let mf: &'static Self =
+            Box::leak(Box::new(Self { name: path.to_path_buf(), data, parent: None, mtime: None }));
         FILE_CACHE.lock().unwrap().get_or_insert_with(HashMap::new).insert(path.to_path_buf(), mf);
         Ok(mf)
     }
@@ -148,7 +140,6 @@ impl MappedFile {
             data: &self.data[start..start + size],
             parent: Some(self),
             mtime,
-            is_lto_output: false,
         }))
     }
 
@@ -156,7 +147,7 @@ impl MappedFile {
     /// stands for (see mergeable::synthesize_object).
     pub fn synthesized(name: PathBuf, data: Vec<u8>) -> &'static Self {
         let data = Vec::leak(data);
-        Box::leak(Box::new(Self { name, data, parent: None, mtime: None, is_lto_output: false }))
+        Box::leak(Box::new(Self { name, data, parent: None, mtime: None }))
     }
 
     pub fn size(&self) -> usize {

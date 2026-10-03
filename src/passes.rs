@@ -2593,8 +2593,7 @@ pub fn do_lto<E: Target>(ctx: &mut Context<E>) -> bool {
     let first = ctx.objs.len();
     for LtoObject { name, mtime, data } in objects {
         let data = Vec::leak(data);
-        let mf =
-            crate::mapped_file::MappedFile { name, data, parent: None, mtime, is_lto_output: true };
+        let mf = crate::mapped_file::MappedFile { name, data, parent: None, mtime };
         // An output of x86_64h bitcode is an x86_64h object: ld-prime
         // warns of it in an x86_64 link as of an input.
         let mf = Box::leak(Box::new(mf));
