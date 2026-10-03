@@ -8,18 +8,18 @@
 //! liveness walk's section-level counterpart, and mirrors
 //! gc_sections.rs in mold (dead-strip.cc in sold).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use rayon::prelude::*;
 
 use crate::chunks::init_offsets::InitFunc;
 use crate::context::Context;
-use crate::error::RawPath;
-use crate::error::{Message, raw, render};
+use crate::error::{RawPath, notice, raw};
 use crate::input_files::{FileId, is_literal_section};
-use crate::input_sections::{InputSection, Reloc, RelocTarget};
+use crate::input_sections::{InputSection, RelocTarget};
 use crate::macho::*;
+use crate::passes::file_display;
 use crate::symbol::{Symbol, SymbolId};
 use crate::target::Target;
 
@@ -43,62 +43,73 @@ fn dead_strip<E: Target>(ctx: &mut Context<E>) {
     let redirects = &redirects;
 
     // The set of live sections is order-independent, which lets the
-    // walk run on all cores; -why_live's chains are not, and it walks
-    // serially as ld-prime does.
-    if ctx.args.why_live.is_empty() {
-        let roots = collect_root_set(ctx, redirects, |_, sym| symbol_root(ctx, sym).is_some());
-        mark(ctx, redirects, &roots);
-    } else {
-        WhyLive::new(ctx, redirects).walk();
+    // walk run on all cores; -why_live, which wants to know what made
+    // each subsection live, walks serially instead.
+    let mut why = (!ctx.args.why_live.is_empty()).then(|| vec![Why::Dead; ctx.isecs.len()]);
+    let is_root = |_, sym: &Symbol| is_symbol_root(ctx, sym);
+    let roots = collect_root_set(ctx, redirects, is_root, why.as_deref_mut());
+    match why.as_deref_mut() {
+        None => mark(ctx, redirects, &roots),
+        Some(why) => walk(ctx, redirects, roots, Some(why)),
     }
 
-    mark_live_support(ctx, redirects);
+    mark_live_support(ctx, redirects, why.as_deref_mut());
     sweep(ctx);
+    if let Some(why) = &why {
+        print_why_live(ctx, redirects, why);
+    }
 }
 
-/// Why a subsection or a symbol is a dead-strip root, in ld-prime's
-/// words for -why_live.
+/// Why a subsection is a dead-strip root, as -why_live says.
 #[derive(Clone, Copy)]
 enum Root {
-    /// The entry point or a -u symbol.
-    InitialUndef,
-    /// An exported symbol.
-    GlobalDontStrip,
-    /// A section or symbol the format keeps (see should_keep).
-    DontDeadStrip,
+    /// It defines the entry point, a -u symbol or an -alias base.
+    Undefined,
+    /// It defines an exported symbol.
+    Export,
+    /// The format keeps it (see should_keep), or a no-dead-strip
+    /// symbol it defines.
+    Kept,
+    /// An initializer __init_offsets runs.
+    Initializer,
+    /// A live-support subsection referring to live code (see
+    /// mark_live_support).
+    LiveSupport,
 }
 
 impl Root {
     fn name(self) -> &'static str {
         match self {
-            Root::InitialUndef => "initial-undef",
-            Root::GlobalDontStrip => "global-dont-strip",
-            Root::DontDeadStrip => "dont-dead-strip",
+            Root::Undefined => "root: the entry point, -u or -alias",
+            Root::Export => "root: exported",
+            Root::Kept => "root: never dead-stripped",
+            Root::Initializer => "root: an initializer",
+            Root::LiveSupport => "root: live support of live code",
         }
     }
 }
 
-/// Whether a symbol makes its subsection a root, and why: a
-/// no-dead-strip symbol, or an export dead stripping keeps.
-fn symbol_root<E: Target>(ctx: &Context<E>, sym: &Symbol) -> Option<Root> {
-    let is_exported = || {
-        sym.is_extern()
-            && !sym.is_private_extern()
-            && sym.is_defined()
-            && keeps_export(ctx, sym.name())
-    };
-    if sym.no_dead_strip() {
-        Some(Root::DontDeadStrip)
-    } else if is_exported() {
-        Some(Root::GlobalDontStrip)
-    } else {
-        None
-    }
+/// What made a subsection live, for -why_live: nothing yet, a root's
+/// reason, or the subsection whose reference first reached it.
+#[derive(Clone, Copy)]
+enum Why {
+    Dead,
+    Root(Root),
+    From(u32),
 }
 
-/// The symbols that are roots by name, in ld-prime's order: the -u ones
-/// as the command line gives them, then the entry point; and the bases
-/// of -alias, which ld-prime keeps as initial undefines too.
+/// Whether a symbol makes its subsection a root: a no-dead-strip
+/// symbol, or an export dead stripping keeps.
+fn is_symbol_root<E: Target>(ctx: &Context<E>, sym: &Symbol) -> bool {
+    sym.no_dead_strip()
+        || (sym.is_extern()
+            && !sym.is_private_extern()
+            && sym.is_defined()
+            && keeps_export(ctx, sym.name()))
+}
+
+/// The symbols that are roots by name: the -u ones, the entry point and
+/// the bases of -alias, which ld-prime keeps as initial undefines too.
 fn initial_undefines<E: Target>(ctx: &Context<E>) -> impl Iterator<Item = SymbolId> {
     let entry = ctx.args.has_entry_point().then_some(&ctx.args.entry);
     let aliased = ctx.args.aliases.iter().map(|(base, _)| base);
@@ -137,22 +148,27 @@ fn should_keep<E: Target>(ctx: &Context<E>, isec: &InputSection) -> bool {
 }
 
 /// Marks the roots and returns them: the sections the format keeps,
-/// those defining a symbol `is_root` takes, and those of the
-/// initializers and initial undefines. They are found on all cores;
-/// marking stays serial (it is a handful of sections).
+/// those defining a symbol `is_root` takes (a no-dead-strip one or an
+/// export), and those of the initializers and initial undefines. They
+/// are found on all cores; marking stays serial (it is a handful of
+/// sections). Under -why_live, `why` gets each root's reason.
 fn collect_root_set<E: Target>(
     ctx: &Context<E>,
     redirects: &[usize],
     is_root: impl Fn(SymbolId, &Symbol) -> bool + Sync,
+    mut why: Option<&mut [Why]>,
 ) -> Vec<usize> {
     let mut roots = Vec::new();
     // Liveness is marked in place, on the section's atomic visited bit
     // (mold's IS_VISITED), rather than in side arrays copied back at
     // the end.
-    let mut enqueue = |id: usize| {
+    let mut enqueue = |id: usize, root: Root| {
         let id = redirects[id];
         if ctx.isecs[id].mark_visited() {
             roots.push(id);
+            if let Some(why) = why.as_deref_mut() {
+                why[id] = Why::Root(root);
+            }
         }
     };
 
@@ -166,28 +182,31 @@ fn collect_root_set<E: Target>(
         .map(|(id, _)| id)
         .collect();
     for id in sections {
-        enqueue(id);
+        enqueue(id, Root::Kept);
     }
 
     // Initializers converted to __init_offsets are roots; their source
     // sections are gone.
     for &func in &ctx.init_offsets.init_funcs {
         if let InitFunc::Local(isec, _) = func {
-            enqueue(isec);
+            enqueue(isec, Root::Initializer);
         }
     }
 
     // Sections defining a no-dead-strip or an exported symbol.
-    let syms: Vec<usize> = ctx
+    let syms: Vec<(usize, Root)> = ctx
         .symbols
         .syms
         .par_iter()
         .enumerate()
         .filter(|&(id, sym)| is_root(id as SymbolId, sym))
-        .filter_map(|(_, sym)| Some(sym.input_section()? as usize))
+        .filter_map(|(_, sym)| {
+            let root = if sym.no_dead_strip() { Root::Kept } else { Root::Export };
+            Some((sym.input_section()? as usize, root))
+        })
         .collect();
-    for id in syms {
-        enqueue(id);
+    for (id, root) in syms {
+        enqueue(id, root);
     }
 
     // -u retains the symbol's subsection as well as extracting its
@@ -195,7 +214,7 @@ fn collect_root_set<E: Target>(
     // unlike an export root.
     for id in initial_undefines(ctx) {
         if let Some(isec) = ctx.symbols[id].input_section() {
-            enqueue(isec as usize);
+            enqueue(isec as usize, Root::Undefined);
         }
     }
 
@@ -207,7 +226,7 @@ fn collect_root_set<E: Target>(
         && let Some(id) = ctx.symbols.get(b"dyld_stub_binding_helper")
         && let Some(isec) = ctx.symbols[id].input_section()
     {
-        enqueue(isec as usize);
+        enqueue(isec as usize, Root::Kept);
     }
     roots
 }
@@ -229,7 +248,7 @@ pub fn native_refs_before_lto<E: Target>(
     let redirects: Vec<usize> =
         (0..ctx.isecs.len()).into_par_iter().map(|i| ctx.resolve_isec(i)).collect();
     let is_root = |id: SymbolId, sym: &Symbol| sym.no_dead_strip() || exported(id);
-    let mut roots = collect_root_set(ctx, &redirects, is_root);
+    let mut roots = collect_root_set(ctx, &redirects, is_root, None);
     for module in &ctx.lto_modules {
         let obj = &ctx.objs[module.obj];
         if !obj.is_alive {
@@ -245,7 +264,7 @@ pub fn native_refs_before_lto<E: Target>(
         }
     }
     mark(ctx, &redirects, &roots);
-    mark_live_support(ctx, &redirects);
+    mark_live_support(ctx, &redirects, None);
 
     let refs: Vec<AtomicBool> =
         (0..ctx.symbols.syms.len()).map(|_| AtomicBool::new(false)).collect();
@@ -414,14 +433,25 @@ fn mark<E: Target>(ctx: &Context<E>, redirects: &[usize], roots: &[usize]) {
     });
 }
 
-/// The serial walk from the marked sections on `stack`, for what a
-/// live-support subsection keeps.
-fn walk<E: Target>(ctx: &Context<E>, redirects: &[usize], mut stack: Vec<usize>) {
-    while let Some(id) = stack.pop() {
+/// The serial walk from the marked sections in `queue`, breadth first:
+/// for what a live-support subsection keeps, and under -why_live for
+/// everything, noting in `why` the subsection that first reaches each
+/// one.
+fn walk<E: Target>(
+    ctx: &Context<E>,
+    redirects: &[usize],
+    queue: Vec<usize>,
+    mut why: Option<&mut [Why]>,
+) {
+    let mut queue = VecDeque::from(queue);
+    while let Some(id) = queue.pop_front() {
         for_each_edge(ctx, id, |target| {
             let target = redirects[target];
             if ctx.isecs[target].mark_visited() {
-                stack.push(target);
+                if let Some(why) = why.as_deref_mut() {
+                    why[target] = Why::From(id as u32);
+                }
+                queue.push_back(target);
             }
         });
     }
@@ -432,7 +462,11 @@ fn walk<E: Target>(ctx: &Context<E>, redirects: &[usize], mut stack: Vec<usize>)
 /// ld64 checks them once, in input order, after what the roots reach is
 /// marked, so one that only a later live-support subsection would make
 /// live stays dead.
-fn mark_live_support<E: Target>(ctx: &Context<E>, redirects: &[usize]) {
+fn mark_live_support<E: Target>(
+    ctx: &Context<E>,
+    redirects: &[usize],
+    mut why: Option<&mut [Why]>,
+) {
     let live_support: Vec<usize> = ctx
         .isecs
         .par_iter()
@@ -448,7 +482,10 @@ fn mark_live_support<E: Target>(ctx: &Context<E>, redirects: &[usize]) {
         });
         let id = redirects[id];
         if references_live && ctx.isecs[id].mark_visited() {
-            walk(ctx, redirects, vec![id]);
+            if let Some(why) = why.as_deref_mut() {
+                why[id] = Why::Root(Root::LiveSupport);
+            }
+            walk(ctx, redirects, vec![id], why.as_deref_mut());
         }
     }
 }
@@ -541,361 +578,62 @@ fn mark_live_references<E: Target>(ctx: &mut Context<E>) {
     });
 }
 
-/// A node of the reference graph ld-prime walks for -why_live: a
-/// subsection, a symbol in a section of an object without
-/// MH_SUBSECTIONS_VIA_SYMBOLS that does not name the section, a dylib's
-/// symbol, one of the linker's own (those of a "boundary-file"), a DOF
-/// the link made (by its index in ctx.dof_sections, of a "dtrace-file")
-/// or a DTrace symbol, which counts as the first object's that refers
-/// to it. ld-prime keeps such a section one subsection, named by the
-/// symbol at its start, and makes each other symbol in it a node of its
-/// own that references that one.
-#[derive(Clone, Copy)]
-enum Node {
-    Isec(usize),
-    Label(SymbolId),
-    Import(SymbolId),
-    Boundary(&'static [u8]),
-    Dof(usize),
-    Dtrace(SymbolId),
-}
-
-/// The names of the mach header, which ld-prime's boundary-file defines
-/// as nodes that reference the start of __TEXT (itself a node there).
-const HEADER_NAMES: [&[u8]; 5] = [
-    b"__mh_execute_header",
-    b"__mh_dylib_header",
-    b"__mh_bundle_header",
-    b"__mh_dylinker_header",
-    b"___dso_handle",
-];
-const TEXT_START: &[u8] = b"segment$start$__TEXT";
-
-/// A step of the walk: a node, what it references, how many of those
-/// have been followed, and whether reports are off (see walk_from).
-struct Frame {
-    node: Node,
-    edges: Vec<(Node, bool)>,
-    next: usize,
-    quiet: bool,
-}
-
-/// -why_live prints, for each node whose name matches a -why_live
-/// pattern ("*" wildcards), every chain of references that keeps it
-/// alive, on stderr, as ld-prime does. Its walk goes from each root in
-/// turn - the -u symbols and the entry point, then every root node in
-/// input order - and when a reference reaches a matching node, prints
-/// "name from file" and the referencing nodes back to the root, one to
-/// a line and indented a step further each; for a root itself, why it
-/// is one. A node already reached is not walked again. An initializer
-/// pointer's subsection is a "mod-init-ptr", and an arm64 assembler
-/// label (ltmpN) that is a node of its own goes by "none" in a chain.
-/// Only meaningful under -dead_strip, like ld64's option of the same
-/// name.
-struct WhyLive<'a, E: Target> {
-    ctx: &'a Context<E>,
-    redirects: &'a [usize],
-    /// The symbol naming each subsection, if one does.
-    names: Vec<Option<SymbolId>>,
-    /// Why each subsection is a root for a symbol it defines.
-    roots: Vec<Option<Root>>,
-    /// The other symbols of each section of an object without
-    /// subsections, in address order.
-    labels: HashMap<usize, Vec<SymbolId>>,
-    /// The label and import nodes reached so far.
-    live_syms: HashSet<SymbolId>,
-    live_boundaries: HashSet<&'static [u8]>,
-    /// The file each import a dylib merged from a library it re-exports
-    /// comes from (libSystem's from its libsystem_* stubs).
-    providers: HashMap<SymbolId, &'a std::path::Path>,
-}
-
-impl<'a, E: Target> WhyLive<'a, E> {
-    fn new(ctx: &'a Context<E>, redirects: &'a [usize]) -> Self {
-        let mut names: Vec<Option<SymbolId>> = vec![None; ctx.isecs.len()];
-        let mut roots: Vec<Option<Root>> = vec![None; ctx.isecs.len()];
-        let mut labels: HashMap<usize, Vec<SymbolId>> = HashMap::new();
-        // A name at the start: an extern one first, an assembler label
-        // last.
-        let rank = |sym: &Symbol| (sym.name().starts_with(b"ltmp"), !sym.is_extern());
-        for (id, sym) in ctx.symbols.syms.iter().enumerate() {
-            let id = id as SymbolId;
-            let Some(isec) = sym.input_section().map(|i| redirects[i as usize]) else {
-                continue;
-            };
-            if roots[isec].is_none() {
-                roots[isec] = symbol_root(ctx, sym);
-            }
-            if !matches!(sym.file(), Some(FileId::Obj(_))) || sym.name().is_empty() {
-                continue;
-            }
-            if !ctx.objs[ctx.isecs[isec].file as usize].subsections_via_symbols {
-                labels.entry(isec).or_default().push(id);
-            }
-            if sym.value == 0 && names[isec].is_none_or(|name| rank(sym) < rank(&ctx.symbols[name]))
-            {
-                names[isec] = Some(id);
-            }
-        }
-        for (&isec, syms) in &mut labels {
-            syms.retain(|&id| Some(id) != names[isec]);
-            syms.sort_by_key(|&id| (ctx.symbols[id].value, rank(&ctx.symbols[id]).0));
-        }
-        let mut by_name: HashMap<&[u8], &std::path::Path> = HashMap::new();
-        for dylib in &ctx.dylibs {
-            for file in &dylib.merged_files {
-                for &name in &file.exports {
-                    by_name.entry(name).or_insert(&file.path);
+/// -why_live prints, on stderr, for each live symbol whose name matches
+/// a -why_live pattern ("*" wildcards), what keeps it alive: the symbol
+/// and its file, then the subsection whose reference made its subsection
+/// live, and that one's, each a step further indented, up to a root and
+/// why it is one. An import is kept by the first live subsection that
+/// refers to it. Only meaningful under -dead_strip, like ld64's option
+/// of the same name.
+fn print_why_live<E: Target>(ctx: &Context<E>, redirects: &[usize], why: &[Why]) {
+    let matches = |sym: &Symbol| ctx.args.why_live.find(sym.name()) != -1;
+    let print_chain = |mut step: Why| {
+        for depth in 1.. {
+            let indent = depth * 2;
+            match step {
+                Why::From(id) => {
+                    let isec = &ctx.isecs[id as usize];
+                    let name = ctx.subsec_name(id as usize);
+                    let file = file_display(&ctx.objs[isec.file as usize]);
+                    notice(format_args!("{:indent$}{} from {file}", "", raw(&name)));
+                    step = why[id as usize];
                 }
+                Why::Root(root) => {
+                    notice(format_args!("{:indent$}{}", "", root.name()));
+                    return;
+                }
+                Why::Dead => return,
             }
         }
-        let providers = (0..ctx.symbols.syms.len() as SymbolId)
-            .filter(|&id| matches!(ctx.symbols[id].file(), Some(FileId::Dylib(_))))
-            .filter_map(|id| Some((id, *by_name.get(ctx.symbols[id].name())?)))
-            .collect();
-        let (live_syms, live_boundaries) = (HashSet::new(), HashSet::new());
-        Self { ctx, redirects, names, roots, labels, live_syms, live_boundaries, providers }
-    }
+    };
 
-    /// Walks from every root, marking what it reaches live.
-    fn walk(&mut self) {
-        let ctx = self.ctx;
-        for id in initial_undefines(ctx) {
-            if let Some(node) = self.node_of(id) {
-                self.walk_from(node, Root::InitialUndef);
-            }
-        }
-        for (id, isec) in ctx.isecs.iter().enumerate() {
-            if !ctx.objs[isec.file as usize].is_alive {
+    for (i, obj) in ctx.objs.iter().enumerate().filter(|(_, obj)| obj.is_alive) {
+        for &id in &obj.symbols {
+            let sym = &ctx.symbols[id];
+            if sym.file() != Some(FileId::Obj(i as u32)) || !matches(sym) {
                 continue;
             }
-            // An initializer pointer ld-prime keeps, even converted to
-            // __init_offsets (which leaves its section dead).
-            // The DOFs come last (see below).
-            let init_pointers = ctx.hdr_of(isec).section_type() == S_MOD_INIT_FUNC_POINTERS;
-            if !isec.is_alive() && !init_pointers || crate::dtrace::is_dof(ctx, isec) {
-                continue;
-            }
-            let keep = should_keep(ctx, isec) || init_pointers;
-            let why = match self.roots[id] {
-                _ if keep => Root::DontDeadStrip,
-                Some(why) if self.redirects[id] == id => why,
-                _ => continue,
-            };
-            let id = self.redirects[id];
-            self.walk_from(Node::Isec(id), why);
-            if keep && let Some(labels) = self.labels.get(&id) {
-                for label in labels.clone() {
-                    self.walk_from(Node::Label(label), Root::DontDeadStrip);
-                }
-            }
-        }
-        // An executable's mach header is a root, then the DOFs.
-        if ctx.args.output_type == MH_EXECUTE && !ctx.args.preload {
-            self.walk_from(Node::Boundary(HEADER_NAMES[0]), Root::DontDeadStrip);
-        }
-        for i in 0..ctx.dof_sections.len() {
-            self.walk_from(Node::Dof(i), Root::DontDeadStrip);
-        }
-    }
-
-    /// The node a symbol names, if a file or the linker defines it.
-    fn node_of(&self, sym: SymbolId) -> Option<Node> {
-        let symbol = &self.ctx.symbols[sym];
-        if matches!(symbol.file(), Some(FileId::Dylib(_))) {
-            return Some(Node::Import(sym));
-        }
-        if !symbol.is_defined() && crate::dtrace::is_dtrace_symbol(symbol.name()) {
-            return Some(Node::Dtrace(sym));
-        }
-        let Some(isec) = symbol.input_section() else {
-            let name = HEADER_NAMES.into_iter().find(|&name| name == symbol.name())?;
-            return symbol.is_defined().then_some(Node::Boundary(name));
-        };
-        let isec = self.redirects[isec as usize];
-        let whole = !self.ctx.objs[self.ctx.isecs[isec].file as usize].subsections_via_symbols;
-        if whole && self.names[isec] != Some(sym) {
-            Some(Node::Label(sym))
-        } else {
-            Some(Node::Isec(isec))
-        }
-    }
-
-    /// Marks a node live, and says whether it was not before.
-    fn mark(&mut self, node: Node) -> bool {
-        match node {
-            Node::Isec(id) => self.ctx.isecs[id].mark_visited(),
-            Node::Dof(i) => self.ctx.isecs[self.ctx.dof_sections[i].isec].mark_visited(),
-            Node::Label(sym) | Node::Import(sym) | Node::Dtrace(sym) => self.live_syms.insert(sym),
-            Node::Boundary(name) => self.live_boundaries.insert(name),
-        }
-    }
-
-    /// What a node references, in the order of the places it does (a
-    /// label, the subsection it is in), and whether ld-prime reports the
-    /// reference. It follows an arm64 instruction pair referring to a
-    /// symbol by its ADRP alone, and reports no LSDA or personality
-    /// routine; those references come last, unreported, so that the
-    /// walk marks all mold's does.
-    fn edges(&self, node: Node) -> Vec<(Node, bool)> {
-        let ctx = self.ctx;
-        let id = match node {
-            Node::Label(sym) => {
-                let isec = ctx.symbols[sym].input_section().unwrap() as usize;
-                return vec![(Node::Isec(self.redirects[isec]), true)];
-            }
-            Node::Import(_) | Node::Dtrace(_) | Node::Boundary(TEXT_START) => return Vec::new(),
-            Node::Boundary(_) => return vec![(Node::Boundary(TEXT_START), true)],
-            // A DOF refers to each site's subsection and, for the site's
-            // distance, to itself, site by site.
-            Node::Dof(i) => {
-                let sites = ctx.dof_sections[i].sites.iter();
-                let refs = sites.flat_map(|&s| [Node::Isec(self.redirects[s as usize]), node]);
-                return refs.map(|node| (node, true)).collect();
-            }
-            Node::Isec(id) => id,
-        };
-        let file = &ctx.objs[ctx.isecs[id].file as usize];
-        let mut relocs: Vec<_> = ctx.isec_relocs(id).iter().collect();
-        let second = |rel: &Reloc| {
-            E::CPUTYPE == CPU_TYPE_ARM64
-                && matches!(
-                    rel.r_type,
-                    ARM64_RELOC_PAGEOFF12
-                        | ARM64_RELOC_GOT_LOAD_PAGEOFF12
-                        | ARM64_RELOC_TLVP_LOAD_PAGEOFF12
-                )
-        };
-        relocs.sort_by_key(|rel| (second(rel), rel.offset));
-        let mut edges = Vec::new();
-        for rel in relocs {
-            let node = match rel.target() {
-                RelocTarget::Sym(idx) => self.node_of(file.symbols[idx as usize]),
-                RelocTarget::Section(target) => Some(Node::Isec(self.redirects[target as usize])),
-            };
-            edges.extend(node.map(|node| (node, !second(rel))));
-        }
-        for_each_unwind_edge(ctx, id, |target, sym| {
-            let node = match sym {
-                Some(sym) => self.node_of(sym),
-                None => Some(Node::Isec(self.redirects[target])),
-            };
-            edges.extend(node.map(|node| (node, false)));
-        });
-        edges
-    }
-
-    /// Walks from a root, depth first as ld-prime does. What only an
-    /// unreported reference reaches is reported on no further.
-    fn walk_from(&mut self, root: Node, why: Root) {
-        self.report(root, &[], Some(why));
-        if !self.mark(root) {
-            return;
-        }
-        let mut stack = vec![Frame { node: root, edges: self.edges(root), next: 0, quiet: false }];
-        while let Some(frame) = stack.last_mut() {
-            let Some(&(target, reported)) = frame.edges.get(frame.next) else {
-                stack.pop();
+            let Some(isec) = sym.input_section().map(|isec| redirects[isec as usize]) else {
                 continue;
             };
-            frame.next += 1;
-            let quiet = frame.quiet || !reported;
-            if !quiet {
-                self.report(target, &stack, None);
-            }
-            if self.mark(target) {
-                let edges = self.edges(target);
-                stack.push(Frame { node: target, edges, next: 0, quiet });
+            if ctx.isecs[isec].is_alive() {
+                notice(format_args!("{} from {}", raw(sym.name()), file_display(obj)));
+                print_chain(why[isec]);
             }
         }
     }
 
-    /// Prints the chain that reaches a node if the node matches.
-    fn report(&self, node: Node, stack: &[Frame], why: Option<Root>) {
-        let Some(name) = self.name(node, false) else { return };
-        if self.ctx.args.why_live.find(name) == -1 {
-            return;
-        }
-        crate::error::notice(format_args!("{}", raw(&self.describe(node, name))));
-        if let Some(why) = why {
-            crate::error::notice(format_args!("  {}", why.name()));
-        }
-        for (depth, frame) in stack.iter().rev().enumerate() {
-            let referrer = frame.node;
-            let name = match self.name(referrer, true) {
-                Some(name) => name.to_vec(),
-                None => self.section_name(referrer),
-            };
-            crate::error::notice(format_args!(
-                "{:indent$}{}",
-                "",
-                raw(&self.describe(referrer, &name)),
-                indent = depth * 2 + 2
-            ));
-        }
-    }
-
-    /// A node's name, if it has one, as a match or in a chain: an
-    /// initializer pointer is a "mod-init-ptr" there, and an assembler
-    /// label that is a node of its own "none". Literals have none.
-    fn name(&self, node: Node, in_chain: bool) -> Option<&[u8]> {
-        let ctx = self.ctx;
-        match node {
-            Node::Label(sym) => {
-                let name = ctx.symbols[sym].name();
-                Some(if in_chain && name.starts_with(b"ltmp") { b"none" } else { name })
-            }
-            Node::Import(sym) | Node::Dtrace(sym) => Some(ctx.symbols[sym].name()),
-            Node::Boundary(name) => Some(name),
-            Node::Dof(i) => Some(&ctx.dof_sections[i].subsec_name),
-            Node::Isec(id) => {
-                let hdr = ctx.hdr_of(&ctx.isecs[id]);
-                if in_chain && hdr.section_type() == S_MOD_INIT_FUNC_POINTERS {
-                    return Some(b"mod-init-ptr");
-                }
-                if is_literal_section(hdr) {
-                    return None;
-                }
-                self.names[id].map(|sym| ctx.symbols[sym].name())
+    let mut seen = HashSet::new();
+    for (id, isec) in ctx.isecs.iter().enumerate().filter(|(_, isec)| isec.is_alive()) {
+        for rel in ctx.isec_relocs(id) {
+            let Some(sym_id) = ctx.reloc_target_sym(isec.file as usize, rel) else { continue };
+            let sym = &ctx.symbols[sym_id];
+            let Some(FileId::Dylib(dylib)) = sym.file() else { continue };
+            if dylib != u32::MAX && matches(sym) && seen.insert(sym_id) {
+                let file = ctx.dylibs[dylib as usize].path.raw();
+                notice(format_args!("{} from {file}", raw(sym.name())));
+                print_chain(Why::From(id as u32));
             }
         }
-    }
-
-    fn section_name(&self, node: Node) -> Vec<u8> {
-        let Node::Isec(id) = node else { unreachable!() };
-        let hdr = self.ctx.hdr_of(&self.ctx.isecs[id]);
-        [hdr.segname(), b",", hdr.sectname()].concat()
-    }
-
-    /// "name from file", but the linker's own sections have no file. A
-    /// dylib goes by its real path, as ld-prime reports the files it
-    /// loads. The name is bytes: a section's may be any.
-    fn describe(&self, node: Node, name: &[u8]) -> Message {
-        let ctx = self.ctx;
-        let from = |file: &dyn std::fmt::Display| render(format_args!("{} from {file}", raw(name)));
-        let isec = match node {
-            Node::Isec(id) => id,
-            Node::Label(sym) => ctx.symbols[sym].input_section().unwrap() as usize,
-            Node::Boundary(_) => return from(&"boundary-file"),
-            Node::Dof(_) => return from(&"dtrace-file"),
-            Node::Dtrace(sym) => {
-                let mut objs = ctx.objs.iter().filter(|obj| obj.is_alive);
-                let obj = objs.find(|obj| crate::dtrace::refers_to(obj, sym));
-                let path = obj.map(|obj| crate::passes::resolved_file_name(obj.mf));
-                return from(&path.unwrap_or_default());
-            }
-            Node::Import(sym) => {
-                let Some(FileId::Dylib(i)) = ctx.symbols[sym].file() else { unreachable!() };
-                let path = self.providers.get(&sym).copied();
-                let path = path.unwrap_or(&ctx.dylibs[i as usize].path);
-                let (real, _) = crate::passes::real_path(path);
-                return from(&real.raw());
-            }
-        };
-        let file = ctx.isecs[isec].file as usize;
-        if ctx.is_internal(file) {
-            return name.to_vec();
-        }
-        from(&crate::passes::resolved_file_name(ctx.objs[file].mf))
     }
 }

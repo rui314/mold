@@ -83,13 +83,11 @@ fn provider_of(name: &[u8]) -> &[u8] {
 }
 
 /// A provider's DOF section, as the link makes it: the subsection with
-/// the DOF, which refers to each site's subsection (in site order), and
-/// the name ld-prime gives that subsection in -why_live.
+/// the DOF, which refers to each site's subsection (in site order).
 #[derive(Debug)]
 pub struct DofSection {
     pub isec: u32,
     pub sites: Vec<u32>,
-    pub subsec_name: Vec<u8>,
 }
 
 /// Whether a branch to symbol `sym` from subsection `isec` is a probe
@@ -162,7 +160,7 @@ pub fn create_dof_sections<E: Target>(ctx: &mut Context<E>) {
             }
         };
         let name = section_name(provider, &taken);
-        add_dof_section(ctx, provider, &name, dof, &sites);
+        add_dof_section(ctx, &name, dof, &sites);
         taken.push(name);
     }
 }
@@ -289,13 +287,7 @@ fn section_name(provider: &[u8], taken: &[Vec<u8>]) -> Vec<u8> {
 /// in __TEXT, with relocations that fill each site's slot with its
 /// distance from the DOF: a 4-byte SUBTRACTOR pair from the DOF to the
 /// site, as ld-prime's fixups are.
-fn add_dof_section<E: Target>(
-    ctx: &mut Context<E>,
-    provider: &[u8],
-    name: &[u8],
-    dof: Dof,
-    sites: &[&Site],
-) {
+fn add_dof_section<E: Target>(ctx: &mut Context<E>, name: &[u8], dof: Dof, sites: &[&Site]) {
     let mut sectname = [0; 16];
     sectname[..name.len()].copy_from_slice(name);
     let (file, shndx) = ctx.add_synthetic_section(MachSection {
@@ -339,19 +331,7 @@ fn add_dof_section<E: Target>(
         unwind_offset: 0,
         nunwind: 0,
     });
-    ctx.dof_sections.push(DofSection {
-        isec: id,
-        sites: sites.iter().map(|s| s.isec).collect(),
-        subsec_name: [b"l__dtrace_dof_for_provider_", provider].concat(),
-    });
-}
-
-/// Whether an object refers to symbol `sym` as undefined. ld-prime
-/// counts a DTrace symbol as the first such object's.
-pub fn refers_to(obj: &crate::input_files::ObjectFile, sym: SymbolId) -> bool {
-    let r = obj.global_range();
-    let mut refs = obj.nlists[r.clone()].iter().zip(&obj.symbols[r]);
-    refs.any(|(nlist, &id)| id == sym && !nlist.is_stab() && nlist.n_type() == N_UNDF)
+    ctx.dof_sections.push(DofSection { isec: id, sites: sites.iter().map(|s| s.isec).collect() });
 }
 
 /// Whether subsection `isec` is a DOF section the link made.

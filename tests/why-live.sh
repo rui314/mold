@@ -1,6 +1,12 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# -why_live prints, for each live symbol a pattern names, the chain of
+# subsections that keeps it alive, each referring to the one above it,
+# down to a root and why that is one. ld-prime words and orders its
+# report differently (it prints every chain, in its own words), so this
+# checks mold's.
+
 cat <<EOF | $CC -o $t/a.o -c -xc -
 void leaf() {}
 void middle() { leaf(); }
@@ -10,28 +16,28 @@ EOF
 
 # The chain from _leaf back to the entry point, on stderr.
 $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-dead_strip -Wl,-why_live,_leaf 2> $t/log
-grep -q '^_leaf from .*/a.o' $t/log
-grep -q '^  _middle from .*/a.o' $t/log
-grep -q '^    _main from .*/a.o' $t/log
+grep -A3 '^_leaf from .*a\.o$' $t/log > $t/chain
+cat > $t/chain.expected <<EOF
+_leaf from $t/a.o
+  _middle from $t/a.o
+    _main from $t/a.o
+      root: the entry point, -u or -alias
+EOF
+diff $t/chain.expected $t/chain
 
 # A dead symbol prints nothing; a wildcard matches several.
 $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-dead_strip -Wl,-why_live,_unused 2> $t/log2
-! grep -q _unused $t/log2 || false
+not grep -q _unused $t/log2
 
 $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-dead_strip -Wl,-why_live,'_m*' 2> $t/log3
-grep -q '^_middle' $t/log3
-grep -q '^_main' $t/log3
+grep -q '^_middle from ' $t/log3
+grep -q '^_main from ' $t/log3
+not grep -q '^_leaf' $t/log3
 
-# A root says why it is one, but a chain ends at its root without that.
+# A root says why it is one: the entry point, a -u symbol, an export.
 $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-dead_strip -Wl,-why_live,_main 2> $t/log4
-grep -q '^_main from .*/a.o' $t/log4
-grep -q '^  initial-undef$' $t/log4
-not grep -q 'initial-undef' $t/log
+grep -A1 '^_main from .*a\.o$' $t/log4 | grep -q '^  root: the entry point'
 
-# ld-prime walks from each root in turn, the -u symbols and then the
-# entry point first, and prints a chain each time a reference reaches a
-# matching subsection, and a reason each time a root is one; an
-# initializer pointer is a mod-init-ptr.
 cat <<EOF | $CC -o $t/b.o -c -xc -
 int leaf(void) { return 1; }
 int middle(void) { return leaf() + 1; }
@@ -42,62 +48,29 @@ cat <<EOF | $CC -o $t/c.o -c -xc -
 int leaf(void);
 __attribute__((constructor)) static void init(void) { leaf(); }
 EOF
-dir=$(cd $t && pwd -P)
-why_live() {
-  $CC --ld-path=$mold -o $t/out $t/b.o -Wl,-dead_strip "$@" 2>&1 >/dev/null |
-    grep -v warning | sed -e "s#$dir/##"
-}
 
-why_live $t/c.o -Wl,-why_live,_leaf > $t/log5
-cat > $t/log5.expected <<EOF
-_leaf from b.o
-  _middle from b.o
-    _main from b.o
-_leaf from b.o
-  _other from b.o
-    _main from b.o
-_leaf from b.o
-  _init from c.o
-    mod-init-ptr from c.o
+$CC --ld-path=$mold -o $t/exe $t/b.o -Wl,-dead_strip,-why_live,_other,-u,_other 2> $t/log5
+grep -A1 '^_other from ' $t/log5 | grep -q '^  root: the entry point, -u or -alias'
+
+$CC --ld-path=$mold -o $t/exe $t/b.o -Wl,-dead_strip,-why_live,_main,-export_dynamic 2> $t/log6
+grep -A1 '^_main from ' $t/log6 | grep -q '^  root: exported$'
+
+$CC --ld-path=$mold -shared -o $t/lib.dylib $t/b.o -Wl,-dead_strip,-why_live,_leaf 2> $t/log7
+grep -A1 '^_leaf from ' $t/log7 | grep -q '^  root: exported$'
+
+# A symbol is reported once, by one chain, however many keep it: here
+# an initializer, a root of its own, reaches _leaf first.
+$CC --ld-path=$mold -o $t/exe $t/b.o $t/c.o -Wl,-dead_strip,-why_live,_leaf 2> $t/log8
+[ "$(grep -c '^_leaf from ' $t/log8)" = 1 ]
+grep -A2 '^_leaf from ' $t/log8 > $t/chain8
+cat > $t/chain8.expected <<EOF
+_leaf from $t/b.o
+  _init from $t/c.o
+    root: an initializer
 EOF
-diff $t/log5.expected $t/log5
+diff $t/chain8.expected $t/chain8
 
-why_live -Wl,-why_live,_main,-u,_main,-export_dynamic > $t/log6
-cat > $t/log6.expected <<EOF
-_main from b.o
-  initial-undef
-_main from b.o
-  initial-undef
-_main from b.o
-  global-dont-strip
-EOF
-diff $t/log6.expected $t/log6
-
-why_live -Wl,-why_live,_leaf,-u,_other > $t/log9
-cat > $t/log9.expected <<EOF
-_leaf from b.o
-  _other from b.o
-_leaf from b.o
-  _middle from b.o
-    _main from b.o
-EOF
-diff $t/log9.expected $t/log9
-
-why_live -shared -Wl,-why_live,_leaf > $t/log7
-cat > $t/log7.expected <<EOF
-_leaf from b.o
-  global-dont-strip
-_leaf from b.o
-  _middle from b.o
-_leaf from b.o
-  _other from b.o
-EOF
-diff $t/log7.expected $t/log7
-
-# In an object without subsections a section is one subsection, named
-# by the symbol at its start, and every other symbol in it one of its
-# own that refers to that one (an arm64 ltmpN label as "none"). An
-# executable's header is a root of its own.
+# Every section of an object without subsections is a root.
 cat <<EOF | $CC -o $t/d.o -c -xassembler -
 .text
 .globl _main
@@ -108,26 +81,20 @@ _main:
 _f1:
   ret
 EOF
-$CC --ld-path=$mold -o $t/out $t/d.o -Wl,-dead_strip -Wl,-why_live,'*' 2>&1 >/dev/null |
-  grep -v warning | sed -e "s#$dir/##" > $t/log8
-{
-  echo '_main from d.o'
-  echo '  initial-undef'
-  echo '_main from d.o'
-  echo '  dont-dead-strip'
-  if [ $ARCH = arm64 ]; then
-    echo 'ltmp0 from d.o'
-    echo '  dont-dead-strip'
-    echo '_main from d.o'
-    echo '  none from d.o'
-  fi
-  echo '_f1 from d.o'
-  echo '  dont-dead-strip'
-  echo '_main from d.o'
-  echo '  _f1 from d.o'
-  echo '__mh_execute_header from boundary-file'
-  echo '  dont-dead-strip'
-  echo 'segment$start$__TEXT from boundary-file'
-  echo '  __mh_execute_header from boundary-file'
-} > $t/log8.expected
-diff $t/log8.expected $t/log8
+$CC --ld-path=$mold -o $t/exe $t/d.o -Wl,-dead_strip,-why_live,_f1 2> $t/log9
+grep -A1 '^_f1 from .*d\.o$' $t/log9 | grep -q '^  root: never dead-stripped$'
+
+# An import is kept by the live code that refers to it, and named with
+# the dylib's path.
+cat <<EOF | $CC -o $t/e.o -c -xc -
+int leaf(void);
+int main(void) { return leaf(); }
+EOF
+$CC --ld-path=$mold -o $t/exe $t/e.o $t/lib.dylib -Wl,-dead_strip,-why_live,_leaf 2> $t/log10
+grep -A2 '^_leaf from ' $t/log10 > $t/chain10
+cat > $t/chain10.expected <<EOF
+_leaf from $t/lib.dylib
+  _main from $t/e.o
+    root: the entry point, -u or -alias
+EOF
+diff $t/chain10.expected $t/chain10

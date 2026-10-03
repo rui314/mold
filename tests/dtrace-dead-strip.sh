@@ -4,8 +4,9 @@ source "$(dirname "$0")"/dtrace.inc
 
 # The DOF is made before dead stripping, of the probe sites of all
 # functions, and is a root that refers to each: -dead_strip keeps every
-# function with a site, and what it calls. -why_live names the DOF's
-# subsection after the provider, the linker's "dtrace-file" its file.
+# function with a site, and what it calls. -why_live shows the DOF, a
+# subsection of the linker's own, keeping them. (ld-prime words it
+# differently.)
 cat > $t/p.d <<EOF
 provider stab {
   probe x(int);
@@ -42,15 +43,22 @@ probe x(int) in dead1: 1 sites, 0 tests
 EOF
 diff $t/dof $t/expected
 
-grep -v '^+' $t/log | sed 's| from .*/| from |' > $t/why
+grep -v '^+' $t/log | sed 's| from .*/| from |; s|[^ ]* from <synthesized>$|DOF|' > $t/why
+grep -A2 '^_dead1 ' $t/why > $t/why1
 cat > $t/expected <<EOF
 _dead1 from a.o
-  l__dtrace_dof_for_provider_stab from dtrace-file
+  DOF
+    root: never dead-stripped
+EOF
+diff $t/why1 $t/expected
+grep -A3 '^_callee ' $t/why > $t/why2
+cat > $t/expected <<EOF
 _callee from a.o
   _dead2 from a.o
-    l__dtrace_dof_for_provider_stab from dtrace-file
+    DOF
+      root: never dead-stripped
 EOF
-diff $t/why $t/expected
+diff $t/why2 $t/expected
 
 # Identical functions are folded, but not those with a probe site.
 cat > $t/b.c <<EOF

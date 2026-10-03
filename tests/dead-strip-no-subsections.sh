@@ -55,11 +55,11 @@ grep -q ' _b_used$' $t/syms
 not grep -q ' _b_unused$' $t/syms
 not grep -q ' _b_unused_data$' $t/syms
 
-# -why_live names the reason such a subsection is a root.
+# -why_live says such a subsection is a root. (ld-prime words it
+# differently.)
 $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-dead_strip \
   -Wl,-why_live,_unused_text2 2> $t/log
-grep -q '^_unused_text2 from .*/a.o$' $t/log
-grep -q '^  dont-dead-strip$' $t/log
+grep -A1 '^_unused_text2 from .*/a.o$' $t/log | grep -q '^  root: never dead-stripped$'
 
 # An archive member without the flag that nothing loads stays out; one
 # that is loaded is kept whole.

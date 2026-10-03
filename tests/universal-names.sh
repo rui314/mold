@@ -40,8 +40,8 @@ grep -v '^+' $t/log5 | grep -A1 _missing | grep -Fq "libufat.a[$ARCH][3](u.o)"
 not $CC --ld-path=$mold -o $t/exe6 $t/n.o -Wl,-force_load,$t/libu.a 2> $t/log6
 grep -v '^+' $t/log6 | grep -A1 _missing | grep -Eq '(: | in )libu\.a\[3\]\(u\.o\)'
 
-# -why_live names a fat dylib by its path alone.
+# -why_live names a fat dylib by its path.
 $CC -shared -o $t/libd.dylib $t/f.o
 lipo $t/libd.dylib -create -output $t/libdfat.dylib
 $CC --ld-path=$mold -o $t/exe7 $t/m.o $t/libdfat.dylib -Wl,-dead_strip,-why_live,_foo > $t/log7 2>&1
-grep -q "^_foo from /.*/libdfat.dylib\$" $t/log7
+grep -q "^_foo from $t/libdfat.dylib" $t/log7
