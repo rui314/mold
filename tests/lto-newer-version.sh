@@ -15,9 +15,9 @@ $CC --ld-path=$mold -flto -mmacosx-version-min=26.0 -o $t/exe $t/a.o $t/b.o $t/c
 sed -n 's/.*object file (\(.*\)) was built for newer .* version (\(.*\)) than .*/\1 \2/p' \
   $t/log | sort > $t/files
 cat <<EOF > $t/expected
-$(pwd -P)/$t/a.o 27.0
-$(pwd -P)/$t/b.o 27.0
-$(pwd -P)/$t/c.o 26.5
+$t/a.o 27.0
+$t/b.o 27.0
+$t/c.o 26.5
 /tmp/lto.o 27.0
 EOF
 diff $t/files <(sort $t/expected)
@@ -25,4 +25,4 @@ $t/exe
 
 # A -r link of bitcode alone checks the bitcode too.
 $CC --ld-path=$mold -flto -mmacosx-version-min=26.0 -r -o $t/r.o $t/a.o $t/c.o 2> $t/log2
-grep -q "object file ($(pwd -P)/$t/a.o) was built for newer 'macOS' version (27.0)" $t/log2
+grep -q "object file ($t/a.o) was built for newer 'macOS' version (27.0)" $t/log2

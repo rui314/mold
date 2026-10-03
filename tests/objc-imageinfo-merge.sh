@@ -17,7 +17,7 @@ mk a 0x40 main
 mk b 0
 mk c 0x40
 mk d 0
-dir=$(cd $t && pwd -P)
+dir=$t
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o $t/c.o $t/d.o 2> $t/log
 grep -F "warning: mixed ObjC ABI, $dir/b.o compiled without category class properties" $t/log

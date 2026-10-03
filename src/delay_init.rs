@@ -87,7 +87,7 @@ fn delay_uses<E: Target>(ctx: &Context<E>) -> Vec<DelayUseSite> {
         if hdr.sectname() == b"__objc_classrefs"
             && let Some(class) = sym.name().strip_prefix(b"_OBJC_CLASS_$_")
         {
-            let file = crate::passes::resolved_file_name(ctx.objs[sec.file as usize].mf);
+            let file = crate::error::RawPath::raw(ctx.objs[sec.file as usize].mf.name.as_path());
             let class = crate::error::raw(class);
             crate::error!(
                 "use of ObjC class '{class}' in '{file}' cannot be delayed when targeting an older OS versions"

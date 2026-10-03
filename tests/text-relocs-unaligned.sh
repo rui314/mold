@@ -24,7 +24,7 @@ _dp:
   .quad _main
 EOF
 
-dir=$(cd $t && pwd -P)
+dir=$t
 cat <<EOF > $t/expected
   text-relocation in '_tp'+0x4 ($dir/a.o) to '_main'
   text-relocation in '_tp'+0xC ($dir/a.o) to '_main'

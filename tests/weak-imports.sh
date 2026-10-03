@@ -26,7 +26,7 @@ $CC --ld-path=$mold -o $t/liba.dylib -shared $t/a.o
 
 # (The messages but the last one have no prefix.)
 strip() {
-  grep -v '^+' $1 | sed -E 's/^(ld: |mold: (error: )?)//; s|in /.*/|in |'
+  grep -v '^+' $1 | sed -E 's/^(ld: |mold: (error: )?)//; s|in [^ ]*/|in |'
 }
 
 not $mold -dylib -o $t/libb.dylib $t/b.o $t/c.o $t/liba.dylib -no_weak_imports 2> $t/log

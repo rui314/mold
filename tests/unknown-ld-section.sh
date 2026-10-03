@@ -29,9 +29,9 @@ rm -f $t/lib.a
 ar rcs $t/lib.a $t/b.o
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/lib.a 2> $t/log
-grep -q 'unknown section: __LD/__ll in /.*/a.o$' $t/log
-grep -q 'unknown section: __LD/__zz in /.*/a.o$' $t/log
-grep -q 'unknown section: __LD/__mm in /.*/lib.a\[2\](b.o)$' $t/log
+grep -q "unknown section: __LD/__ll in $t/a.o\$" $t/log
+grep -q "unknown section: __LD/__zz in $t/a.o\$" $t/log
+grep -q "unknown section: __LD/__mm in $t/lib.a(b.o)\$" $t/log
 not grep -q 'compact_unwind' $t/log
 otool -l $t/exe > $t/lc
 not grep -q 'segname __LD' $t/lc

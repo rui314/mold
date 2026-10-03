@@ -82,6 +82,12 @@ impl From<&str> for RawBuf {
     }
 }
 
+impl From<&std::path::Path> for RawBuf {
+    fn from(path: &std::path::Path) -> Self {
+        Self(std::os::unix::ffi::OsStrExt::as_bytes(path.as_os_str()).to_vec())
+    }
+}
+
 impl fmt::Display for RawBuf {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         raw(&self.0).fmt(f)

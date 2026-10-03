@@ -17,7 +17,7 @@ mk() {
 mk v5 5 main
 mk v6 6
 mk v8 8
-dir=$(cd $t && pwd -P)
+dir=$t
 
 not $CC --ld-path=$mold -o $t/exe $t/v5.o $t/v6.o 2> $t/log
 grep -q "not all .o files built with the same Swift ABI version. Started with (4.0), now found (4.1/4.2) in $dir/v6.o" $t/log

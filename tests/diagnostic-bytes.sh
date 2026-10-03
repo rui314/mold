@@ -27,7 +27,7 @@ assert data.count(b'mZ.o') == 1
 open(sys.argv[1], 'wb').write(data.replace(b'mZ.o', b'm\xff.o'))
 EOF
 not $CC --ld-path=$mold -o $t/exe $t/main.o -Wl,-force_load,$t/libm.a 2> $t/log
-grep -q $'libm.a\\[2\\](m\xff.o)$' $t/log
+grep -q $'libm.a(m\xff.o)$' $t/log
 
 # A dylib's install name.
 $CC --ld-path=$mold -shared -o $t/libfoo.dylib $t/mZ.o -mmacos-version-min=15.0 \

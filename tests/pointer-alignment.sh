@@ -113,16 +113,16 @@ _cf: .quad L_c
 EOF
 echo 'extern void *cf; int main() { return !cf; }' | $CC -o $t/g.o -c -xc -
 $CC --ld-path=$mold -o $t/exe5 $t/g.o $t/f.o -framework CoreFoundation 2> $t/log5
-grep -q "section __DATA/__cfstring is not pointer aligned in /.*/$t/f.o$" $t/log5
+grep -q "section __DATA/__cfstring is not pointer aligned in $t/f.o$" $t/log5
 not grep -q 'pointer not aligned' $t/log5
 $t/exe5
 $mold -r -arch $ARCH -o $t/r.o $t/f.o 2> $t/log6
-grep -q "section __DATA/__cfstring is not pointer aligned in /.*/$t/f.o$" $t/log6
+grep -q "section __DATA/__cfstring is not pointer aligned in $t/f.o$" $t/log6
 rm -f $t/lib.a
 ar rcs $t/lib.a $t/f.o
 echo 'int main() { return 0; }' | $CC -o $t/h.o -c -xc -
 $CC --ld-path=$mold -o $t/exe7 $t/h.o $t/lib.a 2> $t/log7
-grep -q "section __DATA/__cfstring is not pointer aligned in /.*/$t/lib.a\[2\](f.o)$" $t/log7
+grep -q "section __DATA/__cfstring is not pointer aligned in $t/lib.a(f.o)$" $t/log7
 
 # -unaligned_pointers turns those warnings into an error, which stops at
 # the first unaligned pointer, or silences them (x86-64 still gives

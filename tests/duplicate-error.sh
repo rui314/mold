@@ -12,7 +12,7 @@ EOF
 
 ! $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o 2> $t/log || false
 # (ld-prime lists the files in no stable order.)
-grep -v '^+' $t/log | sed -E 's|^(ld: \|mold: error: )||; s|/.*/||' > $t/msgs
+grep -v '^+' $t/log | sed -E 's|^(ld: \|mold: error: )||; s|[^ ]*/||' > $t/msgs
 cat > $t/expected <<EOF
 duplicate symbol '_hello' in:
     a.o

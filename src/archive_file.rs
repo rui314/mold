@@ -130,34 +130,6 @@ fn archive_members(
     })
 }
 
-/// The 1-based position of an archive member among all the archive's
-/// entries, symbol table included, by which ld-prime tells members apart
-/// in diagnostics: "libfoo.a[2](foo.o)" is the first object after the
-/// __.SYMDEF.
-pub fn member_index(member: &MappedFile) -> Option<usize> {
-    let data = member.parent?.data();
-    let target = member.data().as_ptr();
-    let mut pos = 8;
-    let mut index = 0;
-    while data.len().saturating_sub(pos) >= 2 {
-        if pos % 2 != 0 {
-            pos += 1;
-        }
-        let hdr = ArHeader::parse(data.get(pos..)?)?;
-        index += 1;
-        let body_start = pos + HEADER_SIZE;
-        let body_end = (body_start + hdr.size).min(data.len());
-        let mut body = &data[body_start..body_end];
-        // Only a #1/ long name moves the body; the strtab is not needed.
-        hdr.read_name(&[], &mut body);
-        if body.as_ptr() == target {
-            return Some(index);
-        }
-        pos = body_end;
-    }
-    None
-}
-
 /// Opens members as they are consumed. A member is named
 /// "archive(member)", as ld64 reports it.
 pub fn read_archive_members(mf: &'static MappedFile) -> impl Iterator<Item = &'static MappedFile> {

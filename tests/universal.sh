@@ -38,5 +38,5 @@ ar rcs $t/libd.a $t/d.o
 lipo $t/libd.a -create -output $t/libfatd.a
 $CC --ld-path=$mold -o $t/exe2 $t/b.o $t/a.o $t/fatc.o $t/libfatd.a -Wl,-u,_d1 \
   -Wl,-no_fixup_chains 2> $t/log2
-grep -q "pointer not aligned.*'_c1' (/.*/$t/fatc.o)" $t/log2
-grep -q "pointer not aligned.*'_d1' (/.*/$t/libfatd.a\[$ARCH\]\[2\](d.o))" $t/log2
+grep -q "pointer not aligned.*'_c1' ($t/fatc.o(for architecture $ARCH))" $t/log2
+grep -q "pointer not aligned.*'_d1' ($t/libfatd.a(for architecture $ARCH)(d.o))" $t/log2

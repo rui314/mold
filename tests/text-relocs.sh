@@ -41,7 +41,7 @@ cat <<EOF | $CC -o $t/main.o -c -xc -
 int main() { return 0; }
 EOF
 
-dir=$(cd $t && pwd -P)
+dir=$t
 cat > $t/expected <<EOF
 Illegal text-relocations:
   text-relocation in '_site'+0x8 ($dir/a.o) to '_ext'

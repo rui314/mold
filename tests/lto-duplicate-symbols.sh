@@ -5,7 +5,7 @@ echo 'int dup(void); int main(void) { return dup(); }' | $CC -flto -c -xc - -o $
 echo 'int dup(void) { return 1; }' | $CC -flto -c -xc - -o $t/bc1.o
 echo 'int dup(void) { return 2; }' | $CC -flto -c -xc - -o $t/bc2.o
 echo 'int dup(void) { return 3; }' | $CC -c -xc - -o $t/n1.o
-dir="$(pwd -P)/$t/"
+dir="$t/"
 
 # A symbol bitcode and a Mach-O object both define shows up once LTO
 # has compiled the bitcode, in the object LTO made, which keeps the

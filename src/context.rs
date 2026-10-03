@@ -1260,7 +1260,7 @@ impl<E: Target> Context<E> {
     pub fn fixup_error(&self, isec: usize, offset: u32, kind: &str, msg: std::fmt::Arguments) {
         let sec = &self.isecs[isec];
         let obj = &self.objs[sec.file as usize];
-        let path = crate::passes::resolved_file_name(obj.mf).0;
+        let path = crate::util::path_bytes(&obj.mf.name);
         let file = crate::error::raw(path.rsplit(|&c| c == b'/').next().unwrap_or_default());
         let name = self.subsec_name(isec);
         let name = crate::error::raw(&name);
@@ -1324,7 +1324,8 @@ impl<E: Target> Context<E> {
     /// ld-prime's other diagnostics do: "'NAME'+0xOFF (path)", with the
     /// object's full path.
     pub fn subsec_ref(&self, isec: usize, offset: u32) -> crate::error::Message {
-        let path = crate::passes::resolved_file_name(self.objs[self.isecs[isec].file as usize].mf);
+        let path =
+            crate::error::RawPath::raw(self.objs[self.isecs[isec].file as usize].mf.name.as_path());
         let name = self.subsec_name(isec);
         let name = crate::error::raw(&name);
         if offset == 0 {

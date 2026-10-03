@@ -65,7 +65,7 @@ $CC --ld-path=$mold -bundle -o $t/u2.bundle $t/unused.o $t/libz1.dylib \
   -Wl,-bundle_loader,$t/sub/hostlink -Wl,-warn_unused_dylibs 2> $t/log2
 grep -n 'but not using any symbols' $t/log2 | cut -d: -f1 | tr '\n' ' ' > $t/lines
 [ "$(cat $t/lines)" = '1 2 ' ]
-sed -n 2p $t/log2 | grep -q "linking with bundle loader (/.*/host) but not using any symbols from it"
+sed -n 2p $t/log2 | grep -q "linking with bundle loader ($t/sub/hostlink) but not using any symbols from it"
 $CC --ld-path=$mold -bundle -o $t/u3.bundle $t/unused.o -Wl,-bundle_loader,$t/sub/hostlink \
   -Wl,-t > $t/trace
 grep -q 'sub/hostlink$' $t/trace

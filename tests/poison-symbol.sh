@@ -27,10 +27,10 @@ grep -v '^+' $t/log | sed -E 's/^(ld|mold): (error: )?//' > $t/msgs
 cat > $t/expected <<EOF
 Use of poisoned symbols:
   _bar, referenced from:
-      _main in b.o
-      _baz in c.o
+      _main in $t/b.o
+      _baz in $t/c.o
   _foo, referenced from:
-      _main in b.o
+      _main in $t/b.o
 
 EOF
 # (ld-prime lists the symbols in no stable order.)
@@ -64,8 +64,8 @@ _grault: .quad 0
 EOF2
 not $CC --ld-path=$mold -shared -o $t/d.dylib $t/d.o -Wl,-poison_symbol,_garply \
   -Wl,-poison_symbol,_grault 2> $t/log
-grep -A1 '_garply, referenced from:' $t/log | grep -q '^ *_d in d.o$'
-[ $(grep -c ' in d.o$' $t/log) = 1 ]
+grep -A1 '_garply, referenced from:' $t/log | grep -q "^ *_d in $t/d.o\$"
+[ $(grep -c ' in .*/d.o$' $t/log) = 1 ]
 not grep -q '_grault, referenced' $t/log
 
 if [ $ARCH = arm64 ]; then
@@ -97,7 +97,7 @@ _corge: .quad 0
 EOF2
   not $CC --ld-path=$mold -shared -o $t/e.dylib $t/e.o -Wl,-poison_symbol,_qux \
     -Wl,-poison_symbol,_quux -Wl,-poison_symbol,_corge 2> $t/log
-  [ $(grep -A3 '_qux, referenced from:' $t/log | grep -c ' _f in e.o$') = 1 ]
-  [ $(grep -A3 '_quux, referenced from:' $t/log | grep -c ' _g in e.o$') = 1 ]
-  [ $(grep -A4 '_corge, referenced from:' $t/log | grep -c ' _h in e.o$') = 1 ]
+  [ $(grep -A3 '_qux, referenced from:' $t/log | grep -c ' _f in .*/e.o$') = 1 ]
+  [ $(grep -A3 '_quux, referenced from:' $t/log | grep -c ' _g in .*/e.o$') = 1 ]
+  [ $(grep -A4 '_corge, referenced from:' $t/log | grep -c ' _h in .*/e.o$') = 1 ]
 fi

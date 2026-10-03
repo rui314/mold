@@ -3996,7 +3996,7 @@ fn read_tbd<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> Option<tapi
 pub fn load_tbd<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> Option<tapi::TbdFile> {
     let tbd = read_tbd(ctx, mf);
     if tbd.is_none() {
-        let path = crate::passes::resolved_file_name(mf);
+        let path = mf.name.raw();
         let why =
             format_args!("tapi error: missing required architecture {} in file {path}", E::NAME);
         ignore_foreign_file(ctx, mf, &why);

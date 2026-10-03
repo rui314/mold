@@ -44,8 +44,8 @@ not grep -q libfoo $t/libs3
 not $CC --ld-path=$mold -o $t/exe4 $t/b.o -L$t -Wl,-assert-weak-lfoo 2> $t/log4
 grep -q 'Found non-weak-imported symbol(s) preventing @rpath/libfoo.dylib from being weak-linked:$' $t/log4
 grep -A2 '^  "_foo" imported from:$' $t/log4 | tr -d ' ' | tr '\n' ' ' > $t/foo4
-[ "$(cat $t/foo4)" = '"_foo"importedfrom: b.o stubs-got-file ' ]
-grep -A1 '^  "_foo_var" imported from:$' $t/log4 | grep -q '^      b.o$'
+[ "$(cat $t/foo4)" = "\"_foo\"importedfrom: $t/b.o stubs-got-file " ]
+grep -A1 '^  "_foo_var" imported from:$' $t/log4 | grep -q "^      $t/b.o\$"
 
 # -weak-l makes the imports weak.
 $CC --ld-path=$mold -o $t/exe5 $t/b.o -L$t -Wl,-assert-weak-lfoo,-weak-lfoo
