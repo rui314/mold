@@ -458,8 +458,12 @@ pub fn remove_redundant_thunks<E: Target>(ctx: &mut Context<E>) {
 
                     // A thunk jumps to the start of a symbol, so it can't serve a
                     // branch to an offset from a section symbol, which assemblers
-                    // emit for calls to static functions.
-                    if sym.ty() == STT_SECTION
+                    // emit for calls to static functions. On RELA targets, such
+                    // branches already refer to symbols at their destinations
+                    // (see redirect_section_relocations()), but an addend in a
+                    // REL instruction can't be moved into a symbol that way.
+                    if !E::IS_RELA
+                        && sym.ty() == STT_SECTION
                         && isec.rel_addend(rel) != 0
                         && requires_thunk(ctx, isec, rel, sym, false)
                     {

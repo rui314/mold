@@ -72,7 +72,7 @@ pub enum OriginValue {
 impl Origin {
     const NONE: Self = Self(0);
 
-    fn new(value: OriginValue) -> Self {
+    pub(crate) fn new(value: OriginValue) -> Self {
         match value {
             OriginValue::None => Self::NONE,
             OriginValue::InputSection(section) => {
@@ -91,7 +91,7 @@ impl Origin {
     }
 
     #[inline]
-    fn get(self) -> OriginValue {
+    pub(crate) fn get(self) -> OriginValue {
         if self.0 == 0 {
             return OriginValue::None;
         }

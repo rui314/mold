@@ -25,7 +25,7 @@ use crate::input_sections::{
 };
 use crate::mapped_file::MappedFile;
 use crate::symbol::{
-    Bins, NEEDS_PLT, OriginValue, ParallelSymbolAllocator, Symbol, SymbolId, SymbolSlot,
+    Bins, NEEDS_PLT, Origin, OriginValue, ParallelSymbolAllocator, Symbol, SymbolId, SymbolSlot,
     SymbolTable, hash_key,
 };
 use crate::target::{Family, Target};
@@ -83,25 +83,41 @@ pub struct ObjId(pub u32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct DsoId(pub u32);
 
-/// A fragment symbol awaiting its slot in the central symbol vector.
+/// A dummy symbol awaiting its slot in the central symbol vector. It replaces
+/// a section symbol in a relocation and points to a section fragment or to
+/// an offset in an input section. See redirect_section_relocations().
 /// Keep only the varying fields here so that growing file-local vectors does
 /// not repeatedly copy full Symbols.
-pub struct FragmentSymbol {
-    fragment: FragmentRef,
+pub struct DummySymbol {
+    origin: Origin,
     value: u64,
     sym_idx: u32,
 }
 
-impl FragmentSymbol {
+impl DummySymbol {
     #[inline]
     pub(crate) fn into_symbol<E: Target>(self, file: &ObjectFile<E>) -> Symbol {
-        let mut sym = Symbol::new(BStr::new(b"<fragment>"));
+        let esym = &file.base.elf_syms[self.sym_idx as usize];
+        let mut sym = match self.origin.get() {
+            OriginValue::Fragment(fragment) => {
+                let mut sym = Symbol::new(BStr::new(b"<fragment>"));
+                sym.set_fragment_dummy(true);
+                sym.set_fragment(fragment);
+                sym
+            }
+            OriginValue::InputSection(section) => {
+                // Name it after the section, as the section symbol is named.
+                let shndx = file.shndx_from(self.sym_idx as usize, esym.st_shndx());
+                let mut sym = Symbol::new(BStr::new(file.section(shndx).unwrap().name(file)));
+                sym.set_input_section(section);
+                sym
+            }
+            _ => unreachable!(),
+        };
         sym.set_file(FileId::Obj(file.id()));
-        sym.set_fragment_dummy(true);
         sym.set_sym_idx(self.sym_idx);
-        sym.set_esym(&file.base.elf_syms[self.sym_idx as usize]);
+        sym.set_esym(esym);
         sym.set_visibility(STV_HIDDEN);
-        sym.set_fragment(self.fragment);
         sym.value = self.value;
         sym
     }
@@ -2299,14 +2315,23 @@ impl<E: Target> ObjectFile<E> {
             .fold(0, usize::saturating_add)
     }
 
-    // For each relocation referring to a mergeable section symbol, we
-    // create a new dummy non-section symbol and redirect the relocation
-    // to the newly created symbol.
-    pub(crate) fn reattach_fragment_relocations(
+    // Redirects relocations against section symbols to new dummy symbols
+    // where a section symbol plus an addend doesn't work as a target:
+    //
+    // - A relocation referring to a mergeable section actually refers to a
+    //   fragment of the section, and fragments are placed independently.
+    //
+    // - Assemblers emit a branch to a static function in another section
+    //   as a relocation against a section symbol plus an offset. A range
+    //   extension thunk jumps to the start of a symbol, so we give such a
+    //   branch a symbol at its destination and clear the addend. An addend
+    //   stored in the instruction can't be cleared, so we do this only for
+    //   RELA targets.
+    pub(crate) fn redirect_section_relocations(
         &mut self,
         merged: &[MergedSection<E>],
-    ) -> Vec<FragmentSymbol> {
-        let mut fragments = Vec::new();
+    ) -> Vec<DummySymbol> {
+        let mut dummies = Vec::new();
 
         for shndx in 0..self.sections.len() {
             let (relsec_idx, contents) = {
@@ -2344,39 +2369,51 @@ impl<E: Target> ObjectFile<E> {
             for rel in rels.iter_mut() {
                 let record = *rel;
                 let r_sym = record.r_sym() as usize;
-                if self.base.elf_syms[r_sym].st_type() != STT_SECTION {
+                let esym = &self.base.elf_syms[r_sym];
+                if esym.st_type() != STT_SECTION {
                     continue;
                 }
-                let found = {
-                    let esym = &self.base.elf_syms[r_sym];
-                    let sym_shndx = self.shndx_from(r_sym, esym.st_shndx());
-                    self.merge_info(sym_shndx).map(|m| {
-                        debug_assert!(merged[m.parent.index()].resolved);
-                        let addend = if E::IS_RELA && E::FAMILY != Family::Sh4 {
-                            record.r_addend()
-                        } else {
-                            E::get_addend(&contents[record.r_offset() as usize..], &record)
-                        };
-                        let Some((frag, in_frag_offset)) =
-                            m.fragment(esym.st_value().wrapping_add(addend as u64))
-                        else {
-                            fatal!("{self}: bad relocation at {}", record.r_sym());
-                        };
-                        (
-                            FragmentRef { section: m.parent, entry: frag },
-                            (in_frag_offset - addend) as u64,
-                        )
-                    })
-                };
-                let Some((frag, value)) = found else {
-                    continue;
-                };
+                let sym_shndx = self.shndx_from(r_sym, esym.st_shndx());
+                let dummy_idx = (self.base.elf_syms.len() + dummies.len()) as u32;
 
-                let dummy_idx = (self.base.elf_syms.len() + fragments.len()) as u32;
-
-                fragments.push(FragmentSymbol { fragment: frag, value, sym_idx: record.r_sym() });
-
-                rel.set_r_sym(dummy_idx);
+                if let Some(m) = self.merge_info(sym_shndx) {
+                    debug_assert!(merged[m.parent.index()].resolved);
+                    let addend = if E::IS_RELA && E::FAMILY != Family::Sh4 {
+                        record.r_addend()
+                    } else {
+                        E::get_addend(&contents[record.r_offset() as usize..], &record)
+                    };
+                    let Some((frag, in_frag_offset)) =
+                        m.fragment(esym.st_value().wrapping_add(addend as u64))
+                    else {
+                        fatal!("{self}: bad relocation at {}", record.r_sym());
+                    };
+                    let frag = FragmentRef { section: m.parent, entry: frag };
+                    dummies.push(DummySymbol {
+                        origin: Origin::new(OriginValue::Fragment(frag)),
+                        value: (in_frag_offset - addend) as u64,
+                        sym_idx: record.r_sym(),
+                    });
+                    rel.set_r_sym(dummy_idx);
+                } else if E::NEEDS_THUNK
+                    && E::IS_RELA
+                    && record.is_func_call::<E>()
+                    // R_PPC_PLTREL24's addend is an offset in .got2, not in the target.
+                    && !(E::FAMILY == Family::Ppc32 && record.r_type() == R_PPC_PLTREL24)
+                    && record.r_addend() != 0
+                    && let Some((section, isec)) = self.section_with_id(sym_shndx)
+                    // PPC64 ELFv1 calls refer to function descriptors in .opd,
+                    // which rewrite_opd() later resolves by their addends.
+                    && isec.sh_flags & SHF_EXECINSTR as u64 != 0
+                {
+                    dummies.push(DummySymbol {
+                        origin: Origin::new(OriginValue::InputSection(section)),
+                        value: esym.st_value().wrapping_add(record.r_addend() as u64),
+                        sym_idx: record.r_sym(),
+                    });
+                    rel.set_r_sym(dummy_idx);
+                    rel.set_r_addend(0);
+                }
             }
 
             if let Some(data) = decoded {
@@ -2385,7 +2422,7 @@ impl<E: Target> ObjectFile<E> {
             }
         }
 
-        fragments
+        dummies
     }
 
     pub fn scan_relocations(&self, ctx: &Context<E>) {

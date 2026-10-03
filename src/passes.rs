@@ -885,12 +885,12 @@ pub fn create_merged_sections<E: Target>(ctx: &mut Context<E>) {
     let Context { objs, symbols, merged_sections, .. } = ctx;
 
     let editor = SymbolEditor::new(symbols.as_mut_slice());
-    let fragments: Vec<_> = objs
+    let dummies: Vec<_> = objs
         .par_iter_mut()
         .map(|file| {
             let id = file.id();
             file.reattach_section_symbols(id, &editor, merged_sections);
-            file.reattach_fragment_relocations(merged_sections)
+            file.redirect_section_relocations(merged_sections)
         })
         .collect();
 
@@ -899,23 +899,23 @@ pub fn create_merged_sections<E: Target>(ctx: &mut Context<E>) {
     let base = symbols.len();
     // SAFETY: each task initializes all of its disjoint new slots.
     unsafe {
-        symbols.add_many_with_existing(fragments.iter().map(Vec::len).sum(), |_, slots| {
+        symbols.add_many_with_existing(dummies.iter().map(Vec::len).sum(), |_, slots| {
             let mut rest = slots;
             let mut offset = base;
-            let parts: Vec<_> = fragments
+            let parts: Vec<_> = dummies
                 .into_iter()
-                .map(|fragments| {
-                    let head = rest.split_off_mut(..fragments.len()).unwrap();
+                .map(|dummies| {
+                    let head = rest.split_off_mut(..dummies.len()).unwrap();
 
                     let first = offset;
-                    offset += fragments.len();
-                    (first, head, fragments)
+                    offset += dummies.len();
+                    (first, head, dummies)
                 })
                 .collect();
-            objs.par_iter_mut().zip(parts).for_each(|(file, (first, slots, fragments))| {
-                file.base.symbols.reserve(fragments.len());
-                for (i, (slot, fragment)) in slots.iter_mut().zip(fragments).enumerate() {
-                    slot.write(fragment.into_symbol(file));
+            objs.par_iter_mut().zip(parts).for_each(|(file, (first, slots, dummies))| {
+                file.base.symbols.reserve(dummies.len());
+                for (i, (slot, dummy)) in slots.iter_mut().zip(dummies).enumerate() {
+                    slot.write(dummy.into_symbol(file));
                     file.base.symbols.push(SymbolId((first + i) as u32));
                 }
             });
