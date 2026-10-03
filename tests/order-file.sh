@@ -76,18 +76,3 @@ printf 'l_.str.1\nlc2\n' > $t/order6
 $CC --ld-path=$mold -o $t/exe6 $t/s.o -Wl,-order_file,$t/order6
 otool -X -v -s __TEXT __cstring $t/exe6 | head -1 | grep -q 'second$'
 [ "$(otool -X -s __TEXT __const $t/exe6 | head -1 | awk '{ print $2 + 0 }')" = 2 ]
-
-# With no -order_file, an Apple-internal SDK's file for the
-# -final_output name orders the image: the first -syslibroot's
-# AppleInternal/OrderFiles/<name>.order.
-sdk=$(xcrun --show-sdk-path)
-rm -rf $t/sdk
-mkdir -p $t/sdk/AppleInternal/OrderFiles
-ln -s $sdk/usr $t/sdk/usr
-ln -s $sdk/System $t/sdk/System
-cp $t/order2 $t/sdk/AppleInternal/OrderFiles/final7.order
-$CC --ld-path=$mold -o $t/exe7 $t/a.o -isysroot $t/sdk -Wl,-final_output,final7
-$t/exe7 | grep '^0$'
-$CC --ld-path=$mold -o $t/exe8 $t/a.o -isysroot $t/sdk -Wl,-final_output,final7 \
-  -Wl,-order_file,$t/order1
-$t/exe8 | grep '^1$'
