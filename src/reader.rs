@@ -1019,7 +1019,7 @@ fn load_dylib<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFile, rc: Read
     }
     let first = ctx.dylibs.len();
     let idx = if is_stub {
-        input_files::parse_dylib(ctx, mf)
+        input_files::parse_tbd(ctx, mf)
     } else {
         Some(input_files::parse_dylib_binary(ctx, mf))
     };

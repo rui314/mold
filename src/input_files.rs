@@ -3890,7 +3890,9 @@ fn is_class_export(name: &[u8]) -> bool {
         || (name.starts_with(b"_$s") && name.ends_with(b"CN"))
 }
 
-pub fn parse_dylib<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFile) -> Option<usize> {
+/// Adds a .tbd stub's library to the link; None if the stub has no
+/// target on the link's architecture, and the link ignores it.
+pub fn parse_tbd<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFile) -> Option<usize> {
     let tbd = load_tbd(ctx, mf)?;
     Some(register_tbd_file(ctx, mf, tbd))
 }
