@@ -1186,10 +1186,9 @@ fn libraries_of_kind(inputs: &[InputArg], kind: LibraryKind) -> Vec<&OsStr> {
 }
 
 /// Decides whether the dylibs -lazy-l and the like name load lazily:
-/// dyld loads one when __dyld_lazy_load says so, which ld-prime keeps
-/// as an import of any final image that names one, used or not, for
-/// macOS 27 on. Firmware, a -preload image included, has no dyld: the
-/// library links as usual there.
+/// dyld loads one when __dyld_lazy_load says so, for macOS 27 on.
+/// Firmware, a -preload image included, has no dyld: the library links
+/// as usual there.
 fn resolve_lazy_load(args: &mut Args) {
     let libs = libraries_of_kind(&args.inputs, LibraryKind::Lazy);
     if libs.is_empty() {
@@ -1205,9 +1204,6 @@ fn resolve_lazy_load(args: &mut Args) {
         );
     }
     args.lazy_load = lazy_load;
-    if lazy_load && !args.relocatable {
-        args.forced_undefined.push(b"__dyld_lazy_load".to_vec());
-    }
 }
 
 /// A dylib -delay-l and the like name keeps its initializers until the

@@ -4112,16 +4112,11 @@ pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
     // gives without wildcards) or by the alias in its
     // "command-line-aliases-file" (an -alias base) - unless -dead_strip
     // strips the alias, which only an export root survives. The alias
-    // itself counts as defined. The lazy dylibs' __dyld_lazy_load is
-    // none: ld-prime wants it from its "<lazy-load-undefs>", as an
-    // ordinary reference, which a kext's dynamic lookup lets stay.
-    let lazy_load = ctx.symbols.get(b"__dyld_lazy_load").filter(|_| ctx.args.lazy_load);
+    // itself counts as defined.
     let mut initial: hashbrown::HashMap<crate::symbol::SymbolId, &str> = hashbrown::HashMap::new();
     let entry = ctx.args.has_entry_point().then_some(&ctx.args.entry);
     for name in ctx.args.forced_undefined.iter().chain(entry) {
-        if let Some(id) = ctx.symbols.get(name)
-            && Some(id) != lazy_load
-        {
+        if let Some(id) = ctx.symbols.get(name) {
             initial.insert(id, "<initial-undefines>");
         }
     }
@@ -4158,7 +4153,6 @@ pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
         });
         match map.get(&id) {
             Some(&obj_idx) => error::RawBuf::from(ctx.objs[obj_idx].mf.name.as_path()),
-            None if Some(id) == lazy_load => "<lazy-load-undefs>".into(),
             None => initial.get(&id).copied().unwrap_or("<synthesized>").into(),
         }
     };
@@ -5023,17 +5017,8 @@ pub(crate) fn add_got<E: Target>(ctx: &mut Context<E>, id: crate::symbol::Symbol
 /// that uses a delay-init dylib), which mold refuses; one that names
 /// such a dylib but uses nothing of it links as any other.
 pub fn create_lazy_loads<E: Target>(ctx: &mut Context<E>) {
-    if ctx.args.lazy_load {
-        ctx.lazy_helpers.keep_alive = add_keep_alive_subsec(ctx);
-    }
     if !ctx.dylibs.iter().any(|d| d.is_lazy) {
         return;
-    }
-    // (The keep-alive subsection's reference, as ld-prime names it.)
-    if let Some(id) = ctx.symbols.get(b"__dyld_lazy_load")
-        && ctx.is_lazy_import(id)
-    {
-        error!("keepAlive use of '__dyld_lazy_load' in 'anon' cannot be lazy loaded.");
     }
     let uses = lazy_uses(ctx);
     if ctx.args.make_mergeable && !uses.is_empty() {
@@ -5042,10 +5027,13 @@ pub fn create_lazy_loads<E: Target>(ctx: &mut Context<E>) {
     let (flags, slots) = create_lazy_load_slots(ctx, &uses);
     create_lazy_helpers(ctx, &uses, &flags, &slots);
 
-    // The helpers call __dyld_lazy_load through its stub.
-    if !ctx.lazy_helpers.helpers.is_empty()
-        && let Some(id) = ctx.symbols.get(b"__dyld_lazy_load")
-    {
+    // The helpers call __dyld_lazy_load through its stub (see
+    // bind_dyld_lazy_load).
+    if !ctx.lazy_helpers.helpers.is_empty() {
+        let id = ctx.symbols.get(b"__dyld_lazy_load").filter(|&id| ctx.symbols[id].is_defined());
+        let Some(id) = id else {
+            fatal!("lazy-load dylibs need __dyld_lazy_load, which no loaded dylib exports");
+        };
         add_stub(ctx, id);
         if ctx.args.lazy_binding {
             ensure_stub_binder(ctx);
@@ -5054,37 +5042,6 @@ pub fn create_lazy_loads<E: Target>(ctx: &mut Context<E>) {
         }
         ctx.lazy_helpers.dyld_lazy_load = Some(id);
     }
-}
-
-/// ld-prime keeps __dyld_lazy_load alive, in any link that names a
-/// lazy dylib, by a reference from an empty subsection it appends to
-/// __text: it has an entry of its own in __unwind_info (encoding 0).
-/// Returns the subsection.
-fn add_keep_alive_subsec<E: Target>(ctx: &mut Context<E>) -> u32 {
-    let flags = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
-    let (file, shndx) = ctx.add_synthetic_section(MachSection {
-        sectname: bytes_to_name(b"__text"),
-        segname: bytes_to_name(b"__TEXT"),
-        flags,
-        ..Default::default()
-    });
-    ctx.isecs.push(InputSection {
-        file,
-        shndx,
-        p2align: 0,
-        input_addr: 0,
-        size: 0,
-        contents: 0,
-        rel_offset: 0,
-        nrels: 0,
-        output_section: u32::MAX,
-        offset: 0,
-        flags: InputSection::flags_alive_no_modulus(),
-        replacement: crate::input_sections::NO_REPLACEMENT,
-        unwind_offset: 0,
-        nunwind: 0,
-    });
-    (ctx.isecs.len() - 1) as u32
 }
 
 /// A reference to a lazy dylib's symbol: the subsection, the
@@ -6675,7 +6632,9 @@ pub(crate) fn ensure_stub_binder<E: Target>(ctx: &mut Context<E>) {
     if ctx.stub_helper.dyld_stub_binder.is_some() || ctx.args.legacy_linkedit {
         return;
     }
-    let Some(id) = bind_stub_binder(ctx).or_else(|| look_up_stub_binder(ctx)) else {
+    let name = b"dyld_stub_binder";
+    let id = bind_linker_import(ctx, name).or_else(|| look_up_linker_import(ctx, name));
+    let Some(id) = id else {
         fatal!("lazy binding needs dyld_stub_binder, which no loaded dylib exports");
     };
     ctx.symbols[id].set_is_used(true);
@@ -6719,10 +6678,13 @@ pub(crate) fn add_data_word<E: Target>(ctx: &mut Context<E>, size: u32) -> u32 {
     isec
 }
 
-/// Binds dyld_stub_binder to the first loaded dylib that exports it,
-/// unless something in the link defines it.
-fn bind_stub_binder<E: Target>(ctx: &mut Context<E>) -> Option<crate::symbol::SymbolId> {
-    let name: &[u8] = b"dyld_stub_binder";
+/// Binds a symbol the linker's own code calls (dyld_stub_binder,
+/// __dyld_lazy_load) to the first loaded dylib that exports it, unless
+/// something in the link defines it.
+fn bind_linker_import<E: Target>(
+    ctx: &mut Context<E>,
+    name: &'static [u8],
+) -> Option<crate::symbol::SymbolId> {
     let dylib = ctx.dylibs.iter().position(|d| d.exports.contains(name))?;
     let id = ctx.symbols.intern(name);
     let sym = &mut ctx.symbols[id];
@@ -6735,10 +6697,12 @@ fn bind_stub_binder<E: Target>(ctx: &mut Context<E>) -> Option<crate::symbol::Sy
     Some(id)
 }
 
-/// Makes dyld_stub_binder a symbol dyld looks up, if the image may look
-/// it up so.
-fn look_up_stub_binder<E: Target>(ctx: &mut Context<E>) -> Option<crate::symbol::SymbolId> {
-    let name: &[u8] = b"dyld_stub_binder";
+/// Makes a symbol the linker's own code calls one dyld looks up, if the
+/// image may look it up so.
+fn look_up_linker_import<E: Target>(
+    ctx: &mut Context<E>,
+    name: &'static [u8],
+) -> Option<crate::symbol::SymbolId> {
     let args = &ctx.args;
     if !args.undefined_dynamic_lookup && !args.allowed_undefined.iter().any(|n| n == name) {
         return None;
@@ -6764,6 +6728,25 @@ pub fn resolve_stub_binder<E: Target>(ctx: &mut Context<E>) {
         let id = ctx.symbols.get(b"dyld_stub_binding_helper");
         let id = id.filter(|&id| ctx.symbols[id].input_section().is_some());
         ctx.stub_helper.binding_helper = id;
+    }
+}
+
+/// Binds __dyld_lazy_load, which the lazy-load helpers call (see
+/// create_lazy_loads), in an image that uses a symbol of a lazy dylib,
+/// before the dylibs no symbol binds to are dropped.
+pub fn bind_dyld_lazy_load<E: Target>(ctx: &mut Context<E>) {
+    if !ctx.dylibs.iter().any(|d| d.is_lazy) {
+        return;
+    }
+    let ctx_ref: &Context<E> = ctx;
+    let uses_lazy = (0..ctx.symbols.syms.len() as crate::symbol::SymbolId)
+        .into_par_iter()
+        .any(|id| ctx_ref.symbols[id].is_used() && ctx_ref.is_lazy_import(id));
+    let name = b"__dyld_lazy_load";
+    if uses_lazy
+        && let Some(id) = bind_linker_import(ctx, name).or_else(|| look_up_linker_import(ctx, name))
+    {
+        ctx.symbols[id].set_is_used(true);
     }
 }
 

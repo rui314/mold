@@ -70,22 +70,13 @@ pub struct LazyHelpersSection {
     pub sites: hashbrown::HashMap<(u32, u32), u32>,
     /// __dyld_lazy_load, which the helpers call through its stub.
     pub dyld_lazy_load: Option<SymbolId>,
-    /// The empty subsection ld-prime keeps __dyld_lazy_load alive from
-    /// (see passes::add_keep_alive_subsec), or u32::MAX.
-    pub keep_alive: u32,
 }
 
 impl LazyHelpersSection {
     pub fn new() -> Self {
         let mut hdr = ChunkHeader::new(b"__TEXT", b"__lazy_helpers");
         hdr.flags = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
-        Self {
-            hdr,
-            helpers: Vec::new(),
-            sites: Default::default(),
-            dyld_lazy_load: None,
-            keep_alive: u32::MAX,
-        }
+        Self { hdr, helpers: Vec::new(), sites: Default::default(), dyld_lazy_load: None }
     }
 
     /// The helper a rewritten GOT load at `offset` of subsection `isec`

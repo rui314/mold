@@ -213,6 +213,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     // Synthetic stubs and unwind data can introduce library references
     // (notably dyld_stub_binder). Establish them before pruning dylibs.
     passes::resolve_stub_binder(&mut ctx);
+    passes::bind_dyld_lazy_load(&mut ctx);
     timed!("dead_strip_dylibs", passes::dead_strip_dylibs(&mut ctx));
     passes::bind_private_reexports_to_image(&mut ctx);
     passes::check_weak_assertions(&ctx);

@@ -95,7 +95,6 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 pub fn build<E: Target>(ctx: &mut Context<E>) {
     let mut b = Builder::new(ctx);
     b.add_object_entries();
-    b.add_lazy_load_keep_alive();
     let selrefs = b.add_objc_entries();
     b.add_object_fixups();
     b.add_objc_fixups(&selrefs);
@@ -365,29 +364,6 @@ impl<'a, E: Target> Builder<'a, E> {
                 self.entries[alias as usize].fixups.push(fixup);
             }
         }
-    }
-
-    /// The empty subsection that keeps __dyld_lazy_load alive in a link
-    /// that names a lazy dylib (see passes::add_keep_alive_subsec), as
-    /// ld-prime records it after the objects': with fixups that keep
-    /// alive ___dso_handle, which the lazy-load helpers pass, and
-    /// __dyld_lazy_load.
-    fn add_lazy_load_keep_alive(&mut self) {
-        let ctx = self.ctx;
-        let id = ctx.lazy_helpers.keep_alive;
-        if id == u32::MAX {
-            return;
-        }
-        let (content_type, _) = self.content_type(ctx.hdr_of(&ctx.isecs[id as usize]));
-        let mut entry = OutEntry::new(0, kind::ANON, content_type);
-        entry.no_dead_strip = true;
-        for name in [&b"___dso_handle"[..], b"__dyld_lazy_load"] {
-            if let Some(sym) = ctx.symbols.get(name) {
-                entry.fixups.push(OutFixup::new(0, To::Sym(sym), fk::KEEP_ALIVE, 0));
-            }
-        }
-        let idx = self.push_entry(entry, None);
-        self.isec_entry.insert(id, To::Entry(idx));
     }
 
     /// The debug notes of an object with DWARF, as a final link would
@@ -1106,8 +1082,8 @@ impl<'a, E: Target> Builder<'a, E> {
     /// linker defines (or leaves to dynamic lookup) as first referred
     /// to, then the imports by library and name. An import the link
     /// names as an initial undefine - by -u, or _dlopen in one that
-    /// names a delay-init dylib and __dyld_lazy_load in one that names
-    /// a lazy one - is one whether or not anything refers to it.
+    /// names a delay-init dylib - is one whether or not anything refers
+    /// to it.
     fn referenced_syms(&self, deps: &[(i32, DylibRecord)]) -> Vec<(SymbolId, Option<u8>)> {
         let ctx = self.ctx;
         let mut syms: Vec<SymbolId> = Vec::new();

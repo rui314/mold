@@ -3,9 +3,9 @@ source "$(dirname "$0")"/common.inc
 
 # A mergeable dylib may name a lazy-load or delay-init dylib it uses
 # nothing of: ld-prime links it as any other, the delay-init dylib's
-# load command and _dlopen kept, and the empty subsection that keeps
-# __dyld_lazy_load alive and its imports recorded, so that an image
-# that merges it, linked by either linker, gets them too.
+# load command and _dlopen kept, so that an image that merges it,
+# linked by either linker, gets them too. The lazy dylib, which nothing
+# uses, leaves nothing to merge.
 cat <<EOF | $CC -o $t/bar.o -c -xc -
 int bv = 10;
 int bar(void) { return 4; }
@@ -36,8 +36,10 @@ $CC --ld-path=$mold -shared -o $t/m2/libbaz.dylib $t/baz.o -L$t/lib -Wl,-make_me
 for ldflag in --ld-path=$mold ""; do
   $CC $ldflag -o $t/exe1 $t/main.o -L$t/m1 -L$t/lib -Wl,-merge-lbaz \
     -mmacosx-version-min=27.0
-  nm -m $t/exe1 > $t/syms1
-  grep -q '(undefined) external __dyld_lazy_load (from libSystem)' $t/syms1
+  otool -L $t/exe1 > $t/libs1
+  not grep -q libbaz.dylib $t/libs1
+  not grep -q libbar.dylib $t/libs1
+  $t/exe1
   $CC $ldflag -o $t/exe2 $t/main.o -L$t/m2 -L$t/lib -Wl,-merge-lbaz \
     -mmacosx-version-min=27.0
   nm -m $t/exe2 > $t/syms2

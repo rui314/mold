@@ -106,12 +106,13 @@ $CC --ld-path=$mold -o $t/exe3 $t/d.o -L$t -lmid -Wl,-rpath,$t -mmacosx-version-
 $t/exe3 > $t/out3
 printf 'start\nfoo loaded\n4\n' | cmp - $t/out3
 
-# A lazy dylib the program does not use has no record, but
-# __dyld_lazy_load is still imported.
+# A lazy dylib the program does not use has no record and no load
+# command.
 cat <<EOF | $CC -o $t/e.o -c -xc -
 int main() { return 0; }
 EOF
 $CC --ld-path=$mold -o $t/exe4 $t/e.o -L$t -Wl,-lazy-lfoo -mmacosx-version-min=27.0
 otool -l $t/exe4 > $t/lc4
 not grep -q LC_LAZY_LOAD_DYLIB_INFO $t/lc4
-nm $t/exe4 | grep -q 'U __dyld_lazy_load'
+not grep -q libfoo $t/lc4
+$t/exe4
