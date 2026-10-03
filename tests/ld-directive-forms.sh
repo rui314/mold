@@ -1,14 +1,14 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# ld-prime passes over a "$ld$..." directive it can't read without a
-# word, and reads them more loosely than their documented form: an
-# $ld$previous symbol needs no final '$', and with no symbol field at
-# all the directive renames the whole library. A version it can't read
-# (1.2.3.1, 70000, 14.0x) makes it ignore the directive. A stub may
-# also give the compatibility version for an OS version
-# ($ld$compatibility_version$os<ver>$<version>), which a dylib binary
-# can't: there it is ignored, as any kind of directive it doesn't know.
+# A "$ld$..." directive that doesn't parse is passed over without a
+# word: one with a version that isn't X[.Y[.Z]] in 16.8.8 bits (1.2.3.1,
+# 70000, 14.0x, 10.), say. An $ld$previous symbol needs no final '$',
+# and with no symbol field at all the directive renames the whole
+# library. A stub may also give the compatibility version for an OS
+# version ($ld$compatibility_version$os<ver>$<version>), which a dylib
+# binary can't: there it is ignored, as any kind of directive it doesn't
+# know.
 cat <<EOF | $CC -o $t/a.o -c -xc -
 int foo();
 int main() { return foo(); }

@@ -4071,7 +4071,9 @@ impl LdSymbols {
                 b"compatibility_version"
                     if ld.compatibility_version.is_none_or(|(first, _)| name < first) =>
                 {
-                    ld.compatibility_version = Some((name, directive_version(arg).unwrap_or(0)));
+                    if let Some(version) = directive_version(arg) {
+                        ld.compatibility_version = Some((name, version));
+                    }
                 }
                 _ => {}
             }
@@ -4155,10 +4157,10 @@ fn interpret_binary_ld_symbols<E: Target>(
     ld.finish(dylib.current_version, dylib.compatibility_version)
 }
 
-/// An $ld$previous directive, as ld-prime reads one:
+/// An $ld$previous directive:
 /// <install name>$<compat>$<platform>$<lo>$<hi>[$[<sym>[$]]], the
 /// symbol - which may itself contain '$', as Swift's do - less a final
-/// '$'. A field it can't read makes it ignore the directive.
+/// '$'. None if a field doesn't parse.
 struct PreviousDirective {
     install_name: &'static [u8],
     version: Option<u32>,
@@ -4174,74 +4176,34 @@ impl PreviousDirective {
         let (install_name, compat, platform) = (f.next()?, f.next()?, f.next()?);
         let (lo, hi) = (f.next()?, f.next()?);
         let sym = f.next().unwrap_or_default();
-        let version = |s: &[u8]| if s.is_empty() { Some(0) } else { previous_version(s) };
-        if install_name.is_empty()
-            || platform.is_empty()
-            || !platform.iter().all(u8::is_ascii_digit)
-        {
+        if install_name.is_empty() {
             return None;
         }
         Some(Self {
             install_name,
-            version: if compat.is_empty() { None } else { Some(previous_version(compat)?) },
-            platform: strtoul32(platform)?,
-            lo: version(lo)?,
-            hi: version(hi)?,
+            version: if compat.is_empty() { None } else { Some(directive_version(compat)?) },
+            platform: std::str::from_utf8(platform).ok()?.parse().ok()?,
+            lo: directive_version(lo)?,
+            hi: directive_version(hi)?,
             sym: sym.strip_suffix(b"$").unwrap_or(sym),
         })
     }
 }
 
-/// A number of a directive's version, as strtoul reads one into 32
-/// bits: digits only, none for 0.
-fn strtoul32(s: &[u8]) -> Option<u32> {
-    if !s.iter().all(u8::is_ascii_digit) {
-        return None;
-    }
-    let n = s.iter().try_fold(0u64, |n, &c| n.checked_mul(10)?.checked_add(u64::from(c - b'0')));
-    Some(n.map_or(u32::MAX, |n| n as u32))
-}
-
-/// A version in an $ld$previous directive, as ld-prime reads one, packed
-/// as a Mach-O version: up to five dot-separated numbers, of which the
-/// fourth and fifth must be 0, the first below 65536 and the others
-/// below 256. An empty number is 0, but not as the last of the first
-/// four ("1..2" is 1.0.2, "1." no version).
-fn previous_version(s: &[u8]) -> Option<u32> {
-    let count = s.split(|&c| c == b'.').count();
-    if count > 5 {
-        return None;
-    }
-    let mut nums = [0; 5];
-    for (i, part) in s.split(|&c| c == b'.').enumerate() {
-        if part.is_empty() && i + 1 == count && i < 4 {
-            return None;
-        }
-        nums[i] = strtoul32(part)?;
-    }
-    (nums[0] <= 0xffff && nums[1] <= 0xff && nums[2] <= 0xff && nums[3] == 0 && nums[4] == 0)
-        .then(|| (nums[0] << 16) | (nums[1] << 8) | nums[2])
-}
-
-/// The OS version of a directive, or the version of an
-/// $ld$compatibility_version one, as ld-prime reads it: the first three
-/// numbers of those separated by dots (empty ones skipped), the first
-/// below 65536 and the others below 256.
+/// A version in a directive, X[.Y[.Z]], packed as a Mach-O version in
+/// 16, 8 and 8 bits.
 fn directive_version(s: &[u8]) -> Option<u32> {
+    let mut parts = s.split(|&c| c == b'.');
     let mut version = 0;
-    for (i, part) in s.split(|&c| c == b'.').filter(|p| !p.is_empty()).take(3).enumerate() {
-        if !part.iter().all(u8::is_ascii_digit) {
+    for (shift, max) in [(16, 0xffff), (8, 0xff), (0, 0xff)] {
+        let Some(part) = parts.next() else { break };
+        let n: u32 = std::str::from_utf8(part).ok()?.parse().ok()?;
+        if n > max {
             return None;
         }
-        let n = part
-            .iter()
-            .try_fold(0u32, |n, &c| n.checked_mul(10)?.checked_add(u32::from(c - b'0')))?;
-        if n > if i == 0 { 0xffff } else { 0xff } {
-            return None;
-        }
-        version |= n << (16 - 8 * i);
+        version |= n << shift;
     }
-    Some(version)
+    parts.next().is_none().then_some(version)
 }
 
 /// A stub's library, read for the link's architecture and platform;
