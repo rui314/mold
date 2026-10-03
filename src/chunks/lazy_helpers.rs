@@ -59,8 +59,8 @@ pub struct LazyHelper {
     pub offset: u32,
 }
 
-/// __TEXT,__lazy_helpers: the helpers, in name order as ld-prime lays
-/// them out.
+/// __TEXT,__lazy_helpers: the helpers, in the order of the image's
+/// first uses.
 #[derive(Debug)]
 pub struct LazyHelpersSection {
     pub hdr: ChunkHeader,

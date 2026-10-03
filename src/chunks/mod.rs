@@ -856,8 +856,8 @@ pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
     }
 
     // Libraries in ordinal order (command-line order, then the
-    // auto-linked ones), then those dyld loads lazily, one command per
-    // record (see lazy_load_info).
+    // auto-linked ones), then those dyld loads lazily, by their records
+    // (see lazy_load_info), in the order of the image's first uses.
     let mut dylibs: Vec<&crate::input_files::DylibFile> =
         ctx.dylibs.iter().filter(|d| !d.is_bundle_loader && !d.is_lazy).collect();
     dylibs.sort_by_key(|d| d.dylib_idx);

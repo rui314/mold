@@ -18,7 +18,7 @@ pub struct LazyDylib {
     /// the dylib.
     pub flag: u32,
     /// The symbol of each of its __lazy_load_got slots, which follow
-    /// one another from `got_start`, by name.
+    /// one another from `got_start`.
     pub syms: Vec<SymbolId>,
     pub got_start: u32,
     /// Where its record lies in this chunk, and its size.
@@ -26,8 +26,10 @@ pub struct LazyDylib {
     pub size: u32,
 }
 
-/// Each lazy dylib's record, which a load command of its own points at
-/// (dyld reads each record on its own). A record is 32-bit words - the offset of the dylib's install name
+/// Each lazy dylib's record, in the order of the image's first uses of
+/// the dylibs, as their load commands are; dyld finds each record by
+/// its load command and reads it on its own. A record is 32-bit
+/// words - the offset of the dylib's install name
 /// (from the record's start), the image offset of its flag word, the
 /// pointer format of its __lazy_load_got chain in the high half with
 /// flags in the low half (1: a weak dylib, which may be missing), the
@@ -38,7 +40,7 @@ pub struct LazyDylib {
 #[derive(Debug)]
 pub struct LazyLoadInfoSection {
     pub hdr: ChunkHeader,
-    /// The dylibs, in load order.
+    /// The dylibs, in the order of the image's first uses.
     pub dylibs: Vec<LazyDylib>,
 }
 

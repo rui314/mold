@@ -5103,53 +5103,42 @@ fn lazy_slot<E: Target>(id: crate::symbol::SymbolId, how: crate::target::LazyRef
 }
 
 /// Gives each lazy dylib the image uses its flag word, its symbols
-/// their __lazy_load_got slots and it its record. Returns each dylib's
-/// flag word's subsection, and each slot's index.
+/// their __lazy_load_got slots and it its record, all in the order of
+/// the image's first uses. Returns each dylib's flag word's subsection,
+/// and each slot's index.
 fn create_lazy_load_slots<E: Target>(
     ctx: &mut Context<E>,
     uses: &[LazyUseSite],
 ) -> (Vec<u32>, hashbrown::HashMap<LazySlot, u32>) {
     use crate::chunks::lazy_load_info::{LazyDylib, record_size};
 
-    // Each dylib's slots by name, the dylibs in load order: the order of
-    // the slots.
+    // The dylibs used, and each one's slots, which follow one another.
+    let mut used: Vec<usize> = Vec::new();
     let mut by_dylib: Vec<Vec<LazySlot>> = vec![Vec::new(); ctx.dylibs.len()];
+    let mut seen = hashbrown::HashSet::new();
     for &(_, _, id, how) in uses {
-        if let Some(FileId::Dylib(d)) = ctx.symbols[id].file() {
-            by_dylib[d as usize].push(lazy_slot::<E>(id, how));
+        let Some(FileId::Dylib(d)) = ctx.symbols[id].file() else { continue };
+        let slot = lazy_slot::<E>(id, how);
+        if seen.insert(slot) {
+            if by_dylib[d as usize].is_empty() {
+                used.push(d as usize);
+            }
+            by_dylib[d as usize].push(slot);
         }
     }
-    for list in &mut by_dylib {
-        list.sort_unstable_by_key(|&(id, own)| (ctx.symbols[id].name(), own));
-        list.dedup();
-    }
-    let mut used: Vec<usize> = (0..ctx.dylibs.len()).filter(|&d| !by_dylib[d].is_empty()).collect();
-    used.sort_by(|&a, &b| {
-        let (da, db) = (&ctx.dylibs[a], &ctx.dylibs[b]);
-        da.load_order.cmp(&db.load_order).then_with(|| da.install_name.cmp(&db.install_name))
-    });
 
-    // The flag words, by install name, ahead of __dyld_private.
     let mut flags = vec![u32::MAX; ctx.dylibs.len()];
-    let mut by_name = used.clone();
-    by_name.sort_by(|&a, &b| ctx.dylibs[a].install_name.cmp(&ctx.dylibs[b].install_name));
-    for d in by_name {
-        let isec = add_data_word(ctx, 4);
+    let mut index = hashbrown::HashMap::new();
+    let mut slots = Vec::new();
+    let mut offset = 0;
+    for d in used {
+        let flag = add_data_word(ctx, 4);
         let install_name = &ctx.dylibs[d].install_name;
         let leaf = install_name.rsplit(|&c| c == b'/').next().unwrap_or(install_name);
         let name = crate::util::leak_bytes([b"_lazyLoadFlag$", leaf].concat());
-        ctx.extra_local_syms.push((name, isec));
-        flags[d] = isec;
-    }
-    let private = ctx.stub_helper.dyld_private_isec;
-    if let Some(i) = ctx.data_blobs.iter().position(|b| b.isec == private) {
-        let blob = ctx.data_blobs.remove(i);
-        ctx.data_blobs.push(blob);
-    }
+        ctx.extra_local_syms.push((name, flag));
+        flags[d] = flag;
 
-    let mut index = hashbrown::HashMap::new();
-    let mut slots = Vec::new();
-    for &d in &used {
         let got_start = slots.len() as u32;
         let list = std::mem::take(&mut by_dylib[d]);
         for &(id, own) in &list {
@@ -5162,24 +5151,19 @@ fn create_lazy_load_slots<E: Target>(
             slots.push((id, name));
         }
         let syms: Vec<_> = list.into_iter().map(|(id, _)| id).collect();
-        let (flag, size) = (flags[d], record_size(ctx, &ctx.dylibs[d].install_name, &syms));
+        let size = record_size(ctx, &ctx.dylibs[d].install_name, &syms);
         let dylib = d as u32;
-        ctx.lazy_load_info.dylibs.push(LazyDylib { dylib, flag, syms, got_start, offset: 0, size });
+        ctx.lazy_load_info.dylibs.push(LazyDylib { dylib, flag, syms, got_start, offset, size });
+        offset += size;
     }
     ctx.lazy_load_got.slots = slots;
-    // The records go in the reverse order.
-    let mut offset = 0;
-    for d in ctx.lazy_load_info.dylibs.iter_mut().rev() {
-        d.offset = offset;
-        offset += d.size;
-    }
     ctx.lazy_load_info.hdr.size = offset as u64;
     (flags, index)
 }
 
-/// Makes the helpers, laid out by name: one per symbol for calls, and
-/// one per symbol and register for GOT loads, or per load in arm64
-/// frameless code.
+/// Makes the helpers, in the order of the image's first uses: one per
+/// symbol for calls, and one per symbol and register for GOT loads, or
+/// per load in arm64 frameless code.
 fn create_lazy_helpers<E: Target>(
     ctx: &mut Context<E>,
     uses: &[LazyUseSite],
@@ -5192,7 +5176,8 @@ fn create_lazy_helpers<E: Target>(
     let mut helpers: Vec<LazyHelper> = Vec::new();
     let mut index: hashbrown::HashMap<(crate::symbol::SymbolId, LazyUse), usize> =
         hashbrown::HashMap::new();
-    let mut sites = Vec::new();
+    let mut sites = hashbrown::HashMap::new();
+    let mut size = 0;
     for &(isec, offset, id, how) in uses {
         let kind = match how {
             LazyRef::Call => LazyUse::Call,
@@ -5224,28 +5209,20 @@ fn create_lazy_helpers<E: Target>(
             let Some(FileId::Dylib(d)) = ctx.symbols[id].file() else { unreachable!() };
             let (flag, slot) = (flags[d as usize], slots[&lazy_slot::<E>(id, how)]);
             let name = crate::util::leak_bytes(name);
-            helpers.push(LazyHelper { sym: id, kind, name, flag, slot, offset: 0 });
+            helpers.push(LazyHelper { sym: id, kind, name, flag, slot, offset: size });
+            size += E::lazy_helper_size(kind);
             helpers.len() - 1
         });
         if how != LazyRef::Call {
-            sites.push(((isec, offset), i));
+            sites.insert((isec, offset), i as u32);
         }
     }
 
-    let mut sorted: Vec<(usize, LazyHelper)> = helpers.into_iter().enumerate().collect();
-    sorted.sort_by_key(|(_, h)| h.name);
-    let mut rank = vec![0; sorted.len()];
-    let mut offset = 0;
-    for (r, (i, h)) in sorted.iter_mut().enumerate() {
-        rank[*i] = r as u32;
-        h.offset = offset;
-        offset += E::lazy_helper_size(h.kind);
-        if h.kind == LazyUse::Call {
-            ctx.sym_aux_mut(h.sym).lazy_stub_idx = r as u32;
-        }
+    for (i, h) in helpers.iter().enumerate().filter(|(_, h)| h.kind == LazyUse::Call) {
+        ctx.sym_aux_mut(h.sym).lazy_stub_idx = i as u32;
     }
-    ctx.lazy_helpers.sites = sites.into_iter().map(|(site, i)| (site, rank[i])).collect();
-    ctx.lazy_helpers.helpers = sorted.into_iter().map(|(_, h)| h).collect();
+    ctx.lazy_helpers.sites = sites;
+    ctx.lazy_helpers.helpers = helpers;
 }
 
 /// Lays out __stubs and __got in ld-prime's order rather than in the

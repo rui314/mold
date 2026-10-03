@@ -58,12 +58,39 @@ else
   grep -q '_fdata$lazyGOT$loadHelper_rax' $t/nm
 fi
 
-# The record: the install name's offset, the flag's and the first
-# slot's image offsets, the chain's pointer format, and the symbols.
-otool -l $t/exe | grep -A3 'cmd LC_LAZY_LOAD_DYLIB_INFO' | grep dataoff | head -1 > $t/rec
-off=$(awk '{print $2}' $t/rec)
-xxd -s $off -l 40 -p $t/exe | tr -d '\n' > $t/bytes
-grep -q '^24000000........00000600........0300000018000000' $t/bytes
+# Each dylib's record: its install name, the addresses of its flag word
+# and of its chain's first __lazy_load_got slot, the chain's pointer
+# format (DYLD_CHAINED_PTR_64_OFFSET, not weak), and the symbols the
+# program uses, which the chain binds in turn. Records and symbols may
+# come in any order.
+python3 - $t/exe > $t/recs <<'EOF'
+import struct, sys
+d = open(sys.argv[1], 'rb').read()
+off = 32
+for _ in range(struct.unpack_from('<I', d, 16)[0]):
+    cmd, size = struct.unpack_from('<II', d, off)
+    if cmd == 0x19 and d[off + 8:off + 24].rstrip(b'\0') == b'__TEXT':
+        base = struct.unpack_from('<Q', d, off + 24)[0]
+    if cmd == 0x3a:
+        rec = struct.unpack_from('<II', d, off + 8)[0]
+        name, flag, fmt, chain, n, arr = struct.unpack_from('<6I', d, rec)
+        cstr = lambda o: d[rec + o:d.index(b'\0', rec + o)].decode()
+        syms = sorted({cstr(struct.unpack_from('<I', d, rec + arr + 4 * i)[0]) for i in range(n)})
+        print(cstr(name), ' '.join(syms), hex(fmt), hex(base + flag), hex(base + chain))
+    off += size
+EOF
+nm $t/exe > $t/syms
+addrs() {
+  awk -v s="$1" '$3 == s { print $1 }' $t/syms | while read a; do printf '0x%x\n' 0x$a; done
+}
+grep -q "^@rpath/libfoo.dylib _bar _fdata _foo 0x60000 $(addrs '_lazyLoadFlag$libfoo.dylib') " $t/recs
+grep -q "^@rpath/libqux.dylib _qux 0x60000 $(addrs '_lazyLoadFlag$libqux.dylib') " $t/recs
+foo_chain=$(awk '$1 == "@rpath/libfoo.dylib" { print $NF }' $t/recs)
+qux_chain=$(awk '$1 == "@rpath/libqux.dylib" { print $NF }' $t/recs)
+for s in _bar _fdata _foo; do addrs "$s\$lazyGOT"; done > $t/foo-slots
+grep -qx $foo_chain $t/foo-slots
+addrs '_qux$lazyGOT' > $t/qux-slots
+grep -qx $qux_chain $t/qux-slots
 
 # The dylibs load as the program first uses them.
 $t/exe > $t/out
