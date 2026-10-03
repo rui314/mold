@@ -239,17 +239,89 @@ pub struct Entry {
 }
 
 /// A fixup of an entry: its place, target and addend, and what its kind
-/// carries besides - the entry subtracted (a difference), or the second
-/// instruction's distance in instructions and the load size (the fused
-/// arm64 pairs).
+/// carries besides - the entry subtracted (a difference), or an arm64
+/// page offset's access size and, for the fused pairs, the distance to
+/// the second instruction. `T` refers to an entry: by its index in the
+/// record, or as the writer does until it numbers the entries.
 #[derive(Clone, Copy, Debug)]
-pub struct Fixup {
+pub struct Fixup<T = u32> {
     pub offset: u32,
-    pub target: u32,
+    pub target: T,
     pub kind: u16,
     pub addend: i64,
-    pub from: u32,
-    pub other: u8,
+    pub from: Option<T>,
+    /// How many bytes a page offset's load or store moves (1 for an add).
+    pub scale: u8,
+    /// The second instruction's distance from the first, in instructions.
+    pub second: u8,
+}
+
+/// Bit 10 of a fixup's third word: bits 11-31 are the index of its
+/// addend among the large ones.
+const LARGE_ADDEND: u32 = 0x400;
+
+impl Fixup {
+    /// Reads a fixup's 16 bytes: its offset and target, then its kind
+    /// (bits 0-9) and its addend (bits 11-31, or see LARGE_ADDEND), and
+    /// a last word its kind uses as extras_usage says: for the rest of
+    /// the addend, for the entry subtracted, or for the second
+    /// instruction's distance (byte 0) and the access size (byte 1).
+    fn read(c: &[u8], large_addends: &[i64]) -> Self {
+        let (w2, w3) = (read32(c, 8), read32(c, 12));
+        let kind = (w2 & 0x3ff) as u16;
+        let usage = extras_usage(kind);
+        let addend = if w2 & LARGE_ADDEND != 0 {
+            large_addends[(w2 >> 11) as usize]
+        } else {
+            match usage {
+                2 => w3 as i32 as i64,
+                3 => sign_extend(((w2 >> 11) | ((w3 >> 25) << 21)) as u64, 28),
+                4..=8 => sign_extend(((w2 >> 11) | ((w3 >> 16) << 21)) as u64, 32),
+                _ => sign_extend((w2 >> 11) as u64, 21),
+            }
+        };
+        let arm64 = (4..=8).contains(&usage);
+        Self {
+            offset: read32(c, 0),
+            target: read32(c, 4),
+            kind,
+            addend,
+            from: (usage == 1).then_some(w3),
+            scale: if arm64 { (w3 >> 8) as u8 } else { 0 },
+            second: if arm64 { w3 as u8 } else { 0 },
+        }
+    }
+
+    /// Writes the fixup's 16 bytes (see read). An addend too large for
+    /// its kind's bits goes among the `large` ones, each value once.
+    pub(crate) fn write(&self, out: &mut [u8], large: &mut Vec<i64>) {
+        let usage = extras_usage(self.kind);
+        let kind = self.kind as u32;
+        let addend = self.addend;
+        let fits = |bits: u32| addend >= -(1 << (bits - 1)) && addend < 1 << (bits - 1);
+        let extras = match usage {
+            1 => self.from.unwrap_or(0),
+            4..=8 => (self.scale as u32) << 8 | self.second as u32,
+            _ => 0,
+        };
+        let (low, high) = (addend as u32 & 0x1f_ffff, addend as u32 >> 21);
+        let (w2, w3) = match usage {
+            2 if fits(32) => (kind, addend as u32),
+            4..=8 if fits(32) => (kind | low << 11, extras | high << 16),
+            0 | 1 | 3 if fits(21) => (kind | low << 11, extras),
+            _ => {
+                let i = large.iter().position(|&v| v == addend).unwrap_or_else(|| {
+                    large.push(addend);
+                    large.len() - 1
+                });
+                (kind | LARGE_ADDEND | (i as u32) << 11, extras)
+            }
+        };
+        out[0..4].copy_from_slice(&self.offset.to_le_bytes());
+        out[4..8].copy_from_slice(&self.target.to_le_bytes());
+        out[8..12].copy_from_slice(&w2.to_le_bytes());
+        out[12..16].copy_from_slice(&w3.to_le_bytes());
+    }
 }
 
 /// A section that is none of ld-prime's standard ones.
@@ -366,9 +438,7 @@ impl MergeableRecord {
         let blob = &file[base..base + size];
         let r = Reader { file, base, blob };
         let symbols = r.symbol_names();
-        let large_addends: Vec<i64> =
-            r.array(header::LARGE_ADDENDS, 8).chunks(8).map(|c| read64(c, 0) as i64).collect();
-        let fixups = r.fixups(&large_addends);
+        let fixups = r.fixups();
         let sections: Vec<CustomSection> = r
             .array(header::SECTIONS, SECTION_SIZE)
             .chunks(SECTION_SIZE)
@@ -476,35 +546,12 @@ impl Reader<'_> {
             .collect()
     }
 
-    fn fixups(&self, large_addends: &[i64]) -> Vec<Fixup> {
+    /// The fixups, and the addends too large for theirs.
+    fn fixups(&self) -> Vec<Fixup> {
+        let large: Vec<i64> =
+            self.array(header::LARGE_ADDENDS, 8).chunks(8).map(|c| read64(c, 0) as i64).collect();
         let table = self.array(header::FIXUPS, FIXUP_SIZE);
-        table
-            .chunks(FIXUP_SIZE)
-            .map(|c| {
-                let w2 = read32(c, 8);
-                let w3 = read32(c, 12);
-                let kind = (w2 & 0x3ff) as u16;
-                let usage = extras_usage(kind);
-                let addend = if w2 & 0x400 != 0 {
-                    large_addends[(w2 >> 11) as usize]
-                } else {
-                    match usage {
-                        2 => w3 as i32 as i64,
-                        3 => sign_extend(((w2 >> 11) | ((w3 >> 25) << 21)) as u64, 28),
-                        4..=8 => sign_extend(((w2 >> 11) | ((w3 >> 16) << 21)) as u64, 32),
-                        _ => sign_extend((w2 >> 11) as u64, 21),
-                    }
-                };
-                Fixup {
-                    offset: read32(c, 0),
-                    target: read32(c, 4),
-                    kind,
-                    addend,
-                    from: if usage == 1 { w3 } else { 0 },
-                    other: if (4..=8).contains(&usage) { w3 as u8 } else { 0 },
-                }
-            })
-            .collect()
+        table.chunks(FIXUP_SIZE).map(|c| Fixup::read(c, &large)).collect()
     }
 
     /// A DylibFileInfoRO_2 at blob offset `at`, and its size.
@@ -1169,7 +1216,7 @@ impl<E: Target> Synth<'_, E> {
             }
             fk::DIFF32 | fk::DIFF64 => {
                 let size = if f.kind == fk::DIFF64 { 8 } else { 4 };
-                let Some(from) = self.target_sym(f.from) else { return false };
+                let Some(from) = f.from.and_then(|e| self.target_sym(e)) else { return false };
                 out.extend(self.diff_pair(sect, off, size, from, sym, f.addend));
             }
             fk::PCREL_DELTA32 => {
@@ -1202,7 +1249,7 @@ impl<E: Target> Synth<'_, E> {
                 out.push(MachRel { r_address: at, bits });
             }
         };
-        let second = off + 4 * f.other as u32;
+        let second = off + 4 * f.second as u32;
         match f.kind {
             ARM64_B26 | ARM64_B26_ADDEND => {
                 self.set_insn(sect, off, self.insn(sect, off) & 0xfc00_0000);
@@ -1354,7 +1401,8 @@ impl<E: Target> Synth<'_, E> {
             let off = (entry_off + f.offset as u64) as u32;
             match f.kind {
                 fk::DIFF32 | fk::DIFF64 => {
-                    let val = self.addr(f.target, f.addend).wrapping_sub(self.addr(f.from, 0));
+                    let val =
+                        self.addr(f.target, f.addend).wrapping_sub(self.addr(f.from.unwrap(), 0));
                     let size = if f.kind == fk::DIFF64 { 8 } else { 4 };
                     self.put(sect, off, size, val);
                 }

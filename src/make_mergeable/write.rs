@@ -1,6 +1,6 @@
 //! The record's bytes, laid out as ld-prime writes them.
 
-use super::{Content, DylibRecord, MergeableRecord, OutFixup};
+use super::{Content, DylibRecord, MergeableRecord};
 use crate::context::Context;
 use crate::macho::*;
 use crate::mergeable::{
@@ -246,7 +246,7 @@ impl MergeableRecord {
         w.out[12] = self.entries.iter().map(|e| e.kind).max().unwrap_or(0);
         w.out[13] = self.entries.iter().map(|e| e.content_type).max().unwrap_or(0);
         let max_kind = |arch: bool| {
-            let kinds = self.fixups.iter().map(|(f, _, _)| f.kind);
+            let kinds = self.fixups.iter().map(|f| f.kind);
             kinds.filter(|&k| (k >= 0x80) == arch).max().unwrap_or(0)
         };
         w.out[14..16].copy_from_slice(&max_kind(false).to_le_bytes());
@@ -264,13 +264,9 @@ impl MergeableRecord {
         let at = w.reserve(self.fixups.len() * FIXUP_SIZE);
         w.table(header::FIXUPS, at, self.fixups.len());
         let mut large: Vec<i64> = Vec::new();
-        for (i, &(f, target, from)) in self.fixups.iter().enumerate() {
+        for (i, f) in self.fixups.iter().enumerate() {
             let at = at + i * FIXUP_SIZE;
-            let (w2, w3) = encode_fixup(&f, from, &mut large);
-            w.put32(at, f.offset);
-            w.put32(at + 4, target);
-            w.put32(at + 8, w2);
-            w.put32(at + 12, w3);
+            f.write(&mut w.out[at..at + FIXUP_SIZE], &mut large);
         }
         let at = w.align(8);
         for v in &large {
@@ -404,43 +400,6 @@ fn write_dylib_record(w: &mut Writer, d: &DylibRecord) {
             let pos = w.out.len();
             w.out.resize(pos + 16, 0);
             w.cstrings.push((pos, s.clone()));
-        }
-    }
-}
-
-/// A fixup's third and fourth words: its kind and the addend or the
-/// index of a large one, and what its kind keeps besides (see
-/// mergeable::extras_usage).
-fn encode_fixup(f: &OutFixup, from: u32, large: &mut Vec<i64>) -> (u32, u32) {
-    let usage = crate::mergeable::extras_usage(f.kind);
-    let kind = f.kind as u32;
-    let fits = |bits: u32| f.addend >= -(1 << (bits - 1)) && f.addend < 1 << (bits - 1);
-    let large_index = |large: &mut Vec<i64>| {
-        let i = large.iter().position(|&v| v == f.addend).unwrap_or_else(|| {
-            large.push(f.addend);
-            large.len() - 1
-        });
-        kind | 0x400 | (i as u32) << 11
-    };
-    match usage {
-        2 if fits(32) => (kind, f.addend as u32),
-        2 => (large_index(large), 0),
-        4..=8 => {
-            let extras = (f.scale as u32) << 8;
-            if fits(32) {
-                let a = f.addend as u32;
-                (kind | (a & 0x1f_ffff) << 11, extras | (a >> 21) << 16)
-            } else {
-                (large_index(large), extras)
-            }
-        }
-        _ => {
-            let w3 = if usage == 1 { from } else { 0 };
-            if fits(21) {
-                (kind | ((f.addend as u32) & 0x1f_ffff) << 11, w3)
-            } else {
-                (large_index(large), w3)
-            }
         }
     }
 }

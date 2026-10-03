@@ -28,7 +28,9 @@ use crate::fatal;
 use crate::input_files::{FileId, ObjectFile};
 use crate::input_sections::{InputSection, NO_REPLACEMENT, Reloc, RelocTarget};
 use crate::macho::*;
-use crate::mergeable::{CustomSection, ctype, fk, header, kind, scope, standard_content_type};
+use crate::mergeable::{
+    CustomSection, Fixup, ctype, fk, header, kind, scope, standard_content_type,
+};
 use crate::symbol::SymbolId;
 use crate::target::Target;
 
@@ -123,21 +125,12 @@ enum To {
     Sym(SymbolId),
 }
 
-#[derive(Clone, Copy, Debug)]
-struct OutFixup {
-    offset: u32,
-    target: To,
-    kind: u16,
-    addend: i64,
-    /// The entry a difference subtracts.
-    from: Option<To>,
-    /// The size of the access a page offset's instruction makes.
-    scale: u8,
-}
+/// A fixup as the writer makes it, of entries not yet numbered.
+type OutFixup = Fixup<To>;
 
 impl OutFixup {
     fn new(offset: u32, target: To, kind: u16, addend: i64) -> Self {
-        Self { offset, target, kind, addend, from: None, scale: 0 }
+        Self { offset, target, kind, addend, from: None, scale: 0, second: 0 }
     }
 }
 
@@ -225,8 +218,8 @@ struct DebugRecord {
 /// The entries and tables, in their final order.
 struct MergeableRecord {
     entries: Vec<OutEntry>,
-    /// Each fixup with its target and subtracted entry numbered.
-    fixups: Vec<(OutFixup, u32, u32)>,
+    /// The fixups, of the entries numbered, each entry's in a run.
+    fixups: Vec<Fixup>,
     first_fixup: Vec<u32>,
     sections: Vec<CustomSection>,
     own: DylibRecord,
@@ -948,7 +941,9 @@ impl<'a, E: Target> Builder<'a, E> {
             first_fixup.push(fixups.len() as u32);
             entry.fixups.sort_by_key(|f| f.offset);
             for f in &entry.fixups {
-                fixups.push((*f, number(f.target), f.from.map_or(0, number)));
+                let Fixup { offset, kind, addend, scale, second, .. } = *f;
+                let (target, from) = (number(f.target), f.from.map(number));
+                fixups.push(Fixup { offset, target, kind, addend, from, scale, second });
             }
         }
         MergeableRecord {
