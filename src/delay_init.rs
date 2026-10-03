@@ -11,7 +11,7 @@ use rayon::prelude::*;
 
 use crate::chunks::delay_init::{DelayHelper, DelayStub, DelayUse, DlopenHelper};
 use crate::context::Context;
-use crate::input_files::{self, FileId};
+use crate::input_files::FileId;
 use crate::macho::*;
 use crate::symbol::{NO_IDX, SymbolId};
 use crate::target::{LazyRef, Target};
@@ -59,9 +59,8 @@ pub fn create_delay_init<E: Target>(ctx: &mut Context<E>) {
 }
 
 /// The references to delay-init dylibs' symbols from live subsections,
-/// in input order, once the ones that can't be delayed are reported:
-/// by the place of the reference, or for a class an __objc_classrefs
-/// slot points at, by the class.
+/// in input order, once the ones that can't be delayed are reported (an
+/// __objc_classrefs slot of a class among them).
 fn delay_uses<E: Target>(ctx: &Context<E>) -> Vec<DelayUseSite> {
     let uses: Vec<DelayUseSite> = (0..ctx.isecs.len())
         .into_par_iter()
@@ -78,30 +77,11 @@ fn delay_uses<E: Target>(ctx: &Context<E>) -> Vec<DelayUseSite> {
         })
         .collect();
     for &(isec, _, id, how) in &uses {
-        if how != LazyRef::Unsupported {
-            continue;
+        if how == LazyRef::Unsupported {
+            let (sym, subsec) = (&ctx.symbols[id], ctx.subsec_name(isec as usize));
+            let subsec = crate::error::raw(&subsec);
+            crate::error!("use of '{sym}' in '{subsec}' cannot be delayed");
         }
-        let sym = &ctx.symbols[id];
-        let sec = &ctx.isecs[isec as usize];
-        let hdr = ctx.hdr_of(sec);
-        if hdr.sectname() == b"__objc_classrefs"
-            && let Some(class) = sym.name().strip_prefix(b"_OBJC_CLASS_$_")
-        {
-            let file = crate::error::RawPath::raw(ctx.objs[sec.file as usize].mf.name.as_path());
-            let class = crate::error::raw(class);
-            crate::error!(
-                "use of ObjC class '{class}' in '{file}' cannot be delayed when targeting an older OS versions"
-            );
-            continue;
-        }
-        let split = ctx.objs[sec.file as usize].subsections_via_symbols;
-        let subsec = if input_files::is_record_list(hdr, split) {
-            b"anon"[..].into()
-        } else {
-            ctx.subsec_name(isec as usize)
-        };
-        let subsec = crate::error::raw(&subsec);
-        crate::error!("use of '{sym}' in '{subsec}' cannot be delayed.");
     }
     crate::error::checkpoint();
     uses
