@@ -3999,21 +3999,13 @@ pub fn check_common_conflicts<E: Target>(ctx: &Context<E>) {
 }
 
 /// The imports an object references, each once, and whether weakly
-/// (its undefined symbol is N_WEAK_REF), in the order of ld-prime's
-/// fixups: section by section, each section's relocations as the
-/// object lists them, which an assembler does from the last address
-/// back.
+/// (its undefined symbol is N_WEAK_REF).
 fn import_references<E: Target>(ctx: &Context<E>, obj_idx: usize) -> Vec<(SymbolId, bool)> {
     let obj = &ctx.objs[obj_idx];
-    let mut subsecs = obj.subsecs.clone();
-    subsecs.sort_by_key(|&id| {
-        let isec = &ctx.isecs[id as usize];
-        (isec.shndx, std::cmp::Reverse(isec.input_addr))
-    });
     let mut seen = hashbrown::HashSet::new();
     let mut out = Vec::new();
-    for id in subsecs {
-        for rel in input_files::isec_relocs_of(&ctx.objs, &ctx.isecs[id as usize]).iter().rev() {
+    for &id in &obj.subsecs {
+        for rel in input_files::isec_relocs_of(&ctx.objs, &ctx.isecs[id as usize]) {
             let RelocTarget::Sym(idx) = rel.target() else { continue };
             let sym_id = obj.symbols[idx as usize];
             if ctx.symbols[sym_id].is_imported() && seen.insert(sym_id) {
@@ -4024,13 +4016,12 @@ fn import_references<E: Target>(ctx: &Context<E>, obj_idx: usize) -> Vec<(Symbol
     out
 }
 
-/// -no_weak_imports and -weak_reference_mismatches error: ld-prime
-/// goes through each object's imports (see import_references), and
-/// under -no_weak_imports names each one an object references weakly,
-/// while under -weak_reference_mismatches error it names the object
-/// that references one otherwise than the objects before it did (where
-/// any strong reference makes a strong one). It does so once it has
-/// found no undefined symbol, before looking for duplicates.
+/// -no_weak_imports and -weak_reference_mismatches error go through each
+/// object's imports (see import_references): -no_weak_imports names
+/// each one an object references weakly, and -weak_reference_mismatches
+/// error names the object that references one otherwise than the
+/// objects before it did (where any strong reference makes a strong
+/// one).
 pub fn check_weak_imports<E: Target>(ctx: &Context<E>) {
     use crate::cmdline::WeakRefMismatches;
     let mismatches = ctx.args.weak_reference_mismatches == WeakRefMismatches::Error;
