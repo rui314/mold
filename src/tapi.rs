@@ -115,110 +115,106 @@ fn parse_json(
         fatal!("{}: unsupported .tbd version", file.raw());
     }
 
-    let targets_of = |lib: &'static Value| -> Vec<Target> {
-        let info = list(lib, "target_info").iter();
-        info.filter_map(|t| t.get("target").and_then(Value::as_str)).filter_map(target).collect()
-    };
-    let target_of = |lib| select_target(arch, platform, &targets_of(lib)).0;
-    // A group without targets applies to all of the library's.
-    let applies = |group: &'static Value, want: Target| {
-        group.get("targets").is_none() || strs(group, "targets").any(|t| target(t) == Some(want))
-    };
-
-    // Adds one library object's symbols for its target.
-    let add_symbols = |tbd: &mut TbdFile, lib: &'static Value, target: Target| {
-        for key in ["exported_symbols", "reexported_symbols"] {
-            for group in list(lib, key).iter().filter(|g| applies(g, target)) {
-                for section in ["data", "text"] {
-                    let Some(kinds) = group.get(section) else { continue };
-                    tbd.exports.extend(strs(kinds, "global").map(str::as_bytes));
-                    tbd.weak_exports.extend(strs(kinds, "weak").map(str::as_bytes));
-                    tbd.tlv_exports.extend(strs(kinds, "thread_local").map(str::as_bytes));
-                    for name in strs(kinds, "objc_class") {
-                        push_objc_class(&mut tbd.exports, name, false);
-                    }
-                    for name in strs(kinds, "objc_eh_type") {
-                        push_objc_class(&mut tbd.exports, name, true);
-                    }
-                    for name in strs(kinds, "objc_ivar") {
-                        tbd.exports.push(leak_name("_OBJC_IVAR_$_", name));
-                    }
-                }
-            }
-        }
-    };
-
-    // One library object (the main library or an inlined re-export) as
-    // a TbdFile: its install name, version, flags, symbols and the
-    // names it re-exports, for the requested target.
-    let parse_library = |lib: &'static Value| -> Option<TbdFile> {
-        let target = target_of(lib);
-        if !targets_of(lib).contains(&target) {
-            return None;
-        }
-        let mut tbd = TbdFile {
-            current_version: crate::macho::encode_version(1, 0, 0),
-            compatibility_version: crate::macho::encode_version(1, 0, 0),
-            ..TbdFile::default()
-        };
-        // TAPI takes the install name and versions from the first entry
-        // of their lists, whatever its targets.
-        let first = |key: &str, field: &str| list(lib, key).first()?.get(field)?.as_str();
-        if let Some(s) = first("install_names", "name") {
-            tbd.install_name = s.as_bytes();
-        }
-        if let Some(s) = first("current_versions", "version") {
-            tbd.current_version = parse_version(s);
-        }
-        if let Some(s) = first("compatibility_versions", "version") {
-            tbd.compatibility_version = parse_version(s);
-        }
-        if let Some(s) = (list(lib, "target_info").iter())
-            .find(|t| t["target"].as_str().and_then(self::target) == Some(target))
-            .and_then(|t| t.get("min_deployment"))
-            .and_then(Value::as_str)
-        {
-            tbd.minos = parse_version(s);
-        }
-        for group in list(lib, "parent_umbrellas") {
-            if applies(group, target) {
-                tbd.parent_umbrella =
-                    group.get("umbrella").and_then(Value::as_str).map(str::as_bytes);
-            }
-        }
-        for group in list(lib, "allowable_clients") {
-            if applies(group, target) {
-                tbd.allowable_clients.extend(strs(group, "clients").map(str::as_bytes));
-            }
-        }
-        add_symbols(&mut tbd, lib, target);
-        for group in list(lib, "reexported_libraries").iter().filter(|g| applies(g, target)) {
-            for name in strs(group, "names").map(str::as_bytes) {
-                if !tbd.reexports.contains(&name) {
-                    tbd.reexports.push(name);
-                }
-            }
-        }
-        Some(tbd)
-    };
-
     let Some(main) = root.get("main_library") else {
         fatal!("{}: no main_library in .tbd file", file.raw());
     };
-    let mut tbd = parse_library(main)?;
-    tbd.platforms = select_target(arch, platform, &targets_of(main)).1;
+    let mut tbd = parse_json_library(main, arch, platform)?;
+    tbd.platforms = select_target(arch, platform, &json_targets(main)).1;
     // The re-exported libraries inlined in "libraries" are documents
     // of their own.
-    for lib in list(root, "libraries") {
-        if let Some(doc) = parse_library(lib) {
-            tbd.documents.push(doc);
-        }
-    }
+    let libs = list(root, "libraries").iter();
+    tbd.documents = libs.filter_map(|lib| parse_json_library(lib, arch, platform)).collect();
 
     if tbd.install_name.is_empty() {
         fatal!("{}: no install name in .tbd file", file.raw());
     }
     Some(tbd)
+}
+
+/// The targets a library object of a TBD v5 file has.
+fn json_targets(lib: &'static Value) -> Vec<Target> {
+    let info = list(lib, "target_info").iter();
+    info.filter_map(|t| t.get("target").and_then(Value::as_str)).filter_map(target).collect()
+}
+
+/// Whether a group of a library object's list applies to `want`: a
+/// group without targets applies to all of the library's.
+fn json_applies(group: &'static Value, want: Target) -> bool {
+    group.get("targets").is_none() || strs(group, "targets").any(|t| target(t) == Some(want))
+}
+
+/// One library object of a TBD v5 file (the main library or an inlined
+/// re-export) as a TbdFile: its install name, version, flags, symbols
+/// and the names it re-exports, read for the architecture `arch` of a
+/// link for `platform`. None if it has no target on the architecture.
+fn parse_json_library(lib: &'static Value, arch: &'static str, platform: u32) -> Option<TbdFile> {
+    let targets = json_targets(lib);
+    let target = select_target(arch, platform, &targets).0;
+    if !targets.contains(&target) {
+        return None;
+    }
+    let mut tbd = TbdFile {
+        current_version: crate::macho::encode_version(1, 0, 0),
+        compatibility_version: crate::macho::encode_version(1, 0, 0),
+        ..TbdFile::default()
+    };
+    // TAPI takes the install name and versions from the first entry
+    // of their lists, whatever its targets.
+    let first = |key: &str, field: &str| list(lib, key).first()?.get(field)?.as_str();
+    if let Some(s) = first("install_names", "name") {
+        tbd.install_name = s.as_bytes();
+    }
+    if let Some(s) = first("current_versions", "version") {
+        tbd.current_version = parse_version(s);
+    }
+    if let Some(s) = first("compatibility_versions", "version") {
+        tbd.compatibility_version = parse_version(s);
+    }
+    if let Some(s) = (list(lib, "target_info").iter())
+        .find(|t| t["target"].as_str().and_then(self::target) == Some(target))
+        .and_then(|t| t.get("min_deployment"))
+        .and_then(Value::as_str)
+    {
+        tbd.minos = parse_version(s);
+    }
+    let groups = |key| list(lib, key).iter().filter(move |g| json_applies(g, target));
+    for group in groups("parent_umbrellas") {
+        tbd.parent_umbrella = group.get("umbrella").and_then(Value::as_str).map(str::as_bytes);
+    }
+    for group in groups("allowable_clients") {
+        tbd.allowable_clients.extend(strs(group, "clients").map(str::as_bytes));
+    }
+    for group in groups("exported_symbols").chain(groups("reexported_symbols")) {
+        add_json_symbols(&mut tbd, group);
+    }
+    for group in groups("reexported_libraries") {
+        for name in strs(group, "names").map(str::as_bytes) {
+            if !tbd.reexports.contains(&name) {
+                tbd.reexports.push(name);
+            }
+        }
+    }
+    Some(tbd)
+}
+
+/// Adds the symbols a group of a library object's exported or
+/// re-exported symbols lists, in its "data" and "text" sections.
+fn add_json_symbols(tbd: &mut TbdFile, group: &'static Value) {
+    for section in ["data", "text"] {
+        let Some(kinds) = group.get(section) else { continue };
+        tbd.exports.extend(strs(kinds, "global").map(str::as_bytes));
+        tbd.weak_exports.extend(strs(kinds, "weak").map(str::as_bytes));
+        tbd.tlv_exports.extend(strs(kinds, "thread_local").map(str::as_bytes));
+        for name in strs(kinds, "objc_class") {
+            push_objc_class(&mut tbd.exports, name, false);
+        }
+        for name in strs(kinds, "objc_eh_type") {
+            push_objc_class(&mut tbd.exports, name, true);
+        }
+        for name in strs(kinds, "objc_ivar") {
+            tbd.exports.push(leak_name("_OBJC_IVAR_$_", name));
+        }
+    }
 }
 
 /// Strips a YAML scalar's surrounding quotes, if any.
@@ -230,14 +226,9 @@ fn unquote(s: &str) -> &str {
         .unwrap_or(s)
 }
 
+/// The position of the first `needle` in `bytes` at or after `from`.
 fn memchr_from(bytes: &[u8], needle: u8, from: usize) -> Option<usize> {
-    if from >= bytes.len() {
-        return None;
-    }
-    // SAFETY: memchr reads within the given range.
-    let p =
-        unsafe { libc::memchr(bytes.as_ptr().add(from).cast(), needle as i32, bytes.len() - from) };
-    if p.is_null() { None } else { Some(p as usize - bytes.as_ptr() as usize) }
+    memchr::memchr(needle, bytes.get(from..)?).map(|i| from + i)
 }
 
 fn parse_version(val: &str) -> u32 {
@@ -250,9 +241,9 @@ fn parse_version(val: &str) -> u32 {
 
 /// Parses a .tbd file as `parse` does, memoized. Stub parsing is pure
 /// string work over the mapped file, so results are cached by the
-/// file's address and the link's architecture and platform. The big SDK stubs (libSystem's tree,
-/// framework umbrellas) can be parsed once, in parallel, by prefetch()
-/// before the serial input loop needs them.
+/// file's address and the link's architecture and platform. The big SDK
+/// stubs (libSystem's tree, framework umbrellas) can be parsed once, in
+/// parallel, by prefetch() before the serial input loop needs them.
 pub fn parse_cached(mf: &'static MappedFile, arch: &'static str, platform: u32) -> Option<TbdFile> {
     type Cache = hashbrown::HashMap<(usize, &'static str, u32), Option<TbdFile>>;
     static CACHE: std::sync::Mutex<Option<Cache>> = std::sync::Mutex::new(None);
@@ -275,123 +266,132 @@ pub fn prefetch(
 }
 
 /// Parses a .tbd file for the architecture `arch` of a link for
-/// `platform`. None if the library has no target on the architecture,
-/// which makes ld-prime ignore the file.
+/// `platform`, keeping each of its libraries apart. None if the library
+/// has no target on the architecture, which makes ld-prime ignore the
+/// file.
 pub fn parse(mf: &MappedFile, arch: &'static str, platform: u32) -> Option<TbdFile> {
     let Ok(text): Result<&'static str, _> = std::str::from_utf8(mf.data()) else {
         fatal!("{}: invalid UTF-8 in .tbd file", mf.name.raw());
     };
-
     // TBD version 5 is JSON (tapi's current output, and what Xcode
     // writes for the "eager linking" stubs of frameworks built in the
     // same workspace); versions 1-4 are YAML.
     if text.trim_start().starts_with('{') {
-        return parse_json(&mf.name, text, arch, platform);
+        parse_json(&mf.name, text, arch, platform)
+    } else {
+        parse_yaml(&mf.name, text, arch, platform)
     }
+}
 
-    // The first document is the library itself; the others are the
-    // libraries it re-exports, inlined, each kept as a TbdFile of its
-    // own.
-    let mut main: Option<TbdFile> = None;
-    let mut documents: Vec<TbdFile> = Vec::new();
-
-    for (doc, fields) in yaml_documents(text).iter().enumerate() {
+/// Parses a TBD v1-4 file: YAML documents, the first the library itself
+/// and the others the libraries it re-exports, inlined.
+fn parse_yaml(
+    file: &Path,
+    text: &'static str,
+    arch: &'static str,
+    platform: u32,
+) -> Option<TbdFile> {
+    // The target a document is read for, with the platforms it has for
+    // the architecture, if it has a target on the architecture.
+    let select = |fields: &[YamlField]| {
         let top = || fields.iter().filter(|f| f.indent == 0 && !f.item);
         let (target, platforms) = select_target(arch, platform, &yaml_targets(top()));
-        let doc_active = yaml_matches(top(), target);
-        if doc == 0 && !doc_active {
-            return None;
-        }
-        if !doc_active {
-            continue;
-        }
-        let mut tbd = TbdFile {
-            current_version: crate::macho::encode_version(1, 0, 0),
-            compatibility_version: crate::macho::encode_version(1, 0, 0),
-            ..TbdFile::default()
-        };
-        let mut active = doc_active;
-        // The top-level key whose value the field is in: the symbols an
-        // "undefineds" section lists are the library's imports, which
-        // the link has no use for.
-        let mut section = "";
-        for (i, field) in fields.iter().enumerate() {
-            if field.indent == 0 && !field.item {
-                active = doc_active;
-                section = field.key;
-            }
-            if field.item {
-                let end = fields[i + 1..]
-                    .iter()
-                    .position(|f| f.indent <= field.indent)
-                    .map_or(fields.len(), |n| i + 1 + n);
-                active = doc_active && yaml_matches(fields[i..end].iter(), target);
-            }
-            if field.key == "install-name" {
-                tbd.install_name = unquote(field.value).as_bytes();
-            }
-            if !active || section == "undefineds" {
-                continue;
-            }
-            match field.key {
-                "current-version" => tbd.current_version = parse_version(unquote(field.value)),
-                "compatibility-version" => {
-                    tbd.compatibility_version = parse_version(unquote(field.value))
-                }
-                // Version 4 lists them per target group ("umbrella:",
-                // "clients:"), older versions directly.
-                "parent-umbrella" | "umbrella" if !field.value.is_empty() => {
-                    tbd.parent_umbrella = Some(unquote(field.value).as_bytes());
-                }
-                // Version 1 spells it allowed-clients.
-                "allowable-clients" | "allowed-clients" | "clients" => {
-                    tbd.allowable_clients.extend(field.items().map(str::as_bytes))
-                }
-                "symbols" => tbd.exports.extend(field.items().map(str::as_bytes)),
-                "weak-symbols" | "weak-def-symbols" => {
-                    tbd.weak_exports.extend(field.items().map(str::as_bytes))
-                }
-                "thread-local-symbols" => tbd.tlv_exports.extend(field.items().map(str::as_bytes)),
-                "libraries" | "re-exports" => {
-                    for name in field.items().map(str::as_bytes) {
-                        if !tbd.reexports.contains(&name) {
-                            tbd.reexports.push(name);
-                        }
-                    }
-                }
-                "objc-classes" => {
-                    for item in field.items() {
-                        push_objc_class(&mut tbd.exports, item, false);
-                    }
-                }
-                "objc-eh-types" => {
-                    for item in field.items() {
-                        push_objc_class(&mut tbd.exports, item, true);
-                    }
-                }
-                "objc-ivars" => {
-                    for item in field.items() {
-                        tbd.exports.push(leak_name("_OBJC_IVAR_$_", item));
-                    }
-                }
-                _ => {}
-            }
-        }
-        if doc == 0 {
-            tbd.platforms = platforms;
-            main = Some(tbd);
-        } else {
-            documents.push(tbd);
+        yaml_matches(top(), target).then_some((target, platforms))
+    };
+    let docs = yaml_documents(text);
+    let (target, platforms) = select(&docs[0])?;
+    let mut tbd = TbdFile { platforms, ..parse_yaml_document(&docs[0], target) };
+    for fields in &docs[1..] {
+        if let Some((target, _)) = select(fields) {
+            tbd.documents.push(parse_yaml_document(fields, target));
         }
     }
-
-    let mut tbd = main.unwrap_or_default();
-    tbd.documents = documents;
 
     if tbd.install_name.is_empty() {
-        fatal!("{}: no install-name in .tbd file", mf.name.raw());
+        fatal!("{}: no install-name in .tbd file", file.raw());
     }
     Some(tbd)
+}
+
+/// One YAML document of a .tbd file, read for `target`: the library's
+/// install name, versions, flags, symbols and the names it re-exports,
+/// as the target groups that apply to `target` list them.
+fn parse_yaml_document(fields: &[YamlField], target: Target) -> TbdFile {
+    let mut tbd = TbdFile {
+        current_version: crate::macho::encode_version(1, 0, 0),
+        compatibility_version: crate::macho::encode_version(1, 0, 0),
+        ..TbdFile::default()
+    };
+    let mut active = true;
+    // The top-level key whose value the field is in: the symbols an
+    // "undefineds" section lists are the library's imports, which the
+    // link has no use for.
+    let mut section = "";
+    for (i, field) in fields.iter().enumerate() {
+        if field.indent == 0 && !field.item {
+            active = true;
+            section = field.key;
+        }
+        // A list item is a target group, which applies if its targets
+        // (or architectures) include `target`.
+        if field.item {
+            let end = fields[i + 1..]
+                .iter()
+                .position(|f| f.indent <= field.indent)
+                .map_or(fields.len(), |n| i + 1 + n);
+            active = yaml_matches(fields[i..end].iter(), target);
+        }
+        if field.key == "install-name" {
+            tbd.install_name = unquote(field.value).as_bytes();
+        }
+        if !active || section == "undefineds" {
+            continue;
+        }
+        match field.key {
+            "current-version" => tbd.current_version = parse_version(unquote(field.value)),
+            "compatibility-version" => {
+                tbd.compatibility_version = parse_version(unquote(field.value))
+            }
+            // Version 4 lists them per target group ("umbrella:",
+            // "clients:"), older versions directly.
+            "parent-umbrella" | "umbrella" if !field.value.is_empty() => {
+                tbd.parent_umbrella = Some(unquote(field.value).as_bytes());
+            }
+            // Version 1 spells it allowed-clients.
+            "allowable-clients" | "allowed-clients" | "clients" => {
+                tbd.allowable_clients.extend(field.items().map(str::as_bytes))
+            }
+            "symbols" => tbd.exports.extend(field.items().map(str::as_bytes)),
+            "weak-symbols" | "weak-def-symbols" => {
+                tbd.weak_exports.extend(field.items().map(str::as_bytes))
+            }
+            "thread-local-symbols" => tbd.tlv_exports.extend(field.items().map(str::as_bytes)),
+            "libraries" | "re-exports" => {
+                for name in field.items().map(str::as_bytes) {
+                    if !tbd.reexports.contains(&name) {
+                        tbd.reexports.push(name);
+                    }
+                }
+            }
+            "objc-classes" => {
+                for item in field.items() {
+                    push_objc_class(&mut tbd.exports, item, false);
+                }
+            }
+            "objc-eh-types" => {
+                for item in field.items() {
+                    push_objc_class(&mut tbd.exports, item, true);
+                }
+            }
+            "objc-ivars" => {
+                for item in field.items() {
+                    tbd.exports.push(leak_name("_OBJC_IVAR_$_", item));
+                }
+            }
+            _ => {}
+        }
+    }
+    tbd
 }
 
 // Retain indentation and list-item boundaries so a target selector applies
