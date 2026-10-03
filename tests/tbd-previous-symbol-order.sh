@@ -1,11 +1,12 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# ld-prime gives the libraries exports moved to ($ld$previous) their
-# load commands after all the others, even the auto-linked ones: by the
-# library they moved from, in load-command order, and then by the first
-# export that moved. libzzz, all of whose exports moved, has no load
-# command, but its moved export's library keeps libzzz's place.
+# The libraries exports moved to ($ld$previous) get load commands of
+# their own, and the moved exports bind to them. libzzz, all of whose
+# exports moved, has no load command. The command-line libraries keep
+# their order. (ld-prime lists the moved-to libraries after all the
+# others, by the library they moved from and then by the first export
+# that moved.)
 tbd() {
   local inst=$1; shift
   local syms=$(printf "'%s', " "$@")
@@ -36,6 +37,14 @@ int main() { foo(); bar(); baz(); zzz(); aut(); auto3(); }
 EOF
 
 $CC --ld-path=$mold -mmacos-version-min=11.0 -o $t/exe $t/a.o $t/libzzz.tbd $t/libfoo.tbd -L$t
-otool -L $t/exe | tail -n +2 | awk '{print $1}' | tr '\n' ' ' > $t/libs
-[ "$(cat $t/libs)" = "/mmm/libfoo.dylib /usr/lib/libSystem.B.dylib /bbb/libauto.dylib \
-/bbb/libold3.dylib /ddd/libold.dylib /ccc/libold2.dylib /aaa/libold4.dylib " ]
+otool -L $t/exe | tail -n +2 | awk '{print $1}' > $t/libs
+[ "$(sort $t/libs | tr '\n' ' ')" = "/aaa/libold4.dylib /bbb/libauto.dylib /bbb/libold3.dylib \
+/ccc/libold2.dylib /ddd/libold.dylib /mmm/libfoo.dylib /usr/lib/libSystem.B.dylib " ]
+[ "$(grep -e libfoo -e libSystem $t/libs | tr '\n' ' ')" = "/mmm/libfoo.dylib /usr/lib/libSystem.B.dylib " ]
+dyld_info -fixups $t/exe | grep bind | awk '{print $NF}' | sort -u > $t/binds
+grep -qx 'libfoo/_baz' $t/binds
+grep -qx 'libold/_bar' $t/binds
+grep -qx 'libold2/_foo' $t/binds
+grep -qx 'libold3/_zzz' $t/binds
+grep -qx 'libauto/_auto' $t/binds
+grep -qx 'libold4/_auto3' $t/binds

@@ -50,12 +50,13 @@ grep -q "lazy-load will be ignored for '$t/libbar.dylib' because" $t/log6
 grep -q "lazy-load will be ignored for 'Foo' because" $t/log6
 otool -L $t/exe2 | grep -q /u/libfoo.dylib
 
-# Their load commands follow those of the other libraries the command
-# line names (libSystem's too), in naming order.
+# Their load commands keep their place in the command line's order (the
+# compiler driver names libSystem last). (ld-prime puts them after those
+# of the other libraries the command line names.)
 $CC --ld-path=$mold -o $t/exe3 $t/a.o -L$t -F$t/fw -Wl,-lazy-lfoo \
   -Wl,-lazy_library,$t/libbar.dylib -Wl,-framework,Foo -mmacosx-version-min=14.0 2> /dev/null
 otool -L $t/exe3 | awk 'NR > 1 { print $1 }' | tr '\n' ' ' > $t/order3
-[ "$(cat $t/order3)" = '/u/Foo /usr/lib/libSystem.B.dylib /u/libfoo.dylib /u/libbar.dylib ' ]
+[ "$(cat $t/order3)" = '/u/libfoo.dylib /u/libbar.dylib /u/Foo /usr/lib/libSystem.B.dylib ' ]
 
 # Firmware - and a -preload image, macOS 27's too - has no dyld to load
 # one lazily: each links as usual, with the warning.

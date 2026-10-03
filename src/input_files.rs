@@ -377,7 +377,9 @@ pub struct DylibFile {
     /// The -bundle_loader executable: its symbols bind to the main
     /// executable at run time and it gets no LC_LOAD_DYLIB.
     pub is_bundle_loader: bool,
-    /// Position in input order, for resolution tie-breaking.
+    /// Position in input order, taken as the library is named, before
+    /// the libraries it re-exports load: for resolution tie-breaking,
+    /// and the order of the load commands (see named_at).
     pub priority: u32,
     /// True if loaded with LC_LOAD_WEAK_DYLIB: dyld tolerates the
     /// library missing at load time.
@@ -407,11 +409,6 @@ pub struct DylibFile {
     /// first use of one of its symbols (LC_LAZY_LOAD_DYLIB_INFO), so it
     /// has no LC_LOAD_DYLIB and no ordinal.
     pub is_lazy: bool,
-    /// Named by -lazy-l, -lazy_library or -lazy_framework, whatever the
-    /// deployment target. Below macOS 27 such a dylib loads as any
-    /// other, but its load command follows those of the other libraries
-    /// the command line names (see passes::dead_strip_dylibs).
-    pub named_lazily: bool,
     /// -delay-l and the like, or a public library such a dylib
     /// re-exports: dyld runs its initializers only when the image
     /// dlopen()s this install name (its own, or the re-exporting
@@ -429,13 +426,13 @@ pub struct DylibFile {
     /// Loaded because a dylib on the command line (or auto-linked)
     /// re-exports it and it lives in a public location: symbols found
     /// through the re-export bind to it directly, and it gets a load
-    /// command after the explicitly named libraries if anything binds
-    /// to it. Private re-exported libraries are not loaded this way;
-    /// their symbols bind to the re-exporting dylib.
+    /// command of its own if anything binds to it. Private re-exported
+    /// libraries are not loaded this way; their symbols bind to the
+    /// re-exporting dylib.
     pub is_implicit: bool,
-    /// Load-command order: the sequence in which command-line and
-    /// auto-linked libraries were named (u32::MAX for implicit ones,
-    /// which follow, sorted by install name).
+    /// Always u32::MAX: load commands follow the order of naming (see
+    /// passes::assign_dylib_ordinals). Its last reader is the lazy-load
+    /// tables' sort in passes::create_lazy_load_slots.
     pub load_order: u32,
     pub exports: hashbrown::HashSet<&'static [u8]>,
     /// Exports that are weak definitions: binding to one sets
@@ -3165,6 +3162,8 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
     // and rpaths, since @loader_path and @rpath in an install name are
     // relative to the referrer.
     let reexports = ReexportRef::of(reexports, &install_name, &dir_of(&mf.name), &rpaths, 0);
+    // Named before the libraries it re-exports, which load now.
+    let priority = ctx.next_priority();
     let loaded = load_reexports(
         ctx,
         reexports,
@@ -3179,7 +3178,6 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
     let moved_exports = add_moved_dylibs(ctx, &mf.name, moved, &exports);
     let name_source = if directives.renamed { NameSource::Directive } else { NameSource::Own };
 
-    let priority = ctx.next_priority();
     add_dylib(
         ctx,
         DylibFile {
@@ -3200,7 +3198,6 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
             is_needed: false,
             is_upward: false,
             is_lazy: false,
-            named_lazily: false,
             delay_init: None,
             named_at: None,
             is_autolinked: false,
@@ -3407,7 +3404,6 @@ pub fn parse_bundle_loader<E: Target>(ctx: &mut Context<E>, mf: &'static MappedF
             is_needed: false,
             is_upward: false,
             is_lazy: false,
-            named_lazily: false,
             delay_init: None,
             named_at: None,
             is_autolinked: false,
@@ -4066,6 +4062,8 @@ fn register_tbd<E: Target>(
     let names = tbd.reexports.into_iter().map(<[u8]>::to_vec).collect();
     let name = tbd.install_name;
     let reexports = ReexportRef::of(names, name, &dir_of(path), &[], 0);
+    // Named before the libraries it re-exports, which load now.
+    let priority = ctx.next_priority();
     let loaded = load_reexports(
         ctx,
         reexports,
@@ -4080,7 +4078,6 @@ fn register_tbd<E: Target>(
     let moved_exports = add_moved_dylibs(ctx, path, moved, &exports);
     let name_source = if directives.renamed { NameSource::Directive } else { NameSource::Own };
 
-    let priority = ctx.next_priority();
     add_dylib(
         ctx,
         DylibFile {
@@ -4101,7 +4098,6 @@ fn register_tbd<E: Target>(
             is_needed: false,
             is_upward: false,
             is_lazy: false,
-            named_lazily: false,
             delay_init: None,
             named_at: None,
             is_autolinked: false,
@@ -4158,7 +4154,6 @@ fn add_moved_dylibs<E: Target>(
                     is_needed: false,
                     is_upward: false,
                     is_lazy: false,
-                    named_lazily: false,
                     delay_init: None,
                     named_at: None,
                     is_autolinked: false,
@@ -4188,7 +4183,6 @@ fn add_moved_dylibs<E: Target>(
 /// after the others, which has the exports the merged dylib's entries
 /// import.
 pub fn add_merged_dependency<E: Target>(ctx: &mut Context<E>, dep: crate::mergeable::Dependency) {
-    let before = ctx.dylibs.len();
     let priority = ctx.next_priority();
     let weak_exports: hashbrown::HashSet<&'static [u8]> = dep.weak_exports.into_iter().collect();
     let dylib = DylibFile {
@@ -4209,7 +4203,6 @@ pub fn add_merged_dependency<E: Target>(ctx: &mut Context<E>, dep: crate::mergea
         is_needed: false,
         is_upward: false,
         is_lazy: false,
-        named_lazily: false,
         delay_init: None,
         named_at: None,
         is_autolinked: false,
@@ -4224,11 +4217,7 @@ pub fn add_merged_dependency<E: Target>(ctx: &mut Context<E>, dep: crate::mergea
         moved_exports: hashbrown::HashMap::new(),
         name_source: NameSource::Own,
     };
-    let idx = add_dylib(ctx, dylib);
-    if idx >= before {
-        ctx.dylibs[idx].load_order = ctx.dylib_load_seq;
-        ctx.dylib_load_seq += 1;
-    }
+    add_dylib(ctx, dylib);
 }
 
 /// Registers a dylib, deduplicating by install name: several libraries

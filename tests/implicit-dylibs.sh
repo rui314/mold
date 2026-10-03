@@ -4,15 +4,13 @@ source "$(dirname "$0")"/common.inc
 # A symbol found through a dylib's re-exports binds to the dylib that
 # defines it when that dylib lives in a public location (a top-level
 # /System/Library/Frameworks framework, /usr/lib/lib*.dylib), which
-# then gets an implicit load command after the explicitly named
-# libraries; a private re-exported library's symbols bind to the
-# re-exporting dylib. AppKit re-exports Foundation (public; Foundation
-# re-exports CoreFoundation, public) and UIFoundation (private):
-# ld-prime binds NSHomeDirectory to Foundation, CFRelease to
-# CoreFoundation and NSAttachmentAttributeName to AppKit, and lists
-# AppKit, libSystem, CoreFoundation, Foundation (the command-line
-# libraries in order, then the implicit ones by name).
-# -no_implicit_dylibs binds everything to AppKit.
+# then gets an implicit load command of its own; a private re-exported
+# library's symbols bind to the re-exporting dylib. AppKit re-exports
+# Foundation (public; Foundation re-exports CoreFoundation, public) and
+# UIFoundation (private): NSHomeDirectory binds to Foundation, CFRelease
+# to CoreFoundation and NSAttachmentAttributeName to AppKit, and the
+# command-line libraries keep their order. (ld-prime lists the implicit
+# ones last, by name.) -no_implicit_dylibs binds everything to AppKit.
 cat <<EOF2 | $CC -o $t/a.o -c -xc -
 typedef const void *CFTypeRef;
 void CFRelease(CFTypeRef);
@@ -29,7 +27,8 @@ EOF2
 $CC --ld-path=$mold -o $t/exe $t/a.o -framework AppKit -mmacosx-version-min=15.0
 $t/exe
 otool -L $t/exe | tail -n +2 | awk '{print $1}' | sed 's|.*/||' > $t/loads
-[ "$(tr '\n' ' ' < $t/loads)" = "AppKit libSystem.B.dylib CoreFoundation Foundation " ]
+[ "$(sort $t/loads | tr '\n' ' ')" = "AppKit CoreFoundation Foundation libSystem.B.dylib " ]
+[ "$(grep -e '^AppKit$' -e '^libSystem' $t/loads | tr '\n' ' ')" = "AppKit libSystem.B.dylib " ]
 dyld_info -fixups $t/exe | grep bind | awk '{print $NF}' | sort -u > $t/binds
 grep -q '^AppKit/_NSApp$' $t/binds
 grep -q '^AppKit/_NSAttachmentAttributeName$' $t/binds
@@ -47,7 +46,9 @@ grep -q '^AppKit/_CFRelease$' $t/binds2
 # position even when a re-export reached it first.
 $CC --ld-path=$mold -o $t/exe3 $t/a.o -framework AppKit -framework Foundation
 $t/exe3
-[ "$(otool -L $t/exe3 | tail -n +2 | awk '{print $1}' | sed 's|.*/||' | tr '\n' ' ')" = "AppKit Foundation libSystem.B.dylib CoreFoundation " ]
+otool -L $t/exe3 | tail -n +2 | awk '{print $1}' | sed 's|.*/||' > $t/loads3
+[ "$(sort $t/loads3 | tr '\n' ' ')" = "AppKit CoreFoundation Foundation libSystem.B.dylib " ]
+[ "$(grep -v CoreFoundation $t/loads3 | tr '\n' ' ')" = "AppKit Foundation libSystem.B.dylib " ]
 
 # A framework's binary is told by its name: the path must end in the
 # name before the first dot after /System/Library/Frameworks/, so a

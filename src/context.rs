@@ -204,9 +204,6 @@ pub struct Context<E: Target> {
     pub symtab: SymtabSection,
     pub strtab: StrtabSection,
     pub code_signature: CodeSignatureSection,
-    /// Sequence number of the next dylib named on the command line or
-    /// by an auto-link option; orders their load commands.
-    pub dylib_load_seq: u32,
     /// Objective-C data records the linker synthesized (see
     /// merge_objc_categories) and the table of bundle_hook, each placed
     /// as the tail of the output section it names.
@@ -337,7 +334,6 @@ impl<E: Target> Context<E> {
             extra_local_syms: Vec::new(),
             folded_subsec_names: hashbrown::HashSet::new(),
             dof_sections: Vec::new(),
-            dylib_load_seq: 0,
             indirect_aliases: Vec::new(),
             redundant_reexports: Vec::new(),
             boundary_syms: Vec::new(),
