@@ -3133,7 +3133,7 @@ pub fn is_allowed_client<E: Target>(ctx: &Context<E>, dylib: &DylibIdentity) -> 
 /// into its parent's, too - was built for the link's platform, and
 /// returns the minimum OS version it names for that platform (0 for
 /// none).
-fn check_dylib_platform<E: Target>(ctx: &mut Context<E>, mf: &MappedFile) -> u32 {
+fn check_dylib_platform<E: Target>(ctx: &Context<E>, mf: &MappedFile) -> u32 {
     let hdr = MachHeader::read_from(mf.data());
     let mut versions = Vec::new();
     let mut off = size_of::<MachHeader>();
@@ -3148,37 +3148,22 @@ fn check_dylib_platform<E: Target>(ctx: &mut Context<E>, mf: &MappedFile) -> u32
     if let Some(version) = versions.iter().find(|v| v.platform == ctx.args.platform) {
         return version.minos;
     }
-    if let Some(first) = versions.first() {
-        // A zippered dylib has a build version for macOS and one for
-        // Mac Catalyst.
-        let platforms: Vec<u32> = versions.iter().map(|v| v.platform).collect();
-        let name =
-            if platforms.contains(&PLATFORM_MACOS) && platforms.contains(&PLATFORM_MACCATALYST) {
-                "zippered(macOS/Catalyst)".to_string()
-            } else {
-                platform_name(first.platform)
-            };
-        check_dylib_platforms(ctx, mf, &platforms, &name);
-    }
+    let platforms: Vec<u32> = versions.iter().map(|v| v.platform).collect();
+    check_dylib_platforms(ctx, mf, &platforms);
     0
 }
 
-/// Refuses a dylib built for none of the link's platform - for
-/// `platforms`, which `name` names -, which a firmware link takes with
-/// a warning.
-fn check_dylib_platforms<E: Target>(
-    ctx: &Context<E>,
-    mf: &MappedFile,
-    platforms: &[u32],
-    name: &str,
-) {
+/// Refuses a dylib built for `platforms`, none of them the link's,
+/// which a firmware link takes with a warning.
+fn check_dylib_platforms<E: Target>(ctx: &Context<E>, mf: &MappedFile, platforms: &[u32]) {
     if platforms.is_empty() || platforms.contains(&ctx.args.platform) {
         return;
     }
     let msg = format_args!(
-        "building for '{}', but linking in dylib ({}) built for '{name}'",
+        "building for '{}', but linking in dylib ({}) built for '{}'",
         platform_name(ctx.args.platform),
         mf.name.raw(),
+        platforms_name(platforms),
     );
     if ctx.args.platform == PLATFORM_FIRMWARE {
         crate::warn!("{msg}");
@@ -4011,7 +3996,7 @@ fn register_tbd_file<E: Target>(
     mf: &'static MappedFile,
     mut tbd: tapi::TbdFile,
 ) -> usize {
-    check_dylib_platforms(ctx, mf, &tbd.platforms, &platforms_name(&tbd.platforms));
+    check_dylib_platforms(ctx, mf, &tbd.platforms);
     let documents = std::mem::take(&mut tbd.documents);
     register_tbd(ctx, &mf.name, tbd, documents)
 }
