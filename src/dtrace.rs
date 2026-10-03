@@ -82,11 +82,10 @@ fn provider_of(name: &[u8]) -> &[u8] {
     split_once(rest, b'$').map_or(&[][..], |(provider, _)| provider)
 }
 
-/// A provider's DOF section, as the link makes it: the subsection with
-/// the DOF, which refers to each site's subsection (in site order).
+/// A provider's DOF section, as the link makes it: the subsections of
+/// the sites it refers to (in site order).
 #[derive(Debug)]
 pub struct DofSection {
-    pub isec: u32,
     pub sites: Vec<u32>,
 }
 
@@ -331,7 +330,7 @@ fn add_dof_section<E: Target>(ctx: &mut Context<E>, name: &[u8], dof: Dof, sites
         unwind_offset: 0,
         nunwind: 0,
     });
-    ctx.dof_sections.push(DofSection { isec: id, sites: sites.iter().map(|s| s.isec).collect() });
+    ctx.dof_sections.push(DofSection { sites: sites.iter().map(|s| s.isec).collect() });
 }
 
 /// Whether subsection `isec` is a DOF section the link made.
