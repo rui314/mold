@@ -4,7 +4,7 @@
 
 use rayon::prelude::*;
 
-use crate::chunks::{ChunkHeader, rebase_info};
+use crate::chunks::{ChunkHeader, OutputSegment, rebase_info};
 use crate::cmdline::Treatment;
 use crate::context::Context;
 use crate::fatal;
@@ -200,12 +200,10 @@ fn write_starts_in_image<E: Target>(ctx: &Context<E>, buf: &mut Vec<u8>, fixups:
     // -image_base may move.
     let image_base = ctx.mach_header.hdr.addr;
     for (seg_idx, seg) in ctx.segments.iter().enumerate() {
-        let lo = fixups.partition_point(|&(a, _, _)| a < seg.cmd.vmaddr);
-        let hi = fixups.partition_point(|&(a, _, _)| a < seg.cmd.vmaddr + seg.cmd.vmsize);
-        if lo == hi {
+        let fx = segment_fixups(fixups, seg);
+        if fx.is_empty() {
             continue;
         }
-        let fx = &fixups[lo..hi];
 
         pad(buf, 8);
         let off = buf.len() - starts_offset;
@@ -352,12 +350,7 @@ pub fn write_fixup_chains<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     };
 
     for seg in &ctx.segments {
-        let lo = ctx.chained_fixups.fixups.partition_point(|&(a, _, _)| a < seg.cmd.vmaddr);
-        let hi = ctx
-            .chained_fixups
-            .fixups
-            .partition_point(|&(a, _, _)| a < seg.cmd.vmaddr + seg.cmd.vmsize);
-        let fx = &ctx.chained_fixups.fixups[lo..hi];
+        let fx = segment_fixups(&ctx.chained_fixups.fixups, seg);
         // Pages count from the segment's start.
         let page = |addr: u64| (addr - seg.cmd.vmaddr) >> page_shift;
         let chains_to = |addr: u64, next: u64| {
@@ -386,31 +379,43 @@ pub fn write_fixup_chains<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
                     ordinal | (inline_addend << 24) | (next << 51) | (1 << 63)
                 }
                 None => {
-                    // dyld_chained_ptr_64_rebase; the word currently
-                    // holds the absolute target address, its top byte
-                    // (high8) carried separately.
                     let val = u64::from_le_bytes(buf[off..off + 8].try_into().unwrap());
-                    let high8 = val >> 56;
-                    let target = (val & 0x00ff_ffff_ffff_ffff).wrapping_sub(target_base);
-                    if target >> 36 != 0 {
-                        let sect = ctx
-                            .chunks
-                            .iter()
-                            .map(|&id| ctx.chunk_header(id))
-                            .find(|hdr| hdr.addr <= addr && addr < hdr.addr + hdr.size)
-                            .map(|hdr| [hdr.segname, b",", hdr.sectname].concat())
-                            .unwrap_or_default();
-                        fatal!(
-                            "rebase target unencodable at {addr:#x} in {} (value {val:#x}); re-link with -no_fixup_chains",
-                            crate::error::raw(&sect)
-                        );
-                    }
-                    target | (high8 << 36) | (next << 51)
+                    rebase_word(ctx, addr, val, target_base) | (next << 51)
                 }
             };
             buf[off..off + 8].copy_from_slice(&word.to_le_bytes());
         }
     }
+}
+
+/// The fixups, sorted by address, that lie in a segment.
+fn segment_fixups<'a>(fixups: &'a [Fixup], seg: &OutputSegment) -> &'a [Fixup] {
+    let lo = fixups.partition_point(|&(a, _, _)| a < seg.cmd.vmaddr);
+    let hi = fixups.partition_point(|&(a, _, _)| a < seg.cmd.vmaddr + seg.cmd.vmsize);
+    &fixups[lo..hi]
+}
+
+/// A rebase's dyld_chained_ptr_64_rebase word, but for the link to the
+/// next fixup: the pointer at `addr` holds `val`, the absolute target
+/// address with its top byte (high8), which the word carries apart;
+/// the target counts from `target_base`, and must fit in 36 bits.
+fn rebase_word<E: Target>(ctx: &Context<E>, addr: u64, val: u64, target_base: u64) -> u64 {
+    let high8 = val >> 56;
+    let target = (val & 0x00ff_ffff_ffff_ffff).wrapping_sub(target_base);
+    if target >> 36 != 0 {
+        let sect = ctx
+            .chunks
+            .iter()
+            .map(|&id| ctx.chunk_header(id))
+            .find(|hdr| hdr.addr <= addr && addr < hdr.addr + hdr.size)
+            .map(|hdr| [hdr.segname, b",", hdr.sectname].concat())
+            .unwrap_or_default();
+        fatal!(
+            "rebase target unencodable at {addr:#x} in {} (value {val:#x}); re-link with -no_fixup_chains",
+            crate::error::raw(&sect)
+        );
+    }
+    target | (high8 << 36)
 }
 
 /// Collects the fixups, sorted by address, and those of subsections at
