@@ -544,8 +544,6 @@ fn collect_file<E: Target>(
             }
         }
         FileType::Dylib if rc.merge => merge_dylib(ctx, mf, out),
-        FileType::Tapi | FileType::Dylib if refuses_client(ctx, mf, rc) => {}
-        FileType::Dylib if !input_files::has_uuid(mf.data()) => refuse_without_uuid(mf),
         FileType::Tapi | FileType::Dylib => load_dylib(ctx, mf, rc),
         FileType::Archive => collect_archive_members(ctx, mf, rc, out),
         FileType::Fat => match input_files::fat_slice::<E>(&ctx.args, mf) {
@@ -561,10 +559,18 @@ fn collect_file<E: Target>(
 }
 
 /// Loads a dylib or its stub, and the public libraries it re-exports,
-/// and gives it what its naming says.
+/// and gives it what its naming says - unless it refuses this link.
 fn load_dylib<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFile, rc: ReaderContext) {
+    if refuses_client(ctx, mf, rc) {
+        return;
+    }
+    let is_stub = get_file_type(mf) == FileType::Tapi;
+    if !is_stub && !input_files::has_uuid(mf.data()) {
+        refuse_without_uuid(mf);
+        return;
+    }
     let first = ctx.dylibs.len();
-    let idx = if get_file_type(mf) == FileType::Tapi {
+    let idx = if is_stub {
         input_files::parse_dylib(ctx, mf)
     } else {
         Some(input_files::parse_dylib_binary(ctx, mf))
