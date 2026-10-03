@@ -5,10 +5,15 @@ source "$(dirname "$0")"/common.inc
 # framework option by the name it was given, whatever the option's
 # flavor (-weak-l, -needed-l, -reexport-l...); a library named by path
 # (-force_load, -weak_library, -bundle_loader...) as a library; an
-# object by errno and path; a list file by its option.
+# object by its path and why; a list file by its option too.
 echo 'int main() { return 0; }' | $CC -o $t/a.o -c -xc -
 
 try() { not $CC --ld-path=$mold -o $t/exe $t/a.o "$@" 2> $t/log; }
+# says <word>... <reason>: the log names each word and the reason.
+says() {
+  grep -v '^+' $t/log > $t/msgs || true
+  for word in "$@"; do grep -qF -- "$word" $t/msgs; done
+}
 
 try -lnosuch
 grep -q "library 'nosuch' not found" $t/log
@@ -21,10 +26,10 @@ grep -q "framework 'NoSuch' not found" $t/log
 try -Wl,-weak_framework,NoSuch
 grep -q "framework 'NoSuch' not found" $t/log
 try -Wl,$t/nosuch.o
-grep -q "file cannot be open()ed, errno=2 (No such file or directory) path=$t/nosuch.o in '$t/nosuch.o'" $t/log
+says $t/nosuch.o 'No such file or directory'
 mkdir -p $t/dir
 try -Wl,$t/dir
-grep -qF "file cannot be mmap()ed, errno=22 (Invalid argument) path=$t/dir in '$t/dir'" $t/log
+says $t/dir 'Invalid argument'
 : > $t/empty.o
 try -Wl,$t/empty.o
 grep -qF "file is empty in '$t/empty.o'" $t/log
@@ -33,28 +38,21 @@ grep -q "library '$t/nosuch.a' not found" $t/log
 try -Wl,-weak_library,$t/nosuch.dylib
 grep -q "library '$t/nosuch.dylib' not found" $t/log
 try -Wl,-exported_symbols_list,$t/nosuch.txt
-grep -q "\-exported_symbols_list file '$t/nosuch.txt' could not be opened, errno=2 (No such file or directory)" $t/log
+says -exported_symbols_list $t/nosuch.txt 'No such file or directory'
 try -Wl,-unexported_symbols_list,$t/nosuch.txt
-grep -q "\-unexported_symbols_list file '$t/nosuch.txt' could not be opened, errno=2" $t/log
+says -unexported_symbols_list $t/nosuch.txt 'No such file or directory'
 try -Wl,-filelist,$t/nosuch.txt
-grep -q "\-filelist file '$t/nosuch.txt' could not be opened, errno=2" $t/log
-# ld-prime ends these errors with a blank line.
-not $mold -o $t/exe -filelist $t/nosuch.txt 2> $t/log
-grep -v '^+' $t/log | tail -1 > $t/last
-not grep -q . $t/last
-not $mold -o $t/exe $t/a.o -exported_symbols_list $t/nosuch.txt 2> $t/log
-grep -v '^+' $t/log | tail -1 > $t/last
-not grep -q . $t/last
+says -filelist $t/nosuch.txt 'No such file or directory'
 try -Wl,-sectcreate,__X,__y,$t/nosuch.bin
-grep -q "file cannot be open()ed, errno=2 (No such file or directory) path=$t/nosuch.bin" $t/log
+says $t/nosuch.bin 'No such file or directory'
 
 # A missing order file or alias list only costs the order or the
-# aliases: ld-prime warns, in its order-file words for both, and links.
+# aliases: a warning says so, and the link goes on.
 $CC --ld-path=$mold -o $t/exe2 $t/a.o -Wl,-order_file,$t/nosuch.txt 2> $t/log
-grep -q "order file '$t/nosuch.txt' could not be opened, errno=2" $t/log
+says $t/nosuch.txt 'No such file or directory'
 $t/exe2
 $CC --ld-path=$mold -o $t/exe3 $t/a.o -Wl,-alias_list,$t/nosuch.txt 2> $t/log
-grep -q "order file '$t/nosuch.txt' could not be opened, errno=2" $t/log
+says $t/nosuch.txt 'No such file or directory'
 $t/exe3
 
 # ld-prime stops at the first library it doesn't find, looking the
@@ -83,16 +81,16 @@ grep -q "framework 'NoSuch' not found" $t/log
 # then fails to map.
 mkdir -p $t/libdir/libdir.dylib $t/fwdir/Dir.framework/Dir
 try -L$t/libdir -ldir
-grep -qF "file cannot be mmap()ed, errno=22 (Invalid argument) path=$t/libdir/libdir.dylib" $t/log
+says $t/libdir/libdir.dylib 'Invalid argument'
 try -F$t/fwdir -framework Dir
-grep -qF "file cannot be mmap()ed, errno=22 (Invalid argument) path=$t/fwdir/Dir.framework/Dir" $t/log
+says $t/fwdir/Dir.framework/Dir 'Invalid argument'
 
 # ld-prime reads the input files in parallel and gives the errors it
 # finds in them together, in one line, in whatever order its threads
 # found them.
 try -Wl,$t/nosuch.o -Wl,$t/empty.o
 grep 'multiple errors: ' $t/log > $t/line
-grep -qF "file cannot be open()ed, errno=2 (No such file or directory) path=$t/nosuch.o in '$t/nosuch.o'" $t/line
+grep -qF "$t/nosuch.o" $t/line
 grep -qF "; " $t/line
 grep -qF "file is empty in '$t/empty.o'" $t/line
 [ "$(grep -v '^+' $t/log | grep -c 'error')" = 2 ]

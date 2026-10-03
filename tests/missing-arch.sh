@@ -32,4 +32,5 @@ otool -hv $t/exe > $t/hdr
 grep -q " $(echo $ARCH | tr a-z A-Z) " $t/hdr
 
 not link $t/libfoo.dylib $t/nonexistent.o $t/a.o 2> $t/log
-grep -q "file cannot be open()ed, errno=2 (No such file or directory) path=$t/nonexistent.o$" $t/log
+grep -qF "$t/nonexistent.o" $t/log
+grep -q 'No such file or directory' $t/log

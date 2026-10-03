@@ -1223,8 +1223,7 @@ fn place_sectcreate_inputs<E: Target>(ctx: &mut Context<E>) {
         let name = map.renamed(&ctx.args, (static_name(&sc.segname), static_name(&sc.sectname)));
         let data: &'static [u8] = match &sc.path {
             Some(path) => Vec::leak(std::fs::read(path).unwrap_or_else(|e| {
-                let errno = crate::error::errno_text(&e);
-                fatal!("file cannot be open()ed, {errno} path={}", path.raw())
+                fatal!("cannot open -sectcreate file {}: {}", path.raw(), error::strerror(&e))
             })),
             None => &[],
         };
@@ -1980,8 +1979,7 @@ fn read_order_files<E: Target>(ctx: &Context<E>) -> Vec<OrderEntry> {
         let text = match std::fs::read(path) {
             Ok(text) => text,
             Err(e) => {
-                let errno = crate::error::errno_text(&e);
-                crate::warn!("order file '{}' could not be opened, {errno}", path.raw());
+                crate::warn!("cannot open order file {}: {}", path.raw(), error::strerror(&e));
                 continue;
             }
         };

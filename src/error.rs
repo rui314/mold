@@ -30,16 +30,21 @@ static HAS_ERROR: AtomicBool = AtomicBool::new(false);
 static HAS_LAYOUT_ERROR: AtomicBool = AtomicBool::new(false);
 static OUTPUT_LOCK: Mutex<()> = Mutex::new(());
 
-/// An I/O error as ld64 words it: "errno=2 (No such file or directory)".
-pub fn errno_text(e: &io::Error) -> String {
-    let text = e.to_string();
-    match e.raw_os_error() {
-        Some(n) => {
-            let text = text.strip_suffix(&format!(" (os error {n})")).unwrap_or(&text);
-            format!("errno={n} ({text})")
+/// Returns the text that C's strerror gives for an I/O error. Unlike
+/// `io::Error`'s `Display`, it doesn't append " (os error N)". An error that
+/// doesn't come from the OS is formatted as usual.
+pub fn strerror(err: &io::Error) -> String {
+    if let Some(errno) = err.raw_os_error() {
+        let mut buf = [0u8; 256];
+        // SAFETY: strerror_r writes at most `buf.len()` bytes to `buf`.
+        let ret = unsafe { libc::strerror_r(errno, buf.as_mut_ptr().cast(), buf.len()) };
+        if ret == 0
+            && let Ok(msg) = std::ffi::CStr::from_bytes_until_nul(&buf)
+        {
+            return msg.to_string_lossy().into_owned();
         }
-        None => text,
     }
+    err.to_string()
 }
 
 pub fn set_color(on: bool) {

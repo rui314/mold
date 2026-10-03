@@ -37,7 +37,8 @@ grep -q -- '-dylib_file malformed <path:path>' $t/log
 mkdir -p $t/dir
 not $CC --ld-path=$mold -o $t/exe $t/a.o $t/libbar.dylib \
   -Wl,-dylib_file,/nonexistent/libfoo.dylib:$t/dir 2> $t/log
-grep -qF "file cannot be mmap()ed, errno=22 (Invalid argument) path=$t/dir in '$t/dir'" $t/log
+grep -qF "$t/dir" $t/log
+grep -q 'Invalid argument' $t/log
 : > $t/empty.dylib
 not $CC --ld-path=$mold -o $t/exe $t/a.o $t/libbar.dylib \
   -Wl,-dylib_file,/nonexistent/libfoo.dylib:$t/empty.dylib 2> $t/log

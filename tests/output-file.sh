@@ -55,10 +55,10 @@ link -o $t/fifo
 rm -f $t/dangling
 ln -s $t/nonexistent $t/dangling
 not link -o $t/dangling 2> $t/log
-grep -q "open() failed, errno=17 (File exists) for '$t/dangling'" $t/log
+grep -q 'File exists' $t/log
 
 not link -o $t/dir 2> $t/log
-grep -q "open() failed, errno=21 (Is a directory) for '$t/dir'" $t/log
+grep -q 'Is a directory' $t/log
 
 link -o /dev/stdout 2> $t/log | cat > /dev/null || true
-grep -q "ftruncate() failed, errno=22 (Invalid argument) for '/dev/stdout'" $t/log
+grep -q 'Invalid argument' $t/log

@@ -33,7 +33,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
 use crate::error::RawPath;
-use crate::error::errno_text;
+use crate::error::strerror;
 use crate::fatal;
 
 /// The output path of the in-progress link, removed on a fatal error or
@@ -85,13 +85,12 @@ fn open(path: &Path, mode: u32) -> (std::fs::File, bool) {
     }
     let file = options
         .open(path)
-        .unwrap_or_else(|e| fatal!("open() failed, {} for '{}'", errno_text(&e), path.raw()));
+        .unwrap_or_else(|e| fatal!("cannot open {}: {}", path.raw(), strerror(&e)));
     (file, !in_place)
 }
 
-/// ld-prime's words for a failed write of the output file.
 fn write_error(path: &Path, e: &io::Error) -> ! {
-    fatal!("write() failed, {} for '{}'", errno_text(e), path.raw())
+    fatal!("cannot write {}: {}", path.raw(), strerror(e))
 }
 
 /// Removes a partially written output file.
@@ -178,7 +177,7 @@ impl OutputFile {
             set_output_path(Some(path));
         }
         if let Err(e) = file.set_len(len as u64) {
-            fatal!("ftruncate() failed, {} for '{}'", errno_text(&e), path.raw());
+            fatal!("cannot set the size of {}: {}", path.raw(), strerror(&e));
         }
         let file = Arc::new(file);
 

@@ -60,7 +60,7 @@ grep -q "building for 'macOS', but linking in dylib (/.*/$t/ios.tbd) built for '
 # for another: an input it can't read fails the link before, and those
 # after it go unmentioned.
 not $mold -arch $ARCH $mac -e _start $t/a.o $t/nosuch.o $t/ios.tbd -o $t/exe7 2> $t/log7
-grep -q 'file cannot be open()ed' $t/log7
+grep -q 'No such file or directory' $t/log7
 not grep -q 'building for' $t/log7
 
 cat <<EOF | $CC -o $t/ios.o -c -xassembler -

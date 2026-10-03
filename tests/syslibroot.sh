@@ -37,7 +37,7 @@ for opt in -weak_library -needed_library -reexport_library -upward_library -lazy
 done
 not $CC --ld-path=$mold -shared -o $t/q.dylib $t/q.o -Wl,-syslibroot,$t/root \
   -Wl,/opt/lib/libqux.dylib 2> $t/log
-grep -q 'file cannot be open()ed' $t/log
+grep -q 'No such file or directory' $t/log
 
 # But for an archive's: ld-prime looks a bare path ending in .a up as
 # -force_load's path, under the syslibroot first, even when the path

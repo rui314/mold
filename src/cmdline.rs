@@ -10,7 +10,7 @@ use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
 
 use crate::error::RawPath;
-use crate::error::raw;
+use crate::error::{raw, strerror};
 use crate::fatal;
 use crate::filetype::{FileType, get_file_type};
 use crate::input_files::PlatformVersion;
@@ -1429,16 +1429,10 @@ fn add_patterns(glob: &mut GlobBuilder, entries: impl IntoIterator<Item: AsRef<[
 }
 
 /// Reads a symbol list file, its names bytes, as ld-prime takes them.
-/// ld-prime ends its error about one it can't open, as about a
-/// -filelist file, with a blank line.
 fn read_symbol_list(opt: &str, path: &Path) -> Vec<Vec<u8>> {
     match std::fs::read(path) {
         Ok(text) => symbol_list(&text),
-        Err(e) => fatal!(
-            "{opt} file '{}' could not be opened, {}\n",
-            path.raw(),
-            crate::error::errno_text(&e)
-        ),
+        Err(e) => fatal!("cannot open {opt} file {}: {}", path.raw(), strerror(&e)),
     }
 }
 
@@ -1642,10 +1636,8 @@ fn read_filelist(arg: &OsStr) -> (PathBuf, Vec<PathBuf>) {
         ),
         None => (Path::new(arg), None),
     };
-    let text = std::fs::read(path).unwrap_or_else(|e| {
-        let errno = crate::error::errno_text(&e);
-        fatal!("-filelist file '{}' could not be opened, {errno}\n", path.raw())
-    });
+    let text = std::fs::read(path)
+        .unwrap_or_else(|e| fatal!("cannot open -filelist file {}: {}", path.raw(), strerror(&e)));
     let files = text
         .split(|&b| b == b'\n')
         .map(|line| line.strip_suffix(b"\r").unwrap_or(line))
@@ -2029,14 +2021,12 @@ fn parse_common_align(arg: &str) -> u8 {
 
 /// Reads an -alias_list file: an existing symbol's name and its alias's
 /// on each line, '#' starting a comment. ld64 links on without the
-/// aliases of a file it can't read, warning in the words it uses for
-/// an order file.
+/// aliases of a file it can't read, with a warning.
 fn read_alias_list(list: &Path, aliases: &mut Vec<(Vec<u8>, Vec<u8>)>) {
     let contents = match std::fs::read(list) {
         Ok(contents) => contents,
         Err(e) => {
-            let errno = crate::error::errno_text(&e);
-            crate::warn!("order file '{}' could not be opened, {errno}", list.raw());
+            crate::warn!("cannot open -alias_list file {}: {}", list.raw(), strerror(&e));
             Vec::new()
         }
     };
@@ -2520,9 +2510,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     _ => args.move_to_ro.push(list),
                 }
             }
-            // ld-prime's error about a list it can't open names no option.
             b"-dirty_data_list" => {
-                let list = symbol_move("", b"__DATA_DIRTY", &cur.next_path(name));
+                let list = symbol_move(name, b"__DATA_DIRTY", &cur.next_path(name));
                 args.dirty_data.push(list);
             }
             b"-data_const" => st.data_const = Some(true),

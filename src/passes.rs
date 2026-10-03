@@ -1135,12 +1135,12 @@ pub fn unreadable_file(path: &Path, e: &std::io::Error) -> error::Message {
         Some(md) if md.len() == 0 => b"file is empty".to_vec(),
         Some(_) => {
             let e = std::io::Error::from_raw_os_error(libc::EINVAL);
-            let errno = crate::error::errno_text(&e);
-            error::render(format_args!("file cannot be mmap()ed, {errno} path={p}"))
+            let errno = crate::error::strerror(&e);
+            error::render(format_args!("cannot map {p}: {errno}"))
         }
         None => {
-            let errno = crate::error::errno_text(e);
-            error::render(format_args!("file cannot be open()ed, {errno} path={p}"))
+            let errno = crate::error::strerror(e);
+            error::render(format_args!("cannot open {p}: {errno}"))
         }
     }
 }

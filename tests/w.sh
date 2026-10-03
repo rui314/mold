@@ -30,7 +30,7 @@ not grep -q warning $t/log4
 # the one about an obsolete option. (ld-prime gives these as it reads
 # the option, which only a -w before it silences.)
 $CC --ld-path=$mold -o $t/exe $t/b.o -Wl,-alias_list,$t/nosuch >& $t/log5
-[ "$(grep -c "order file '$t/nosuch' could not be opened" $t/log5)" = 1 ]
+[ "$(grep -c 'No such file or directory' $t/log5)" = 1 ]
 $CC --ld-path=$mold -o $t/exe $t/b.o -Wl,-w,-alias_list,$t/nosuch >& $t/log6
 not grep -q warning $t/log6
 

@@ -25,7 +25,7 @@ nm -n $t/exe | grep -A1 ' _f3$' | grep -q ' _f2$'
 $mold -r -arch $ARCH -o $t/r.o $t/a.o -sectorder "" "" $t/order
 
 $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-sectorder,__TEXT,__text,$t/nonexistent 2> $t/log
-grep -q "order file '$t/nonexistent' could not be opened" $t/log
+grep -q 'No such file or directory' $t/log
 
 not $mold -arch $ARCH -o $t/exe $t/a.o -sectorder __TEXT __text 2> $t/log
 grep -q -- '-sectorder.*missing' $t/log
