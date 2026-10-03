@@ -6422,20 +6422,16 @@ pub fn bind_dyld_lazy_load<E: Target>(ctx: &mut Context<E>) {
     }
 }
 
-/// Copies all chunks to the output buffer and applies relocations. The
-/// code signature is computed last, over everything else.
-/// Copies one chunk's contents into its slice of the output buffer.
-/// The slice covers exactly [fileoff, fileoff + size).
 /// Copies all chunks to the output buffer and applies relocations, in
 /// parallel: the buffer is carved into disjoint per-chunk slices, and
-/// every chunk writes only within its own. The mach header, symbol
-/// table (which also fills the string table), UUID and code signature
-/// run serially afterwards, in that order, since each depends on the
-/// bytes before it. Each range of the buffer is queued to `out` the
-/// moment it is final, so the file is written while the rest is
-/// produced: everything between the header and the symbol table after
-/// the copy and its fix-ups, the symbol and string tables after
-/// copy_symtab, the header after the UUID, the signature last.
+/// every chunk writes only within its own. The fixups, the symbol table
+/// (which also fills the string table), the mach header, the UUID and
+/// the code signature follow serially, in that order, since each
+/// depends on the bytes before it. Each range of the buffer is queued
+/// to `out` the moment it is final, so the file is written while the
+/// rest is produced: everything between the header and the symbol
+/// table after the copy and its fix-ups, the symbol and string tables
+/// after copy_symtab, the header after the UUID, the signature last.
 pub fn copy_chunks<E: Target>(
     ctx: &Context<E>,
     buf: &mut [u8],
@@ -6499,19 +6495,33 @@ pub fn copy_chunks<E: Target>(
     out.queue(symtab_start, sig_start - symtab_start);
     chunks::copy_mach_header(ctx, buf);
 
-    // The code signature is SHA256 hashes of every 4KiB page before it,
-    // and the UUID that identifies this build is derived from that same
-    // hash array rather than from a second pass over the contents: the
-    // pages are hashed while the LC_UUID field is still zero, the array is
-    // hashed once more and stamped as a version-4 UUID, which is written
-    // into the header's LC_UUID, and only the pages the header spans are
-    // hashed again for the signature. The circularity - the signature
-    // covers the header, the header holds the UUID - is broken by the
-    // zeroed field, the way ld64 hashes with the UUID zeroed. Like ld64's,
-    // the UUID depends on the contents before the signature only, not on
-    // the signature blob (whose identifier is the output's basename);
-    // unsigned output hashes its pages the same way.
-    // A -random_uuid one goes in before anything is hashed.
+    let hashes = compute_uuid(ctx, buf, sig_start);
+    out.queue(0, hdr_end);
+
+    if ctx.args.adhoc_codesign {
+        let _t = ctx.timer("write_code_signature");
+        chunks::code_signature::write(ctx, buf, &hashes);
+    }
+    out.queue(sig_start, buf.len() - sig_start);
+}
+
+/// Computes the UUID that identifies the build and writes it into the
+/// header's LC_UUID, and returns the SHA256 hashes of every 4KiB page
+/// before the code signature at `sig_start`, which the signature is
+/// made of.
+///
+/// The UUID is derived from those page hashes rather than from a second
+/// pass over the contents: the pages are hashed while the LC_UUID field
+/// is still zero, the array is hashed once more and stamped as a
+/// version-4 UUID, and only the pages the header spans are hashed again
+/// for the signature. The circularity - the signature covers the
+/// header, the header holds the UUID - is broken by the zeroed field,
+/// the way ld64 hashes with the UUID zeroed. Like ld64's, the UUID
+/// depends on the contents before the signature only, not on the
+/// signature blob (whose identifier is the output's basename); unsigned
+/// output hashes its pages the same way. A -random_uuid one goes in
+/// before anything is hashed.
+fn compute_uuid<E: Target>(ctx: &Context<E>, buf: &mut [u8], sig_start: usize) -> Vec<[u8; 32]> {
     let set_uuid = |uuid: &[u8], buf: &mut [u8]| {
         let mut uuid: [u8; 16] = uuid[..16].try_into().unwrap();
         uuid[6] = (uuid[6] & 0x0f) | 0x40; // version 4
@@ -6538,13 +6548,8 @@ pub fn copy_chunks<E: Target>(
         let mut hash = [0; 32];
         crate::util::sha256(&flat, &mut hash);
         set_uuid(&hash, buf);
+        let hdr_end = ctx.mach_header.hdr.size as usize;
         chunks::code_signature::rehash_pages(&buf[..sig_start], &mut hashes, 0..hdr_end);
     }
-    out.queue(0, hdr_end);
-
-    if ctx.args.adhoc_codesign {
-        let _t = ctx.timer("write_code_signature");
-        chunks::code_signature::write(ctx, buf, &hashes);
-    }
-    out.queue(sig_start, buf.len() - sig_start);
+    hashes
 }
