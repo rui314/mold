@@ -27,13 +27,34 @@ EOF
 
 reports() { echo "-Wl,-map,$t/$1.map -Wl,-dependency_info,$t/$1.dep"; }
 
-# A reference to Swift metadata the option dropped is an error.
-not $CC --ld-path=$mold -o $t/exe1 $t/a.o -Wl,-remove_swift_reflection_metadata_sections \
-  $(reports 1) 2> $t/log1
-grep -q "$t/a.o: _desc+0x4: target '_fm1' does not have address" $t/log1
-grep -q '^\[  1\] .*/a.o$' $t/1.map
-grep -q a.o $t/1.dep
+# A pc-relative reference to an import, which has no address in the
+# image, fails the link as the output is written.
+echo 'long x = 5;' | $CC -o $t/x.o -c -xc -
+$CC --ld-path=$mold -shared -o $t/libx.dylib $t/x.o
+if [ $ARCH = arm64 ]; then
+  ref='adrp x0, _x@PAGE'
+else
+  ref='leaq _x(%rip), %rax'
+fi
+cat <<EOF | $CC -o $t/p.o -c -xassembler -
+.text
+.globl _main
+_main:
+  $ref
+  ret
+EOF
+not $CC --ld-path=$mold -o $t/exe1 $t/p.o $t/libx.dylib $(reports 1) 2> $t/log1
+grep -q "$t/p.o: _main+0x[0-9a-f]*: target '_x' does not have address" $t/log1
+grep -q '^\[  1\] .*/p.o$' $t/1.map
+grep -q p.o $t/1.dep
 [ ! -e $t/exe1 ]
+
+# A reference to Swift metadata the option dropped is an error found
+# before.
+not $CC --ld-path=$mold -o $t/exe4 $t/a.o -Wl,-remove_swift_reflection_metadata_sections \
+  2> $t/log4
+grep -q "$t/a.o: _desc+0x4: target '_fm1' does not have address" $t/log4
+[ ! -e $t/exe4 ]
 
 # Thread-local data a rename moves out of the template is an error in
 # the layout.

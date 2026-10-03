@@ -3209,13 +3209,12 @@ pub fn remove_swift_reflection_metadata<E: Target>(ctx: &mut Context<E>) {
     }
 }
 
-/// Reports a reference to the Swift reflection metadata that
+/// Reports each live reference to the Swift reflection metadata that
 /// -remove_swift_reflection_metadata_sections dropped - such as a type
 /// descriptor's to its field descriptor, which every Swift type has -
-/// whose target so has no address. ld-prime fails a final link at the
-/// first by address as it writes it, a relative one (and crashes on a
-/// pointer, or in a -r link, where mold reports the first in input
-/// order).
+/// whose target so has no address. (ld-prime fails a final link at the
+/// first by address as it writes it, and crashes on a pointer or in a
+/// -r link.)
 pub fn check_removed_swift_metadata_refs<E: Target>(ctx: &Context<E>) {
     if !ctx.args.remove_swift_reflection_metadata_sections {
         return;
@@ -3227,28 +3226,20 @@ pub fn check_removed_swift_metadata_refs<E: Target>(ctx: &Context<E>) {
     let live = |isec: &InputSection| {
         isec.is_alive() && isec.replacement == crate::input_sections::NO_REPLACEMENT
     };
-    let first = (ctx.isecs.iter().enumerate())
-        .filter(|(_, isec)| live(isec))
-        .flat_map(|(i, isec)| ctx.isec_relocs(i).iter().map(move |rel| (i, isec, rel)))
-        .filter(|&(_, isec, rel)| {
-            let target = match ctx.reloc_target_sym(isec.file as usize, rel) {
+    for (i, isec) in ctx.isecs.iter().enumerate().filter(|(_, isec)| live(isec)) {
+        for rel in ctx.isec_relocs(i) {
+            let file = isec.file as usize;
+            let target = match ctx.reloc_target_sym(file, rel) {
                 Some(id) => ctx.symbols[id].input_section().map(|t| t as usize),
-                None => match rel.target() {
-                    RelocTarget::Section(t) => Some(t as usize),
-                    RelocTarget::Sym(_) => None,
-                },
+                None => ctx.reloc_target_isec(file, rel),
             };
-            target.is_some_and(removed)
-        })
-        .min_by_key(|&(i, _, rel)| {
-            let at = if ctx.args.relocatable { i as u64 } else { ctx.isec_addr(i) };
-            (at, rel.offset)
-        });
-    let Some((i, isec, rel)) = first else {
-        return;
-    };
-    let target = ctx.reloc_target_name(isec.file as usize, rel);
-    ctx.fixup_error(i, rel.offset, format_args!("target '{}' does not have address", raw(&target)));
+            if target.is_some_and(removed) {
+                let target = ctx.reloc_target_name(file, rel);
+                let msg = format_args!("target '{}' does not have address", raw(&target));
+                ctx.fixup_error(i, rel.offset, msg);
+            }
+        }
+    }
 }
 
 /// Hides the subsections of archive members that resolution left

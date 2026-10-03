@@ -188,6 +188,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
         dead_strip::strip_dead_code(&mut ctx);
         drop(t);
     }
+    passes::check_removed_swift_metadata_refs(&ctx);
     timed!("report_undef_errors", passes::report_undef_errors(&mut ctx));
     crate::error::checkpoint();
     passes::check_weak_imports(&ctx);
@@ -233,7 +234,6 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     crate::mapfile::write_dependency_info(&ctx);
     crate::mapfile::print_map(&ctx);
     crate::mapfile::write_sdk_imports(&ctx);
-    passes::check_removed_swift_metadata_refs(&ctx);
 
     // Write the output. The file is created up front, executable, and
     // its ranges are written from background threads as copy_chunks
