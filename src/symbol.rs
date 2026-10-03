@@ -380,6 +380,24 @@ impl std::hash::Hash for Key {
     }
 }
 
+/// A key for lookups, which needn't outlive the lookup (mold's Query).
+struct Query<'a> {
+    hash: u64,
+    key: &'a [u8],
+}
+
+impl std::hash::Hash for Query<'_> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        state.write_u64(self.hash);
+    }
+}
+
+impl hashbrown::Equivalent<Key> for Query<'_> {
+    fn equivalent(&self, key: &Key) -> bool {
+        self.hash == key.hash && self.key == key.key
+    }
+}
+
 #[derive(Default)]
 struct PassThroughHasher(u64);
 
@@ -416,14 +434,7 @@ impl SymbolTable {
     /// Returns the symbol for a global name if it exists.
     pub fn get(&self, name: &[u8]) -> Option<SymbolId> {
         let hash = hash_key(name);
-        // SAFETY-free trick from mold: lookups build a key borrowing
-        // the probe name; only inserts require 'static.
-        let probe = Key {
-            hash,
-            // The key is only compared during this call.
-            key: unsafe { std::mem::transmute::<&[u8], &'static [u8]>(name) },
-        };
-        self.shards[shard_of(hash)].get(&probe).copied()
+        self.shards[shard_of(hash)].get(&Query { hash, key: name }).copied()
     }
 
     /// Creates an anonymous slot for a file-local symbol.
