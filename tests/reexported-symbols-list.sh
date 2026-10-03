@@ -22,16 +22,16 @@ $CC --ld-path=$mold $t/main.o $t/libouter.dylib -o $t/exe
 $t/exe
 
 # A listed name is an initial undefine, as a -u name is: one nothing
-# defines is wanted by ld-prime's "<initial-undefines>", even under
-# -undefined dynamic_lookup. (mold names the place on the symbol's line,
-# ld-prime on the next.)
+# defines is wanted by the command line, even under -undefined
+# dynamic_lookup. (ld-prime names its "<initial-undefines>", on the line
+# after the symbol's.)
 echo _missing > $t/list
 not $CC --ld-path=$mold -dynamiclib $t/a.o $t/libinner.dylib \
   -Wl,-reexported_symbols_list,$t/list,-dead_strip -o $t/libbad.dylib 2> $t/log
-grep -v '^+' $t/log | grep -A1 _missing | grep -qF '<initial-undefines>'
+grep -v '^+' $t/log | grep -A1 _missing | grep -qF 'the command line'
 not $CC --ld-path=$mold -dynamiclib $t/a.o $t/libinner.dylib -Wl,-undefined,dynamic_lookup \
   -Wl,-reexported_symbols_list,$t/list -o $t/libbad.dylib 2> $t/log
-grep -v '^+' $t/log | grep -A1 _missing | grep -qF '<initial-undefines>'
+grep -v '^+' $t/log | grep -A1 _missing | grep -qF 'the command line'
 
 # Only a dylib re-exports symbols: ld-prime refuses the list, empty or
 # not, for any other output, though an executable may re-export a

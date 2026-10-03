@@ -39,7 +39,7 @@ fi
 
 not $CC --ld-path=$mold -o $t/lib3.dylib -shared $t/a.o -Wl,-init,_nosuch \
   -Wl,-undefined,dynamic_lookup 2> $t/log3
-grep -v '^+' $t/log3 | grep -A1 _nosuch | grep -q '<initial-undefines>'
+grep -v '^+' $t/log3 | grep -A1 _nosuch | grep -q 'the command line'
 
 # An offset can't reach a function in another image.
 not $CC --ld-path=$mold -o $t/lib4.dylib -shared $t/a.o -Wl,-init,_puts 2> $t/log4

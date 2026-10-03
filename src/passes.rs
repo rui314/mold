@@ -4106,31 +4106,19 @@ pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
     // ld-prime reports them by name.
     undef.par_sort_unstable_by_key(|&i| ctx.symbols.syms[i].name());
     let referenced = referenced_symbols(ctx);
-    // A name the command line insists on must resolve: ld-prime reports
-    // one even under -undefined dynamic_lookup or -U, as wanted by its
-    // "<initial-undefines>" (-u, the entry point, a name an export list
-    // gives without wildcards) or by the alias in its
-    // "command-line-aliases-file" (an -alias base) - unless -dead_strip
-    // strips the alias, which only an export root survives. The alias
+    // A name the command line insists on must resolve, even under
+    // -undefined dynamic_lookup or -U: -u, the entry point, a name an
+    // export list gives without wildcards, an -alias base. The alias
     // itself counts as defined.
-    let mut initial: hashbrown::HashMap<crate::symbol::SymbolId, &str> = hashbrown::HashMap::new();
     let entry = ctx.args.has_entry_point().then_some(&ctx.args.entry);
-    for name in ctx.args.forced_undefined.iter().chain(entry) {
-        if let Some(id) = ctx.symbols.get(name) {
-            initial.insert(id, "<initial-undefines>");
-        }
-    }
-    let mut aliases = hashbrown::HashSet::new();
-    for (base, alias) in &ctx.args.aliases {
-        let live = !ctx.strips_dead_code()
-            || (crate::dead_strip::keeps_export(ctx, alias)
-                && ctx.args.unexported_symbols.find(alias) == -1);
-        if let Some(id) = ctx.symbols.get(base) {
-            let place = if live { "command-line-aliases-file" } else { "<initial-undefines>" };
-            initial.entry(id).or_insert(place);
-        }
-        aliases.extend(ctx.symbols.get(alias));
-    }
+    let bases = ctx.args.aliases.iter().map(|(base, _)| base);
+    let initial: hashbrown::HashSet<crate::symbol::SymbolId> = (ctx.args.forced_undefined.iter())
+        .chain(entry)
+        .chain(bases)
+        .filter_map(|name| ctx.symbols.get(name))
+        .collect();
+    let aliases: hashbrown::HashSet<crate::symbol::SymbolId> =
+        ctx.args.aliases.iter().filter_map(|(_, alias)| ctx.symbols.get(alias)).collect();
 
     // Errors name a file that wants the symbol; the map from symbol to
     // referencing object is built only once an error is certain.
@@ -4153,7 +4141,8 @@ pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
         });
         match map.get(&id) {
             Some(&obj_idx) => error::RawBuf::from(ctx.objs[obj_idx].mf.name.as_path()),
-            None => initial.get(&id).copied().unwrap_or("<synthesized>").into(),
+            None if initial.contains(&id) => "the command line".into(),
+            None => "<synthesized>".into(),
         }
     };
 
@@ -4168,7 +4157,7 @@ pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
             let allowed = !ctx.args.static_link
                 && (ctx.args.undefined_dynamic_lookup
                     || ctx.args.allowed_undefined.iter().any(|n| n.as_slice() == sym.name()))
-                && !initial.contains_key(&(i as crate::symbol::SymbolId));
+                && !initial.contains(&(i as crate::symbol::SymbolId));
             if allowed {
                 let sym = &mut ctx.symbols[i];
                 sym.set_file(FileId::Dylib((usize::MAX) as u32));

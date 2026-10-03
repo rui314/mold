@@ -26,8 +26,8 @@ EOF
 $CC --ld-path=$mold -o $t/exe2 $t/a.o $t/b.o -Wl,-alias_list,$t/aliases
 $t/exe2 | grep hello
 
-# An alias of nothing is an undefined symbol, wanted by the alias in
-# ld-prime's command-line-aliases-file.
+# An alias of nothing is an undefined symbol, wanted by the command
+# line. (ld-prime says by the alias in its command-line-aliases-file.)
 not $CC --ld-path=$mold -o $t/exe3 $t/a.o $t/b.o -Wl,-alias,_nonexistent,_official_name 2> $t/log
 grep -q '_nonexistent' $t/log
-grep -q 'command-line-aliases-file' $t/log
+grep -q 'the command line' $t/log
