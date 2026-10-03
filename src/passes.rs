@@ -2867,64 +2867,75 @@ pub fn parse_symbol_version<E: Target>(ctx: &mut Context<E>) {
         .map(|(i, v)| (v.as_ref(), i as u16 + VER_NDX_LAST_RESERVED as u16 + 1))
         .collect();
 
-    for file in &ctx.objs {
-        if ctx.is_internal(file.id()) {
+    // Symbols with versions in their names, such as foo@VERSION, are few,
+    // so we look for them in parallel. They are then processed in input
+    // order, as one may read a version that another one has just set.
+    let symvers: Vec<(ObjId, usize)> = {
+        let ctx: &Context<E> = ctx;
+        ctx.objs
+            .par_iter()
+            .filter(|file| !ctx.is_internal(file.id()))
+            .flat_map_iter(|file| {
+                let file_id = FileId::Obj(file.id());
+                (file.base.first_global..file.base.elf_syms.len())
+                    .filter(move |&i| {
+                        file.has_symver[i - file.base.first_global]
+                            && ctx.symbols[file.base.symbols[i]].file() == Some(file_id)
+                    })
+                    .map(move |i| (file.id(), i))
+            })
+            .collect()
+    };
+
+    for (obj, i) in symvers {
+        let file = &ctx.objs[obj.index()];
+        let file_id = FileId::Obj(obj);
+        let id = file.base.symbols[i];
+
+        // Match VERSION part of symbol foo@VERSION with version definitions.
+        let name = file.base.symbol_name_in(i);
+        let at = memchr::memchr(b'@', name).unwrap();
+        let mut ver = &name[at + 1..];
+        let mut is_default = false;
+        if let Some(rest) = ver.strip_prefix(b"@") {
+            is_default = true;
+            ver = rest;
+        }
+
+        // Empty version (`foo@@`) is the unversioned default; export it
+        // globally, overriding any `local: *` from apply_version_script().
+        if ver.is_empty() {
+            ctx.symbols[id].ver_idx = VER_NDX_GLOBAL as u16;
             continue;
         }
-        let file_id = FileId::Obj(file.id());
-        for i in file.base.first_global..file.base.elf_syms.len() {
-            // Match VERSION part of symbol foo@VERSION with version definitions.
-            if !file.has_symver[i - file.base.first_global] {
-                continue;
-            }
-            let id = file.base.symbols[i];
-            if ctx.symbols[id].file() != Some(file_id) {
-                continue;
-            }
-            let name = file.base.symbol_name_in(i);
-            let at = memchr::memchr(b'@', name).unwrap();
-            let mut ver = &name[at + 1..];
-            let mut is_default = false;
-            if let Some(rest) = ver.strip_prefix(b"@") {
-                is_default = true;
-                ver = rest;
-            }
+        let Some(&ver_idx) = verdefs.get(ver) else {
+            error!(
+                "{}: symbol {} has undefined version {}",
+                file,
+                ctx.symbols[id],
+                crate::util::display(ver)
+            );
+            continue;
+        };
+        let ver_idx = if is_default { ver_idx } else { ver_idx | VERSYM_HIDDEN as u16 };
+        ctx.symbols[id].ver_idx = ver_idx;
 
-            // Empty version (`foo@@`) is the unversioned default; export it
-            // globally, overriding any `local: *` from apply_version_script().
-            if ver.is_empty() {
-                ctx.symbols[id].ver_idx = VER_NDX_GLOBAL as u16;
-                continue;
-            }
-            let Some(&ver_idx) = verdefs.get(ver) else {
-                error!(
-                    "{}: symbol {} has undefined version {}",
-                    file,
-                    ctx.symbols[id],
-                    crate::util::display(ver)
-                );
-                continue;
-            };
-            let ver_idx = if is_default { ver_idx } else { ver_idx | VERSYM_HIDDEN as u16 };
-            ctx.symbols[id].ver_idx = ver_idx;
-
-            // If both symbol `foo` and `foo@VERSION` are defined, `foo@VERSION`
-            // hides `foo` so that all references to `foo` are resolved to a
-            // versioned symbol. Likewise, if `foo@VERSION` and `foo@@VERSION` are
-            // defined, the default one takes precedence.
-            let sym_name = ctx.symbols[id].name();
-            if let Some(id2) = ctx.symbols.lookup(sym_name)
-                && id2 != id
-                && ctx.symbols[id2].file() == Some(file_id)
-            {
-                let sym2_idx = ctx.symbols[id2].sym_idx() as usize;
-                if !file.has_symver[sym2_idx - file.base.first_global] {
-                    let v2 = ctx.symbols[id2].ver_idx as u32;
-                    if v2 == ctx.default_version as u32
-                        || (v2 & !VERSYM_HIDDEN) == (ver_idx as u32 & !VERSYM_HIDDEN)
-                    {
-                        ctx.symbols[id2].ver_idx = VER_NDX_LOCAL as u16;
-                    }
+        // If both symbol `foo` and `foo@VERSION` are defined, `foo@VERSION`
+        // hides `foo` so that all references to `foo` are resolved to a
+        // versioned symbol. Likewise, if `foo@VERSION` and `foo@@VERSION` are
+        // defined, the default one takes precedence.
+        let sym_name = ctx.symbols[id].name();
+        if let Some(id2) = ctx.symbols.lookup(sym_name)
+            && id2 != id
+            && ctx.symbols[id2].file() == Some(file_id)
+        {
+            let sym2_idx = ctx.symbols[id2].sym_idx() as usize;
+            if !file.has_symver[sym2_idx - file.base.first_global] {
+                let v2 = ctx.symbols[id2].ver_idx as u32;
+                if v2 == ctx.default_version as u32
+                    || (v2 & !VERSYM_HIDDEN) == (ver_idx as u32 & !VERSYM_HIDDEN)
+                {
+                    ctx.symbols[id2].ver_idx = VER_NDX_LOCAL as u16;
                 }
             }
         }
@@ -2974,73 +2985,59 @@ pub fn compute_import_export<E: Target>(ctx: &mut Context<E>) {
 
     // If we are creating an executable, we want to export symbols referenced
     // by DSOs unless they are explicitly marked as local by a version script.
-    let mut exports: Vec<SymbolId> = Vec::new();
     if !ctx.args.shared {
         let symbols = &ctx.symbols;
-        exports = ctx
-            .dsos
-            .par_iter()
-            .flat_map_iter(|file| {
-                file.base.symbols.iter().copied().filter(|&id| {
-                    let sym = &symbols[id];
-                    matches!(sym.file(), Some(FileId::Obj(_)))
-                        && sym.visibility() != STV_HIDDEN
-                        && sym.ver_idx as u32 != VER_NDX_LOCAL
-                })
-            })
-            .collect();
-    }
-    for id in exports {
-        ctx.symbols[id].set_exported(true);
+        ctx.dsos.par_iter().for_each(|file| {
+            for &id in &file.base.symbols {
+                let sym = &symbols[id];
+                if matches!(sym.file(), Some(FileId::Obj(_)))
+                    && sym.visibility() != STV_HIDDEN
+                    && sym.ver_idx as u32 != VER_NDX_LOCAL
+                {
+                    sym.set_exported_shared();
+                }
+            }
+        });
     }
 
     // Export symbols that are not hidden or marked as local.
     // We also want to mark imported symbols as such.
-    let updates: Vec<(SymbolId, bool, bool, bool)> = {
-        let ctx_ref: &Context<E> = ctx;
-        ctx_ref
-            .objs
-            .par_iter()
-            .flat_map_iter(|file| {
-                let file_id = FileId::Obj(file.id());
-                file.base.global_symbols().iter().copied().enumerate().filter_map(move |(i, id)| {
-                    let sym = &ctx_ref.symbols[id];
+    {
+        let ctx: &Context<E> = ctx;
+        ctx.objs.par_iter().for_each(|file| {
+            let file_id = FileId::Obj(file.id());
+            for (i, &id) in file.base.global_symbols().iter().enumerate() {
+                let sym = &ctx.symbols[id];
 
-                    // If we are using a symbol in a DSO, we need to import it.
-                    if let Some(FileId::Dso(_)) = sym.file() {
-                        // Shared symbols remain weak only if every undefined
-                        // reference is weak. Fragment dummies have no ElfSym.
-                        let strong = file
-                            .base
-                            .elf_syms
-                            .get(file.base.first_global + i)
-                            .is_some_and(|esym| esym.is_undef() && !esym.is_weak());
-                        return Some((id, true, false, strong));
-                    }
+                // If we are using a symbol in a DSO, we need to import it.
+                if let Some(FileId::Dso(_)) = sym.file() {
+                    sym.set_imported_shared();
 
-                    // If we have a definition of a symbol, we may want to export it.
-                    if sym.file() == Some(file_id) && should_export(ctx_ref, sym) {
-                        // Exported symbols are marked as imported as well by default
-                        // for DSOs.
-                        let imported = ctx_ref.args.shared && !is_protected(ctx_ref, sym);
-                        return Some((id, imported, true, false));
+                    // Shared symbols remain weak only if every undefined
+                    // reference is weak. Fragment dummies have no ElfSym.
+                    if file
+                        .base
+                        .elf_syms
+                        .get(file.base.first_global + i)
+                        .is_some_and(|esym| esym.is_undef() && !esym.is_weak())
+                    {
+                        sym.clear_weak_shared();
                     }
-                    None
-                })
-            })
-            .collect()
-    };
-    for (id, imported, exported, strong) in updates {
-        let sym = &mut ctx.symbols[id];
-        if imported {
-            sym.set_imported(true);
-        }
-        if exported {
-            sym.set_exported(true);
-        }
-        if strong {
-            sym.set_weak(false);
-        }
+                    continue;
+                }
+
+                // If we have a definition of a symbol, we may want to export it.
+                if sym.file() == Some(file_id) && should_export(ctx, sym) {
+                    sym.set_exported_shared();
+
+                    // Exported symbols are marked as imported as well by default
+                    // for DSOs.
+                    if ctx.args.shared && !is_protected(ctx, sym) {
+                        sym.set_imported_shared();
+                    }
+                }
+            }
+        });
     }
 
     // Apply --dynamic-list, --export-dynamic-symbol and

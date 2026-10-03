@@ -9,7 +9,7 @@ use std::hash::{BuildHasherDefault, Hash, Hasher};
 use std::mem::MaybeUninit;
 use std::ops::{Index, IndexMut, Range};
 use std::ptr::NonNull;
-use std::sync::atomic::{AtomicU8, AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicU16, AtomicU32, AtomicUsize, Ordering};
 
 // Atomic accesses use relaxed ordering unless stronger synchronization is
 // required, matching C++ mold's default atomic wrapper.
@@ -282,8 +282,8 @@ pub struct Symbol {
     aux_idx: AtomicU32,
 
     /// The symbol's boolean attributes, packed; the accessors below name
-    /// them.
-    bits: u16,
+    /// them. Some passes set them in parallel through shared references.
+    bits: AtomicU16,
 }
 
 // It can be smaller on 32-bit hosts.
@@ -443,15 +443,16 @@ macro_rules! symbol_bits {
             $(
                 #[inline]
                 pub fn $get(&self) -> bool {
-                    self.bits & $bit != 0
+                    self.bits.load(Ordering::Relaxed) & $bit != 0
                 }
 
                 #[inline]
                 pub fn $set(&mut self, on: bool) {
+                    let bits = self.bits.get_mut();
                     if on {
-                        self.bits |= $bit;
+                        *bits |= $bit;
                     } else {
-                        self.bits &= !$bit;
+                        *bits &= !$bit;
                     }
                 }
             )*
@@ -495,7 +496,7 @@ impl Symbol {
             visibility: AtomicU8::new(STV_DEFAULT as u8),
             flags: AtomicU8::new(0),
             aux_idx: AtomicU32::new(NO_AUX),
-            bits: 0,
+            bits: AtomicU16::new(0),
         }
     }
 
@@ -674,6 +675,35 @@ impl Symbol {
     pub fn add_flags(&self, flags: u8) {
         debug_assert_eq!(flags & WRITE_TO_SYMTAB, 0);
         crate::util::atomic_or(&self.flags, flags);
+    }
+
+    // The following setters are for passes that update symbols in parallel
+    // through shared references. Many files refer to the same symbols, so,
+    // like mark(), they test a bit before writing it to avoid contended
+    // atomic writes.
+
+    #[inline]
+    pub fn set_imported_shared(&self) {
+        self.set_bits_shared(IMPORTED);
+    }
+
+    #[inline]
+    pub fn set_exported_shared(&self) {
+        self.set_bits_shared(EXPORTED);
+    }
+
+    #[inline]
+    pub fn clear_weak_shared(&self) {
+        if self.bits.load(Ordering::Relaxed) & WEAK != 0 {
+            self.bits.fetch_and(!WEAK, Ordering::Relaxed);
+        }
+    }
+
+    #[inline]
+    fn set_bits_shared(&self, bits: u16) {
+        if self.bits.load(Ordering::Relaxed) & bits != bits {
+            self.bits.fetch_or(bits, Ordering::Relaxed);
+        }
     }
 
     #[inline]
