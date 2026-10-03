@@ -3628,8 +3628,8 @@ fn dir_of(path: &Path) -> PathBuf {
 /// entries. ld-prime expands no @executable_path (ld64 took the output
 /// executable's directory, or -executable_path's), so such a name
 /// resolves only by its leaf. A -dylib_file for the name comes first,
-/// unless its file isn't there; one that is ld-prime reads as any input
-/// (see passes::unreadable_input). Then the name is looked for as
+/// unless its file isn't there; one that is ld-prime reads as any input.
+/// Then the name is looked for as
 /// find_dylib_ref does, the files not found noted for -dependency_info
 /// - but for the name itself if a stub has the library `inlined`.
 fn resolve_dylib_ref<E: Target>(
@@ -3645,7 +3645,7 @@ fn resolve_dylib_ref<E: Target>(
             Ok(mf) if mf.size() > 0 => return Some(mf),
             Ok(_) => fatal!("file is empty in '{}'", file.raw()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound && !file.exists() => {}
-            Err(e) => fatal!("{}", crate::error::raw(&crate::passes::unreadable_input(file, &e))),
+            Err(e) => fatal!("{}", crate::error::raw(&crate::passes::unreadable_file(file, &e))),
         }
     }
     let prober = crate::passes::Prober::new(ctx);

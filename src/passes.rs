@@ -324,7 +324,7 @@ fn find_mergeable_dylib<E: Target>(
 
 /// Looks for lib<name> in the library search path, for each pass of
 /// files in turn. What is there counts, as for ld-prime, which fails
-/// on a directory it finds (see unreadable_input). A name ending in .o
+/// on a directory it finds. A name ending in .o
 /// is a file name to look up as it is, whatever the option: clang
 /// links crt1.o for an old deployment target as -lcrt1.10.6.o.
 fn search_library<E: Target>(
@@ -703,11 +703,9 @@ fn name_again<E: Target>(
 }
 
 /// Refuses an image the link reads that has no LC_UUID (see
-/// input_files::has_uuid), by the path of its file.
+/// input_files::has_uuid).
 fn refuse_without_uuid(mf: &MappedFile) {
-    let name = input_files::trace_name(path_bytes(&mf.name));
-    let name = raw(&name);
-    error!("missing LC_UUID load command in '{name}' in '{name}'");
+    error!("missing LC_UUID load command in '{}'", mf.name.raw());
 }
 
 /// Refuses a file the link can't take, by what it is.
@@ -925,7 +923,7 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
                 load_bundle_loader(ctx, mf, rc, &mut queue)
             }
             Ok(mf) => collect_file(ctx, mf, rc, &mut queue),
-            Err(e) => error!("{}", raw(&unreadable_input(&path, &e))),
+            Err(e) => error!("{}", raw(&unreadable_file(&path, &e))),
         }
     }
     ctx.args.inputs = inputs;
@@ -1043,16 +1041,10 @@ fn collect_indirect_files<E: Target>(ctx: &mut Context<E>, out: &mut Vec<Pending
     }
 }
 
-/// ld-prime's words for an input file MappedFile::try_open failed on
-/// with `e`: unreadable_file's, then the input's name.
-pub fn unreadable_input(path: &Path, e: &std::io::Error) -> error::Message {
-    error::render(format_args!("{} in '{}'", raw(&unreadable_file(path, e)), path.raw()))
-}
-
-/// ld-prime's words for a file MappedFile::try_open failed on with `e`.
-/// ld-prime maps every input whole, and refuses an empty one, so a file
-/// that is there but no regular one (which MappedFile takes for none)
-/// is one it can't map - a directory - or an empty one.
+/// The words for a file MappedFile::try_open failed on with `e`. Every
+/// input is read whole, and an empty one refused, so a file that is
+/// there but no regular one (which MappedFile takes for none) is one
+/// that can't be mapped - a directory - or an empty one.
 pub fn unreadable_file(path: &Path, e: &std::io::Error) -> error::Message {
     let p = path.raw();
     let found = std::fs::metadata(path).ok().filter(|_| e.kind() == std::io::ErrorKind::NotFound);
@@ -1572,7 +1564,7 @@ pub fn load_autolink_deps<E: Target>(ctx: &mut Context<E>) -> Autolinked {
                 let rc = ReaderContext { autolinked: true, sdk, ..Default::default() };
                 collect_file(ctx, mf, rc, &mut queue);
             }
-            Err(e) => error!("{}", raw(&unreadable_input(&path, &e))),
+            Err(e) => error!("{}", raw(&unreadable_file(&path, &e))),
         }
     }
     for dylib in &mut ctx.dylibs[dylibs_before..] {

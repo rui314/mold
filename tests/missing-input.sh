@@ -81,8 +81,8 @@ echo $t/nosuch.a > $t/list
 try -framework NoSuch -Wl,-filelist,$t/list
 grep -q "framework 'NoSuch' not found" $t/log
 
-# A library search finds what is there, a directory too, which ld-prime
-# then fails to map.
+# A library search finds what is there, a directory too, which then
+# can't be read.
 mkdir -p $t/libdir/libdir.dylib $t/fwdir/Dir.framework/Dir
 try -L$t/libdir -ldir
 says $t/libdir/libdir.dylib 'Invalid argument'
