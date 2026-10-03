@@ -4,8 +4,8 @@ source "$(dirname "$0")"/common.inc
 # A pointer in a read-only section to a class reference slot needs a
 # fixup, so it is a text relocation the link refuses, at any deployment
 # target; the slot goes by its label (an x86-64 assembler's relocation
-# names its section and offset). (From macOS 15 on ld-prime folds the
-# slot into its class's GOT entry and names that by its own numbering of
+# names its section and offset), also from macOS 15 on, where the slot
+# is its class's GOT entry. (ld-prime names that by its own numbering of
 # the subsections of its "stubs-got-file", "anon-N"; a slot in place it
 # names by the object's subsections'.)
 if [ $ARCH = arm64 ]; then

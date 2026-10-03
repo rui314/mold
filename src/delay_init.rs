@@ -49,8 +49,9 @@ pub fn create_delay_init<E: Target>(ctx: &mut Context<E>) {
 }
 
 /// The references to delay-init dylibs' symbols from live subsections,
-/// in input order, once the ones that can't be delayed are reported (an
-/// __objc_classrefs slot of a class among them).
+/// in input order, once the ones that can't be delayed are reported:
+/// among them an __objc_classrefs slot of a class, which only a link
+/// below macOS 15 keeps (see objc::fold_objc_classrefs).
 fn delay_uses<E: Target>(ctx: &Context<E>) -> Vec<LazyUseSite> {
     let uses = import_uses(ctx, |id| ctx.is_delay_import(id));
     for &(isec, _, id, how) in &uses {

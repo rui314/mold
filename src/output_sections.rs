@@ -66,7 +66,9 @@ const DATA_CONST_SECTIONS: &[&[u8]] = &[
 /// Class, protocol and superclass references are written by the
 /// Objective-C runtime on older systems, so they stay in __DATA unless
 /// the deployment target is macOS 14.4 or later, where ld-prime moves
-/// them to __DATA_CONST (dyld fixes them up there).
+/// them to __DATA_CONST (dyld fixes them up there; from macOS 15 on
+/// most class references fold into __got, see
+/// objc::fold_objc_classrefs).
 fn objc_refs_are_const<E: Target>(ctx: &Context<E>) -> bool {
     ctx.args.platform == crate::macho::PLATFORM_MACOS
         && ctx.args.platform_minos >= crate::macho::encode_version(14, 4, 0)

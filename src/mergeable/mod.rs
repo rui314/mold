@@ -118,6 +118,7 @@ pub(crate) mod ctype {
     pub const DATA: u8 = 27;
     pub const CFI: u8 = 31;
     pub const COMPACT_UNWIND: u8 = 32;
+    pub const CLASS_REF: u8 = 33;
     pub const SELECTOR_REF: u8 = 35;
     /// __objc_classlist and __objc_nlclslist.
     pub const CLASS_LISTS: [u8; 2] = [40, 44];

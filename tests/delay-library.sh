@@ -72,8 +72,8 @@ EOF
 not $CC --ld-path=$mold -o $t/exe2 $t/b.o -L$t -Wl,-delay-lfoo 2> $t/log
 grep -q "use of '_fdata' in '_p' cannot be delayed" $t/log
 
-# So is a class reference of Objective-C code, a pointer to the class
-# (which ld-prime loads from the GOT instead from macOS 15 on).
+# So is a class reference of Objective-C code below macOS 15, a pointer
+# to the class (see delay-library-objc-class.sh).
 cat <<EOF | $CC -o $t/f.o -c -xobjective-c - -mmacosx-version-min=14.0
 #import <Foundation/Foundation.h>
 int main() { return [NSString string] != nil ? 0 : 1; }

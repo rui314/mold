@@ -14,6 +14,10 @@ pub struct GotSection {
     pub hdr: ChunkHeader,
     /// Symbols with a __got slot, in slot order.
     pub got_syms: Vec<SymbolId>,
+    /// The subsections standing for the GOT entries of the classes whose
+    /// __objc_classrefs slots stay when the slots fold into __got (see
+    /// objc::fold_objc_classrefs), with the classes.
+    pub stand_ins: Vec<(u32, SymbolId)>,
 }
 
 impl GotSection {
@@ -21,7 +25,7 @@ impl GotSection {
         let mut hdr = ChunkHeader::new(b"__DATA", b"__got");
         hdr.flags = S_NON_LAZY_SYMBOL_POINTERS;
         hdr.p2align = 3;
-        Self { hdr, got_syms: Vec::new() }
+        Self { hdr, got_syms: Vec::new(), stand_ins: Vec::new() }
     }
 
     pub fn slot_addr(&self, i: usize) -> u64 {

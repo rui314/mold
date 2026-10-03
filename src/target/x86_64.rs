@@ -249,6 +249,14 @@ impl Target for X86_64 {
         }
     }
 
+    // GOT_LOAD marks "movq sym@GOTPCREL(%rip), %reg" (opcode 0x8b,
+    // after a REX prefix), which a local target relaxes to lea (0x8d).
+    // A leaq of a slot takes its address.
+    fn got_load_form(r_type: u8, data: &[u8], offset: u32) -> Option<u8> {
+        let mov = offset >= 2 && data.get(offset as usize - 2) == Some(&0x8b);
+        (r_type == X86_64_RELOC_SIGNED && mov).then_some(X86_64_RELOC_GOT_LOAD)
+    }
+
     fn write_stubs(ctx: &Context<Self>, addr: u64, buf: &mut [u8]) {
         for (i, &sym) in ctx.stubs.symbols.iter().enumerate() {
             let ent = &mut buf[i * 6..];

@@ -201,6 +201,24 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
     /// How LC_SEGMENT_SPLIT_INFO records a relocation type's reference.
     fn split_ref(r_type: u8) -> SplitRef;
 
+    /// The GOT-load type objc::fold_objc_classrefs rewrites a reference
+    /// to an __objc_classrefs slot into - a relocation of type `r_type`
+    /// at `offset` of a subsection whose contents are `data` - if the
+    /// reference loads the slot's pointer (arm64's adrp, or the ldr
+    /// under it; x86-64's RIP-relative mov): the ordinary GOT-load
+    /// handling then loads the class from its GOT entry, or relaxes the
+    /// load of a class the image defines. None for a reference that
+    /// takes the slot's address.
+    fn got_load_form(r_type: u8, data: &[u8], offset: u32) -> Option<u8>;
+
+    /// Which half of a two-instruction address or load a relocation
+    /// type is: Some(true) for the page (arm64's adrp), Some(false) for
+    /// the offset into it (the ldr or add that follows); None for one
+    /// that stands alone (x86-64's RIP-relative references).
+    fn page_pair_half(_r_type: u8) -> Option<bool> {
+        None
+    }
+
     /// Writes the __stubs section: for each symbol in `ctx.stubs.symbols`, a
     /// jump through the symbol's __got slot. `addr` is the section's
     /// address and `buf` its bytes in the output.

@@ -2,10 +2,14 @@
 source "$(dirname "$0")"/common.inc
 
 # A class reference may point at a class only a temporary label names:
-# x86-64 relocations refer to it section-relatively. The slot holds the
-# class's address all the same, also into the middle of a subsection.
-# (From macOS 15 on, ld-prime folds it into the GOT, and the load of the
-# slot becomes a lea of the class - of the subsection's start.)
+# an arm64 assembler's relocation names the section's ltmp label, an
+# x86-64 one's the section and offset. From macOS 15 on, a slot that
+# points at its class through a symbol folds into the GOT as any other
+# (the load becomes an adrp+add of the class); one that points at it
+# section-relatively, or into the middle of a subsection, stays in
+# __objc_classrefs. (ld-prime folds those too, through symbols of its
+# own, and points the load of one into a subsection's middle at the
+# subsection's start.)
 class() {
   if [ $ARCH = arm64 ]; then
     load='adrp x8, _OBJC_CLASSLIST_REFERENCES_$_@PAGE
@@ -45,9 +49,16 @@ EOF
 class a ''
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/a.o -mmacosx-version-min=15.0
 $t/exe | grep -q '^1$'
-otool -l $t/exe | grep -q 'sectname __objc_classrefs'
+otool -l $t/exe > $t/lc
+if [ $ARCH = arm64 ]; then
+  not grep -q __objc_classrefs $t/lc
+elif $mold -v 2>&1 | grep -q mold-macho; then
+  grep -q 'sectname __objc_classrefs' $t/lc
+fi
 
-class b '.quad 7'
-$CC --ld-path=$mold -o $t/exe2 $t/main.o $t/b.o -mmacosx-version-min=15.0
-$t/exe2 | grep -q '^1$'
-otool -l $t/exe2 | grep -q 'sectname __objc_classrefs'
+if $mold -v 2>&1 | grep -q mold-macho; then
+  class b '.quad 7'
+  $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/b.o -mmacosx-version-min=15.0
+  $t/exe2 | grep -q '^1$'
+  otool -l $t/exe2 | grep -q 'sectname __objc_classrefs'
+fi

@@ -1,11 +1,13 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# A class reference is an 8-byte slot in __objc_classrefs holding the
-# class's address, which dyld fixes up: identical references from
-# different objects coalesce into one slot, as ld64 keeps one class
-# reference per class, at any deployment target. (From macOS 15 on,
-# ld-prime folds the slots into __got instead.)
+# From a deployment target of macOS 15 on, __objc_classrefs folds into
+# __got: a class reference is an 8-byte slot holding the class's
+# address, which is what a GOT entry for the class symbol is, so
+# references are redirected to the GOT, identical references from
+# different objects share one entry, and the image has no
+# __objc_classrefs section (nor the slots' local symbols). Below macOS
+# 15 the section stays.
 cat <<EOF2 | $CC -o $t/a.o -c -xobjective-c -fno-objc-arc -
 #import <Foundation/Foundation.h>
 @interface Foo : NSObject
@@ -30,10 +32,19 @@ int main() {
 EOF2
 otool -l $t/a.o | grep 'sectname __objc_classrefs'
 
-for v in 15.0 14.0; do
-  $CC --ld-path=$mold -o $t/exe$v $t/a.o $t/b.o -framework Foundation -mmacosx-version-min=$v
-  $t/exe$v | grep '^Foo NSMutableArray 1 1$'
-  otool -l $t/exe$v | grep -q 'sectname __objc_classrefs'
-  dyld_info -fixups $t/exe$v > $t/fixups$v
-  [ "$(grep '__objc_classrefs' $t/fixups$v | grep -c 'NSMutableArray')" = 1 ]
-done
+$CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o -framework Foundation -mmacosx-version-min=15.0
+$t/exe | grep '^Foo NSMutableArray 1 1$'
+otool -l $t/exe > $t/lc
+not grep -q '__objc_classrefs' $t/lc
+nm $t/exe > $t/nm
+not grep -q 'OBJC_CLASSLIST_REFERENCES' $t/nm
+dyld_info -fixups $t/exe > $t/fixups
+# One GOT slot per class, bound (NSMutableArray) or rebased (Foo).
+[ "$(grep '__got' $t/fixups | grep -c 'OBJC_CLASS_\$_NSMutableArray')" = 1 ]
+
+$CC --ld-path=$mold -o $t/exe14 $t/a.o $t/b.o -framework Foundation -mmacosx-version-min=14.0
+$t/exe14 | grep '^Foo NSMutableArray 1 1$'
+otool -l $t/exe14 | grep 'sectname __objc_classrefs'
+# Both objects' references to NSMutableArray coalesce into one slot,
+# as ld64 keeps one class reference per class.
+[ "$(dyld_info -fixups $t/exe14 | grep '__objc_classrefs' | grep -c 'NSMutableArray')" = 1 ]

@@ -119,7 +119,8 @@ fn lazy_uses<E: Target>(ctx: &Context<E>) -> Vec<LazyUseSite> {
         }
     }
     // A stub or GOT slot another pass made for one (an unwind
-    // personality's, an input __got's) would be a pointer dyld binds at
+    // personality's, a class's whose __objc_classrefs slot stays, see
+    // objc::fold_objc_classrefs) would be a pointer dyld binds at
     // launch, and is refused alike. (ld-prime leaves a personality's
     // slot zero.)
     for &id in ctx.stubs.symbols.iter().chain(&ctx.got.got_syms) {

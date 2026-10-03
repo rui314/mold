@@ -1,9 +1,11 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# The same inputs always produce the same bytes: the class references
-# and whatever the link makes of them must not follow the order of a
-# hash map, which hashbrown reseeds every process.
+# The same inputs always produce the same bytes. Folding
+# __objc_classrefs into __got (macOS 15 on) gives the classes their GOT
+# slots in the objects' class-reference order, not in the order of a
+# hash map, which hashbrown reseeds every process: every load that
+# encodes a slot's address, and __got's contents, would vary otherwise.
 cat <<EOF2 | $CC -o $t/a.o -c -xobjective-c -fno-objc-arc -
 #import <Foundation/Foundation.h>
 id f(void) {

@@ -826,6 +826,28 @@ impl Target for Arm64 {
         }
     }
 
+    // An adrp+ldr GOT load relaxes as one: the adrp keeps its shape and
+    // the ldr (of 64 or 32 bits) becomes an add. So an adrp of a slot
+    // is a GOT load's if the ldr under it is (see fold_objc_classrefs);
+    // an add under it takes the slot's address.
+    fn got_load_form(r_type: u8, data: &[u8], offset: u32) -> Option<u8> {
+        match r_type {
+            ARM64_RELOC_PAGE21 => Some(ARM64_RELOC_GOT_LOAD_PAGE21),
+            ARM64_RELOC_PAGEOFF12 if is_ldr_imm(read32(&data[offset as usize..])) => {
+                Some(ARM64_RELOC_GOT_LOAD_PAGEOFF12)
+            }
+            _ => None,
+        }
+    }
+
+    fn page_pair_half(r_type: u8) -> Option<bool> {
+        match r_type {
+            ARM64_RELOC_PAGE21 | ARM64_RELOC_GOT_LOAD_PAGE21 => Some(true),
+            ARM64_RELOC_PAGEOFF12 | ARM64_RELOC_GOT_LOAD_PAGEOFF12 => Some(false),
+            _ => None,
+        }
+    }
+
     fn write_stubs(ctx: &Context<Self>, addr: u64, buf: &mut [u8]) {
         for (i, &sym) in ctx.stubs.symbols.iter().enumerate() {
             let ent = &mut buf[i * 12..];
