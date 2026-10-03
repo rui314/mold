@@ -52,8 +52,11 @@ cat <<EOF | $CC -o $t/main.o -c -xobjective-c -
 static const char *where(NSBundle *b) {
   if (b == NSBundle.mainBundle)
     return "main";
-  NSString *app = NSBundle.mainBundle.bundlePath;
-  return [b.bundlePath stringByReplacingOccurrencesOfString:app withString:@"@app"].UTF8String;
+  // The main bundle's path is the real one, a framework's the one dyld
+  // loaded it by (e.g. /tmp rather than /private/tmp).
+  NSString *app = NSBundle.mainBundle.bundlePath.stringByResolvingSymlinksInPath;
+  NSString *path = b.bundlePath.stringByResolvingSymlinksInPath;
+  return [path stringByReplacingOccurrencesOfString:app withString:@"@app"].UTF8String;
 }
 __attribute__((constructor)) static void init(void) {
   printf("init %s\n", where([NSBundle bundleForClass:objc_getClass("FooObjC")]));
