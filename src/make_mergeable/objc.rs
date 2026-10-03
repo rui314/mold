@@ -7,18 +7,10 @@
 
 use hashbrown::HashSet;
 
-use super::{
-    Builder, CT_DATA, Content, OutEntry, OutFixup, To, record_size, standard_content_type,
-};
-use crate::mergeable::{fk, kind, scope};
+use super::{Builder, Content, OutEntry, OutFixup, To, record_size};
+use crate::mergeable::{ctype, fk, kind, scope, standard_content_type};
 use crate::objc::{DataField, ObjcRef};
 use crate::target::Target;
-
-const CT_METHOD_NAME: u8 = 12;
-const CT_METHOD_LIST: u8 = 15;
-const CT_SELECTOR_REF: u8 = 35;
-const CT_CLASS_LISTS: [u8; 2] = [40, 44];
-const CT_CATEGORY_LISTS: [u8; 3] = [41, 45, 70];
 
 impl<E: Target> Builder<'_, E> {
     /// The entries of the metadata the link made: the selector
@@ -32,7 +24,7 @@ impl<E: Target> Builder<'_, E> {
         let slots = self.add_selref_entries();
         for list in &ctx.objc_methlist.lists {
             let isec = &ctx.isecs[list.isec];
-            let mut entry = OutEntry::new(0, kind::ANON, CT_METHOD_LIST);
+            let mut entry = OutEntry::new(scope::LOCAL, kind::ANON, ctype::METHOD_LIST);
             entry.size = isec.size;
             entry.p2align = 3;
             entry.content = self.isec_content(isec, ctx.hdr_of(isec));
@@ -57,7 +49,7 @@ impl<E: Target> Builder<'_, E> {
         for (i, (_, sel)) in stubs.symbols.iter().enumerate() {
             let osec = ctx.output_section(stubs.methname.unwrap());
             let fileoff = osec.hdr.fileoff + osec.tail_off + stubs.methname_offs[i];
-            let mut entry = coalesced(CT_METHOD_NAME, sel.len() as u32 + 1, 0);
+            let mut entry = coalesced(ctype::METHOD_NAME, sel.len() as u32 + 1, 0);
             entry.content = Content::Image(fileoff);
             let name = Some(To::Entry(self.push_entry(entry, None)));
             slots.push(self.add_selref(name));
@@ -74,8 +66,8 @@ impl<E: Target> Builder<'_, E> {
     fn add_data_blob_entry(&mut self, isec: u32) {
         let ctx = self.ctx;
         let hdr = ctx.hdr_of(&ctx.isecs[isec]);
-        let content_type = standard_content_type(hdr).unwrap_or(CT_DATA);
-        let mut entry = OutEntry::new(0, kind::ANON, content_type);
+        let content_type = standard_content_type(hdr).unwrap_or(ctype::DATA);
+        let mut entry = OutEntry::new(scope::LOCAL, kind::ANON, content_type);
         entry.no_dead_strip = hdr.flags & crate::macho::S_ATTR_NO_DEAD_STRIP != 0;
         entry.size = ctx.isecs[isec].size;
         entry.p2align = ctx.isecs[isec].p2align;
@@ -87,7 +79,7 @@ impl<E: Target> Builder<'_, E> {
     /// bytes in the record, as ld-prime does: a merging link writes its
     /// pointer.
     fn add_selref(&mut self, name: Option<To>) -> To {
-        let mut entry = coalesced(CT_SELECTOR_REF, 8, 3);
+        let mut entry = coalesced(ctype::SELECTOR_REF, 8, 3);
         if let Some(name) = name {
             entry.fixups.push(OutFixup::new(0, name, fk::PTR64, 0));
         }
@@ -176,8 +168,8 @@ impl<E: Target> Builder<'_, E> {
         let mut cats = Vec::new();
         for &list in &lists {
             let entry = self.entry(list);
-            let is_class = CT_CLASS_LISTS.contains(&entry.content_type);
-            let is_cat = CT_CATEGORY_LISTS.contains(&entry.content_type);
+            let is_class = ctype::CLASS_LISTS.contains(&entry.content_type);
+            let is_cat = ctype::CATEGORY_LISTS.contains(&entry.content_type);
             if !is_class && !is_cat {
                 continue;
             }
@@ -218,7 +210,7 @@ impl<E: Target> Builder<'_, E> {
             {
                 continue;
             }
-            let mut placeholder = OutEntry::new(0, kind::ANON_PLACEHOLDER, CT_DATA);
+            let mut placeholder = OutEntry::new(scope::LOCAL, kind::ANON_PLACEHOLDER, ctype::DATA);
             placeholder.size = 8;
             let to = To::Entry(self.push_entry(placeholder, None));
             let f = OutFixup::new(off as u32, to, fk::PTR64, 0);

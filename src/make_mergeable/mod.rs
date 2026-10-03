@@ -28,19 +28,12 @@ use crate::fatal;
 use crate::input_files::{FileId, ObjectFile};
 use crate::input_sections::{InputSection, NO_REPLACEMENT, Reloc, RelocTarget};
 use crate::macho::*;
-use crate::mergeable::{CustomSection, ctype, fk, kind, scope};
+use crate::mergeable::{CustomSection, ctype, fk, kind, scope, standard_content_type};
 use crate::symbol::SymbolId;
 use crate::target::Target;
 
 mod objc;
 mod write;
-
-/// The content types the writer gives besides the standard sections'.
-const CT_NONE: u8 = 1;
-const CT_COMPACT_UNWIND: u8 = 32;
-const CT_CUSTOM: u8 = 63;
-const CT_DATA: u8 = 27;
-const CT_COMMON: u8 = 66;
 
 /// LC_ATOM_INFO's data in __LINKEDIT: the record, but for what depends
 /// on where it lands in the file, filled in as it is copied out.
@@ -399,7 +392,7 @@ impl<'a, E: Target> Builder<'a, E> {
             None if literal => {
                 OutEntry::new(scope::HIDDEN, kind::ANON_COAL_BY_CONTENT, content_type)
             }
-            None => OutEntry::new(0, kind::ANON, content_type),
+            None => OutEntry::new(scope::LOCAL, kind::ANON, content_type),
         };
         entry.custom_section = custom;
         // What is live whatever refers to it: an initializer or a
@@ -446,7 +439,7 @@ impl<'a, E: Target> Builder<'a, E> {
         }
         let (scope, kind) = linkage(ctx, &obj.nlists[label], sym_id);
         let kind = if kind == kind::WEAK_DEF { kind::WEAK_DEF_ALIAS } else { kind::ALIAS };
-        let mut alias = OutEntry::new(scope, kind, CT_NONE);
+        let mut alias = OutEntry::new(scope, kind, ctype::NONE);
         alias.name = Some(ctx.symbols[sym_id].name());
         let idx = self.push_entry(alias, None);
         self.folded.push((idx, id));
@@ -505,7 +498,7 @@ impl<'a, E: Target> Builder<'a, E> {
             }
             let (scope, kind) = linkage(ctx, &obj.nlists[i], sym_id);
             let kind = if kind == kind::WEAK_DEF { kind::WEAK_DEF_ALIAS } else { kind::ALIAS };
-            let mut alias = OutEntry::new(scope, kind, CT_NONE);
+            let mut alias = OutEntry::new(scope, kind, ctype::NONE);
             alias.name = Some(sym.name());
             alias.dds_if_refs_live = true;
             alias.no_dead_strip = obj.nlists[i].n_desc & N_NO_DEAD_STRIP != 0;
@@ -532,7 +525,7 @@ impl<'a, E: Target> Builder<'a, E> {
                 continue;
             }
             let (scope, _) = linkage(ctx, n, sym_id);
-            let mut entry = OutEntry::new(scope, kind::ABSOLUTE, CT_DATA);
+            let mut entry = OutEntry::new(scope, kind::ABSOLUTE, ctype::DATA);
             entry.name = Some(sym.name());
             entry.size = 8;
             entry.p2align = 3;
@@ -561,7 +554,7 @@ impl<'a, E: Target> Builder<'a, E> {
             }
             let isec = &ctx.isecs[isec];
             let scope = if sym.is_private_extern() { scope::HIDDEN } else { scope::GLOBAL };
-            let mut entry = OutEntry::new(scope, kind::TENTATIVE_DEF, CT_COMMON);
+            let mut entry = OutEntry::new(scope, kind::TENTATIVE_DEF, ctype::COMMON);
             entry.name = Some(sym.name());
             entry.size = isec.size;
             entry.p2align = isec.p2align;
@@ -588,7 +581,7 @@ impl<'a, E: Target> Builder<'a, E> {
             self.sections.push(CustomSection { segname, sectname, flags: hdr.flags });
             self.sections.len() - 1
         });
-        (CT_CUSTOM, Some(idx as u8))
+        (ctype::CUSTOM, Some(idx as u8))
     }
 
     /// The fixups of the objects' entries, from their relocations.
@@ -766,7 +759,7 @@ impl<'a, E: Target> Builder<'a, E> {
                 }
                 _ => continue,
             };
-            let mut entry = OutEntry::new(0, kind::ANON, ctype::INIT_OFFSET);
+            let mut entry = OutEntry::new(scope::LOCAL, kind::ANON, ctype::INIT_OFFSET);
             entry.size = 4;
             entry.p2align = 2;
             entry.no_dead_strip = true;
@@ -879,7 +872,7 @@ impl<'a, E: Target> Builder<'a, E> {
         let mut out = Vec::new();
         for (k, bytes) in contents.as_chunks::<32>().0.iter().enumerate() {
             let start = (k * 32) as u32;
-            let mut entry = OutEntry::new(scope::HIDDEN, kind::ANON, CT_COMPACT_UNWIND);
+            let mut entry = OutEntry::new(scope::HIDDEN, kind::ANON, ctype::COMPACT_UNWIND);
             entry.size = 32;
             entry.p2align = 3;
             entry.dds_if_refs_live = true;
@@ -1056,26 +1049,13 @@ fn record_content(content: Content, off: u32, size: u32) -> Content {
     }
 }
 
-/// The content type of the standard section a section is, by name and
-/// type (see mergeable::standard_section).
-fn standard_content_type(hdr: &MachSection) -> Option<u8> {
-    (0..82).find(|&ct| {
-        ct != ctype::INIT_OFFSET
-            && crate::mergeable::standard_section(ct).is_some_and(|(seg, sect, flags)| {
-                hdr.segname() == seg
-                    && hdr.sectname() == sect
-                    && hdr.section_type() == flags & SECTION_TYPE
-            })
-    })
-}
-
 /// The scope and kind of the entry a symbol of an object names: local
 /// to its object, hidden, hidden unless something takes its address
 /// (a weak definition that can be hidden), or global; a weak definition
 /// only where it is not hidden.
 fn linkage<E: Target>(ctx: &Context<E>, nlist: &NList, id: SymbolId) -> (u8, u8) {
     if !nlist.is_extern() {
-        return (0, kind::REGULAR);
+        return (scope::LOCAL, kind::REGULAR);
     }
     let sym = &ctx.symbols[id];
     let weak = nlist.n_desc & N_WEAK_DEF != 0;
@@ -1130,7 +1110,7 @@ fn undefine_entry<E: Target>(ctx: &Context<E>, id: SymbolId) -> OutEntry {
     } else {
         kind::UNDEFINE
     };
-    let mut entry = OutEntry::new(scope::GLOBAL, kind, CT_NONE);
+    let mut entry = OutEntry::new(scope::GLOBAL, kind, ctype::NONE);
     entry.name = Some(sym.name());
     entry
 }
@@ -1142,7 +1122,7 @@ fn import_entry<E: Target>(ctx: &Context<E>, id: SymbolId, dylib: u8) -> OutEntr
     let Some(FileId::Dylib(d)) = sym.file() else { unreachable!() };
     let weak_def = ctx.dylibs[d as usize].weak_exports.contains(sym.name());
     let kind = if weak_def { kind::DYLIB_EXPORT_WEAK_DEF } else { kind::DYLIB_EXPORT };
-    let mut entry = OutEntry::new(scope::GLOBAL, kind, CT_NONE);
+    let mut entry = OutEntry::new(scope::GLOBAL, kind, ctype::NONE);
     entry.name = Some(sym.name());
     entry.import = if sym.is_weak_ref() { 1 } else { 2 };
     entry.dylib = Some(dylib);

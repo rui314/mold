@@ -72,17 +72,34 @@ pub mod kind {
 
 /// An entry's scope (bits 0-2 of its flags word).
 pub mod scope {
+    /// Local to its object.
+    pub const LOCAL: u8 = 0;
     pub const HIDDEN: u8 = 1;
     pub const AUTO_HIDE: u8 = 2;
     pub const GLOBAL: u8 = 3;
     pub const NEVER_STRIP: u8 = 4;
 }
 
-/// The content types whose entries need more than their section.
+/// The content types (bits 8-14 of an entry's flags word) the reader
+/// or the writer names; STANDARD_SECTIONS has the rest.
 pub(crate) mod ctype {
+    /// No bytes: an alias, an import.
+    pub const NONE: u8 = 1;
+    pub const METHOD_NAME: u8 = 12;
+    pub const METHOD_LIST: u8 = 15;
+    pub const DATA: u8 = 27;
     pub const CFI: u8 = 31;
+    pub const COMPACT_UNWIND: u8 = 32;
+    pub const SELECTOR_REF: u8 = 35;
+    /// __objc_classlist and __objc_nlclslist.
+    pub const CLASS_LISTS: [u8; 2] = [40, 44];
+    /// __objc_catlist, __objc_nlcatlist and __objc_catlist2.
+    pub const CATEGORY_LISTS: [u8; 3] = [41, 45, 70];
     pub const OBJC_IMAGE_INFO: u8 = 43;
     pub const INIT_OFFSET: u8 = 55;
+    /// A section of the custom table.
+    pub const CUSTOM: u8 = 63;
+    pub const COMMON: u8 = 66;
 }
 
 /// The fixup kinds (ld-prime's Fixup::Kind), generic and per target.
@@ -535,74 +552,90 @@ impl Reader<'_> {
     }
 }
 
-/// The section ld-prime gives an entry of a content type: its segment
-/// and section names and Mach-O flags, as an object would have them
-/// (its StandardSection::fromContentType).
+/// The sections ld-prime gives the entries of a content type (its
+/// StandardSection::fromContentType): segment and section names and
+/// Mach-O flags, as an object would have them.
+const STANDARD_SECTIONS: &[(u8, &[u8], &[u8], u32)] = &[
+    (2, b"__TEXT", b"__text", TEXT),
+    (9, b"__TEXT", b"__const", 0),
+    (10, b"__TEXT", b"__cstring", S_CSTRING_LITERALS),
+    (11, b"__TEXT", b"__objc_classname", S_CSTRING_LITERALS),
+    (12, b"__TEXT", b"__objc_methname", S_CSTRING_LITERALS),
+    (13, b"__TEXT", b"__objc_methtype", S_CSTRING_LITERALS),
+    (14, b"__TEXT", b"__oslogstring", S_CSTRING_LITERALS),
+    (15, b"__TEXT", b"__objc_methlist", 0),
+    (16, b"__TEXT", b"__ustring", 0),
+    (17, b"__TEXT", b"__literal4", S_4BYTE_LITERALS),
+    (18, b"__TEXT", b"__literal8", S_8BYTE_LITERALS),
+    (19, b"__TEXT", b"__literal16", S_16BYTE_LITERALS),
+    // A slot of an object's GOT, which an object has as a regular
+    // section (one of non-lazy pointers is refused).
+    (22, b"__DATA", b"__got", 0),
+    (26, b"__DATA", b"__const", 0),
+    (27, b"__DATA", b"__data", 0),
+    (28, b"__DATA", b"__cfstring", 0),
+    (29, b"__DATA", b"__const_cfobj2", 0),
+    (30, b"__TEXT", b"__gcc_except_tab", 0),
+    (31, b"__TEXT", b"__eh_frame", EH_FRAME),
+    (32, b"__LD", b"__compact_unwind", S_ATTR_DEBUG),
+    (33, b"__DATA", b"__objc_classrefs", S_ATTR_NO_DEAD_STRIP),
+    (34, b"__DATA", b"__objc_superrefs", S_ATTR_NO_DEAD_STRIP),
+    (35, b"__DATA", b"__objc_selrefs", S_LITERAL_POINTERS | S_ATTR_NO_DEAD_STRIP),
+    (36, b"__DATA", b"__objc_protorefs", S_COALESCED | S_ATTR_NO_DEAD_STRIP),
+    (37, b"__DATA", b"__objc_ivar", 0),
+    (38, b"__DATA", b"__objc_data", 0),
+    (39, b"__DATA", b"__objc_const", 0),
+    (40, b"__DATA", b"__objc_classlist", S_ATTR_NO_DEAD_STRIP),
+    (41, b"__DATA", b"__objc_catlist", S_ATTR_NO_DEAD_STRIP),
+    (42, b"__DATA", b"__objc_protolist", S_COALESCED),
+    (43, b"__DATA", b"__objc_imageinfo", 0),
+    (44, b"__DATA", b"__objc_nlclslist", S_ATTR_NO_DEAD_STRIP),
+    (45, b"__DATA", b"__objc_nlcatlist", S_ATTR_NO_DEAD_STRIP),
+    (46, b"__DATA", b"__objc_intobj", 0),
+    (47, b"__DATA", b"__objc_floatobj", 0),
+    (48, b"__DATA", b"__objc_doubleobj", 0),
+    (49, b"__DATA", b"__objc_dateobj", 0),
+    (50, b"__DATA", b"__objc_dictobj", 0),
+    (51, b"__DATA", b"__objc_arrayobj", 0),
+    (52, b"__DATA", b"__objc_arraydata", 0),
+    (53, b"__DATA", b"__mod_init_func", S_MOD_INIT_FUNC_POINTERS),
+    (54, b"__DATA", b"__mod_term_func", S_MOD_TERM_FUNC_POINTERS),
+    // An initializer offset the dylib's link made of a pointer is the
+    // pointer again (see Synth::place).
+    (55, b"__DATA", b"__mod_init_func", S_MOD_INIT_FUNC_POINTERS),
+    (56, b"__TEXT", b"__StaticInit", TEXT),
+    (57, b"__DATA", b"__thread_vars", S_THREAD_LOCAL_VARIABLES),
+    (58, b"__DATA", b"__thread_ptrs", S_THREAD_LOCAL_VARIABLE_POINTERS),
+    (64, b"__DATA", b"__thread_data", S_THREAD_LOCAL_REGULAR),
+    (65, b"__DATA", b"__thread_bss", S_THREAD_LOCAL_ZEROFILL),
+    (66, b"__DATA", b"__common", S_ZEROFILL),
+    (67, b"__DATA", b"__bss", S_ZEROFILL),
+    (70, b"__DATA", b"__objc_catlist2", S_ATTR_NO_DEAD_STRIP),
+    (72, b"__DATA", b"__objc_clsrolist", S_ATTR_NO_DEAD_STRIP),
+    (73, b"__LD", b"__func_variants", 0),
+];
+
+const TEXT: u32 = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
+const EH_FRAME: u32 = S_COALESCED | S_ATTR_NO_TOC | S_ATTR_STRIP_STATIC_SYMS | S_ATTR_LIVE_SUPPORT;
+
+/// The standard section of a content type: its segment and section
+/// names and flags.
 pub(crate) fn standard_section(ct: u8) -> Option<(&'static [u8], &'static [u8], u32)> {
-    const TEXT: u32 = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
-    Some(match ct {
-        2 => (b"__TEXT", b"__text", TEXT),
-        9 => (b"__TEXT", b"__const", 0),
-        10 => (b"__TEXT", b"__cstring", S_CSTRING_LITERALS),
-        11 => (b"__TEXT", b"__objc_classname", S_CSTRING_LITERALS),
-        12 => (b"__TEXT", b"__objc_methname", S_CSTRING_LITERALS),
-        13 => (b"__TEXT", b"__objc_methtype", S_CSTRING_LITERALS),
-        14 => (b"__TEXT", b"__oslogstring", S_CSTRING_LITERALS),
-        15 => (b"__TEXT", b"__objc_methlist", 0),
-        16 => (b"__TEXT", b"__ustring", 0),
-        17 => (b"__TEXT", b"__literal4", S_4BYTE_LITERALS),
-        18 => (b"__TEXT", b"__literal8", S_8BYTE_LITERALS),
-        19 => (b"__TEXT", b"__literal16", S_16BYTE_LITERALS),
-        // A slot of an object's GOT, which an object has as a regular
-        // section (one of non-lazy pointers is refused).
-        22 => (b"__DATA", b"__got", 0),
-        26 => (b"__DATA", b"__const", 0),
-        27 => (b"__DATA", b"__data", 0),
-        28 => (b"__DATA", b"__cfstring", 0),
-        29 => (b"__DATA", b"__const_cfobj2", 0),
-        30 => (b"__TEXT", b"__gcc_except_tab", 0),
-        31 => (
-            b"__TEXT",
-            b"__eh_frame",
-            S_COALESCED | S_ATTR_NO_TOC | S_ATTR_STRIP_STATIC_SYMS | S_ATTR_LIVE_SUPPORT,
-        ),
-        32 => (b"__LD", b"__compact_unwind", S_ATTR_DEBUG),
-        33 => (b"__DATA", b"__objc_classrefs", S_ATTR_NO_DEAD_STRIP),
-        34 => (b"__DATA", b"__objc_superrefs", S_ATTR_NO_DEAD_STRIP),
-        35 => (b"__DATA", b"__objc_selrefs", S_LITERAL_POINTERS | S_ATTR_NO_DEAD_STRIP),
-        36 => (b"__DATA", b"__objc_protorefs", S_COALESCED | S_ATTR_NO_DEAD_STRIP),
-        37 => (b"__DATA", b"__objc_ivar", 0),
-        38 => (b"__DATA", b"__objc_data", 0),
-        39 => (b"__DATA", b"__objc_const", 0),
-        40 => (b"__DATA", b"__objc_classlist", S_ATTR_NO_DEAD_STRIP),
-        41 => (b"__DATA", b"__objc_catlist", S_ATTR_NO_DEAD_STRIP),
-        42 => (b"__DATA", b"__objc_protolist", S_COALESCED),
-        43 => (b"__DATA", b"__objc_imageinfo", 0),
-        44 => (b"__DATA", b"__objc_nlclslist", S_ATTR_NO_DEAD_STRIP),
-        45 => (b"__DATA", b"__objc_nlcatlist", S_ATTR_NO_DEAD_STRIP),
-        46 => (b"__DATA", b"__objc_intobj", 0),
-        47 => (b"__DATA", b"__objc_floatobj", 0),
-        48 => (b"__DATA", b"__objc_doubleobj", 0),
-        49 => (b"__DATA", b"__objc_dateobj", 0),
-        50 => (b"__DATA", b"__objc_dictobj", 0),
-        51 => (b"__DATA", b"__objc_arrayobj", 0),
-        52 => (b"__DATA", b"__objc_arraydata", 0),
-        // An initializer offset the dylib's link made of a pointer
-        // becomes one again (see Synth::place).
-        53 | 55 => (b"__DATA", b"__mod_init_func", S_MOD_INIT_FUNC_POINTERS),
-        54 => (b"__DATA", b"__mod_term_func", S_MOD_TERM_FUNC_POINTERS),
-        56 => (b"__TEXT", b"__StaticInit", TEXT),
-        57 => (b"__DATA", b"__thread_vars", S_THREAD_LOCAL_VARIABLES),
-        58 => (b"__DATA", b"__thread_ptrs", S_THREAD_LOCAL_VARIABLE_POINTERS),
-        64 => (b"__DATA", b"__thread_data", S_THREAD_LOCAL_REGULAR),
-        65 => (b"__DATA", b"__thread_bss", S_THREAD_LOCAL_ZEROFILL),
-        66 => (b"__DATA", b"__common", S_ZEROFILL),
-        67 => (b"__DATA", b"__bss", S_ZEROFILL),
-        70 => (b"__DATA", b"__objc_catlist2", S_ATTR_NO_DEAD_STRIP),
-        72 => (b"__DATA", b"__objc_clsrolist", S_ATTR_NO_DEAD_STRIP),
-        73 => (b"__LD", b"__func_variants", 0),
-        _ => return None,
-    })
+    let &(_, seg, sect, flags) = STANDARD_SECTIONS.iter().find(|s| s.0 == ct)?;
+    Some((seg, sect, flags))
+}
+
+/// The content type of the standard section an object's section is, by
+/// its names and type: a section of initializer pointers is one of
+/// them, not of the offsets made of them.
+pub(crate) fn standard_content_type(hdr: &MachSection) -> Option<u8> {
+    let &(ct, ..) = STANDARD_SECTIONS.iter().find(|&&(ct, seg, sect, flags)| {
+        ct != ctype::INIT_OFFSET
+            && hdr.segname() == seg
+            && hdr.sectname() == sect
+            && hdr.section_type() == flags & SECTION_TYPE
+    })?;
+    Some(ct)
 }
 
 /// Whether a section's subsections are fixed-size records or literals
