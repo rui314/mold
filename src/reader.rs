@@ -375,58 +375,6 @@ struct PendingObject {
     priority: u32,
 }
 
-/// Gives a dylib what its first naming says (library_namings has merged
-/// what the options naming one library say): -needed_* keeps the load
-/// command under -dead_strip_dylibs, -reexport_* re-exports it, -weak_*
-/// makes every import from it weak and -upward_* makes it an upward
-/// dependency. A library so far loaded only as a public re-export of
-/// another (Foundation's stub brings CoreFoundation) got its weakness
-/// from that parent; its first command-line naming decides it instead:
-/// `-weak_framework Foundation -framework CoreFoundation` imports from
-/// CoreFoundation strongly, while an auto-link option, a hint, changes
-/// nothing. -needed_* covers the named library only; the ones its stub
-/// re-exports get a load command only if something binds to them.
-fn name_dylib<E: Target>(ctx: &mut Context<E>, idx: usize, rc: ReaderContext) {
-    if ctx.dylibs[idx].is_implicit {
-        ctx.dylibs[idx].named_at = Some(ctx.next_priority());
-    }
-    let lazy = rc.lazy && ctx.args.lazy_load;
-    let dylib = &mut ctx.dylibs[idx];
-    let delay_init = rc.delay.then(|| dylib.install_name.clone());
-    if dylib.is_implicit && !rc.autolinked {
-        dylib.is_weak = rc.weak;
-        dylib.is_lazy = lazy;
-        dylib.delay_init = delay_init;
-    } else {
-        dylib.is_weak |= rc.weak;
-        dylib.is_lazy |= lazy;
-        if dylib.delay_init.is_none() {
-            dylib.delay_init = delay_init;
-        }
-    }
-    if rc.delay && dylib.has_weak_defs {
-        crate::warn!(
-            "delay-init link with '{}' will be ignored because it has weak-def exports",
-            crate::error::raw(&dylib.install_name)
-        );
-    }
-    dylib.is_reexported |= rc.reexport;
-    dylib.is_weak_asserted |= rc.assert_weak;
-    dylib.is_needed |= rc.needed;
-    dylib.is_upward |= rc.upward;
-    dylib.in_sdk = rc.sdk;
-    dylib.is_implicit = false;
-    // A library -sub_library or -sub_umbrella re-exports loads strongly.
-    if rc.sub_reexport {
-        if dylib.is_weak {
-            let name = crate::error::raw(&dylib.install_name);
-            crate::warn!("re-exported dylibs cannot be weak-linked: {name}");
-            dylib.is_weak = false;
-        }
-        dylib.is_reexported = true;
-    }
-}
-
 /// How an input was named: the flags its option gives the file, as
 /// mold's ReaderContext carries --as-needed and --whole-archive.
 #[derive(Clone, Copy, Default)]
@@ -561,18 +509,19 @@ fn collect_file<E: Target>(
     // (the first that isn't a public re-export's, for a dylib). An
     // object file, though, loads as often as it is named, as in
     // ld-prime: twice over, its globals are duplicate definitions.
-    let object = matches!(get_file_type(mf), FileType::Object | FileType::LlvmBitcode);
+    let ty = get_file_type(mf);
+    let object = matches!(ty, FileType::Object | FileType::LlvmBitcode);
     if !ctx.visited_files.insert(mf.name.clone()) && !object {
         name_again(ctx, mf, rc, out);
         return;
     }
-    if !matches!(get_file_type(mf), FileType::Archive | FileType::Fat) {
+    if !matches!(ty, FileType::Archive | FileType::Fat) {
         input_files::trace_file(ctx, path_bytes(&mf.name));
     }
-    if matches!(get_file_type(mf), FileType::Object | FileType::Dylib) && is_foreign(ctx, mf) {
+    if matches!(ty, FileType::Object | FileType::Dylib) && is_foreign(ctx, mf) {
         return;
     }
-    match get_file_type(mf) {
+    match ty {
         FileType::Object => {
             let priority = ctx.next_priority();
             out.push(PendingObject { mf, alive: true, hidden: rc.hidden, priority });
@@ -590,73 +539,15 @@ fn collect_file<E: Target>(
         // a dylib on their command lines (and ignores a stub without
         // the architecture as ever), then ignores it with a warning.
         FileType::Tapi | FileType::Dylib if ctx.args.relocatable || !ctx.args.links_dylibs() => {
-            if get_file_type(mf) == FileType::Dylib || input_files::load_tbd(ctx, mf).is_some() {
+            if ty == FileType::Dylib || input_files::load_tbd(ctx, mf).is_some() {
                 crate::warn!("ignoring unexpected dylib '{}'", mf.name.raw());
             }
         }
         FileType::Dylib if rc.merge => merge_dylib(ctx, mf, out),
         FileType::Tapi | FileType::Dylib if refuses_client(ctx, mf, rc) => {}
         FileType::Dylib if !input_files::has_uuid(mf.data()) => refuse_without_uuid(mf),
-        FileType::Tapi | FileType::Dylib => {
-            let first = ctx.dylibs.len();
-            let idx = if get_file_type(mf) == FileType::Tapi {
-                input_files::parse_dylib(ctx, mf)
-            } else {
-                Some(input_files::parse_dylib_binary(ctx, mf))
-            };
-            let Some(idx) = idx else { return };
-            // The dylibs loaded during the parse beyond this one are the
-            // public libraries it re-exports; a weak parent's are weak,
-            // a lazy one's lazy, and a delayed one's initialized when it
-            // is. (Those standing for libraries its exports moved to
-            // load weakly only as their imports say; see
-            // passes::weaken_moved_imports.)
-            let lazy = rc.lazy && ctx.args.lazy_load;
-            let delay_init = rc.delay.then(|| ctx.dylibs[idx].install_name.clone());
-            for d in &mut ctx.dylibs[first..] {
-                d.is_weak |= rc.weak && d.name_source != input_files::NameSource::Moved;
-                d.is_lazy |= lazy;
-                if d.delay_init.is_none() {
-                    d.delay_init.clone_from(&delay_init);
-                }
-            }
-            // One named before by another path keeps what that said.
-            if idx >= first || ctx.dylibs[idx].is_implicit {
-                name_dylib(ctx, idx, rc);
-            }
-        }
-        FileType::Archive => {
-            // Every member is parsed eagerly; whether it is *live* -
-            // whether its content reaches the output - is decided by
-            // symbol resolution and the liveness walk. -all_load and
-            // -force_load make every member live up front; -ObjC does
-            // so for members with Objective-C metadata, which register
-            // classes by their mere presence. ld64 exempts clang's
-            // runtime library (libclang_rt.*.a, which the compiler
-            // driver adds to every link) from -all_load: its members
-            // are wanted only when referenced.
-            let all_load = ctx.args.all_load
-                && !mf.name.file_name().is_some_and(|f| f.as_bytes().starts_with(b"libclang_rt"));
-            if rc.force_load {
-                ctx.force_loaded.insert(mf.name.clone());
-            }
-            for member in crate::archive_file::read_archive_members(mf) {
-                input_files::trace_file(ctx, path_bytes(&member.name));
-                let alive = rc.force_load
-                    || all_load
-                    || (ctx.args.load_objc && input_files::has_objc_sections(member));
-                match get_file_type(member) {
-                    FileType::LlvmBitcode => {
-                        input_files::parse_bitcode(ctx, member, alive);
-                    }
-                    FileType::Object if is_foreign(ctx, member) => {}
-                    _ => {
-                        let priority = ctx.next_priority();
-                        out.push(PendingObject { mf: member, alive, hidden: rc.hidden, priority });
-                    }
-                }
-            }
-        }
+        FileType::Tapi | FileType::Dylib => load_dylib(ctx, mf, rc),
+        FileType::Archive => collect_archive_members(ctx, mf, rc, out),
         FileType::Fat => match input_files::fat_slice::<E>(&ctx.args, mf) {
             Some(slice) => collect_file(ctx, slice, rc, out),
             None => input_files::warn_fat_missing_arch(ctx, mf),
@@ -666,6 +557,125 @@ fn collect_file<E: Target>(
         }
         FileType::Empty => {}
         _ => refuse_file(mf),
+    }
+}
+
+/// Loads a dylib or its stub, and the public libraries it re-exports,
+/// and gives it what its naming says.
+fn load_dylib<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFile, rc: ReaderContext) {
+    let first = ctx.dylibs.len();
+    let idx = if get_file_type(mf) == FileType::Tapi {
+        input_files::parse_dylib(ctx, mf)
+    } else {
+        Some(input_files::parse_dylib_binary(ctx, mf))
+    };
+    let Some(idx) = idx else { return };
+    // The dylibs loaded during the parse beyond this one are the public
+    // libraries it re-exports; a weak parent's are weak, a lazy one's
+    // lazy, and a delayed one's initialized when it is. (Those standing
+    // for libraries its exports moved to load weakly only as their
+    // imports say; see passes::weaken_moved_imports.)
+    let lazy = rc.lazy && ctx.args.lazy_load;
+    let delay_init = rc.delay.then(|| ctx.dylibs[idx].install_name.clone());
+    for d in &mut ctx.dylibs[first..] {
+        d.is_weak |= rc.weak && d.name_source != input_files::NameSource::Moved;
+        d.is_lazy |= lazy;
+        if d.delay_init.is_none() {
+            d.delay_init.clone_from(&delay_init);
+        }
+    }
+    // One named before by another path keeps what that said.
+    if idx >= first || ctx.dylibs[idx].is_implicit {
+        name_dylib(ctx, idx, rc);
+    }
+}
+
+/// Gives a dylib what its first naming says (library_namings has merged
+/// what the options naming one library say): -needed_* keeps the load
+/// command under -dead_strip_dylibs, -reexport_* re-exports it, -weak_*
+/// makes every import from it weak and -upward_* makes it an upward
+/// dependency. A library so far loaded only as a public re-export of
+/// another (Foundation's stub brings CoreFoundation) got its weakness
+/// from that parent; its first command-line naming decides it instead:
+/// `-weak_framework Foundation -framework CoreFoundation` imports from
+/// CoreFoundation strongly, while an auto-link option, a hint, changes
+/// nothing. -needed_* covers the named library only; the ones its stub
+/// re-exports get a load command only if something binds to them.
+fn name_dylib<E: Target>(ctx: &mut Context<E>, idx: usize, rc: ReaderContext) {
+    if ctx.dylibs[idx].is_implicit {
+        ctx.dylibs[idx].named_at = Some(ctx.next_priority());
+    }
+    let lazy = rc.lazy && ctx.args.lazy_load;
+    let dylib = &mut ctx.dylibs[idx];
+    let delay_init = rc.delay.then(|| dylib.install_name.clone());
+    if dylib.is_implicit && !rc.autolinked {
+        dylib.is_weak = rc.weak;
+        dylib.is_lazy = lazy;
+        dylib.delay_init = delay_init;
+    } else {
+        dylib.is_weak |= rc.weak;
+        dylib.is_lazy |= lazy;
+        if dylib.delay_init.is_none() {
+            dylib.delay_init = delay_init;
+        }
+    }
+    if rc.delay && dylib.has_weak_defs {
+        crate::warn!(
+            "delay-init link with '{}' will be ignored because it has weak-def exports",
+            crate::error::raw(&dylib.install_name)
+        );
+    }
+    dylib.is_reexported |= rc.reexport;
+    dylib.is_weak_asserted |= rc.assert_weak;
+    dylib.is_needed |= rc.needed;
+    dylib.is_upward |= rc.upward;
+    dylib.in_sdk = rc.sdk;
+    dylib.is_implicit = false;
+    // A library -sub_library or -sub_umbrella re-exports loads strongly.
+    if rc.sub_reexport {
+        if dylib.is_weak {
+            let name = crate::error::raw(&dylib.install_name);
+            crate::warn!("re-exported dylibs cannot be weak-linked: {name}");
+            dylib.is_weak = false;
+        }
+        dylib.is_reexported = true;
+    }
+}
+
+/// Queues an archive's members. Every member is parsed eagerly; whether
+/// it is *live* - whether its content reaches the output - is decided
+/// by symbol resolution and the liveness walk. -all_load and -force_load
+/// make every member live up front; -ObjC does so for members with
+/// Objective-C metadata, which register classes by their mere presence.
+/// ld64 exempts clang's runtime library (libclang_rt.*.a, which the
+/// compiler driver adds to every link) from -all_load: its members are
+/// wanted only when referenced.
+fn collect_archive_members<E: Target>(
+    ctx: &mut Context<E>,
+    mf: &'static MappedFile,
+    rc: ReaderContext,
+    out: &mut Vec<PendingObject>,
+) {
+    let all_load = ctx.args.all_load
+        && !mf.name.file_name().is_some_and(|f| f.as_bytes().starts_with(b"libclang_rt"));
+    if rc.force_load {
+        ctx.force_loaded.insert(mf.name.clone());
+    }
+    for member in crate::archive_file::read_archive_members(mf) {
+        input_files::trace_file(ctx, path_bytes(&member.name));
+        let alive = rc.force_load
+            || all_load
+            || (ctx.args.load_objc && input_files::has_objc_sections(member));
+        match get_file_type(member) {
+            FileType::LlvmBitcode => {
+                input_files::parse_bitcode(ctx, member, alive);
+            }
+            FileType::Object if is_foreign(ctx, member) => {}
+            _ => {
+                let priority = ctx.next_priority();
+                out.push(PendingObject { mf: member, alive, hidden: rc.hidden, priority });
+            }
+        }
     }
 }
 
@@ -816,10 +826,7 @@ fn load_pending<E: Target>(ctx: &mut Context<E>, pending: Vec<PendingObject>) {
         })
         .collect();
     let counts: Vec<usize> = per_obj.iter().map(Vec::len).collect();
-    let mut batch: Vec<(&'static [u8], u64)> = Vec::with_capacity(counts.iter().sum());
-    for v in per_obj {
-        batch.extend(v);
-    }
+    let batch = per_obj.concat();
     let t = ctx.timer("gather");
     let ids = ctx.symbols.gather(&batch);
     drop(t);
@@ -862,6 +869,9 @@ fn warn_duplicate_libraries<E: Target>(ctx: &Context<E>) {
     }
 }
 
+/// Reads all input files: finds the file each input names, loads the
+/// dylibs in command line order and parses the objects and archive
+/// members in parallel (see load_pending).
 pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
     warn_duplicate_libraries(ctx);
     // -add_linker_option's options are read first, as the command
@@ -871,7 +881,7 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
         ctx.cmdline_linker_options = Some(read_linker_options(words, || "command line"));
     }
     let inputs = std::mem::take(&mut ctx.args.inputs);
-    let paths = find_inputs(ctx, &inputs);
+    let paths: Vec<Option<PathBuf>> = inputs.iter().map(|arg| find_input(ctx, arg)).collect();
     let namings = library_namings(&ctx.args, &inputs, &paths);
 
     let stubs: Vec<&'static MappedFile> = inputs
@@ -1045,18 +1055,13 @@ pub fn unreadable_file(path: &Path, e: &std::io::Error) -> error::Message {
     }
 }
 
-/// Finds the file each input names: None for a library or framework
-/// not found, or a file a library option, -force_load, -bundle_loader
-/// or a path of an archive (see find_input) names that isn't there.
-fn find_inputs<E: Target>(ctx: &Context<E>, inputs: &[InputArg]) -> Vec<Option<PathBuf>> {
-    inputs.iter().map(|arg| find_input(ctx, arg)).collect()
-}
-
-/// Finds the file an input names (see find_inputs). ld-prime takes a
-/// path of an archive on the command line - one its name ends in .a -
-/// for a library's: an absolute one is looked for under each
-/// -syslibroot first (see find_file), and one missing is a library not
-/// found. Any other path, and any a -filelist gives, is the file's.
+/// Finds the file an input names: None for a library or framework not
+/// found, or a file a library option, -force_load, -bundle_loader or a
+/// path of an archive names that isn't there. ld-prime takes a path of
+/// an archive on the command line - one its name ends in .a - for a
+/// library's: an absolute one is looked for under each -syslibroot
+/// first (see find_file), and one missing is a library not found. Any
+/// other path, and any a -filelist gives, is the file's.
 fn find_input<E: Target>(ctx: &Context<E>, arg: &InputArg) -> Option<PathBuf> {
     use LibraryKind::*;
     let prober = &Prober::new(ctx);
