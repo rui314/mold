@@ -1125,33 +1125,15 @@ fn parse_dylib_version(opt: &str, arg: &str, warnings: &mut OptionWarnings) -> u
 }
 
 /// Parses -source_version's a.b.c.d.e into LC_SOURCE_VERSION's 64 bits,
-/// 24 for a and 10 for each other number. ld-prime reads up to five
-/// numbers of decimal digits apart by dots, an empty one 0 and each
-/// taken modulo 2^32, and ignores what follows the fifth; a dot ending
-/// the string before it, another character or a number too large for
-/// its bits make the string malformed (None).
+/// 24 for a and 10 for each other number: up to five decimal numbers
+/// apart by dots. None if malformed or a number is too large for its
+/// bits.
 fn parse_source_version(arg: &str) -> Option<u64> {
-    let mut nums = [0u32; 5];
-    let mut s = arg.as_bytes();
-    for (i, num) in nums.iter_mut().enumerate() {
-        let len = s.iter().take_while(|c| c.is_ascii_digit()).count();
-        *num = s[..len]
-            .iter()
-            .fold(0, |n: u32, &c| n.wrapping_mul(10).wrapping_add((c - b'0') as u32));
-        s = &s[len..];
-        if i == 4 || s.is_empty() {
-            break;
-        }
-        match s {
-            [b'.', rest @ ..] if !rest.is_empty() => s = rest,
-            _ => return None,
-        }
-    }
-    let [a, b, c, d, e] = nums.map(u64::from);
-    if a > 0xff_ffff || [b, c, d, e].iter().any(|&n| n > 0x3ff) {
+    let nums: Vec<u64> = arg.split('.').map(|s| s.parse().ok()).collect::<Option<_>>()?;
+    if nums.len() > 5 || nums[0] > 0xff_ffff || nums[1..].iter().any(|&n| n > 0x3ff) {
         return None;
     }
-    Some((a << 40) | (b << 30) | (c << 20) | (d << 10) | e)
+    Some(nums.iter().zip([40, 30, 20, 10, 0]).fold(0, |v, (&n, shift)| v | (n << shift)))
 }
 
 /// The traces Apple's build system asks for in the environment, where
