@@ -148,14 +148,7 @@ fn claim_locals<E: Target>(ctx: &mut Context<E>) {
                     sym.value = nlist.n_value;
                 }
                 N_SECT => {
-                    let subsecs = &obj.subsecs;
-                    let found = input_files::find_symbol_subsec(
-                        isecs,
-                        subsecs,
-                        nlist.n_sect,
-                        nlist.n_value,
-                    );
-                    if let Some((isec, off)) = found {
+                    if let Some((isec, off)) = obj.symbol_subsec(isecs, i) {
                         sym.set_file(file);
                         sym.set_input_section(Some(isec as u32));
                         sym.value = off;
@@ -348,10 +341,11 @@ fn collect_references<E: Target>(ctx: &Context<E>, only_alive: bool) -> Referenc
 fn definition_rank(
     isecs: &[InputSection],
     obj: &crate::input_files::ObjectFile,
-    nlist: &NList,
+    i: usize,
     tentative: bool,
     autolink_priority: u32,
 ) -> Option<u64> {
+    let nlist = &obj.nlists[i];
     if nlist.is_stab() || !nlist.is_extern() {
         return None;
     }
@@ -372,8 +366,7 @@ fn definition_rank(
     let mut weak_term = 0u64;
     if class == 1
         && nlist.n_type() == N_SECT
-        && let Some((isec, _)) =
-            crate::input_files::find_symbol_subsec(isecs, &obj.subsecs, nlist.n_sect, nlist.n_value)
+        && let Some((isec, _)) = obj.symbol_subsec(isecs, i)
     {
         weak_term = weak_definition_rank(&isecs[isec], nlist, obj.hidden);
     }
@@ -410,10 +403,10 @@ fn race_definitions<E: Target>(
     let best: Vec<AtomicU64> =
         (0..ctx.symbols.syms.len()).map(|_| AtomicU64::new(u64::MAX)).collect();
     ctx.objs.par_iter().filter(|obj| !only_alive || obj.is_alive).for_each(|obj| {
-        let r = obj.global_range();
-        for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
+        for i in obj.global_range() {
+            let sym_id = obj.symbols[i];
             let tentative = overrides_tentative(obj, sym_id, tentative);
-            let rank = definition_rank(&ctx.isecs, obj, nlist, tentative, ctx.autolink_priority);
+            let rank = definition_rank(&ctx.isecs, obj, i, tentative, ctx.autolink_priority);
             if let Some(rank) = rank {
                 best[sym_id as usize].fetch_min(rank, Ordering::Relaxed);
             }
@@ -447,10 +440,10 @@ fn claim_definitions<E: Target>(
     let autolink_priority = ctx.autolink_priority;
     let objs = ctx.objs.par_iter().enumerate().filter(|(_, obj)| !only_alive || obj.is_alive);
     objs.for_each(|(obj_idx, obj)| {
-        let r = obj.global_range();
-        for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
+        for i in obj.global_range() {
+            let sym_id = obj.symbols[i];
             let tentative = overrides_tentative(obj, sym_id, tentative);
-            let rank = definition_rank(isecs, obj, nlist, tentative, autolink_priority);
+            let rank = definition_rank(isecs, obj, i, tentative, autolink_priority);
             let Some(rank) = rank else { continue };
             if best[sym_id as usize].load(Ordering::Relaxed) != rank {
                 continue;
@@ -458,23 +451,24 @@ fn claim_definitions<E: Target>(
             // SAFETY: this object holds the unique minimum rank for
             // sym_id, so no other thread writes this slot.
             let sym = unsafe { syms.get(sym_id) };
-            if !claim_definition(sym, obj_idx, obj, nlist, isecs) {
+            if !claim_definition(sym, obj_idx, obj, i, isecs) {
                 best[sym_id as usize].store(u64::MAX, Ordering::Relaxed);
             }
         }
     });
 }
 
-/// Makes `sym` what `nlist` of object `obj_idx`, the definition that
+/// Makes `sym` what nlist `i` of object `obj_idx`, the definition that
 /// won the race for it, defines. Returns false for a symbol in a section
 /// that was discarded (debug info), which resolves as if undefined.
 fn claim_definition(
     sym: &mut Symbol,
     obj_idx: usize,
     obj: &input_files::ObjectFile,
-    nlist: &NList,
+    i: usize,
     isecs: &[InputSection],
 ) -> bool {
+    let nlist = &obj.nlists[i];
     sym.set_is_extern(true);
     sym.set_is_imported(false);
     sym.set_is_common(false);
@@ -495,10 +489,7 @@ fn claim_definition(
             sym.value = nlist.n_value;
         }
         N_SECT => {
-            let subsecs = &obj.subsecs;
-            let found =
-                input_files::find_symbol_subsec(isecs, subsecs, nlist.n_sect, nlist.n_value);
-            let Some((isec, off)) = found else {
+            let Some((isec, off)) = obj.symbol_subsec(isecs, i) else {
                 sym.clear_file();
                 return false;
             };
@@ -2129,8 +2120,8 @@ fn weak_def_losers<E: Target>(ctx: &Context<E>, obj_idx: usize) -> Vec<(usize, u
     // The addresses of the object's symbols, sorted, once there is a
     // losing copy to check.
     let mut values: Option<Vec<u64>> = None;
-    let r = obj.global_range();
-    for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
+    for i in obj.global_range() {
+        let (nlist, sym_id) = (&obj.nlists[i], obj.symbols[i]);
         if !is_weak_def(nlist) {
             continue;
         }
@@ -2140,11 +2131,7 @@ fn weak_def_losers<E: Target>(ctx: &Context<E>, obj_idx: usize) -> Vec<(usize, u
             continue;
         }
         let Some(winner) = sym.input_section() else { continue };
-        let Some((loser, off)) =
-            input_files::find_symbol_subsec(&ctx.isecs, &obj.subsecs, nlist.n_sect, nlist.n_value)
-        else {
-            continue;
-        };
+        let Some((loser, off)) = obj.symbol_subsec(&ctx.isecs, i) else { continue };
         if off != sym.value {
             continue;
         }
@@ -2210,8 +2197,8 @@ fn duplicate_symbols<E: Target>(ctx: &Context<E>, among_bitcode: bool) -> Vec<Du
         .enumerate()
         .filter(|(_, obj)| obj.is_alive)
         .flat_map_iter(|(obj_idx, obj)| {
-            let r = obj.global_range();
-            obj.nlists[r.clone()].iter().zip(&obj.symbols[r]).filter_map(move |(nlist, &sym_id)| {
+            obj.global_range().filter_map(move |i| {
+                let (nlist, sym_id) = (&obj.nlists[i], obj.symbols[i]);
                 if nlist.is_stab()
                     || !nlist.is_extern()
                     || !matches!(nlist.n_type(), N_SECT | N_ABS)
@@ -2220,15 +2207,7 @@ fn duplicate_symbols<E: Target>(ctx: &Context<E>, among_bitcode: bool) -> Vec<Du
                 {
                     return None;
                 }
-                let isec = match nlist.n_type() {
-                    N_SECT => input_files::find_symbol_subsec(
-                        &ctx.isecs,
-                        &obj.subsecs,
-                        nlist.n_sect,
-                        nlist.n_value,
-                    ),
-                    _ => None,
-                };
+                let isec = obj.symbol_subsec(&ctx.isecs, i);
                 let live = isec.is_none_or(|(isec, _)| ctx.isecs[isec].is_alive());
                 Some((sym_id, obj_idx, live))
             })

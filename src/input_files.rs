@@ -185,6 +185,9 @@ pub struct ObjectFile {
     pub relocs: Vec<crate::input_sections::Reloc>,
     /// All of this object's subsections, sorted by input address.
     pub subsecs: Vec<crate::input_sections::InputSectionId>,
+    /// The subsection each nlist is defined in, or NONE (see
+    /// symbol_subsec).
+    pub sym_subsecs: Vec<crate::input_sections::InputSectionId>,
     /// The flags word of the object's __objc_imageinfo, if it has one.
     pub objc_image_info: Option<u32>,
     /// True if the object carries DWARF debug info, so the output gets
@@ -243,6 +246,7 @@ impl ObjectFile {
             sect_hdrs: std::borrow::Cow::Borrowed(&[]),
             relocs: Vec::new(),
             subsecs: Vec::new(),
+            sym_subsecs: Vec::new(),
             objc_image_info: None,
             has_debug_info: false,
             lto_module: None,
@@ -761,6 +765,9 @@ pub struct StagedObject {
     pub relocs: Vec<crate::input_sections::Reloc>,
     /// Indices into `isecs`, sorted by input address.
     pub subsecs: Vec<crate::input_sections::InputSectionId>,
+    /// Each nlist's subsection, an index into `isecs`, or NONE (see
+    /// find_symbol_subsecs).
+    pub sym_subsecs: Vec<crate::input_sections::InputSectionId>,
     pub nlists: std::borrow::Cow<'static, [NList]>,
     /// Index of the first external nlist, if the table is partitioned
     /// locals-then-externals (see first_global_of).
@@ -819,6 +826,18 @@ macro_rules! symbol_ranges {
 }
 impl ObjectFile {
     symbol_ranges!();
+
+    /// The subsection nlist `i` is defined in, and its offset there,
+    /// as find_symbol_subsec finds them: None for a symbol not defined
+    /// in a section, or in one that has no subsections (debug info).
+    #[inline]
+    pub fn symbol_subsec(&self, isecs: &[InputSection], i: usize) -> Option<(usize, u64)> {
+        let id = self.sym_subsecs[i];
+        (id != crate::symbol::NONE).then(|| {
+            let id = id as usize;
+            (id, self.nlists[i].n_value - isecs[id].input_addr as u64)
+        })
+    }
 }
 impl StagedObject {
     symbol_ranges!();
@@ -1066,6 +1085,7 @@ pub fn stage_object<E: Target>(
         isecs: Vec::new(),
         relocs: Vec::new(),
         subsecs: Vec::new(),
+        sym_subsecs: Vec::new(),
         nlists,
         first_global,
         sym_names: Vec::new(),
@@ -1090,6 +1110,7 @@ pub fn stage_object<E: Target>(
     obj.read_relocations::<E>(&bare, &sect_isecs);
     obj.check_init_pointers();
     obj.parse_unwind_info::<E>(kept_fdes);
+    obj.find_symbol_subsecs();
     obj
 }
 
@@ -1420,6 +1441,24 @@ impl StagedObject {
         (isec, addr.wrapping_sub(self.isecs[isec].input_addr as u64))
     }
 
+    /// Finds the subsection of each symbol defined in a section, once,
+    /// in parallel with the other objects: every resolution round takes
+    /// it from sym_subsecs. An ELF symbol names its section outright (as
+    /// mold's resolve_symbol takes it), but a Mach-O symbol names a
+    /// section that symbols split into subsections, and its own one
+    /// takes a search (see find_symbol_subsec).
+    fn find_symbol_subsecs(&mut self) {
+        self.sym_subsecs = (self.nlists.iter())
+            .map(|nlist| {
+                if nlist.is_stab() || nlist.n_type() != N_SECT {
+                    return crate::symbol::NONE;
+                }
+                find_symbol_subsec(&self.isecs, &self.subsecs, nlist.n_sect, nlist.n_value)
+                    .map_or(crate::symbol::NONE, |(id, _)| id as u32)
+            })
+            .collect();
+    }
+
     /// Records each symbol's name, and for an external symbol the hash
     /// its name is interned by; the interning itself happens at
     /// integration, in one batch for all objects.
@@ -1536,6 +1575,9 @@ impl StagedObject {
         for sub in &mut self.subsecs {
             *sub += isec_base as u32;
         }
+        for sub in self.sym_subsecs.iter_mut().filter(|sub| **sub != crate::symbol::NONE) {
+            *sub += isec_base as u32;
+        }
         for rec in &mut self.unwind {
             rec.isec += isec_base as u32;
             if rec.lsda_isec != UNWIND_NONE {
@@ -1580,6 +1622,7 @@ impl StagedObject {
             sect_hdrs: std::borrow::Cow::Borrowed(self.sect_hdrs),
             relocs: self.relocs,
             subsecs: self.subsecs,
+            sym_subsecs: self.sym_subsecs,
             objc_image_info: self.objc_image_info,
             has_debug_info: self.has_debug_info,
             nlists: self.nlists,
@@ -1871,6 +1914,7 @@ pub fn parse_bitcode<E: Target>(
         is_alive: alive,
         priority,
         platform_versions,
+        sym_subsecs: vec![crate::symbol::NONE; nlists.len()],
         nlists: std::borrow::Cow::Owned(nlists),
         symbols: syms,
         lto_module: Some(module),
