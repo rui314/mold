@@ -744,7 +744,7 @@ fn create_linkedit_data_cmd(cmd: u32, hdr: &ChunkHeader) -> Vec<u8> {
     to_vec(&cmd)
 }
 
-pub fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
+fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
     // In ld64's order: the segments; a dylib's identity; the dyld
     // tables; the symbol tables; the dynamic linker; identification
     // (UUID, build and source versions); the entry point; the split

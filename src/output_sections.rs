@@ -27,7 +27,7 @@ use crate::util::align_to;
 
 /// The segment for read-only-after-fixup data: __DATA_CONST unless
 /// -no_data_const.
-pub(crate) fn data_seg<E: Target>(ctx: &Context<E>) -> &'static [u8] {
+fn data_seg<E: Target>(ctx: &Context<E>) -> &'static [u8] {
     if ctx.args.data_const { b"__DATA_CONST" } else { b"__DATA" }
 }
 
@@ -65,7 +65,7 @@ const DATA_CONST_SECTIONS: &[&[u8]] = &[
 /// Objective-C runtime on older systems, so they stay in __DATA unless
 /// the deployment target is macOS 14.4 or later, where ld-prime moves
 /// them to __DATA_CONST (dyld fixes them up there).
-pub(crate) fn objc_refs_are_const<E: Target>(ctx: &Context<E>) -> bool {
+fn objc_refs_are_const<E: Target>(ctx: &Context<E>) -> bool {
     ctx.args.platform == crate::macho::PLATFORM_MACOS
         && ctx.args.platform_minos >= crate::macho::encode_version(14, 4, 0)
 }
@@ -174,7 +174,7 @@ fn renamed_segment(args: &crate::cmdline::Args, seg: &'static [u8]) -> &'static 
 /// A section or segment name that lives as long as the output's
 /// headers: the usual segment names are literals, and the rest are
 /// leaked (the callers name each distinct section once).
-pub(crate) fn static_name(name: &[u8]) -> &'static [u8] {
+fn static_name(name: &[u8]) -> &'static [u8] {
     match name {
         b"__TEXT" => b"__TEXT",
         b"__DATA_CONST" => b"__DATA_CONST",
