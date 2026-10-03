@@ -798,25 +798,35 @@ fn merged_resolve_members<E: Target>(
     objs: &mut FileList<ObjectFile<E>>,
     count: usize,
 ) -> Vec<Vec<crate::chunks::merged::ResolveMember<'_>>> {
-    let mut members: Vec<Vec<crate::chunks::merged::ResolveMember<'_>>> =
-        (0..count).map(|_| Vec::new()).collect();
-    for file in objs {
-        let filename = file.base.filename.as_ref();
-        let archive_name = file.archive_name;
-        let shstrtab = file.base.shstrtab;
-        let num_elf_sections = file.num_elf_sections;
-        for (merge_info, input) in file.sections.merge_infos_with_inputs_mut() {
-            let parent = merge_info.parent.index();
-            members[parent].push(crate::chunks::merged::ResolveMember {
-                merge_info,
-                data: input.contents(),
-                filename,
-                archive_name,
-                name: input.name_in(shstrtab, num_elf_sections),
-            });
-        }
-    }
-    members
+    // Files are visited in parallel. Folding and reducing by appending keeps
+    // each merged section's members in file order.
+    let new = || -> Vec<Vec<crate::chunks::merged::ResolveMember<'_>>> {
+        (0..count).map(|_| Vec::new()).collect()
+    };
+    objs.par_iter_mut()
+        .fold(new, |mut members, file| {
+            let filename = file.base.filename.as_ref();
+            let archive_name = file.archive_name;
+            let shstrtab = file.base.shstrtab;
+            let num_elf_sections = file.num_elf_sections;
+            for (merge_info, input) in file.sections.merge_infos_with_inputs_mut() {
+                let parent = merge_info.parent.index();
+                members[parent].push(crate::chunks::merged::ResolveMember {
+                    merge_info,
+                    data: input.contents(),
+                    filename,
+                    archive_name,
+                    name: input.name_in(shstrtab, num_elf_sections),
+                });
+            }
+            members
+        })
+        .reduce(new, |mut left, right| {
+            for (l, mut r) in left.iter_mut().zip(right) {
+                l.append(&mut r);
+            }
+            left
+        })
 }
 
 pub fn create_merged_sections<E: Target>(ctx: &mut Context<E>) {
