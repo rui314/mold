@@ -51,7 +51,7 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
         }
     }
     for isec in ctx.isecs.iter() {
-        if !isec.is_alive() || isec.replacement != crate::input_sections::NO_REPLACEMENT {
+        if !isec.is_emitted() {
             continue;
         }
         for (addr, rel) in rebase_info::pointer_relocs(ctx, isec) {

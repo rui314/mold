@@ -105,7 +105,7 @@ fn table_records<E: Target>(ctx: &Context<E>) -> Vec<UnwindRecord> {
         .par_iter()
         .filter(|rec| {
             let isec = &ctx.isecs[rec.isec as usize];
-            isec.is_alive() && isec.replacement == crate::input_sections::NO_REPLACEMENT
+            isec.is_emitted()
         })
         .cloned()
         .collect();
@@ -428,8 +428,7 @@ fn bare_record(isec: u32, off: u32) -> UnwindRecord {
 /// Whether a subsection is one of a code section, which gets an entry
 /// whatever its unwind info (see bare_code_records).
 fn is_code_subsec<E: Target>(ctx: &Context<E>, isec: &InputSection) -> bool {
-    isec.is_alive()
-        && isec.replacement == crate::input_sections::NO_REPLACEMENT
+    isec.is_emitted()
         && isec
             .output_section()
             .is_some_and(|id| ctx.chunk_header(id).flags & S_ATTR_PURE_INSTRUCTIONS != 0)

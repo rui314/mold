@@ -61,7 +61,7 @@ fn delay_uses<E: Target>(ctx: &Context<E>) -> Vec<DelayUseSite> {
         .into_par_iter()
         .filter(|&i| {
             let isec = &ctx.isecs[i];
-            isec.is_alive() && isec.replacement == crate::input_sections::NO_REPLACEMENT
+            isec.is_emitted()
         })
         .flat_map_iter(|i| {
             let (file, data) = (ctx.isecs[i].file as usize, ctx.isecs[i].data());

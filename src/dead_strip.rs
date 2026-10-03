@@ -531,16 +531,13 @@ fn sweep<E: Target>(ctx: &mut Context<E>) {
 /// become dynamic imports.
 fn mark_live_references<E: Target>(ctx: &mut Context<E>) {
     ctx.symbols.syms.par_iter().for_each(|sym| sym.unmark());
-    ctx.isecs
-        .par_iter()
-        .filter(|isec| isec.is_alive() && isec.replacement == crate::input_sections::NO_REPLACEMENT)
-        .for_each(|isec| {
-            for rel in crate::input_files::isec_relocs_of(&ctx.objs, isec) {
-                if let Some(id) = ctx.reloc_target_sym(isec.file as usize, rel) {
-                    ctx.symbols[id].mark();
-                }
+    ctx.isecs.par_iter().filter(|isec| isec.is_emitted()).for_each(|isec| {
+        for rel in crate::input_files::isec_relocs_of(&ctx.objs, isec) {
+            if let Some(id) = ctx.reloc_target_sym(isec.file as usize, rel) {
+                ctx.symbols[id].mark();
             }
-        });
+        }
+    });
     for rec in &ctx.unwind_records {
         if let Some(id) = rec.personality() {
             ctx.symbols[id].mark();

@@ -1537,10 +1537,7 @@ pub fn check_removed_swift_metadata_refs<E: Target>(ctx: &Context<E>) {
         let isec = &ctx.isecs[ctx.resolve_isec(isec)];
         !isec.is_alive() && is_swift_reflection_section(ctx.hdr_of(isec))
     };
-    let live = |isec: &InputSection| {
-        isec.is_alive() && isec.replacement == crate::input_sections::NO_REPLACEMENT
-    };
-    for (i, isec) in ctx.isecs.iter().enumerate().filter(|(_, isec)| live(isec)) {
+    for (i, isec) in ctx.isecs.iter().enumerate().filter(|(_, isec)| isec.is_emitted()) {
         for rel in ctx.isec_relocs(i) {
             let file = isec.file as usize;
             let target = match ctx.reloc_target_sym(file, rel) {
@@ -1818,7 +1815,7 @@ pub fn merge_literals<E: Target>(ctx: &mut Context<E>) {
         .par_iter()
         .enumerate()
         .filter_map(|(i, isec)| {
-            if !isec.is_alive() || isec.replacement != NO_REPLACEMENT || isec.is_labeled() {
+            if !isec.is_emitted() || isec.is_labeled() {
                 return None;
             }
             let hdr = ctx.hdr_of(isec);
@@ -2786,7 +2783,7 @@ pub fn check_weak_assertions<E: Target>(ctx: &Context<E>) {
         .into_par_iter()
         .filter(|&i| {
             let isec = &ctx.isecs[i];
-            isec.is_alive() && isec.replacement == NO_REPLACEMENT
+            isec.is_emitted()
         })
         .flat_map_iter(|i| {
             let file = ctx.isecs[i].file;
@@ -3150,19 +3147,15 @@ fn check_libsystem_linked<E: Target>(ctx: &Context<E>) {
 /// symbol's address is observable by any image that imports it.
 pub fn compute_address_significance<E: Target>(ctx: &mut Context<E>) {
     let ctx_ref: &Context<E> = ctx;
-    ctx_ref
-        .isecs
-        .par_iter()
-        .filter(|isec| isec.is_alive() && isec.replacement == NO_REPLACEMENT)
-        .for_each(|isec| {
-            for r in input_files::isec_relocs_of(&ctx_ref.objs, isec) {
-                if E::classify_reloc(r.r_type) != RelocClass::Branch
-                    && let Some(dst) = ctx_ref.reloc_target_isec(isec.file as usize, r)
-                {
-                    ctx_ref.isecs[ctx_ref.resolve_isec(dst)].set_address_taken();
-                }
+    ctx_ref.isecs.par_iter().filter(|isec| isec.is_emitted()).for_each(|isec| {
+        for r in input_files::isec_relocs_of(&ctx_ref.objs, isec) {
+            if E::classify_reloc(r.r_type) != RelocClass::Branch
+                && let Some(dst) = ctx_ref.reloc_target_isec(isec.file as usize, r)
+            {
+                ctx_ref.isecs[ctx_ref.resolve_isec(dst)].set_address_taken();
             }
-        });
+        }
+    });
 
     ctx_ref.symbols.syms.par_iter().for_each(|sym| {
         if matches!(sym.file(), Some(FileId::Obj(_)))
@@ -3189,7 +3182,7 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
     let classes: Vec<(SymbolId, RelocClass)> = ctx_ref
         .isecs
         .par_iter()
-        .filter(|isec| isec.is_alive() && isec.replacement == NO_REPLACEMENT)
+        .filter(|isec| isec.is_emitted())
         .flat_map_iter(|isec| {
             input_files::isec_relocs_of(&ctx_ref.objs, isec).iter().filter_map(move |rel| {
                 let id = ctx_ref.reloc_target_sym(isec.file as usize, rel)?;

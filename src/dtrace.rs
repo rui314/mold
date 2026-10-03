@@ -169,7 +169,7 @@ fn collect_sites<E: Target>(ctx: &Context<E>) -> Vec<Site> {
         .into_par_iter()
         .filter(|&i| {
             let isec = &ctx.isecs[i];
-            isec.is_alive() && isec.replacement == NO_REPLACEMENT
+            isec.is_emitted()
         })
         .flat_map_iter(|i| {
             let file = ctx.isecs[i].file as usize;

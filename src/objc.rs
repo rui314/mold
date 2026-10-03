@@ -342,10 +342,7 @@ fn ref_target<E: Target>(ctx: &Context<E>, obj: usize, rel: &Reloc) -> RefTarget
 /// coalesce_objc_refs coalesces.
 fn ref_key<E: Target>(ctx: &Context<E>, i: usize) -> Option<RefKey> {
     let isec = &ctx.isecs[i];
-    if !isec.is_alive()
-        || isec.replacement != crate::input_sections::NO_REPLACEMENT
-        || ctx.is_internal(isec.file as usize)
-    {
+    if !isec.is_emitted() || ctx.is_internal(isec.file as usize) {
         return None;
     }
     let h = ctx.hdr_of(isec);

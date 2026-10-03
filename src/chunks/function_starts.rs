@@ -6,7 +6,6 @@ use rayon::prelude::*;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::input_files::FileId;
-use crate::input_sections::NO_REPLACEMENT;
 use crate::macho::S_ATTR_PURE_INSTRUCTIONS;
 use crate::target::Target;
 use crate::util::encode_uleb;
@@ -49,8 +48,7 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
             let base = osec.hdr.addr;
             let isecs = osec.members.par_iter().filter_map(move |&id| {
                 let isec = &ctx.isecs[id as usize];
-                (isec.size != 0 && isec.is_alive() && isec.replacement == NO_REPLACEMENT)
-                    .then_some(base + isec.offset as u64)
+                (isec.size != 0 && isec.is_emitted()).then_some(base + isec.offset as u64)
             });
             let thunks = osec.thunks.par_iter().flat_map_iter(move |thunk| {
                 (0..thunk.syms.len() as u64).map(move |i| base + thunk.offset + i * E::THUNK_SIZE)

@@ -3,7 +3,7 @@
 
 use crate::chunks::{ChunkHeader, segment_and_offset};
 use crate::context::Context;
-use crate::input_sections::{InputSection, NO_REPLACEMENT, Reloc};
+use crate::input_sections::{InputSection, Reloc};
 use crate::macho::*;
 use crate::objc::{DataField, ObjcRef, objc_ref_addr};
 use crate::symbol::SymbolId;
@@ -62,7 +62,7 @@ pub fn rebase_locations<E: Target>(ctx: &Context<E>) -> Vec<u64> {
 
     // Pointers written for UNSIGNED relocations to local targets.
     for isec in ctx.isecs.iter() {
-        if !isec.is_alive() || isec.replacement != NO_REPLACEMENT {
+        if !isec.is_emitted() {
             continue;
         }
         for (addr, rel) in pointer_relocs(ctx, isec) {

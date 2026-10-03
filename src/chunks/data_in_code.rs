@@ -4,7 +4,7 @@
 
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
-use crate::input_sections::{InputSection, NO_REPLACEMENT};
+use crate::input_sections::InputSection;
 use crate::target::Target;
 
 /// LC_DATA_IN_CODE: ranges inside __text that hold data (jump tables,
@@ -61,8 +61,7 @@ fn live_entries<E: Target>(
             let (isec, off_in) =
                 crate::input_files::find_subsec(&ctx.isecs, &obj.subsecs, off as u64)?;
             let isec = &ctx.isecs[isec];
-            (isec.is_alive() && isec.replacement == NO_REPLACEMENT)
-                .then_some((isec, off_in, len, kind))
+            isec.is_emitted().then_some((isec, off_in, len, kind))
         })
     })
 }

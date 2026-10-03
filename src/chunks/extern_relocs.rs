@@ -8,7 +8,6 @@
 
 use crate::chunks::{ChunkHeader, rebase_info};
 use crate::context::Context;
-use crate::input_sections::NO_REPLACEMENT;
 use crate::macho::*;
 use crate::symbol::SymbolId;
 use crate::target::{RelocClass, Target};
@@ -52,7 +51,7 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<(u64, SymbolId, bool)> {
         false => ctx.symbols[id].is_imported(),
     };
     for isec in ctx.isecs.iter() {
-        if !isec.is_alive() || isec.replacement != NO_REPLACEMENT {
+        if !isec.is_emitted() {
             continue;
         }
         let Some(chunk) = isec.output_section() else {

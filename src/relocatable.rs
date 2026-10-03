@@ -26,7 +26,7 @@ use crate::context::Context;
 use crate::error;
 use crate::fatal;
 use crate::input_files::FileId;
-use crate::input_sections::{InputSection, NO_REPLACEMENT, Reloc, RelocTarget};
+use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
 use crate::output_file;
 use crate::symbol::SymbolId;
@@ -65,7 +65,7 @@ fn optimization_hints<E: Target>(ctx: &Context<E>) -> Option<Vec<u8>> {
                 continue;
             };
             let isec = &ctx.isecs[id];
-            if isec.is_alive() && isec.replacement == NO_REPLACEMENT {
+            if isec.is_emitted() {
                 hints.push((ctx.isec_addr(id), isec.input_addr as u64, hint));
             }
         }
@@ -512,8 +512,7 @@ fn compact_unwind_records<E: Target>(ctx: &Context<E>) -> Vec<usize> {
         .filter(|&i| {
             let rec = &ctx.unwind_records[i];
             let isec = &ctx.isecs[rec.isec as usize];
-            isec.is_alive()
-                && isec.replacement == NO_REPLACEMENT
+            isec.is_emitted()
                 && (rec.fde().is_none() || rec.encoding & UNWIND_MODE_MASK == E::UNWIND_MODE_DWARF)
         })
         .collect()
@@ -559,7 +558,7 @@ fn eh_frame_records<E: Target>(ctx: &Context<E>) -> Vec<(EhRec, u32)> {
     let mut off = 0u32;
     for (f, fde) in ctx.fdes.iter().enumerate() {
         let isec = &ctx.isecs[fde.isec as usize];
-        if !isec.is_alive() || isec.replacement != NO_REPLACEMENT {
+        if !isec.is_emitted() {
             continue;
         }
         let cie = cies_used.insert(fde.cie).then_some(EhRec::Cie(fde.cie as usize));

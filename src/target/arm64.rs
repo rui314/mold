@@ -585,10 +585,7 @@ fn hint_insns<'a>(
 ) -> Option<(std::ops::Range<usize>, [HintInsn<'a>; 3])> {
     let id = obj.hint_subsec(&ctx.isecs, addrs)?;
     let isec = &ctx.isecs[id];
-    if !isec.is_alive()
-        || isec.offset == u32::MAX
-        || isec.replacement != crate::input_sections::NO_REPLACEMENT
-    {
+    if !isec.is_emitted() || isec.offset == u32::MAX {
         return None;
     }
 

@@ -296,6 +296,12 @@ impl InputSection {
     pub fn is_alive(&self) -> bool {
         self.flags.load(std::sync::atomic::Ordering::Relaxed) & IS_ALIVE != 0
     }
+    /// Whether the subsection is in the output as itself: live, and not
+    /// replaced by an identical copy (see `replacement`).
+    #[inline]
+    pub fn is_emitted(&self) -> bool {
+        self.is_alive() && self.replacement == NO_REPLACEMENT
+    }
     #[inline]
     pub fn set_alive(&mut self, v: bool) {
         let f = self.flags.get_mut();

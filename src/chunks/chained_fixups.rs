@@ -429,9 +429,7 @@ fn collect_fixups<E: Target>(ctx: &Context<E>) -> (Vec<Fixup>, Vec<(u32, u64)>) 
         .isecs
         .par_iter()
         .enumerate()
-        .filter(|(_, isec)| {
-            isec.is_alive() && isec.replacement == crate::input_sections::NO_REPLACEMENT
-        })
+        .filter(|(_, isec)| isec.is_emitted())
         .flat_map_iter(|(id, isec)| {
             let unaligned = &unaligned;
             rebase_info::pointer_relocs(ctx, isec).filter_map(move |(addr, rel)| {

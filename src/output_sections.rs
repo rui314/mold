@@ -781,10 +781,7 @@ fn assign_input_sections<E: Target>(
     let mut last: Option<((u32, u32), Option<OutputSectionId>)> = None;
     for i in 0..ctx.isecs.len() {
         let isec = &ctx.isecs[i];
-        if !isec.is_alive()
-            || isec.replacement != crate::input_sections::NO_REPLACEMENT
-            || isec.is_placed()
-        {
+        if !isec.is_emitted() || isec.is_placed() {
             continue;
         }
         let sec = (isec.file, isec.shndx);
@@ -1407,8 +1404,7 @@ fn warn_eh_frame_too_large<E: Target>(ctx: &Context<E>) {
     }
     let out_of_reach = ctx.unwind_records.iter().any(|rec| {
         let isec = &ctx.isecs[rec.isec as usize];
-        isec.is_alive()
-            && isec.replacement == crate::input_sections::NO_REPLACEMENT
+        isec.is_emitted()
             && rec.fde().is_some_and(|fde| ctx.fdes[fde].output_offset > MAX_FDE_OFFSET)
     });
     if out_of_reach {

@@ -26,7 +26,6 @@
 use rayon::prelude::*;
 
 use crate::context::Context;
-use crate::input_sections::NO_REPLACEMENT;
 use crate::macho::CPU_TYPE_ARM64;
 use crate::symbol::SymbolId;
 use crate::target::{RelocClass, Target};
@@ -77,7 +76,7 @@ pub fn add_far_ref_slots<E: Target>(ctx: &mut Context<E>) {
         .into_par_iter()
         .filter(|&i| {
             let isec = &ctx_ref.isecs[i];
-            isec.is_alive() && isec.replacement == NO_REPLACEMENT && isec.nrels > 0
+            isec.is_emitted() && isec.nrels > 0
         })
         .flat_map_iter(|i| {
             let obj = ctx_ref.isecs[i].file as usize;
