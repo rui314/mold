@@ -275,8 +275,7 @@ impl<'a, E: Target> Places<'a, E> {
     }
 
     fn got_index(&self, i: usize) -> Place {
-        let (chunk, off) = self.ctx.got.slot_place(i);
-        self.chunk(chunk, off)
+        self.chunk(ChunkId::Got, i as u64 * 8)
     }
 
     /// The place of an image offset (in __unwind_info): the section it

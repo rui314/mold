@@ -8,7 +8,7 @@ source "$(dirname "$0")"/common.inc
 # goes, local ones for the pointers that slide. On arm64 its code gets
 # a __TEXT_EXEC segment of its own, its read-only data __DATA_CONST
 # after __DATA, and it records split info; calls to imports and to its
-# weak definitions go through stubs and __got / __weak_got. On x86-64
+# weak definitions go through stubs and __got. On x86-64
 # it calls imports directly.
 cat <<EOF | $CC -o $t/a.o -c -xc -O1 -mkernel -
 extern int IOLog(const char *fmt, ...);
@@ -58,7 +58,7 @@ if [ $ARCH = arm64 ]; then
   grep -A10 'sectname __got' $t/lc | grep -q 'flags 0x00000000'
   otool -Iv $t/kext > $t/isyms
   grep -q 'Indirect symbols for (__TEXT_EXEC,__stubs) 2 entries' $t/isyms
-  grep -A1 'sectname __weak_got' $t/lc | grep -q __DATA_CONST
+  grep -A1 'sectname __got' $t/lc | grep -q __DATA_CONST
 
   $mold -arch $ARCH -kext -not_for_dyld_shared_cache $t/a.o -o $t/kext2
   otool -l $t/kext2 > $t/lc2

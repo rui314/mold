@@ -56,7 +56,6 @@ macro_rules! chunk_header {
             ChunkId::StubHelper => &$($mutable)? $ctx.stub_helper.hdr,
             ChunkId::LazyPtrs => &$($mutable)? $ctx.lazy_ptrs.hdr,
             ChunkId::Got => &$($mutable)? $ctx.got.hdr,
-            ChunkId::WeakGot => &$($mutable)? $ctx.got.weak_hdr,
             ChunkId::DelayStubs => &$($mutable)? $ctx.delay_init.stubs_hdr,
             ChunkId::DelayHelper => &$($mutable)? $ctx.delay_init.helper_hdr,
             ChunkId::LazyHelpers => &$($mutable)? $ctx.lazy_helpers.hdr,
@@ -924,8 +923,8 @@ impl<E: Target> Context<E> {
         // ld64 emits neither a stub nor a weak bind for it (the stock
         // XNU kernel has no stubs and an empty weak bind table). Nor
         // does a kext's but in the shared region, where it calls and
-        // takes its weak definitions through __weak_got as ld-prime
-        // links an arm64 kext.
+        // takes its weak definitions through the GOT as ld-prime links
+        // an arm64 kext.
         if self.args.static_link || (self.args.is_kext() && !self.args.shared_region) {
             return false;
         }

@@ -146,7 +146,6 @@ pub enum ChunkId {
     StubHelper,
     LazyPtrs,
     Got,
-    WeakGot,
     DelayStubs,
     DelayHelper,
     LazyHelpers,
@@ -185,13 +184,12 @@ pub enum ChunkId {
 impl ChunkId {
     /// The chunks that exist at most once, in the order `pack` numbers
     /// them.
-    const UNITS: [Self; 34] = [
+    const UNITS: [Self; 33] = [
         Self::MachHeader,
         Self::Stubs,
         Self::StubHelper,
         Self::LazyPtrs,
         Self::Got,
-        Self::WeakGot,
         Self::DelayStubs,
         Self::DelayHelper,
         Self::LazyHelpers,
@@ -328,8 +326,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, id: ChunkId, buf: &mut [u8]) {
         ChunkId::Stubs => stubs::copy_buf(ctx, buf),
         ChunkId::StubHelper => stub_helper::copy_buf(ctx, buf),
         ChunkId::LazyPtrs => lazy_ptrs::copy_buf(ctx, buf),
-        ChunkId::Got => got::copy_buf(ctx, false, buf),
-        ChunkId::WeakGot => got::copy_buf(ctx, true, buf),
+        ChunkId::Got => got::copy_buf(ctx, buf),
         ChunkId::DelayStubs => delay_init::copy_stubs(ctx, buf),
         ChunkId::DelayHelper => delay_init::copy_helper(ctx, buf),
         ChunkId::LazyHelpers => lazy_helpers::copy_buf(ctx, buf),

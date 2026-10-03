@@ -1716,8 +1716,8 @@ fn add_stack_segment<E: Target>(ctx: &mut Context<E>) {
 }
 
 /// Sizes the stubs, the lazy-binding helper and pointers, the
-/// lazy-load helpers and slots, and the GOT (with __weak_got split off,
-/// see GotSection), and adds the ones in use to the output.
+/// lazy-load helpers and slots, and the GOT, and adds the ones in use
+/// to the output.
 fn add_stub_and_got_chunks<E: Target>(ctx: &mut Context<E>) {
     if !ctx.stubs.symbols.is_empty() {
         if ctx.args.text_exec {
@@ -1776,24 +1776,18 @@ fn add_stub_and_got_chunks<E: Target>(ctx: &mut Context<E>) {
         ctx.chunks.push(ChunkId::LazyLoadGot);
     }
 
-    let got = &mut ctx.got;
-    let weak = got.got_syms.len() - got.weak_start;
-    let slots = got.weak_start;
-    got.hdr.size = slots as u64 * 8;
-    got.weak_hdr.size = weak as u64 * 8;
     let seg = data_seg(ctx);
     // A kext's are plain data to ld-prime (indexed into the indirect
     // symbol table all the same), and so are a -static image's, but for
     // a PIE's - one that has an indirect symbol table.
     let plain = ctx.args.is_kext() || (ctx.args.static_link && !ctx.args.pie);
     let flags = if plain { S_REGULAR } else { S_NON_LAZY_SYMBOL_POINTERS };
-    for (id, len) in [(ChunkId::Got, slots), (ChunkId::WeakGot, weak)] {
-        if len > 0 {
-            let hdr = ctx.chunk_header_mut(id);
-            hdr.segname = seg;
-            hdr.flags = flags;
-            ctx.chunks.push(id);
-        }
+    if !ctx.got.got_syms.is_empty() {
+        let hdr = &mut ctx.got.hdr;
+        hdr.size = ctx.got.got_syms.len() as u64 * 8;
+        hdr.segname = seg;
+        hdr.flags = flags;
+        ctx.chunks.push(ChunkId::Got);
     }
 }
 

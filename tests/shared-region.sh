@@ -7,8 +7,9 @@ source "$(dirname "$0")"/common.inc
 # references between sections (LC_SEGMENT_SPLIT_INFO) and is laid out
 # as ld-prime lays out such images: the selector references, the class
 # data (with relative method lists), the lazy pointers and the GOT
-# slots of weak-lookup symbols (__weak_got) join __DATA_CONST; and a
-# dylib binds the pointers to its exported classes to itself.
+# (with the slots of weak-lookup symbols, which ld-prime puts in a
+# __weak_got of their own) join __DATA_CONST; and a dylib binds the
+# pointers to its exported classes to itself.
 cat <<EOF | $CC -o $t/a.o -c -xobjective-c++ -O1 -
 #import <Foundation/Foundation.h>
 @interface Foo : NSObject
@@ -29,14 +30,14 @@ otool -l $t/a.dylib > $t/lc
 grep -q 'cmd LC_SEGMENT_SPLIT_INFO$' $t/lc
 sects a.dylib > $t/sects
 grep -q '__DATA_CONST,__objc_const ' $t/sects
-grep -q '__DATA_CONST,__weak_got ' $t/sects
+grep -q '__DATA_CONST,__got ' $t/sects
 grep -q '__DATA_CONST,__objc_selrefs ' $t/sects
 grep -A10 'sectname __objc_selrefs' $t/lc | grep -q 'flags 0x00000000'
 # The cache builder, not dyld, protects __DATA_CONST.
 grep -A10 'segname __DATA_CONST' $t/lc | grep -q 'flags 0x0$'
 dyld_info -fixups $t/a.dylib > $t/fixups
 grep -q '__objc_classlist .* bind *<this-image>/_OBJC_CLASS_$_Foo' $t/fixups
-grep -q '__weak_got .* bind .*__ZZ6weakfnvE1s' $t/fixups
+grep -q '__got .* bind .*__ZZ6weakfnvE1s' $t/fixups
 
 # Without, or opting out, none of that.
 link b.dylib

@@ -5798,23 +5798,19 @@ pub fn sort_stubs_and_got<E: Target>(ctx: &mut Context<E>) {
     ctx.stubs.symbols = stubs;
 
     // The objc stubs' own _objc_msgSend slot goes before the one other
-    // references share, and a delay-init stub's own slot after it. In
-    // the shared region the weak-lookup slots, which form __weak_got,
-    // go last.
+    // references share, and a delay-init stub's own slot after it.
     let got = std::mem::take(&mut ctx.got.got_syms);
     let objc = ctx.objc_stubs.msgsend_got_idx as usize;
     let delay_own: hashbrown::HashSet<usize> = (ctx.delay_init.stubs.iter())
         .filter(|s| s.got != ctx.sym_aux(s.sym).got_idx)
         .map(|s| s.got as usize)
         .collect();
-    let in_weak_got = |id| ctx.args.shared_region && ctx.binds_weak_lookup(id);
     let mut order: Vec<usize> = (0..got.len()).collect();
     order.par_sort_by_key(|&i| {
         let id = got[i];
         let name = crate::util::name_sort_key(ctx.symbols[id].name());
-        (in_weak_got(id), got_rank(ctx, id), name, i != objc, delay_own.contains(&i))
+        (got_rank(ctx, id), name, i != objc, delay_own.contains(&i))
     });
-    ctx.got.weak_start = order.iter().position(|&i| in_weak_got(got[i])).unwrap_or(order.len());
     let mut slot_of = vec![0; got.len()];
     for (slot, &i) in order.iter().enumerate() {
         slot_of[i] = slot as u32;
