@@ -50,6 +50,11 @@ objdump --macho --unwind-info $t/exe > $t/unwind
 off=$(printf '0x%08x' $((0x$addr - 0x100000000)))
 [ "$(grep -c "function offset=$off" $t/unwind)" = 1 ]
 
-$CC --ld-path=$mold -o $t/exe2 $t/main.o $t/a1.o $t/a2.o $t/a3.o -Wl,-deduplicate
+# main's unwind record, after the copies', keeps its entry.
+$CC --ld-path=$mold -o $t/exe2 $t/a1.o $t/a2.o $t/a3.o $t/main.o -Wl,-deduplicate
 $t/exe2
 [ "$(dwarfdump --eh-frame $t/exe2 | grep -c ' FDE ')" = 1 ]
+addr=$(nm $t/exe2 | awk '/ _main$/ { print $1; exit }')
+off=$(printf '0x%08x' $((0x$addr - 0x100000000)))
+objdump --macho --unwind-info $t/exe2 > $t/unwind2
+grep "function offset=$off," $t/unwind2 | grep -qv '=0x00000000$'

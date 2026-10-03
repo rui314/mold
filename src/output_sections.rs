@@ -1513,6 +1513,7 @@ fn lay_out_eh_frame<E: Target>(ctx: &mut Context<E>) {
         }
     }
     ctx.fdes = kept_fdes;
+    let num_records = ctx.unwind_records.len();
     ctx.unwind_records.retain_mut(|rec| {
         if rec.fde_idx == crate::input_files::UNWIND_NONE {
             return true;
@@ -1525,6 +1526,11 @@ fn lay_out_eh_frame<E: Target>(ctx: &mut Context<E>) {
         rec.fde_idx = mapped as u32;
         true
     });
+    // The compaction moved the surviving records; refresh the
+    // subsections' ranges, which the __unwind_info encoding reads.
+    if ctx.unwind_records.len() < num_records {
+        crate::passes::refresh_unwind_ranges(ctx);
+    }
     if ctx.fdes.is_empty() {
         return;
     }

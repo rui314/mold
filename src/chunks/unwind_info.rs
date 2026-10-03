@@ -109,7 +109,7 @@ fn table_records<E: Target>(ctx: &Context<E>) -> Vec<UnwindRecord> {
         })
         .cloned()
         .collect();
-    records.extend(bare_code_records(ctx, &records));
+    records.extend(bare_code_records(ctx));
 
     // A DWARF-mode record's encoding holds its FDE's offset in
     // __eh_frame in the low 24 bits, or 0 if they can't hold it, as in
@@ -379,33 +379,26 @@ pub(crate) fn function_lsda<E: Target>(
 /// only data. A section of an object without MH_SUBSECTIONS_VIA_SYMBOLS
 /// is one subsection of several functions: the code past each record's
 /// length up to the next record has no unwind information either.
-fn bare_code_records<E: Target>(ctx: &Context<E>, records: &[UnwindRecord]) -> Vec<UnwindRecord> {
-    use std::collections::HashMap;
-
-    // Where each subsection's records start, and, in a section without
-    // subsections, where they end.
-    let mut starts: HashMap<u32, Vec<u32>> = HashMap::new();
-    let mut ends: HashMap<u32, Vec<u32>> = HashMap::new();
-    for rec in records {
-        starts.entry(rec.isec).or_default().push(rec.input_offset);
-        if !ctx.objs[ctx.isecs[rec.isec as usize].file as usize].subsections_via_symbols {
-            ends.entry(rec.isec).or_default().push(rec.input_offset + rec.code_len);
-        }
-    }
-
+///
+/// Each subsection is looked at on its own, with its records (its range
+/// of ctx.unwind_records), as sold reads a subsection's unwind records.
+fn bare_code_records<E: Target>(ctx: &Context<E>) -> Vec<UnwindRecord> {
     ctx.isecs
         .par_iter()
         .enumerate()
         .filter(|&(_, isec)| is_code_subsec(ctx, isec))
         .flat_map_iter(|(i, isec)| {
-            let i = i as u32;
-            let starts = starts.get(&i).map_or(&[][..], Vec::as_slice);
-            let ends = ends.get(&i).map_or(&[][..], Vec::as_slice);
-            let ends = ends.iter().copied().filter(|&off| off < isec.size);
+            let start = isec.unwind_offset as usize;
+            let recs = &ctx.unwind_records[start..start + isec.nunwind as usize];
+            let unsplit =
+                if ctx.objs[isec.file as usize].subsections_via_symbols { &[][..] } else { recs };
+            let ends = (unsplit.iter())
+                .map(|rec| rec.input_offset + rec.code_len)
+                .filter(move |&off| off < isec.size);
             std::iter::once(0)
                 .chain(ends)
-                .filter(|off| !starts.contains(off))
-                .map(move |off| bare_record(i, off))
+                .filter(move |&off| !recs.iter().any(|rec| rec.input_offset == off))
+                .map(move |off| bare_record(i as u32, off))
         })
         .collect()
 }
