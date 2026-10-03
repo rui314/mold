@@ -40,24 +40,50 @@ pub fn create_internal_file<E: Target>(ctx: &mut Context<E>) {
 /// Resolves all symbols, following mold's model: every input including
 /// each archive member has been parsed already, and resolution ranks
 /// competing definitions (strong > weak > lazy archive member or
-/// dylib > common), breaking ties by input order. A liveness walk then marks
-/// the archive members whose definitions are actually referenced, and
-/// a second round restricted to live files settles the final owners.
-/// A member the walk loads may bring tentative definitions, which want
-/// what defines them as data (see definition_rank), so the first round
-/// and the walk repeat until none comes in.
+/// dylib > common), breaking ties by input order. A liveness walk then
+/// marks the archive members whose definitions are actually referenced
+/// (see resolve_and_mark_live), and the live objects' auto-link options
+/// load the libraries they name; objects among those, or a library that
+/// changes what an earlier one stands for, have resolution and the walk
+/// start over. A final round restricted to live files settles the
+/// owners, as in mold's resolve_symbols.
 pub fn resolve_symbols<E: Target>(ctx: &mut Context<E>) {
     intern_command_line_symbols(ctx);
+    // The final round ranks the dylibs as they were before the last
+    // auto-linked ones came: those claim only what is left undefined
+    // (see claim_new_dylibs).
+    let (ranking, num_dylibs) = loop {
+        resolve_and_mark_live(ctx);
+        let ranking = DylibRanking::new(&ctx.dylibs);
+        let num_dylibs = ctx.dylibs.len();
+        if !crate::reader::load_autolink_deps(ctx) {
+            break (ranking, num_dylibs);
+        }
+    };
+
+    // Now that we know the exact set of input files that are to be
+    // included in the output file, redo symbol resolution.
+    clear_symbols(ctx);
+    resolve_symbols_pass(ctx, true, &ranking);
+    claim_locals(ctx);
+    if ctx.dylibs.len() > num_dylibs {
+        claim_new_dylibs(ctx, num_dylibs);
+    }
+}
+
+/// Resolves the symbols with every object taking part, the lazy archive
+/// members too, and marks the live objects. A member the walk loads may
+/// bring tentative definitions, which want what defines them as data
+/// (see definition_rank), so the two repeat until none comes in.
+fn resolve_and_mark_live<E: Target>(ctx: &mut Context<E>) {
     loop {
         clear_symbols(ctx);
-        let tentative = resolve_symbols_pass(ctx, false);
+        let ranking = DylibRanking::new(&ctx.dylibs);
+        let tentative = resolve_symbols_pass(ctx, false, &ranking);
         if !mark_live_objects(ctx, &tentative) {
             break;
         }
     }
-    clear_symbols(ctx);
-    resolve_symbols_pass(ctx, true);
-    claim_locals(ctx);
 }
 
 /// The symbols the command line names, which count as referenced: the
@@ -213,9 +239,14 @@ fn clear_symbols<E: Target>(ctx: &mut Context<E>) {
 /// One resolution round over the objects - all of them, or with
 /// `only_alive` just the live ones: definitions race for each symbol by
 /// rank and the winners claim it, common symbols merge, and dylib
-/// exports claim what the objects leave undefined. Returns the symbols
-/// a live object has a tentative definition of.
-fn resolve_symbols_pass<E: Target>(ctx: &mut Context<E>, only_alive: bool) -> Tentative {
+/// exports claim what the objects leave undefined, the dylibs ranked as
+/// `ranking` has them. Returns the symbols a live object has a
+/// tentative definition of.
+fn resolve_symbols_pass<E: Target>(
+    ctx: &mut Context<E>,
+    only_alive: bool,
+    ranking: &DylibRanking,
+) -> Tentative {
     use std::sync::atomic::Ordering;
 
     let refs = collect_references(ctx, only_alive);
@@ -248,7 +279,7 @@ fn resolve_symbols_pass<E: Target>(ctx: &mut Context<E>, only_alive: bool) -> Te
     // A relocatable link keeps every reference undefined rather than
     // binding it to a dylib.
     if !ctx.args.relocatable {
-        claim_dylib_exports(ctx, &refs.used, &best, &tentative);
+        claim_dylib_exports(ctx, ranking, &refs.used, &best, &tentative);
     }
 
     // Record the final usage set for downstream passes.
@@ -568,9 +599,11 @@ fn merge_common_symbols<E: Target>(
 /// Dylib exports claim the referenced symbols that no object defines,
 /// or that only a lazy archive member does; an earlier dylib beats a
 /// later archive member and vice versa (see dylib_ranks). Of the dylibs
-/// that export a symbol, the first in search order claims it.
+/// `ranking` ranks that export a symbol, the first in search order
+/// claims it.
 fn claim_dylib_exports<E: Target>(
     ctx: &mut Context<E>,
+    ranking: &DylibRanking,
     used: &[std::sync::atomic::AtomicBool],
     best: &[std::sync::atomic::AtomicU64],
     tentative: &Tentative,
@@ -578,9 +611,8 @@ fn claim_dylib_exports<E: Target>(
     use std::sync::atomic::Ordering;
     collect_dylib_symbols(ctx);
     let dylibs = &ctx.dylibs;
-    let providers = merged_providers(dylibs);
-    let ranks = dylib_ranks(dylibs);
-    let order = dylib_search_order(&ranks, 0);
+    let DylibRanking { ranks, providers } = ranking;
+    let order = dylib_search_order(ranks, 0);
     let first = first_exporters(dylibs, ctx.symbols.syms.len(), &order);
     // A live tentative definition (a common symbol) beats a dylib's
     // but under -commons use_dylibs, even where it is an archive
@@ -610,7 +642,7 @@ fn claim_dylib_exports<E: Target>(
             sym.value = 0;
             sym.common_p2align = 0;
         }
-        let owner = import_from_dylib(sym, dylibs, &providers, dylib_idx);
+        let owner = import_from_dylib(sym, dylibs, providers, dylib_idx);
         // -weak_framework / -weak_library / -weak-l: every import from
         // the library is a weak import (ld64 binds it weak-import and
         // marks it N_WEAK_REF), whatever the references say.
@@ -666,6 +698,20 @@ fn first_exporters(
         }
     });
     first
+}
+
+/// How resolution ranks the dylibs of the link: the rank each claims
+/// symbols with (see dylib_ranks), and those it takes the symbols of
+/// its private re-exports from (see merged_providers).
+struct DylibRanking {
+    ranks: Vec<u64>,
+    providers: Vec<Vec<usize>>,
+}
+
+impl DylibRanking {
+    fn new(dylibs: &[input_files::DylibFile]) -> Self {
+        Self { ranks: dylib_ranks(dylibs), providers: merged_providers(dylibs) }
+    }
 }
 
 /// For each dylib, the dylibs of the link it merged as private
@@ -730,7 +776,7 @@ fn import_from_dylib(
 /// carry later priorities than every file already resolved, so they
 /// can steal nothing - a full re-resolution would reach exactly this
 /// outcome, at many times the cost.
-pub(crate) fn claim_new_dylibs<E: Target>(ctx: &mut Context<E>, first: usize) {
+fn claim_new_dylibs<E: Target>(ctx: &mut Context<E>, first: usize) {
     use std::sync::atomic::Ordering;
     collect_dylib_symbols(ctx);
     let dylibs = &ctx.dylibs;
@@ -1305,7 +1351,6 @@ pub fn do_lto<E: Target>(ctx: &mut Context<E>) {
 
     // Redo name resolution.
     resolve_symbols(ctx);
-    crate::reader::load_autolink_deps(ctx);
     keep_bitcode_imports(ctx);
 }
 

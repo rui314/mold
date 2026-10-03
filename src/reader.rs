@@ -24,7 +24,6 @@ use crate::input_files;
 use crate::macho::*;
 use crate::mapped_file::MappedFile;
 use crate::mergeable::MergedLibrary;
-use crate::passes;
 use crate::tapi;
 use crate::target::Target;
 use crate::util::path_bytes;
@@ -1285,50 +1284,38 @@ fn warn_about_sections(staged: &[input_files::StagedObject]) {
 /// Acts on the auto-link options (LC_LINKER_OPTION) of the live
 /// objects, once symbols are resolved: each names a library or
 /// framework the object needs, as if it had been on the command line.
-/// Swift objects rely on this entirely. What the options load may make
-/// more objects live, with options of their own, so symbols resolve
-/// again and the options are read again until they load nothing new.
-pub fn load_autolink_deps<E: Target>(ctx: &mut Context<E>) {
+/// Swift objects rely on this entirely. Returns whether resolution must
+/// start over (see passes::resolve_symbols): new objects change what it
+/// chose and may make more objects live, with options of their own, and
+/// so does a new dylib that an earlier one merged as a private
+/// re-export, which takes its symbols from that one. Other new dylibs
+/// only claim what is still undefined (see passes::claim_new_dylibs).
+pub fn load_autolink_deps<E: Target>(ctx: &mut Context<E>) -> bool {
     if ctx.args.ignore_auto_link {
-        return;
+        return false;
     }
-    loop {
-        // Those of objects new to the link are read.
-        for obj in ctx.objs.iter_mut().filter(|obj| obj.is_alive && !obj.linker_options_read) {
-            let mf = obj.mf;
-            obj.linker_options = read_linker_options(&obj.linker_options, || mf.name.raw());
-            obj.linker_options_read = true;
-        }
-        // ld64 does not act on auto-link options in a -r link: the
-        // LC_LINKER_OPTION commands are copied into the output object
-        // and the final link resolves them. Loading them here would let
-        // the libraries claim symbols that the output must leave
-        // undefined (Xcode's prelink of a Swift package auto-linked
-        // libc++ this way and the -r symbol table then lacked operator
-        // new).
-        if ctx.args.relocatable {
-            return;
-        }
-
-        let (num_objs, num_dylibs) = (ctx.objs.len(), ctx.dylibs.len());
-        load_autolinked_libraries(ctx);
-
-        // New objects change what resolution chose, and so does a new
-        // dylib that an earlier one merged as a private re-export, which
-        // takes its symbols from that one: resolution runs again. Other
-        // new dylibs only claim what is still undefined (see
-        // passes::claim_new_dylibs).
-        let (old, new) = ctx.dylibs.split_at(num_dylibs);
-        let rebinds =
-            new.iter().any(|d| old.iter().any(|o| o.merged_reexports.contains(&d.install_name)));
-        if ctx.objs.len() == num_objs && !rebinds {
-            if ctx.dylibs.len() != num_dylibs {
-                passes::claim_new_dylibs(ctx, num_dylibs);
-            }
-            return;
-        }
-        passes::resolve_symbols(ctx);
+    // Those of objects new to the link are read.
+    for obj in ctx.objs.iter_mut().filter(|obj| obj.is_alive && !obj.linker_options_read) {
+        let mf = obj.mf;
+        obj.linker_options = read_linker_options(&obj.linker_options, || mf.name.raw());
+        obj.linker_options_read = true;
     }
+    // ld64 does not act on auto-link options in a -r link: the
+    // LC_LINKER_OPTION commands are copied into the output object and
+    // the final link resolves them. Loading them here would let the
+    // libraries claim symbols that the output must leave undefined
+    // (Xcode's prelink of a Swift package auto-linked libc++ this way
+    // and the -r symbol table then lacked operator new).
+    if ctx.args.relocatable {
+        return false;
+    }
+
+    let (num_objs, num_dylibs) = (ctx.objs.len(), ctx.dylibs.len());
+    load_autolinked_libraries(ctx);
+    let (old, new) = ctx.dylibs.split_at(num_dylibs);
+    let rebinds =
+        new.iter().any(|d| old.iter().any(|o| o.merged_reexports.contains(&d.install_name)));
+    ctx.objs.len() != num_objs || rebinds
 }
 
 /// Loads the libraries the auto-link options not acted on yet name, and

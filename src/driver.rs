@@ -91,11 +91,10 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     crate::error::checkpoint();
 
     // Resolve symbols by choosing the most appropriate file for each
-    // symbol, then load the libraries the live objects' auto-link
-    // options name, which resolves symbols again as they come in.
+    // symbol, loading the libraries the live objects' auto-link options
+    // name as they become live.
     let mut t = ctx.timer("resolve_symbols");
     passes::resolve_symbols(&mut ctx);
-    reader::load_autolink_deps(&mut ctx);
     let mut checked = passes::CheckedInputs::default();
     passes::check_input_versions(&ctx, &mut checked);
     passes::check_bitcode_duplicates(&ctx);
