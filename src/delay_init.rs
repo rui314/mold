@@ -182,10 +182,9 @@ fn create_delay_stubs<E: Target>(
 }
 
 /// Makes the helpers for GOT loads and compares: one per symbol and
-/// register, or per load in arm64 frameless code, by symbol, a
-/// symbol's in the order of their first uses (where ld-prime's lazy-load
-/// helpers go by their own names); then lays out __delay_helper, the
-/// dlopen helpers after them.
+/// register, or per load in arm64 frameless code, in the order of their
+/// first uses; then lays out __delay_helper, the dlopen helpers after
+/// them.
 fn create_delay_helpers<E: Target>(
     ctx: &mut Context<E>,
     uses: &[DelayUseSite],
@@ -193,7 +192,7 @@ fn create_delay_helpers<E: Target>(
 ) {
     let mut helpers: Vec<DelayHelper> = Vec::new();
     let mut index: hashbrown::HashMap<(SymbolId, DelayUse), usize> = hashbrown::HashMap::new();
-    let mut sites = Vec::new();
+    let mut sites = hashbrown::HashMap::new();
     for &(isec, offset, id, how) in uses {
         let kind = match how {
             LazyRef::Cmp => DelayUse::Cmp,
@@ -225,15 +224,11 @@ fn create_delay_helpers<E: Target>(
             helpers.push(DelayHelper { sym: id, kind, name, dlopen, offset: 0 });
             helpers.len() - 1
         });
-        sites.push(((isec, offset), i));
+        sites.insert((isec, offset), i as u32);
     }
 
-    let mut sorted: Vec<(usize, DelayHelper)> = helpers.into_iter().enumerate().collect();
-    sorted.sort_by_key(|(_, h)| ctx.symbols[h.sym].name());
-    let mut rank = vec![0; sorted.len()];
     let mut offset = 0;
-    for (r, (i, h)) in sorted.iter_mut().enumerate() {
-        rank[*i] = r as u32;
+    for h in &mut helpers {
         h.offset = offset;
         offset += E::delay_helper_size(h.kind);
     }
@@ -241,7 +236,6 @@ fn create_delay_helpers<E: Target>(
         d.offset = offset;
         offset += E::DLOPEN_HELPER_SIZE;
     }
-    let delay = &mut ctx.delay_init;
-    delay.sites = sites.into_iter().map(|(site, i)| (site, rank[i])).collect();
-    delay.helpers = sorted.into_iter().map(|(_, h)| h).collect();
+    ctx.delay_init.sites = sites;
+    ctx.delay_init.helpers = helpers;
 }
