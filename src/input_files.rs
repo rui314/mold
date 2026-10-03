@@ -2727,12 +2727,8 @@ pub fn is_public_location(install_name: &[u8]) -> bool {
 /// file's slice, and its members, by the file's own path.
 pub fn trace_file<E: Target>(ctx: &mut Context<E>, name: &[u8]) {
     if ctx.args.trace {
-        ctx.traced_files.push(trace_name(name));
+        ctx.traced_files.push(without_fat_arch(name));
     }
-}
-
-pub fn trace_name(name: &[u8]) -> Vec<u8> {
-    without_fat_arch(name)
 }
 
 /// Splits the name fat_slice gives a fat file's slice into the file's

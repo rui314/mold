@@ -694,7 +694,7 @@ fn refuse_without_uuid(mf: &MappedFile) {
 
 /// Refuses a file the link can't take, by what it is.
 fn refuse_file(mf: &MappedFile) {
-    let name = input_files::trace_name(path_bytes(&mf.name));
+    let name = input_files::without_fat_arch(path_bytes(&mf.name));
     let name = raw(&name);
     if crate::filetype::get_macho_filetype(mf.data()).is_some() {
         error!(

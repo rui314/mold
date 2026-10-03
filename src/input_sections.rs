@@ -251,10 +251,6 @@ impl InputSection {
     pub fn is_placed(&self) -> bool {
         self.flags.load(std::sync::atomic::Ordering::Relaxed) & IS_PLACED != 0
     }
-    /// Marks a subsection a pass places by hand in a chunk of its own.
-    pub fn set_placed(&mut self) {
-        *self.flags.get_mut() |= IS_PLACED;
-    }
     /// The next output offset at or after `off` where this subsection
     /// may start. ld64 keeps each subsection at the offset it had within
     /// its input section modulo the section's alignment (an 8-byte
