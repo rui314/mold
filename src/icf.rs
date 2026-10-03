@@ -262,14 +262,11 @@ impl DigestMap {
 
 fn uniquify_cies<E: Target>(ctx: &mut Context<E>) {
     let _t = ctx.timer("uniquify_cies");
-    let mut next = 0;
-    crate::chunks::eh_frame::deduplicate_cies(ctx, |cie, leader| {
-        cie.icf_idx = leader.unwrap_or_else(|| {
-            let index = next;
-            next += 1;
-            index
-        });
-        cie.icf_idx
+    let cies = crate::chunks::eh_frame::classify_cies(ctx);
+    ctx.objs.par_iter_mut().zip(cies.per_file()).for_each(|(file, classes)| {
+        for (cie, &class) in file.cies.iter_mut().zip(classes) {
+            cie.icf_idx = class;
+        }
     });
 }
 

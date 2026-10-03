@@ -5,6 +5,8 @@
 //! emitted as `.eh_frame_hdr` so that the unwinder can find the FDE for a
 //! PC by binary search.
 
+use hashbrown::HashMap;
+
 use rayon::prelude::*;
 
 use crate::chunks::ChunkHeader;
@@ -17,32 +19,82 @@ use crate::output_file::split_at_offsets;
 use crate::symbol::Symbol;
 use crate::target::Target;
 use crate::util::is_int;
+use crate::util::siphash::SipHash13_128;
 use crate::{error, fatal};
 
-/// Visits CIEs in input order, reusing the value assigned to an equivalent
-/// leader. The visitor only updates layout/ICF metadata, not CIE contents.
-pub fn deduplicate_cies<E: Target>(
-    ctx: &mut Context<E>,
-    mut assign: impl FnMut(&mut CieRecord, Option<u32>) -> u32,
-) {
-    let mut leaders: Vec<(crate::input_files::ObjId, usize, u32)> = Vec::new();
-    for i in 0..ctx.objs.len() {
-        let id = ctx.objs.live_file(i).id();
-        for ci in 0..ctx.objs[id.index()].cies.len() {
-            let file = &ctx.objs[id.index()];
-            let leader = leaders
-                .iter()
-                .find(|&&(owner, index, _)| {
-                    let other = &ctx.objs[owner.index()];
-                    cie_equals::<E>(other, &other.cies[index], file, &file.cies[ci])
-                })
-                .map(|&(_, _, value)| value);
-            let value = assign(&mut ctx.objs[id.index()].cies[ci], leader);
-            if leader.is_none() {
-                leaders.push((id, ci, value));
-            }
-        }
+/// Groups of identical CIEs, which are merged in the output.
+pub struct CieClasses {
+    /// The class of each CIE, in input order. Classes are numbered in the
+    /// order of their first CIEs.
+    classes: Vec<u32>,
+    /// Where each live file's CIEs start in `classes`, and their end.
+    starts: Vec<usize>,
+    /// The first CIE of each class as (live file index, CIE index).
+    pub leaders: Vec<(usize, usize)>,
+}
+
+impl CieClasses {
+    /// The classes of each live file's CIEs.
+    pub fn per_file(&self) -> impl IndexedParallelIterator<Item = &[u32]> {
+        self.starts.par_windows(2).map(|w| &self.classes[w[0]..w[1]])
     }
+}
+
+/// Groups CIEs with the same contents and relocations. A large program has
+/// tens of thousands of CIEs in thousands of classes, so CIEs are compared
+/// by their 128-bit SipHash digests with a random key, which we assume never
+/// collide, as ICF does.
+pub fn classify_cies<E: Target>(ctx: &Context<E>) -> CieClasses {
+    let mut key = [0u8; 16];
+    crate::util::random_bytes(&mut key);
+    let hashes: Vec<u128> = ctx
+        .objs
+        .par_iter()
+        .flat_map_iter(|file| file.cies.iter().map(move |cie| cie_digest(&key, file, cie)))
+        .collect();
+
+    let mut starts: Vec<usize> = ctx.objs.par_iter().map(|file| file.cies.len()).collect();
+    let mut start = 0;
+    for n in &mut starts {
+        start += std::mem::replace(n, start);
+    }
+    starts.push(start);
+
+    let mut map: HashMap<u128, u32> = HashMap::new();
+    let mut first: Vec<usize> = Vec::new();
+    let classes = hashes
+        .iter()
+        .enumerate()
+        .map(|(k, &hash)| {
+            *map.entry(hash).or_insert_with(|| {
+                first.push(k);
+                first.len() as u32 - 1
+            })
+        })
+        .collect();
+
+    let leaders = first
+        .into_iter()
+        .map(|k| {
+            let i = starts.partition_point(|&start| start <= k) - 1;
+            (i, k - starts[i])
+        })
+        .collect();
+    CieClasses { classes, starts, leaders }
+}
+
+fn cie_digest<E: Target>(key: &[u8; 16], file: &ObjectFile<E>, cie: &CieRecord) -> u128 {
+    let mut h = SipHash13_128::new(key);
+    h.update(cie.contents::<E>());
+    for rel in cie.rels(file) {
+        h.update_u64(rel.r_offset() - cie.input_offset as u64);
+        h.update_u64(rel.r_type() as u64);
+        h.update_u64(file.base.symbols[rel.r_sym() as usize].0 as u64);
+        h.update_u64(rel.r_addend() as u64);
+    }
+    let mut digest = [0; 16];
+    h.finish(&mut digest);
+    u128::from_le_bytes(digest)
 }
 
 // .eh_frame contains runtime information as to how to handle exceptions
@@ -55,61 +107,52 @@ pub fn new_header<E: Target>() -> ChunkHeader<E> {
     hdr
 }
 
-/// Whether two CIEs are identical, including their relocations.
-pub fn cie_equals<E: Target>(
-    a_file: &ObjectFile<E>,
-    a: &CieRecord,
-    b_file: &ObjectFile<E>,
-    b: &CieRecord,
-) -> bool {
-    if a.contents::<E>() != b.contents::<E>() {
-        return false;
-    }
-    let x = a.rels(a_file);
-    let y = b.rels(b_file);
-    x.len() == y.len()
-        && x.iter().zip(y).all(|(rx, ry)| {
-            rx.r_offset() - a.input_offset as u64 == ry.r_offset() - b.input_offset as u64
-                && rx.r_type() == ry.r_type()
-                && a_file.base.symbols[rx.r_sym() as usize]
-                    == b_file.base.symbols[ry.r_sym() as usize]
-                && rx.r_addend() == ry.r_addend()
-        })
-}
-
 pub fn construct<E: Target>(ctx: &mut Context<E>) {
     let _t = ctx.timer("eh_frame");
 
     // Remove dead FDEs and assign them offsets within their corresponding
     // CIE group.
-    ctx.objs.par_iter_mut().for_each(|file| {
-        file.fdes.retain(|fde| fde.is_alive());
-        let mut offset = 0;
-        let cies = &file.cies;
-        for fde in &mut file.fdes {
-            fde.output_offset = offset as u32;
-            offset += fde.size_with::<E>(cies);
-        }
-        file.fde_size = offset as u64;
-    });
+    let fde_sizes: Vec<u64> = ctx
+        .objs
+        .par_iter_mut()
+        .map(|file| {
+            file.fdes.retain(|fde| fde.is_alive());
+            let mut offset = 0;
+            let cies = &file.cies;
+            for fde in &mut file.fdes {
+                fde.output_offset = offset as u32;
+                offset += fde.size_with::<E>(cies);
+            }
+            file.fde_size = offset as u64;
+            file.fde_size
+        })
+        .collect();
 
-    // Uniquify CIEs and assign offsets to them.
+    // Uniquify CIEs. The first CIE of each class represents it, and they
+    // are laid out in input order, followed by each file's FDEs.
+    let cies = classify_cies(ctx);
     let mut offset = 0u64;
-    deduplicate_cies(ctx, |cie, leader| {
-        cie.output_offset = leader.unwrap_or_else(|| {
-            let start = offset as u32;
-            cie.is_leader = true;
-            offset += cie.size::<E>() as u64;
-            start
-        });
-        cie.output_offset
-    });
+    let mut place = |size: u64| {
+        let start = offset;
+        offset += size;
+        start
+    };
+    let cie_offsets: Vec<u64> = cies
+        .leaders
+        .iter()
+        .map(|&(i, ci)| place(ctx.objs.live_file(i).cies[ci].size::<E>() as u64))
+        .collect();
+    let fde_offsets: Vec<u64> = fde_sizes.into_iter().map(&mut place).collect();
 
-    // Assign FDE offsets to files.
-    for file in &mut ctx.objs {
-        file.fde_offset = offset;
-        offset += file.fde_size;
-    }
+    ctx.objs.par_iter_mut().zip(cies.per_file()).zip(fde_offsets).enumerate().for_each(
+        |(i, ((file, classes), fde_offset))| {
+            for (ci, (cie, &class)) in file.cies.iter_mut().zip(classes).enumerate() {
+                cie.output_offset = cie_offsets[class as usize] as u32;
+                cie.is_leader = cies.leaders[class as usize] == (i, ci);
+            }
+            file.fde_offset = fde_offset;
+        },
+    );
 
     // .eh_frame must end with a null word.
     ctx.eh_frame.shdr.sh_size.set(offset + 4);
