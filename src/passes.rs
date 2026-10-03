@@ -4561,10 +4561,10 @@ fn assign_dylib_ordinals<E: Target>(ctx: &mut Context<E>) -> Vec<usize> {
     order
 }
 
-/// Drops load commands for dylibs no symbol binds to
-/// (-dead_strip_dylibs). Bind records name dylibs by their 1-based
-/// load-command ordinal, so surviving dylibs are renumbered and symbol
-/// origins remapped.
+/// Drops the dylibs no symbol binds to that the link may drop (under
+/// -dead_strip_dylibs, or auto-linked), makes those every reference to
+/// which is weak load weakly, and gives the rest their load commands'
+/// ordinals, by which bind records name them.
 pub fn dead_strip_dylibs<E: Target>(ctx: &mut Context<E>) {
     // An auto-linked dylib is stripped even without -dead_strip_dylibs,
     // as ld64 treats its option as a hint: NetNewsWire's auto-link
@@ -4616,7 +4616,30 @@ pub fn dead_strip_dylibs<E: Target>(ctx: &mut Context<E>) {
         }
     }
     weaken_moved_imports(ctx);
+    remove_unused_dylibs(ctx, &used, &twins);
 
+    let order = assign_dylib_ordinals(ctx);
+    // Only a dylib can have an upward dependency, one that depends on
+    // it in turn: ld-prime loads the library as usual for anything else,
+    // with a warning.
+    if ctx.args.output_type != MH_DYLIB {
+        for &i in &order {
+            let dylib = &mut ctx.dylibs[i];
+            if dylib.is_upward {
+                let name = crate::error::raw(&dylib.install_name);
+                crate::warn!("ignoring upward dylib option for {name}");
+                dylib.is_upward = false;
+            }
+        }
+    }
+    check_shared_cache_deps(ctx);
+    check_libsystem_linked(ctx);
+}
+
+/// Drops the dylibs not `used`, and points what refers to a dylib - a
+/// symbol it defines, an export moved to it - at its new index, or at
+/// its twin's if it has one (see moved_dylib_twins).
+fn remove_unused_dylibs<E: Target>(ctx: &mut Context<E>, used: &[bool], twins: &[Option<usize>]) {
     let mut remap = vec![usize::MAX; ctx.dylibs.len()];
     let old = std::mem::take(&mut ctx.dylibs);
     for (i, dylib) in old.into_iter().enumerate() {
@@ -4643,23 +4666,6 @@ pub fn dead_strip_dylibs<E: Target>(ctx: &mut Context<E>) {
             *target = remap[*target];
         }
     }
-
-    let order = assign_dylib_ordinals(ctx);
-    // Only a dylib can have an upward dependency, one that depends on
-    // it in turn: ld-prime loads the library as usual for anything else,
-    // with a warning.
-    if ctx.args.output_type != MH_DYLIB {
-        for &i in &order {
-            let dylib = &mut ctx.dylibs[i];
-            if dylib.is_upward {
-                let name = crate::error::raw(&dylib.install_name);
-                crate::warn!("ignoring upward dylib option for {name}");
-                dylib.is_upward = false;
-            }
-        }
-    }
-    check_shared_cache_deps(ctx);
-    check_libsystem_linked(ctx);
 }
 
 /// Has the imports from the libraries this image re-exports from
