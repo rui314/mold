@@ -1239,56 +1239,38 @@ const JOINED_LIBRARY_OPTIONS: [(&str, LibraryKind); 13] = [
     ("-l", LibraryKind::Plain),
 ];
 
-/// The frameworks and the other libraries the options of a kind name,
-/// each once, in command line order: ld-prime keeps the two apart.
-fn libraries_of_kind(inputs: &[InputArg], kind: LibraryKind) -> (Vec<&[u8]>, Vec<&[u8]>) {
-    let mut frameworks: Vec<&[u8]> = Vec::new();
-    let mut libraries: Vec<&[u8]> = Vec::new();
+/// The names of the libraries the options of a kind name, each once.
+fn libraries_of_kind(inputs: &[InputArg], kind: LibraryKind) -> Vec<&OsStr> {
+    let mut names = Vec::new();
     for input in inputs {
         if let InputArg::Library(k, name) = input
             && *k == kind
+            && !names.contains(&name.as_os_str())
         {
-            let list = match name {
-                LibraryName::Framework(_) => &mut frameworks,
-                _ => &mut libraries,
-            };
-            let name = name.as_os_str().as_bytes();
-            if !list.contains(&name) {
-                list.push(name);
-            }
+            names.push(name.as_os_str());
         }
     }
-    (frameworks, libraries)
+    names
 }
 
 /// Decides whether the dylibs -lazy-l and the like name load lazily:
 /// dyld loads one when __dyld_lazy_load says so, which ld-prime keeps
 /// as an import of any final image that names one, used or not, for
-/// macOS 27 on. Firmware, a -preload image included, has no dyld:
-/// ld-prime links the library as usual there, with a second warning.
+/// macOS 27 on. Firmware, a -preload image included, has no dyld: the
+/// library links as usual there.
 fn resolve_lazy_load(args: &mut Args) {
-    let (frameworks, libraries) = libraries_of_kind(&args.inputs, LibraryKind::Lazy);
-    if frameworks.is_empty() && libraries.is_empty() {
+    let libs = libraries_of_kind(&args.inputs, LibraryKind::Lazy);
+    if libs.is_empty() {
         return;
     }
     let lazy_load = args.platform == PLATFORM_MACOS
         && args.platform_minos >= encode_version(27, 0, 0)
         && !args.preload;
-    for lib in frameworks.iter().chain(&libraries).filter(|_| !lazy_load) {
+    for lib in libs.iter().filter(|_| !lazy_load) {
         crate::warn!(
             "lazy-load will be ignored for '{}' because deployment target version is too low",
-            raw(lib)
+            lib.raw()
         );
-    }
-    if args.platform == PLATFORM_FIRMWARE || args.preload {
-        for _ in &frameworks {
-            crate::warn!(
-                "-lazy_framework cannot be used on firmware, changing to regular -framework"
-            );
-        }
-        for _ in &libraries {
-            crate::warn!("-lazy_library cannot be used on firmware, changing to regular link");
-        }
     }
     args.lazy_load = lazy_load;
     if lazy_load && !args.relocatable {
@@ -1303,17 +1285,17 @@ fn resolve_lazy_load(args: &mut Args) {
 /// command line's initial undefines in any link that names one, -r
 /// included.
 fn resolve_delay_init(args: &mut Args) {
-    let (frameworks, libraries) = libraries_of_kind(&args.inputs, LibraryKind::Delay);
-    if frameworks.is_empty() && libraries.is_empty() {
+    let libs = libraries_of_kind(&args.inputs, LibraryKind::Delay);
+    if libs.is_empty() {
         return;
     }
     let supported = args.platform == PLATFORM_MACOS
         && args.platform_minos >= encode_version(15, 0, 0)
         && !args.preload;
-    for lib in frameworks.iter().chain(&libraries).filter(|_| !supported) {
+    for lib in libs.iter().filter(|_| !supported) {
         crate::warn!(
             "delay-init will be ignored for '{}' because deployment target version is too low",
-            raw(lib)
+            lib.raw()
         );
     }
     args.forced_undefined.push(b"_dlopen".to_vec());
