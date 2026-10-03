@@ -26,6 +26,7 @@ use crate::input_sections::{FragmentRef, InputSection, InputSectionId};
 use crate::target::Target;
 use crate::util::SyncUnsafeCell;
 use crate::util::demangle::{demangle_cpp, demangle_rust};
+use crate::util::hyperloglog::HyperLogLog;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct SymbolId(pub u32);
@@ -1642,8 +1643,20 @@ impl SymbolTable {
             .par_iter_mut()
             .enumerate()
             .map(|(i, shard)| {
+                // Most names occur in many files, so reserve for the
+                // estimated number of distinct names rather than for all
+                // occurrences. An oversized table spreads its entries over
+                // many more pages, all of which have to be faulted in. The
+                // low hash bits are the same within a shard, so mix the
+                // hash before giving it to HyperLogLog, which picks a
+                // register by the low bits.
+                let mut sketch = HyperLogLog::default();
+                for p in bins.iter().flat_map(|bin| &bin.0[i]) {
+                    sketch.insert(p.key.hash.wrapping_mul(0x9e37_79b9_7f4a_7c15));
+                }
+                let estimate = sketch.cardinality() as usize;
                 let count: usize = bins.iter().map(|bin| bin.0[i].len()).sum();
-                shard.reserve(count);
+                shard.reserve(count.min(estimate + estimate / 8));
                 let mut blocks: Vec<(usize, usize)> = Vec::new();
                 for p in bins.iter().flat_map(|bin| &bin.0[i]) {
                     let id = match shard.entry(p.key) {
