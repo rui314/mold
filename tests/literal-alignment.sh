@@ -111,7 +111,7 @@ $t/exe2 | grep '^1 0 1 0 400000003 0 0$'
 # wrong slot (ld-prime drops the low bits silently).
 cat <<EOF2 | $CC -o $t/d.o -c -xassembler -
 .section __TEXT,__const
-.p2align 3
+.p2align 4
 .quad 9
 .globl _v
 _v:

@@ -908,6 +908,12 @@ pub fn mach_header_size<E: Target>(ctx: &Context<E>) -> u64 {
 /// an image dyld loads (room for codesign's LC_CODE_SIGNATURE), or with
 /// -headerpad_max_install_names room for each dylib command to grow to
 /// MAXPATHLEN.
+///
+/// To that come 32 bytes and 8 per dylib: ld-prime places the sections
+/// after an estimate of the load commands that runs over by up to that
+/// much, and post-link scripts written against Xcode spend the room
+/// (Sequel Ace's renames three dylibs to @loader_path paths with
+/// install_name_tool, 48 bytes, without -headerpad_max_install_names).
 fn header_pad<E: Target>(ctx: &Context<E>) -> u64 {
     // A -preload image's header has pages of its own, ahead of the
     // segments; dyld's __text starts on the next 4 KiB boundary (see
@@ -922,7 +928,8 @@ fn header_pad<E: Target>(ctx: &Context<E>) -> u64 {
         let id = (ctx.args.output_type == MH_DYLIB) as usize;
         pad = pad.max((loads + id) as u64 * 1024);
     }
-    pad
+
+    pad + 32 + 8 * ctx.dylibs.len() as u64
 }
 
 /// Writes the mach header and the load commands.

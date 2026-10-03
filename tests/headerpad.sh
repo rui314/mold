@@ -53,6 +53,28 @@ codesign -f -s - $t/exe7 2> /dev/null
 otool -L $t/exe7 | grep -q "$long/libfoo.dylib"
 $t/exe7
 
+# Without -headerpad_max_install_names the room is no less than
+# ld-prime's, which places the sections after an estimate of the load
+# commands that counts up to 8 bytes more per dependency. Post-link
+# scripts written against Xcode spend it: Sequel Ace's renames dylibs
+# installed under bare names to @loader_path ones, 16 bytes per
+# command, here 48 bytes in all, more than -headerpad's 32.
+for i in 1 2 3; do
+  echo "int bar$i() { return $i; }" | $CC -o $t/d$i.o -c -xc -
+  $CC --ld-path=$mold -shared -o $t/libbar$i.dylib $t/d$i.o -Wl,-install_name,libbar$i.dylib
+done
+cat <<EOF | $CC -o $t/e.o -c -xc -
+int bar1(), bar2(), bar3();
+int main() { return bar1() + bar2() + bar3() != 6; }
+EOF
+$CC --ld-path=$mold -o $t/exe8 $t/e.o -L$t -lbar1 -lbar2 -lbar3
+for i in 1 2 3; do
+  install_name_tool -change libbar$i.dylib @loader_path/libbar$i.dylib $t/exe8 2> /dev/null
+done
+codesign -f -s - $t/exe8 2> /dev/null
+[ $(otool -L $t/exe8 | grep -c '@loader_path/libbar') = 3 ]
+$t/exe8
+
 # An image no dyld loads gets -headerpad, whatever it says.
 $mold -arch $ARCH -static -e _main -o $t/static $t/a.o
 [ $(free $t/static) -ge 32 ]
