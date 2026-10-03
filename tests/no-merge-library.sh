@@ -57,18 +57,19 @@ grep -q "library 'bar' not found" $t/log4
 # exports a class itself: an Objective-C class or metaclass object, or
 # a Swift class's type metadata ($s...CN), as the names go. The hook
 # has the Objective-C runtime place each class in the library's
-# framework, whose resources stay in the app bundle. Its initializer
-# has the same name in mold's and ld-prime's. (The ERR trap doesn't
-# reach into a function: each command's status goes to the caller.)
+# framework, whose resources stay in the app bundle; its table of
+# classes is mold's ___mold_bundle_hook_table or ld-prime's
+# _relinkableLibraryClasses. (The ERR trap doesn't reach into a
+# function: each command's status goes to the caller.)
 needs_hook() {
   rm -f $t/exe
   $CC --ld-path=$mold -o $t/exe $t/main.o "$@" && nm $t/exe > $t/syms &&
-    grep -q __ZL11constructorv $t/syms
+    grep -Eq '___mold_bundle_hook_table|_relinkableLibraryClasses' $t/syms
 }
 no_hook() {
   rm -f $t/exe
   $CC --ld-path=$mold -o $t/exe $t/main.o "$@" && nm $t/exe > $t/syms &&
-    not grep -q __ZL11constructorv $t/syms
+    not grep -Eq '___mold_bundle_hook_table|_relinkableLibraryClasses' $t/syms
 }
 
 cat <<EOF | $CC -o $t/c.o -c -xobjective-c -

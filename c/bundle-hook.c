@@ -79,10 +79,6 @@ static int find_app_bundle(void) {
 // the hook installed last first. So Swift's goes in first, if Swift is
 // loaded. The objects are built for macOS releases that may lack
 // objc_setHook_getImageName (10.14 has it), which is looked up too.
-// ld-prime's diagnostics about static initializers name its hook's by
-// the name this one has.
-static void install(void) __asm__("__ZL11constructorv");
-
 __attribute__((constructor)) static void install(void) {
   if (!find_app_bundle())
     return;

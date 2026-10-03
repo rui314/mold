@@ -67,8 +67,8 @@ not grep -q 'nop' $t/disasm
 
 # The debug build gets the hook for the classes it doesn't export (see
 # merged-libraries-hook.sh), after the export options; none if there
-# are none. The hook's initializer has the same name in mold's and
-# ld-prime's.
+# are none. The hook's table of classes is mold's ___mold_bundle_hook_table
+# or ld-prime's _relinkableLibraryClasses.
 cat <<EOF | $CC -o $t/b.o -c -xobjective-c -
 #import <Foundation/Foundation.h>
 __attribute__((visibility("hidden")))
@@ -91,18 +91,18 @@ EOF
 $CC --ld-path=$mold -shared -o $t/b.dylib $t/b.o -framework Foundation \
   -Wl,-add_mergeable_debug_hook
 nm $t/b.dylib > $t/syms
-grep -q __ZL11constructorv $t/syms
+grep -Eq '___mold_bundle_hook_table|_relinkableLibraryClasses' $t/syms
 for objs in $t/d.o $t/a.o; do
   $CC --ld-path=$mold -shared -o $t/d.dylib $objs -framework Foundation \
     -Wl,-add_mergeable_debug_hook
   nm $t/d.dylib > $t/syms
-  not grep -q __ZL11constructorv $t/syms
+  not grep -Eq '___mold_bundle_hook_table|_relinkableLibraryClasses' $t/syms
 done
 $CC --ld-path=$mold -shared -o $t/d.dylib $t/d.o -framework Foundation \
   -Wl,-add_mergeable_debug_hook -Wl,-unexported_symbol,'_OBJC_CLASS_$_Shown'
 nm $t/d.dylib > $t/syms
-grep -q __ZL11constructorv $t/syms
+grep -Eq '___mold_bundle_hook_table|_relinkableLibraryClasses' $t/syms
 $CC --ld-path=$mold -shared -o $t/d.dylib $t/b.o -framework Foundation \
   -Wl,-add_mergeable_debug_hook -Wl,-no_merged_libraries_hook
 nm $t/d.dylib > $t/syms
-not grep -q __ZL11constructorv $t/syms
+not grep -Eq '___mold_bundle_hook_table|_relinkableLibraryClasses' $t/syms

@@ -8,8 +8,9 @@ source "$(dirname "$0")"/common.inc
 # that is NULL bound to a placeholder. An image that merges a library
 # that defines classes gets the linker's hook for them (so that
 # +[NSBundle bundleForClass:] finds the library's bundle), unless
-# -no_merged_libraries_hook; the hook's initializer has the same name
-# in mold's and ld-prime's (see merged-libraries-hook.sh).
+# -no_merged_libraries_hook; the hook's table of classes is mold's
+# ___mold_bundle_hook_table or ld-prime's _relinkableLibraryClasses (see
+# merged-libraries-hook.sh).
 cat <<EOF | $CC -o $t/a.o -c -O1 -xobjective-c -
 #import <Foundation/Foundation.h>
 @protocol Greeter <NSObject>
@@ -63,8 +64,8 @@ not grep -q libfoo $t/libs
 grep -q Foundation $t/libs
 
 nm $t/exe > $t/syms
-not grep -q __ZL11constructorv $t/syms
+not grep -Eq '___mold_bundle_hook_table|_relinkableLibraryClasses' $t/syms
 $CC --ld-path=$mold -o $t/exe2 $t/main.o -L$t -Wl,-merge-lfoo
 $t/exe2 | grep -q '^Alice greets Bob (30) / ALICE GREETS WORLD (30) / 6 1$'
 nm $t/exe2 > $t/syms
-grep -q __ZL11constructorv $t/syms
+grep -Eq '___mold_bundle_hook_table|_relinkableLibraryClasses' $t/syms
