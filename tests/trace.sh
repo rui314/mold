@@ -1,11 +1,11 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# -t lists every file the link loads, on stdout: the objects, every
-# member of an archive whether used or not, and each library a stub
-# re-exports - libSystem's own dozens included - by the file it was
+# -t lists every file the link reads, once each, on stdout: the objects,
+# every member of an archive whether used or not, and each library a
+# stub re-exports - libSystem's own dozens included - by the file it was
 # found at, or by its install name if a stub inlines it and no file
-# holds it (ld-prime, which prints them in varying order).
+# holds it.
 cat <<EOF | $CC -o $t/a.o -c -xc -
 void foo() {}
 EOF
@@ -55,11 +55,12 @@ grep -q '^/usr/local/lib/libB.dylib$' $t/log
 [ "$(grep -c 'lib.a(a.o)$' $t/log)" = 1 ]
 
 # A library loaded as another's re-export (Foundation's libobjc.A.tbd)
-# is listed, and a naming of it at another path (-lobjc's libobjc.tbd,
-# a symlink to it) is listed too. (ld-prime lists the naming's file
-# alone.)
+# that a naming finds at another path (-lobjc's libobjc.tbd, a symlink
+# to it) is listed by both files, each read. (ld-prime lists the
+# naming's file alone.)
 echo 'int main() { return 0; }' | $CC -o $t/c.o -c -xc -
 $CC --ld-path=$mold -o $t/exe2 $t/c.o -framework Foundation -Wl,-t > $t/log2
 grep -q '/usr/lib/libobjc.A.tbd$' $t/log2
 $CC --ld-path=$mold -o $t/exe3 $t/c.o -framework Foundation -lobjc -Wl,-t > $t/log3
 grep -q '/usr/lib/libobjc.tbd$' $t/log3
+[ "$(sort $t/log3 | uniq -d)" = "" ]

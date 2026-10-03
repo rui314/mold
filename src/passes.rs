@@ -4377,28 +4377,21 @@ pub fn print_dependencies<E: Target>(ctx: &Context<E>) {
     }
 }
 
-/// -t lists the link's inputs, one line per file loaded: objects and
-/// stubs by the path they were found at, every member of an archive
-/// as archive(member), used or not, and each library a stub re-exports
-/// (by its install name if the stub inlines it), once each - but an
-/// object as often as it is loaded - as ld-prime does. ld-prime prints
-/// them in an order that varies from run to run.
+/// -t lists the files the link read, once each, in the order read:
+/// objects and stubs by the path they were found at, every member of an
+/// archive as archive(member), and each library a stub re-exports (by
+/// its install name if the stub inlines it).
 pub fn print_trace<E: Target>(ctx: &Context<E>) {
     if !ctx.args.trace {
         return;
     }
-    let objects: std::collections::HashSet<Vec<u8>> = ctx
-        .objs
-        .iter()
-        .filter(|obj| obj.mf.parent.is_none())
-        .map(|obj| input_files::trace_name(path_bytes(&obj.mf.name)))
-        .collect();
-    let mut seen = std::collections::HashSet::new();
-    for name in &ctx.traced_files {
-        if objects.contains(name) || seen.insert(name) {
-            let _ = std::io::Write::write_all(&mut std::io::stdout(), &[name, &b"\n"[..]].concat());
-        }
+    let mut seen = hashbrown::HashSet::new();
+    let mut out = Vec::new();
+    for name in ctx.traced_files.iter().filter(|name| seen.insert(*name)) {
+        out.extend_from_slice(name);
+        out.push(b'\n');
     }
+    let _ = std::io::Write::write_all(&mut std::io::stdout(), &out);
 }
 
 /// -why_load reports what dragged each archive member into the link:
