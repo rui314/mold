@@ -5701,7 +5701,6 @@ fn lazy_uses<E: Target>(ctx: &Context<E>) -> Vec<LazyUseSite> {
             })
         })
         .collect();
-    let mut errors = Vec::new();
     for &(isec, _, id, how) in &uses {
         if let crate::target::LazyRef::Unsupported(kind) = how {
             let sym = &ctx.symbols[id];
@@ -5713,9 +5712,7 @@ fn lazy_uses<E: Target>(ctx: &Context<E>) -> Vec<LazyUseSite> {
                 ctx.subsec_name(isec as usize)
             };
             let subsec = raw(&subsec);
-            errors.push(error::render(format_args!(
-                "{kind} use of '{sym}' in '{subsec}' cannot be lazy loaded."
-            )));
+            crate::error!("{kind} use of '{sym}' in '{subsec}' cannot be lazy loaded.");
         }
     }
     // A stub or GOT slot another pass made for one (an unwind
@@ -5725,12 +5722,9 @@ fn lazy_uses<E: Target>(ctx: &Context<E>) -> Vec<LazyUseSite> {
     for &id in ctx.stubs.symbols.iter().chain(&ctx.got.got_syms) {
         if ctx.is_lazy_import(id) {
             let sym = &ctx.symbols[id];
-            errors.push(error::render(format_args!(
-                "ptr64 use of '{sym}' in 'anon' cannot be lazy loaded."
-            )));
+            crate::error!("ptr64 use of '{sym}' in 'anon' cannot be lazy loaded.");
         }
     }
-    crate::error::errors_together(&errors);
     crate::error::checkpoint();
     uses
 }

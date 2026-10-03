@@ -296,16 +296,6 @@ pub fn notice(msg: fmt::Arguments) {
     emit("", "", msg);
 }
 
-/// Reports the errors of one check of ld-prime's as one, as it does: a
-/// line each, every line ending with a newline when there are several.
-pub fn errors_together(errors: &[Message]) {
-    match errors {
-        [] => {}
-        [one] => error(format_args!("{}", raw(one))),
-        _ => error(format_args!("{}\n", raw(&errors.join(&b'\n')))),
-    }
-}
-
 /// Exits with a failure status if any error has been reported, giving
 /// the messages of the parallel passes before it first.
 pub fn checkpoint() {

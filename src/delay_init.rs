@@ -78,7 +78,6 @@ fn delay_uses<E: Target>(ctx: &Context<E>) -> Vec<DelayUseSite> {
             })
         })
         .collect();
-    let mut errors = Vec::new();
     for &(isec, _, id, how) in &uses {
         let LazyRef::Unsupported(kind) = how else { continue };
         let sym = &ctx.symbols[id];
@@ -89,9 +88,9 @@ fn delay_uses<E: Target>(ctx: &Context<E>) -> Vec<DelayUseSite> {
         {
             let file = crate::passes::resolved_file_name(ctx.objs[sec.file as usize].mf);
             let class = crate::error::raw(class);
-            errors.push(crate::error::render(format_args!(
+            crate::error!(
                 "use of ObjC class '{class}' in '{file}' cannot be delayed when targeting an older OS versions"
-            )));
+            );
             continue;
         }
         let split = ctx.objs[sec.file as usize].subsections_via_symbols;
@@ -101,11 +100,8 @@ fn delay_uses<E: Target>(ctx: &Context<E>) -> Vec<DelayUseSite> {
             ctx.subsec_name(isec as usize)
         };
         let subsec = crate::error::raw(&subsec);
-        errors.push(crate::error::render(format_args!(
-            "{kind} use of '{sym}' in '{subsec}' cannot be delayed."
-        )));
+        crate::error!("{kind} use of '{sym}' in '{subsec}' cannot be delayed.");
     }
-    crate::error::errors_together(&errors);
     crate::error::checkpoint();
     uses
 }
