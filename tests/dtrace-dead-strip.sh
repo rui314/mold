@@ -34,12 +34,13 @@ grep -q '_callee$' $t/syms
 not grep -q '_unused$' $t/syms
 
 dof_dump $t/exe > $t/dof
+sort -o $t/dof $t/dof
 cat > $t/expected <<EOF
-dof __dof_stab stab flags 0xf align 0
 attrs 0x01010000 0x01010000 0x01010000 0x01010000 0x01010000
-probe x(int) in live: 1 sites, 0 tests
-probe x(int) in dead2: 1 sites, 0 tests
+dof __dof_stab stab flags 0xf align 0
 probe x(int) in dead1: 1 sites, 0 tests
+probe x(int) in dead2: 1 sites, 0 tests
+probe x(int) in live: 1 sites, 0 tests
 EOF
 diff $t/dof $t/expected
 

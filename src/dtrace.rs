@@ -107,7 +107,6 @@ struct Site {
     isec: u32,
     offset: u32,
     sym: SymbolId,
-    kind: SiteKind,
 }
 
 /// Makes a DOF section for each provider some code has a probe site of,
@@ -161,11 +160,10 @@ fn dtrace_symbols<E: Target>(ctx: &Context<E>) -> Vec<SymbolId> {
         .collect()
 }
 
-/// The probe sites, in ld-prime's order: by file in input order, by
-/// section and address in a file (the subsections' order), and by
-/// offset in a subsection - as the code is laid out without an order
-/// file. A copy of a function another one replaced (a weak definition
-/// another file's won) has none.
+/// The probe sites: by file in input order, by section and address in a
+/// file (the subsections' order), and by offset in a subsection. A copy
+/// of a function another one replaced (a weak definition another file's
+/// won) has none.
 fn collect_sites<E: Target>(ctx: &Context<E>) -> Vec<Site> {
     (0..ctx.isecs.len())
         .into_par_iter()
@@ -180,29 +178,27 @@ fn collect_sites<E: Target>(ctx: &Context<E>) -> Vec<Site> {
                     return None;
                 }
                 let sym = ctx.reloc_target_sym(file, r)?;
-                if ctx.symbols[sym].is_defined() {
-                    return None;
-                }
-                let kind = site_kind_of(ctx.symbols[sym].name())?;
-                Some(Site { isec: i as u32, offset: r.offset, sym, kind })
+                let (defined, name) = (ctx.symbols[sym].is_defined(), ctx.symbols[sym].name());
+                (!defined && site_kind_of(name).is_some()).then_some(Site {
+                    isec: i as u32,
+                    offset: r.offset,
+                    sym,
+                })
             })
         })
         .collect()
 }
 
-/// Each provider's sites, as ld-prime groups them: all its probe sites,
-/// then all its is-enabled tests, each in site order. The providers
-/// come in the order of their first sites in that walk; a site of no
-/// provider (a name the prefix ends) belongs to none.
+/// Each provider's sites, in site order, the providers in the order of
+/// their first sites; a site of no provider (a name the prefix ends)
+/// belongs to none.
 fn sites_by_provider<'a, E: Target>(
     ctx: &Context<E>,
     sites: &'a [Site],
 ) -> Vec<(&'static [u8], Vec<&'a Site>)> {
     let mut providers: Vec<(&'static [u8], Vec<&Site>)> = Vec::new();
     let mut index: HashMap<&[u8], usize> = HashMap::new();
-    let probes = sites.iter().filter(|s| s.kind == SiteKind::Probe);
-    let tests = sites.iter().filter(|s| s.kind == SiteKind::IsEnabled);
-    for site in probes.chain(tests) {
+    for site in sites {
         let provider = provider_of(ctx.symbols[site.sym].name());
         if provider.is_empty() {
             continue;
@@ -374,32 +370,28 @@ fn arg_type(spelled: &[u8], typedefs: &[Vec<u8>]) -> Vec<u8> {
         .collect()
 }
 
-/// A probe as libdtrace registers it: its name, the types of its
-/// arguments, none if no probe site declares them, and the functions it
-/// has sites in, newest first.
+/// A probe: its name, the types of its arguments, none if no probe site
+/// declares them, and the functions it has sites in.
 struct Probe {
     name: Vec<u8>,
     args: Option<Vec<Vec<u8>>>,
     instances: Vec<Instance>,
 }
 
-/// A function a probe has sites in, by name (cut to 127 bytes, as
-/// libdtrace keeps it), with the indices of the sites: the probe's
-/// sites, and its is-enabled tests.
+/// A function a probe has sites in, by name, with the indices of the
+/// sites: the probe's sites, and its is-enabled tests.
 struct Instance {
     function: Vec<u8>,
     sites: Vec<u32>,
     tests: Vec<u32>,
 }
 
-/// Registers each site with its probe as libdtrace does: under the
-/// probe's hyphenated name, in the instance of its function - the name
-/// of its subsection with one leading underscore less - put first among
-/// the probe's when it is new. libdtrace keeps a function name in 128
-/// bytes and compares it with the full name, so the sites of a function
-/// with a longer one get an instance each. A probe's arguments are those
-/// the symbol of its first probe site gives (see arg_type). Returns the
-/// probes in the DOF's order, by name.
+/// Registers each site with its probe, by the probe's hyphenated name,
+/// in the instance of its function: the name of its subsection with one
+/// leading underscore less, cut to the 127 bytes the kernel takes. The
+/// probes and their instances come in the order of their first sites. A
+/// probe's arguments are those the symbol of its first probe site gives
+/// (see arg_type).
 fn register<'a>(
     probe_names: &[&'a [u8]],
     functions: &[&[u8]],
@@ -423,22 +415,23 @@ fn register<'a>(
                 Some(f[4..].iter().map(|hex| arg_type(&unhex(hex), typedefs)).collect());
         }
         let function = function.strip_prefix(b"_").unwrap_or(function);
+        let function = &function[..function.len().min(127)];
         let instances = &mut probes[k].instances;
-        let inst = match instances.iter().position(|inst| inst.function == function) {
-            Some(j) => &mut instances[j],
+        let j = match instances.iter().position(|inst| inst.function == function) {
+            Some(j) => j,
             None => {
-                let function = function[..function.len().min(127)].to_vec();
-                instances.insert(0, Instance { function, sites: Vec::new(), tests: Vec::new() });
-                &mut instances[0]
+                let function = function.to_vec();
+                instances.push(Instance { function, sites: Vec::new(), tests: Vec::new() });
+                instances.len() - 1
             }
         };
+        let inst = &mut instances[j];
         if test {
             inst.tests.push(i as u32);
         } else {
             inst.sites.push(i as u32);
         }
     }
-    probes.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(probes)
 }
 
@@ -690,7 +683,8 @@ mod tests {
     }
 
     /// Probes of a function, one with an is-enabled test too: 8
-    /// sections, the probes by name, the tests' slots after the sites'.
+    /// sections, the probes in the order of their first sites, the tests'
+    /// slots after the sites'.
     #[test]
     fn dof_with_is_enabled_tests() {
         let stability = b"___dtrace_stability$myapp$v1$1_1_0_1_1_0_1_1_0_1_1_0_1_1_0";
@@ -713,21 +707,21 @@ mod tests {
             "0f000000040000000100000000000000e4010000000000002c00000000000000",
             "0a00000008000000010000001800000010020000000000004800000000000000",
             "0c00000004000000010000000000000058020000000000000c00000000000000",
-            "0000000000000000080000000100000008000000080000000000000000000000",
-            "000001000000000000000000000000000000000000000000220000000d000000",
-            "1a0000001e000000000000000100000001010100000000000100000000000000",
-            "00000000000000004b0000002700000035000000400000000100000002000000",
-            "0202010001000000000000000000000000000100000000000000000000000000",
+            "000000000000000025000000010000000f0000001a0000000000000000000000",
+            "0202010000000000000000000000000000000000000000003f0000002a000000",
+            "370000003b000000020000000100000001010100000000000100000000000000",
+            "00000000000000004b000000440000004b0000004b0000000300000002000000",
+            "0000010001000000000000000000000000010000000000000000000000000000",
             "0000000000000000010000000200000003000000500000000000010100000101",
-            "0000010100000101000001010400000008000000010000000000000000000000",
-            "0000000000000000220000000100000030000000000000000000000000000000",
+            "0000010100000101000001010400000025000000010000000000000000000000",
+            "00000000000000003f0000000100000030000000000000000000000000000000",
             "4b00000001000000600000000000000000000000000000000000000006000000",
-            "01000000006e6f61726773006d61696e00726571756573742d646f6e6500696e",
-            "7400696e74006d61696e00726571756573742d737461727400696e7400636861",
-            "72202a00696e740063686172202a006d61696e006d7961707000",
+            "0100000000726571756573742d737461727400696e740063686172202a00696e",
+            "740063686172202a006d61696e00726571756573742d646f6e6500696e740069",
+            "6e74006d61696e006e6f61726773006d61696e006d7961707000",
         ]);
         assert_eq!(dof.bytes, expected);
-        assert_eq!(dof.slots, [0x1dc, 0x1d8, 0x1d4, 0x1e0]);
+        assert_eq!(dof.slots, [0x1d4, 0x1d8, 0x1dc, 0x1e0]);
     }
 
     /// A probe's arguments as dtrace -h spells them, but the provider's
@@ -748,9 +742,8 @@ mod tests {
         }
     }
 
-    /// A probe's instances come newest first, those of a function's name
-    /// one; one whose name is longer than 127 bytes gets an instance per
-    /// site, the name cut.
+    /// A probe's instances come in the order of their first sites, one
+    /// per function, a name longer than 127 bytes cut.
     #[test]
     fn instances() {
         let long = format!("_{}", "x".repeat(130));
@@ -759,8 +752,9 @@ mod tests {
         let probes = register(&probes, &functions, &[]).unwrap();
         let names: Vec<&[u8]> = probes[0].instances.iter().map(|i| &i.function[..]).collect();
         let cut = &long.as_bytes()[1..128];
-        assert_eq!(names, [cut, cut, b"fb".as_slice(), b"fa".as_slice()]);
-        assert_eq!(probes[0].instances[3].sites, [0, 2]);
+        assert_eq!(names, [b"fa".as_slice(), b"fb".as_slice(), cut]);
+        assert_eq!(probes[0].instances[0].sites, [0, 2]);
+        assert_eq!(probes[0].instances[2].sites, [3, 4]);
     }
 
     #[test]

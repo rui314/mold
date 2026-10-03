@@ -7,7 +7,8 @@ source "$(dirname "$0")"/dtrace.inc
 # ___dtrace_isenabled$...; the link turns each into a nop (the test into
 # a zeroing of its result) and describes them in a DOF section,
 # __TEXT,__dof_<provider>, after the other sections of __TEXT. None of
-# the ___dtrace_ symbols is left in the image.
+# the ___dtrace_ symbols is left in the image. (The probes' order is
+# left out: ld-prime has them by name, mold by their first sites.)
 cat > $t/p.d <<EOF
 provider myapp {
   probe request__start(int, char *);
@@ -34,9 +35,10 @@ $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-map,$t/map
 $t/exe | grep -q 'Hello world'
 
 dof_dump $t/exe > $t/dof
+sort -o $t/dof $t/dof
 cat > $t/expected <<EOF
-dof __dof_myapp myapp flags 0xf align 0
 attrs 0x01010000 0x01010000 0x01010000 0x01010000 0x01010000
+dof __dof_myapp myapp flags 0xf align 0
 probe noargs() in main: 1 sites, 0 tests
 probe request-done(int) in main: 1 sites, 1 tests
 probe request-start(int, char *) in main: 1 sites, 0 tests

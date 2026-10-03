@@ -51,7 +51,7 @@ $t/exe
 
 dof_dump $t/exe > $t/dof
 sed -n 's/^probe \([a-z]*\)(\(.*\)) in main: 1 sites, 0 tests$/\1, \2/p' $t/dof |
-  awk -F', ' '{ print $1, NF - 1 }' > $t/nargs
+  awk -F', ' '{ print $1, NF - 1 }' | sort > $t/nargs
 cat > $t/expected <<EOF
 floats 2
 ints 7

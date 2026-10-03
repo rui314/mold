@@ -8,18 +8,16 @@ dtrace_header() {
   dtrace -h -s $t/$1.d -o $t/$1.h >& /dev/null || skip
 }
 
-# dof_dump [-x] FILE: describes each DOF section (S_DTRACE_DOF) of an
-# image, a line for the section and its provider, its attributes, and
-# each probe with its argument types and the function of each instance,
-# with the number of its probe sites and is-enabled tests. A site whose
+# dof_dump FILE: describes each DOF section (S_DTRACE_DOF) of an image,
+# a line for the section and its provider, its attributes, and each
+# probe with its argument types and the function of each instance, with
+# the number of its probe sites and is-enabled tests. A site whose
 # instruction in the image is not what the linker makes of one, a nop
-# or a zeroing of the result register, is reported. -x adds the DOF's
-# bytes in hex, each slot of a site's distance from the DOF zeroed.
+# or a zeroing of the result register, is reported.
 dof_dump() {
-  python3 - "$@" <<'EOF'
+  python3 - "$1" <<'EOF'
 import struct, sys
-hexdump = sys.argv[1] == '-x'
-data = open(sys.argv[-1], 'rb').read()
+data = open(sys.argv[1], 'rb').read()
 u32 = lambda o: struct.unpack_from('<I', data, o)[0]
 cputype, ncmds = u32(4), u32(16)
 segs, sects, off = [], [], 32
@@ -48,7 +46,7 @@ else:
 for name, addr, size, foff, align, flags in sects:
     if flags & 0xff != 0xf:
         continue
-    dof = bytearray(data[foff:foff + size])
+    dof = data[foff:foff + size]
     secs = [struct.unpack_from('<IIIIQQ', dof, 64 + 32 * i) for i in range(u32(foff + 28))]
     by_type = {s[0]: s for s in secs}
     strtab = dof[by_type[8][4]:][:by_type[8][5]]
@@ -76,9 +74,5 @@ for name, addr, size, foff, align, flags in sects:
             site = addr + struct.unpack_from('<i', dof, o)[0]
             if at_site(site) != sites[kind]:
                 print(f'bad site 0x{site:x}: {at_site(site).hex()}')
-            dof[o:o + 4] = bytes(4)
-    if hexdump:
-        for i in range(0, len(dof), 32):
-            print(dof[i:i + 32].hex())
 EOF
 }

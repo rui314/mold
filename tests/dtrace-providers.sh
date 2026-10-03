@@ -5,12 +5,11 @@ source "$(dirname "$0")"/dtrace.inc
 # Each provider gets a DOF section of its own. A probe has an instance
 # per function it has sites in, named after the name of the function's
 # subsection less its leading underscore: the static functions of one
-# name in two files share one. The instances come newest first, a
-# probe's sites before its is-enabled tests. A section is named after
-# the provider, cut to 15 bytes; one that would have an earlier one's
-# name has its last byte replaced by '0', '1' and so on. (ld-prime
-# orders the sections by a hash table of the providers; the test leaves
-# their order out.)
+# name in two files share one. A section is named after the provider,
+# cut to 15 bytes; one that would have an earlier one's name has its
+# last byte replaced by '0', '1' and so on. (The test leaves out the
+# order of the sections, which ld-prime has by a hash table of the
+# providers, and of the probes and instances in each.)
 cat > $t/p.d <<EOF
 provider zeta {
   probe start(int);
@@ -82,30 +81,30 @@ EOF
 diff $t/names $t/expected
 
 awk '/^dof/ { p = $3; sub(/^dof [^ ]* /, "dof ") } { print p, $0 }' $t/dof |
-  sort -s -k1,1 | cut -d' ' -f2- > $t/by-provider
+  sort | cut -d' ' -f2- > $t/by-provider
 cat > $t/expected <<EOF
+attrs 0x01010000 0x01010000 0x01010000 0x01010000 0x01010000
 dof alpha flags 0xf align 0
-attrs 0x01010000 0x01010000 0x01010000 0x01010000 0x01010000
-probe aa(int) in fc: 1 sites, 0 tests
 probe aa(int) in fb: 1 sites, 1 tests
-probe go(long, char *) in helper: 1 sites, 0 tests
+probe aa(int) in fc: 1 sites, 0 tests
 probe go(long, char *) in fa: 1 sites, 0 tests
-probe zz() in main: 1 sites, 0 tests
+probe go(long, char *) in helper: 1 sites, 0 tests
 probe zz() in helper: 1 sites, 0 tests
+probe zz() in main: 1 sites, 0 tests
+attrs 0x01010000 0x01010000 0x01010000 0x01010000 0x01010000
 dof longprovidera flags 0xf align 0
-attrs 0x01010000 0x01010000 0x01010000 0x01010000 0x01010000
 probe p() in fa: 1 sites, 0 tests
+attrs 0x01010000 0x01010000 0x01010000 0x01010000 0x01010000
 dof longproviderb flags 0xf align 0
-attrs 0x01010000 0x01010000 0x01010000 0x01010000 0x01010000
 probe p() in fb: 1 sites, 0 tests
-dof zeta flags 0xf align 0
 attrs 0x01010000 0x01010000 0x01010000 0x01010000 0x01010000
+dof zeta flags 0xf align 0
 probe only-enabled(int) in fa: 0 sites, 1 tests
 probe only-enabled(int) in fb: 1 sites, 0 tests
+probe start(int) in fa: 2 sites, 0 tests
 probe start(int) in fc: 1 sites, 1 tests
 probe start(int) in helper: 2 sites, 0 tests
-probe start(int) in fa: 2 sites, 0 tests
-probe stop() in fb: 1 sites, 0 tests
 probe stop() in fa: 1 sites, 0 tests
+probe stop() in fb: 1 sites, 0 tests
 EOF
 diff $t/by-provider $t/expected
