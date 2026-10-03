@@ -52,14 +52,19 @@ d = json.load(open(sys.argv[1]))
 assert d['apiListVersion'] == 3 and d['inputs'] == []
 EOF
 
-# The list is read as NSJSONSerialization reads it, with a comma
-# allowed before a closing bracket; of a key given twice, the last
-# counts.
-echo '{"version": 1, "version": 4, "apis": ["_puts",],}' > $t/apis5.json
+# Of a key given twice, the last counts.
+echo '{"version": 1, "version": 4, "apis": ["_puts"]}' > $t/apis5.json
 $CC --ld-path=$mold $t/a.o $t/libfoo.dylib -o $t/exe5 \
   -Wl,-sdk_imports,$t/imports5.json,-sdk_imports_api_list,$t/apis5.json
 jq -e '.apiListVersion == 4' $t/imports5.json > /dev/null
 
+# A list must be JSON, with a version and APIs. (ld-prime reads it with
+# NSJSONSerialization, which allows a comma before a closing bracket.)
+if $mold -v 2> /dev/null | grep -q mold-macho; then
+  echo '{"version": 1, "apis": ["_puts",],}' > $t/apis6.json
+  not $mold -arch $ARCH -o $t/exe4 $t/a.o -sdk_imports_api_list $t/apis6.json 2> $t/log
+  grep -q "invalid list at $t/apis6.json" $t/log
+fi
 echo '{"apis": ["_puts"]}' > $t/apis3.json
 not $mold -arch $ARCH -o $t/exe4 $t/a.o -sdk_imports_api_list $t/apis3.json 2> $t/log
 grep -q "invalid list at $t/apis3.json" $t/log
