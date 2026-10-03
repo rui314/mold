@@ -7,19 +7,14 @@
 //! the public libraries such a dylib re-exports are delayed with it,
 //! by its dlopen helper.
 
-use rayon::prelude::*;
-
 use crate::chunks::delay_init::{DelayHelper, DelayStub, DelayUse, DlopenHelper};
 use crate::context::Context;
 use crate::input_files::FileId;
+use crate::lazy_load::{LazyUseSite, import_uses, load_helper_name};
 use crate::macho::*;
 use crate::symbol::SymbolId;
 use crate::target::{LazyRef, Target};
 use crate::util::leak_bytes;
-
-/// A reference to a delay-init dylib's symbol: the subsection, the
-/// relocation's offset in it, the symbol, and how it refers to it.
-type DelayUseSite = (u32, u32, SymbolId, LazyRef);
 
 /// Makes the stubs and helpers through which the image reaches the
 /// symbols of its delay-init dylibs, as ld-prime does: calls branch to
@@ -56,21 +51,8 @@ pub fn create_delay_init<E: Target>(ctx: &mut Context<E>) {
 /// The references to delay-init dylibs' symbols from live subsections,
 /// in input order, once the ones that can't be delayed are reported (an
 /// __objc_classrefs slot of a class among them).
-fn delay_uses<E: Target>(ctx: &Context<E>) -> Vec<DelayUseSite> {
-    let uses: Vec<DelayUseSite> = (0..ctx.isecs.len())
-        .into_par_iter()
-        .filter(|&i| {
-            let isec = &ctx.isecs[i];
-            isec.is_emitted()
-        })
-        .flat_map_iter(|i| {
-            let (file, data) = (ctx.isecs[i].file as usize, ctx.isecs[i].data());
-            ctx.isec_relocs(i).iter().filter_map(move |r| {
-                let id = ctx.reloc_target_sym(file, r)?;
-                ctx.is_delay_import(id).then(|| (i as u32, r.offset, id, E::lazy_ref(r, data)))
-            })
-        })
-        .collect();
+fn delay_uses<E: Target>(ctx: &Context<E>) -> Vec<LazyUseSite> {
+    let uses = import_uses(ctx, |id| ctx.is_delay_import(id));
     for &(isec, _, id, how) in &uses {
         if how == LazyRef::Unsupported {
             let (sym, subsec) = (&ctx.symbols[id], ctx.subsec_name(isec as usize));
@@ -95,7 +77,7 @@ fn dlopen_name<E: Target>(ctx: &Context<E>, id: SymbolId) -> &[u8] {
 /// of each install name.
 fn create_dlopen_helpers<E: Target>(
     ctx: &mut Context<E>,
-    uses: &[DelayUseSite],
+    uses: &[LazyUseSite],
 ) -> hashbrown::HashMap<Vec<u8>, u32> {
     let mut names: Vec<Vec<u8>> = uses
         .iter()
@@ -159,7 +141,7 @@ fn add_cstring<E: Target>(ctx: &mut Context<E>, s: &[u8]) -> u32 {
 /// through the symbol's __got slot.
 fn create_delay_stubs<E: Target>(
     ctx: &mut Context<E>,
-    uses: &[DelayUseSite],
+    uses: &[LazyUseSite],
     dlopen_of: &hashbrown::HashMap<Vec<u8>, u32>,
 ) {
     let mut called: Vec<SymbolId> =
@@ -182,7 +164,7 @@ fn create_delay_stubs<E: Target>(
 /// them.
 fn create_delay_helpers<E: Target>(
     ctx: &mut Context<E>,
-    uses: &[DelayUseSite],
+    uses: &[LazyUseSite],
     dlopen_of: &hashbrown::HashMap<Vec<u8>, u32>,
 ) {
     let mut helpers: Vec<DelayHelper> = Vec::new();
@@ -201,18 +183,7 @@ fn create_delay_helpers<E: Target>(
             let sym = ctx.symbols[id].name();
             let name = match kind {
                 DelayUse::Cmp => [sym, b"$cmpHelper"].concat(),
-                DelayUse::Load { reg, site: None } => {
-                    [sym, b"$loadHelper_", E::lazy_register_name(reg).as_bytes()].concat()
-                }
-                DelayUse::Load { reg, site: Some(_) } => [
-                    sym,
-                    b"$loadHelper_",
-                    E::lazy_register_name(reg).as_bytes(),
-                    b"$for$",
-                    &ctx.subsec_name(isec as usize),
-                    format!("+{offset}").as_bytes(),
-                ]
-                .concat(),
+                DelayUse::Load { reg, site } => load_helper_name(ctx, sym, b"$", reg, site),
             };
             let name = leak_bytes(name);
             let dlopen = dlopen_of[dlopen_name(ctx, id)];

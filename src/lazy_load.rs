@@ -71,31 +71,39 @@ pub fn create_lazy_loads<E: Target>(ctx: &mut Context<E>) {
     }
 }
 
-/// A reference to a lazy dylib's symbol: the subsection, the
-/// relocation's offset in it, the symbol, and how it refers to it.
-type LazyUseSite = (u32, u32, SymbolId, LazyRef);
+/// A reference to a symbol of a lazy or delay-init dylib: the
+/// subsection, the relocation's offset in it, the symbol, and how it
+/// refers to it.
+pub(crate) type LazyUseSite = (u32, u32, SymbolId, LazyRef);
 
 /// A __lazy_load_got slot: its symbol, and whether it is the one the
 /// symbol's call helper has to itself (see Target::LAZY_CALL_OWN_SLOT).
 type LazySlot = (SymbolId, bool);
 
-/// The references to lazy dylibs' symbols from live subsections, in
-/// input order, once the ones ld-prime refuses are reported.
-fn lazy_uses<E: Target>(ctx: &Context<E>) -> Vec<LazyUseSite> {
-    let uses: Vec<LazyUseSite> = (0..ctx.isecs.len())
+/// The references from live subsections, in input order, to the
+/// symbols `is_import` picks: a lazy dylib's, or a delay-init one's.
+pub(crate) fn import_uses<E: Target>(
+    ctx: &Context<E>,
+    is_import: impl Fn(SymbolId) -> bool + Sync,
+) -> Vec<LazyUseSite> {
+    let is_import = &is_import;
+    (0..ctx.isecs.len())
         .into_par_iter()
-        .filter(|&i| {
-            let isec = &ctx.isecs[i];
-            isec.is_emitted()
-        })
+        .filter(|&i| ctx.isecs[i].is_emitted())
         .flat_map_iter(|i| {
             let (file, data) = (ctx.isecs[i].file as usize, ctx.isecs[i].data());
             ctx.isec_relocs(i).iter().filter_map(move |r| {
                 let id = ctx.reloc_target_sym(file, r)?;
-                ctx.is_lazy_import(id).then(|| (i as u32, r.offset, id, E::lazy_ref(r, data)))
+                is_import(id).then(|| (i as u32, r.offset, id, E::lazy_ref(r, data)))
             })
         })
-        .collect();
+        .collect()
+}
+
+/// The references to lazy dylibs' symbols from live subsections, in
+/// input order, once the ones ld-prime refuses are reported.
+fn lazy_uses<E: Target>(ctx: &Context<E>) -> Vec<LazyUseSite> {
+    let uses = import_uses(ctx, |id| ctx.is_lazy_import(id));
     for &(isec, _, id, how) in &uses {
         if how == LazyRef::Unsupported {
             let sym = &ctx.symbols[id];
@@ -214,18 +222,7 @@ fn create_lazy_helpers<E: Target>(
             let name = match kind {
                 LazyUse::Call => [sym, b"$lazyLoadStub"].concat(),
                 LazyUse::Cmp => [sym, b"$lazyGOT$cmpHelper"].concat(),
-                LazyUse::Load { reg, site: None } => {
-                    [sym, b"$lazyGOT$loadHelper_", E::lazy_register_name(reg).as_bytes()].concat()
-                }
-                LazyUse::Load { reg, site: Some(_) } => [
-                    sym,
-                    b"$lazyGOT$loadHelper_",
-                    E::lazy_register_name(reg).as_bytes(),
-                    b"$for$",
-                    &ctx.subsec_name(isec as usize),
-                    format!("+{offset}").as_bytes(),
-                ]
-                .concat(),
+                LazyUse::Load { reg, site } => load_helper_name(ctx, sym, b"$lazyGOT$", reg, site),
             };
             let Some(FileId::Dylib(d)) = ctx.symbols[id].file() else { unreachable!() };
             let (flag, slot) = (flags[d as usize], slots[&lazy_slot::<E>(id, how)]);
@@ -244,4 +241,24 @@ fn create_lazy_helpers<E: Target>(
     }
     ctx.lazy_helpers.sites = sites;
     ctx.lazy_helpers.helpers = helpers;
+}
+
+/// The name of a helper for GOT loads of symbol `sym` into register
+/// `reg`, a lazy dylib's or a delay-init one's, as ld-prime names it:
+/// `<sym><infix>loadHelper_<reg>`, and for the helper of one load of
+/// its own (see LazyUse::Load), `$for$<subsection>+<offset>` after it.
+pub(crate) fn load_helper_name<E: Target>(
+    ctx: &Context<E>,
+    sym: &[u8],
+    infix: &[u8],
+    reg: u8,
+    site: Option<(u32, u32)>,
+) -> Vec<u8> {
+    let mut name = [sym, infix, b"loadHelper_", E::lazy_register_name(reg).as_bytes()].concat();
+    if let Some((isec, offset)) = site {
+        name.extend_from_slice(b"$for$");
+        name.extend_from_slice(&ctx.subsec_name(isec as usize));
+        name.extend_from_slice(format!("+{offset}").as_bytes());
+    }
+    name
 }
