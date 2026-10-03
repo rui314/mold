@@ -2943,12 +2943,12 @@ fn load_reexports<E: Target>(
 }
 
 /// A library a dylib re-exports, as load_reexports walks it: its
-/// install name, with the directory and rpaths it resolves from, how
-/// many re-exports away from the dylib it is and the library that
-/// re-exports it.
+/// install name, with the file of the library that names it and the
+/// rpaths it resolves from, how many re-exports away from the dylib it
+/// is and the library that re-exports it.
 struct ReexportRef {
     name: Vec<u8>,
-    loader_dir: PathBuf,
+    loader: PathBuf,
     loader_rpaths: Vec<PathBuf>,
     hops: u32,
     via: Vec<u8>,
@@ -2960,13 +2960,13 @@ impl ReexportRef {
     fn of(
         names: Vec<Vec<u8>>,
         install_name: &[u8],
-        dir: &Path,
+        loader: &Path,
         rpaths: &[PathBuf],
         hops: u32,
     ) -> Vec<Self> {
         let refs = names.into_iter().map(|name| ReexportRef {
             name,
-            loader_dir: dir.to_path_buf(),
+            loader: loader.to_path_buf(),
             loader_rpaths: rpaths.to_vec(),
             hops: hops + 1,
             via: install_name.to_vec(),
@@ -3016,7 +3016,7 @@ impl ReexportWalk<'_> {
         let on_disk = if inline.is_some() && !public {
             None
         } else {
-            resolve_dylib_ref(ctx, &r.name, &r.loader_dir, &r.loader_rpaths, inline.is_some())
+            resolve_dylib_ref(ctx, &r.name, &r.loader, &r.loader_rpaths, inline.is_some())
         };
         match (on_disk, inline) {
             (Some(mf), _) => self.load_file(ctx, mf, r),
@@ -3034,7 +3034,7 @@ impl ReexportWalk<'_> {
         // ld-prime names an inlined library by the file it would find
         // for it, where there is one.
         if ctx.args.trace || ctx.args.dependency_info.is_some() {
-            let found = resolve_dylib_ref(ctx, &r.name, &r.loader_dir, &r.loader_rpaths, true);
+            let found = resolve_dylib_ref(ctx, &r.name, &r.loader, &r.loader_rpaths, true);
             if let Some(mf) = found {
                 note_reexport_file(ctx, &mf.name);
             }
@@ -3048,7 +3048,7 @@ impl ReexportWalk<'_> {
             return;
         }
         self.moved.extend(interpret_ld_symbols(ctx, &mut doc).moved);
-        self.merge_tbd(doc, &r.loader_dir, &r.loader_rpaths, r.hops);
+        self.merge_tbd(doc, &r.loader, &r.loader_rpaths, r.hops);
         self.dylib.merged_reexports.push(r.name);
     }
 
@@ -3084,7 +3084,7 @@ impl ReexportWalk<'_> {
             }
             self.dylib.merged_reexports.push(tbd.install_name.to_vec());
             self.moved.extend(interpret_ld_symbols(ctx, &mut tbd).moved);
-            self.merge_tbd(tbd, &dir_of(&dep.name), &[], r.hops);
+            self.merge_tbd(tbd, &dep.name, &[], r.hops);
             return;
         }
 
@@ -3109,7 +3109,7 @@ impl ReexportWalk<'_> {
         check_dylib_platform(ctx, binary);
         let mut dylib = read_dylib_binary(binary);
         self.moved.extend(interpret_binary_ld_symbols(ctx, &mut dylib).moved);
-        self.merge_binary(dylib, &found.install_name, &dir_of(&dep.name), r.hops);
+        self.merge_binary(dylib, &found.install_name, &dep.name, r.hops);
         self.dylib.merged_reexports.push(found.install_name);
     }
 
@@ -3130,11 +3130,11 @@ impl ReexportWalk<'_> {
     /// Merges a private library's stub, `hops` re-exports away, into the
     /// dylib: its exports join the dylib's, by kind, its inlined
     /// documents the pool, and the libraries it re-exports in turn the
-    /// queue, to resolve from `loader_dir` and `loader_rpaths`.
+    /// queue, to resolve from `loader` and `loader_rpaths`.
     fn merge_tbd(
         &mut self,
         tbd: tapi::TbdFile,
-        loader_dir: &Path,
+        loader: &Path,
         loader_rpaths: &[PathBuf],
         hops: u32,
     ) {
@@ -3147,16 +3147,16 @@ impl ReexportWalk<'_> {
         self.pool.extend(tbd.documents);
         let names = tbd.reexports.into_iter().map(<[u8]>::to_vec).collect();
         let name = tbd.install_name;
-        self.queue.extend(ReexportRef::of(names, name, loader_dir, loader_rpaths, hops));
+        self.queue.extend(ReexportRef::of(names, name, loader, loader_rpaths, hops));
     }
 
     /// Merges what a private library's binary, `name`, contributes into
     /// the dylib likewise: the libraries it re-exports resolve from
-    /// `loader_dir` and the binary's rpaths.
-    fn merge_binary(&mut self, dylib: DylibBinary, name: &[u8], loader_dir: &Path, hops: u32) {
+    /// `loader`, the binary's file, and its rpaths.
+    fn merge_binary(&mut self, dylib: DylibBinary, name: &[u8], loader: &Path, hops: u32) {
         self.dylib.exports.extend(dylib.exports);
         self.dylib.tlv_exports.extend(dylib.tlv_exports);
-        let refs = ReexportRef::of(dylib.reexports, name, loader_dir, &dylib.rpaths, hops);
+        let refs = ReexportRef::of(dylib.reexports, name, loader, &dylib.rpaths, hops);
         self.queue.extend(refs);
     }
 }
@@ -3296,9 +3296,8 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
     // Each re-exported library keeps the referencing dylib's directory
     // and rpaths, since @loader_path and @rpath in an install name are
     // relative to the referrer.
-    let dir = dir_of(&mf.name);
     let reexports =
-        ReexportRef::of(binary.reexports, &binary.install_name, &dir, &binary.rpaths, 0);
+        ReexportRef::of(binary.reexports, &binary.install_name, &mf.name, &binary.rpaths, 0);
     let weak_exports: hashbrown::HashSet<&'static [u8]> = binary.weak_exports.into_iter().collect();
     let dylib = DylibFile {
         current_version: binary.current_version,
@@ -3592,7 +3591,7 @@ fn dir_of(path: &Path) -> PathBuf {
 fn resolve_dylib_ref<E: Target>(
     ctx: &Context<E>,
     name: &[u8],
-    loader_dir: &Path,
+    loader: &Path,
     loader_rpaths: &[PathBuf],
     inlined: bool,
 ) -> Option<&'static MappedFile> {
@@ -3606,7 +3605,7 @@ fn resolve_dylib_ref<E: Target>(
         }
     }
     let prober = crate::reader::Prober::new(ctx);
-    let loader = Some((loader_dir, loader_rpaths));
+    let loader = Some((loader, loader_rpaths));
     MappedFile::open(&find_dylib_ref(ctx, &prober, name, loader, inlined)?)
 }
 
@@ -3618,9 +3617,10 @@ pub fn find_reexport<E: Target>(ctx: &Context<E>, name: &[u8]) -> Option<&'stati
 }
 
 /// Finds the file of a dependent dylib's install name with `prober`, as
-/// ld-prime looks for it: a name relative to its `loader` - the
-/// directory of the dylib that names it, and that dylib's rpaths - in
-/// its place there first; then by the name's end in the search paths
+/// ld-prime looks for it: a name relative to its `loader` - the file of
+/// the dylib that names it, whose directory @loader_path stands for
+/// (looked up only for such a name: it resolves symbolic links), and
+/// that dylib's rpaths - in its place there first; then by the name's end in the search paths
 /// (see find_by_leaf); then the name itself, an absolute one under each
 /// -syslibroot first (reexports between freshly built dylibs use
 /// absolute install names outside any SDK) - but not where a stub has
@@ -3634,9 +3634,9 @@ fn find_dylib_ref<E: Target>(
     inlined: bool,
 ) -> Option<PathBuf> {
     use crate::util::os_str;
-    if let Some((loader_dir, loader_rpaths)) = loader {
+    if let Some((loader, loader_rpaths)) = loader {
         if let Some(rest) = name.strip_prefix(b"@loader_path/") {
-            if let Some(path) = prober.library(&loader_dir.join(os_str(rest))) {
+            if let Some(path) = prober.library(&dir_of(loader).join(os_str(rest))) {
                 return Some(path);
             }
         } else if let Some(rest) = name.strip_prefix(b"@rpath/") {
@@ -4057,7 +4057,7 @@ fn register_tbd<E: Target>(
     exports.extend(tlv_exports.iter().copied());
 
     let names = tbd.reexports.into_iter().map(<[u8]>::to_vec).collect();
-    let reexports = ReexportRef::of(names, tbd.install_name, &dir_of(path), &[], 0);
+    let reexports = ReexportRef::of(names, tbd.install_name, path, &[], 0);
     let dylib = DylibFile {
         current_version: tbd.current_version,
         compatibility_version: tbd.compatibility_version,
