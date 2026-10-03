@@ -659,10 +659,9 @@ pub struct Args {
     /// -non_global_symbols_no_strip_list: if set, only matching local
     /// symbols stay.
     pub local_keep_list: Option<Glob>,
+    /// __PAGEZERO's size, the low memory a main executable reserves
+    /// against NULL dereferences (see resolve_pagezero_size).
     pub pagezero_size: u64,
-    /// True when -pagezero_size was given explicitly (a non-zero size
-    /// is an error anywhere but a main executable).
-    pub explicit_pagezero: bool,
     /// -image_base (or -seg1addr): __TEXT's address, and so the mach
     /// header's; a -segaddr for __TEXT sets it too. resolve_image_base
     /// drops it for an image dyld slides wherever it likes.
@@ -1458,6 +1457,7 @@ struct ParseState<'a> {
     max_default_common_align: Option<u8>,
     headerpad: Option<u64>,
     segalign: Option<u64>,
+    pagezero_size: Option<u64>,
     segprots: Vec<(Vec<u8>, u8, u8)>,
     seg_page_sizes: Vec<(Vec<u8>, u64)>,
     stack_size: Option<u64>,
@@ -1851,7 +1851,6 @@ fn initial_args() -> Args {
         warn_eh_frame_too_large: true,
         lto_filenames_in_order_file: true,
         warn_duplicate_libraries: true,
-        pagezero_size: 0x1_0000_0000,
         warn_reduced_section_align: true,
         merged_libraries_hook: true,
 
@@ -2221,10 +2220,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
 
             // The segments and sections: their addresses, protections, order
             // and contents.
-            b"-pagezero_size" => {
-                args.pagezero_size = parse_hex(name, cur.next_text(name));
-                args.explicit_pagezero = true;
-            }
+            b"-pagezero_size" => st.pagezero_size = Some(parse_hex(name, cur.next_text(name))),
             b"-image_base" | b"-seg1addr" => {
                 args.image_base = Some(parse_hex(name, cur.next_text(name)));
             }
@@ -2862,7 +2858,7 @@ fn resolve_options(target: &TargetTraits, args: &mut Args, st: &mut ParseState) 
     }
     args.segprots = resolve_segprots(target, std::mem::take(&mut st.segprots));
     args.seg_page_sizes = resolve_seg_page_sizes(args, std::mem::take(&mut st.seg_page_sizes));
-    resolve_pagezero_size(args);
+    resolve_pagezero_size(args, st.pagezero_size);
     resolve_stack(target, args, st.stack_size, st.stack_addr);
     args.const_selrefs = st.const_selrefs.unwrap_or(args.shared_region);
     args.lto_softload = st.lto_softload.unwrap_or(args.static_link || args.preload);
@@ -3602,22 +3598,24 @@ fn resolve_seg_page_sizes(args: &Args, sizes: Vec<(Vec<u8>, u64)>) -> Vec<(Vec<u
     out
 }
 
-/// -pagezero_size, as ld-prime takes it: only for a main executable
-/// (not a -preload one), rounded up to a page, and no more than 4 GiB
-/// in an executable with chained fixups. A dylib is
-/// loaded at an arbitrary address, and a -preload image copied to
-/// wherever its segments say; only a main executable reserves the low
-/// 4 GiB against NULL dereferences. A -kernel image, which ld-prime
-/// makes position independent for the kernel collection to slide, has
-/// none unless -pagezero_size asks.
-fn resolve_pagezero_size(args: &mut Args) {
+/// __PAGEZERO's size: 4 GiB in a main executable unless -pagezero_size
+/// says otherwise, which ld-prime takes only for a main executable (not
+/// a -preload one), rounded up to a page, and no more than 4 GiB in one
+/// with chained fixups. A dylib is loaded at an arbitrary address, and
+/// a -preload image copied to wherever its segments say. A -kernel
+/// image, which ld-prime makes position independent for the kernel
+/// collection to slide, has none unless -pagezero_size asks.
+fn resolve_pagezero_size(args: &mut Args, size: Option<u64>) {
     let has_pagezero = args.output_type == MH_EXECUTE && !args.relocatable && !args.preload;
-    if !has_pagezero && args.explicit_pagezero && args.pagezero_size != 0 {
+    if !has_pagezero && size.is_some_and(|size| size != 0) {
         fatal!("-pagezero_size can only be used when linking a main executable");
     }
-    if args.output_type != MH_EXECUTE || args.preload || (args.kernel && !args.explicit_pagezero) {
-        args.pagezero_size = 0;
-    }
+    args.pagezero_size = match size {
+        _ if args.output_type != MH_EXECUTE || args.preload => 0,
+        Some(size) => size,
+        None if args.kernel => 0,
+        None => 0x1_0000_0000,
+    };
     if args.relocatable {
         return;
     }
@@ -3632,7 +3630,7 @@ fn resolve_pagezero_size(args: &mut Args) {
         );
         args.pagezero_size = aligned;
     }
-    if args.output_type == MH_EXECUTE && args.fixup_chains && args.pagezero_size > 0x1_0000_0000 {
+    if args.fixup_chains && args.pagezero_size > 0x1_0000_0000 {
         crate::warn!("-pagezero_size is too large, setting it to 4GB");
         args.pagezero_size = 0x1_0000_0000;
     }
