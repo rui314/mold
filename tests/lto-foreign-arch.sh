@@ -36,18 +36,12 @@ if [ $ARCH = arm64 ]; then
 fi
 
 # With it, x86_64h bitcode links into an x86_64 link, with a warning
-# for it as it is loaded and checked, and so for the object LTO made of
-# it, x86_64h too.
+# for it as it is loaded. (ld-prime warns again as it checks it, and
+# twice for the object LTO made of it, x86_64h too.)
 if [ $ARCH = x86_64 ]; then
   clang -target x86_64h-apple-macos14.0 -flto -c $t/foo.c -o $t/h.o
   $CC --ld-path=$mold -flto -o $t/exe5 $t/a.o $t/h.o -Wl,-allow_sub_type_mismatches 2> $t/log5
-  grep 'linking x86_64h' $t/log5 > $t/h.log
-  cat <<EOF | diff - <(sed 's/^[a-z]*: //' $t/h.log)
-warning: linking x86_64h file '$t/h.o' into x86_64 link
-warning: linking x86_64h file '$t/h.o' into x86_64 link
-warning: linking x86_64h file '/tmp/lto.o' into x86_64 link
-warning: linking x86_64h file '/tmp/lto.o' into x86_64 link
-EOF
+  [ "$(grep -c "warning: linking x86_64h file '$t/h.o' into x86_64 link" $t/log5)" = 1 ]
 fi
 
 # ld-prime knows bitcode only in the wrapper Apple's compilers put it

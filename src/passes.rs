@@ -549,7 +549,7 @@ fn refuses_client<E: Target>(ctx: &Context<E>, mf: &'static MappedFile, rc: Read
 /// take (see input_files::takes_arch), which ld-prime ignores with a
 /// warning - an archive member too, whether the link needs it or not.
 /// -allow_sub_type_mismatches has it take one of another subtype with
-/// a warning instead (see also warn_subtype_mismatches).
+/// a warning instead.
 fn is_foreign<E: Target>(ctx: &Context<E>, mf: &MappedFile) -> bool {
     let Some(arch) = input_files::foreign_arch::<E>(mf) else { return false };
     if ctx.args.allow_sub_type_mismatches && input_files::is_subtype_mismatch::<E>(mf) {
@@ -3114,33 +3114,6 @@ fn initializers<E: Target>(ctx: &Context<E>) -> Vec<(&[u8], error::RawBuf)> {
         }
     }
     vec
-}
-
-/// ld-prime warns again about each object of another subtype that
-/// -allow_sub_type_mismatches had it take (see is_foreign) once it
-/// knows the link uses it: an archive member it loads, or a file on the
-/// command line.
-pub fn warn_subtype_mismatches<E: Target>(ctx: &Context<E>, objs: Range<usize>) {
-    if !ctx.args.allow_sub_type_mismatches {
-        return;
-    }
-    for i in objs.filter(|&i| ctx.objs[i].is_alive && !ctx.is_internal(i)) {
-        let obj = &ctx.objs[i];
-        let arch = match obj.lto_module {
-            Some(module) => {
-                input_files::foreign_bitcode_arch::<E>(&ctx.lto_plugin.unwrap(), module)
-            }
-            None => input_files::foreign_arch::<E>(obj.mf).map(str::to_string),
-        };
-        if let Some(arch) = arch {
-            let name = input_files::without_fat_arch(path_bytes(&obj.mf.name));
-            crate::warn!(
-                "linking {arch} file '{}' into {} link",
-                crate::error::raw(&name),
-                E::NAME
-            );
-        }
-    }
 }
 
 /// The inputs check_input_versions has looked at: the objects live
