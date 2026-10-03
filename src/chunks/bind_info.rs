@@ -92,7 +92,7 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     let flags = |id: crate::symbol::SymbolId| {
         if ctx.symbols[id].is_weak_ref() { BIND_SYMBOL_FLAGS_WEAK_IMPORT } else { 0 }
     };
-    encode(compress(bind_ops(ctx, &binds, |id| Some(ordinal(id)), flags)), Vec::new())
+    encode(bind_ops(ctx, &binds, |id| Some(ordinal(id)), flags), Vec::new())
 }
 
 /// Encodes bind opcodes after `buf`'s, ending the stream.
@@ -126,18 +126,6 @@ pub(crate) fn encode(ops: Vec<Op>, mut buf: Vec<u8>) -> Vec<u8> {
                 crate::util::encode_sleb(&mut buf, addend);
             }
             Op::Bind => buf.push(BIND_OPCODE_DO_BIND),
-            Op::BindAddAddr(delta) if delta < 15 * 8 && delta % 8 == 0 => {
-                buf.push(BIND_OPCODE_DO_BIND_ADD_ADDR_IMM_SCALED | (delta / 8) as u8)
-            }
-            Op::BindAddAddr(delta) => {
-                buf.push(BIND_OPCODE_DO_BIND_ADD_ADDR_ULEB);
-                encode_uleb(&mut buf, delta);
-            }
-            Op::BindTimesSkipping(count, skip) => {
-                buf.push(BIND_OPCODE_DO_BIND_ULEB_TIMES_SKIPPING_ULEB);
-                encode_uleb(&mut buf, count);
-                encode_uleb(&mut buf, skip);
-            }
         }
     }
 
@@ -157,12 +145,10 @@ pub(crate) enum Op {
     AddAddr(u64),
     Addend(i64),
     Bind,
-    BindAddAddr(u64),
-    BindTimesSkipping(u64, u64),
 }
 
 /// The opcodes binding the sorted `binds`, each piece of the bind
-/// machine's state set only when it changes, as ld-prime writes them:
+/// machine's state set only when it changes:
 /// the address moves by ADD_ADDR_ULEB within a segment, backwards too,
 /// and by SET_SEGMENT_AND_OFFSET_ULEB into another one. `ordinal` is the
 /// library each symbol binds to, if the stream names one, and `flags`
@@ -212,40 +198,4 @@ pub(crate) fn bind_ops<E: Target>(
         cur_addr = addr + 8;
     }
     ops
-}
-
-/// ld64's compression of a bind opcode list: a bind followed by an
-/// address step becomes one opcode, and a run of those with one step
-/// becomes DO_BIND_ULEB_TIMES_SKIPPING_ULEB. (Encoding then writes a
-/// small, pointer-aligned step as DO_BIND_ADD_ADDR_IMM_SCALED.)
-pub(crate) fn compress(ops: Vec<Op>) -> Vec<Op> {
-    let mut paired = Vec::with_capacity(ops.len());
-    let mut it = ops.into_iter().peekable();
-    while let Some(op) = it.next() {
-        match (op, it.peek()) {
-            (Op::Bind, Some(&Op::AddAddr(delta))) => {
-                it.next();
-                paired.push(Op::BindAddAddr(delta));
-            }
-            (op, _) => paired.push(op),
-        }
-    }
-    let mut out = Vec::with_capacity(paired.len());
-    let mut it = paired.into_iter().peekable();
-    while let Some(op) = it.next() {
-        match (op, it.peek()) {
-            (Op::BindAddAddr(delta), Some(&Op::BindAddAddr(next))) if next == delta => {
-                let mut count = 1;
-                while let Some(&Op::BindAddAddr(next)) = it.peek()
-                    && next == delta
-                {
-                    it.next();
-                    count += 1;
-                }
-                out.push(Op::BindTimesSkipping(count, delta));
-            }
-            (op, _) => out.push(op),
-        }
-    }
-    out
 }

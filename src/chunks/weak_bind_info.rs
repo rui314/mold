@@ -96,5 +96,5 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     }
     let binds: Vec<_> = binds.into_iter().map(|(id, addr)| (addr, id, 0)).collect();
     let ops = bind_info::bind_ops(ctx, &binds, |_| None, |_| 0);
-    bind_info::encode(bind_info::compress(ops), buf)
+    bind_info::encode(ops, buf)
 }

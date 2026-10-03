@@ -124,41 +124,30 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     locs.sort_unstable();
 
     let mut buf = vec![REBASE_OPCODE_SET_TYPE_IMM | REBASE_TYPE_POINTER];
-    for op in compress(rebase_ops(ctx, &locs)) {
+    for op in rebase_ops(ctx, &locs) {
         match op {
             Op::SegOffset(seg, off) => {
                 buf.push(REBASE_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB | seg as u8);
                 encode_uleb(&mut buf, off);
             }
-            Op::AddAddr(delta) if delta < 15 * 8 && delta % 8 == 0 => {
+            Op::AddAddr(delta) if delta <= 15 * 8 && delta % 8 == 0 => {
                 buf.push(REBASE_OPCODE_ADD_ADDR_IMM_SCALED | (delta / 8) as u8)
             }
             Op::AddAddr(delta) => {
                 buf.push(REBASE_OPCODE_ADD_ADDR_ULEB);
                 encode_uleb(&mut buf, delta);
             }
-            Op::Rebase(count) if count < 15 => {
+            Op::Rebase(count) if count <= 15 => {
                 buf.push(REBASE_OPCODE_DO_REBASE_IMM_TIMES | count as u8)
             }
             Op::Rebase(count) => {
                 buf.push(REBASE_OPCODE_DO_REBASE_ULEB_TIMES);
                 encode_uleb(&mut buf, count);
             }
-            Op::RebaseAddAddr(delta) => {
-                buf.push(REBASE_OPCODE_DO_REBASE_ADD_ADDR_ULEB);
-                encode_uleb(&mut buf, delta);
-            }
-            Op::RebaseTimesSkipping(count, skip) => {
-                buf.push(REBASE_OPCODE_DO_REBASE_ULEB_TIMES_SKIPPING_ULEB);
-                encode_uleb(&mut buf, count);
-                encode_uleb(&mut buf, skip);
-            }
         }
     }
-    // ld64 writes no DONE: the zeros padding the stream to 8 bytes
-    // read as one, and a stream that fills its last 8 bytes simply
-    // ends there.
-    while buf.len() % 8 != 0 {
+    buf.push(REBASE_OPCODE_DONE);
+    while !buf.len().is_multiple_of(8) {
         buf.push(REBASE_OPCODE_DONE);
     }
     buf
@@ -170,8 +159,6 @@ enum Op {
     SegOffset(usize, u64),
     AddAddr(u64),
     Rebase(u64),
-    RebaseAddAddr(u64),
-    RebaseTimesSkipping(u64, u64),
 }
 
 /// The opcodes rebasing the sorted `locs`: the address moves by
@@ -205,43 +192,6 @@ fn rebase_ops<E: Target>(ctx: &Context<E>, locs: &[u64]) -> Vec<Op> {
         i += n;
     }
     ops
-}
-
-/// ld64's compression of a rebase opcode list: a single rebase followed
-/// by an address step becomes one DO_REBASE_ADD_ADDR_ULEB, and three or
-/// more of those with one step become DO_REBASE_ULEB_TIMES_SKIPPING_ULEB.
-/// (Encoding then writes a small, pointer-aligned step as
-/// ADD_ADDR_IMM_SCALED and a short run as DO_REBASE_IMM_TIMES.)
-fn compress(ops: Vec<Op>) -> Vec<Op> {
-    let mut paired = Vec::with_capacity(ops.len());
-    let mut it = ops.into_iter().peekable();
-    while let Some(op) = it.next() {
-        match (op, it.peek()) {
-            (Op::Rebase(1), Some(&Op::AddAddr(delta))) => {
-                it.next();
-                paired.push(Op::RebaseAddAddr(delta));
-            }
-            (op, _) => paired.push(op),
-        }
-    }
-    let mut out = Vec::with_capacity(paired.len());
-    let mut i = 0;
-    while i < paired.len() {
-        if let Op::RebaseAddAddr(delta) = paired[i] {
-            let count = paired[i..]
-                .iter()
-                .take_while(|op| matches!(op, Op::RebaseAddAddr(d) if *d == delta))
-                .count();
-            if count >= 3 {
-                out.push(Op::RebaseTimesSkipping(count as u64, delta));
-                i += count;
-                continue;
-            }
-        }
-        out.push(paired[i]);
-        i += 1;
-    }
-    out
 }
 
 /// The (address, target) of every pointer field of the synthesized
