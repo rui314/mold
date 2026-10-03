@@ -38,16 +38,9 @@ impl PlatformVersion {
     /// The deployment target of an object file: the one its first
     /// platform load command names, if it has one.
     pub fn of_object(data: &[u8]) -> Option<Self> {
-        let hdr = MachHeader::read_from(data);
-        let mut off = size_of::<MachHeader>();
-        for _ in 0..hdr.ncmds {
-            let lc = LoadCommand::read_from(&data[off..]);
-            if is_platform_cmd(lc.cmd) {
-                return Some(Self::read(lc.cmd, &data[off..], hdr.cputype));
-            }
-            off += lc.cmdsize as usize;
-        }
-        None
+        let cputype = MachHeader::read_from(data).cputype;
+        let (cmd, bytes) = load_commands(data).find(|&(cmd, _)| is_platform_cmd(cmd))?;
+        Some(Self::read(cmd, bytes, cputype))
     }
 
     fn read(cmd: u32, data: &[u8], cputype: u32) -> Self {
@@ -116,6 +109,42 @@ fn is_platform_cmd(cmd: u32) -> bool {
             | LC_VERSION_MIN_TVOS
             | LC_VERSION_MIN_WATCHOS
     )
+}
+
+/// A Mach-O file's load commands, in order: each one's type and its
+/// bytes.
+fn load_commands(data: &[u8]) -> impl Iterator<Item = (u32, &[u8])> {
+    let ncmds = MachHeader::read_from(data).ncmds;
+    let mut off = size_of::<MachHeader>();
+    (0..ncmds).map(move |_| {
+        let lc = LoadCommand::read_from(&data[off..]);
+        let bytes = &data[off..off + lc.cmdsize as usize];
+        off += lc.cmdsize as usize;
+        (lc.cmd, bytes)
+    })
+}
+
+/// The section headers of an LC_SEGMENT_64 load command.
+fn segment_sections(cmd: &[u8]) -> impl Iterator<Item = MachSection> + '_ {
+    let nsects = SegmentCommand::read_from(cmd).nsects as usize;
+    (0..nsects).map(move |i| {
+        MachSection::read_from(&cmd[size_of::<SegmentCommand>() + i * size_of::<MachSection>()..])
+    })
+}
+
+/// A Mach-O file's section headers: every segment's, in load command
+/// order, the order in which section ordinals count them.
+fn section_headers(data: &[u8]) -> impl Iterator<Item = MachSection> + '_ {
+    load_commands(data)
+        .filter(|&(cmd, _)| cmd == LC_SEGMENT_64)
+        .flat_map(|(_, bytes)| segment_sections(bytes))
+}
+
+/// The NUL-terminated string a load command holds at `offset` from its
+/// start, such as a dylib's install name.
+fn lc_string(cmd: &[u8], offset: u32) -> &[u8] {
+    let s = &cmd[offset as usize..];
+    &s[..memchr::memchr(0, s).unwrap_or(s.len())]
 }
 
 /// A relocatable object file.
@@ -782,19 +811,13 @@ struct LoadCommands {
 }
 
 impl LoadCommands {
-    fn read<E: Target>(mf: &MappedFile, hdr: &MachHeader) -> Self {
+    fn read<E: Target>(mf: &MappedFile) -> Self {
         let data = mf.data();
         let mut cmds = Self::default();
-        let mut off = size_of::<MachHeader>();
-        for _ in 0..hdr.ncmds {
-            let lc = LoadCommand::read_from(&data[off..]);
-            match lc.cmd {
+        for (cmd, bytes) in load_commands(data) {
+            match cmd {
                 LC_SEGMENT_64 => {
-                    let seg = SegmentCommand::read_from(&data[off..]);
-                    for i in 0..seg.nsects as usize {
-                        let sect_off =
-                            off + size_of::<SegmentCommand>() + i * size_of::<MachSection>();
-                        let mut sect = MachSection::read_from(&data[sect_off..]);
+                    for mut sect in segment_sections(bytes) {
                         sect.flags = crate::output_sections::canonical_section_flags(
                             sect.segname(),
                             sect.sectname(),
@@ -803,10 +826,10 @@ impl LoadCommands {
                         cmds.sect_hdrs.push(sect);
                     }
                 }
-                LC_SYMTAB => cmds.symtab = Some(SymtabCommand::read_from(&data[off..])),
-                LC_DYSYMTAB => cmds.dysymtab = Some(DysymtabCommand::read_from(&data[off..])),
+                LC_SYMTAB => cmds.symtab = Some(SymtabCommand::read_from(bytes)),
+                LC_DYSYMTAB => cmds.dysymtab = Some(DysymtabCommand::read_from(bytes)),
                 cmd if is_platform_cmd(cmd) => {
-                    let version = PlatformVersion::read(cmd, &data[off..], E::CPUTYPE);
+                    let version = PlatformVersion::read(cmd, bytes, E::CPUTYPE);
                     cmds.platform_versions.push(version);
                 }
                 LC_LINKER_OPTION => {
@@ -814,7 +837,7 @@ impl LoadCommands {
                     // needs, as NUL-terminated strings after a count -
                     // an option and its argument, if it takes one, and
                     // no more, as ld-prime sees it.
-                    let count = u32::from_le_bytes(data[off + 8..off + 12].try_into().unwrap());
+                    let count = u32::from_le_bytes(bytes[8..12].try_into().unwrap());
                     if !(1..=2).contains(&count) {
                         let file = mf.name.raw();
                         fatal!(
@@ -822,17 +845,16 @@ impl LoadCommands {
                         );
                     }
                     let mut strs = Vec::with_capacity(count as usize);
-                    let mut p = off + 12;
+                    let mut p = 12;
                     for _ in 0..count {
-                        let rest = &data[p..off + lc.cmdsize as usize];
-                        let len = rest.iter().position(|&b| b == 0).unwrap_or(rest.len());
-                        strs.push(rest[..len].to_vec());
-                        p += len + 1;
+                        let s = lc_string(bytes, p);
+                        strs.push(s.to_vec());
+                        p += s.len() as u32 + 1;
                     }
                     cmds.linker_options.push(strs);
                 }
                 LC_DATA_IN_CODE => {
-                    let cmd = LinkEditDataCommand::read_from(&data[off..]);
+                    let cmd = LinkEditDataCommand::read_from(bytes);
                     for i in 0..cmd.datasize as usize / 8 {
                         let p = cmd.dataoff as usize + i * 8;
                         cmds.dice.push((
@@ -845,7 +867,7 @@ impl LoadCommands {
                 LC_LINKER_OPTIMIZATION_HINT => {
                     // A stream of ULEB128 triples-and-more: kind, argument
                     // count, then that many instruction addresses.
-                    let cmd = LinkEditDataCommand::read_from(&data[off..]);
+                    let cmd = LinkEditDataCommand::read_from(bytes);
                     let payload =
                         &data[cmd.dataoff as usize..(cmd.dataoff + cmd.datasize) as usize];
                     let mut pos = 0;
@@ -861,7 +883,6 @@ impl LoadCommands {
                 }
                 _ => {}
             }
-            off += lc.cmdsize as usize;
         }
         cmds
     }
@@ -933,7 +954,7 @@ pub fn stage_object<E: Target>(
         fatal!("{}: incompatible CPU type: expected {}", mf.name.raw(), E::NAME);
     }
 
-    let cmds = LoadCommands::read::<E>(mf, &hdr);
+    let cmds = LoadCommands::read::<E>(mf);
 
     // The section headers are complete; leak them so subsections can
     // reference (not copy) their parent header. The leak is bounded by
@@ -2548,33 +2569,15 @@ pub fn has_objc_sections(mf: &MappedFile) -> bool {
     if data.len() < size_of::<MachHeader>() {
         return false;
     }
-    let hdr = MachHeader::read_from(data);
-    if hdr.magic != MH_MAGIC_64 {
+    if MachHeader::read_from(data).magic != MH_MAGIC_64 {
         return false;
     }
-    let mut off = size_of::<MachHeader>();
-    for _ in 0..hdr.ncmds {
-        let lc = LoadCommand::read_from(&data[off..]);
-        if lc.cmd == LC_SEGMENT_64 {
-            let seg = SegmentCommand::read_from(&data[off..]);
-            for i in 0..seg.nsects as usize {
-                let sect_off = off + size_of::<SegmentCommand>() + i * size_of::<MachSection>();
-                let sect = MachSection::read_from(&data[sect_off..]);
-                if matches!(
-                    sect.sectname(),
-                    b"__objc_classlist"
-                        | b"__objc_catlist"
-                        | b"__objc_nlclslist"
-                        | b"__objc_nlcatlist"
-                ) || (sect.segname() == b"__TEXT" && sect.sectname().starts_with(b"__swift"))
-                {
-                    return true;
-                }
-            }
-        }
-        off += lc.cmdsize as usize;
-    }
-    false
+    section_headers(data).any(|sect| {
+        matches!(
+            sect.sectname(),
+            b"__objc_classlist" | b"__objc_catlist" | b"__objc_nlclslist" | b"__objc_nlcatlist"
+        ) || (sect.segname() == b"__TEXT" && sect.sectname().starts_with(b"__swift"))
+    })
 }
 
 /// An architecture's name, from a Mach-O CPU type and subtype: one of
@@ -3050,29 +3053,19 @@ impl DylibIdentity {
     }
 
     fn of_binary(mf: &MappedFile) -> Self {
-        let data = mf.data();
-        let hdr = MachHeader::read_from(data);
         let mut id = Self { install_name: Vec::new(), umbrella: None, clients: Vec::new() };
-        let mut off = size_of::<MachHeader>();
-        for _ in 0..hdr.ncmds {
-            let lc = LoadCommand::read_from(&data[off..]);
-            let string = |nameoff: u32| {
-                let name = &data[off + nameoff as usize..off + lc.cmdsize as usize];
-                name[..name.iter().position(|&b| b == 0).unwrap_or(name.len())].to_vec()
-            };
-            match lc.cmd {
-                LC_ID_DYLIB => {
-                    id.install_name = string(DylibCommand::read_from(&data[off..]).nameoff)
-                }
+        for (cmd, bytes) in load_commands(mf.data()) {
+            // LC_SUB_FRAMEWORK and LC_SUB_CLIENT have the layout of
+            // LC_LOAD_DYLINKER: a string's offset after the header.
+            let string = |nameoff| lc_string(bytes, nameoff).to_vec();
+            match cmd {
+                LC_ID_DYLIB => id.install_name = string(DylibCommand::read_from(bytes).nameoff),
                 LC_SUB_FRAMEWORK => {
-                    id.umbrella = Some(string(DylinkerCommand::read_from(&data[off..]).nameoff));
+                    id.umbrella = Some(string(DylinkerCommand::read_from(bytes).nameoff));
                 }
-                LC_SUB_CLIENT => {
-                    id.clients.push(string(DylinkerCommand::read_from(&data[off..]).nameoff))
-                }
+                LC_SUB_CLIENT => id.clients.push(string(DylinkerCommand::read_from(bytes).nameoff)),
                 _ => {}
             }
-            off += lc.cmdsize as usize;
         }
         id
     }
@@ -3133,17 +3126,11 @@ pub fn is_allowed_client<E: Target>(ctx: &Context<E>, dylib: &DylibIdentity) -> 
 /// returns the minimum OS version it names for that platform (0 for
 /// none).
 fn check_dylib_platform<E: Target>(ctx: &Context<E>, mf: &MappedFile) -> u32 {
-    let hdr = MachHeader::read_from(mf.data());
-    let mut versions = Vec::new();
-    let mut off = size_of::<MachHeader>();
-    for _ in 0..hdr.ncmds {
-        let data = &mf.data()[off..];
-        let lc = LoadCommand::read_from(data);
-        if is_platform_cmd(lc.cmd) {
-            versions.push(PlatformVersion::read(lc.cmd, data, hdr.cputype));
-        }
-        off += lc.cmdsize as usize;
-    }
+    let cputype = MachHeader::read_from(mf.data()).cputype;
+    let versions: Vec<PlatformVersion> = load_commands(mf.data())
+        .filter(|&(cmd, _)| is_platform_cmd(cmd))
+        .map(|(cmd, bytes)| PlatformVersion::read(cmd, bytes, cputype))
+        .collect();
     if let Some(version) = versions.iter().find(|v| v.platform == ctx.args.platform) {
         return version.minos;
     }
@@ -3199,28 +3186,35 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
     add_library(ctx, dylib, reexports, Vec::new(), directives)
 }
 
-/// Returns the 1-based ordinals of S_THREAD_LOCAL_VARIABLES sections.
-fn thread_local_section_ordinals(data: &[u8], hdr: &MachHeader) -> Vec<u8> {
-    let mut ordinals = Vec::new();
-    let mut ordinal = 0u8;
-    let mut off = size_of::<MachHeader>();
-    for _ in 0..hdr.ncmds {
-        let lc = LoadCommand::read_from(&data[off..]);
-        if lc.cmd == LC_SEGMENT_64 {
-            let seg = SegmentCommand::read_from(&data[off..]);
-            for i in 0..seg.nsects as usize {
-                let sect = MachSection::read_from(
-                    &data[off + size_of::<SegmentCommand>() + i * size_of::<MachSection>()..],
-                );
-                ordinal += 1;
-                if sect.flags & SECTION_TYPE == S_THREAD_LOCAL_VARIABLES {
-                    ordinals.push(ordinal);
-                }
-            }
+/// The defined external symbols of an image's symbol table, the run its
+/// LC_DYSYMTAB names: each one's name, whether it is a weak definition
+/// and whether it is a thread-local variable, which its section tells -
+/// an S_THREAD_LOCAL_VARIABLES section, of the variables' descriptors.
+fn defined_externals(data: &'static [u8]) -> Vec<(&'static [u8], bool, bool)> {
+    let mut symtab = None;
+    let mut dysymtab = None;
+    for (cmd, bytes) in load_commands(data) {
+        match cmd {
+            LC_SYMTAB => symtab = Some(SymtabCommand::read_from(bytes)),
+            LC_DYSYMTAB => dysymtab = Some(DysymtabCommand::read_from(bytes)),
+            _ => {}
         }
-        off += lc.cmdsize as usize;
     }
-    ordinals
+    let (Some(symtab), Some(dysym)) = (symtab, dysymtab) else {
+        return Vec::new();
+    };
+    let (nlists, strtab) = read_symtab(data, Some(&symtab));
+    let tlv_sects: Vec<u8> = section_headers(data)
+        .enumerate()
+        .filter(|(_, sect)| sect.section_type() == S_THREAD_LOCAL_VARIABLES)
+        .map(|(i, _)| (i + 1) as u8)
+        .collect();
+    let range = dysym.iextdefsym as usize..(dysym.iextdefsym + dysym.nextdefsym) as usize;
+    let defs = nlists[range].iter().map(|nlist| {
+        let weak = nlist.n_desc & N_WEAK_DEF != 0;
+        (symbol_name(strtab, nlist), weak, tlv_sects.contains(&nlist.n_sect))
+    });
+    defs.collect()
 }
 
 /// The ordinal the next LC_LOAD_DYLIB will have: dylibs are numbered
@@ -3231,33 +3225,24 @@ pub fn next_dylib_ordinal<E: Target>(ctx: &Context<E>) -> i32 {
 
 /// Where an image keeps its export trie: LC_DYLD_EXPORTS_TRIE, or the
 /// export section of LC_DYLD_INFO(_ONLY).
-fn find_export_trie(data: &[u8], hdr: &MachHeader) -> Option<(usize, usize)> {
+fn find_export_trie(data: &[u8]) -> Option<(usize, usize)> {
     let mut trie = None;
-    let mut off = size_of::<MachHeader>();
-    for _ in 0..hdr.ncmds {
-        let lc = LoadCommand::read_from(&data[off..]);
-        match lc.cmd {
+    for (cmd, bytes) in load_commands(data) {
+        match cmd {
             LC_DYLD_EXPORTS_TRIE => {
-                let cmd = LinkEditDataCommand::read_from(&data[off..]);
+                let cmd = LinkEditDataCommand::read_from(bytes);
                 trie = Some((cmd.dataoff as usize, cmd.datasize as usize));
             }
             LC_DYLD_INFO | LC_DYLD_INFO_ONLY => {
-                let cmd = DyldInfoCommand::read_from(&data[off..]);
+                let cmd = DyldInfoCommand::read_from(bytes);
                 if cmd.export_size != 0 {
                     trie = Some((cmd.export_off as usize, cmd.export_size as usize));
                 }
             }
             _ => {}
         }
-        off += lc.cmdsize as usize;
     }
     trie
-}
-
-/// The names in an export trie: what a stripped executable or dylib
-/// exports.
-fn export_trie_names(data: &[u8], off: usize, size: usize) -> Vec<&'static [u8]> {
-    export_trie_entries(data, off, size).into_iter().map(|(name, _)| name).collect()
 }
 
 /// The (name, flags) entries of an export trie. The trie is what dyld
@@ -3319,52 +3304,16 @@ fn export_trie_entries(data: &[u8], off: usize, size: usize) -> Vec<(&'static [u
 /// are linked with -export_dynamic, and an executable may be stripped).
 pub fn parse_bundle_loader<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFile) -> usize {
     let data = mf.data();
-    let hdr = MachHeader::read_from(data);
-
-    let mut symtab_cmd = None;
-    let mut dysymtab_cmd = None;
-    let mut trie: Option<(usize, usize)> = None;
-    let mut off = size_of::<MachHeader>();
-    for _ in 0..hdr.ncmds {
-        let lc = LoadCommand::read_from(&data[off..]);
-        match lc.cmd {
-            LC_SYMTAB => symtab_cmd = Some(SymtabCommand::read_from(&data[off..])),
-            LC_DYSYMTAB => dysymtab_cmd = Some(DysymtabCommand::read_from(&data[off..])),
-            LC_DYLD_EXPORTS_TRIE => {
-                let cmd = LinkEditDataCommand::read_from(&data[off..]);
-                trie = Some((cmd.dataoff as usize, cmd.datasize as usize));
-            }
-            LC_DYLD_INFO | LC_DYLD_INFO_ONLY => {
-                let cmd = DyldInfoCommand::read_from(&data[off..]);
-                if cmd.export_size != 0 {
-                    trie = Some((cmd.export_off as usize, cmd.export_size as usize));
-                }
-            }
-            _ => {}
-        }
-        off += lc.cmdsize as usize;
-    }
-
     let mut exports: hashbrown::HashSet<&'static [u8]> = hashbrown::HashSet::new();
     let mut tlv_exports: hashbrown::HashSet<&'static [u8]> = hashbrown::HashSet::new();
-    if let (Some(sym), Some(dysym)) = (symtab_cmd, dysymtab_cmd) {
-        let nlists: Vec<NList> = read_array(data, sym.symoff as usize, sym.nsyms as usize);
-        let strtab = &data[sym.stroff as usize..(sym.stroff + sym.strsize) as usize];
-        // SAFETY: input files are leaked, so the string table lives for
-        // the rest of the process.
-        let strtab: &'static [u8] = unsafe { std::mem::transmute::<&[u8], &'static [u8]>(strtab) };
-        let tlv_sects = thread_local_section_ordinals(data, &hdr);
-        let range = dysym.iextdefsym as usize..(dysym.iextdefsym + dysym.nextdefsym) as usize;
-        for nlist in &nlists[range] {
-            let name = symbol_name(strtab, nlist);
-            if tlv_sects.contains(&nlist.n_sect) {
-                tlv_exports.insert(name);
-            }
-            exports.insert(name);
+    for (name, _, tlv) in defined_externals(data) {
+        if tlv {
+            tlv_exports.insert(name);
         }
+        exports.insert(name);
     }
-    if let Some((off, size)) = trie {
-        exports.extend(export_trie_names(data, off, size));
+    if let Some((off, size)) = find_export_trie(data) {
+        exports.extend(export_trie_entries(data, off, size).into_iter().map(|(name, _)| name));
     }
 
     let priority = ctx.next_priority();
@@ -3404,73 +3353,41 @@ pub fn is_mergeable(mf: &MappedFile) -> bool {
     if crate::filetype::get_file_type(mf) != crate::filetype::FileType::Dylib {
         return false;
     }
-    let data = mf.data();
-    let hdr = MachHeader::read_from(data);
-    let mut off = size_of::<MachHeader>();
-    for _ in 0..hdr.ncmds {
-        let lc = LoadCommand::read_from(&data[off..]);
-        if lc.cmd == LC_ATOM_INFO {
-            return true;
-        }
-        off += lc.cmdsize as usize;
-    }
-    false
+    load_commands(mf.data()).any(|(cmd, _)| cmd == LC_ATOM_INFO)
 }
 
 /// Whether an image - a dylib, an executable - has an LC_UUID. ld
 /// -no_uuid makes one without, which dyld refuses to load and ld-prime
 /// to link with.
 pub fn has_uuid(data: &[u8]) -> bool {
-    let hdr = MachHeader::read_from(data);
-    let mut off = size_of::<MachHeader>();
-    for _ in 0..hdr.ncmds {
-        let lc = LoadCommand::read_from(&data[off..]);
-        if lc.cmd == LC_UUID {
-            return true;
-        }
-        off += lc.cmdsize as usize;
-    }
-    false
+    load_commands(data).any(|(cmd, _)| cmd == LC_UUID)
 }
 
 fn read_dylib_binary(mf: &'static MappedFile) -> DylibBinary {
     let data = mf.data();
-    let hdr = MachHeader::read_from(data);
     let mut dylib = DylibBinary {
         current_version: encode_version(1, 0, 0),
         compatibility_version: encode_version(1, 0, 0),
         ..Default::default()
     };
-    let mut symtab_cmd = None;
-    let mut dysymtab_cmd = None;
-
-    let mut off = size_of::<MachHeader>();
-    for _ in 0..hdr.ncmds {
-        let lc = LoadCommand::read_from(&data[off..]);
-        let string = |nameoff: u32| {
-            let name = &data[off + nameoff as usize..off + lc.cmdsize as usize];
-            &name[..name.iter().position(|&b| b == 0).unwrap_or(name.len())]
-        };
-        match lc.cmd {
+    for (cmd, bytes) in load_commands(data) {
+        match cmd {
             LC_ID_DYLIB => {
-                let cmd = DylibCommand::read_from(&data[off..]);
-                dylib.install_name = string(cmd.nameoff).to_vec();
+                let cmd = DylibCommand::read_from(bytes);
+                dylib.install_name = lc_string(bytes, cmd.nameoff).to_vec();
                 dylib.current_version = cmd.current_version;
                 dylib.compatibility_version = cmd.compatibility_version;
             }
-            LC_SYMTAB => symtab_cmd = Some(SymtabCommand::read_from(&data[off..])),
-            LC_DYSYMTAB => dysymtab_cmd = Some(DysymtabCommand::read_from(&data[off..])),
             LC_REEXPORT_DYLIB => {
-                let cmd = DylibCommand::read_from(&data[off..]);
-                dylib.reexports.push(string(cmd.nameoff).to_vec());
+                let cmd = DylibCommand::read_from(bytes);
+                dylib.reexports.push(lc_string(bytes, cmd.nameoff).to_vec());
             }
             LC_RPATH => {
-                let cmd = DylinkerCommand::read_from(&data[off..]);
-                dylib.rpaths.push(loader_rpath(&mf.name, string(cmd.nameoff)));
+                let cmd = DylinkerCommand::read_from(bytes);
+                dylib.rpaths.push(loader_rpath(&mf.name, lc_string(bytes, cmd.nameoff)));
             }
             _ => {}
         }
-        off += lc.cmdsize as usize;
     }
 
     let mut add = |name: &'static [u8], weak: bool, tlv: bool| {
@@ -3486,23 +3403,10 @@ fn read_dylib_binary(mf: &'static MappedFile) -> DylibBinary {
         }
         dylib.exports.push(name);
     };
-    if let (Some(sym), Some(dysym)) = (symtab_cmd, dysymtab_cmd) {
-        let nlists: Vec<NList> = read_array(data, sym.symoff as usize, sym.nsyms as usize);
-        let strtab = &data[sym.stroff as usize..(sym.stroff + sym.strsize) as usize];
-        // SAFETY: input files are leaked, so the string table lives for
-        // the rest of the process.
-        let strtab: &'static [u8] = unsafe { std::mem::transmute::<&[u8], &'static [u8]>(strtab) };
-        // A TLV export is recognizable by its section: n_sect names a
-        // S_THREAD_LOCAL_VARIABLES section (the __thread_vars
-        // descriptors).
-        let tlv_sects = thread_local_section_ordinals(data, &hdr);
-        let range = dysym.iextdefsym as usize..(dysym.iextdefsym + dysym.nextdefsym) as usize;
-        for nlist in &nlists[range] {
-            let weak = nlist.n_desc & N_WEAK_DEF != 0;
-            add(symbol_name(strtab, nlist), weak, tlv_sects.contains(&nlist.n_sect));
-        }
+    for (name, weak, tlv) in defined_externals(data) {
+        add(name, weak, tlv);
     }
-    if let Some((off, size)) = find_export_trie(data, &hdr) {
+    if let Some((off, size)) = find_export_trie(data) {
         for (name, flags) in export_trie_entries(data, off, size) {
             let flags = flags as u32;
             let weak = flags & EXPORT_SYMBOL_FLAGS_WEAK_DEFINITION != 0;
