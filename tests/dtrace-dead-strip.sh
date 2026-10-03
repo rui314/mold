@@ -2,11 +2,11 @@
 source "$(dirname "$0")"/common.inc
 source "$(dirname "$0")"/dtrace.inc
 
-# The DOF is made before dead stripping, of the probe sites of all
-# functions, and is a root that refers to each: -dead_strip keeps every
-# function with a site, and what it calls. -why_live shows the DOF, a
-# subsection of the linker's own, keeping them. (ld-prime words it
-# differently.)
+# The DOF lists the probe sites of the code dead stripping leaves:
+# -dead_strip removes a function nothing calls with its probe sites, and
+# what only it calls. (ld-prime makes the DOF before dead stripping, of
+# the sites of all functions, and keeps every function with a site, and
+# what it calls, for probes that can never fire.)
 cat > $t/p.d <<EOF
 provider stab {
   probe x(int);
@@ -24,17 +24,27 @@ void live(void) { STAB_X(3); }
 int main() { live(); return 0; }
 EOF
 $CC -o $t/a.o -c $t/a.c
-$CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-dead_strip \
-  -Wl,-why_live,_dead1 -Wl,-why_live,_callee 2> $t/log
+$CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-dead_strip
 $t/exe
 nm $t/exe > $t/syms
-grep -q '_dead1$' $t/syms
-grep -q '_dead2$' $t/syms
-grep -q '_callee$' $t/syms
+grep -q '_live$' $t/syms
+not grep -q '_dead1$' $t/syms
+not grep -q '_dead2$' $t/syms
+not grep -q '_callee$' $t/syms
 not grep -q '_unused$' $t/syms
 
 dof_dump $t/exe > $t/dof
-sort -o $t/dof $t/dof
+cat > $t/expected <<EOF
+dof __dof_stab stab flags 0xf align 0
+attrs 0x01010000 0x01010000 0x01010000 0x01010000 0x01010000
+probe x(int) in live: 1 sites, 0 tests
+EOF
+diff $t/dof $t/expected
+
+# Without -dead_strip, every function's sites are listed.
+$CC --ld-path=$mold -o $t/exe3 $t/a.o
+dof_dump $t/exe3 > $t/dof3
+sort -o $t/dof3 $t/dof3
 cat > $t/expected <<EOF
 attrs 0x01010000 0x01010000 0x01010000 0x01010000 0x01010000
 dof __dof_stab stab flags 0xf align 0
@@ -42,24 +52,7 @@ probe x(int) in dead1: 1 sites, 0 tests
 probe x(int) in dead2: 1 sites, 0 tests
 probe x(int) in live: 1 sites, 0 tests
 EOF
-diff $t/dof $t/expected
-
-grep -v '^+' $t/log | sed 's| from .*/| from |; s|[^ ]* from <synthesized>$|DOF|' > $t/why
-grep -A2 '^_dead1 ' $t/why > $t/why1
-cat > $t/expected <<EOF
-_dead1 from a.o
-  DOF
-    root: never dead-stripped
-EOF
-diff $t/why1 $t/expected
-grep -A3 '^_callee ' $t/why > $t/why2
-cat > $t/expected <<EOF
-_callee from a.o
-  _dead2 from a.o
-    DOF
-      root: never dead-stripped
-EOF
-diff $t/why2 $t/expected
+diff $t/dof3 $t/expected
 
 # Identical functions are folded, but not those with a probe site.
 cat > $t/b.c <<EOF

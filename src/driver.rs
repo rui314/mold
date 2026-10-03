@@ -180,14 +180,12 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     passes::print_dependencies(&ctx);
     passes::print_trace(&ctx);
     passes::print_implicit_trace(&ctx);
-    // Before dead stripping, which the DTrace probe sites survive.
-    timed!("create_dof_sections", crate::dtrace::create_dof_sections(&mut ctx));
-    crate::error::checkpoint();
     if ctx.strips_dead_code() {
         let t = ctx.timer("dead_strip");
         dead_strip::strip_dead_code(&mut ctx);
         drop(t);
     }
+    timed!("create_dof_sections", crate::dtrace::create_dof_sections(&mut ctx));
     passes::check_removed_swift_metadata_refs(&ctx);
     timed!("report_undef_errors", passes::report_undef_errors(&mut ctx));
     crate::error::checkpoint();

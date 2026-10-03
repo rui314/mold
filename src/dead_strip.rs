@@ -133,12 +133,10 @@ fn initial_undefines<E: Target>(ctx: &Context<E>) -> impl Iterator<Item = Symbol
 /// thread-local variable descriptors) are stripped as usual. ld-prime
 /// strips a class reference nothing uses although clang marks
 /// __objc_classrefs no-dead-strip (it keeps unused selector
-/// references). A DOF the link makes is a root too, which keeps every
-/// function with a DTrace probe site alive.
+/// references).
 fn should_keep<E: Target>(ctx: &Context<E>, isec: &InputSection) -> bool {
     let hdr = ctx.hdr_of(isec);
     matches!(hdr.section_type(), S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS)
-        || crate::dtrace::is_dof(ctx, isec)
         || hdr.section_type() == S_INIT_FUNC_OFFSETS
         || (hdr.flags & S_ATTR_NO_DEAD_STRIP != 0
             && !(hdr.segname() == b"__DATA" && hdr.sectname() == b"__objc_classrefs"))

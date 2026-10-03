@@ -109,9 +109,9 @@ struct Site {
     sym: SymbolId,
 }
 
-/// Makes a DOF section for each provider some code has a probe site of,
-/// as ld-prime does after resolving the symbols and before dead
-/// stripping: the sites of dead functions count, and keep them alive.
+/// Makes a DOF section for each provider some live code has a probe site
+/// of, once dead stripping is done. (ld-prime makes them before, so that
+/// a function nothing calls stays for its probe sites.)
 pub fn create_dof_sections<E: Target>(ctx: &mut Context<E>) {
     if !ctx.args.dtrace_dof || ctx.args.relocatable {
         return;
@@ -278,11 +278,6 @@ fn add_dof_section<E: Target>(ctx: &mut Context<E>, name: &[u8], dof: Dof, sites
         nunwind: 0,
     });
     ctx.dof_sections.push(DofSection { sites: sites.iter().map(|s| s.isec).collect() });
-}
-
-/// Whether subsection `isec` is a DOF section the link made.
-pub fn is_dof<E: Target>(ctx: &Context<E>, isec: &InputSection) -> bool {
-    ctx.is_internal(isec.file as usize) && ctx.hdr_of(isec).section_type() == S_DTRACE_DOF
 }
 
 /// What libdtrace's dtrace_ld_create_dof makes of a provider (see
