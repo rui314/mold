@@ -1163,22 +1163,13 @@ impl StagedObject {
             let first = self.isecs.len();
             for (j, &start) in points.iter().enumerate() {
                 let end = points.get(j + 1).copied().unwrap_or(sect.addr + sect.size);
-                let mut contents: &[u8] = if is_zerofill {
+                let contents: &[u8] = if is_zerofill {
                     &[]
                 } else {
                     let lo = sect.offset as u64 + (start - sect.addr);
                     &data[lo as usize..(lo + (end - start)) as usize]
                 };
-                let mut size = end - start;
-                // ld-prime takes the unterminated string that may end a
-                // C-string section for a string too, and completes it
-                // with a NUL (see is_unterminated_string).
-                if sect.section_type() == S_CSTRING_LITERALS
-                    && contents.last().is_some_and(|&b| b != 0)
-                {
-                    contents = Vec::leak([contents, &[0]].concat());
-                    size += 1;
-                }
+                let size = end - start;
                 self.isecs.push(InputSection {
                     file: u32::MAX,
                     shndx: i as u32,
@@ -1413,8 +1404,8 @@ fn is_pointer_list(sect: &MachSection) -> bool {
 }
 
 /// Where the elements of a literal section start: each NUL-terminated
-/// string of a __cstring section (and the unterminated one that may end
-/// it, see initialize_sections), each fixed-size record of the others.
+/// string of a __cstring section (and the bytes after its last NUL, if
+/// any), each fixed-size record of the others.
 fn literal_split_points(sect: &MachSection, data: &[u8]) -> Vec<u64> {
     let elem_size = match sect.section_type() {
         S_CSTRING_LITERALS => {

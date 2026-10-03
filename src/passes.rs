@@ -3699,21 +3699,13 @@ fn is_mergeable_literal(hdr: &MachSection, isec: &InputSection) -> bool {
         return false;
     }
     match hdr.section_type() {
-        S_CSTRING_LITERALS => !is_unterminated_string(hdr, isec),
+        S_CSTRING_LITERALS => true,
         S_4BYTE_LITERALS => hdr.segname_is(b"__TEXT") && hdr.sectname_is(b"__literal4"),
         S_8BYTE_LITERALS => hdr.segname_is(b"__TEXT") && hdr.sectname_is(b"__literal8"),
         S_16BYTE_LITERALS => hdr.segname_is(b"__TEXT") && hdr.sectname_is(b"__literal16"),
         S_REGULAR => hdr.segname_is(b"__TEXT") && hdr.sectname_is(b"__ustring"),
         _ => false,
     }
-}
-
-/// Whether a C-string literal is the unterminated string that ended its
-/// input section, which the NUL it lacks completes past the section's
-/// end (see initialize_sections). ld-prime merges it with no other
-/// string, not even an identical one.
-fn is_unterminated_string(hdr: &crate::macho::MachSection, isec: &InputSection) -> bool {
-    isec.input_addr as u64 + isec.size as u64 > hdr.addr + hdr.size
 }
 
 /// Points every symbol defined in a merged-away subsection at the
