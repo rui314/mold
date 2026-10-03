@@ -291,8 +291,17 @@ pub fn create_range_extension_thunks<E: Target>(
 
     // Initialize input sections with a dummy offset so that we can
     // distinguish sections whose addresses have been assigned from those
-    // whose addresses have not.
-    members.par_iter().for_each(|&member| ctx.input_section(member).set_offset(UNPLACED));
+    // whose addresses have not. The layout below is sequential, so we also
+    // read their sizes and alignments into an array, which is much faster
+    // than looking up input sections one by one.
+    let mut layout: Vec<(u64, u64, u8)> = members
+        .par_iter()
+        .map(|&member| {
+            let sec = ctx.input_section(member);
+            sec.set_offset(UNPLACED);
+            (UNPLACED, sec.sh_size, sec.p2align())
+        })
+        .collect();
 
     let distance = E::branch_distance() as u64;
     let batch = batch_size::<E>();
@@ -309,40 +318,42 @@ pub fn create_range_extension_thunks<E: Target>(
 
     while b < n {
         // Move D foward as far as we can jump from B to a thunk at D.
+        let placed = d;
         while d < n {
-            let sec = ctx.input_section(members[d]);
-            let (p2align, size) = (sec.p2align(), sec.sh_size);
+            let (_, size, p2align) = layout[d];
             if b != d {
                 let thunk_end =
                     align_to(align_to(offset, 1 << p2align) + size, THUNK_ALIGN) + max_thunk;
-                if thunk_end > ctx.input_section(members[b]).offset() + distance {
+                if thunk_end > layout[b].0 + distance {
                     break;
                 }
             }
             offset = align_to(offset, 1 << p2align);
-            sec.set_offset(offset);
+            layout[d].0 = offset;
             offset += size;
             d += 1;
         }
+        members[placed..d].par_iter().zip(&layout[placed..d]).for_each(
+            |(&member, &(offset, ..))| {
+                ctx.input_section(member).set_offset(offset);
+            },
+        );
 
         // Find the end of the current batch. Section end addresses are sorted,
         // so use binary search. Starting from B + 1 guarantees progress.
-        let b_offset = ctx.input_section(members[b]).offset();
+        let b_offset = layout[b].0;
         let c = b
             + 1
-            + members[b + 1..d].partition_point(|&member| {
-                let sec = ctx.input_section(member);
-                sec.offset() + sec.sh_size < b_offset + batch
-            });
+            + layout[b + 1..d]
+                .partition_point(|&(offset, size, _)| offset + size < b_offset + batch);
 
         // Find the first section that is within branch range of C.
-        let c_offset = if c == d { offset } else { ctx.input_section(members[c]).offset() };
-        a += members[a..b].partition_point(|&member| {
-            ctx.input_section(member).offset() < c_offset.saturating_sub(distance)
-        });
+        let c_offset = if c == d { offset } else { layout[c].0 };
+        a += layout[a..b]
+            .partition_point(|&(offset, ..)| offset < c_offset.saturating_sub(distance));
 
         // Erase references to out-of-range thunks.
-        while t < thunks.len() && thunks[t].offset < ctx.input_section(members[a]).offset() {
+        while t < thunks.len() && thunks[t].offset < layout[a].0 {
             for &sym in &thunks[t].symbols {
                 ctx.symbols[sym].unmark();
             }
@@ -512,20 +523,27 @@ pub fn remove_redundant_thunks<E: Target>(ctx: &mut Context<E>) {
             thunk.offsets = offsets;
         }
 
-        // Recompute section sizes
+        // Recompute section sizes. The layout is sequential, so read the
+        // members' attributes into an array in parallel beforehand, which
+        // is much faster than looking up input sections one by one.
         let members = &ctx.output_sections[id.index()].members;
-        let (mut mi, mut ti) = (0, 0);
+        let attrs: Vec<(u64, u8, u64)> = members
+            .par_iter()
+            .map(|&member| {
+                let sec = ctx.input_section(member);
+                (sec.offset(), sec.p2align(), sec.sh_size)
+            })
+            .collect();
+        let mut offsets = Vec::with_capacity(members.len());
+        let mut ti = 0;
         let mut offset = 0;
-        while mi < members.len() || ti < thunks.len() {
-            let member_first = mi < members.len()
-                && (ti >= thunks.len()
-                    || ctx.input_section(members[mi]).offset() < thunks[ti].offset);
-            if member_first {
-                let sec = ctx.input_section(members[mi]);
-                offset = align_to(offset, 1 << sec.p2align());
-                sec.set_offset(offset);
-                offset += sec.sh_size;
-                mi += 1;
+        while offsets.len() < attrs.len() || ti < thunks.len() {
+            let mi = offsets.len();
+            if mi < attrs.len() && (ti >= thunks.len() || attrs[mi].0 < thunks[ti].offset) {
+                let (_, p2align, size) = attrs[mi];
+                offset = align_to(offset, 1 << p2align);
+                offsets.push(offset);
+                offset += size;
             } else {
                 offset = align_to(offset, THUNK_ALIGN);
                 thunks[ti].offset = offset;
@@ -533,6 +551,9 @@ pub fn remove_redundant_thunks<E: Target>(ctx: &mut Context<E>) {
                 ti += 1;
             }
         }
+        members.par_iter().zip(offsets).for_each(|(&member, offset)| {
+            ctx.input_section(member).set_offset(offset);
+        });
         let osec = &mut ctx.output_sections[id.index()];
         osec.hdr.shdr.sh_size.set(offset);
         osec.thunks = thunks;
