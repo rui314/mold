@@ -73,17 +73,47 @@ pub fn resolve_symbols<E: Target>(ctx: &mut Context<E>) {
 
 /// Resolves the symbols with every object taking part, the lazy archive
 /// members too, and marks the live objects. A member the walk loads may
-/// bring tentative definitions, which want what defines them as data
-/// (see definition_rank), so the two repeat until none comes in.
+/// bring tentative definitions of symbols the round didn't rank as
+/// such, which want what defines them as data (see definition_rank):
+/// if a lazy member is what does, the two run again for the walk to
+/// load it. Those symbols are the only ones another walk could load
+/// anything for: every other symbol a live file needs, this walk has
+/// left to a live file, a dylib or none.
 fn resolve_and_mark_live<E: Target>(ctx: &mut Context<E>) {
     loop {
         clear_symbols(ctx);
         let ranking = DylibRanking::new(&ctx.dylibs);
         let tentative = resolve_symbols_pass(ctx, false, &ranking);
-        if !mark_live_objects(ctx, &tentative) {
+        let new_tentative = mark_live_objects(ctx, &tentative);
+        if !member_overrides(ctx, &new_tentative) {
             break;
         }
     }
+}
+
+/// Whether a lazy archive member would own one of `tentative`, symbols
+/// a live file now has a tentative definition of, in a round that ranks
+/// them so: one that defines it as data where no live file defines it
+/// (see definition_rank). The objects' definitions of those symbols
+/// alone race for them here.
+fn member_overrides<E: Target>(ctx: &Context<E>, tentative: &Tentative) -> bool {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    if tentative.is_empty() {
+        return false;
+    }
+    let index: hashbrown::HashMap<SymbolId, usize> =
+        tentative.iter().enumerate().map(|(k, &id)| (id, k)).collect();
+    let best: Vec<AtomicU64> = (0..index.len()).map(|_| AtomicU64::new(u64::MAX)).collect();
+    ctx.objs.par_iter().for_each(|obj| {
+        for i in obj.global_range() {
+            let Some(&k) = index.get(&obj.symbols[i]) else { continue };
+            let rank = definition_rank(&ctx.isecs, obj, i, !obj.is_alive, ctx.autolink_priority);
+            if let Some(rank) = rank {
+                best[k].fetch_min(rank, Ordering::Relaxed);
+            }
+        }
+    });
+    best.iter().any(|rank| rank.load(Ordering::Relaxed) >> 40 == 2)
 }
 
 /// The symbols the command line names, which count as referenced: the
@@ -862,8 +892,8 @@ fn dylib_search_order(ranks: &[u64], first: usize) -> Vec<usize> {
 /// the member that overrides it, if any (see definition_rank), but only
 /// one of the `tentative` symbols, which the round ranked for: one that
 /// a member this walk loads brings waits for the next round. Returns
-/// whether there was such a one.
-fn mark_live_objects<E: Target>(ctx: &mut Context<E>, tentative: &Tentative) -> bool {
+/// the symbols of such ones.
+fn mark_live_objects<E: Target>(ctx: &mut Context<E>, tentative: &Tentative) -> Tentative {
     // Resolution runs in rounds (auto-linking, LTO), and a file live
     // after one stays so, with the -why_load reason it was loaded for.
     let mut queue: Vec<usize> = (0..ctx.objs.len()).filter(|&i| ctx.objs[i].is_alive).collect();
@@ -890,7 +920,7 @@ fn mark_live_objects<E: Target>(ctx: &mut Context<E>, tentative: &Tentative) -> 
     // Once bitcode is live, the archive members that define a runtime
     // routine LTO may call are too (see LTO_RUNTIME_ROUTINES).
     let mut softloaded = false;
-    let mut new_tentative = false;
+    let mut new_tentative = Tentative::new();
     loop {
         while let Some(obj_idx) = queue.pop() {
             for i in 0..ctx.objs[obj_idx].nlists.len() {
@@ -900,7 +930,7 @@ fn mark_live_objects<E: Target>(ctx: &mut Context<E>, tentative: &Tentative) -> 
                 }
                 let sym_id = ctx.objs[obj_idx].symbols[i];
                 if nlist.is_common() && !tentative.contains(&sym_id) {
-                    new_tentative = true;
+                    new_tentative.insert(sym_id);
                     continue;
                 }
                 load_owner(ctx, sym_id, &mut queue);
