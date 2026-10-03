@@ -121,7 +121,7 @@ pub struct Context<E: Target> {
     /// another's re-exports, as found (see load_reexports).
     pub reexport_files: Vec<std::path::PathBuf>,
     /// Under -dependency_info, the files a search for an input looked
-    /// for and did not find (see passes::Prober).
+    /// for and did not find (see reader::Prober).
     pub missing_files: std::sync::Mutex<Vec<std::path::PathBuf>>,
     /// The loaded libLTO, once a bitcode input has been seen.
     pub lto_plugin: Option<crate::lto::Plugin>,
@@ -135,21 +135,21 @@ pub struct Context<E: Target> {
     /// Auto-link options already acted on.
     pub processed_linker_options: std::collections::HashSet<Vec<Vec<u8>>>,
     /// -add_linker_option's auto-link options, once read as an
-    /// object's are (see passes::read_linker_options).
+    /// object's are (see reader::read_linker_options).
     pub cmdline_linker_options: Option<Vec<Vec<Vec<u8>>>>,
     /// The libraries and frameworks auto-link options named that were
     /// not found, or that don't take this link as a client: reported if
     /// symbols stay undefined.
     pub autolink_misses: Vec<crate::error::Message>,
     /// The files only -possible-l and the like name, which load with
-    /// the auto-linked libraries (see passes::load_autolink_deps).
+    /// the auto-linked libraries (see reader::load_autolink_deps).
     pub possible_files: Vec<std::path::PathBuf>,
     /// The files -dylib_file names for re-exported libraries that are
     /// no libraries, to load as inputs (see collect_indirect_files).
     pub indirect_files: Vec<&'static crate::mapped_file::MappedFile>,
     /// The dylibs the mergeable dylibs merged into the image link, by
     /// their recorded identities, to add after the command line's (see
-    /// passes::add_merged_dependencies).
+    /// reader::add_merged_dependencies).
     pub merged_dependencies: Vec<crate::mergeable::Dependency>,
     /// The mergeable dylibs merged into the image, which are none of
     /// its dependencies, in input order.

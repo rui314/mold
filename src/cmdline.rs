@@ -49,7 +49,7 @@ pub enum InputArg {
     /// A file path.
     File(PathBuf),
     /// A file path a -filelist gives, which ld-prime takes as it is,
-    /// an archive's too (see passes::find_input).
+    /// an archive's too (see reader::find_input).
     Listed(PathBuf),
     /// A library option: what it makes of the library, and how it
     /// names it.
@@ -120,7 +120,7 @@ pub enum LibraryKind {
     Force,
     /// -possible-l, -possible_framework, -possible_library: a library
     /// as an auto-link option names one, a hint (see
-    /// passes::load_autolink_deps).
+    /// reader::load_autolink_deps).
     Possible,
     /// -assert-weak-l, -assert_weak_framework, -assert_weak_library: a
     /// dylib that loads weakly, all of whose imports must be weak
@@ -244,7 +244,7 @@ pub struct Args {
     pub platform_minos: u32,
     pub platform_sdk: u32,
     pub syslibroot: Vec<PathBuf>,
-    /// The -L and -F directories, and once passes::set_search_paths has
+    /// The -L and -F directories, and once reader::set_search_paths has
     /// settled them, the library and framework search paths.
     pub library_paths: Vec<PathBuf>,
     pub framework_paths: Vec<PathBuf>,
@@ -436,7 +436,7 @@ pub struct Args {
     /// different Swift ABI versions draw a warning rather than an error.
     pub warn_swift_abi_mismatches: bool,
     /// $LD_PREFER_TAPI_FILE: a library search takes a stub over the
-    /// library next to it in an SDK too (see passes::Prober::library).
+    /// library next to it in an SDK too (see reader::Prober::library).
     pub prefer_stubs: bool,
     /// -max_default_common_align, as a power of two: the most a common
     /// symbol with no alignment of its own is aligned to (its size
@@ -771,7 +771,7 @@ pub struct Args {
     /// a -r output.
     pub ignore_auto_link: bool,
     /// -add_linker_option: auto-link options as if an object gave them,
-    /// the words of every one in a row (see passes::read_linker_options).
+    /// the words of every one in a row (see reader::read_linker_options).
     pub linker_options: Vec<Vec<u8>>,
     /// -force_load_swift_libs: load every member of an archive an
     /// auto-link option finds whose file name starts with "libswift".
@@ -2675,7 +2675,7 @@ fn detect_target(args: &Args) -> &'static str {
 fn open_for_target(path: &Path) -> Option<&'static MappedFile> {
     match MappedFile::try_open(path) {
         Ok(mf) => (mf.size() > 0).then_some(mf),
-        Err(e) => fatal!("{}", crate::error::raw(&crate::passes::unreadable_file(path, &e))),
+        Err(e) => fatal!("{}", crate::error::raw(&crate::reader::unreadable_file(path, &e))),
     }
 }
 

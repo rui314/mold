@@ -12,6 +12,7 @@ use crate::objc;
 use crate::output_file;
 use crate::output_sections;
 use crate::passes;
+use crate::reader;
 use crate::target::Target;
 
 /// The fully expanded command line.
@@ -68,14 +69,14 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
 
     let mut ctx: Context<E> = Context::new(args);
     crate::error::set_demangle(ctx.args.demangle);
-    passes::set_search_paths(&mut ctx);
+    reader::set_search_paths(&mut ctx);
 
     let t_all = ctx.timer("all");
     crate::subprocess::install_signal_handler();
 
     // Parse input files
     let t = ctx.timer("read_input_files");
-    passes::read_input_files(&mut ctx);
+    reader::read_input_files(&mut ctx);
     drop(t);
 
     // Create a dummy file containing linker-synthesized symbols.
@@ -87,7 +88,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     // options name, which resolves symbols again as they come in.
     let mut t = ctx.timer("resolve_symbols");
     passes::resolve_symbols(&mut ctx);
-    passes::load_autolink_deps(&mut ctx);
+    reader::load_autolink_deps(&mut ctx);
     let mut checked = passes::CheckedInputs::default();
     passes::check_input_versions(&ctx, &mut checked);
     passes::check_bitcode_duplicates(&ctx);

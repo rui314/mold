@@ -42,7 +42,7 @@ pub struct BundleHook {
     /// The hook's object, if the link may need it.
     pub obj: Option<usize>,
     /// Each merged library that defines classes: its name, and the
-    /// object its code makes (see passes::merge_dylib).
+    /// object its code makes (see reader::merge_dylib).
     merged: Vec<(Vec<u8>, &'static MappedFile)>,
     /// Each re-exported library that exports classes: its name, and
     /// the classes, which the table binds to.

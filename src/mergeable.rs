@@ -24,7 +24,7 @@
 //! custom table's), its symbol or a private label, and its fixups the
 //! relocations the objects had; an import stays undefined, and the
 //! dylibs the mergeable one links stand by their install names (see
-//! passes::add_merged_dependencies). What ld-prime keeps of the objects
+//! reader::add_merged_dependencies). What ld-prime keeps of the objects
 //! is all there is: no data-in-code entries and no optimization hints
 //! survive, in its merged images either. make_mergeable writes the
 //! record in a dylib linked with -make_mergeable.

@@ -88,7 +88,7 @@ fn optimization_hints<E: Target>(ctx: &Context<E>) -> Option<Vec<u8>> {
 }
 
 /// The auto-link options (LC_LINKER_OPTION) a -r output carries for the
-/// final link to act on (see passes::read_linker_options): those of
+/// final link to act on (see reader::read_linker_options): those of
 /// -add_linker_option and of its inputs as they are, in that order, each
 /// only once - what a link of the inputs would see. (ld-prime rewrites
 /// them, one per library, which loses -force_load, -weak_framework and

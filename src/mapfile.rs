@@ -121,7 +121,7 @@ pub fn write_sdk_imports<E: Target>(ctx: &Context<E>) {
 /// and -sectcreate files, the libraries auto-link options load and
 /// those loaded as another's re-exports, each once. The missing files
 /// are those the searches for inputs looked for, each once, as spelled
-/// (see passes::Prober): a build system links again when one appears.
+/// (see reader::Prober): a build system links again when one appears.
 /// The outputs are the image, the -map and the -sdk_imports file.
 /// Inputs and outputs are named by absolute paths.
 pub fn write_dependency_info<E: Target>(ctx: &Context<E>) {

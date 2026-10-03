@@ -162,7 +162,7 @@ pub struct ObjectFile {
     /// is live.
     pub linker_options: Vec<Vec<Vec<u8>>>,
     /// Whether linker_options have been read (see
-    /// passes::read_linker_options): what is left are the libraries to
+    /// reader::read_linker_options): what is left are the libraries to
     /// link.
     pub linker_options_read: bool,
     /// Platforms and minimum OS versions from LC_BUILD_VERSION or
@@ -471,7 +471,7 @@ pub struct DylibFile {
     pub weak_exports: hashbrown::HashSet<&'static [u8]>,
     /// Whether the library itself, not one it re-exports, exports weak
     /// definitions, which ld-prime says keep it from being delayed
-    /// (see passes::name_dylib).
+    /// (see reader::name_dylib).
     pub has_weak_defs: bool,
     /// The subset of exports that are thread-local variables.
     pub tlv_exports: hashbrown::HashSet<&'static [u8]>,
@@ -1766,7 +1766,7 @@ fn ensure_lto_plugin<E: Target>(ctx: &mut Context<E>) -> crate::lto::Plugin {
 /// module's symbols so resolution works, compiled for real by LTO once
 /// all inputs are known. One for another architecture than the link's
 /// is ignored, as ld-prime ignores a Mach-O object (see
-/// passes::is_foreign): None.
+/// reader::is_foreign): None.
 pub fn parse_bitcode<E: Target>(
     ctx: &mut Context<E>,
     mf: &'static MappedFile,
@@ -3477,10 +3477,10 @@ fn resolve_dylib_ref<E: Target>(
             Ok(mf) if mf.size() > 0 => return Some(mf),
             Ok(_) => fatal!("file is empty in '{}'", file.raw()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound && !file.exists() => {}
-            Err(e) => fatal!("{}", crate::error::raw(&crate::passes::unreadable_file(file, &e))),
+            Err(e) => fatal!("{}", crate::error::raw(&crate::reader::unreadable_file(file, &e))),
         }
     }
-    let prober = crate::passes::Prober::new(ctx);
+    let prober = crate::reader::Prober::new(ctx);
     let loader = Some((loader_dir, loader_rpaths));
     MappedFile::open(&find_dylib_ref(ctx, &prober, name, loader, inlined)?)
 }
@@ -3488,7 +3488,7 @@ fn resolve_dylib_ref<E: Target>(
 /// Locates a re-exported library by its install name as load_reexports
 /// does, but quietly: ahead of the link, or again after it.
 pub fn find_reexport<E: Target>(ctx: &Context<E>, name: &[u8]) -> Option<&'static MappedFile> {
-    let prober = crate::passes::Prober::quiet(ctx);
+    let prober = crate::reader::Prober::quiet(ctx);
     MappedFile::open(&find_dylib_ref(ctx, &prober, name, None, false)?)
 }
 
@@ -3503,7 +3503,7 @@ pub fn find_reexport<E: Target>(ctx: &Context<E>, name: &[u8]) -> Option<&'stati
 /// is looked in for a stub too (see Prober::library).
 fn find_dylib_ref<E: Target>(
     ctx: &Context<E>,
-    prober: &crate::passes::Prober,
+    prober: &crate::reader::Prober,
     name: &[u8],
     loader: Option<(&Path, &[PathBuf])>,
     inlined: bool,
@@ -3527,7 +3527,7 @@ fn find_dylib_ref<E: Target>(
     let path = Path::new(os_str(name));
     if path.is_absolute() {
         for root in &ctx.args.syslibroot {
-            if let Some(path) = prober.library(&crate::passes::under_root(root, path)) {
+            if let Some(path) = prober.library(&crate::reader::under_root(root, path)) {
                 return Some(path);
             }
         }
@@ -3546,7 +3546,7 @@ fn find_dylib_ref<E: Target>(
 /// inside a framework, which is looked up by its name alone.
 fn find_by_leaf<E: Target>(
     ctx: &Context<E>,
-    prober: &crate::passes::Prober,
+    prober: &crate::reader::Prober,
     name: &[u8],
 ) -> Option<PathBuf> {
     use crate::util::{os_str, path_bytes};
@@ -3979,7 +3979,7 @@ fn add_moved_dylibs<E: Target>(
 }
 
 /// Adds a dylib a merged mergeable dylib links (see
-/// passes::add_merged_dependencies), as one named on the command line
+/// reader::add_merged_dependencies), as one named on the command line
 /// after the others, which has the exports the merged dylib's entries
 /// import.
 pub fn add_merged_dependency<E: Target>(ctx: &mut Context<E>, dep: crate::mergeable::Dependency) {
