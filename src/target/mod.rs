@@ -351,10 +351,9 @@ pub fn canonical_name(name: &str) -> Option<&'static str> {
 
 /// Returns the target name for a Mach-O CPU type, if we know it.
 pub fn cputype_name(cputype: u32) -> Option<&'static str> {
-    use crate::macho::*;
     match cputype {
-        CPU_TYPE_ARM64 => Some("arm64"),
-        CPU_TYPE_X86_64 => Some("x86_64"),
+        Arm64::CPUTYPE => Some(Arm64::NAME),
+        X86_64::CPUTYPE => Some(X86_64::NAME),
         _ => None,
     }
 }
