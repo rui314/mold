@@ -725,9 +725,10 @@ fn relative_methods<E: Target>(
 /// class_ro_t records are rewritten to point at the merged lists
 /// (their symbols follow), the categories leave __objc_catlist, and a
 /// class that absorbed a +load category joins __objc_nlclslist. A
-/// category whose data is not in the expected shape is left alone. Runs after the method
-/// lists have been rewritten in relative form, when it merges those;
-/// with classic lists the merged list is a classic one.
+/// category whose data is not in the expected shape is left alone.
+/// Runs after the method lists have been rewritten in relative form,
+/// when it merges those; with classic lists the merged list is a
+/// classic one.
 pub fn merge_objc_categories<E: Target>(ctx: &mut Context<E>) {
     if ctx.args.relocatable || !ctx.args.objc_category_merging {
         return;

@@ -5,14 +5,14 @@
 //! directly. ld-prime sends a branch between such segments through a
 //! "shim": the target's __stubs entry, which jumps through a __got slot
 //! dyld rebases to the target (the slot shared with a GOT load's), in
-//! any image dyld loads - not a
-//! -static or -preload one, where the branch is a fixup error. It keeps
-//! a GOT load between them a load from the slot rather than relaxing it
-//! to an adrp+add that could not reach, in any image. A branch from the
-//! far segment back to __TEXT's stubs is out of reach all the same.
-//! (With classic dyld info ld-prime binds such a stub lazily, by name in
-//! the image itself, which crashes when the target is not exported;
-//! ours jumps through the rebased slot there too.)
+//! any image dyld loads - not a -static or -preload one, where the
+//! branch is a fixup error. It keeps a GOT load between them a load
+//! from the slot rather than relaxing it to an adrp+add that could not
+//! reach, in any image. A branch from the far segment back to __TEXT's
+//! stubs is out of reach all the same. (With classic dyld info ld-prime
+//! binds such a stub lazily, by name in the image itself, which crashes
+//! when the target is not exported; ours jumps through the rebased slot
+//! there too.)
 //!
 //! Whether two segments are that far apart ld-prime decides before it
 //! lays the image out: a segment -segaddr pins (to an address other
