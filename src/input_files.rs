@@ -450,12 +450,22 @@ pub fn find_symbol_subsec(
     n_sect: u8,
     addr: u64,
 ) -> Option<(usize, u64)> {
-    let shndx = u32::from(n_sect).wrapping_sub(1);
     let end = subsecs.partition_point(|&id| isecs[id as usize].input_addr as u64 <= addr);
+    symbol_subsec_before(isecs, &subsecs[..end], n_sect, addr)
+}
+
+/// find_symbol_subsec's answer from `before`, the object's subsections
+/// that start at or before `addr`.
+fn symbol_subsec_before(
+    isecs: &[InputSection],
+    before: &[crate::input_sections::InputSectionId],
+    n_sect: u8,
+    addr: u64,
+) -> Option<(usize, u64)> {
+    let shndx = u32::from(n_sect).wrapping_sub(1);
     // The nearest subsection of the section starting at or before
     // `addr`; any in between belong to empty sections at that address.
-    let id =
-        subsecs[..end].iter().rev().map(|&id| id as usize).find(|&id| isecs[id].shndx == shndx)?;
+    let id = before.iter().rev().map(|&id| id as usize).find(|&id| isecs[id].shndx == shndx)?;
     let isec = &isecs[id];
     // A label may sit at a section's end, except in one of fixed-size
     // records, where it names no record: ld-prime ignores it, and a
@@ -1457,12 +1467,18 @@ impl StagedObject {
     /// section that symbols split into subsections, and its own one
     /// takes a search (see find_symbol_subsec).
     fn find_symbol_subsecs(&mut self) {
+        // The subsections' addresses in a row of their own, which the
+        // searches go through rather than the subsections themselves.
+        let addrs: Vec<u32> =
+            self.subsecs.iter().map(|&id| self.isecs[id as usize].input_addr).collect();
         self.sym_subsecs = (self.nlists.iter())
             .map(|nlist| {
                 if nlist.is_stab() || nlist.n_type() != N_SECT {
                     return crate::symbol::NONE;
                 }
-                find_symbol_subsec(&self.isecs, &self.subsecs, nlist.n_sect, nlist.n_value)
+                let end = addrs.partition_point(|&a| a as u64 <= nlist.n_value);
+                let before = &self.subsecs[..end];
+                symbol_subsec_before(&self.isecs, before, nlist.n_sect, nlist.n_value)
                     .map_or(crate::symbol::NONE, |(id, _)| id as u32)
             })
             .collect();
