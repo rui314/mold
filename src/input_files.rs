@@ -3059,25 +3059,6 @@ pub fn dylib_identity<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> D
     }
 }
 
-/// Whether the dylib in a stub or binary file exports a symbol that the
-/// link uses and neither an object nor a dylib loaded so far defines
-/// (SwiftUI, auto-linked before SwiftUICore, re-exports all of it).
-pub fn provides_undefined<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> bool {
-    let names: Vec<&'static [u8]> = match crate::filetype::get_file_type(mf) {
-        crate::filetype::FileType::Tapi => {
-            let tbd = read_tbd(ctx, mf).unwrap_or_default();
-            [tbd.exports, tbd.weak_exports, tbd.tlv_exports].concat()
-        }
-        _ => read_dylib_binary(mf).exports,
-    };
-    names.iter().any(|name| {
-        ctx.symbols.get(name).is_some_and(|id| {
-            let sym = &ctx.symbols[id];
-            sym.is_used() && !sym.is_defined()
-        }) && !ctx.dylibs.iter().any(|d| d.exports.contains(name))
-    })
-}
-
 /// Whether this link may name a dylib directly. ld-prime restricts only
 /// a dylib that lists the clients it allows (SwiftUICore lists AppKit,
 /// SwiftUI, UIKit and a few more): the output may link it if its client

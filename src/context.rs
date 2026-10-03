@@ -138,7 +138,8 @@ pub struct Context<E: Target> {
     /// object's are (see passes::read_linker_options).
     pub cmdline_linker_options: Option<Vec<Vec<Vec<u8>>>>,
     /// The libraries and frameworks auto-link options named that were
-    /// not found, as ld-prime reports them if symbols stay undefined.
+    /// not found, or that don't take this link as a client: reported if
+    /// symbols stay undefined.
     pub autolink_misses: Vec<crate::error::Message>,
     /// The files only -possible-l and the like name, which load with
     /// the auto-linked libraries (see passes::load_autolink_deps).

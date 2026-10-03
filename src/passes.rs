@@ -524,8 +524,13 @@ impl ReaderContext {
 
 /// Reports a dylib that does not let this link name it directly (see
 /// input_files::is_allowed_client): an error on the command line, while
-/// the library an auto-link option names is left out with a warning.
-fn refuses_client<E: Target>(ctx: &Context<E>, mf: &'static MappedFile, rc: ReaderContext) -> bool {
+/// the library an auto-link option names is left out, as a hint not
+/// found is (see missing_hint).
+fn refuses_client<E: Target>(
+    ctx: &mut Context<E>,
+    mf: &'static MappedFile,
+    rc: ReaderContext,
+) -> bool {
     let id = input_files::dylib_identity(ctx, mf);
     if input_files::is_allowed_client(ctx, &id) {
         return false;
@@ -537,10 +542,9 @@ fn refuses_client<E: Target>(ctx: &Context<E>, mf: &'static MappedFile, rc: Read
     );
     if !rc.autolinked {
         error!("{msg}");
-    } else if input_files::provides_undefined(ctx, mf) {
-        // ld-prime opens an auto-linked library only for a symbol still
-        // undefined, so it says nothing of one that would provide none.
-        crate::warn!("Could not parse or use implicit file '{}': {msg}", mf.name.raw());
+    } else {
+        let msg = format_args!("Could not parse or use implicit file '{}': {msg}", mf.name.raw());
+        ctx.autolink_misses.push(error::render(msg));
     }
     true
 }
