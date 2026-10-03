@@ -851,9 +851,7 @@ impl LoadCommands {
                     let count = u32::from_le_bytes(bytes[8..12].try_into().unwrap());
                     if !(1..=2).contains(&count) {
                         let file = mf.name.raw();
-                        fatal!(
-                            "LC_LINKER_OPTION has count={count}, only 1 or 2 is valid in '{file}' in '{file}'"
-                        );
+                        fatal!("{file}: LC_LINKER_OPTION has count={count}, only 1 or 2 is valid");
                     }
                     let mut strs = Vec::with_capacity(count as usize);
                     let mut p = 12;

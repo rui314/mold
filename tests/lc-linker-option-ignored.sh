@@ -91,4 +91,4 @@ cat <<EOF | $CC -o $t/d.o -c -x assembler -
 .linker_option "-lz", "-lm", "-lc"
 EOF
 not $CC --ld-path=$mold -o $t/exe $t/d.o $t/main.o $t/baz.o 2> $t/log5
-grep -Fq "LC_LINKER_OPTION has count=3, only 1 or 2 is valid in '$t/d.o' in '$t/d.o'" $t/log5
+grep -Fq "$t/d.o: LC_LINKER_OPTION has count=3, only 1 or 2 is valid" $t/log5
