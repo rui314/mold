@@ -915,7 +915,7 @@ fn warn_about_objects<E: Target>(
 /// -no_warn_duplicate_libraries. Under -w ld-prime leaves the warning
 /// out, -fatal_warnings or not.
 fn warn_duplicate_libraries<E: Target>(ctx: &Context<E>) {
-    if !ctx.args.warn_duplicate_libraries || ctx.args.suppress_warnings {
+    if !ctx.args.warn_duplicate_libraries {
         return;
     }
     let mut seen = std::collections::HashSet::new();

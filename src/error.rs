@@ -28,7 +28,6 @@ static FATAL_WARNINGS: AtomicBool = AtomicBool::new(false);
 static SUPPRESS_WARNINGS: AtomicBool = AtomicBool::new(false);
 static HAS_ERROR: AtomicBool = AtomicBool::new(false);
 static HAS_LAYOUT_ERROR: AtomicBool = AtomicBool::new(false);
-static HAS_WARNING: AtomicBool = AtomicBool::new(false);
 static OUTPUT_LOCK: Mutex<()> = Mutex::new(());
 
 /// An I/O error as ld64 words it: "errno=2 (No such file or directory)".
@@ -321,15 +320,20 @@ pub fn has_layout_error() -> bool {
     HAS_LAYOUT_ERROR.load(Ordering::Relaxed)
 }
 
-/// Reports a warning, or holds it back (see hold_warnings). -w hides
-/// it, but -fatal_warnings still counts it (see check_fatal_warnings).
+/// Reports a warning, or holds it back (see hold_warnings). With -w it
+/// is dropped; with -fatal_warnings it is promoted to an error.
 pub fn warn(msg: fmt::Arguments) {
     if let Some(held) = HELD.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
         held.push(render(msg));
         return;
     }
-    HAS_WARNING.store(true, Ordering::Relaxed);
-    if !SUPPRESS_WARNINGS.load(Ordering::Relaxed) {
+    if SUPPRESS_WARNINGS.load(Ordering::Relaxed) {
+        return;
+    }
+    if FATAL_WARNINGS.load(Ordering::Relaxed) {
+        emit("mold: error: ", "mold: \x1b[0;1;31merror:\x1b[0m ", msg);
+        HAS_ERROR.store(true, Ordering::Relaxed);
+    } else {
         emit("mold: warning: ", "mold: \x1b[0;1;35mwarning:\x1b[0m ", msg);
     }
 }
@@ -339,18 +343,6 @@ pub fn warn(msg: fmt::Arguments) {
 /// layout it fails on) in lines of its own.
 pub fn notice(msg: fmt::Arguments) {
     emit("", "", msg);
-}
-
-/// Fails a link that has given a warning, shown or hidden by -w, under
-/// -fatal_warnings. ld-prime links to the end first, reporting each
-/// warning as a warning, then fails with the output in place; this is
-/// called once the output is written.
-pub fn check_fatal_warnings() {
-    release_parallel();
-    if FATAL_WARNINGS.load(Ordering::Relaxed) && HAS_WARNING.load(Ordering::Relaxed) {
-        error(format_args!("fatal warning(s) induced error (-fatal_warnings)"));
-        exit_after_cleanup(1);
-    }
 }
 
 /// Reports the errors of one check of ld-prime's as one, as it does: a
@@ -363,8 +355,10 @@ pub fn errors_together(errors: &[Message]) {
     }
 }
 
-/// Exits with a failure status if any error has been reported.
+/// Exits with a failure status if any error has been reported, giving
+/// the messages of the parallel passes before it first.
 pub fn checkpoint() {
+    release_parallel();
     if HAS_ERROR.load(Ordering::Relaxed) || HAS_LAYOUT_ERROR.load(Ordering::Relaxed) {
         exit_after_cleanup(1);
     }

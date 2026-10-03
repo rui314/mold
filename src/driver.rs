@@ -101,7 +101,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
         passes::write_merged_bitcode(&ctx);
         crate::error::checkpoint();
         crate::mapfile::write_dependency_info(&ctx);
-        crate::error::check_fatal_warnings();
+        crate::error::checkpoint();
         crate::subprocess::notify_parent();
         drop(t_all);
         return Ok(0);
@@ -164,7 +164,6 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
         ctx.output_size = crate::relocatable::link(&mut ctx);
         drop(t);
         crate::error::checkpoint();
-        crate::error::check_fatal_warnings();
         crate::subprocess::notify_parent();
         drop(t_all);
         print_statistics(&ctx);
@@ -270,7 +269,6 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     out.finish();
     drop(t);
     drop(t_copy);
-    crate::error::check_fatal_warnings();
     let _ = std::io::Write::flush(&mut std::io::stdout());
     let _ = std::io::Write::flush(&mut std::io::stderr());
     crate::subprocess::notify_parent();

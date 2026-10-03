@@ -238,6 +238,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) -> u64 {
             .collect();
         crate::mapfile::print_map_of(ctx, &sections);
     }
+    crate::error::checkpoint();
     let t = ctx.timer("r-write");
     output_file::write(&ctx.args.output, &buf);
     drop(t);
