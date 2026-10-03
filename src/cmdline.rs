@@ -2943,6 +2943,46 @@ fn resolve_segaddrs(segaddrs: Vec<(Vec<u8>, u64)>) -> Vec<(Vec<u8>, u64)> {
     out
 }
 
+/// Decides whether the dylibs -lazy-l and the like name load lazily:
+/// dyld loads one when __dyld_lazy_load says so, from macOS 27 on.
+/// Elsewhere the library links as usual.
+fn resolve_lazy_load(args: &mut Args) {
+    args.lazy_load = dyld_supports(args, LibraryKind::Lazy, 27, "lazy-load") == Some(true);
+}
+
+/// A dylib -delay-l and the like name keeps its initializers until the
+/// image dlopen()s it, which dyld supports from macOS 15 on; ld-prime
+/// delays the dylib all the same elsewhere. It wants _dlopen as one of
+/// the command line's initial undefines in any link that names one, -r
+/// included.
+fn resolve_delay_init(args: &mut Args) {
+    if dyld_supports(args, LibraryKind::Delay, 15, "delay-init").is_some() {
+        args.forced_undefined.push(b"_dlopen".to_vec());
+    }
+}
+
+/// Whether dyld does what the library options of `kind` ask for, which
+/// it does from macOS `major` on: None if no such option names a
+/// library. For an older macOS or another platform (firmware, a
+/// -preload image included, has no dyld), ld-prime warns that it will
+/// ignore the `feature` of each library they name.
+fn dyld_supports(args: &Args, kind: LibraryKind, major: u32, feature: &str) -> Option<bool> {
+    let libs = libraries_of_kind(&args.inputs, kind);
+    if libs.is_empty() {
+        return None;
+    }
+    let supported = args.platform == PLATFORM_MACOS
+        && args.platform_minos >= encode_version(major, 0, 0)
+        && !args.preload;
+    for lib in libs.iter().filter(|_| !supported) {
+        crate::warn!(
+            "{feature} will be ignored for '{}' because deployment target version is too low",
+            lib.raw()
+        );
+    }
+    Some(supported)
+}
+
 /// The names of the libraries the options of a kind name, each once.
 fn libraries_of_kind(inputs: &[InputArg], kind: LibraryKind) -> Vec<&OsStr> {
     let mut names = Vec::new();
@@ -2955,50 +2995,6 @@ fn libraries_of_kind(inputs: &[InputArg], kind: LibraryKind) -> Vec<&OsStr> {
         }
     }
     names
-}
-
-/// Decides whether the dylibs -lazy-l and the like name load lazily:
-/// dyld loads one when __dyld_lazy_load says so, for macOS 27 on.
-/// Firmware, a -preload image included, has no dyld: the library links
-/// as usual there.
-fn resolve_lazy_load(args: &mut Args) {
-    let libs = libraries_of_kind(&args.inputs, LibraryKind::Lazy);
-    if libs.is_empty() {
-        return;
-    }
-    let lazy_load = args.platform == PLATFORM_MACOS
-        && args.platform_minos >= encode_version(27, 0, 0)
-        && !args.preload;
-    for lib in libs.iter().filter(|_| !lazy_load) {
-        crate::warn!(
-            "lazy-load will be ignored for '{}' because deployment target version is too low",
-            lib.raw()
-        );
-    }
-    args.lazy_load = lazy_load;
-}
-
-/// A dylib -delay-l and the like name keeps its initializers until the
-/// image dlopen()s it, which dyld supports from macOS 15 on: ld-prime
-/// warns of an older or another target (a -preload image included),
-/// but delays the dylib all the same. It wants _dlopen as one of the
-/// command line's initial undefines in any link that names one, -r
-/// included.
-fn resolve_delay_init(args: &mut Args) {
-    let libs = libraries_of_kind(&args.inputs, LibraryKind::Delay);
-    if libs.is_empty() {
-        return;
-    }
-    let supported = args.platform == PLATFORM_MACOS
-        && args.platform_minos >= encode_version(15, 0, 0)
-        && !args.preload;
-    for lib in libs.iter().filter(|_| !supported) {
-        crate::warn!(
-            "delay-init will be ignored for '{}' because deployment target version is too low",
-            lib.raw()
-        );
-    }
-    args.forced_undefined.push(b"_dlopen".to_vec());
 }
 
 /// Resolves how the image's pointers are fixed up as it loads: by
