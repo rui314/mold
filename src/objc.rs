@@ -21,7 +21,7 @@ use crate::context::Context;
 use crate::input_files::FileId;
 use crate::input_sections::{InputSection, RelocTarget};
 use crate::macho::*;
-use crate::passes::{add_branch_target, redirect_symbols_to_replacements};
+use crate::passes::{add_branch_target, add_got, redirect_symbols_to_replacements};
 use crate::target::RelocClass;
 use crate::target::Target;
 use crate::util::align_to;
@@ -499,18 +499,15 @@ pub fn drop_dead_objc_stubs<E: Target>(ctx: &mut Context<E>) {
     ctx.objc_stubs.symbols = live;
 }
 
-/// The synthesized objc stubs call _objc_msgSend through a GOT slot of
-/// their own: ld-prime binds _objc_msgSend twice when a stub or a GOT
-/// load elsewhere needs a slot for it as well. Small stubs branch to
-/// it instead, as a call in the code would: to its __stubs entry if
-/// it is imported.
+/// The synthesized objc stubs call _objc_msgSend through its GOT slot,
+/// which other GOT loads of it share. Small stubs branch to it instead,
+/// as a call in the code would: to its __stubs entry if it is imported.
 pub fn scan_objc_stubs<E: Target>(ctx: &mut Context<E>) {
     if let Some(id) = ctx.objc_stubs.msgsend_sym {
         if ctx.args.objc_stubs_small {
             add_branch_target(ctx, id);
         } else {
-            ctx.objc_stubs.msgsend_got_idx = ctx.got.got_syms.len() as u32;
-            ctx.got.got_syms.push(id);
+            add_got(ctx, id);
         }
     }
 

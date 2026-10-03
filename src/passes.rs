@@ -5797,10 +5797,9 @@ pub fn sort_stubs_and_got<E: Target>(ctx: &mut Context<E>) {
     }
     ctx.stubs.symbols = stubs;
 
-    // The objc stubs' own _objc_msgSend slot goes before the one other
-    // references share, and a delay-init stub's own slot after it.
+    // A delay-init stub's own slot goes after the one other references
+    // share.
     let got = std::mem::take(&mut ctx.got.got_syms);
-    let objc = ctx.objc_stubs.msgsend_got_idx as usize;
     let delay_own: hashbrown::HashSet<usize> = (ctx.delay_init.stubs.iter())
         .filter(|s| s.got != ctx.sym_aux(s.sym).got_idx)
         .map(|s| s.got as usize)
@@ -5809,14 +5808,12 @@ pub fn sort_stubs_and_got<E: Target>(ctx: &mut Context<E>) {
     order.par_sort_by_key(|&i| {
         let id = got[i];
         let name = crate::util::name_sort_key(ctx.symbols[id].name());
-        (got_rank(ctx, id), name, i != objc, delay_own.contains(&i))
+        (got_rank(ctx, id), name, delay_own.contains(&i))
     });
     let mut slot_of = vec![0; got.len()];
     for (slot, &i) in order.iter().enumerate() {
         slot_of[i] = slot as u32;
-        if i == objc {
-            ctx.objc_stubs.msgsend_got_idx = slot as u32;
-        } else if !delay_own.contains(&i) {
+        if !delay_own.contains(&i) {
             ctx.sym_aux_mut(got[i]).got_idx = slot as u32;
         }
     }

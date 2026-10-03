@@ -990,7 +990,7 @@ impl<E: Target> Context<E> {
     /// Returns the address of the __got slot the objc stubs load
     /// _objc_msgSend from.
     pub fn objc_msgsend_got_addr(&self) -> u64 {
-        self.got.slot_addr(self.objc_stubs.msgsend_got_idx as usize)
+        self.sym_got_addr(self.objc_stubs.msgsend_sym.unwrap())
     }
 
     /// Returns the symbol a relocation refers to, if it refers to one.

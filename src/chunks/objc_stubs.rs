@@ -40,9 +40,6 @@ pub struct ObjcStubsSection {
     pub selrefs: Option<OutputSectionId>,
     /// The _objc_msgSend symbol, once objc stubs exist.
     pub msgsend_sym: Option<SymbolId>,
-    /// The __got slot the stubs load _objc_msgSend from: their own, not
-    /// the one other references to it share.
-    pub msgsend_got_idx: u32,
 }
 
 impl ObjcStubsSection {
@@ -61,7 +58,6 @@ impl ObjcStubsSection {
             methname: None,
             selrefs: None,
             msgsend_sym: None,
-            msgsend_got_idx: u32::MAX,
         }
     }
 }

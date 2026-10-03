@@ -53,7 +53,7 @@ for v in 11.0 13.0; do
   $t/exe2 | grep -q '^1 2 1$'
   if [ $ARCH = arm64 ]; then
     [ "$(sect $t/exe2 __objc_stubs)" = '0x0000000000000040 2^5 ' ]
-    [ "$(got $t/exe2 | grep -o '_objc_msgSend ' | tr -d '\n')" = '_objc_msgSend _objc_msgSend ' ]
+    [ "$(got $t/exe2 | grep -o '_objc_msgSend ' | tr -d '\n')" = '_objc_msgSend ' ]
   fi
 done
 

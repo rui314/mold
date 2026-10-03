@@ -567,7 +567,7 @@ impl<'a, E: Target> Places<'a, E> {
         let stubs = &ctx.objc_stubs;
         if ctx.chunks.contains(&ChunkId::ObjcStubs) {
             let [sel, msgsend] = E::OBJC_STUB_REF_OFFS;
-            let msgsend_slot = self.got_index(stubs.msgsend_got_idx as usize);
+            let msgsend_slot = self.got_slot(stubs.msgsend_sym.unwrap());
             for i in 0..stubs.symbols.len() {
                 let at = i as u64 * ctx.objc_stub_size();
                 self.pcrel(out, self.chunk(ChunkId::ObjcStubs, at + sel), Some(self.selref(i)));
