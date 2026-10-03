@@ -16,7 +16,7 @@ use std::path::Path;
 
 use crate::context::Context;
 use crate::error::RawPath;
-use crate::input_sections::Reloc;
+use crate::input_sections::{Reloc, RelocTarget};
 use crate::macho::{MachRel, MachSection};
 
 /// How a relocation type uses its target symbol.
@@ -283,14 +283,23 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
     fn apply_optimization_hints(_ctx: &Context<Self>, _buf: &mut [u8]) {}
 }
 
-/// The section a non-extern relocation targets: the one its
-/// r_symbolnum names (a 1-based section ordinal), wherever the target
-/// address lies. Only the ordinal tells apart sections that share an
+/// The section a non-extern record `r` of object `file` refers to, and
+/// the offset in it of `addr`, the address the record points at. The
+/// section is the one r_symbolnum names (a 1-based ordinal), wherever
+/// `addr` lies: only the ordinal tells apart sections that share an
 /// address - an empty one and its successor, or one section's end and
 /// the next one's start.
-pub fn nonextern_target_section(sections: &[MachSection], ordinal: u32) -> Option<usize> {
-    let i = (ordinal as usize).checked_sub(1)?;
-    sections.get(i).map(|_| i)
+pub fn section_target(
+    file: &Path,
+    sections: &[MachSection],
+    r: &MachRel,
+    addr: u64,
+) -> (RelocTarget, i64) {
+    let i = (r.r_section() as usize).wrapping_sub(1);
+    let Some(sec) = sections.get(i) else {
+        crate::fatal!("{}: bad relocation: {}", file.raw(), r.r_address);
+    };
+    (RelocTarget::Section(i as u32), addr.wrapping_sub(sec.addr) as i64)
 }
 
 /// The helper that relocation `r` of subsection `isec` calls in place

@@ -6,12 +6,11 @@ use crate::chunks::delay_init::{DelayCode, DelayTarget, DelayUse};
 use crate::chunks::lazy_helpers::{LazyTarget, LazyUse};
 use crate::context::Context;
 use crate::dtrace::SiteKind;
-use crate::error::RawPath;
 use crate::fatal;
 use crate::input_sections::{Reloc, RelocTarget};
 use crate::macho::*;
 use crate::symbol::SymbolId;
-use crate::target::{SplitRef, Target, has_reloc_form, load_helper, reloc_form};
+use crate::target::{SplitRef, Target, has_reloc_form, load_helper, reloc_form, section_target};
 
 #[derive(Clone, Copy, Default)]
 pub struct X86_64;
@@ -542,19 +541,15 @@ impl Target for X86_64 {
             let addend = embedded + reloc_bias(r.r_type());
             let is_subtracted = i > 0 && rels[i - 1].r_type() == X86_64_RELOC_SUBTRACTOR;
 
+            // A non-extern record's field holds the address it points
+            // at, a pcrel one as a displacement from the field's end.
             let (target, addend) = if r.is_extern() {
                 (RelocTarget::Sym(r.r_symbolnum()), addend)
+            } else if r.is_pcrel() {
+                let addr = (hdr.addr + r.r_address as u64 + 4).wrapping_add_signed(addend);
+                section_target(file_name, sections, r, addr)
             } else {
-                let addr = if r.is_pcrel() {
-                    (hdr.addr + r.r_address as u64 + 4).wrapping_add_signed(addend)
-                } else {
-                    addend as u64
-                };
-                let Some(idx) = crate::target::nonextern_target_section(sections, r.r_section())
-                else {
-                    fatal!("{}: bad relocation: {}", file_name.raw(), r.r_address);
-                };
-                (RelocTarget::Section(idx as u32), addr.wrapping_sub(sections[idx].addr) as i64)
+                section_target(file_name, sections, r, addend as u64)
             };
 
             vec.push(Reloc {

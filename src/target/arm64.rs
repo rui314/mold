@@ -9,12 +9,11 @@ use crate::chunks::delay_init::{DelayCode, DelayTarget, DelayUse};
 use crate::chunks::lazy_helpers::{LazyTarget, LazyUse};
 use crate::context::Context;
 use crate::dtrace::SiteKind;
-use crate::error::RawPath;
 use crate::fatal;
 use crate::input_files::ObjectFile;
 use crate::input_sections::{Reloc, RelocTarget};
 use crate::macho::*;
-use crate::target::{SplitRef, Target, has_reloc_form, load_helper, reloc_form};
+use crate::target::{SplitRef, Target, has_reloc_form, load_helper, reloc_form, section_target};
 use crate::util::{bits, sign_extend};
 
 #[derive(Clone, Copy, Default)]
@@ -1227,13 +1226,7 @@ impl Target for Arm64 {
             let (target, addend) = if r.is_extern() {
                 (RelocTarget::Sym(r.r_symbolnum()), addend)
             } else {
-                let addr = addend as u64;
-                let Some(idx) = crate::target::nonextern_target_section(sections, r.r_section())
-                else {
-                    fatal!("{}: bad relocation: {}", file_name.raw(), r.r_address);
-                };
-                let target = RelocTarget::Section(idx as u32);
-                (target, addr.wrapping_sub(sections[idx].addr) as i64)
+                section_target(file_name, sections, r, addend as u64)
             };
 
             vec.push(Reloc {
