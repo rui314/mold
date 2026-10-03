@@ -85,15 +85,9 @@ says $t/libdir/libdir.dylib 'Invalid argument'
 try -F$t/fwdir -framework Dir
 says $t/fwdir/Dir.framework/Dir 'Invalid argument'
 
-# ld-prime reads the input files in parallel and gives the errors it
-# finds in them together, in one line, in whatever order its threads
-# found them.
+# The errors in several input files are all reported.
 try -Wl,$t/nosuch.o -Wl,$t/empty.o
-grep 'multiple errors: ' $t/log > $t/line
-grep -qF "$t/nosuch.o" $t/line
-grep -qF "; " $t/line
-grep -qF "file is empty in '$t/empty.o'" $t/line
-[ "$(grep -v '^+' $t/log | grep -c 'error')" = 2 ]
+says $t/nosuch.o 'No such file or directory' "file is empty in '$t/empty.o'"
 
 # A file it can't link it words by what the file is.
 echo 'int x;' > $t/x.c

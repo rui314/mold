@@ -70,9 +70,7 @@ pub fn link<E: Target>(cmdline: Arc<[Cow<'static, OsStr>]>) -> Result<i32, &'sta
     // libraries or the LTO output adds inputs, so resolution repeats
     // until the input set is stable.
     let t = ctx.timer("read_input_files");
-    crate::error::hold_input_errors();
     passes::read_input_files(&mut ctx);
-    crate::error::report_input_errors();
     drop(t);
     passes::create_internal_file(&mut ctx);
     crate::error::checkpoint();
