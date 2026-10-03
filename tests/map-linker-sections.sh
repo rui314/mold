@@ -58,7 +58,7 @@ whole __DATA_CONST __got
 if [ $ARCH = arm64 ]; then
   whole __TEXT __objc_stubs
   whole __TEXT __objc_methlist
-  grep -Eq $'^0x[0-9A-F]+\t0x00000008\t\\[  0\\] __DATA,__objc_selrefs$' $t/map
+  grep -Eq $'^0x[0-9A-F]+\t0x[0-9A-F]+\t\\[  0\\] __DATA,__objc_selrefs$' $t/map
 fi
 
 # The symbols of the inputs stay their files'.

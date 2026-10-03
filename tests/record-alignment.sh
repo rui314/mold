@@ -6,7 +6,7 @@ source "$(dirname "$0")"/common.inc
 # section's alignment for it. A thread-local variable descriptor goes
 # at a multiple of a pointer in an image (clang aligns __thread_vars to
 # a byte), and of at least one in a -r output; a selector reference
-# keeps its section's, even one an _objc_msgSend$ stub takes over.
+# keeps its section's, also next to an _objc_msgSend$ stub's own.
 
 # Sets the p2align of section SECT of object IN, writing OUT.
 cat > $t/align.py <<'EOF'
@@ -72,4 +72,4 @@ echo 'int main() { return 0; }' | $CC -o $t/main2.o -c -xc -
 $CC --ld-path=$mold -o $t/exe2 $t/main2.o $t/a2.o -lobjc
 [ "$(sect $t/exe2 __objc_selrefs)" = '0x0000000000000008 2^4 ' ]
 $CC --ld-path=$mold -o $t/exe3 $t/main2.o $t/b2.o -lobjc
-[ "$(sect $t/exe3 __objc_selrefs)" = '0x0000000000000008 2^4 ' ]
+[ "$(sect $t/exe3 __objc_selrefs | cut -d' ' -f2)" = '2^4' ]

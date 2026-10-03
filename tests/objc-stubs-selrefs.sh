@@ -28,19 +28,10 @@ EOF
 
 $CC --ld-path=$mold -mmacosx-version-min=13.0 -o $t/exe $t/a.o -framework Foundation
 $t/exe | grep '^42 responds$'
-# One slot per selector, as ld64 keeps it: the stub for
-# componentsToRegister loads the compiler's selector reference rather
-# than a synthesized slot of its own.
-otool -l $t/exe | grep -A3 'sectname __objc_selrefs' | grep 'size 0x0000000000000008'
-
 otool -l $t/exe > $t/lc
 [ "$(grep -c 'sectname __objc_selrefs' $t/lc)" = 1 ]
 [ "$(grep -c 'sectname __objc_methname' $t/lc)" = 1 ]
 grep -q 'sectname __objc_stubs' $t/lc
-# A stub's selector name is an input's string of that name where there
-# is one (ld-prime coalesces the two): each name appears once.
-otool -X -s __TEXT __objc_methname -V $t/exe | sort | uniq -d > $t/dups
-[ ! -s $t/dups ]
 # x86-64's stubs are 13 bytes, packed back to back, arm64's 32 bytes;
 # the section is 32-byte aligned on either. (ld-prime leaves x86-64's
 # byte-aligned.)

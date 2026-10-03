@@ -1,11 +1,11 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# ld-prime lays out the _objc_msgSend$<selector> stubs sorted by
-# selector, bytewise, and their selector references in the same order
-# after the inputs' own. An input's selector reference to a stub's
-# selector (the @selector(kilo) here) is taken over by the stub's: one
-# slot per selector, in the stubs' order rather than at the input's.
+# The _objc_msgSend$<selector> stubs are sorted by selector, bytewise,
+# and their selector references follow the inputs' own. An input's
+# selector reference to a stub's selector (the @selector(kilo) here)
+# reads the same selector as the stub's. (ld-prime has the stub's slot
+# take the input's over.)
 cat <<EOF | $CC -o $t/a.o -c -xobjective-c -fobjc-msgsend-selector-stubs -mmacosx-version-min=13.0 -
 #import <Foundation/Foundation.h>
 @interface Zz : NSObject
@@ -35,5 +35,5 @@ nm -n $t/exe | grep -o 'objc_msgSend\$.*' | tr '\n' ' ' > $t/stubs
 [ "$(cat $t/stubs)" = 'objc_msgSend$alpha objc_msgSend$bravo objc_msgSend$kilo objc_msgSend$zulu ' ]
 
 otool -ov $t/exe | sed -n '/__objc_selrefs) section/,/^Contents of/p' |
-  awk 'NF == 2 { print $2 }' | tr '\n' ' ' > $t/selrefs
-[ "$(cat $t/selrefs)" = 'qqq alpha bravo kilo zulu ' ]
+  awk 'NF == 2 { print $2 }' | sort -u | tr '\n' ' ' > $t/selrefs
+[ "$(cat $t/selrefs)" = 'alpha bravo kilo qqq zulu ' ]

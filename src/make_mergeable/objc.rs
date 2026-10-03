@@ -57,24 +57,16 @@ impl<E: Target> Builder<'_, E> {
         let stubs = &ctx.objc_stubs;
         let mut slots = Vec::new();
         for (i, (_, sel)) in stubs.symbols.iter().enumerate() {
-            let name = match stubs.name_isec[i] {
-                u32::MAX => {
-                    let osec = ctx.output_section(stubs.methname.unwrap());
-                    let fileoff = osec.hdr.fileoff + osec.tail_off + stubs.methname_offs[i];
-                    let mut entry = coalesced(CT_METHOD_NAME, sel.len() as u32 + 1, 0);
-                    entry.content = Content::Image(fileoff);
-                    Some(To::Entry(self.push_entry(entry, None)))
-                }
-                isec => self.isec_target(isec),
-            };
+            let osec = ctx.output_section(stubs.methname.unwrap());
+            let fileoff = osec.hdr.fileoff + osec.tail_off + stubs.methname_offs[i];
+            let mut entry = coalesced(CT_METHOD_NAME, sel.len() as u32 + 1, 0);
+            entry.content = Content::Image(fileoff);
+            let name = Some(To::Entry(self.push_entry(entry, None)));
             slots.push(self.add_selref(name));
         }
         for &sel in &stubs.extra_selrefs {
             let name = self.isec_target(sel);
             slots.push(self.add_selref(name));
-        }
-        for &(stand_in, slot) in &stubs.absorbed {
-            self.isec_entry.insert(stand_in, slots[slot as usize]);
         }
         slots
     }

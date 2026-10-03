@@ -22,18 +22,10 @@ pub struct ObjcStubsSection {
     /// no input references: the __objc_methname subsection each points
     /// at. They follow the stubs' slots in the __objc_selrefs tail.
     pub extra_selrefs: Vec<u32>,
-    /// Input selector references to a stub's selector, which its slot
-    /// takes over: a synthetic subsection standing for the slot, each
-    /// replacing such inputs, and the slot's index in the tail.
-    pub absorbed: Vec<(u32, u32)>,
     /// Contents of the synthesized __objc_methname tail, and each
     /// selector's offset in it.
     pub methname_data: Vec<u8>,
     pub methname_offs: Vec<u64>,
-    /// Per stub: the input __objc_methname string of its selector's
-    /// name that its synthesized selector reference points at, when an
-    /// input has one (u32::MAX: the name is in the tail).
-    pub name_isec: Vec<u32>,
     /// The output sections carrying the synthesized selector strings
     /// and selector references as their tail.
     pub methname: Option<OutputSectionId>,
@@ -51,10 +43,8 @@ impl ObjcStubsSection {
             hdr,
             symbols: Vec::new(),
             extra_selrefs: Vec::new(),
-            absorbed: Vec::new(),
             methname_data: Vec::new(),
             methname_offs: Vec::new(),
-            name_isec: Vec::new(),
             methname: None,
             selrefs: None,
             msgsend_sym: None,

@@ -431,17 +431,11 @@ impl<E: Target> Context<E> {
         osec.hdr.addr + osec.tail_off + i as u64 * 8
     }
 
-    /// Address of the selector name string for objc stub `i`: an
-    /// input's string of that name, else its own in the tail of the
-    /// __objc_methname output section.
+    /// Address of the selector name string for objc stub `i`, in the
+    /// tail of the __objc_methname output section.
     pub fn objc_methname_addr(&self, i: usize) -> u64 {
-        match self.objc_stubs.name_isec[i] {
-            u32::MAX => {
-                let osec = self.output_section(self.objc_stubs.methname.unwrap());
-                osec.hdr.addr + osec.tail_off + self.objc_stubs.methname_offs[i]
-            }
-            isec => self.isec_addr(isec as usize),
-        }
+        let osec = self.output_section(self.objc_stubs.methname.unwrap());
+        osec.hdr.addr + osec.tail_off + self.objc_stubs.methname_offs[i]
     }
 
     /// The library ordinal as the chained-fixups import formats encode

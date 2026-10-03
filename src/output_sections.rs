@@ -1130,20 +1130,9 @@ fn add_objc_stubs<E: Target>(ctx: &mut Context<E>) {
         let (name, _) =
             output_section_for(&ctx.args, map, b"__DATA", b"__objc_selrefs", S_LITERAL_POINTERS)
                 .unwrap();
-        // A slot keeps the alignment of the inputs it took over.
-        let p2align = (ctx.objc_stubs.absorbed.iter())
-            .map(|&(synth, _)| ctx.isecs[synth as usize].p2align as u32)
-            .fold(3, u32::max);
         let tail = Tail::ObjcSelrefs;
-        let id = tail_section(ctx, name, S_REGULAR, p2align, tail, selrefs_size);
+        let id = tail_section(ctx, name, S_REGULAR, 3, tail, selrefs_size);
         ctx.objc_stubs.selrefs = Some(id);
-        let tail_off = ctx.output_section(id).tail_off;
-        for i in 0..ctx.objc_stubs.absorbed.len() {
-            let (synth, slot) = ctx.objc_stubs.absorbed[i];
-            let isec = &mut ctx.isecs[synth as usize];
-            isec.set_output_section(ChunkId::Output(id));
-            isec.offset = (tail_off + slot as u64 * 8) as u32;
-        }
     }
 }
 

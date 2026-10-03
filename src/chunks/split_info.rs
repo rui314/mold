@@ -576,15 +576,10 @@ impl<'a, E: Target> Places<'a, E> {
         }
         if stubs.selrefs.is_some() {
             let n = stubs.symbols.len();
-            for i in 0..n {
-                let name = match stubs.name_isec[i] {
-                    u32::MAX => {
-                        let osec = ctx.output_section(stubs.methname.unwrap());
-                        Some((osec.hdr.n_sect, osec.tail_off + stubs.methname_offs[i]))
-                    }
-                    isec => self.isec(isec as usize),
-                };
-                push(out, self.selref(i), DYLD_CACHE_ADJ_V2_POINTER_64, name);
+            for (i, &off) in stubs.methname_offs.iter().enumerate() {
+                let methname = ctx.output_section(stubs.methname.unwrap());
+                let name = (methname.hdr.n_sect, methname.tail_off + off);
+                push(out, self.selref(i), DYLD_CACHE_ADJ_V2_POINTER_64, Some(name));
             }
             for (j, &name) in stubs.extra_selrefs.iter().enumerate() {
                 let to = self.isec(name as usize);

@@ -64,7 +64,7 @@ sect() {
 
 $CC --ld-path=$mold -o $t/exe $t/a.o -framework Foundation
 $t/exe | grep -q '^42 7$'
-[ "$(sect $t/exe __objc_selrefs)" = '0x0000000000000010 0x00000000' ]
+sect $t/exe __objc_selrefs | grep -q ' 0x00000000$'
 sect $t/exe __objc_methname > $t/methname
 grep -q ' 0x00000002$' $t/methname
 
