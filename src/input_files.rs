@@ -452,6 +452,44 @@ pub struct DylibFile {
     pub name_source: NameSource,
 }
 
+impl DylibFile {
+    /// A library of the link with `install_name`, read from `path`: at
+    /// version 1.0.0, with no exports, and loaded as a plain dependency.
+    /// The callers fill in what their file says.
+    fn new(path: PathBuf, install_name: Vec<u8>) -> Self {
+        Self {
+            path,
+            install_name,
+            current_version: encode_version(1, 0, 0),
+            compatibility_version: encode_version(1, 0, 0),
+            minos: 0,
+            in_sdk: false,
+            dylib_idx: 0,
+            is_bundle_loader: false,
+            priority: 0,
+            is_weak: false,
+            is_weak_asserted: false,
+            is_reexported: false,
+            binds_to_image: false,
+            is_needed: false,
+            is_upward: false,
+            is_lazy: false,
+            delay_init: None,
+            named_at: None,
+            is_autolinked: false,
+            is_implicit: false,
+            exports: hashbrown::HashSet::new(),
+            weak_exports: hashbrown::HashSet::new(),
+            has_weak_defs: false,
+            tlv_exports: hashbrown::HashSet::new(),
+            merged_reexports: Vec::new(),
+            reexported: Vec::new(),
+            moved_exports: hashbrown::HashMap::new(),
+            name_source: NameSource::Own,
+        }
+    }
+}
+
 /// Whose install name a dylib has, which decides between the dylibs of
 /// the link that have the same one (see add_dylib).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -3170,39 +3208,23 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
     let moved_exports = add_moved_dylibs(ctx, &mf.name, moved, &exports);
     let name_source = if directives.renamed { NameSource::Directive } else { NameSource::Own };
 
-    add_dylib(
-        ctx,
-        DylibFile {
-            path: mf.name.clone(),
-            install_name,
-            current_version,
-            compatibility_version,
-            minos,
-            in_sdk: false,
-            dylib_idx: next_dylib_ordinal(ctx),
-            is_bundle_loader: false,
-            priority,
-            is_weak: false,
-            is_weak_asserted: false,
-            is_reexported: false,
-            binds_to_image: false,
-            is_needed: false,
-            is_upward: false,
-            is_lazy: false,
-            delay_init: None,
-            named_at: None,
-            is_autolinked: false,
-            is_implicit: false,
-            exports,
-            weak_exports,
-            has_weak_defs,
-            tlv_exports,
-            merged_reexports: loaded.merged,
-            reexported: loaded.edges,
-            moved_exports,
-            name_source,
-        },
-    )
+    let dylib = DylibFile {
+        current_version,
+        compatibility_version,
+        minos,
+        dylib_idx: next_dylib_ordinal(ctx),
+        priority,
+        exports,
+        weak_exports,
+        has_weak_defs,
+        tlv_exports,
+        merged_reexports: loaded.merged,
+        reexported: loaded.edges,
+        moved_exports,
+        name_source,
+        ..DylibFile::new(mf.name.clone(), install_name)
+    };
+    add_dylib(ctx, dylib)
 }
 
 /// Returns the 1-based ordinals of S_THREAD_LOCAL_VARIABLES sections.
@@ -3374,39 +3396,16 @@ pub fn parse_bundle_loader<E: Target>(ctx: &mut Context<E>, mf: &'static MappedF
     }
 
     let priority = ctx.next_priority();
-    add_dylib(
-        ctx,
-        DylibFile {
-            path: mf.name.clone(),
-            install_name: crate::util::path_bytes(&mf.name).to_vec(),
-            current_version: encode_version(1, 0, 0),
-            compatibility_version: encode_version(1, 0, 0),
-            minos: 0,
-            in_sdk: false,
-            dylib_idx: BIND_SPECIAL_DYLIB_MAIN_EXECUTABLE,
-            is_bundle_loader: true,
-            priority,
-            is_weak: false,
-            is_weak_asserted: false,
-            is_reexported: false,
-            binds_to_image: false,
-            is_needed: false,
-            is_upward: false,
-            is_lazy: false,
-            delay_init: None,
-            named_at: None,
-            is_autolinked: false,
-            is_implicit: false,
-            exports,
-            weak_exports: hashbrown::HashSet::new(),
-            has_weak_defs: false,
-            tlv_exports,
-            merged_reexports: Vec::new(),
-            reexported: Vec::new(),
-            moved_exports: hashbrown::HashMap::new(),
-            name_source: NameSource::Own,
-        },
-    )
+    let install_name = crate::util::path_bytes(&mf.name).to_vec();
+    let dylib = DylibFile {
+        dylib_idx: BIND_SPECIAL_DYLIB_MAIN_EXECUTABLE,
+        is_bundle_loader: true,
+        priority,
+        exports,
+        tlv_exports,
+        ..DylibFile::new(mf.name.clone(), install_name)
+    };
+    add_dylib(ctx, dylib)
 }
 
 /// What a dylib binary says of itself: its install name and versions;
@@ -4066,39 +4065,23 @@ fn register_tbd<E: Target>(
     let moved_exports = add_moved_dylibs(ctx, path, moved, &exports);
     let name_source = if directives.renamed { NameSource::Directive } else { NameSource::Own };
 
-    add_dylib(
-        ctx,
-        DylibFile {
-            path: path.to_path_buf(),
-            install_name: tbd.install_name.to_vec(),
-            current_version: tbd.current_version,
-            compatibility_version: tbd.compatibility_version,
-            minos: tbd.minos,
-            in_sdk: false,
-            dylib_idx: next_dylib_ordinal(ctx),
-            is_bundle_loader: false,
-            priority,
-            is_weak: false,
-            is_weak_asserted: false,
-            is_reexported: false,
-            binds_to_image: false,
-            is_needed: false,
-            is_upward: false,
-            is_lazy: false,
-            delay_init: None,
-            named_at: None,
-            is_autolinked: false,
-            is_implicit: false,
-            exports,
-            weak_exports,
-            has_weak_defs,
-            tlv_exports,
-            merged_reexports: loaded.merged,
-            reexported: loaded.edges,
-            moved_exports,
-            name_source,
-        },
-    )
+    let dylib = DylibFile {
+        current_version: tbd.current_version,
+        compatibility_version: tbd.compatibility_version,
+        minos: tbd.minos,
+        dylib_idx: next_dylib_ordinal(ctx),
+        priority,
+        exports,
+        weak_exports,
+        has_weak_defs,
+        tlv_exports,
+        merged_reexports: loaded.merged,
+        reexported: loaded.edges,
+        moved_exports,
+        name_source,
+        ..DylibFile::new(path.to_path_buf(), tbd.install_name.to_vec())
+    };
+    add_dylib(ctx, dylib)
 }
 
 /// Makes a dylib stand for each older library that exports of the
@@ -4123,34 +4106,13 @@ fn add_moved_dylibs<E: Target>(
             None => {
                 let priority = ctx.next_priority();
                 let dylib = DylibFile {
-                    path: path.to_path_buf(),
-                    install_name: export.install_name.to_vec(),
                     current_version: export.current_version,
                     compatibility_version: export.compatibility_version,
-                    minos: 0,
-                    in_sdk: false,
                     dylib_idx: next_dylib_ordinal(ctx),
-                    is_bundle_loader: false,
                     priority,
-                    is_weak: false,
-                    is_weak_asserted: false,
-                    is_reexported: false,
-                    binds_to_image: false,
-                    is_needed: false,
-                    is_upward: false,
-                    is_lazy: false,
-                    delay_init: None,
-                    named_at: None,
-                    is_autolinked: false,
                     is_implicit: true,
-                    exports: hashbrown::HashSet::new(),
-                    weak_exports: hashbrown::HashSet::new(),
-                    has_weak_defs: false,
-                    tlv_exports: hashbrown::HashSet::new(),
-                    merged_reexports: Vec::new(),
-                    reexported: Vec::new(),
-                    moved_exports: hashbrown::HashMap::new(),
                     name_source: NameSource::Moved,
+                    ..DylibFile::new(path.to_path_buf(), export.install_name.to_vec())
                 };
                 let idx = add_dylib(ctx, dylib);
                 targets.push((export.install_name, idx));
@@ -4170,34 +4132,14 @@ pub fn add_merged_dependency<E: Target>(ctx: &mut Context<E>, dep: crate::mergea
     let priority = ctx.next_priority();
     let weak_exports: hashbrown::HashSet<&'static [u8]> = dep.weak_exports.into_iter().collect();
     let dylib = DylibFile {
-        path: dep.path,
-        install_name: dep.info.install_name,
         current_version: dep.info.current_version,
         compatibility_version: dep.info.compatibility_version,
-        minos: 0,
-        in_sdk: false,
         dylib_idx: next_dylib_ordinal(ctx),
-        is_bundle_loader: false,
         priority,
-        is_weak: false,
-        is_weak_asserted: false,
-        is_reexported: false,
-        binds_to_image: false,
-        is_needed: false,
-        is_upward: false,
-        is_lazy: false,
-        delay_init: None,
-        named_at: None,
-        is_autolinked: false,
-        is_implicit: false,
         exports: dep.exports.into_iter().collect(),
         has_weak_defs: !weak_exports.is_empty(),
         weak_exports,
-        tlv_exports: hashbrown::HashSet::new(),
-        merged_reexports: Vec::new(),
-        reexported: Vec::new(),
-        moved_exports: hashbrown::HashMap::new(),
-        name_source: NameSource::Own,
+        ..DylibFile::new(dep.path, dep.info.install_name)
     };
     add_dylib(ctx, dylib);
 }
