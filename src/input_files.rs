@@ -1022,26 +1022,7 @@ pub fn stage_object<E: Target>(
     obj.read_symbol_names(strtab);
     obj.read_relocations::<E>(&bare, &sect_isecs);
     obj.check_init_pointers();
-    if let Some(i) =
-        sect_hdrs.iter().position(|s| s.segname() == b"__LD" && s.sectname() == b"__compact_unwind")
-    {
-        let rels = obj.read_section_relocs::<E>(i);
-        obj.parse_compact_unwind(i, &rels);
-    }
-    if kept_fdes != KeptFdes::None
-        && let Some(hdr) =
-            sect_hdrs.iter().find(|s| s.segname() == b"__TEXT" && s.sectname() == b"__eh_frame")
-    {
-        obj.parse_eh_frame::<E>(hdr, kept_fdes == KeptFdes::All);
-    }
-    // A DWARF-mode record whose FDE never turned up describes nothing.
-    if kept_fdes != KeptFdes::None {
-        obj.unwind.retain(|rec| {
-            rec.encoding & UNWIND_MODE_MASK != E::UNWIND_MODE_DWARF || rec.fde().is_some()
-        });
-    }
-    obj.group_unwind_records();
-    obj.warn_unwind_outside_code();
+    obj.parse_unwind_info::<E>(kept_fdes);
     obj
 }
 
@@ -1871,10 +1852,7 @@ fn bitcode_nlist(ls: &crate::lto::LtoSymbol) -> NList {
 /// triple (x86_64h-apple-macosx14.0.0), if the link doesn't take it -
 /// named as for a Mach-O file, a Thumb one (thumbv7-apple-ios9.0.0) by
 /// its ARM architecture.
-fn foreign_bitcode_arch<E: Target>(
-    plugin: &crate::lto::Plugin,
-    module: usize,
-) -> Option<String> {
+fn foreign_bitcode_arch<E: Target>(plugin: &crate::lto::Plugin, module: usize) -> Option<String> {
     let triple = crate::lto::module_triple(plugin, module);
     let arch = match triple.split('-').next().unwrap_or_default() {
         "aarch64" => "arm64".to_string(),
@@ -1952,6 +1930,35 @@ impl UnwindRecord {
 }
 
 impl StagedObject {
+    /// Reads the object's unwind info: the records of its
+    /// __compact_unwind, and the CIEs of its __eh_frame with the FDEs
+    /// that `kept_fdes` keeps, a function with only an FDE getting a
+    /// record of its own. Each subsection's records end up in one run.
+    fn parse_unwind_info<E: Target>(&mut self, kept_fdes: KeptFdes) {
+        let sect_hdrs = self.sect_hdrs;
+        if let Some(i) = sect_hdrs
+            .iter()
+            .position(|s| s.segname() == b"__LD" && s.sectname() == b"__compact_unwind")
+        {
+            let rels = self.read_section_relocs::<E>(i);
+            self.parse_compact_unwind(i, &rels);
+        }
+        if kept_fdes != KeptFdes::None {
+            if let Some(hdr) =
+                sect_hdrs.iter().find(|s| s.segname() == b"__TEXT" && s.sectname() == b"__eh_frame")
+            {
+                self.parse_eh_frame::<E>(hdr, kept_fdes == KeptFdes::All);
+            }
+            // A DWARF-mode record whose FDE never turned up describes
+            // nothing.
+            self.unwind.retain(|rec| {
+                rec.encoding & UNWIND_MODE_MASK != E::UNWIND_MODE_DWARF || rec.fde().is_some()
+            });
+        }
+        self.group_unwind_records();
+        self.warn_unwind_outside_code();
+    }
+
     /// Parses a __LD,__compact_unwind section into unwind records. The
     /// section is an array of 32-byte entries whose pointer fields are
     /// set by relocations, `rels` as read_relocs made them of the
