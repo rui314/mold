@@ -3035,14 +3035,13 @@ pub fn convert_init_offsets<E: Target>(ctx: &mut Context<E>) {
     }
 }
 
-/// The initializer symbol `id` is. One dyld binds has no offset in the
-/// image: ld-prime fails the link as it writes it (see
-/// init_offsets::copy_buf). An absolute symbol's value is the offset.
+/// The initializer symbol `id` is. One dyld binds, or an absolute
+/// one, has no offset in the image: the link fails as it is written
+/// (see init_offsets::copy_buf).
 fn init_func<E: Target>(ctx: &Context<E>, id: crate::symbol::SymbolId) -> InitFunc {
     let sym = &ctx.symbols[id];
     match sym.input_section() {
         Some(isec) => InitFunc::Local(ctx.resolve_isec(isec as usize), sym.value),
-        None if ctx.is_absolute_symbol(id) => InitFunc::Absolute(sym.value),
         None => InitFunc::Imported(id),
     }
 }

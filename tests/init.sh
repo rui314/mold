@@ -45,14 +45,14 @@ grep -v '^+' $t/log3 | grep -A1 _nosuch | grep -q '<initial-undefines>'
 not $CC --ld-path=$mold -o $t/lib4.dylib -shared $t/a.o -Wl,-init,_puts 2> $t/log4
 grep -q "fixup error (kind=imageOffset32) at 'anon-1' from inits-file, target '_puts' does not have address" $t/log4
 
-# An absolute symbol's value is the offset, its low 32 bits.
+# Nor does an absolute symbol. (ld-prime takes the low 32 bits of its
+# value for the offset.)
 cat <<EOF | $CC -o $t/abs.o -c -xassembler -
 .globl _abs
 .set _abs, 0x123456789
 EOF
-$CC --ld-path=$mold -o $t/lib6.dylib -shared $t/a.o $t/abs.o -Wl,-init,_abs
-otool -s __TEXT __init_offsets $t/lib6.dylib > $t/offsets6
-grep -Eq '^[0-9a-f]+[[:space:]]+(23456789|89 67 45 23) ' $t/offsets6
+not $CC --ld-path=$mold -o $t/lib6.dylib -shared $t/a.o $t/abs.o -Wl,-init,_abs 2> $t/log6
+grep -q "'_abs'" $t/log6
 
 $mold -arch $ARCH -r -o $t/r.o $t/a.o -init _nosuch
 nm $t/r.o | grep -q ' U _nosuch$'

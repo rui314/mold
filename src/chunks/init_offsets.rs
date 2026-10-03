@@ -17,12 +17,11 @@ pub struct InitOffsetsSection {
 }
 
 /// An initializer function: a subsection and the function's offset in
-/// it, an absolute symbol's value, which ld-prime takes for the offset,
-/// or a symbol dyld binds, which has no offset in the image.
+/// it, or a symbol with no offset in the image (one dyld binds, or an
+/// absolute one).
 #[derive(Clone, Copy, Debug)]
 pub enum InitFunc {
     Local(usize, u64),
-    Absolute(u64),
     Imported(SymbolId),
 }
 
@@ -49,7 +48,6 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     for (i, &func) in ctx.init_offsets.init_funcs.iter().enumerate() {
         let val = match func {
             InitFunc::Local(isec, off) => ctx.isec_addr(isec) + off - ctx.mach_header.hdr.addr,
-            InitFunc::Absolute(value) => value,
             InitFunc::Imported(id) => {
                 let msg = format_args!("target '{}' does not have address", ctx.symbols[id]);
                 let (ordinal, fileoff) = (2 * i + 1, ctx.init_offsets.hdr.fileoff + i as u64 * 4);
