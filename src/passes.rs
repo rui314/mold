@@ -3157,8 +3157,8 @@ fn newer_dylib_warning<E: Target>(
 /// first stops the link; one built for a newer OS version gets a
 /// warning, for each input that names it, but not those it re-exports,
 /// nor those of the SDK, built for newer OS versions as a matter of
-/// course. A merged mergeable dylib is a dylib to these checks (see
-/// warn_merged_library_versions). It checks bitcode files by their
+/// course. A merged mergeable dylib is a dylib to these checks. It
+/// checks bitcode files by their
 /// target triples before LTO, and the object LTO makes (with what it
 /// pulls in) after: the driver calls this twice. Along with each
 /// object's deployment target, it checks its Objective-C image info
@@ -3362,19 +3362,6 @@ fn swift_abi_name(v: u32) -> String {
         _ => return format!("unknown ABI version 0x{v:02X}"),
     };
     name.to_string()
-}
-
-/// ld-prime checks a merged mergeable dylib's OS version again as it
-/// merges the dylib's code, once it has resolved the symbols and
-/// checked the inputs (with what LTO made): a dylib built for a newer
-/// version than the link's gets its warning a second time, in input
-/// order.
-pub fn warn_merged_library_versions<E: Target>(ctx: &Context<E>) {
-    for lib in &ctx.merged_libraries {
-        if let Some(msg) = newer_dylib_warning(ctx, &lib.install_name, lib.minos) {
-            crate::warn!("{}", raw(&msg));
-        }
-    }
 }
 
 /// Whether -remove_swift_reflection_metadata_sections drops an input

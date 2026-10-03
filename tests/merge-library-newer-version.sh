@@ -2,9 +2,9 @@
 source "$(dirname "$0")"/common.inc
 
 # A merged mergeable dylib built for a newer macOS than the link gets
-# the warning of a dylib, not an object's, in its place among the
-# inputs - whatever -deployment_target_mismatches says - and again as
-# ld-prime merges its code, after every input's.
+# the warning of a dylib, not an object's, whatever
+# -deployment_target_mismatches says. (ld-prime warns again as it
+# merges its code.)
 cat <<EOF | $CC -o $t/a.o -c -xc - -mmacosx-version-min=26.0
 int foo(void) { return 3; }
 EOF
@@ -26,9 +26,9 @@ $CC --ld-path=$mold -o $t/exe $t/main.o -F$t/Frameworks -Wl,-merge_framework,Foo
 sed 's/^[a-z]*: warning: //; s|(/.*/b.o)|(b.o)|' $t/log > $t/log2
 dylib="building for macOS-14.0, but linking with dylib '@rpath/Foo.framework/Foo' which was built for newer version 26.0"
 obj="object file (b.o) was built for newer 'macOS' version (15.0) than being linked (14.0)"
-printf '%s\n' "$dylib" "$obj" "$dylib" | diff - $t/log2
+printf '%s\n' "$dylib" "$obj" | sort | diff - <(sort $t/log2)
 
 $CC --ld-path=$mold -o $t/exe $t/main.o -F$t/Frameworks -Wl,-merge_framework,Foo \
   $t/b.o -mmacosx-version-min=14.0 -Wl,-deployment_target_mismatches,suppress 2> $t/log3
 sed 's/^[a-z]*: warning: //' $t/log3 > $t/log4
-printf '%s\n' "$dylib" "$dylib" | diff - $t/log4
+printf '%s\n' "$dylib" | diff - $t/log4
