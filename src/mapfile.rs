@@ -385,6 +385,15 @@ impl<'a> TraceInputs<'a> {
     fn symbols_json<E: Target>(&self, ctx: &Context<E>, uuid: Option<&str>) -> Value {
         let args = &ctx.args;
         let imports = dylib_imports(ctx);
+        let dylib_entry = |i: usize, d: &DylibFile, attrs: Vec<&str>| {
+            json!({
+                "path": trace_path(&d.path),
+                "install-name": String::from_utf8_lossy(&d.install_name),
+                "arch": E::NAME,
+                "attributes": attrs,
+                "imported-symbols": json_names(&imports[i]),
+            })
+        };
         let mut dylibs: Vec<Value> = (self.dylibs.iter())
             .map(|&(i, d)| {
                 let attrs = [
@@ -393,14 +402,8 @@ impl<'a> TraceInputs<'a> {
                     (d.is_upward, "upward"),
                     (d.delay_init.is_some(), "delay-init"),
                 ];
-                let attrs: Vec<&str> = attrs.iter().filter(|a| a.0).map(|a| a.1).collect();
-                let mut entry = json!({
-                    "path": trace_path(&d.path),
-                    "install-name": String::from_utf8_lossy(&d.install_name),
-                    "arch": E::NAME,
-                    "attributes": attrs,
-                    "imported-symbols": json_names(&imports[i]),
-                });
+                let attrs = attrs.iter().filter(|a| a.0).map(|a| a.1).collect();
+                let mut entry = dylib_entry(i, d, attrs);
                 if d.is_reexported {
                     let mut exports: Vec<&[u8]> = d.exports.iter().copied().collect();
                     exports.sort_unstable();
@@ -409,15 +412,7 @@ impl<'a> TraceInputs<'a> {
                 entry
             })
             .collect();
-        dylibs.extend(self.lazy.iter().map(|&(i, d)| {
-            json!({
-                "path": trace_path(&d.path),
-                "install-name": String::from_utf8_lossy(&d.install_name),
-                "arch": E::NAME,
-                "attributes": ["lazy-load"],
-                "imported-symbols": json_names(&imports[i]),
-            })
-        }));
+        dylibs.extend(self.lazy.iter().map(|&(i, d)| dylib_entry(i, d, vec!["lazy-load"])));
         let archives: Vec<Value> = (self.archives.iter())
             .map(|(path, syms)| {
                 json!({ "path": path, "arch": E::NAME, "imported-symbols": json_names(syms) })
