@@ -15,10 +15,9 @@
 //! to load in its place, and the objects with debug info by the notes
 //! that point a debugger at them.
 //!
-//! ld-prime orders the entries by object, and in an object by section
-//! and address, then the imports and what the linker made; the
-//! imports of a dylib come in an order of its own, which isn't
-//! reproduced (they go by name here).
+//! The entries come object by object, then those of the names the
+//! objects import or leave to the linker, then what the linker made.
+//! Fixups refer to entries by index; their order means nothing else.
 
 use hashbrown::HashMap;
 
@@ -42,7 +41,6 @@ const CT_COMPACT_UNWIND: u8 = 32;
 const CT_CUSTOM: u8 = 63;
 const CT_DATA: u8 = 27;
 const CT_COMMON: u8 = 66;
-const CT_THREAD_VARS: u8 = 57;
 
 /// LC_ATOM_INFO's data in __LINKEDIT: the record, but for what depends
 /// on where it lands in the file, filled in as it is copied out.
@@ -329,10 +327,9 @@ impl<'a, E: Target> Builder<'a, E> {
             .collect()
     }
 
-    /// The objects' entries: object by object, the live subsections by
-    /// section and address, each followed by the aliases of the other
-    /// symbols in it, and then the tentative definitions the object
-    /// made.
+    /// The objects' entries: object by object, the live subsections,
+    /// each followed by the aliases of the other symbols in it, and then
+    /// the absolute symbols and tentative definitions the object made.
     fn add_object_entries(&mut self) {
         let ctx = self.ctx;
         for (obj_idx, obj) in ctx.objs.iter().enumerate() {
@@ -340,9 +337,7 @@ impl<'a, E: Target> Builder<'a, E> {
                 continue;
             }
             let debug = self.add_debug_record(obj);
-            let mut subsecs = obj.subsecs.clone();
-            subsecs.sort_by_key(|&id| (ctx.isecs[id].shndx, ctx.isecs[id].input_addr));
-            for id in subsecs {
+            for &id in &obj.subsecs {
                 self.add_isec_entry(obj, id, debug);
             }
             self.add_absolute_entries(obj_idx);
@@ -438,8 +433,8 @@ impl<'a, E: Target> Builder<'a, E> {
     /// by the name its own subsection had, as ld-prime records the
     /// functions its deduplication folds - so that a merging link finds
     /// an exported Swift function folded so. Its other symbols are
-    /// aliases of that alias, in its place; it goes after the imports
-    /// (see final_order), its target filled in once every entry is made.
+    /// aliases of that alias; its target is filled in once every entry
+    /// is made.
     fn add_folded_function(&mut self, obj: &ObjectFile, id: u32, debug: u16) {
         let ctx = self.ctx;
         let Some(label) = ctx.subsec_label_index(id as usize) else { return };
@@ -495,18 +490,15 @@ impl<'a, E: Target> Builder<'a, E> {
         let isec = &ctx.isecs[id];
         let start = isec.input_addr as u64;
         let end = start + isec.size as u64;
-        let mut syms: Vec<usize> = (0..obj.nlists.len())
-            .filter(|&i| {
-                let n = &obj.nlists[i];
-                Some(i) != label
-                    && !n.is_stab()
-                    && n.n_type() == N_SECT
-                    && n.n_sect as u32 == isec.shndx + 1
-                    && (start..end.max(start + 1)).contains(&n.n_value)
-                    && !crate::input_files::is_private_label(ctx.symbols[obj.symbols[i]].name())
-            })
-            .collect();
-        syms.sort_by_key(|&i| (obj.nlists[i].n_value, std::cmp::Reverse(i)));
+        let syms = (0..obj.nlists.len()).filter(|&i| {
+            let n = &obj.nlists[i];
+            Some(i) != label
+                && !n.is_stab()
+                && n.n_type() == N_SECT
+                && n.n_sect as u32 == isec.shndx + 1
+                && (start..end.max(start + 1)).contains(&n.n_value)
+                && !crate::input_files::is_private_label(ctx.symbols[obj.symbols[i]].name())
+        });
         for i in syms {
             let sym_id = obj.symbols[i];
             let sym = &ctx.symbols[sym_id];
@@ -1018,35 +1010,30 @@ impl<'a, E: Target> Builder<'a, E> {
         }
     }
 
-    /// Puts the entries in their final order - the objects', then those
-    /// of the symbols they leave to the linker or import, then the
-    /// linker's - and numbers the fixups' targets.
+    /// Numbers the entries - the objects', then those of the symbols
+    /// they import or leave to the linker, then the linker's - and the
+    /// fixups' targets.
     fn finish(self) -> MergeableRecord {
         let ctx = self.ctx;
         let deps = dependencies(ctx);
         let mut sym_entries: Vec<OutEntry> = Vec::new();
-        let mut sym_index: HashMap<SymbolId, usize> = HashMap::new();
+        let mut sym_index: HashMap<SymbolId, u32> = HashMap::new();
         for (id, dep) in self.referenced_syms(&deps) {
+            sym_index.insert(id, sym_entries.len() as u32);
             sym_entries.push(match dep {
                 Some(dylib) => import_entry(ctx, id, dylib),
                 None => undefine_entry(ctx, id),
             });
-            sym_index.insert(id, sym_entries.len() - 1);
         }
-        let order = self.final_order(sym_entries.len());
-        let mut index =
-            [vec![0u32; self.entries.len()], vec![0; self.tail.len()], vec![0; sym_entries.len()]];
-        for (i, &(list, j)) in order.iter().enumerate() {
-            index[list][j] = i as u32;
-        }
+        let nobjs = self.entries.len() as u32;
+        let nsyms = sym_entries.len() as u32;
         let number = |to: To| match to {
-            To::Entry(a) => index[0][a as usize],
-            To::Tail(t) => index[1][t as usize],
-            To::Sym(id) => index[2][sym_index[&id]],
+            To::Entry(i) => i,
+            To::Sym(id) => nobjs + sym_index[&id],
+            To::Tail(i) => nobjs + nsyms + i,
         };
-        let lists = [&self.entries, &self.tail, &sym_entries];
         let mut entries: Vec<OutEntry> =
-            order.iter().map(|&(list, j)| lists[list][j].clone()).collect();
+            self.entries.into_iter().chain(sym_entries).chain(self.tail).collect();
         let mut fixups = Vec::new();
         let mut first_fixup = Vec::with_capacity(entries.len());
         for entry in &mut entries {
@@ -1068,10 +1055,9 @@ impl<'a, E: Target> Builder<'a, E> {
         }
     }
 
-    /// The symbols the fixups refer to by name, each with its library's
-    /// index among the dependencies if it is an import: those the
-    /// linker defines (or leaves to dynamic lookup) as first referred
-    /// to, then the imports by library and name. An import the link
+    /// The symbols the fixups refer to by name, as first referred to,
+    /// each with its library's index among the dependencies if it is an
+    /// import. An import the link
     /// names as an initial undefine - by -u, or _dlopen in one that
     /// names a delay-init dylib - is one whether or not anything refers
     /// to it.
@@ -1113,32 +1099,7 @@ impl<'a, E: Target> Builder<'a, E> {
             }
             _ => None,
         };
-        let mut syms: Vec<(SymbolId, Option<u8>)> =
-            syms.into_iter().map(|id| (id, dep_index(id))).collect();
-        syms.sort_by_key(|&(id, dep)| match dep {
-            None => (0, 0, &b""[..]),
-            Some(dep) => (1, dep, ctx.symbols[id].name()),
-        });
-        syms
-    }
-
-    /// The entries' final order, as (list, index) pairs of the objects'
-    /// entries (0), the linker's (1) and the symbols' (2): the objects'
-    /// but the folded functions and the thread-local variables, the
-    /// symbols', the folded functions, the thread-local variables, and
-    /// the linker's.
-    fn final_order(&self, nsyms: usize) -> Vec<(usize, usize)> {
-        let is_tlv = |i: &usize| self.entries[*i].content_type == CT_THREAD_VARS;
-        let folded: hashbrown::HashSet<usize> =
-            self.folded.iter().map(|&(alias, _)| alias as usize).collect();
-        let objs = 0..self.entries.len();
-        let mut order: Vec<(usize, usize)> =
-            (objs.clone()).filter(|i| !is_tlv(i) && !folded.contains(i)).map(|i| (0, i)).collect();
-        order.extend((0..nsyms).map(|i| (2, i)));
-        order.extend(self.folded.iter().map(|&(alias, _)| (0, alias as usize)));
-        order.extend(objs.filter(is_tlv).map(|i| (0, i)));
-        order.extend((0..self.tail.len()).map(|i| (1, i)));
-        order
+        syms.into_iter().map(|id| (id, dep_index(id))).collect()
     }
 }
 
