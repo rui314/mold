@@ -810,11 +810,12 @@ fn prefetch_stubs<E: Target>(ctx: &Context<E>, stubs: &[&'static MappedFile]) {
     });
 }
 
-/// The stubs prefetch_stub has taken up, and the re-exported install
-/// names it has looked for.
+/// The stubs prefetch_stub has taken up, by the address of their
+/// contents - a stub reached by two paths is one (see MappedFile) - and
+/// the re-exported install names it has looked for.
 #[derive(Default)]
 struct Prefetched {
-    files: std::sync::Mutex<hashbrown::HashSet<&'static Path>>,
+    files: std::sync::Mutex<hashbrown::HashSet<usize>>,
     names: std::sync::Mutex<hashbrown::HashSet<&'static [u8]>>,
 }
 
@@ -830,7 +831,8 @@ fn prefetch_stub<'s, E: Target>(
     seen: &'s Prefetched,
     mf: &'static MappedFile,
 ) {
-    if get_file_type(mf) != FileType::Tapi || !seen.files.lock().unwrap().insert(&mf.name) {
+    let data = mf.data().as_ptr() as usize;
+    if get_file_type(mf) != FileType::Tapi || !seen.files.lock().unwrap().insert(data) {
         return;
     }
     scope.spawn(move |scope| {
