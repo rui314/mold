@@ -130,13 +130,6 @@ pub fn link<E: Target>(ctx: &mut Context<E>) -> u64 {
     // sections' contents and the relocations, regenerated against the
     // merged tables.
     let ctx = &*ctx;
-    let merged: Vec<OutputSectionId> = sects
-        .iter()
-        .filter_map(|s| match *s {
-            Sect::Merged(i) => Some(i),
-            _ => None,
-        })
-        .collect();
     let t = ctx.timer("r-symtab");
     let symtab = build_symtab(ctx);
     drop(t);
@@ -145,83 +138,24 @@ pub fn link<E: Target>(ctx: &mut Context<E>) -> u64 {
     for sec in &mut synthetic {
         sec.build_contents(&targets);
     }
-    let mut relocs: Vec<Vec<MachRel>> = vec![Vec::new(); ctx.output_sections.len()];
-    let merged_relocs: Vec<Vec<MachRel>> =
-        merged.par_iter().map(|&osec| section_relocs(&targets, osec)).collect();
-    for (&osec, rels) in merged.iter().zip(merged_relocs) {
-        relocs[osec.index()] = rels;
-    }
-    drop(t);
-
-    // After the contents: the relocations, section by section in output
-    // order (x86-64's __eh_frame among the merged ones), and then data
-    // in code, hints, symbols and strings.
-    let mut off = align_to(content_end, 8);
-    let mut place = |size: usize| {
-        off += size as u64;
-        off - size as u64
-    };
-    let mut reloff = vec![0; ctx.output_sections.len()];
-    for &s in &sects {
-        match s {
-            Sect::Merged(i) => {
-                reloff[i.index()] = place(relocs[i.index()].len() * size_of::<MachRel>());
-            }
-            Sect::Synthetic(i) => {
-                synthetic[i].reloff = place(synthetic[i].relocs.len() * size_of::<MachRel>());
-            }
-            Sect::Created(_) => {}
-        }
-    }
-    let layout = FileLayout {
-        vmsize,
-        seg_fileoff,
-        seg_filesize: content_end - seg_fileoff,
-        diceoff: place(cmds.dice.len() * 8),
-        lohoff: place(cmds.loh.as_ref().map_or(0, Vec::len)),
-        symoff: place(symtab.table.len() * size_of::<NList>()),
-        stroff: place(symtab.table.strtab_size),
-    };
-    let headers: Vec<MachSection> = sects
+    let merged_relocs: Vec<Vec<MachRel>> = (0..ctx.output_sections.len())
+        .into_par_iter()
+        .map(|i| section_relocs(&targets, OutputSectionId::new(i as u32)))
+        .collect();
+    // Each section's relocations, in output order.
+    let relocs: Vec<&[MachRel]> = sects
         .iter()
         .map(|&s| match s {
-            Sect::Merged(i) => {
-                section_header(&ctx.output_section(i).hdr, &relocs[i.index()], reloff[i.index()])
-            }
-            Sect::Synthetic(i) => {
-                let sec = &synthetic[i];
-                section_header(&sec.hdr, &sec.relocs, sec.reloff)
-            }
-            Sect::Created(i) => section_header(&ctx.sectcreate_sections[i].hdr, &[], 0),
+            Sect::Merged(i) => &merged_relocs[i.index()][..],
+            Sect::Synthetic(i) => &synthetic[i].relocs[..],
+            Sect::Created(_) => &[],
         })
         .collect();
+    drop(t);
 
+    let layout = FileLayout::new(&cmds, &symtab, &relocs, vmsize, seg_fileoff, content_end);
     let t = ctx.timer("r-copy");
-    let mut buf = vec![0u8; off as usize];
-    write_load_commands(ctx, &mut buf, &cmds, &headers, &layout, &symtab);
-    copy_section_contents(&targets, &merged, &mut buf);
-    for sec in &synthetic {
-        let fileoff = sec.hdr.fileoff as usize;
-        buf[fileoff..fileoff + sec.data.len()].copy_from_slice(&sec.data);
-        write_array(&mut buf, sec.reloff as usize, &sec.relocs);
-    }
-    for sec in &ctx.sectcreate_sections {
-        let fileoff = sec.hdr.fileoff as usize;
-        buf[fileoff..fileoff + sec.contents.len()].copy_from_slice(sec.contents);
-    }
-    for &osec in &merged {
-        write_array(&mut buf, reloff[osec.index()] as usize, &relocs[osec.index()]);
-    }
-    crate::chunks::data_in_code::write_entries(&cmds.dice, &mut buf[layout.diceoff as usize..]);
-    if let Some(loh) = &cmds.loh {
-        let lohoff = layout.lohoff as usize;
-        buf[lohoff..lohoff + loh.len()].copy_from_slice(loh);
-    }
-    let (syms, strtab) =
-        buf[layout.symoff as usize..].split_at_mut(symtab.table.len() * size_of::<NList>());
-    let strtab = &mut strtab[..symtab.table.strtab_size];
-    crate::chunks::symtab::write_symtab(ctx, &symtab.table, syms, strtab);
-
+    let buf = write_object(&targets, &synthetic, &sects, &cmds, &relocs, &layout);
     drop(t);
 
     crate::error::checkpoint();
@@ -242,7 +176,56 @@ pub fn link<E: Target>(ctx: &mut Context<E>) -> u64 {
     let t = ctx.timer("r-write");
     output_file::write(&ctx.args.output, &buf);
     drop(t);
-    off
+    buf.len() as u64
+}
+
+/// Builds the -r output in memory: the header and load commands, the
+/// sections' contents, their relocations, then data in code, hints,
+/// symbols and strings, where `layout` places them.
+fn write_object<E: Target>(
+    targets: &RelocTargets<E>,
+    synthetic: &[SyntheticSection],
+    sects: &[Sect],
+    cmds: &LoadCommands,
+    relocs: &[&[MachRel]],
+    layout: &FileLayout,
+) -> Vec<u8> {
+    let ctx = targets.ctx;
+    let headers: Vec<MachSection> = (sects.iter().zip(relocs).zip(&layout.reloffs))
+        .map(|((&s, rels), &off)| section_header(sect_hdr(ctx, synthetic, s), rels, off))
+        .collect();
+    let merged: Vec<OutputSectionId> = (sects.iter())
+        .filter_map(|s| match *s {
+            Sect::Merged(i) => Some(i),
+            _ => None,
+        })
+        .collect();
+
+    let mut buf = vec![0u8; layout.size as usize];
+    write_load_commands(ctx, &mut buf, cmds, &headers, layout, targets.symtab);
+    copy_section_contents(targets, &merged, &mut buf);
+    for sec in synthetic {
+        let fileoff = sec.hdr.fileoff as usize;
+        buf[fileoff..fileoff + sec.data.len()].copy_from_slice(&sec.data);
+    }
+    for sec in &ctx.sectcreate_sections {
+        let fileoff = sec.hdr.fileoff as usize;
+        buf[fileoff..fileoff + sec.contents.len()].copy_from_slice(sec.contents);
+    }
+    for (rels, &off) in relocs.iter().zip(&layout.reloffs) {
+        write_array(&mut buf, off as usize, rels);
+    }
+    crate::chunks::data_in_code::write_entries(&cmds.dice, &mut buf[layout.diceoff as usize..]);
+    if let Some(loh) = &cmds.loh {
+        let lohoff = layout.lohoff as usize;
+        buf[lohoff..lohoff + loh.len()].copy_from_slice(loh);
+    }
+    let symtab = &targets.symtab.table;
+    let (syms, strtab) =
+        buf[layout.symoff as usize..].split_at_mut(symtab.len() * size_of::<NList>());
+    let strtab = &mut strtab[..symtab.strtab_size];
+    crate::chunks::symtab::write_symtab(ctx, symtab, syms, strtab);
+    buf
 }
 
 /// The local symbols that name the -sectcreate input sections, which
@@ -452,8 +435,6 @@ struct SyntheticSection {
     kind: SyntheticKind,
     data: Vec<u8>,
     relocs: Vec<MachRel>,
-    /// Where the relocations start in the file.
-    reloff: u64,
 }
 
 /// What a synthetic section holds.
@@ -479,7 +460,7 @@ impl SyntheticSection {
         hdr.flags = flags;
         hdr.p2align = p2align;
         hdr.size = size;
-        Self { hdr, kind, data: Vec::new(), relocs: Vec::new(), reloff: 0 }
+        Self { hdr, kind, data: Vec::new(), relocs: Vec::new() }
     }
 
     /// Builds the contents and relocations, which fill the size the
@@ -826,16 +807,54 @@ impl<'a, E: Target> RelocTargets<'a, E> {
 }
 
 /// Where the parts of a -r output lie in the file, besides the sections'
-/// contents and relocations: the segment, which the contents make up,
-/// and the tables after it.
+/// contents: the segment, which the contents make up, and what follows
+/// it - each section's relocations, in output order, then data in code,
+/// hints, symbols and strings - and the file's size.
 struct FileLayout {
     vmsize: u64,
     seg_fileoff: u64,
     seg_filesize: u64,
+    reloffs: Vec<u64>,
     diceoff: u64,
     lohoff: u64,
     symoff: u64,
     stroff: u64,
+    size: u64,
+}
+
+impl FileLayout {
+    /// Places what follows the sections' contents, which end at
+    /// `content_end`, given each section's relocations, `relocs`.
+    fn new(
+        cmds: &LoadCommands,
+        symtab: &RSymtab,
+        relocs: &[&[MachRel]],
+        vmsize: u64,
+        seg_fileoff: u64,
+        content_end: u64,
+    ) -> Self {
+        let mut off = align_to(content_end, 8);
+        let mut place = |size: usize| {
+            off += size as u64;
+            off - size as u64
+        };
+        let reloffs = relocs.iter().map(|rels| place(size_of_val(*rels))).collect();
+        let diceoff = place(cmds.dice.len() * 8);
+        let lohoff = place(cmds.loh.as_ref().map_or(0, Vec::len));
+        let symoff = place(symtab.table.len() * size_of::<NList>());
+        let stroff = place(symtab.table.strtab_size);
+        Self {
+            vmsize,
+            seg_fileoff,
+            seg_filesize: content_end - seg_fileoff,
+            reloffs,
+            diceoff,
+            lohoff,
+            symoff,
+            stroff,
+            size: off,
+        }
+    }
 }
 
 /// A section's header in the segment command.
