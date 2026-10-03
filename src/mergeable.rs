@@ -33,6 +33,7 @@ use std::path::Path;
 
 use crate::error::RawPath;
 use crate::fatal;
+use crate::input_files::load_commands;
 use crate::macho::*;
 use crate::mapped_file::MappedFile;
 use crate::target::Target;
@@ -463,17 +464,9 @@ fn read64(data: &[u8], off: usize) -> u64 {
 
 /// Where a dylib's LC_ATOM_INFO data is in its file, if it has one.
 fn record_range(data: &[u8]) -> Option<(usize, usize)> {
-    let hdr = MachHeader::read_from(data);
-    let mut off = size_of::<MachHeader>();
-    for _ in 0..hdr.ncmds {
-        let lc = LoadCommand::read_from(&data[off..]);
-        if lc.cmd == LC_ATOM_INFO {
-            let cmd = LinkEditDataCommand::read_from(&data[off..]);
-            return Some((cmd.dataoff as usize, cmd.datasize as usize));
-        }
-        off += lc.cmdsize as usize;
-    }
-    None
+    let (_, cmd) = load_commands(data).find(|&(cmd, _)| cmd == LC_ATOM_INFO)?;
+    let cmd = LinkEditDataCommand::read_from(cmd);
+    Some((cmd.dataoff as usize, cmd.datasize as usize))
 }
 
 impl MergeableRecord {

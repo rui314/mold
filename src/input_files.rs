@@ -114,7 +114,7 @@ fn is_platform_cmd(cmd: u32) -> bool {
 
 /// A Mach-O file's load commands, in order: each one's type and its
 /// bytes.
-fn load_commands(data: &[u8]) -> impl Iterator<Item = (u32, &[u8])> {
+pub(crate) fn load_commands(data: &[u8]) -> impl Iterator<Item = (u32, &[u8])> {
     let ncmds = MachHeader::read_from(data).ncmds;
     let mut off = size_of::<MachHeader>();
     (0..ncmds).map(move |_| {
