@@ -18,9 +18,8 @@ pub struct ChainedFixupsSection {
     pub hdr: ChunkHeader,
     /// The encoded payload, built during layout.
     pub contents: Vec<u8>,
-    /// Every dynamic fixup location, sorted by address: (address,
-    /// bound symbol or None for a rebase, addend).
-    pub fixups: Vec<(u64, Option<SymbolId>, u64)>,
+    /// Every dynamic fixup, sorted by address.
+    pub fixups: Vec<Fixup>,
     /// The import table: (symbol, table addend), in the order the binds
     /// first name them; and each entry's index.
     pub imports: Vec<(SymbolId, u64)>,
@@ -57,24 +56,14 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     buf[..data.len()].copy_from_slice(data);
 }
 
-/// Builds the LC_DYLD_CHAINED_FIXUPS payload. Instead of opcode
-/// streams, chained fixups store, per page of each segment, the offset
-/// of the first fixup; each 64-bit fixup word in the data itself then
-/// encodes its target (a rebase value or an import ordinal) plus the
-/// distance to the next fixup in the page, forming a chain dyld walks.
-/// Builds the chained-fixups payload; returns the encoded bytes, the
-/// collected fixups, the import table and each import's index, for the
-/// caller to store on the context.
-pub type ChainedFixups = (
-    Vec<u8>,
-    Vec<(u64, Option<crate::symbol::SymbolId>, u64)>,
-    Vec<(crate::symbol::SymbolId, u64)>,
-    ImportOrdinals,
-);
+/// What build_chained_fixups makes, for the caller to store on the
+/// context: the encoded payload, the fixups, the import table and each
+/// import's index.
+pub type ChainedFixups = (Vec<u8>, Vec<Fixup>, Vec<(SymbolId, u64)>, ImportOrdinals);
 
 /// A fixup: its address, the symbol it binds (None for a rebase), and
 /// the addend.
-type Fixup = (u64, Option<SymbolId>, u64);
+pub type Fixup = (u64, Option<SymbolId>, u64);
 
 /// The import-table addend of a bind: addends up to 255 are carried
 /// inline in the fixup word and share the symbol's addend-0 entry.
@@ -115,8 +104,30 @@ pub(crate) fn pointer_format<E: Target>(ctx: &Context<E>) -> u16 {
     }
 }
 
-/// Returns None if the image must have classic dyld info instead (see
-/// check_pointer_alignment).
+fn push16(buf: &mut Vec<u8>, val: u16) {
+    buf.extend_from_slice(&val.to_le_bytes());
+}
+
+fn push32(buf: &mut Vec<u8>, val: u32) {
+    buf.extend_from_slice(&val.to_le_bytes());
+}
+
+fn push64(buf: &mut Vec<u8>, val: u64) {
+    buf.extend_from_slice(&val.to_le_bytes());
+}
+
+fn pad(buf: &mut Vec<u8>, align: usize) {
+    buf.resize(buf.len().next_multiple_of(align), 0);
+}
+
+/// Builds the LC_DYLD_CHAINED_FIXUPS payload. Instead of opcode
+/// streams, chained fixups store, per page of each segment, the offset
+/// of the first fixup; each 64-bit fixup word in the data itself then
+/// encodes its target (a rebase value or an import ordinal) plus the
+/// distance to the next fixup in the page, forming a chain dyld walks.
+/// The payload is a header, the starts of the chains, the import table
+/// and the imports' names. Returns None if the image must have classic
+/// dyld info instead (see check_pointer_alignment).
 pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> Option<ChainedFixups> {
     // An image with nothing to fix up still gets the payload (a
     // header and a starts table with no pages), as ld64 writes it:
@@ -126,21 +137,8 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> Option<ChainedFixups
     if !check_pointer_alignment(ctx, &fixups, unaligned, true) {
         return None;
     }
-    let (dynsyms, ordinals) = import_table(&fixups);
-
-    let max_addend = dynsyms.iter().map(|&(_, a)| a).max().unwrap_or(0);
-    let import_format = if max_addend == 0 {
-        DYLD_CHAINED_IMPORT
-    } else if dynsyms.iter().all(|&(_, a)| i32::try_from(a as i64).is_ok()) {
-        DYLD_CHAINED_IMPORT_ADDEND
-    } else {
-        DYLD_CHAINED_IMPORT_ADDEND64
-    };
-
-    let push32 = |buf: &mut Vec<u8>, v: u32| buf.extend_from_slice(&v.to_le_bytes());
-    let push16 = |buf: &mut Vec<u8>, v: u16| buf.extend_from_slice(&v.to_le_bytes());
-    let push64 = |buf: &mut Vec<u8>, v: u64| buf.extend_from_slice(&v.to_le_bytes());
-    let pad = |buf: &mut Vec<u8>, align: usize| buf.resize(buf.len().next_multiple_of(align), 0);
+    let (imports, ordinals) = import_table(&fixups);
+    let format = import_format(&imports);
 
     let mut buf = Vec::new();
     // dyld_chained_fixups_header; the offsets are backpatched.
@@ -148,24 +146,63 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> Option<ChainedFixups
     push32(&mut buf, 0); // starts_offset
     push32(&mut buf, 0); // imports_offset
     push32(&mut buf, 0); // symbols_offset
-    push32(&mut buf, dynsyms.len() as u32);
-    push32(&mut buf, import_format);
+    push32(&mut buf, imports.len() as u32);
+    push32(&mut buf, format);
     push32(&mut buf, 0); // symbols_format: uncompressed
     pad(&mut buf, 8);
 
-    // dyld_chained_starts_in_image
     let starts_offset = buf.len();
     buf[4..8].copy_from_slice(&(starts_offset as u32).to_le_bytes());
+    write_starts_in_image(ctx, &mut buf, &fixups);
+
+    // The import table, aligned only as its entries need: 4 bytes, or 8
+    // for 64-bit addends.
+    pad(&mut buf, if format == DYLD_CHAINED_IMPORT_ADDEND64 { 8 } else { 4 });
+    let imports_offset = buf.len();
+    buf[8..12].copy_from_slice(&(imports_offset as u32).to_le_bytes());
+    write_imports(ctx, &mut buf, &imports, format);
+
+    // The imports' names, after a leading NUL.
+    let symbols_offset = buf.len();
+    buf[12..16].copy_from_slice(&(symbols_offset as u32).to_le_bytes());
+    buf.push(0);
+    for &(sym, _) in &imports {
+        buf.extend_from_slice(ctx.symbols[sym].name());
+        buf.push(0);
+    }
+    pad(&mut buf, 8);
+
+    Some((buf, fixups, imports, ordinals))
+}
+
+/// The import table's format: the narrowest whose entries hold every
+/// import's table addend.
+fn import_format(imports: &[(SymbolId, u64)]) -> u32 {
+    let max_addend = imports.iter().map(|&(_, a)| a).max().unwrap_or(0);
+    if max_addend == 0 {
+        DYLD_CHAINED_IMPORT
+    } else if imports.iter().all(|&(_, a)| i32::try_from(a as i64).is_ok()) {
+        DYLD_CHAINED_IMPORT_ADDEND
+    } else {
+        DYLD_CHAINED_IMPORT_ADDEND64
+    }
+}
+
+/// Appends dyld_chained_starts_in_image: an entry per segment command,
+/// the offset of the segment's starts table, which follow, each
+/// 8-aligned, with the offset of each page's first fixup.
+fn write_starts_in_image<E: Target>(ctx: &Context<E>, buf: &mut Vec<u8>, fixups: &[Fixup]) {
+    let starts_offset = buf.len();
     // One per segment command: a -preload image's __LINKEDIT has none.
     let seg_count = ctx.segments.len() - usize::from(ctx.args.preload);
-    push32(&mut buf, seg_count as u32);
+    push32(buf, seg_count as u32);
     let seg_info_table = buf.len();
     for _ in 0..seg_count {
-        push32(&mut buf, 0);
+        push32(buf, 0);
     }
 
-    // Per-segment page tables, each 8-aligned. A segment's offset
-    // counts from the image's own address, which -image_base may move.
+    // A segment's offset counts from the image's own address, which
+    // -image_base may move.
     let image_base = ctx.mach_header.hdr.addr;
     for (seg_idx, seg) in ctx.segments.iter().enumerate() {
         let lo = fixups.partition_point(|&(a, _, _)| a < seg.cmd.vmaddr);
@@ -175,7 +212,7 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> Option<ChainedFixups
         }
         let fx = &fixups[lo..hi];
 
-        pad(&mut buf, 8);
+        pad(buf, 8);
         let off = buf.len() - starts_offset;
         let ent = seg_info_table + seg_idx * 4;
         buf[ent..ent + 4].copy_from_slice(&(off as u32).to_le_bytes());
@@ -192,14 +229,14 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> Option<ChainedFixups
         let npages = ((fx.last().unwrap().0 + 1 - seg.cmd.vmaddr).div_ceil(page_size)) as usize;
         // The record is 22 bytes of fields plus one u16 per page; its
         // size counts just those, without padding.
-        push32(&mut buf, 22 + npages as u32 * 2);
-        push16(&mut buf, page_size as u16);
-        push16(&mut buf, pointer_format(ctx));
+        push32(buf, 22 + npages as u32 * 2);
+        push16(buf, page_size as u16);
+        push16(buf, pointer_format(ctx));
         // A layout in error may put a segment below the image base; the
         // table is never written then.
-        push64(&mut buf, seg.cmd.vmaddr.wrapping_sub(image_base));
-        push32(&mut buf, 0); // max_valid_pointer
-        push16(&mut buf, npages as u16);
+        push64(buf, seg.cmd.vmaddr.wrapping_sub(image_base));
+        push32(buf, 0); // max_valid_pointer
+        push16(buf, npages as u16);
         let mut j = 0;
         for i in 0..npages {
             let page_addr = seg.cmd.vmaddr + i as u64 * page_size;
@@ -207,78 +244,66 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> Option<ChainedFixups
                 j += 1;
             }
             if j < fx.len() && fx[j].0 < page_addr + page_size {
-                push16(&mut buf, (fx[j].0 - page_addr) as u16);
+                push16(buf, (fx[j].0 - page_addr) as u16);
             } else {
-                push16(&mut buf, DYLD_CHAINED_PTR_START_NONE);
+                push16(buf, DYLD_CHAINED_PTR_START_NONE);
             }
         }
     }
+}
 
-    // Import table, aligned only as its entries need: 4 bytes, or 8
-    // for 64-bit addends.
-    pad(&mut buf, if import_format == DYLD_CHAINED_IMPORT_ADDEND64 { 8 } else { 4 });
-    let imports_offset = buf.len();
-    buf[8..12].copy_from_slice(&(imports_offset as u32).to_le_bytes());
-    // Each import has a name string of its own after a leading NUL,
-    // repeated for a symbol imported with several addends.
-    let mut name_offs = Vec::with_capacity(dynsyms.len());
-    let mut nameoff: u32 = 1;
-    for &(sym, _) in &dynsyms {
-        name_offs.push(nameoff);
-        nameoff += ctx.symbols[sym].name().len() as u32 + 1;
-    }
-    for (i, &(sym, addend)) in dynsyms.iter().enumerate() {
-        let s = &ctx.symbols[sym];
-        // An import names its dylib; one of this image's own weak
-        // definitions is bound by weak lookup (ordinal -3), which
-        // makes dyld search every loaded image for the coalesced
-        // winner, a class bound to the image itself names it (0), and
-        // an interposable export is a flat lookup (-2) under
-        // -flat_namespace and the image itself (0) otherwise.
-        let ordinal_bits = |bits: u32| -> u64 {
-            let special = |ordinal: i32| (ordinal as i64 as u64) & ((1u64 << bits) - 1);
-            match s.file() {
-                Some(FileId::Dylib(dylib)) if !ctx.binds_weak_lookup(sym) => {
-                    ctx.chained_import_ordinal(dylib, bits)
-                }
-                _ if ctx.binds_to_self(sym) => BIND_SPECIAL_DYLIB_SELF as u64,
-                _ if ctx.is_interposable_export(sym) && !ctx.binds_weak_lookup(sym) => {
-                    special(ctx.export_bind_ordinal())
-                }
-                _ if ctx.is_dtrace_pointer_target(sym) => special(BIND_SPECIAL_DYLIB_FLAT_LOOKUP),
-                _ => special(BIND_SPECIAL_DYLIB_WEAK_LOOKUP),
-            }
-        };
-        let weak = s.is_weak_ref() as u32;
-        match import_format {
+/// Appends the import table's entries in `format`. Each import names a
+/// string of its own, repeated for a symbol imported with several
+/// addends.
+fn write_imports<E: Target>(
+    ctx: &Context<E>,
+    buf: &mut Vec<u8>,
+    imports: &[(SymbolId, u64)],
+    format: u32,
+) {
+    // The names follow a leading NUL.
+    let mut name_off: u32 = 1;
+    for &(sym, addend) in imports {
+        let weak = ctx.symbols[sym].is_weak_ref() as u32;
+        match format {
             DYLD_CHAINED_IMPORT => {
-                let ordinal = ordinal_bits(8) as u32;
-                push32(&mut buf, ordinal | (weak << 8) | (name_offs[i] << 9));
+                let ordinal = import_ordinal(ctx, sym, 8) as u32;
+                push32(buf, ordinal | (weak << 8) | (name_off << 9));
             }
             DYLD_CHAINED_IMPORT_ADDEND => {
-                let ordinal = ordinal_bits(8) as u32;
-                push32(&mut buf, ordinal | (weak << 8) | (name_offs[i] << 9));
-                push32(&mut buf, addend as u32);
+                let ordinal = import_ordinal(ctx, sym, 8) as u32;
+                push32(buf, ordinal | (weak << 8) | (name_off << 9));
+                push32(buf, addend as u32);
             }
             _ => {
-                let ordinal = ordinal_bits(16);
-                push64(&mut buf, ordinal | ((weak as u64) << 16) | ((name_offs[i] as u64) << 32));
-                push64(&mut buf, addend);
+                let ordinal = import_ordinal(ctx, sym, 16);
+                push64(buf, ordinal | ((weak as u64) << 16) | ((name_off as u64) << 32));
+                push64(buf, addend);
             }
         }
+        name_off += ctx.symbols[sym].name().len() as u32 + 1;
     }
+}
 
-    // Symbol names
-    let symbols_offset = buf.len();
-    buf[12..16].copy_from_slice(&(symbols_offset as u32).to_le_bytes());
-    buf.push(0);
-    for &(sym, _) in &dynsyms {
-        buf.extend_from_slice(ctx.symbols[sym].name());
-        buf.push(0);
+/// The library ordinal an import's entry holds, in its `bits`. An
+/// import names its dylib; one of this image's own weak definitions is
+/// bound by weak lookup (ordinal -3), which makes dyld search every
+/// loaded image for the coalesced winner, a class bound to the image
+/// itself names it (0), and an interposable export is a flat lookup (-2)
+/// under -flat_namespace and the image itself (0) otherwise.
+fn import_ordinal<E: Target>(ctx: &Context<E>, sym: SymbolId, bits: u32) -> u64 {
+    let special = |ordinal: i32| (ordinal as i64 as u64) & ((1u64 << bits) - 1);
+    match ctx.symbols[sym].file() {
+        Some(FileId::Dylib(dylib)) if !ctx.binds_weak_lookup(sym) => {
+            ctx.chained_import_ordinal(dylib, bits)
+        }
+        _ if ctx.binds_to_self(sym) => BIND_SPECIAL_DYLIB_SELF as u64,
+        _ if ctx.is_interposable_export(sym) && !ctx.binds_weak_lookup(sym) => {
+            special(ctx.export_bind_ordinal())
+        }
+        _ if ctx.is_dtrace_pointer_target(sym) => special(BIND_SPECIAL_DYLIB_FLAT_LOOKUP),
+        _ => special(BIND_SPECIAL_DYLIB_WEAK_LOOKUP),
     }
-    pad(&mut buf, 8);
-
-    Some((buf, fixups, dynsyms, ordinals))
 }
 
 /// The pages the fixup chains of a segment are cut into, from its start:
