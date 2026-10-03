@@ -3,8 +3,7 @@ source "$(dirname "$0")"/common.inc
 
 # ld-prime ignores the options of ld64 and older linkers that no longer
 # mean anything, with a warning for each once it has read them all, in
-# command-line order, which a -w anywhere silences. -s, -Si and -Sn it
-# warns about as it reads them, so that only a -w before them does.
+# command-line order, which a -w anywhere silences.
 echo 'int main() { return 0; }' | $CC -o $t/a.o -c -xc - -mmacosx-version-min=14.0
 sdk=$(xcrun --show-sdk-path)
 link() {
@@ -39,8 +38,14 @@ link -X -s -multiply_defined suppress -segprot __FOO rz r -Si -b 2> $t/log
 [ "$(grep -o -- "-[A-Za-z_]* is obsolete\|letter 'z'" $t/log | tr '\n' ' ')" = \
   "-s is obsolete letter 'z' -Si is obsolete -X is obsolete -multiply_defined is obsolete -b is obsolete " ]
 
-link -X -s -w -Si 2> $t/log
-[ "$(grep -o -- '-[A-Za-z_]* is obsolete' $t/log | tr '\n' ' ')" = "-s is obsolete " ]
+# (ld-prime warns of -s, -Si and -Sn as it reads them, so that only a
+# -w before them silences those.)
+link -X -w -Si 2> $t/log
+not grep -q "is obsolete" $t/log
+if $mold -v 2> /dev/null | grep -q mold-macho; then
+  link -X -s -w -Si 2> $t/log
+  not grep -q "is obsolete" $t/log
+fi
 
 not link -X -s -fatal_warnings 2> $t/log
 grep -q -- '-X is obsolete' $t/log

@@ -21,13 +21,16 @@ grep -q 'passed two min versions (14.0, 13.0.1) for platform macOS. Using 13.0.1
 [ "$(grep -c 'passed two min versions' $t/log1)" = 1 ]
 otool -l $t/exe1 | grep -A4 LC_BUILD_VERSION | grep -q 'minos 13.0.1'
 
-# Only a -w before the option silences the warnings.
+# -w silences the warnings, wherever it is. (ld-prime gives them as it
+# reads the option, which only a -w before it silences.)
 link -lSystem -w -platform_version macos 14.0 15.0 -macos_version_min 13.0 -o $t/exe2 \
   2> $t/log2
 not grep -q 'passed two' $t/log2
-link -lSystem -platform_version macos 14.0 15.0 -macos_version_min 13.0 -w -o $t/exe2 \
-  2> $t/log2
-grep -q 'passed two' $t/log2
+if $mold -v 2> /dev/null | grep -q mold-macho; then
+  link -lSystem -platform_version macos 14.0 15.0 -macos_version_min 13.0 -w -o $t/exe2 \
+    2> $t/log2
+  not grep -q 'passed two' $t/log2
+fi
 
 link -platform_version macos 14.0 14.0 -platform_version firmware 13.0 15.0 -o $t/exe3 \
   2> $t/log3

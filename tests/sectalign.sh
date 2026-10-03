@@ -21,7 +21,7 @@ $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-sectalign,__DATA,__blob,0x300 \
 grep -q 'alignment for -sectalign __DATA __blob is not a power of two, using 0x100' $t/log2
 otool -l $t/exe | grep -A6 'sectname __blob' | grep 'align 2\^8'
 
-# Only a -w before the option silences that warning.
+# -w silences that warning.
 $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-w -Wl,-sectalign,__DATA,__blob,6 2> $t/log2
 not grep -q 'not a power of two' $t/log2
 

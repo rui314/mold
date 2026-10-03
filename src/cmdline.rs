@@ -5,13 +5,12 @@
 
 use std::borrow::Cow;
 use std::ffi::{OsStr, OsString};
-use std::fmt;
 use std::io::IsTerminal;
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
 
 use crate::error::RawPath;
-use crate::error::{Held, raw};
+use crate::error::raw;
 use crate::fatal;
 use crate::filetype::{FileType, get_file_type};
 use crate::input_files::PlatformVersion;
@@ -1112,13 +1111,13 @@ fn parse_version(opt: &str, arg: &str) -> u32 {
 /// truncates to fit, with a warning: each number to its most, and the
 /// numbers past the third dropped (ld64 took five for the current
 /// version). An empty one is 0.
-fn parse_dylib_version(opt: &str, arg: &str, warnings: &mut OptionWarnings) -> u32 {
+fn parse_dylib_version(opt: &str, arg: &str) -> u32 {
     if arg.is_empty() {
         return encode_version(0, 0, 0);
     }
     let nums = version_numbers(opt, arg);
     if !fits_version(&nums) {
-        warnings.warn(format!("truncating {opt} to fit in 32-bit space used by old mach-o format"));
+        crate::warn!("truncating {opt} to fit in 32-bit space used by old mach-o format");
     }
     let num = |i: usize| nums.get(i).map_or(0, |&num| num.min(VERSION_LIMITS[i]) as u32);
     encode_version(num(0), num(1), num(2))
@@ -1329,11 +1328,9 @@ fn set_platform(args: &mut Args, st: &mut ParseState, platform: u32, minos: u32)
     if args.platform == platform && args.platform_minos != minos {
         let (old, new) = (format_version(args.platform_minos), format_version(minos));
         let name = platform_name(platform);
-        st.warnings.warn(format!(
-            "passed two min versions ({old}, {new}) for platform {name}. Using {new}."
-        ));
+        crate::warn!("passed two min versions ({old}, {new}) for platform {name}. Using {new}.");
     } else if args.platform == PLATFORM_MACOS && platform == PLATFORM_FIRMWARE {
-        st.warnings.warn("conflicting -platform_version platform: macOS, using: firmware");
+        crate::warn!("conflicting -platform_version platform: macOS, using: firmware");
     } else if args.platform != 0 && args.platform != platform {
         st.incompatible_platforms.get_or_insert((args.platform, platform));
     }
@@ -1591,7 +1588,7 @@ fn parse_hex(opt: &str, val: &str) -> u64 {
 /// case, and '-' for none. ld-prime warns about any other byte and
 /// ignores it, so a non-ASCII letter draws a warning for each of its
 /// bytes, which it prints as they are.
-fn parse_prot(val: &[u8], warnings: &mut OptionWarnings) -> u8 {
+fn parse_prot(val: &[u8]) -> u8 {
     let mut prot = 0u8;
     for &c in val {
         match c.to_ascii_lowercase() {
@@ -1599,7 +1596,7 @@ fn parse_prot(val: &[u8], warnings: &mut OptionWarnings) -> u8 {
             b'w' => prot |= 2,
             b'x' => prot |= 4,
             b'-' => {}
-            _ => warnings.warn(format_args!("unknown -segprot letter '{}'", raw(&[c]))),
+            _ => crate::warn!("unknown -segprot letter '{}'", raw(&[c])),
         }
     }
     prot
@@ -1616,14 +1613,14 @@ fn section_name(name: &[u8]) -> Vec<u8> {
 /// A -sectcreate segment or section name, cut to 16 bytes with
 /// ld-prime's warning. (-add_empty_section's are cut silently: ld-prime
 /// fails an assertion on them.)
-fn sectcreate_name(kind: &str, name: &[u8], warnings: &mut OptionWarnings) -> Vec<u8> {
+fn sectcreate_name(kind: &str, name: &[u8]) -> Vec<u8> {
     let cut = section_name(name);
     if cut.len() < name.len() {
-        warnings.warn(format_args!(
+        crate::warn!(
             "-sectcreate {kind} name too long ('{}'), will be truncated to '{}'",
             raw(name),
             raw(&cut)
-        ));
+        );
     }
     cut
 }
@@ -1786,40 +1783,6 @@ enum OutputKind {
     Dylinker,
 }
 
-/// The warnings ld-prime gives as it reads an option, which only a -w
-/// before the option silences (but -fatal_warnings still counts), and
-/// its notices, which it prints bare whatever -w and -fatal_warnings
-/// say. They are held back until the parse is known to be for the
-/// target, so that they are given once, but come before the error a
-/// later option runs into (see error::hold).
-#[derive(Default)]
-struct OptionWarnings {
-    quiet: bool,
-    hidden: bool,
-}
-
-impl OptionWarnings {
-    fn warn(&mut self, msg: impl fmt::Display) {
-        if self.quiet {
-            self.hidden = true;
-        } else {
-            crate::error::hold(Held::Warning(crate::error::render(format_args!("{msg}"))));
-        }
-    }
-
-    fn notice(&mut self, msg: impl fmt::Display) {
-        crate::error::hold(Held::Notice(crate::error::render(format_args!("{msg}"))));
-    }
-
-    /// Gives the messages, once the parse is known to be the last.
-    fn print(&self) {
-        crate::error::release_held();
-        if self.hidden {
-            crate::error::hidden_warning();
-        }
-    }
-}
-
 /// What parse_args gathers from the options for the phases after them:
 /// the options it resolves into Args only once it knows the target and
 /// the kind of output (None for one not given), the symbol lists, and
@@ -1873,7 +1836,6 @@ struct ParseState<'a> {
     export_choice: Option<ExportChoice>,
     reexports_listed: bool,
     force_weakness_listed: bool,
-    warnings: OptionWarnings,
     /// The warnings about the obsolete options given, which ld-prime
     /// ignores with a warning once it has read them all.
     obsolete: Vec<String>,
@@ -1935,7 +1897,7 @@ fn check_fixup_sections(
 /// (any word with "framework" in it), and takes the rest for its
 /// argument, spaces and all; it ignores any other with a space, and
 /// passes one without on as a word of its own.
-fn add_linker_option(words: &mut Vec<Vec<u8>>, opt: &[u8], warnings: &mut OptionWarnings) {
+fn add_linker_option(words: &mut Vec<Vec<u8>>, opt: &[u8]) {
     let Some(space) = memchr::memchr(b' ', opt) else {
         words.push(opt.to_vec());
         return;
@@ -1945,10 +1907,10 @@ fn add_linker_option(words: &mut Vec<Vec<u8>>, opt: &[u8], warnings: &mut Option
         words.push(head.to_vec());
         words.push(arg.to_vec());
     } else {
-        warnings.warn(format_args!(
+        crate::warn!(
             "unknown linker option from -add_linker_option ignored, starting with: '{}'",
             raw(head)
-        ));
+        );
     }
 }
 
@@ -2018,13 +1980,8 @@ fn read_platform_version(cur: &mut ArgCursor, args: &mut Args, st: &mut ParseSta
 /// stating the deployment target, still emitted by clang for older
 /// -mmacosx-version-min targets. It fixes the platform to macOS; ld64
 /// records the SDK as the same version (the flag carries no separate
-/// SDK). ld-prime notes each use of the old spelling,
-/// -macosx_version_min, and reports on the option as the new.
-fn read_macos_version_min(cur: &mut ArgCursor, args: &mut Args, st: &mut ParseState, name: &str) {
-    if name == "-macosx_version_min" {
-        st.warnings.notice("-macosx_version_min has been renamed to -macos_version_min");
-    }
-    let opt = "-macos_version_min";
+/// SDK). -macosx_version_min is its old spelling.
+fn read_macos_version_min(cur: &mut ArgCursor, args: &mut Args, st: &mut ParseState, opt: &str) {
     let minos = parse_version(opt, cur.next_text(opt));
     set_platform(args, st, PLATFORM_MACOS, minos);
     args.platform_sdk = minos;
@@ -2032,31 +1989,26 @@ fn read_macos_version_min(cur: &mut ArgCursor, args: &mut Args, st: &mut ParseSt
 
 /// -bundle_loader <executable>: the last one counts; ld-prime reads no
 /// other.
-fn read_bundle_loader(
-    cur: &mut ArgCursor,
-    args: &mut Args,
-    warnings: &mut OptionWarnings,
-    opt: &str,
-) {
+fn read_bundle_loader(cur: &mut ArgCursor, args: &mut Args, opt: &str) {
     let loader = |arg: &InputArg| matches!(arg, InputArg::BundleLoader(_));
     if let Some(pos) = args.inputs.iter().position(loader)
         && let InputArg::BundleLoader(old) = args.inputs.remove(pos)
     {
         let old = old.raw();
-        warnings.warn(format!("duplicate -bundle_loader option, '{old}' ignored"));
+        crate::warn!("duplicate -bundle_loader option, '{old}' ignored");
     }
     args.inputs.push(InputArg::BundleLoader(cur.next_path(opt)))
 }
 
 /// -dylib_file <install_name>:<path>, which ld-prime deprecates, once,
 /// as it reads it.
-fn add_dylib_file(args: &mut Args, warnings: &mut OptionWarnings, arg: &[u8]) {
+fn add_dylib_file(args: &mut Args, arg: &[u8]) {
     let Some(colon) = memchr::memchr(b':', arg) else {
         fatal!("-dylib_file malformed <path:path>");
     };
     if args.dylib_files.is_empty() {
-        warnings.warn(
-            "-dylib_file is deprecated. Use -F or -L to control where indirect dylibs are found",
+        crate::warn!(
+            "-dylib_file is deprecated. Use -F or -L to control where indirect dylibs are found"
         );
     }
     let file = PathBuf::from(os_str(&arg[colon + 1..]));
@@ -2070,10 +2022,10 @@ fn read_segprot(cur: &mut ArgCursor, st: &mut ParseState, opt: &str) {
     let init = cur.next_arg(opt).as_bytes();
     // __LINKEDIT, which dyld reads, keeps its own.
     if seg == b"__LINKEDIT" {
-        st.warnings.warn("-segprot cannot be used to modify __LINKEDIT protections");
+        crate::warn!("-segprot cannot be used to modify __LINKEDIT protections");
     } else {
-        let max = parse_prot(max, &mut st.warnings);
-        let init = parse_prot(init, &mut st.warnings);
+        let max = parse_prot(max);
+        let init = parse_prot(init);
         st.segprots.push((seg, max, init));
     }
 }
@@ -2120,11 +2072,11 @@ fn read_section_order(cur: &mut ArgCursor, args: &mut Args, opt: &str) {
 }
 
 /// -sectcreate <segment> <section> <file>.
-fn read_sectcreate(cur: &mut ArgCursor, args: &mut Args, warnings: &mut OptionWarnings, opt: &str) {
+fn read_sectcreate(cur: &mut ArgCursor, args: &mut Args, opt: &str) {
     let seg = cur.next_arg(opt).as_bytes();
-    let seg = sectcreate_name("segment", seg, warnings);
+    let seg = sectcreate_name("segment", seg);
     let sect = cur.next_arg(opt).as_bytes();
-    let sect = sectcreate_name("section", sect, warnings);
+    let sect = sectcreate_name("section", sect);
     let file = cur.next_path(opt);
     args.sectcreate.push(SectCreate { segname: seg, sectname: sect, path: Some(file) });
 }
@@ -2139,7 +2091,7 @@ fn read_add_empty_section(cur: &mut ArgCursor, args: &mut Args, opt: &str) {
 /// -sectalign <segment> <section> <align>. ld64 takes the largest power
 /// of two that divides the alignment (1 for 0), and the first
 /// -sectalign given for a section.
-fn read_sectalign(cur: &mut ArgCursor, args: &mut Args, warnings: &mut OptionWarnings, opt: &str) {
+fn read_sectalign(cur: &mut ArgCursor, args: &mut Args, opt: &str) {
     let seg = cur.next_bytes(opt);
     let sect = cur.next_bytes(opt);
     let align = parse_hex(opt, cur.next_text(opt));
@@ -2148,12 +2100,12 @@ fn read_sectalign(cur: &mut ArgCursor, args: &mut Args, warnings: &mut OptionWar
     }
     let p2align = if align == 0 { 0 } else { align.trailing_zeros() as u8 };
     if !align.is_power_of_two() {
-        warnings.warn(format_args!(
+        crate::warn!(
             "alignment for -sectalign {} {} is not a power of two, using 0x{:X}",
             raw(&seg),
             raw(&sect),
             1u64 << p2align
-        ));
+        );
     }
     if !args.sectalign.iter().any(|(s1, s2, _)| *s1 == seg && *s2 == sect) {
         args.sectalign.push((seg, sect, p2align));
@@ -2163,7 +2115,7 @@ fn read_sectalign(cur: &mut ArgCursor, args: &mut Args, warnings: &mut OptionWar
 /// -max_default_common_align's alignment, as a power of two: a
 /// hexadecimal power of two up to 0x8000. ld-prime takes 0 for 1 and
 /// anything else for the power of two below it, with a warning.
-fn parse_common_align(arg: &str, warnings: &mut OptionWarnings) -> u8 {
+fn parse_common_align(arg: &str) -> u8 {
     let Some(align) = hex_number(arg) else {
         fatal!("-max_default_common_align must specify an integer size");
     };
@@ -2173,12 +2125,12 @@ fn parse_common_align(arg: &str, warnings: &mut OptionWarnings) -> u8 {
         );
     }
     if align == 0 {
-        warnings.warn("zero is not a valid -max_default_common_align");
+        crate::warn!("zero is not a valid -max_default_common_align");
     } else if !align.is_power_of_two() {
-        warnings.warn(format!(
+        crate::warn!(
             "alignment for -max_default_common_align is not a power of two, using {:#x}",
             1u64 << align.ilog2()
-        ));
+        );
     }
     align.max(1).ilog2() as u8
 }
@@ -2187,16 +2139,12 @@ fn parse_common_align(arg: &str, warnings: &mut OptionWarnings) -> u8 {
 /// on each line, '#' starting a comment. ld64 links on without the
 /// aliases of a file it can't read, warning in the words it uses for
 /// an order file.
-fn read_alias_list(
-    list: &Path,
-    aliases: &mut Vec<(Vec<u8>, Vec<u8>)>,
-    warnings: &mut OptionWarnings,
-) {
+fn read_alias_list(list: &Path, aliases: &mut Vec<(Vec<u8>, Vec<u8>)>) {
     let contents = match std::fs::read(list) {
         Ok(contents) => contents,
         Err(e) => {
             let errno = crate::error::errno_text(&e);
-            warnings.warn(format_args!("order file '{}' could not be opened, {errno}", list.raw()));
+            crate::warn!("order file '{}' could not be opened, {errno}", list.raw());
             Vec::new()
         }
     };
@@ -2297,6 +2245,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut st = ParseState::default();
 
     crate::error::set_color(std::io::stderr().is_terminal());
+    crate::error::hold_warnings();
 
     let mut cur = ArgCursor { args: cmdline, index: 0 };
     while let Some(opt) = cur.advance() {
@@ -2330,7 +2279,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 st.explicit_entry = true;
             }
             b"-init" => args.init = Some(cur.next_bytes(name)),
-            b"-bundle_loader" => read_bundle_loader(&mut cur, &mut args, &mut st.warnings, name),
+            b"-bundle_loader" => read_bundle_loader(&mut cur, &mut args, name),
             b"-final_output" => args.final_output = Some(cur.next_bytes(name)),
             // (dyld's own LC_ID_DYLINKER names /usr/lib/dyld, whatever
             // -dylinker_install_name says.)
@@ -2341,11 +2290,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // accepts; Xcode passes -dylib_compatibility_version.
             b"-current_version" | b"-dylib_current_version" => {
                 let version = text(name, cur.arg_or_empty(name));
-                args.current_version = parse_dylib_version(name, version, &mut st.warnings);
+                args.current_version = parse_dylib_version(name, version);
             }
             b"-compatibility_version" | b"-dylib_compatibility_version" => {
                 let version = text(name, cur.arg_or_empty(name));
-                args.compatibility_version = parse_dylib_version(name, version, &mut st.warnings);
+                args.compatibility_version = parse_dylib_version(name, version);
             }
             b"-umbrella" => args.umbrella = Some(cur.next_bytes(name)),
             b"-sub_library" => args.sub_libraries.push(cur.next_bytes(name)),
@@ -2358,7 +2307,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 Some(arg) if !arg.is_empty() && !arg.as_bytes().starts_with(b"-") => {
                     args.rpaths.push(arg.as_bytes().to_vec());
                 }
-                _ => st.warnings.warn("-rpath missing <path>"),
+                _ => crate::warn!("-rpath missing <path>"),
             },
             b"-dyld_env" => {
                 let arg = cur.next_arg(name).as_bytes();
@@ -2439,11 +2388,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-ignore_auto_link" => args.ignore_auto_link = true,
             b"-add_linker_option" => {
                 let opt = cur.next_arg(name).as_bytes();
-                add_linker_option(&mut args.linker_options, opt, &mut st.warnings);
+                add_linker_option(&mut args.linker_options, opt);
             }
             b"-no_implicit_dylibs" => args.no_implicit_dylibs = true,
             b"-dylib_file" => {
-                add_dylib_file(&mut args, &mut st.warnings, cur.next_arg(name).as_bytes());
+                add_dylib_file(&mut args, cur.next_arg(name).as_bytes());
             }
             b"-dead_strip_dylibs" => args.dead_strip_dylibs = true,
             b"-warn_unused_dylibs" => st.warn_unused_dylibs = Some(true),
@@ -2471,7 +2420,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     args.undefined_dynamic_lookup = true;
                 }
                 if treatment != "dynamic_lookup" {
-                    st.warnings.warn(format!("-undefined {treatment} is deprecated"));
+                    crate::warn!("-undefined {treatment} is deprecated");
                 }
             }
             b"-exported_symbol" => {
@@ -2516,7 +2465,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 args.aliases.push((existing, new));
             }
             b"-alias_list" => {
-                read_alias_list(&cur.next_path(name), &mut args.aliases, &mut st.warnings);
+                read_alias_list(&cur.next_path(name), &mut args.aliases);
             }
             b"-x" => args.strip_locals = true,
             b"-S" => args.strip_debug = true,
@@ -2532,8 +2481,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // ld64 made an executable bind its dylibs' imports flat too
             // (MH_FORCE_FLAT); ld-prime takes it for -flat_namespace.
             b"-force_flat_namespace" => {
-                st.warnings.warn(
-                    "-force_flat_namespace is no longer supported, using -flat_namespace instead",
+                crate::warn!(
+                    "-force_flat_namespace is no longer supported, using -flat_namespace instead"
                 );
                 args.flat_namespace = true;
             }
@@ -2576,7 +2525,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-warn_commons" => args.warn_commons = true,
             b"-max_default_common_align" => {
-                let align = parse_common_align(cur.next_text(name), &mut st.warnings);
+                let align = parse_common_align(cur.next_text(name));
                 st.max_default_common_align = Some(align);
             }
             b"-keep_duplicate" => {
@@ -2658,8 +2607,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-segprot" => read_segprot(&mut cur, &mut st, name),
             b"-segment_order" => read_segment_order(&mut cur, &mut args, name),
             b"-section_order" => read_section_order(&mut cur, &mut args, name),
-            b"-sectalign" => read_sectalign(&mut cur, &mut args, &mut st.warnings, name),
-            b"-sectcreate" => read_sectcreate(&mut cur, &mut args, &mut st.warnings, name),
+            b"-sectalign" => read_sectalign(&mut cur, &mut args, name),
+            b"-sectcreate" => read_sectcreate(&mut cur, &mut args, name),
             b"-add_empty_section" => read_add_empty_section(&mut cur, &mut args, name),
             b"-rename_section" => {
                 let old_seg = cur.next_bytes(name);
@@ -2729,7 +2678,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 let on = name == "-pie";
                 if st.pie == Some(!on) {
                     let other = if on { "-no_pie" } else { "-pie" };
-                    st.warnings.warn(format!("{name} overriding previous {other}"));
+                    crate::warn!("{name} overriding previous {other}");
                 }
                 st.pie = Some(on);
             }
@@ -2897,10 +2846,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-no_lto_softload_runtime_symbols" => st.lto_softload = Some(false),
 
             // Diagnostics, reports and traces.
-            b"-w" => {
-                args.suppress_warnings = true;
-                st.warnings.quiet = true;
-            }
+            b"-w" => args.suppress_warnings = true,
             b"-fatal_warnings" => args.fatal_warnings = true,
             b"-demangle" => args.demangle = true,
             b"-help" => {
@@ -2960,8 +2906,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // them now, and ld64 takes this for -dead_strip alone.
             b"-no_dead_strip_inits_and_terms" => {
                 args.dead_strip = true;
-                st.warnings.warn(
-                    "option '-no_dead_strip_inits_and_terms' is obsolete, use '-dead_strip' instead",
+                crate::warn!(
+                    "option '-no_dead_strip_inits_and_terms' is obsolete, use '-dead_strip' instead"
                 );
             }
             // ld64 set MH_DEAD_STRIPPABLE_DYLIB for this, asking the
@@ -3005,7 +2951,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 cur.arg_or_empty(name);
                 st.obsolete.push(format!("{name} is obsolete"));
             }
-            b"-s" | b"-Si" | b"-Sn" => st.warnings.warn(format!("{name} is obsolete")),
+            b"-s" | b"-Si" | b"-Sn" => crate::warn!("{name} is obsolete"),
             // Bitcode bundles went with Xcode 14, and ld-prime ignores
             // the options that asked for one, as it does -ld_classic,
             // which once picked ld64 over it. -ld_new picks ld-prime,
@@ -3018,7 +2964,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 st.obsolete.push(format!("{name} is no longer supported and will be ignored"))
             }
             b"-ld_classic" => {
-                st.warnings.warn("-ld_classic is no longer supported and will be ignored")
+                crate::warn!("-ld_classic is no longer supported and will be ignored")
             }
             b"-ld_prime" => st.obsolete.push("-ld_prime is deprecated, use -ld_new instead".into()),
             b"-ld_new" => {}
@@ -3061,18 +3007,16 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         crate::error::drop_held();
         return args;
     }
+    // -w and -fatal_warnings apply to every warning, wherever they
+    // appear on the command line.
+    crate::error::set_fatal_warnings(args.fatal_warnings);
+    crate::error::set_suppress_warnings(args.suppress_warnings);
+    crate::error::release_held();
 
     check_segment_order(&args);
     resolve_defaults(target, &mut args, &st);
     std::mem::take(&mut st.lists).build(&mut args);
     args.merged_files = notes_merged_files(&args);
-
-    // -fatal_warnings applies to every warning, wherever it appears on
-    // the command line. So does -w to those from the option checks
-    // below, but not to those given as options were read.
-    crate::error::set_fatal_warnings(args.fatal_warnings);
-    st.warnings.print();
-    crate::error::set_suppress_warnings(args.suppress_warnings);
     check_arch_options(target, &mut args, &st);
     resolve_env_source_version(&mut args, &st);
     if let Some((old, new)) = st.incompatible_platforms {

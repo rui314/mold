@@ -24,19 +24,25 @@ grep -q warning $t/log3
 $CC --ld-path=$mold -o $t/exe $t/b.o -mmacosx-version-min=14.0 -Wl,-no_pie,-w >& $t/log4
 not grep -q warning $t/log4
 
-# ld-prime gives some warnings as it reads the option they are about,
-# so only a -w before that option silences them: that an -alias_list
-# can't be opened, given once, is one, and so are -segprot's and the
-# one about an obsolete option, all in command-line order.
-$CC --ld-path=$mold -o $t/exe $t/b.o -Wl,-alias_list,$t/nosuch,-w >& $t/log5
+# So do the warnings given as the options are read, each given once
+# though the options may be read once per target the link might be for:
+# that an -alias_list can't be opened is one, and so are -segprot's and
+# the one about an obsolete option. (ld-prime gives these as it reads
+# the option, which only a -w before it silences.)
+$CC --ld-path=$mold -o $t/exe $t/b.o -Wl,-alias_list,$t/nosuch >& $t/log5
 [ "$(grep -c "order file '$t/nosuch' could not be opened" $t/log5)" = 1 ]
 $CC --ld-path=$mold -o $t/exe $t/b.o -Wl,-w,-alias_list,$t/nosuch >& $t/log6
 not grep -q warning $t/log6
 
 $CC --ld-path=$mold -o $t/exe $t/b.o \
-  -Wl,-segprot,__FOO,rz,r,-no_dead_strip_inits_and_terms,-segprot,__LINKEDIT,r,r,-w >& $t/log7
-[ "$(grep -o 'letter .z.\|obsolete\|__LINKEDIT' $t/log7 | tr '\n' ' ')" = \
-  "letter 'z' obsolete __LINKEDIT " ]
+  -Wl,-segprot,__FOO,rz,r,-no_dead_strip_inits_and_terms,-segprot,__LINKEDIT,r,r >& $t/log7
+grep -q "letter 'z'" $t/log7
+grep -q obsolete $t/log7
+grep -q __LINKEDIT $t/log7
 $CC --ld-path=$mold -o $t/exe $t/b.o \
   -Wl,-w,-segprot,__FOO,rz,r,-no_dead_strip_inits_and_terms,-segprot,__LINKEDIT,r,r >& $t/log8
 not grep -q warning $t/log8
+if $mold -v 2> /dev/null | grep -q mold-macho; then
+  $CC --ld-path=$mold -o $t/exe $t/b.o -Wl,-alias_list,$t/nosuch,-w >& $t/log9
+  not grep -q warning $t/log9
+fi

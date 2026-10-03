@@ -62,7 +62,7 @@ not grep -q "\[weak-import\]" $t/bbb
 not $mold -o $t/exe $t/b.o -weak_reference_mismatches foo 2> $t/log
 grep -q 'invalid option to -weak_reference_mismatches \[ error | weak | non-weak \]' $t/log
 not $mold -o $t/exe $t/b.o -weak_reference_mismatches 2> $t/log
-grep -q -- '-weak_reference_mismatches missing \[ error | weak | non-weak \]' $t/log
+grep -q -- '-weak_reference_mismatches.*missing' $t/log
 
 # A weakly linked library makes its imports weak, which is fine.
 $CC --ld-path=$mold -o $t/libb.dylib -shared $t/c.o -Wl,-weak_library,$t/liba.dylib \

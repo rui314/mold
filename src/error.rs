@@ -191,11 +191,9 @@ fn release_parallel() {
     }
 }
 
-/// Reports an unrecoverable error and exits, giving the messages held
-/// back first. Reading the input files, it is one more of their errors
-/// (see hold_input_errors).
+/// Reports an unrecoverable error and exits. Reading the input files,
+/// it is one more of their errors (see hold_input_errors).
 pub fn fatal(msg: fmt::Arguments) -> ! {
-    release_held();
     release_layout_error();
     if hold_input_error(msg) {
         report_input_errors();
@@ -251,37 +249,28 @@ pub fn report_input_errors() {
     }
 }
 
-/// A message held back: a warning, or a notice printed bare.
-pub enum Held {
-    Warning(Message),
-    Notice(Message),
+/// The warnings held back while the options are read (Some while they
+/// are), until the parse is known to be for the target: the driver
+/// parses once per speculated target, and a warning is given once.
+static HELD: Mutex<Option<Vec<Message>>> = Mutex::new(None);
+
+/// Holds back the warnings from here on (see HELD).
+pub fn hold_warnings() {
+    *HELD.lock().unwrap_or_else(|e| e.into_inner()) = Some(Vec::new());
 }
 
-/// The messages ld-prime gives as it reads the options, which wait
-/// until the options are known to be read for the target (see
-/// cmdline's OptionWarnings), but come out before the error an option
-/// runs into.
-static HELD: Mutex<Vec<Held>> = Mutex::new(Vec::new());
-
-pub fn hold(msg: Held) {
-    HELD.lock().unwrap_or_else(|e| e.into_inner()).push(msg);
-}
-
-/// Gives the messages held back.
+/// Gives the warnings held back, and holds back no more.
 pub fn release_held() {
-    let held = std::mem::take(&mut *HELD.lock().unwrap_or_else(|e| e.into_inner()));
-    for msg in held {
-        match msg {
-            Held::Warning(msg) => warn(format_args!("{}", raw(&msg))),
-            Held::Notice(msg) => notice(format_args!("{}", raw(&msg))),
-        }
+    let held = HELD.lock().unwrap_or_else(|e| e.into_inner()).take();
+    for msg in held.into_iter().flatten() {
+        warn(format_args!("{}", raw(&msg)));
     }
 }
 
-/// Forgets the messages held back, of options read for another target
-/// that are read again.
+/// Forgets the warnings held back, of options read for another target
+/// that are read again, and holds back no more.
 pub fn drop_held() {
-    HELD.lock().unwrap_or_else(|e| e.into_inner()).clear();
+    *HELD.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
 
 /// Reports an error (or holds it back with the others in the input
@@ -332,26 +321,24 @@ pub fn has_layout_error() -> bool {
     HAS_LAYOUT_ERROR.load(Ordering::Relaxed)
 }
 
-/// Reports a warning. -w hides it, but -fatal_warnings still counts it
-/// (see check_fatal_warnings).
+/// Reports a warning, or holds it back (see hold_warnings). -w hides
+/// it, but -fatal_warnings still counts it (see check_fatal_warnings).
 pub fn warn(msg: fmt::Arguments) {
+    if let Some(held) = HELD.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+        held.push(render(msg));
+        return;
+    }
     HAS_WARNING.store(true, Ordering::Relaxed);
     if !SUPPRESS_WARNINGS.load(Ordering::Relaxed) {
         emit("mold: warning: ", "mold: \x1b[0;1;35mwarning:\x1b[0m ", msg);
     }
 }
 
-/// Prints a message with no prefix: ld-prime gives a few notices that
-/// are neither warnings nor errors (a renamed option), and reports some
-/// of what it did (-why_live, -why_load, the text relocations and the
-/// final layout it fails on) in lines of its own.
+/// Prints a message with no prefix: ld-prime reports some of what it
+/// did (-why_live, -why_load, the text relocations and the final
+/// layout it fails on) in lines of its own.
 pub fn notice(msg: fmt::Arguments) {
     emit("", "", msg);
-}
-
-/// Counts a warning that -w hid before it could be given.
-pub fn hidden_warning() {
-    HAS_WARNING.store(true, Ordering::Relaxed);
 }
 
 /// Fails a link that has given a warning, shown or hidden by -w, under

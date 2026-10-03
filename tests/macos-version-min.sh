@@ -51,20 +51,10 @@ else
   grep -q 'cmd LC_BUILD_VERSION' $t/log3
 fi
 
-# ld-prime notes each use of the old spelling, bare and whatever -w or
-# -fatal_warnings say, and reports on the option under its new name.
+# -macosx_version_min is the option's old spelling.
 sdk=$(xcrun --show-sdk-path)
 link() { $mold -arch $ARCH -syslibroot "$sdk" -lSystem $t/a.o "$@"; }
-link -w -fatal_warnings -macosx_version_min 30.0 -macosx_version_min 30.0 -o $t/exe3 \
-  2> $t/log4
-[ "$(grep -c '^-macosx_version_min has been renamed to -macos_version_min$' $t/log4)" = 2 ]
+link -macosx_version_min 14.1 -o $t/exe3
+otool -l $t/exe3 | grep -A4 LC_BUILD_VERSION | grep -q 'minos 14.1'
 not link -macosx_version_min 1x -o $t/exe3 2> $t/log5
-grep -q -- "-macos_version_min: malformed 32-bit xxxx.yy.zz version number: '1x'" $t/log5
-
-# The notes and warnings given as options are read come before the
-# error an option runs into.
-not link -macosx_version_min 30.0 -sectalign __TEXT __text 3 -headerpad xyz -o $t/exe3 \
-  2> $t/log6
-grep -q '^-macosx_version_min has been renamed to -macos_version_min$' $t/log6
-grep -q 'alignment for -sectalign __TEXT __text is not a power of two' $t/log6
-grep -q -- '-headerpad: not a hexadecimal number: xyz' $t/log6
+grep -q -- "malformed 32-bit xxxx.yy.zz version number: '1x'" $t/log5

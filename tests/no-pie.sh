@@ -38,10 +38,10 @@ fi
 $CC --ld-path=$mold -o $t/b.dylib -shared $t/a.o -mmacosx-version-min=$new -Wl,-no_pie 2> $t/log3
 not grep -q -- '-no_pie' $t/log3
 
-# The last of -pie and -no_pie wins. ld-prime warns as it reads one that
-# turns the other around (so only a -w before it silences that).
+# The last of -pie and -no_pie wins, with a warning for one that turns
+# the other around.
 $CC --ld-path=$mold -o $t/exe4 $t/a.o -mmacosx-version-min=$old \
-  -Wl,-pie,-pie,-no_pie,-no_pie,-pie -Wl,-w 2> $t/log4
+  -Wl,-pie,-pie,-no_pie,-no_pie,-pie 2> $t/log4
 flags $t/exe4 | grep -q ' PIE'
 [ "$(grep -c -- '-no_pie overriding previous -pie' $t/log4)" = 1 ]
 [ "$(grep -c -- '-pie overriding previous -no_pie' $t/log4)" = 1 ]

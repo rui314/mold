@@ -29,7 +29,7 @@ not grep -q 'warning:' $t/log3
 grep -q 'fatal warning(s) induced error (-fatal_warnings)' $t/log3
 
 # So are those given as an option is read, whatever the order of the
-# options, and one a -w before it hides.
+# options, and one -w hides.
 not $CC --ld-path=$mold $t/a.o -Wl,-alias_list,$t/nosuch,-fatal_warnings -o $t/exe 2> $t/log4
 grep -q "order file '$t/nosuch' could not be opened" $t/log4
 not $CC --ld-path=$mold $t/a.o -Wl,-fatal_warnings,-w,-alias_list,$t/nosuch -o $t/exe 2> $t/log5
