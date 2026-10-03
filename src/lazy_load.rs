@@ -18,6 +18,22 @@ use crate::symbol::SymbolId;
 use crate::target::{LazyRef, Target};
 use crate::util::leak_bytes;
 
+/// Binds __dyld_lazy_load, which the lazy-load helpers call (see
+/// create_lazy_loads), in an image that uses a symbol of a lazy dylib,
+/// before the dylibs no symbol binds to are dropped.
+pub fn bind_dyld_lazy_load<E: Target>(ctx: &mut Context<E>) {
+    if !ctx.dylibs.iter().any(|d| d.is_lazy) {
+        return;
+    }
+    let ctx_ref: &Context<E> = ctx;
+    let uses_lazy = (0..ctx.symbols.syms.len() as SymbolId)
+        .into_par_iter()
+        .any(|id| ctx_ref.symbols[id].is_used() && ctx_ref.is_lazy_import(id));
+    if uses_lazy && let Some(id) = bind_linker_import(ctx, b"__dyld_lazy_load") {
+        ctx.symbols[id].set_is_used(true);
+    }
+}
+
 /// Makes what the image reaches the symbols of its lazy dylibs through,
 /// as ld-prime does. Calls go to a helper per symbol that jumps
 /// through the slot once the flag says the dylib is loaded, and first
@@ -228,20 +244,4 @@ fn create_lazy_helpers<E: Target>(
     }
     ctx.lazy_helpers.sites = sites;
     ctx.lazy_helpers.helpers = helpers;
-}
-
-/// Binds __dyld_lazy_load, which the lazy-load helpers call (see
-/// create_lazy_loads), in an image that uses a symbol of a lazy dylib,
-/// before the dylibs no symbol binds to are dropped.
-pub fn bind_dyld_lazy_load<E: Target>(ctx: &mut Context<E>) {
-    if !ctx.dylibs.iter().any(|d| d.is_lazy) {
-        return;
-    }
-    let ctx_ref: &Context<E> = ctx;
-    let uses_lazy = (0..ctx.symbols.syms.len() as SymbolId)
-        .into_par_iter()
-        .any(|id| ctx_ref.symbols[id].is_used() && ctx_ref.is_lazy_import(id));
-    if uses_lazy && let Some(id) = bind_linker_import(ctx, b"__dyld_lazy_load") {
-        ctx.symbols[id].set_is_used(true);
-    }
 }
