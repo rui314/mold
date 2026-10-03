@@ -1496,7 +1496,7 @@ impl SectionFragment {
 }
 
 /// Fragment metadata for an input section with the `SHF_MERGE` flag.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct MergeInfo {
     pub parent: MergedSectionId,
     pub p2align: u8,

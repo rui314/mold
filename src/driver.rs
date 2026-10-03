@@ -236,22 +236,6 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
         return Ok(0);
     }
 
-    // Non-allocated strings are independent of symbol and relocation passes.
-    // Give the background task owned metadata and publish it before layout.
-    let merge_input = chunks::merged::BackgroundMerge::prepare(&ctx);
-    let merge_timers = ctx.timers.clone();
-    let merge_comment = ctx.comment;
-    let merge_cmdline = Arc::clone(&ctx.cmdline_args);
-    let merge_job = Background::spawn("non-allocated string merging", move || {
-        merge_input.run(chunks::merged::ResolveOptions {
-            allocated_only: false,
-            gc_sections: false,
-            comment: merge_comment,
-            cmdline_args: &merge_cmdline,
-            timers: &merge_timers,
-        })
-    });
-
     // Create .bss sections for common symbols.
     passes::convert_common_symbols(&mut ctx);
 
@@ -398,8 +382,6 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     // Now that we know all exported symbols, make sure that no versioned
     // name is defined twice.
     passes::check_symbol_version_conflicts(&ctx);
-
-    merge_job.join().finish(&mut ctx);
 
     // Sort sections by section attributes so that we'll have to
     // create as few segments as possible.

@@ -2275,8 +2275,7 @@ pub fn compute_section_sizes<E: Target>(ctx: &mut Context<E>) {
         }
     }
 
-    // Relocatable links resolve non-allocated sections here; ordinary links
-    // already completed that work in the background.
+    // Merged sections without SHF_ALLOC are resolved here.
     if ctx.merged_sections.iter().any(|section| !section.resolved) {
         let mut members = merged_resolve_members(&mut ctx.objs, ctx.merged_sections.len());
         crate::chunks::merged::resolve_sections::<E>(
