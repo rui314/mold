@@ -11,7 +11,6 @@ use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::input_files::{FileId, ObjectFile};
 use crate::macho::*;
-use crate::passes::{has_unnamed_subsecs, is_unnamed_objc_list};
 use crate::symbol::SymbolId;
 use crate::target::Target;
 use crate::util::{leak_bytes, path_bytes};
@@ -602,7 +601,7 @@ pub(crate) fn object_stabs_opening<E: Target>(
 /// subsection gets them, but a symbol without a section has no address
 /// to note. A -r output keeps a common undefined; it is noted by name.
 /// (ld-prime notes an absolute symbol too, and no symbol of the sections
-/// it splits by content: see has_stabs.)
+/// it splits by content.)
 fn symbol_stabs<E: Target>(
     ctx: &Context<E>,
     obj: &ObjectFile,
@@ -635,42 +634,6 @@ fn symbol_stabs<E: Target>(
     } else {
         SymbolStabs { n_sect, n_type: N_STSYM, ..global }
     })
-}
-
-/// Whether ld-prime notes the symbols of an input section, which
-/// mergeable libraries' records go by (a symbol table notes them all).
-/// It notes
-/// none in those whose contents it splits into subsections of its own:
-/// literals (C strings by the section type, as the 4-, 8- and 16-byte
-/// ones, and UTF-16 strings in __TEXT,__ustring, even in an object
-/// without subsections, where they are one subsection), the initializer
-/// and terminator pointers, exception tables, and the Objective-C
-/// metadata it parses - the lists, the class, superclass, protocol and
-/// selector references, CFStrings and literal objects, ivar offsets,
-/// and the method lists it rewrote in the relative form. The metadata
-/// goes by the name clang gives it, in __DATA: a
-/// __DATA_CONST,__objc_protolist is noted like any other section.
-pub(crate) fn has_stabs(hdr: &MachSection) -> bool {
-    let literals = matches!(
-        hdr.section_type(),
-        S_CSTRING_LITERALS | S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS
-    );
-    let init_term =
-        matches!(hdr.section_type(), S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS);
-    let text = hdr.segname_is(b"__TEXT")
-        && ["__gcc_except_tab", "__objc_methlist", "__ustring"]
-            .iter()
-            .any(|name| hdr.sectname_is(name.as_bytes()));
-    let objc = hdr.segname_is(b"__DATA")
-        && ["__objc_ivar", "__objc_protolist", "__objc_protorefs", "__objc_superrefs"]
-            .iter()
-            .any(|name| hdr.sectname_is(name.as_bytes()));
-    !(literals
-        || init_term
-        || text
-        || objc
-        || has_unnamed_subsecs(hdr, false)
-        || is_unnamed_objc_list(hdr))
 }
 
 /// Whether a symbol is still a tentative definition, which no real one

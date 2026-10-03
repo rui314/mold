@@ -1374,9 +1374,6 @@ impl<E: Target> Synth<'_, E> {
             SymPlace::Defined { sect, offset } => (sect, offset),
         };
         let section = &self.sections[sect];
-        if !has_stabs(section) {
-            return None;
-        }
         let addr = section.addr + offset;
         let n_sect = sect as u8 + 1;
         let notes = if section.flags & S_ATTR_PURE_INSTRUCTIONS != 0 {
@@ -1591,17 +1588,6 @@ struct SymbolTable {
     /// The locals and the debug notes.
     nlocal: usize,
     nextdef: usize,
-}
-
-/// Whether ld-prime notes the symbols of a section.
-fn has_stabs(s: &Section) -> bool {
-    let hdr = MachSection {
-        sectname: s.sectname,
-        segname: s.segname,
-        flags: s.flags,
-        ..Default::default()
-    };
-    crate::chunks::symtab::has_stabs(&hdr)
 }
 
 /// A string table, starting as ld64's do with " \0".

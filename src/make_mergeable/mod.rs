@@ -405,7 +405,7 @@ impl<'a, E: Target> Builder<'a, E> {
         let label = if record { None } else { ctx.subsec_label_index(id as usize) };
         let (content_type, custom) = self.content_type(hdr);
         let mut entry = match label {
-            Some(i) => named_entry(ctx, obj, i, hdr, content_type, debug),
+            Some(i) => named_entry(ctx, obj, i, content_type, debug),
             None if literal => {
                 OutEntry::new(scope::HIDDEN, kind::ANON_COAL_BY_CONTENT, content_type)
             }
@@ -1241,12 +1241,11 @@ fn linkage<E: Target>(ctx: &Context<E>, nlist: &NList, id: SymbolId) -> (u8, u8)
 }
 
 /// The entry a symbol of an object names: its linkage, its name, and
-/// its debug notes if a final link would note it.
+/// its object's debug notes, unless the assembler made it.
 fn named_entry<E: Target>(
     ctx: &Context<E>,
     obj: &ObjectFile,
     i: usize,
-    hdr: &MachSection,
     content_type: u8,
     debug: u16,
 ) -> OutEntry {
@@ -1256,7 +1255,7 @@ fn named_entry<E: Target>(
     entry.name = Some(name);
     entry.cold = obj.nlists[i].n_desc & N_COLD_FUNC != 0;
     entry.no_dead_strip = obj.nlists[i].n_desc & N_NO_DEAD_STRIP != 0;
-    if !crate::input_files::is_private_label(name) && crate::chunks::symtab::has_stabs(hdr) {
+    if !crate::input_files::is_private_label(name) {
         entry.debug = debug;
     }
     entry
