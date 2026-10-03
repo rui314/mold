@@ -545,62 +545,24 @@ pub fn convert_objc_method_lists<E: Target>(ctx: &mut Context<E>) {
 }
 
 /// Every method list the runtime would visit, each once, in the order
-/// the list sections lead to them. The subsections of the list sections
-/// are followed in parallel, one not knowing what the others visit, and
-/// the first visit of each list counts.
+/// the list sections lead to them. Blocks of the subsections are
+/// followed in parallel, one not knowing what the others visit, and the
+/// first visit of each list counts.
 fn runtime_method_lists<E: Target>(ctx: &Context<E>) -> Vec<u32> {
-    let found: Vec<Vec<u32>> = (0..ctx.isecs.len() as u32)
+    const BLOCK: u32 = 4096;
+    let n = ctx.isecs.len() as u32;
+    let found: Vec<Vec<u32>> = (0..n.div_ceil(BLOCK))
         .into_par_iter()
-        .filter_map(|i| method_lists_of(ctx, i))
+        .map(|block| {
+            let mut found = MethodListFinder::default();
+            for i in block * BLOCK..n.min((block + 1) * BLOCK) {
+                found.visit_list_section(ctx, i);
+            }
+            found.lists
+        })
         .collect();
     let mut seen = hashbrown::HashSet::new();
     found.into_iter().flatten().filter(|&list| seen.insert(list)).collect()
-}
-
-/// The method lists a subsection of a list section leads to, in order;
-/// None for a subsection of another section.
-fn method_lists_of<E: Target>(ctx: &Context<E>, i: u32) -> Option<Vec<u32>> {
-    let isec = &ctx.isecs[i];
-    if !isec.is_alive() || ctx.is_internal(isec.file as usize) {
-        return None;
-    }
-    let h = ctx.hdr_of(isec);
-    if !h.segname().starts_with(b"__DATA") {
-        return None;
-    }
-    let mut found = MethodListFinder::default();
-    let records = || list_entries(ctx, i).filter_map(|r| objc_ref_location(ctx, r?));
-    match h.sectname() {
-        b"__objc_classlist" | b"__objc_nlclslist" => {
-            for cls in records() {
-                found.visit_class(ctx, cls);
-            }
-        }
-        b"__objc_catlist" | b"__objc_catlist2" | b"__objc_nlcatlist" => {
-            // category_t: name, cls, instanceMethods, classMethods.
-            for cat in records() {
-                found.note(ctx, cat, 16);
-                found.note(ctx, cat, 24);
-            }
-        }
-        b"__objc_protolist" => {
-            // protocol_t: isa, name, protocols, then the four method
-            // lists.
-            for proto in records() {
-                for field in [24, 32, 40, 48] {
-                    found.note(ctx, proto, field);
-                }
-            }
-        }
-        b"__objc_clsrolist" => {
-            // class_ro_t: baseMethods at 32.
-            for ro in records() {
-                found.note(ctx, ro, 32);
-            }
-        }
-        _ => return None,
-    }
-    Some(found.lists)
 }
 
 /// The method lists found so far, and the classes visited.
@@ -612,6 +574,50 @@ struct MethodListFinder {
 }
 
 impl MethodListFinder {
+    /// Notes the method lists subsection `i` leads to if it is one of a
+    /// list section's.
+    fn visit_list_section<E: Target>(&mut self, ctx: &Context<E>, i: u32) {
+        let isec = &ctx.isecs[i];
+        if !isec.is_alive() || ctx.is_internal(isec.file as usize) {
+            return;
+        }
+        let h = ctx.hdr_of(isec);
+        if !h.segname().starts_with(b"__DATA") {
+            return;
+        }
+        let records = || list_entries(ctx, i).filter_map(|r| objc_ref_location(ctx, r?));
+        match h.sectname() {
+            b"__objc_classlist" | b"__objc_nlclslist" => {
+                for cls in records() {
+                    self.visit_class(ctx, cls);
+                }
+            }
+            b"__objc_catlist" | b"__objc_catlist2" | b"__objc_nlcatlist" => {
+                // category_t: name, cls, instanceMethods, classMethods.
+                for cat in records() {
+                    self.note(ctx, cat, 16);
+                    self.note(ctx, cat, 24);
+                }
+            }
+            b"__objc_protolist" => {
+                // protocol_t: isa, name, protocols, then the four method
+                // lists.
+                for proto in records() {
+                    for field in [24, 32, 40, 48] {
+                        self.note(ctx, proto, field);
+                    }
+                }
+            }
+            b"__objc_clsrolist" => {
+                // class_ro_t: baseMethods at 32.
+                for ro in records() {
+                    self.note(ctx, ro, 32);
+                }
+            }
+            _ => {}
+        }
+    }
+
     /// Notes the method list a record's pointer field at `field` points
     /// at, if it is the start of a subsection.
     fn note<E: Target>(&mut self, ctx: &Context<E>, rec: (u32, u64), field: u64) {
