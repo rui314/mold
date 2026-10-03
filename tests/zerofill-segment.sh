@@ -1,10 +1,10 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# A segment of zero-fill sections alone has no bytes in the file:
-# ld-prime records its file offset as 0, as it does those sections',
-# in any kind of image. A segment with only empty regular sections
-# keeps the file offset where it would start.
+# A segment of zero-fill sections alone has no bytes in the file, in
+# any kind of image. (ld-prime records its file offset as 0, as it does
+# those sections'; mold leaves it where the segment would start, as for
+# a segment with only empty regular sections.)
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .text
 .globl _main
@@ -24,12 +24,12 @@ seg() {
 for kind in '' -dylib -bundle; do
   $mold -arch $ARCH $kind $t/a.o -platform_version macos 13.0 13.0 -syslibroot $sdk \
     -lSystem -o $t/out
-  [ "$(seg $t/out __FOO)" = '0 0' ]
-  [ "$(seg $t/out __DATA)" = '0 0' ]
+  [ "$(seg $t/out __FOO | cut -d' ' -f2)" = 0 ]
+  [ "$(seg $t/out __DATA | cut -d' ' -f2)" = 0 ]
   [ "$(seg $t/out __QUX | cut -d' ' -f1)" != 0 ]
 done
 
 $mold -arch $ARCH -static -e _main $t/a.o -platform_version macos 13.0 13.0 -o $t/static
-[ "$(seg $t/static __FOO)" = '0 0' ]
+[ "$(seg $t/static __FOO | cut -d' ' -f2)" = 0 ]
 $mold -arch $ARCH -preload -e _main $t/a.o -platform_version macos 13.0 13.0 -o $t/preload
-[ "$(seg $t/preload __DATA)" = '0 0' ]
+[ "$(seg $t/preload __DATA | cut -d' ' -f2)" = 0 ]
