@@ -470,7 +470,10 @@ fn output_leaf<E: Target>(ctx: &Context<E>) -> String {
 /// A file's path as the traces give it: its real path, a fat file's
 /// slice by the file's.
 fn trace_path(path: &Path) -> String {
-    crate::passes::real_path(path).0.to_string_lossy().into_owned()
+    let (path, _) = crate::input_files::split_fat_arch(crate::util::path_bytes(path));
+    let path = Path::new(crate::util::os_str(path));
+    let path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    path.to_string_lossy().into_owned()
 }
 
 /// The symbols a dylib output exports of its own definitions, sorted:

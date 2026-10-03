@@ -4242,13 +4242,6 @@ pub fn print_why_load<E: Target>(ctx: &Context<E>) {
     }
 }
 
-/// A file's real path, and of a fat file's slice the architecture.
-pub(crate) fn real_path(name: &Path) -> (PathBuf, Option<&[u8]>) {
-    let (path, arch) = input_files::split_fat_arch(path_bytes(name));
-    let path = Path::new(crate::util::os_str(path));
-    (std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf()), arch)
-}
-
 /// -trace_implicit_libraries prints on stdout the libraries the link
 /// brings in on its own: each live object's auto-link hints, and each
 /// library loaded as the re-export of another, with that library's
