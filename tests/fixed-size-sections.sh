@@ -82,14 +82,18 @@ $mold -r -arch $ARCH -o $t/r.o $t/d.o
 nm $t/r.o > $t/syms
 not grep -q '_end8\|_endinit' $t/syms
 
-# So is the ltmpN label the arm64 assembler puts at an empty section's
-# start, in an object without subsections, where such labels count.
+# The ltmpN label the arm64 assembler puts at an empty section's start,
+# in an object without subsections, where such labels count, keeps the
+# section (but not ld-prime's) and never reaches the symbol table.
 if [ $ARCH = arm64 ]; then
   printf '.text\nnop\n.section __TEXT,__literal8,8byte_literals\n' |
     $CC -o $t/e.o -c -xassembler -
   $mold -r -arch arm64 -o $t/r.o $t/e.o
   nm $t/r.o > $t/syms
   not grep -q ltmp1 $t/syms
+  if $mold -v 2> /dev/null | grep -q mold-macho; then
+    otool -l $t/r.o | grep -q 'sectname __literal8'
+  fi
 fi
 
 for global in '' '.globl _end8'; do
