@@ -195,13 +195,16 @@ first -order_file $t/first.order
 grep -q "fixup error (kind=$far_kind) at $far_at from first2.o, " $t/first.log
 
 # A call to an import, or to a definition dyld may interpose, goes to
-# its stub, which a fixup error names '' as well.
+# its stub, which a fixup error names '' as well. (An arm64 thunk would
+# reach the stub; -no_branch_islands leaves the branch out of reach.)
 if [ $ARCH = arm64 ]; then
   call=bl
   late=0x110000000
+  islands=-no_branch_islands
 else
   call=call
   late=0x190000000
+  islands=
 fi
 cat <<EOF | $CC -o $t/late.o -c -xassembler -
 .text
@@ -220,11 +223,11 @@ _late2:
 .subsections_via_symbols
 EOF
 not $mold -arch $ARCH -platform_version macos 14.0 14.0 -syslibroot "$sdk" \
-  -o $t/late $t/late.o $t/libext2.dylib -lSystem -segaddr __LATE $late 2> $t/late.log
+  -o $t/late $t/late.o $t/libext2.dylib -lSystem -segaddr __LATE $late $islands 2> $t/late.log
 grep -Eq "fixup error \(kind=$far_kind\) at '_late'(\+0x1)? from late.o, .* \(''\)" $t/late.log
 
 printf '_late2\n_late\n' > $t/late.order
 not $mold -arch $ARCH -platform_version macos 14.0 14.0 -syslibroot "$sdk" -dylib \
   -o $t/late.dylib $t/late.o $t/libext2.dylib -lSystem -segaddr __LATE $late \
-  -order_file $t/late.order 2> $t/late.log
+  -order_file $t/late.order $islands 2> $t/late.log
 grep -Eq "fixup error \(kind=$far_kind\) at '_late2'(\+0x1)? from late.o, .* \(''\)" $t/late.log

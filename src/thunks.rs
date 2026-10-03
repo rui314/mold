@@ -8,10 +8,7 @@
 //! whose code - from its first code section to the end of its last,
 //! __stubs and __objc_stubs included - fits within a branch's reach
 //! gets none. need_thunks bounds that span before placement and lays
-//! the code out without thunks if it fits. Its islands serve only the
-//! code of __TEXT, whatever the output type: a branch from or to code
-//! of another segment - a kext's __TEXT_EXEC among them - gets none,
-//! and is a fixup error if it is out of reach.
+//! the code out without thunks if it fits.
 //!
 //! Otherwise every code section is laid out with thunks as mold does:
 //! a thunk is placed for each batch of code at D, the farthest point
@@ -62,8 +59,8 @@ const UNPLACED: u32 = u32::MAX;
 /// code spans no more than a branch reaches, Some(true) if it may span
 /// more, and None if only the placement can tell - the span then holds
 /// a chunk sized as it is placed (a shared-region image's __stubs come
-/// after __unwind_info). With -no_branch_islands it gets none: a branch
-/// out of reach is then a fixup error.
+/// after __unwind_info) or crosses segments. With -no_branch_islands it
+/// gets none: a branch out of reach is then a fixup error.
 pub fn need_thunks<E: Target>(ctx: &Context<E>) -> Option<bool> {
     if E::THUNK_SIZE == 0 || ctx.args.no_branch_islands {
         return Some(false);
@@ -71,9 +68,10 @@ pub fn need_thunks<E: Target>(ctx: &Context<E>) -> Option<bool> {
     let Some((first, last)) = code_range(ctx) else {
         return Some(false);
     };
+    let segname = ctx.chunk_header(ctx.chunks[first]).segname;
     let span = ctx.chunks[first..=last]
         .iter()
-        .map(|&id| chunk_room(ctx, id, false))
+        .map(|&id| chunk_room(ctx, id, segname, false))
         .sum::<Option<u64>>()?;
     Some(span > E::BRANCH_RANGE / 2)
 }
@@ -108,13 +106,11 @@ pub fn create_range_extension_thunks<E: Target>(ctx: &mut Context<E>) {
     }
 }
 
-/// Whether a chunk is code that gets branch islands: a non-empty
-/// executable section of __TEXT.
+/// Whether a chunk is code, which gets thunks: a non-empty executable
+/// section, in whatever segment.
 fn is_code<E: Target>(ctx: &Context<E>, id: ChunkId) -> bool {
     let hdr = ctx.chunk_header(id);
-    hdr.flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0
-        && hdr.size > 0
-        && hdr.segname == b"__TEXT"
+    hdr.flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0 && hdr.size > 0
 }
 
 /// The positions in the output order of the first and the last code
@@ -128,10 +124,16 @@ fn code_range<E: Target>(ctx: &Context<E>) -> Option<(usize, usize)> {
 /// An upper bound on the room a chunk takes in the code span: its size
 /// and the padding its alignment may put before it, plus, for a code
 /// section still to get its thunks (`grows`), those thunks. None for a
-/// chunk whose size is only known once it is placed.
-fn chunk_room<E: Target>(ctx: &Context<E>, id: ChunkId, grows: bool) -> Option<u64> {
+/// chunk outside `segname`, which the segments' placement may put
+/// anywhere, or one whose size is only known once it is placed.
+fn chunk_room<E: Target>(
+    ctx: &Context<E>,
+    id: ChunkId,
+    segname: &[u8],
+    grows: bool,
+) -> Option<u64> {
     let hdr = ctx.chunk_header(id);
-    if matches!(id, ChunkId::MachHeader | ChunkId::UnwindInfo) {
+    if hdr.segname != segname || matches!(id, ChunkId::MachHeader | ChunkId::UnwindInfo) {
         return None;
     }
     let align = 1 << hdr.p2align;
@@ -150,14 +152,12 @@ fn chunk_room<E: Target>(ctx: &Context<E>, id: ChunkId, grows: bool) -> Option<u
 }
 
 /// Where a code chunk lies relative to the section being laid out:
-/// within the code span before or after it, outside the span, or in
-/// another segment than __TEXT, whose code no island serves.
+/// within the code span before or after it, or outside the span.
 #[derive(Clone, Copy, PartialEq)]
 enum Side {
     Before,
     After,
     Outside,
-    OtherSegment,
 }
 
 /// What a branch from the code section being laid out can reach.
@@ -185,8 +185,17 @@ impl Reach {
         pos: usize,
         last: usize,
     ) -> Self {
+        // The span is the code of the section's own segment: the
+        // segments' placement may put another's code anywhere.
+        let hdr = ctx.chunk_header(ctx.chunks[pos]);
+        let in_span = |i: &usize| {
+            let id = ctx.chunks[*i];
+            is_code(ctx, id) && ctx.chunk_header(id).segname == hdr.segname
+        };
+        let first = (first..=pos).find(in_span).unwrap();
+        let last = (pos..=last).rev().find(in_span).unwrap();
+
         let side = |i: usize| match i {
-            _ if ctx.chunk_header(ctx.chunks[i]).segname != b"__TEXT" => Side::OtherSegment,
             _ if i < first || last < i => Side::Outside,
             _ if i < pos => Side::Before,
             _ => Side::After,
@@ -202,9 +211,8 @@ impl Reach {
             }
         }
 
-        let hdr = ctx.chunk_header(ctx.chunks[pos]);
         let room = |ids: &[ChunkId], grows| {
-            ids.iter().map(|&id| chunk_room(ctx, id, grows)).sum::<Option<u64>>()
+            ids.iter().map(|&id| chunk_room(ctx, id, hdr.segname, grows)).sum::<Option<u64>>()
         };
         let before = room(&ctx.chunks[first..pos], false).map(|room| room + (1 << hdr.p2align) - 1);
         let after = room(&ctx.chunks[pos + 1..=last], true);
@@ -343,7 +351,7 @@ fn scan_batch<E: Target>(
                     continue;
                 };
                 let p = isec.offset as u64 + rel.offset as u64;
-                if needs_thunk(ctx, reach, p, sym) && ctx.symbols[sym].mark() {
+                if needs_thunk(ctx, reach, id, p, sym) && ctx.symbols[sym].mark() {
                     syms.push(sym);
                 }
             }
@@ -359,15 +367,25 @@ fn scan_batch<E: Target>(
     syms
 }
 
-/// Whether a branch at offset `p` of the section being laid out may not
-/// reach `sym`, where Context::branch_target_addr takes it: its
-/// subsection, its stub (an import, or a weak definition that may be
-/// interposed) or its _objc_msgSend stub.
-fn needs_thunk<E: Target>(ctx: &Context<E>, reach: &Reach, p: u64, id: SymbolId) -> bool {
+/// Whether a branch at offset `p` of the section being laid out, in
+/// subsection `isec`, may not reach `sym`, where it goes: its
+/// subsection, its stub (an import, a weak definition that may be
+/// interposed, or a shim for a branch from 4 GiB away; see
+/// branch_shims) or its _objc_msgSend stub.
+fn needs_thunk<E: Target>(
+    ctx: &Context<E>,
+    reach: &Reach,
+    isec: InputSectionId,
+    p: u64,
+    id: SymbolId,
+) -> bool {
     let sym = &ctx.symbols[id];
     let aux = ctx.sym_aux(id);
     let side = match sym.file() {
         _ if aux.stub_idx != NO_IDX && ctx.is_interposable(id) => reach.stubs,
+        _ if ctx.has_branch_shim(id) && crate::branch_shims::is_far(ctx, isec as usize, id) => {
+            reach.stubs
+        }
         Some(FileId::Dylib(_)) if aux.stub_idx != NO_IDX => reach.stubs,
         Some(FileId::Obj(_)) => match sym.input_section() {
             Some(target) => {
@@ -389,16 +407,15 @@ fn needs_thunk<E: Target>(ctx: &Context<E>, reach: &Reach, p: u64, id: SymbolId)
             None if aux.objc_stub_idx != NO_IDX => reach.objc_stubs,
             None => Side::Outside,
         },
-        // A DTrace symbol, at address 0 outside __TEXT: a probe site
-        // needs no island, being no branch in the output (see dtrace).
-        None => Side::OtherSegment,
+        // A DTrace symbol, at address 0: a probe site needs no thunk,
+        // being no branch in the output (see dtrace).
+        None => return false,
         _ => Side::Outside,
     };
     match side {
         Side::Before => !reach.backward,
         Side::After => !reach.forward,
         Side::Outside => true,
-        Side::OtherSegment => false,
     }
 }
 
