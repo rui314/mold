@@ -222,6 +222,16 @@ impl ObjectFile {
             mtime: None,
         }));
         Self {
+            sect_hdrs: std::borrow::Cow::Owned(Vec::new()),
+            nlists: std::borrow::Cow::Owned(Vec::new()),
+            ..Self::new(mf)
+        }
+    }
+
+    /// A live object of the file `mf` with no sections or symbols, for
+    /// the callers to fill in.
+    fn new(mf: &'static MappedFile) -> Self {
+        Self {
             mf,
             is_alive: true,
             priority: 0,
@@ -230,13 +240,13 @@ impl ObjectFile {
             platform_versions: Vec::new(),
             hidden: false,
             subsections_via_symbols: true,
-            sect_hdrs: std::borrow::Cow::Owned(Vec::new()),
+            sect_hdrs: std::borrow::Cow::Borrowed(&[]),
             relocs: Vec::new(),
             subsecs: Vec::new(),
             objc_image_info: None,
             has_debug_info: false,
             lto_module: None,
-            nlists: std::borrow::Cow::Owned(Vec::new()),
+            nlists: std::borrow::Cow::Borrowed(&[]),
             first_global: None,
             symbols: Vec::new(),
             dice: Vec::new(),
@@ -1803,59 +1813,31 @@ pub fn parse_bitcode<E: Target>(
     let triple = crate::lto::module_triple(&plugin, module);
     let platform_versions = PlatformVersion::of_triple(&triple).into_iter().collect();
 
-    let obj_idx = ctx.objs.len();
-    let mut syms = Vec::new();
-    let mut nlists = Vec::new();
-
-    // Symbols are expressed as synthesized nlists so that the regular
-    // resolution pass handles bitcode like any object.
+    // The module's symbols become nlists, so that resolution handles
+    // bitcode like any object; its internal definitions are left out.
     let mut defined = Vec::new();
+    let mut nlists = Vec::new();
+    let mut syms = Vec::new();
     for ls in lsyms {
-        let name = ls.name;
         if ls.is_defined {
-            defined.push(name);
+            defined.push(ls.name);
         }
-        if !ls.is_extern && ls.is_defined {
-            continue;
+        if ls.is_extern || !ls.is_defined {
+            syms.push(ctx.symbols.intern(ls.name));
+            nlists.push(bitcode_nlist(&ls));
         }
-        let id = ctx.symbols.intern(name);
-        let mut nlist = NList::default();
-        if ls.is_defined {
-            nlist.n_type = N_ABS | N_EXT | if ls.is_private_extern { N_PEXT } else { 0 };
-            if ls.is_weak_def {
-                nlist.n_desc |= N_WEAK_DEF;
-            }
-            if ls.is_weak_def && ls.can_be_hidden {
-                nlist.n_desc |= N_WEAK_REF;
-            }
-        } else {
-            nlist.n_type = N_UNDF | N_EXT;
-        }
-        nlists.push(nlist);
-        syms.push(id);
     }
 
+    let obj_idx = ctx.objs.len();
     let priority = ctx.next_priority();
     ctx.objs.push(ObjectFile {
-        mf,
         is_alive: alive,
         priority,
-        linker_options: Vec::new(),
-        linker_options_read: false,
         platform_versions,
-        hidden: false,
-        subsections_via_symbols: true,
-        sect_hdrs: std::borrow::Cow::Borrowed(&[]),
-        relocs: Vec::new(),
-        subsecs: Vec::new(),
-        objc_image_info: None,
-        has_debug_info: false,
         nlists: std::borrow::Cow::Owned(nlists),
-        first_global: None,
         symbols: syms,
         lto_module: Some(module),
-        dice: Vec::new(),
-        loh: Vec::new(),
+        ..ObjectFile::new(mf)
     });
     let is_thin = crate::lto::module_is_thin(&plugin, module);
     ctx.lto_modules.push(crate::lto::BitcodeModule {
@@ -1865,6 +1847,24 @@ pub fn parse_bitcode<E: Target>(
         is_thin,
     });
     Some(obj_idx)
+}
+
+/// The nlist an external symbol of a bitcode module stands for: an
+/// absolute definition, or an undefined reference.
+fn bitcode_nlist(ls: &crate::lto::LtoSymbol) -> NList {
+    let mut nlist = NList::default();
+    if !ls.is_defined {
+        nlist.n_type = N_UNDF | N_EXT;
+        return nlist;
+    }
+    nlist.n_type = N_ABS | N_EXT | if ls.is_private_extern { N_PEXT } else { 0 };
+    if ls.is_weak_def {
+        nlist.n_desc |= N_WEAK_DEF;
+    }
+    if ls.is_weak_def && ls.can_be_hidden {
+        nlist.n_desc |= N_WEAK_REF;
+    }
+    nlist
 }
 
 /// The architecture a bitcode module was compiled for, from its target
