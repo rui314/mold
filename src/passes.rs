@@ -4098,14 +4098,7 @@ pub fn write_build_id<E: Target>(ctx: &mut Context<E>, buf: &mut [u8], is_mmappe
             let digest = *blake3::hash(hashes.as_flattened()).as_bytes();
             digest[..*size].to_vec()
         }
-        BuildId::Uuid => {
-            let mut bytes = [0u8; 16];
-            crate::util::random_bytes(&mut bytes);
-            // Indicate that this is UUIDv4 as defined by RFC4122
-            bytes[6] = (bytes[6] & 0x0f) | 0x40;
-            bytes[8] = (bytes[8] & 0x3f) | 0x80;
-            bytes.to_vec()
-        }
+        BuildId::Uuid => uuid::Uuid::new_v4().into_bytes().to_vec(),
         BuildId::None => unreachable!(),
     };
     ctx.buildid.as_mut().unwrap().contents = contents;

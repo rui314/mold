@@ -42,6 +42,7 @@ memmap2 = "0.9"
 portable-atomic = "1"
 rayon = "1"
 rustc-demangle = "0.1"
+uuid = { version = "1.27", default-features = false, features = ["v4"] }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 zstd = "0.13"
 
