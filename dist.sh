@@ -38,6 +38,15 @@
 set -e -x
 cd "$(dirname "$0")"
 
+# The executable embeds the hash of the Git commit it is built from, and
+# the commit's timestamp is used as the file timestamp, so this script
+# must run in a Git clone. A worktree doesn't work either because its
+# `.git` file refers to a directory outside the build container.
+if [ ! -d .git ]; then
+  echo "$0: must be run in a Git clone of mold" >&2
+  exit 1
+fi
+
 usage() {
   echo "Usage: $0 [ x86_64 | aarch64 | arm | riscv64 | ppc64le | s390x | loongarch64 ]"
   exit 1
@@ -142,10 +151,6 @@ EOF
 
 version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml)
 dest=mold-$version-$arch-linux
-
-# Source tarballs available on GitHub don't contain .git directory.
-# Clone the repo if missing.
-[ -d .git ] || git clone --branch v$version --depth 1 --bare https://github.com/rui314/mold .git
 
 # We use the timestamp of the last Git commit as the file timestamp
 # for build artifacts.
