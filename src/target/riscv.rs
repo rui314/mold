@@ -46,34 +46,21 @@ pub type Riscv32Be = RiscvTarget<false, false>;
 
 // Instructions are always little-endian.
 
-fn insn32(loc: &[u8]) -> u32 {
-    read_ul32(loc)
-}
-
-fn insn16(loc: &[u8]) -> u16 {
-    read_ul16(loc)
-}
-
-fn write32(loc: &mut [u8], v: u32) {
-    write_ul32(loc, v);
-}
-
-fn write16(loc: &mut [u8], v: u16) {
-    write_ul16(loc, v);
-}
-
 fn b(val: u64, hi: u32, lo: u32) -> u32 {
     bits(val, hi, lo) as u32
 }
 
 fn write_itype(loc: &mut [u8], val: u64) {
-    write32(loc, (insn32(loc) & 0b000000_00000_11111_111_11111_1111111) | (b(val, 11, 0) << 20));
+    write_ul32(
+        loc,
+        (read_ul32(loc) & 0b000000_00000_11111_111_11111_1111111) | (b(val, 11, 0) << 20),
+    );
 }
 
 fn write_stype(loc: &mut [u8], val: u64) {
-    write32(
+    write_ul32(
         loc,
-        (insn32(loc) & 0b000000_11111_11111_111_00000_1111111)
+        (read_ul32(loc) & 0b000000_11111_11111_111_00000_1111111)
             | (b(val, 11, 5) << 25)
             | (b(val, 4, 0) << 7),
     );
@@ -84,7 +71,7 @@ fn write_btype(loc: &mut [u8], val: u64) {
         | b(val, 10, 5) << 25
         | b(val, 4, 1) << 8
         | (bit(val, 11) as u32) << 7;
-    write32(loc, (insn32(loc) & 0b000000_11111_11111_111_00000_1111111) | imm);
+    write_ul32(loc, (read_ul32(loc) & 0b000000_11111_11111_111_00000_1111111) | imm);
 }
 
 fn write_utype(loc: &mut [u8], val: u64) {
@@ -93,9 +80,9 @@ fn write_utype(loc: &mut [u8], val: u64) {
     // of a register. I-type insn sign-extends a 12-bits immediate and
     // adds it to a register value to construct a complete value. 0x800
     // is added here to compensate for the sign-extension.
-    write32(
+    write_ul32(
         loc,
-        (insn32(loc) & 0b000000_00000_00000_000_11111_1111111)
+        (read_ul32(loc) & 0b000000_00000_00000_000_11111_1111111)
             | ((val as u32).wrapping_add(0x800) & 0xffff_f000),
     );
 }
@@ -105,12 +92,12 @@ fn write_jtype(loc: &mut [u8], val: u64) {
         | b(val, 10, 1) << 21
         | (bit(val, 11) as u32) << 20
         | b(val, 19, 12) << 12;
-    write32(loc, (insn32(loc) & 0b000000_00000_00000_000_11111_1111111) | imm);
+    write_ul32(loc, (read_ul32(loc) & 0b000000_00000_00000_000_11111_1111111) | imm);
 }
 
 fn write_citype(loc: &mut [u8], val: u64) {
     let imm = (bit(val, 5) as u16) << 12 | (b(val, 4, 0) as u16) << 2;
-    write16(loc, (insn16(loc) & 0b111_0_11111_00000_11) | imm);
+    write_ul16(loc, (read_ul16(loc) & 0b111_0_11111_00000_11) | imm);
 }
 
 fn write_cbtype(loc: &mut [u8], val: u64) {
@@ -123,7 +110,7 @@ fn write_cbtype(loc: &mut [u8], val: u64) {
         | bt(2) << 4
         | bt(1) << 3
         | bt(5) << 2;
-    write16(loc, (insn16(loc) & 0b111_000_111_00000_11) | imm);
+    write_ul16(loc, (read_ul16(loc) & 0b111_000_111_00000_11) | imm);
 }
 
 fn write_cjtype(loc: &mut [u8], val: u64) {
@@ -139,16 +126,16 @@ fn write_cjtype(loc: &mut [u8], val: u64) {
         | bt(2) << 4
         | bt(1) << 3
         | bt(5) << 2;
-    write16(loc, (insn16(loc) & 0b111_00000000000_11) | imm);
+    write_ul16(loc, (read_ul16(loc) & 0b111_00000000000_11) | imm);
 }
 
 fn set_rs1(loc: &mut [u8], rs1: u32) {
     debug_assert!(rs1 < 32);
-    write32(loc, (insn32(loc) & 0b111111_11111_00000_111_11111_1111111) | (rs1 << 15));
+    write_ul32(loc, (read_ul32(loc) & 0b111111_11111_00000_111_11111_1111111) | (rs1 << 15));
 }
 
 fn rd(loc: &[u8]) -> u32 {
-    b(insn32(loc) as u64, 11, 7)
+    b(read_ul32(loc) as u64, 11, 7)
 }
 
 const NOP: u32 = 0x13;
@@ -322,7 +309,7 @@ where
         ];
         let insn = if IS_64 { &INSN_64 } else { &INSN_32 };
         for (i, &v) in insn.iter().enumerate() {
-            write32(&mut buf[i * 4..], v);
+            write_ul32(&mut buf[i * 4..], v);
         }
         let gotplt = ctx.gotplt.shdr.sh_addr.get();
         let plt = ctx.plt.hdr.shdr.sh_addr.get();
@@ -503,14 +490,14 @@ where
                     let rd = rd(&orig[4..]);
                     if removed == 4 {
                         // auipc + jalr -> jal
-                        write32(loc, (rd << 7) | 0b1101111);
+                        write_ul32(loc, (rd << 7) | 0b1101111);
                         write_jtype(loc, pcrel);
                         if ctx.args.emit_relocs {
                             rels[rel_idx].set_r_type(R_RISCV_JAL);
                         }
                     } else if removed == 6 && rd == 0 {
                         // auipc + jalr -> c.j
-                        write16(loc, 0b101_00000000000_01);
+                        write_ul16(loc, 0b101_00000000000_01);
                         write_cjtype(loc, pcrel);
                         if ctx.args.emit_relocs {
                             rels[rel_idx].set_r_type(R_RISCV_RVC_JUMP);
@@ -518,7 +505,7 @@ where
                     } else if removed == 6 && rd == 1 {
                         // auipc + jalr -> c.jal
                         debug_assert!(!IS_64);
-                        write16(loc, 0b001_00000000000_01);
+                        write_ul16(loc, 0b001_00000000000_01);
                         write_cjtype(loc, pcrel);
                         if ctx.args.emit_relocs {
                             rels[rel_idx].set_r_type(R_RISCV_RVC_JUMP);
@@ -540,7 +527,7 @@ where
                     let rd = rd(orig);
                     if removed == 6 {
                         // c.li <rd>, val
-                        write16(loc, 0b010_0_00000_00000_01 | (rd as u16) << 7);
+                        write_ul16(loc, 0b010_0_00000_00000_01 | (rd as u16) << 7);
                         write_citype(loc, s);
 
                         // The value is materialized directly, so neither this nor the paired
@@ -552,7 +539,7 @@ where
                         i += 3;
                     } else if removed == 4 {
                         // addi <rd>, zero, val
-                        write32(loc, 0b0010011 | (rd << 7));
+                        write_ul32(loc, 0b0010011 | (rd << 7));
                         write_itype(loc, s);
                         if ctx.args.emit_relocs {
                             rels[rel_idx].set_r_type(R_NONE);
@@ -570,7 +557,7 @@ where
                             utype(loc, pcrel);
 
                             // addi <rd>, <rd>, %lo12(val)
-                            write32(&mut loc[4..], 0b0010011 | (rd << 15) | (rd << 7));
+                            write_ul32(&mut loc[4..], 0b0010011 | (rd << 15) | (rd << 7));
                             write_itype(&mut loc[4..], pcrel);
                             i += 3;
                         } else {
@@ -619,7 +606,7 @@ where
                     if removed == 2 {
                         // Rewrite LUI with C.LUI
                         let rd = rd(orig);
-                        write16(loc, 0b011_0_00000_00000_01 | (rd as u16) << 7);
+                        write_ul16(loc, 0b011_0_00000_00000_01 | (rd as u16) << 7);
                         write_citype(loc, sa.wrapping_add(0x800) >> 12);
                     } else if removed == 0 {
                         utype(loc, sa);
@@ -742,7 +729,7 @@ where
                                     sym2.tlsdesc_addr(ctx).wrapping_add(a2).wrapping_sub(p2),
                                 );
                             } else {
-                                write32(loc, NOP); // nop
+                                write_ul32(loc, NOP); // nop
                             }
                         }
                         R_RISCV_TLSDESC_ADD_LO12 => {
@@ -752,11 +739,11 @@ where
                                     sym2.tlsdesc_addr(ctx).wrapping_add(a2).wrapping_sub(p2),
                                 );
                             } else if sym2.has_gottp(&ctx.symbols) {
-                                write32(loc, 0x517); // auipc a0,<hi20>
+                                write_ul32(loc, 0x517); // auipc a0,<hi20>
                                 utype(loc, sym2.gottp_addr(ctx).wrapping_add(a2).wrapping_sub(p));
                                 tlsdesc_auipc_addr = p;
                             } else {
-                                write32(loc, 0x537); // lui a0,<hi20>
+                                write_ul32(loc, 0x537); // lui a0,<hi20>
                                 utype(loc, tprel);
                             }
                         }
@@ -765,7 +752,7 @@ where
                                 // Do nothing
                             } else if sym2.has_gottp(&ctx.symbols) {
                                 // l[d|w] a0,<lo12>
-                                write32(loc, if IS_64 { 0x53503 } else { 0x52503 });
+                                write_ul32(loc, if IS_64 { 0x53503 } else { 0x52503 });
                                 write_itype(
                                     loc,
                                     sym2.gottp_addr(ctx)
@@ -778,7 +765,7 @@ where
                                 } else {
                                     0x50513 // addi a0,a0,<lo12>
                                 };
-                                write32(loc, insn);
+                                write_ul32(loc, insn);
                                 write_itype(loc, tprel);
                             }
                         }
@@ -804,11 +791,11 @@ where
                     debug_assert_eq!(padding & 1, 0);
                     let mut k = 0;
                     while k + 4 <= padding {
-                        write32(&mut loc[k..], NOP); // nop
+                        write_ul32(&mut loc[k..], NOP); // nop
                         k += 4;
                     }
                     if k < padding {
-                        write16(&mut loc[k..], 0x0001); // c.nop
+                        write_ul16(&mut loc[k..], 0x0001); // c.nop
                     }
                 }
                 R_RISCV_RVC_BRANCH => {
@@ -1100,7 +1087,7 @@ fn write_plt_stub<const IS_64: bool>(buf: &mut [u8], disp: u64) {
     ];
     let entry = if IS_64 { &ENTRY_64 } else { &ENTRY_32 };
     for (i, &v) in entry.iter().enumerate() {
-        write32(&mut buf[i * 4..], v);
+        write_ul32(&mut buf[i * 4..], v);
     }
     write_utype(buf, disp);
     write_itype(&mut buf[4..], disp);

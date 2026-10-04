@@ -793,7 +793,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, id: ChunkId, buf: &mut [u8]) {
         ChunkId::Ppc64Opd => opd::copy_buf(ctx, buf),
         ChunkId::GdbIndex | ChunkId::RelroPadding | ChunkId::Placeholder(_) => {}
         ChunkId::Output(id) => output_section::copy_buf(ctx, id, buf),
-        ChunkId::Merged(id) => merged::copy_buf(ctx, id, buf),
+        ChunkId::Merged(id) => merged::write_to(ctx, id, buf),
         ChunkId::Reloc(_) => {}
         ChunkId::ComdatGroup(i) => comdat_group::copy_buf(ctx, i, buf),
         ChunkId::Compressed(i) => compressed::copy_buf(ctx, i, buf),

@@ -39,17 +39,9 @@ pub struct Arm64Target<const LE: bool>;
 pub type Arm64 = Arm64Target<true>;
 pub type Arm64Be = Arm64Target<false>;
 
-/// Instructions are always little-endian.
-fn insn(loc: &[u8]) -> u32 {
-    read_ul32(loc)
-}
-
-fn write_insn(loc: &mut [u8], v: u32) {
-    write_ul32(loc, v);
-}
-
+// Instructions are always little-endian.
 fn or_insn(loc: &mut [u8], v: u32) {
-    write_insn(loc, insn(loc) | v);
+    write_ul32(loc, read_ul32(loc) | v);
 }
 
 fn write_adrp(loc: &mut [u8], val: u64) {
@@ -62,7 +54,7 @@ fn write_adr(loc: &mut [u8], val: u64) {
 
 /// Rewrites a MOV to MOVZ or MOVN, whichever represents `val`.
 fn write_movn_movz(loc: &mut [u8], val: i64) {
-    let rd = insn(loc) & 0b0000_0000_0110_0000_0000_0000_0001_1111;
+    let rd = read_ul32(loc) & 0b0000_0000_0110_0000_0000_0000_0001_1111;
     let imm = if val >= 0 {
         // rewrite to movz
         0xd280_0000 | (bits(val as u64, 15, 0) << 5) as u32
@@ -70,7 +62,7 @@ fn write_movn_movz(loc: &mut [u8], val: i64) {
         // rewrite to movn
         0x9280_0000 | (bits(!val as u64, 15, 0) << 5) as u32
     };
-    write_insn(loc, rd | imm);
+    write_ul32(loc, rd | imm);
 }
 
 fn page(val: u64) -> u64 {
@@ -80,17 +72,17 @@ fn page(val: u64) -> u64 {
 // https://developer.arm.com/documentation/ddi0596/2021-12/Base-Instructions
 fn is_adrp(loc: &[u8]) -> bool {
     // https://developer.arm.com/documentation/ddi0596/2021-12/Base-Instructions/ADRP--Form-PC-relative-address-to-4KB-page-
-    bits(insn(loc) as u64, 31, 24) & 0b1001_1111 == 0b1001_0000
+    bits(read_ul32(loc) as u64, 31, 24) & 0b1001_1111 == 0b1001_0000
 }
 
 fn is_ldr(loc: &[u8]) -> bool {
     // https://developer.arm.com/documentation/ddi0596/2021-12/Base-Instructions/LDR--immediate---Load-Register--immediate--
-    bits(insn(loc) as u64, 31, 20) & 0b1111_1111_1100 == 0b1111_1001_0100
+    bits(read_ul32(loc) as u64, 31, 20) & 0b1111_1111_1100 == 0b1111_1001_0100
 }
 
 fn is_add(loc: &[u8]) -> bool {
     // https://developer.arm.com/documentation/ddi0596/2021-12/Base-Instructions/ADD--immediate---Add--immediate--
-    bits(insn(loc) as u64, 31, 20) & 0b1111_1111_1100 == 0b1001_0001_0000
+    bits(read_ul32(loc) as u64, 31, 20) & 0b1111_1111_1100 == 0b1001_0001_0000
 }
 
 const NOP: u32 = 0xd503_201f;
@@ -100,7 +92,7 @@ const BTI_C: u32 = 0xd503_245f;
 /// the offset of the next instruction.
 fn write_landing_pad(buf: &mut [u8], needed: bool) -> usize {
     if needed {
-        write_insn(buf, BTI_C);
+        write_ul32(buf, BTI_C);
         4
     } else {
         0
@@ -158,7 +150,7 @@ impl<const LE: bool> Arm64Target<LE> {
             && rel2.r_addend() == rel.r_addend()
             && is_adrp(loc)
             && is_add(&loc[4..])
-            && bits(insn(loc) as u64, 4, 0) == bits(insn(&loc[4..]) as u64, 4, 0)
+            && bits(read_ul32(loc) as u64, 4, 0) == bits(read_ul32(&loc[4..]) as u64, 4, 0)
     }
 }
 
@@ -220,7 +212,7 @@ impl<const LE: bool> Target for Arm64Target<LE> {
         let off = write_landing_pad(buf, note_property::is_bti(ctx));
         let buf = &mut buf[off..Self::PLT_HDR_SIZE as usize];
         for (loc, &v) in buf.chunks_exact_mut(4).zip(&INSN) {
-            write_insn(loc, v);
+            write_ul32(loc, v);
         }
         let gotplt = ctx.gotplt.shdr.sh_addr.get() + 16;
         let plt = ctx.plt.hdr.shdr.sh_addr.get() + off as u64;
@@ -258,7 +250,7 @@ impl<const LE: bool> Target for Arm64Target<LE> {
         let off = write_landing_pad(buf, Self::plt_needs_landing_pad(ctx, sym));
         let buf = &mut buf[off..plt::entry_size(ctx) as usize];
         for (loc, &v) in buf.chunks_exact_mut(4).zip(insn) {
-            write_insn(loc, v);
+            write_ul32(loc, v);
         }
         let gotplt = sym.gotplt_addr(ctx);
         let plt = sym.plt_addr(ctx) + off as u64;
@@ -278,7 +270,7 @@ impl<const LE: bool> Target for Arm64Target<LE> {
         let off = write_landing_pad(buf, Self::plt_needs_landing_pad(ctx, sym));
         let buf = &mut buf[off..Self::PLTGOT_SIZE as usize];
         for (loc, &v) in buf.chunks_exact_mut(4).zip(&INSN) {
-            write_insn(loc, v);
+            write_ul32(loc, v);
         }
         let got = sym.got_pltgot_addr(ctx);
         let plt = sym.plt_addr(ctx) + off as u64;
@@ -348,9 +340,9 @@ impl<const LE: bool> Target for Arm64Target<LE> {
                                 && is_adrp(loc)
                                 && is_ldr(&loc[4..])
                                 && {
-                                    let rd = bits(insn(loc) as u64, 4, 0);
-                                    let rn = bits(insn(&loc[4..]) as u64, 9, 5);
-                                    let rt = bits(insn(&loc[4..]) as u64, 4, 0);
+                                    let rd = bits(read_ul32(loc) as u64, 4, 0);
+                                    let rn = bits(read_ul32(&loc[4..]) as u64, 9, 5);
+                                    let rt = bits(read_ul32(&loc[4..]) as u64, 4, 0);
                                     rd == rn && rn == rt
                                 }
                         });
@@ -514,8 +506,8 @@ impl<const LE: bool> Target for Arm64Target<LE> {
                         let val = page(sa).wrapping_sub(page(p));
                         check(val as i64, -(1 << 32), 1 << 32);
                         write_adrp(loc, val);
-                        let reg = bits(insn(loc) as u64, 4, 0) as u32;
-                        write_insn(
+                        let reg = bits(read_ul32(loc) as u64, 4, 0) as u32;
+                        write_ul32(
                             &mut loc[4..],
                             0x9100_0000 | (reg << 5) | reg | (bits(sa, 11, 0) << 10) as u32,
                         );
@@ -532,9 +524,9 @@ impl<const LE: bool> Target for Arm64Target<LE> {
                     // in a register can be relaxed to `NOP` followed by `ADR x0, foo`
                     // if foo is in PC ± 1 MiB.
                     if Self::relaxes_adrp_add(ctx, isec, rels, i - 1) {
-                        let reg = bits(insn(loc) as u64, 4, 0) as u32;
-                        write_insn(loc, NOP);
-                        write_insn(&mut loc[4..], 0x1000_0000 | reg);
+                        let reg = bits(read_ul32(loc) as u64, 4, 0) as u32;
+                        write_ul32(loc, NOP);
+                        write_ul32(&mut loc[4..], 0x1000_0000 | reg);
                         write_adr(&mut loc[4..], pcrel.wrapping_sub(4));
                         if ctx.args.emit_relocs {
                             rels[i - 1].set_r_type(R_NONE);
@@ -557,7 +549,7 @@ impl<const LE: bool> Target for Arm64Target<LE> {
                     if sym.is_remaining_undef_weak() {
                         // On ARM, calling an weak undefined symbol jumps to the
                         // next instruction.
-                        write_insn(loc, NOP);
+                        write_ul32(loc, NOP);
                     } else {
                         let mut val = pcrel;
                         if !is_int(val as i64, 28) {
@@ -702,7 +694,7 @@ impl<const LE: bool> Target for Arm64Target<LE> {
                         check(val as i64, -(1 << 32), 1 << 32);
                         write_adrp(loc, val);
                     } else {
-                        write_insn(loc, NOP);
+                        write_ul32(loc, NOP);
                         if ctx.args.emit_relocs {
                             rels[i - 1].set_r_type(R_NONE);
                         }
@@ -715,7 +707,7 @@ impl<const LE: bool> Target for Arm64Target<LE> {
                             (bits(sym.tlsdesc_addr(ctx).wrapping_add(a), 11, 3) << 10) as u32,
                         );
                     } else {
-                        write_insn(loc, NOP);
+                        write_ul32(loc, NOP);
                         if ctx.args.emit_relocs {
                             rels[i - 1].set_r_type(R_NONE);
                         }
@@ -728,7 +720,7 @@ impl<const LE: bool> Target for Arm64Target<LE> {
                             (bits(sym.tlsdesc_addr(ctx).wrapping_add(a), 11, 0) << 10) as u32,
                         );
                     } else if sym.has_gottp(&ctx.symbols) {
-                        write_insn(loc, 0x9000_0000); // adrp x0, 0
+                        write_ul32(loc, 0x9000_0000); // adrp x0, 0
                         write_adrp(
                             loc,
                             page(sym.gottp_addr(ctx).wrapping_add(a)).wrapping_sub(page(p)),
@@ -737,7 +729,7 @@ impl<const LE: bool> Target for Arm64Target<LE> {
                             rels[i - 1].set_r_type(R_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21);
                         }
                     } else {
-                        write_insn(loc, 0xd2a0_0000 | (bits(tprel, 32, 16) << 5) as u32);
+                        write_ul32(loc, 0xd2a0_0000 | (bits(tprel, 32, 16) << 5) as u32);
                         // movz x0, 0, lsl #16
                         if ctx.args.emit_relocs {
                             rels[i - 1].set_r_type(R_AARCH64_TLSLE_MOVW_TPREL_G1);
@@ -748,7 +740,7 @@ impl<const LE: bool> Target for Arm64Target<LE> {
                     if sym.has_tlsdesc(&ctx.symbols) {
                         // Do nothing
                     } else if sym.has_gottp(&ctx.symbols) {
-                        write_insn(
+                        write_ul32(
                             loc,
                             0xf940_0000
                                 | (bits(sym.gottp_addr(ctx).wrapping_add(a), 11, 3) << 10) as u32,
@@ -757,7 +749,7 @@ impl<const LE: bool> Target for Arm64Target<LE> {
                             rels[i - 1].set_r_type(R_AARCH64_TLSIE_LD64_GOTTPREL_LO12_NC);
                         }
                     } else {
-                        write_insn(loc, 0xf280_0000 | (bits(tprel, 15, 0) << 5) as u32);
+                        write_ul32(loc, 0xf280_0000 | (bits(tprel, 15, 0) << 5) as u32);
                         // movk x0, 0
                         if ctx.args.emit_relocs {
                             rels[i - 1].set_r_type(R_AARCH64_TLSLE_MOVW_TPREL_G0_NC);
@@ -855,7 +847,7 @@ impl<const LE: bool> Target for Arm64Target<LE> {
             let disp = s.wrapping_sub(addr + off as u64 + 4);
             debug_assert!(is_int(disp as i64, 28));
             for (j, &v) in LANDING_PAD.iter().enumerate() {
-                write_insn(&mut buf[off + j * 4..], v);
+                write_ul32(&mut buf[off + j * 4..], v);
             }
             or_insn(&mut buf[off + 4..], bits(disp, 27, 2) as u32);
         }
@@ -868,14 +860,14 @@ impl<const LE: bool> Target for Arm64Target<LE> {
                 let prel = page(s).wrapping_sub(page(p));
                 debug_assert!(is_int(prel as i64, 33));
                 for (j, &v) in SHORT.iter().enumerate() {
-                    write_insn(&mut entry[j * 4..], v);
+                    write_ul32(&mut entry[j * 4..], v);
                 }
                 write_adrp(entry, prel);
                 or_insn(&mut entry[4..], (bits(s, 11, 0) << 10) as u32);
             } else {
                 let disp = s.wrapping_sub(p);
                 for (j, &v) in LONG.iter().enumerate() {
-                    write_insn(&mut entry[j * 4..], v);
+                    write_ul32(&mut entry[j * 4..], v);
                 }
                 write_adr(entry, bits(disp, 15, 0));
                 or_insn(&mut entry[4..], (bits(disp, 31, 16) << 5) as u32);

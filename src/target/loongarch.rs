@@ -101,53 +101,45 @@ fn highest12(val: u64, pc: u64) -> u64 {
     bits(higher(val, pc.wrapping_sub(12)), 63, 52)
 }
 
-fn insn(loc: &[u8]) -> u32 {
-    read_ul32(loc)
-}
-
-fn set_insn(loc: &mut [u8], v: u32) {
-    write_ul32(loc, v);
-}
-
 /// Instruction formats, named after their immediate fields.
 fn write_k12(loc: &mut [u8], val: u64) {
     // opcode, [11:0], rj, rd
-    set_insn(
+    write_ul32(
         loc,
-        (insn(loc) & 0b1111111111_000000000000_11111_11111) | (bits(val, 11, 0) << 10) as u32,
+        (read_ul32(loc) & 0b1111111111_000000000000_11111_11111) | (bits(val, 11, 0) << 10) as u32,
     );
 }
 
 fn write_k16(loc: &mut [u8], val: u64) {
     // opcode, [15:0], rj, rd
-    set_insn(
+    write_ul32(
         loc,
-        (insn(loc) & 0b111111_0000000000000000_11111_11111) | (bits(val, 15, 0) << 10) as u32,
+        (read_ul32(loc) & 0b111111_0000000000000000_11111_11111) | (bits(val, 15, 0) << 10) as u32,
     );
 }
 
 fn write_j20(loc: &mut [u8], val: u64) {
     // opcode, [19:0], rd
-    set_insn(
+    write_ul32(
         loc,
-        (insn(loc) & 0b1111111_00000000000000000000_11111) | (bits(val, 19, 0) << 5) as u32,
+        (read_ul32(loc) & 0b1111111_00000000000000000000_11111) | (bits(val, 19, 0) << 5) as u32,
     );
 }
 
 fn write_d5k16(loc: &mut [u8], val: u64) {
     // opcode, [15:0], rj, [20:16]
-    let v = (insn(loc) & 0b111111_0000000000000000_11111_00000)
+    let v = (read_ul32(loc) & 0b111111_0000000000000000_11111_00000)
         | (bits(val, 15, 0) << 10) as u32
         | bits(val, 20, 16) as u32;
-    set_insn(loc, v);
+    write_ul32(loc, v);
 }
 
 fn write_d10k16(loc: &mut [u8], val: u64) {
     // opcode, [15:0], [25:16]
-    let v = (insn(loc) & 0b111111_0000000000000000_0000000000)
+    let v = (read_ul32(loc) & 0b111111_0000000000000000_0000000000)
         | (bits(val, 15, 0) << 10) as u32
         | bits(val, 25, 16) as u32;
-    set_insn(loc, v);
+    write_ul32(loc, v);
 }
 
 fn rd(insn: u32) -> u32 {
@@ -160,13 +152,13 @@ fn rj(insn: u32) -> u32 {
 
 fn set_rj(loc: &mut [u8], rj: u32) {
     debug_assert!(rj < 32);
-    set_insn(loc, (insn(loc) & 0b111111_1111111111111111_00000_11111) | (rj << 5));
+    write_ul32(loc, (read_ul32(loc) & 0b111111_1111111111111111_00000_11111) | (rj << 5));
 }
 
 /// Rewrites the instruction at `loc` into `pcaddi $rd, imm`, keeping
 /// its destination register.
 fn write_pcaddi(loc: &mut [u8], val: u64) {
-    set_insn(loc, 0x1800_0000 | rd(insn(loc)));
+    write_ul32(loc, 0x1800_0000 | rd(read_ul32(loc)));
     write_j20(loc, val);
 }
 
@@ -217,8 +209,8 @@ fn is_relaxable_got_load<E: Target>(
     {
         return false;
     }
-    let insn1 = insn(&contents[rels[i].r_offset() as usize..]);
-    let insn2 = insn(&contents[rels[i].r_offset() as usize + 4..]);
+    let insn1 = read_ul32(&contents[rels[i].r_offset() as usize..]);
+    let insn2 = read_ul32(&contents[rels[i].r_offset() as usize + 4..]);
     let is_ld_d = insn2 & 0xffc0_0000 == 0x28c0_0000;
     rd(insn1) == rd(insn2) && rd(insn2) == rj(insn2) && is_ld_d
 }
@@ -244,7 +236,7 @@ const PLT_ENTRY_32: [u32; 4] = [
 
 fn write_insns(buf: &mut [u8], insns: &[u32]) {
     for (i, &insn) in insns.iter().enumerate() {
-        set_insn(&mut buf[i * 4..], insn);
+        write_ul32(&mut buf[i * 4..], insn);
     }
 }
 
@@ -557,7 +549,7 @@ where
                     // though the instruction takes a 16 bit immediate rather than 12 bits.
                     // It is contrary to the psABI document, but GNU ld has special
                     // code to handle it, so we accept it too.
-                    if insn(loc) & 0xfc00_0000 == 0x4c00_0000 {
+                    if read_ul32(loc) & 0xfc00_0000 == 0x4c00_0000 {
                         write_k16(loc, (sign_extend(sa, 12) >> 2) as u64);
                     } else {
                         write_k12(loc, sa);
@@ -596,8 +588,8 @@ where
                         if is_relaxable_got_load(ctx, isec, rels, rel_idx)
                             && is_int(compute_distance(ctx, sym, isec, &rel), 32)
                         {
-                            let reg = rd(insn(loc));
-                            set_insn(&mut loc[4..], 0x02c0_0000 | (reg << 5) | reg); // addi.d
+                            let reg = rd(read_ul32(loc));
+                            write_ul32(&mut loc[4..], 0x02c0_0000 | (reg << 5) | reg); // addi.d
                             write_j20(loc, hi20(sa, p));
                             write_k12(&mut loc[4..], sa);
                             i += 3;
@@ -671,9 +663,9 @@ where
                     } else {
                         // Rewrite PCADDU18I + JIRL to B or BL
                         debug_assert_eq!(removed, 4);
-                        let jirl = insn(&contents[rel.r_offset() as usize + 4..]);
+                        let jirl = read_ul32(&contents[rel.r_offset() as usize + 4..]);
                         let opcode = if rd(jirl) == 0 { 0x5000_0000 } else { 0x5400_0000 };
-                        set_insn(loc, opcode);
+                        write_ul32(loc, opcode);
                         write_d10k16(loc, pcrel >> 2);
                         if ctx.args.emit_relocs {
                             rels[rel_idx].set_r_type(R_LARCH_B26);
@@ -777,13 +769,13 @@ where
                             rels[rel_idx].set_r_type(R_NONE);
                         }
                     } else if sym.has_gottp(&ctx.symbols) {
-                        set_insn(loc, 0x1a00_0004); // pcalau12i $a0, 0
+                        write_ul32(loc, 0x1a00_0004); // pcalau12i $a0, 0
                         write_j20(loc, hi20(sym.gottp_addr(ctx).wrapping_add(a), p));
                         if ctx.args.emit_relocs {
                             rels[rel_idx].set_r_type(R_LARCH_TLS_IE_PC_HI20);
                         }
                     } else {
-                        set_insn(loc, 0x1400_0004); // lu12i.w $a0, 0
+                        write_ul32(loc, 0x1400_0004); // lu12i.w $a0, 0
                         write_j20(loc, sa.wrapping_add(0x800).wrapping_sub(ctx.tp_addr) >> 12);
                         if ctx.args.emit_relocs {
                             rels[rel_idx].set_r_type(R_LARCH_TLS_LE_HI20);
@@ -798,7 +790,7 @@ where
                     } else if sym.has_gottp(&ctx.symbols) {
                         // ld.d $a0, $a0, 0
                         // ld.w $a0, $a0, 0
-                        set_insn(loc, if IS_64 { 0x28c0_0084 } else { 0x2880_0084 }); // ld.[dw] $a0, $a0, 0
+                        write_ul32(loc, if IS_64 { 0x28c0_0084 } else { 0x2880_0084 }); // ld.[dw] $a0, $a0, 0
                         write_k12(loc, sym.gottp_addr(ctx).wrapping_add(a));
                         if ctx.args.emit_relocs {
                             rels[rel_idx].set_r_type(R_LARCH_TLS_IE_PC_LO12);
@@ -810,7 +802,7 @@ where
                         } else {
                             0x0280_0084 // addi.w $a0, $a0, 0
                         };
-                        set_insn(loc, opcode);
+                        write_ul32(loc, opcode);
                         write_k12(loc, val as u64);
                         if ctx.args.emit_relocs {
                             rels[rel_idx].set_r_type(R_LARCH_TLS_LE_LO12);
@@ -995,8 +987,8 @@ where
                         && rels[i + 3].r_type() == R_LARCH_RELAX
                     {
                         let dist = compute_distance(ctx, sym, isec, r);
-                        let insn1 = insn(&contents[r.r_offset() as usize..]);
-                        let insn2 = insn(&contents[r.r_offset() as usize + 4..]);
+                        let insn1 = read_ul32(&contents[r.r_offset() as usize..]);
+                        let insn2 = read_ul32(&contents[r.r_offset() as usize + 4..]);
                         let is_addi_d = insn2 & 0xffc0_0000 == 0x02c0_0000;
                         if dist & 0b11 == 0
                             && is_int(dist, 22)
@@ -1018,7 +1010,7 @@ where
                 // Note that $zero is $r0 and $ra is $r1.
                 R_LARCH_CALL36 => {
                     let dist = compute_distance(ctx, sym, isec, r);
-                    let jirl = insn(&contents[r.r_offset() as usize + 4..]);
+                    let jirl = read_ul32(&contents[r.r_offset() as usize + 4..]);
                     if is_int(dist, 28) && (rd(jirl) == 0 || rd(jirl) == 1) {
                         remove(4);
                     }

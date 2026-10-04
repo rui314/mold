@@ -507,10 +507,6 @@ pub fn layout<E: Target>(msec: &mut MergedSection<E>) {
     msec.shard_offsets = shard_offsets;
 }
 
-pub fn copy_buf<E: Target>(ctx: &Context<E>, id: MergedSectionId, buf: &mut [u8]) {
-    write_to(ctx, id, buf);
-}
-
 pub fn write_to<E: Target>(ctx: &Context<E>, id: MergedSectionId, buf: &mut [u8]) {
     let msec = &ctx.merged_sections[id.index()];
     let frags = &msec.fragments;
