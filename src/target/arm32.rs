@@ -221,12 +221,11 @@ enum MappingKind {
 
 /// What a mapping symbol marks the following bytes as.
 fn mapping_symbol_kind(name: &[u8]) -> Option<MappingKind> {
-    let kind = |c: u8| name == [b'$', c] || (name.starts_with(&[b'$', c, b'.']));
-    if kind(b'a') {
+    if name == b"$a" || name.starts_with(b"$a.") {
         Some(MappingKind::Arm)
-    } else if kind(b't') {
+    } else if name == b"$t" || name.starts_with(b"$t.") {
         Some(MappingKind::Thumb)
-    } else if kind(b'd') {
+    } else if name == b"$d" || name.starts_with(b"$d.") {
         Some(MappingKind::Data)
     } else {
         None
