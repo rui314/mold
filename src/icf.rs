@@ -75,7 +75,7 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{ObjId, ObjectFile};
 use crate::input_sections::{InputSection, SectionRef};
-use crate::symbol::{OriginValue, Symbol, is_c_identifier};
+use crate::symbol::{OriginValue, Symbol, SymbolId, is_c_identifier};
 use crate::target::Target;
 use crate::util::perf::Counter;
 use crate::util::siphash::SipHash13_128;
@@ -308,15 +308,23 @@ fn compute_digest<E: Target>(ctx: &Context<E>, key: &[u8; 16], r: SectionRef) ->
         h.update(&b.len().to_ne_bytes());
         h.update(b);
     };
-    let hash_symbol = |h: &mut SipHash13_128, id: crate::symbol::SymbolId, sym: &Symbol| {
+    // Hashes the place a relocation refers to.
+    let hash_target = |h: &mut SipHash13_128, id: SymbolId, sym: &Symbol, addend: i64| {
         if sym.file().is_none() || sym.is_imported() {
             h.update(b"1");
             hash_u64(h, id.0 as u64);
         } else {
             match sym.origin() {
                 OriginValue::Fragment(frag) => {
+                    // A string literal shared by two input files may be at
+                    // different offsets in their mergeable sections, so
+                    // relocations to it can have different symbol values and
+                    // addends. Only their sum, the offset in the fragment,
+                    // identifies the place.
                     h.update(b"2");
                     hash_u64(h, ((frag.section.0 as u64) << 32) | frag.entry.raw() as u64);
+                    hash_u64(h, sym.value.wrapping_add(addend as u64));
+                    return;
                 }
                 OriginValue::InputSection(sec) => {
                     let isec = ctx.input_section(sec);
@@ -331,6 +339,7 @@ fn compute_digest<E: Target>(ctx: &Context<E>, key: &[u8; 16], r: SectionRef) ->
             }
         }
         hash_u64(h, sym.value);
+        hash_i64(h, addend);
     };
 
     hash_bytes(&mut h, isec.contents());
@@ -349,19 +358,18 @@ fn compute_digest<E: Target>(ctx: &Context<E>, key: &[u8; 16], r: SectionRef) ->
         h.update(&rels.len().to_ne_bytes());
         for rel in rels.iter().skip(1) {
             let id = file.base.symbols[rel.r_sym() as usize];
-            hash_symbol(&mut h, id, &ctx.symbols[id]);
+            let addend = file.section_at(cie.section).rel_addend(rel);
+            hash_target(&mut h, id, &ctx.symbols[id], addend);
             hash_u32(&mut h, rel.r_type());
             hash_u64(&mut h, rel.r_offset() - fde.input_offset as u64);
-            hash_i64(&mut h, file.section_at(cie.section).rel_addend(rel));
         }
     }
 
     for rel in isec.rels(file) {
         hash_u64(&mut h, rel.r_offset());
         hash_u32(&mut h, rel.r_type());
-        hash_i64(&mut h, isec.rel_addend(rel));
         let id = file.base.symbols[rel.r_sym() as usize];
-        hash_symbol(&mut h, id, &ctx.symbols[id]);
+        hash_target(&mut h, id, &ctx.symbols[id], isec.rel_addend(rel));
     }
     finish_digest(h)
 }
