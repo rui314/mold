@@ -272,7 +272,7 @@ pub fn swap_code_bytes<const LE: bool>(ctx: &Context<Arm32Target<LE>>, buf: &mut
                     Some((ctx.input_section(sec).shndx, sym.value, kind))
                 })
                 .collect();
-            marks.sort_unstable_by_key(|&(shndx, offset, _)| (shndx, offset));
+            marks.sort_by_key(|&(shndx, offset, _)| (shndx, offset));
             (file.id().index(), marks)
         })
         .collect();
