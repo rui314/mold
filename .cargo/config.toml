@@ -1,0 +1,7 @@
+# rustc's LoongArch targets use the medium code model, but the cc crate
+# compiles C code with the C compiler's default normal code model, whose
+# direct calls reach only ±128 MiB, unless -Ccode-model is given
+# explicitly. A debug build of mold has more text than that, so we pass
+# the model explicitly to make the cc crate pass -mcmodel=medium.
+[target.'cfg(target_arch = "loongarch64")']
+rustflags = ["-Ccode-model=medium"]
