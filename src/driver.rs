@@ -284,8 +284,12 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
 
     // Handle --no-allow-shlib-undefined
     if !ctx.args.allow_shlib_undefined {
-        passes::check_shlib_undefined(&mut ctx);
+        passes::check_shlib_undefined(&ctx);
     }
+
+    // Now that no pass needs the DSOs other DSOs refer to, drop the
+    // --as-needed DSOs that the output does not need.
+    passes::remove_unneeded_dsos(&mut ctx);
 
     // Warn if symbols with different types are defined under the same name.
     passes::check_symbol_types(&ctx);

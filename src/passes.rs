@@ -255,7 +255,10 @@ fn mark_live_file<E: Target>(ctx: &Context<E>, id: FileId) -> Vec<FileId> {
                     continue;
                 }
 
-                // Follow references to other DSOs only to check --no-allow-shlib-undefined.
+                // Keep the file that defines the symbol. Another DSO kept here
+                // may be needed at run time (see mark_dsos_needed_by_dsos) and
+                // is needed for --no-allow-shlib-undefined; remove_unneeded_dsos
+                // drops it later if it is not.
                 //
                 // A versioned reference must not extract an unversioned definition
                 // from an archive. resolve_default_symver redirects symbols[] to the
@@ -264,7 +267,6 @@ fn mark_live_file<E: Target>(ctx: &Context<E>, id: FileId) -> Vec<FileId> {
                 let target =
                     if id2 != SymbolId::NONE { ctx.symbols[id2].file() } else { sym.file() };
                 if let Some(target) = target
-                    && (!target.is_dso() || !ctx.args.allow_shlib_undefined)
                     && ctx.file(target).mark_reachable()
                 {
                     found.push(target);
@@ -1819,7 +1821,7 @@ fn has_dso_definition<E: Target>(ctx: &Context<E>, id: SymbolId) -> bool {
 // If you do not pass --no-allow-shlib-undefined, undefined symbols in
 // shared libraries will be reported as run-time error by the dynamic
 // linker.
-pub fn check_shlib_undefined<E: Target>(ctx: &mut Context<E>) {
+pub fn check_shlib_undefined<E: Target>(ctx: &Context<E>) {
     let _t = ctx.timer("check_shlib_undefined");
 
     // Skip test if we don't have a complete set of shared object files
@@ -1850,14 +1852,18 @@ pub fn check_shlib_undefined<E: Target>(ctx: &mut Context<E>) {
             }
         });
     }
+}
 
-    // Beyond this point, DSOs that are not referenced directly by any
-    // object file are not needed. They were kept by mark_live_file just for
-    // this pass. Therefore, remove unneeded DSOs from the list now.
+/// Removes --as-needed DSOs that the output does not need. mark_live_file
+/// kept every DSO that a live file refers to, but an --as-needed DSO is
+/// needed only if an object file refers to it or another needed DSO
+/// depends on it (see mark_dsos_needed_by_dsos).
+pub fn remove_unneeded_dsos<E: Target>(ctx: &mut Context<E>) {
+    let _t = ctx.timer("remove_unneeded_dsos");
     for file in &ctx.dsos {
         file.base.set_reachable(!file.base.as_needed);
     }
-    let Context { objs, dsos, symbols, .. } = ctx;
+    let Context { objs, dsos, symbols, .. } = &*ctx;
     objs.par_iter().for_each(|file| {
         for &id in file.base.global_symbols() {
             if let Some(FileId::Dso(dso)) = symbols[id].file() {
@@ -1868,9 +1874,51 @@ pub fn check_shlib_undefined<E: Target>(ctx: &mut Context<E>) {
     remove_unreachable_dsos(ctx);
 }
 
-/// Drops DSOs that are no longer needed, renumbering the rest.
+/// Drops DSOs that are no longer needed, keeping the ones that needed DSOs
+/// depend on.
 pub fn remove_unreachable_dsos<E: Target>(ctx: &mut Context<E>) {
+    mark_dsos_needed_by_dsos(ctx);
     ctx.dsos.retain(|file| file.base.is_reachable());
+}
+
+/// As in GNU ld, an --as-needed DSO is also needed if a needed DSO refers
+/// to one of its symbols without listing it in DT_NEEDED. Such a DSO is
+/// underlinked, and the output has to load its dependency for it. A DSO
+/// that a needed DSO lists in DT_NEEDED is loaded anyway, so the output
+/// does not depend on it for that reason alone.
+fn mark_dsos_needed_by_dsos<E: Target>(ctx: &Context<E>) {
+    let mut is_live = vec![false; ctx.dsos.pool_len()];
+    let mut listed = HashSet::new();
+    let mut worklist = Vec::new();
+    for file in &ctx.dsos {
+        is_live[file.id().index()] = true;
+        if file.base.is_reachable() {
+            listed.extend(file.dt_needed());
+            worklist.push(file.id());
+        }
+    }
+
+    while let Some(id) = worklist.pop() {
+        let file = &ctx.dsos[id.index()];
+        for (i, esym) in file.base.elf_syms.iter().enumerate() {
+            if !esym.is_undef() || esym.is_weak() {
+                continue;
+            }
+            let id2 = file.symbols2[i];
+            let id = if id2 != SymbolId::NONE { id2 } else { file.base.symbols[i] };
+            let Some(FileId::Dso(target)) = ctx.symbols[id].file() else {
+                continue;
+            };
+            let dso = &ctx.dsos[target.index()];
+            if is_live[target.index()]
+                && !listed.contains(dso.soname)
+                && dso.base.mark_reachable()
+            {
+                listed.extend(dso.dt_needed());
+                worklist.push(target);
+            }
+        }
+    }
 }
 
 pub fn check_symbol_types<E: Target>(ctx: &Context<E>) {
