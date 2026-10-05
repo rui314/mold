@@ -15,23 +15,12 @@
 //! is negligible in practice.
 
 use std::io::{ErrorKind, Read};
-use std::mem::MaybeUninit;
 
 use flate2::FlushDecompress;
 use rayon::prelude::*;
+use zlib_rs::adler32::{adler32, adler32_combine};
 
 const SHARD_SIZE: usize = 1024 * 1024;
-
-// libz-sys exposes the zlib 1.2.3.4 API, but deflatePending was added in
-// zlib 1.2.5.1. C++ mold requires and calls this function directly too.
-unsafe extern "C" {
-    #[link_name = "deflatePending"]
-    fn deflate_pending(
-        stream: libz_sys::z_streamp,
-        pending: *mut std::ffi::c_uint,
-        bits: *mut std::ffi::c_int,
-    ) -> std::ffi::c_int;
-}
 
 pub enum Compressor {
     Zlib { shards: Vec<Vec<u8>>, checksum: u32 },
@@ -44,63 +33,36 @@ impl std::fmt::Debug for Compressor {
     }
 }
 
-fn adler32(data: &[u8]) -> u32 {
-    let len = data.len().try_into().unwrap();
-    // SAFETY: data is readable for len bytes. Each caller passes one shard,
-    // whose size fits zlib's uInt length argument.
-    unsafe { libz_sys::adler32(1, data.as_ptr(), len) as u32 }
-}
-
-/// Combines two Adler-32 checksums, where `len2` is the length of the
-/// second input. zlib's adler32_combine() does the same, but the width of
-/// its z_off_t parameter depends on how zlib was compiled, so it cannot be
-/// declared portably from Rust.
-fn adler32_combine(adler1: u32, adler2: u32, len2: usize) -> u32 {
-    // An Adler-32 checksum has two sums modulo 65521. The low 16 bits hold
-    // A, one plus the sum of all bytes, and the high 16 bits hold B, the sum
-    // of A's values after each byte. For a concatenation, A = A1 + A2 - 1
-    // and B = B1 + B2 + len2 * (A1 - 1).
-    const BASE: u32 = 65521;
-    let rem = (len2 % BASE as usize) as u32;
-    let (a1, b1) = (adler1 & 0xffff, adler1 >> 16);
-    let (a2, b2) = (adler2 & 0xffff, adler2 >> 16);
-    let a = (a1 + a2 + BASE - 1) % BASE;
-    let b = (rem * a1 % BASE + b1 + b2 + BASE - rem) % BASE;
-    (b << 16) | a
-}
-
 /// Compresses a shard as a raw deflate stream ending with a sync flush,
 /// so that the stream ends on a byte boundary and can be concatenated.
 fn zlib_compress(input: &[u8], level: u32) -> Vec<u8> {
     // Initialize zlib stream. Since debug info is generally compressed
     // pretty well with lower compression levels, the default level is 1.
-    let mut stream = MaybeUninit::<libz_sys::z_stream>::zeroed();
-    // SAFETY: deflateInit2_ initializes the zeroed stream using its default
-    // allocator. The stream remains at a stable address until deflateEnd.
+    let mut stream = libz_rs_sys::z_stream::default();
+    // SAFETY: stream is a valid z_stream with the default allocator. It
+    // stays at the same address until deflateEnd.
     let status = unsafe {
-        libz_sys::deflateInit2_(
-            stream.as_mut_ptr(),
+        libz_rs_sys::deflateInit2_(
+            &mut stream,
             level as i32,
-            libz_sys::Z_DEFLATED,
+            libz_rs_sys::Z_DEFLATED,
             -15,
             8,
-            libz_sys::Z_DEFAULT_STRATEGY,
-            libz_sys::zlibVersion(),
-            size_of::<libz_sys::z_stream>() as i32,
+            libz_rs_sys::Z_DEFAULT_STRATEGY,
+            libz_rs_sys::zlibVersion(),
+            size_of::<libz_rs_sys::z_stream>() as i32,
         )
     };
-    assert_eq!(status, libz_sys::Z_OK);
-    // SAFETY: deflateInit2_ returned Z_OK, so the stream is initialized.
-    let stream = unsafe { stream.assume_init_mut() };
+    assert_eq!(status, libz_rs_sys::Z_OK);
 
     // Set an input buffer
     stream.avail_in = input.len() as u32;
-    stream.next_in = input.as_ptr().cast_mut();
+    stream.next_in = input.as_ptr();
 
     // Set an output buffer. deflateBound() returns an upper bound
     // on the compression size. +16 for Z_SYNC_FLUSH.
     // SAFETY: stream is initialized and remains valid through deflateEnd.
-    let bound = unsafe { libz_sys::deflateBound(stream, stream.avail_in.into()) } as usize;
+    let bound = unsafe { libz_rs_sys::deflateBound(&mut stream, stream.avail_in.into()) } as usize;
     let mut out = vec![0; bound + 16];
 
     // Compress data. It writes all compressed bytes except the last
@@ -110,8 +72,8 @@ fn zlib_compress(input: &[u8], level: u32) -> Vec<u8> {
     stream.next_out = out.as_mut_ptr();
     // SAFETY: the input and output buffers remain alive and the output has
     // deflateBound() + 16 bytes of space.
-    let status = unsafe { libz_sys::deflate(stream, libz_sys::Z_BLOCK) };
-    assert_eq!(status, libz_sys::Z_OK);
+    let status = unsafe { libz_rs_sys::deflate(&mut stream, libz_rs_sys::Z_BLOCK) };
+    assert_eq!(status, libz_rs_sys::Z_OK);
 
     // This is a workaround for libbacktrace before 2022-04-06.
     //
@@ -131,20 +93,21 @@ fn zlib_compress(input: &[u8], level: u32) -> Vec<u8> {
     // https://github.com/ianlancetaylor/libbacktrace/pull/87
     let mut nbits = 0;
     // SAFETY: stream is initialized and nbits is a valid output pointer.
-    let status = unsafe { deflate_pending(stream, std::ptr::null_mut(), &raw mut nbits) };
-    assert_eq!(status, libz_sys::Z_OK);
+    let status =
+        unsafe { libz_rs_sys::deflatePending(&mut stream, std::ptr::null_mut(), &raw mut nbits) };
+    assert_eq!(status, libz_rs_sys::Z_OK);
     if nbits == 5 {
         // SAFETY: stream is initialized and has enough pending-buffer space.
-        let status = unsafe { libz_sys::deflatePrime(stream, 10, 2) };
-        assert_eq!(status, libz_sys::Z_OK);
+        let status = unsafe { libz_rs_sys::deflatePrime(&mut stream, 10, 2) };
+        assert_eq!(status, libz_rs_sys::Z_OK);
     }
     // SAFETY: stream and its input and output buffers remain valid.
-    let status = unsafe { libz_sys::deflate(stream, libz_sys::Z_SYNC_FLUSH) };
-    assert_eq!(status, libz_sys::Z_OK);
+    let status = unsafe { libz_rs_sys::deflate(&mut stream, libz_rs_sys::Z_SYNC_FLUSH) };
+    assert_eq!(status, libz_rs_sys::Z_OK);
 
     let len = out.len() - stream.avail_out as usize;
     // SAFETY: stream was initialized successfully and is no longer used.
-    unsafe { libz_sys::deflateEnd(stream) };
+    unsafe { libz_rs_sys::deflateEnd(&mut stream) };
     out.truncate(len);
     out
 }
@@ -154,13 +117,13 @@ impl Compressor {
         // Compress each shard
         let (shards, adlers): (Vec<Vec<u8>>, Vec<u32>) = input
             .par_chunks(SHARD_SIZE)
-            .map(|shard| (zlib_compress(shard, level), adler32(shard)))
+            .map(|shard| (zlib_compress(shard, level), adler32(1, shard)))
             .unzip();
 
         // Combine checksums
         let mut checksum = adlers.first().copied().unwrap_or(1);
         for (adler, shard) in adlers.iter().zip(input.chunks(SHARD_SIZE)).skip(1) {
-            checksum = adler32_combine(checksum, *adler, shard.len());
+            checksum = adler32_combine(checksum, *adler, shard.len() as u64);
         }
         Self::Zlib { shards, checksum }
     }

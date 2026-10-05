@@ -138,8 +138,7 @@ version = "1.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6e634e2e0ebac1ee034020da1ca582e17ffe4e0f5e985823721e168928136dcb"
 dependencies = [
- "crc32fast",
- "libz-sys",
+ "zlib-rs",
 ]
 
 [[package]]
@@ -195,15 +194,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "libz-sys"
-version = "1.1.29"
+name = "libz-rs-sys"
+version = "0.6.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85bc9657773828b90eeb625adff10eeac83cc21bbfd8e23a03eaa8a33c9e28d9"
+checksum = "434324ee61a8e4a05dd3fdf03d51c073ea7fdaf5a35b2ca33c4ca9f3f37def4a"
 dependencies = [
- "cc",
- "libc",
- "pkg-config",
- "vcpkg",
+ "zlib-rs",
 ]
 
 [[package]]
@@ -242,7 +238,7 @@ dependencies = [
  "getrandom",
  "hashbrown",
  "libc",
- "libz-sys",
+ "libz-rs-sys",
  "memchr",
  "memmap2",
  "portable-atomic",
@@ -250,6 +246,7 @@ dependencies = [
  "rustc-demangle",
  "uuid",
  "xxhash-rust",
+ "zlib-rs",
  "zstd",
 ]
 
@@ -550,16 +547,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "vcpkg"
-version = "0.2.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
-
-[[package]]
 name = "xxhash-rust"
 version = "0.8.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aee1b19627c7c60102ab80d3a9cbe18de90bfe03bfa6c3715447681f0e8c8af6"
+
+[[package]]
+name = "zlib-rs"
+version = "0.6.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b268e58e7c693d7c271f93ffc4ba3b380412554231c85bf61ca7af91042a4112"
 
 [[package]]
 name = "zstd"

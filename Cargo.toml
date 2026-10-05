@@ -31,11 +31,11 @@ blake3 = "1.8.7"
 bstr = "1"
 cpp_demangle = "0.4"
 crc32fast = "1"
-flate2 = { version = "1", default-features = false, features = ["zlib"] }
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 getrandom = "0.4.3"
 hashbrown = "0.17.1"
 libc.workspace = true
-libz-sys = "1.1.29"
+libz-rs-sys = "0.6.8"
 memchr = "2.8.3"
 memmap2 = "0.9"
 # std has no 64-bit atomics on hosts such as 32-bit PowerPC.
@@ -44,6 +44,7 @@ rayon = "1"
 rustc-demangle = "0.1"
 uuid = { version = "1.27", default-features = false, features = ["v4"] }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
+zlib-rs = { version = "0.6.8", default-features = false }
 zstd = "0.13"
 
 [build-dependencies]
