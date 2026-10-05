@@ -1162,7 +1162,7 @@ impl Symbol {
     #[inline]
     pub fn plt_addr<E: Target>(&self, ctx: &Context<E>) -> u64 {
         if let Some(idx) = self.plt_idx(&ctx.symbols) {
-            return ctx.plt.hdr.shdr.sh_addr.get() + crate::chunks::plt::entry_offset(ctx, idx);
+            return ctx.plt.hdr.shdr.sh_addr.get() + crate::chunks::plt::entry_offset::<E>(idx);
         }
         ctx.pltgot.hdr.shdr.sh_addr.get()
             + self.pltgot_idx(&ctx.symbols).unwrap() as u64 * E::PLTGOT_SIZE

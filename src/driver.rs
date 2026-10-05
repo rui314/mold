@@ -311,23 +311,12 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     // or ctx.dsos.
 
     // Handle `-z cet-report`.
-    if ctx.args.z_cet_report != cmdline::ReportKind::None {
+    if ctx.args.z_cet_report != cmdline::CetReportKind::None {
         passes::check_cet_errors(&ctx);
-    }
-    // Handle `-z bti-report` and `-z gcs-report`.
-    if E::FAMILY == Family::Arm64
-        && (ctx.args.z_bti_report != cmdline::ReportKind::None
-            || ctx.args.z_gcs_report != cmdline::ReportKind::None)
-    {
-        passes::check_arm64_feature_errors(&ctx);
     }
     // Handle `-z execstack-if-needed`.
     if ctx.args.z_execstack_if_needed && ctx.objs.iter().any(|f| f.needs_executable_stack) {
         ctx.args.z_execstack = true;
-    }
-    // Merge .note.gnu.property contents of input files.
-    if ctx.note_property.is_some() {
-        chunks::note_property::construct(&mut ctx);
     }
 
     // If we are linking a .so file, remaining undefined symbols does

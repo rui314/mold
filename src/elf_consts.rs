@@ -219,8 +219,6 @@ pub const DT_VERNEEDNUM: u32 = 0x6fffffff;
 pub const DT_PPC_GOT: u32 = 0x70000000;
 pub const DT_PPC64_GLINK: u32 = 0x70000000;
 pub const DT_RISCV_VARIANT_CC: u32 = 0x70000001;
-pub const DT_AARCH64_BTI_PLT: u32 = 0x70000001;
-pub const DT_AARCH64_PAC_PLT: u32 = 0x70000003;
 pub const DT_AARCH64_VARIANT_PCS: u32 = 0x70000005;
 pub const DT_AUXILIARY: u32 = 0x7ffffffd;
 pub const DT_FILTER: u32 = 0x7fffffff;
@@ -264,11 +262,6 @@ pub const GNU_PROPERTY_X86_ISA_1_BASELINE: u32 = 1;
 pub const GNU_PROPERTY_X86_ISA_1_V2: u32 = 2;
 pub const GNU_PROPERTY_X86_ISA_1_V3: u32 = 4;
 pub const GNU_PROPERTY_X86_ISA_1_V4: u32 = 8;
-
-pub const GNU_PROPERTY_AARCH64_FEATURE_1_AND: u32 = 0xc0000000;
-pub const GNU_PROPERTY_AARCH64_FEATURE_1_BTI: u32 = 1;
-pub const GNU_PROPERTY_AARCH64_FEATURE_1_PAC: u32 = 2;
-pub const GNU_PROPERTY_AARCH64_FEATURE_1_GCS: u32 = 4;
 
 pub const ELFCOMPRESS_NONE: u32 = 0;
 pub const ELFCOMPRESS_ZLIB: u32 = 1;

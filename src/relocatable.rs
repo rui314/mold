@@ -43,7 +43,7 @@ use crate::input_files::FileId;
 use crate::input_sections::InputSectionId;
 use crate::output_file::OutputFile;
 use crate::passes;
-use crate::target::{Family, Target};
+use crate::target::Target;
 use crate::util::align_to;
 
 /// An output section's sh_link can refer to only one section, so
@@ -109,7 +109,7 @@ fn create_synthetic_sections<E: Target>(ctx: &mut Context<E>) {
         ChunkId::Symtab,
         ChunkId::Shstrtab,
     ]);
-    if E::IS_X86 || E::FAMILY == Family::Arm64 {
+    if E::IS_X86 {
         ctx.note_property = Some(NotePropertySection::<E>::new());
         ctx.chunks.push(ChunkId::NoteProperty);
     }
@@ -214,9 +214,6 @@ pub fn combine_objects<E: Target>(ctx: &mut Context<E>) {
     split_link_order_sections(ctx);
     create_synthetic_sections(ctx);
     claim_unresolved_symbols(ctx);
-    if ctx.note_property.is_some() {
-        chunks::note_property::construct(ctx);
-    }
     passes::compute_section_sizes(ctx);
     passes::sort_output_sections(ctx);
     passes::create_output_symtab(ctx);

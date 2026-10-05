@@ -21,8 +21,8 @@ use crate::chunks::{
     self, ChunkHeader, ChunkId, OutputPhdr, OutputSectionId, compressed, copyrel, dynsym, reloc,
 };
 use crate::cmdline::{
-    BsymbolicKind, BuildId, DefsymValue, ReportKind, ReportOutput, SectionOrder, SeparateCodeKind,
-    ShuffleSections, UnresolvedKind,
+    BsymbolicKind, BuildId, CetReportKind, DefsymValue, ReportOutput, SectionOrder,
+    SeparateCodeKind, ShuffleSections, UnresolvedKind,
 };
 use crate::context::Context;
 use crate::elf::*;
@@ -171,7 +171,7 @@ pub fn create_synthetic_sections<E: Target>(ctx: &mut Context<E>) {
     chunks.push(ChunkId::Verneed);
     chunks.push(ChunkId::NotePackage);
 
-    if E::IS_X86 || E::FAMILY == Family::Arm64 {
+    if E::IS_X86 {
         ctx.note_property = Some(NotePropertySection::<E>::new());
         chunks.push(ChunkId::NoteProperty);
     }
@@ -1520,7 +1520,7 @@ pub fn apply_section_align<E: Target>(ctx: &mut Context<E>) {
 }
 
 pub fn check_cet_errors<E: Target>(ctx: &Context<E>) {
-    let warning = ctx.args.z_cet_report == ReportKind::Warning;
+    let warning = ctx.args.z_cet_report == CetReportKind::Warning;
     let has_feature = |file: &ObjectFile<E>, feature: u32| {
         file.gnu_properties.get(&GNU_PROPERTY_X86_FEATURE_1_AND).is_some_and(|v| v & feature != 0)
     };
@@ -1537,36 +1537,6 @@ pub fn check_cet_errors<E: Target>(ctx: &Context<E>) {
                 } else {
                     error!("{file}: -cet-report=error: missing GNU_PROPERTY_X86_FEATURE_1_{name}");
                 }
-            }
-        }
-    }
-}
-
-pub fn check_arm64_feature_errors<E: Target>(ctx: &Context<E>) {
-    let has_feature = |file: &ObjectFile<E>, feature: u32| {
-        file.gnu_properties
-            .get(&GNU_PROPERTY_AARCH64_FEATURE_1_AND)
-            .is_some_and(|v| v & feature != 0)
-    };
-    for file in &ctx.objs {
-        if ctx.is_internal(file.id()) {
-            continue;
-        }
-        for (kind, option, feature, name) in [
-            (ctx.args.z_bti_report, "bti-report", GNU_PROPERTY_AARCH64_FEATURE_1_BTI, "BTI"),
-            (ctx.args.z_gcs_report, "gcs-report", GNU_PROPERTY_AARCH64_FEATURE_1_GCS, "GCS"),
-        ] {
-            if has_feature(file, feature) {
-                continue;
-            }
-            match kind {
-                ReportKind::None => {}
-                ReportKind::Warning => warn!(
-                    "{file}: -z {option}=warning: missing GNU_PROPERTY_AARCH64_FEATURE_1_{name}"
-                ),
-                ReportKind::Error => error!(
-                    "{file}: -z {option}=error: missing GNU_PROPERTY_AARCH64_FEATURE_1_{name}"
-                ),
             }
         }
     }
@@ -2265,13 +2235,12 @@ pub fn compute_section_sizes<E: Target>(ctx: &mut Context<E>) {
     };
 
     // create_range_extension_thunks is not thread-safe
-    let landing_pads = crate::thunks::find_landing_pads(ctx);
     for i in 0..ctx.chunks.len() {
         let id = ctx.chunks[i];
         if let ChunkId::Output(osec) = id
             && needs_thunks(ctx, id)
         {
-            crate::thunks::create_range_extension_thunks(ctx, osec, &landing_pads);
+            crate::thunks::create_range_extension_thunks(ctx, osec);
         }
     }
 

@@ -1,6 +1,6 @@
 //! `.dynamic`, information consumed by the dynamic linker.
 
-use crate::chunks::{ChunkHeader, note_property};
+use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::FileId;
@@ -230,12 +230,6 @@ fn for_each_entry<E: Target>(ctx: &Context<E>, mut define: impl FnMut(u32, u64))
     if E::FAMILY == Family::Arm64 && contains_variant_pcs(ctx) {
         define(DT_AARCH64_VARIANT_PCS, 0);
     }
-    if note_property::is_bti(ctx) {
-        define(DT_AARCH64_BTI_PLT, 0);
-    }
-    if E::FAMILY == Family::Arm64 && ctx.args.z_pac_plt {
-        define(DT_AARCH64_PAC_PLT, 0);
-    }
     // RISC-V has the same feature but with a different name.
     if E::IS_RISCV && plt.symbols.iter().any(|&id| ctx.symbols[id].esym(ctx).riscv_variant_cc()) {
         define(DT_RISCV_VARIANT_CC, 0);
@@ -249,7 +243,7 @@ fn for_each_entry<E: Target>(ctx: &Context<E>, mut define: impl FnMut(u32, u64))
         // it's what it is.
         define(
             DT_PPC64_GLINK,
-            plt.hdr.shdr.sh_addr.get() + crate::chunks::plt::entry_offset(ctx, 0) - 32,
+            plt.hdr.shdr.sh_addr.get() + crate::chunks::plt::entry_offset::<E>(0) - 32,
         );
     }
 
