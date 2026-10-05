@@ -1184,13 +1184,21 @@ impl<E: Target> ObjectFile<E> {
     }
 
     /// Returns relocations for rewriting. Ordinary records live in the
-    /// input's private writable mapping; decoded CREL records use the side
-    /// table because they have no ordinary in-file representation.
+    /// input's private writable mapping. A CREL table has no ordinary
+    /// in-file representation, so it is rewritten in the side table, where
+    /// later passes read it. A table that hasn't been decoded yet, such as
+    /// one for a non-allocated section, is decoded first.
     pub fn rels_mut(&mut self, shndx: u32) -> &mut [ElfRel<E>] {
         let Some(relsec_idx) = self.section_at(shndx).relsec_idx() else {
             return &mut [];
         };
         let index = relsec_idx as usize;
+        if self.base.shdrs[index].sh_type.get() == SHT_CREL
+            && !self.decoded_crel.get(index).is_some_and(Option::is_some)
+        {
+            let decoded = decode_crel::<E>(self, self.input_relocation_data(relsec_idx));
+            self.set_decoded_crel(index, decoded);
+        }
         if let Some(Some(rels)) = self.decoded_crel.get_mut(index) {
             return rels.as_mut_slice();
         }
