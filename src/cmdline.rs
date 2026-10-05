@@ -848,7 +848,7 @@ fn parse_hex(opt: &str, value: &str) -> u64 {
 }
 
 /// Parses an integer in C syntax (decimal, `0x` hex or leading-zero octal).
-pub(crate) fn parse_c_number(s: &str) -> Option<u64> {
+fn parse_c_number(s: &str) -> Option<u64> {
     let s = s.trim_start_matches(|c: char| c.is_ascii() && is_space(c as u8));
     let (negative, digits) = if let Some(rest) = s.strip_prefix('-') {
         (true, rest)
