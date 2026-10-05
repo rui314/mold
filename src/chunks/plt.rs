@@ -10,7 +10,7 @@ use crate::input_files::SymtabBlock;
 use crate::symbol::SymbolId;
 
 // .plt contains linker-synthesized stub code that acts as if they are
-// functions. They are in fact immediately branches to real function entry
+// functions. They in fact immediately branch to real function entry
 // points. .plt is used as a stub for runtime lazy symbol resolution.
 #[derive(Debug)]
 pub struct PltSection<E: Target> {

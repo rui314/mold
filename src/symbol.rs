@@ -312,7 +312,7 @@ const WEAK: u16 = 1 << 0;
 
 // If a symbol can be resolved to a symbol in a different ELF file at
 // runtime, `is_imported` is true. If a symbol is a dynamic symbol and
-// can be used by other ELF file at runtime, `is_exported` is true.
+// can be used by other ELF files at runtime, `is_exported` is true.
 //
 // Note that both can be true at the same time. Such symbol represents
 // a function or data exported from this ELF file which can be
@@ -321,7 +321,7 @@ const WEAK: u16 = 1 << 0;
 // symbol exported by a DSO is usually imported by itself.
 //
 // If is_imported is true and is_exported is false, it is a dynamic
-// symbol just imported from other DSO.
+// symbol just imported from another DSO.
 //
 // If is_imported is false and is_exported is true, there are two
 // possible cases. If we are creating an executable, we know that
@@ -361,13 +361,13 @@ const EXPORTED: u16 = 1 << 2;
 // position-dependent executable, but it's not if `foo` is imported
 // from some other DSO at runtime.
 //
-// In this case, we use the address of the `foo`'s PLT entry in the
+// In this case, we use the address of `foo`'s PLT entry in the
 // main executable (whose address is fixed at link-time) as its
 // address. In order to guarantee pointer equality, we also need to
-// fill foo's GOT entries in DSOs with the address of the foo's PLT
+// fill foo's GOT entries in DSOs with the address of foo's PLT
 // entry instead of `foo`'s real address. We can do that by setting a
 // symbol value to `foo`'s dynamic symbol. If a symbol value is set,
-// the dynamic loader initialize `foo`'s GOT entries with that value
+// the dynamic loader initializes `foo`'s GOT entries with that value
 // instead of the symbol's real address.
 //
 // We call such PLT entry in the main executable as "canonical".
@@ -383,18 +383,18 @@ const EXPORTED: u16 = 1 << 2;
 const CANONICAL: u16 = 1 << 3;
 
 // If an input object file is not compiled with -fPIC (or with
-// -fno-PIC), the file not position independent. That means the
+// -fno-PIC), the file is not position independent. That means the
 // machine code included in the object file does not use GOT to access
 // global variables. Instead, it assumes that addresses of global
 // variables are known at link-time.
 //
 // Let's say `libx.so` exports a global variable `foo`, and a main
 // executable uses the variable. If the executable is not compiled
-// with -fPIC, we can't simply apply a relocation that refers `foo`
+// with -fPIC, we can't simply apply a relocation that refers to `foo`
 // because `foo`'s address is not known at link-time.
 //
 // In this case, we could print out the "recompile with -fPIC" error
-// message, but there's a way to workaround.
+// message, but there's a way to work around it.
 //
 // The loader supports a feature so-called "copy relocations".
 // A copy relocation instructs the loader to copy data from a DSO to a
@@ -960,8 +960,8 @@ impl Symbol {
     }
 
     // A remaining weak undefined symbol is promoted to a dynamic symbol
-    // in DSO and resolved to 0 in an executable. This function returns
-    // true if it's latter.
+    // in a DSO and resolved to 0 in an executable. This function returns
+    // true if it's the latter.
     #[inline]
     pub fn is_remaining_undef_weak(&self) -> bool {
         !self.is_imported() && self.is_undef_weak()
@@ -1004,7 +1004,7 @@ impl Symbol {
     }
 
     pub fn is_pde_ifunc<E: Target>(&self, ctx: &Context<E>) -> bool {
-        // Returns true if this is an ifunc tha uses two GOT slots
+        // Returns true if this is an ifunc that uses two GOT slots
         self.is_ifunc() && !ctx.args.pic && !E::IS_PPC64
     }
 
@@ -1041,10 +1041,10 @@ impl Symbol {
             let frag = ctx.fragment(frag_ref);
             if !frag.is_alive() {
                 std::hint::cold_path();
-                // This condition is met if a non-alloc section refers an
+                // This condition is met if a non-alloc section refers to an
                 // alloc section and if the referenced piece of data is
                 // garbage-collected. Typically, this condition occurs if a
-                // debug info section refers a string constant in .rodata.
+                // debug info section refers to a string constant in .rodata.
                 return 0;
             }
             return ctx.fragment_addr(frag_ref).wrapping_add(self.value);
@@ -1123,7 +1123,7 @@ impl Symbol {
         }
 
         // The control can reach here if there's a relocation that refers
-        // a local symbol belonging to a comdat group section. This is a
+        // to a local symbol belonging to a comdat group section. This is a
         // violation of the spec, as all relocations should use only global
         // symbols of comdat members. However, .eh_frame tends to have such
         // relocations.

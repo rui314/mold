@@ -198,7 +198,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
         passes::do_lto(&mut ctx);
     }
 
-    // Now that we know which object files are to be included to the
+    // Now that we know which object files are to be included in the
     // final output, we can remove unnecessary files.
     let t = ctx.timer("remove_unreachable_files");
     passes::remove_unreachable_files(&mut ctx);
@@ -230,7 +230,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
 
     // Handle --relocatable. Since the linker's behavior is quite different
     // from the normal one when the option is given, the logic is implemented
-    // to a separate file.
+    // in a separate file.
     if ctx.args.relocatable {
         crate::relocatable::combine_objects(&mut ctx);
         return Ok(0);
@@ -323,7 +323,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
         ctx.args.z_execstack = true;
     }
 
-    // If we are linking a .so file, remaining undefined symbols does
+    // If we are linking a .so file, remaining undefined symbols do
     // not cause a linker error. Instead, they are treated as if they
     // were imported symbols.
     //
@@ -351,10 +351,10 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     passes::sort_init_fini(&mut ctx);
 
     // Likewise, .ctors and .dtors have to be sorted. They are rare
-    // because they are superceded by .init_array/.fini_array, though.
+    // because they are superseded by .init_array/.fini_array, though.
     passes::sort_ctor_dtor(&mut ctx);
 
-    // If .ctors/.dtors are to be placed to .init_array/.fini_array,
+    // If .ctors/.dtors are to be placed in .init_array/.fini_array,
     // we need to reverse their contents.
     passes::fixup_ctors_in_init_array(&mut ctx);
 
@@ -362,7 +362,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     if ctx.args.shuffle_sections != cmdline::ShuffleSections::None {
         passes::shuffle_sections(&mut ctx);
     }
-    // Copy string referred by .dynamic to .dynstr.
+    // Copy strings referred to by .dynamic to .dynstr.
     let t = ctx.timer("add_dynamic_strings");
     passes::add_dynamic_strings(&mut ctx);
     drop(t);
@@ -463,7 +463,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     // Assign offsets to output sections
     let mut filesize = passes::set_osec_offsets(&mut ctx);
 
-    // On RISC-V, branches are encode using multiple instructions so
+    // On RISC-V, branches are encoded using multiple instructions so
     // that they can jump to anywhere in ±2 GiB by default. They may
     // be replaced with shorter instruction sequences if destinations
     // are close enough. Do this optimization.
@@ -472,9 +472,9 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
         filesize = passes::set_osec_offsets(&mut ctx);
     }
 
-    // We've created range extension thunks with a pessimistive assumption
+    // We've created range extension thunks with a pessimistic assumption
     // that all out-of-section references are out of range. Now that we know
-    // the addresses of all sections,, we can eliminate excessive thunks.
+    // the addresses of all sections, we can eliminate excessive thunks.
     if E::NEEDS_THUNK {
         crate::thunks::remove_redundant_thunks(&mut ctx);
         filesize = passes::set_osec_offsets(&mut ctx);

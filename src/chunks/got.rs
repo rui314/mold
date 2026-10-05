@@ -28,7 +28,7 @@ impl<E: Target> GotSection<E> {
         hdr.is_relro = true;
         hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
         // We always create a .got so that _GLOBAL_OFFSET_TABLE_ has
-        // something to point to. s390x psABI define GOT[1] and GOT[2]
+        // something to point to. s390x psABI defines GOT[1] and GOT[2]
         // as reserved slots, so we allocate two more for them.
         let reserved = if E::FAMILY == Family::S390x { 3 } else { 1 };
         hdr.shdr.sh_size.set(reserved * E::WORD_SIZE as u64);
@@ -98,7 +98,7 @@ pub fn add_tlsdesc_symbol<E: Target>(ctx: &mut Context<E>, sym: SymbolId) {
     //
     // If dynamic relocation is not available (i.e. if we are creating a
     // statically-linked executable), we always relax TLSDESC relocations
-    // so that no TLSDESC relocation exist at runtime.
+    // so that no TLSDESC relocation exists at runtime.
     debug_assert!(E::SUPPORTS_TLSDESC);
     debug_assert!(!ctx.args.is_static);
     let size = ctx.got.hdr.shdr.sh_size.get();
@@ -128,9 +128,9 @@ struct GotEntry {
 // .got is a linker-synthesized constant pool whose entry is of pointer
 // size. If we know a correct value for an entry, we'll just set that value
 // to the entry. Otherwise, we'll create a dynamic relocation and let the
-// dynamic linker to fill the entry at load-time.
+// dynamic linker fill the entry at load-time.
 //
-// Most GOT entries contain addresses of global variable. If a global
+// Most GOT entries contain addresses of global variables. If a global
 // variable is an imported symbol, we don't know its address until runtime.
 // GOT contains the addresses of such variables at runtime so that we can
 // access imported global variables via GOT.
@@ -163,7 +163,7 @@ fn for_each_entry<E: Target>(ctx: &Context<E>, mut emit: impl FnMut(GotEntry)) {
         }
 
         if sym.is_imported() {
-            // If a symbol is imported, let the dynamic linker to resolve it.
+            // If a symbol is imported, let the dynamic linker resolve it.
             add(idx, 0, E::R_GLOB_DAT, Some(id));
         } else if ctx.args.pic && sym.is_relative() {
             // We know the symbol's address, but it needs a base relocation.
@@ -179,7 +179,7 @@ fn for_each_entry<E: Target>(ctx: &Context<E>, mut emit: impl FnMut(GotEntry)) {
         let sym = &ctx.symbols[id];
         let idx = sym.tlsgd_idx(&ctx.symbols).unwrap();
         if sym.is_imported() {
-            // If a symbol is imported, let the dynamic linker to resolve it.
+            // If a symbol is imported, let the dynamic linker resolve it.
             add(idx, 0, E::R_DTPMOD, Some(id));
             add(idx + 1, 0, E::R_DTPOFF, Some(id));
         } else if ctx.args.shared {
@@ -218,11 +218,11 @@ fn for_each_entry<E: Target>(ctx: &Context<E>, mut emit: impl FnMut(GotEntry)) {
         let idx = sym.gottp_idx(&ctx.symbols).unwrap();
         if sym.is_imported() {
             // If we know nothing about the symbol, let the dynamic linker
-            // to fill the GOT entry.
+            // fill the GOT entry.
             add(idx, 0, E::R_TPOFF, Some(id));
         } else if ctx.args.shared {
             // If we know the offset within the current thread vector,
-            // let the dynamic linker to adjust it.
+            // let the dynamic linker adjust it.
             add(idx, sym.addr(ctx).wrapping_sub(ctx.tls_begin), E::R_TPOFF, None);
         } else {
             // Otherwise, we know the offset from the thread pointer (TP) at

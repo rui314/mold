@@ -7,14 +7,14 @@
 //! popularity continues to decline though.
 //!
 //! SH-4's most distinctive feature compared to other RISC ISAs is that its
-//! instructions are 16 bits in length instead of more common 32 bits for
+//! instructions are 16 bits in length instead of the more common 32 bits for
 //! better code density. This difference affects various aspects of its
 //! instruction set as shown below:
 //!
 //!  - SH-4 has 16 general-purpose registers (GPRs) instead of the most
-//!    commmon 32 GPR configuration to save one bit to specify a register.
+//!    common 32 GPR configuration to save one bit to specify a register.
 //!
-//!  - Binary instructions such as ADD normally take three register in
+//!  - Binary instructions such as ADD normally take three registers in
 //!    RISC ISAs (e.g. x ← y ⊕ z where x, y and z are registers), but
 //!    SH-4's instructions take only two registers. The result of an
 //!    operation is written to one of the source registers (e.g. x ← x ⊕ y).
@@ -33,7 +33,7 @@
 //!    result, the number of relocations the linker has to support is also
 //!    small.
 //!
-//! Beside these, SH-4 has a delay branch slot just like contemporary MIPS
+//! Besides these, SH-4 has a delay branch slot just like contemporary MIPS
 //! and SPARC. That is, one instruction after a branch instruction will
 //! always be executed even if the branch is taken. Delay branch slot allows
 //! a pipelined CPU to start and finish executing an instruction after a
@@ -53,7 +53,7 @@
 //!    convention.
 //!
 //!  - It looks like the ecosystem has bit-rotted. Some tests, especially
-//!    one using C++ exceptions, don't pass even with GNU ld.
+//!    ones using C++ exceptions, don't pass even with GNU ld.
 //!
 //!  - GCC/SH4 tends to write dynamically-relocated data into .text, so the
 //!    output from the linker contains lots of text relocations. That's not

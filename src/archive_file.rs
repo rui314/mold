@@ -10,14 +10,14 @@
 //!
 //! If an archive file is given to the linker, the linker pulls out
 //! object files that are needed to resolve undefined symbols. So,
-//! bunding object files as an archive and giving that archive to the
+//! bundling object files as an archive and giving that archive to the
 //! linker has a different meaning than directly giving the same set of
 //! object files to the linker. The former links only needed object
 //! files, while the latter links all the given object files.
 //!
 //! Therefore, if you link libc.a for example, not all the libc
 //! functions are linked to your binary. Instead, only object files
-//! that provides functions and variables used in your program get
+//! that provide functions and variables used in your program get
 //! linked. To make this efficient, static library functions are
 //! usually separated to each object file in an archive file. You can
 //! see the contents of libc.a by running `ar t

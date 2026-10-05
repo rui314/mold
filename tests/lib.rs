@@ -414,7 +414,7 @@ fn prepare_work_dir(mold: &Path) -> io::Result<PathBuf> {
     fs::create_dir_all(&work_dir)?;
     replace_file_link(&wrapper, &work_dir.join("mold-wrapper.so"))?;
 
-    // FreeBSD defaults to ld.lld on llvm upstream. Override ld is not enough with -B.
+    // FreeBSD defaults to ld.lld on llvm upstream. Overriding ld is not enough with -B.
     for name in ["mold", "ld", "ld.lld"] {
         replace_file_link(&mold, &work_dir.join(name))?;
     }

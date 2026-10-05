@@ -1000,7 +1000,7 @@ fn parse_defsym_value(s: &[u8]) -> DefsymValue {
     DefsymValue::Symbol(s.to_vec())
 }
 
-// Version 6.11 and 6.12 of the Linux kernel does not return ETXTBSY for
+// Versions 6.11 and 6.12 of the Linux kernel do not return ETXTBSY for
 // open(2) on an executable file that is currently running. This function
 // returns true if we are running on a Linux kernel older than 6.11 or newer
 // than 6.12.
@@ -1226,7 +1226,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
 
     // We generally don't need to write addends to relocated places if the
     // relocation type is RELA because RELA records contain addends.
-    // However, there are too much code that wrongly assumes that addends
+    // However, there is too much code that wrongly assumes that addends
     // are written to both RELA records and relocated places, so we write
     // addends to relocated places by default. There are a few exceptions:
     //
@@ -2117,7 +2117,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
         a.strip_all = true;
     }
 
-    // By default, mold tries to ovewrite to an output file if exists
+    // By default, mold tries to overwrite an output file if it exists
     // because at least on Linux, writing to an existing file is much
     // faster than creating a fresh file and writing to it.
     //

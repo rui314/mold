@@ -258,7 +258,7 @@ impl MappedFile {
         }
     }
 
-    // Returns a string that uniquely identify a file that is possibly
+    // Returns a string that uniquely identifies a file that is possibly
     // in an archive.
     pub fn identifier(&self) -> std::ffi::OsString {
         if let Some(parent) = self.parent {

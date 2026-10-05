@@ -37,7 +37,7 @@
 //!
 //! A function compiled for pre-Power10 usually has two entry points,
 //! global and local. The global entry point usually 8 bytes precedes
-//! the local entry point. In between is the following instructions:
+//! the local entry point. In between are the following instructions:
 //!
 //!   addis r2, r12, .TOC.@ha
 //!   addi  r2, r2,  .TOC.@lo + 4;
@@ -50,19 +50,19 @@
 //!
 //! So, if a callee's TOC pointer is different from the current one
 //! (e.g. calling a function in another .so), we first load the callee's
-//! address to r12 (e.g. from .got.plt with a r2-relative load) and branch
+//! address to r12 (e.g. from .got.plt with an r2-relative load) and branch
 //! to that address. Then the callee computes its own TOC pointer using
 //! r12.
 //!
 //!
 //! Position-independent code on Power10:
 //!
-//! Power10 added 8-bytes-long instructions to the ISA. Some of them are
-//! PC-relative load/store instructions that take 34 bits offsets.
+//! Power10 added 8-byte-long instructions to the ISA. Some of them are
+//! PC-relative load/store instructions that take 34-bit offsets.
 //! Functions compiled with `-mcpu=power10` use these instructions for PIC.
-//! r2 does not have a special meaning in such fucntions.
+//! r2 does not have a special meaning in such functions.
 //!
-//! When a fucntion compiled for Power10 calls a function that uses the TOC
+//! When a function compiled for Power10 calls a function that uses the TOC
 //! pointer, we need to compute a correct value for TOC and set it to r2
 //! before transferring the control to the callee. Thunks are responsible
 //! for doing it.
@@ -519,7 +519,7 @@ impl Target for Ppc64V2 {
     ///
     /// PowerPC before Power9 lacks PC-relative load/store instructions.
     /// Functions compiled for Power9 or earlier assume that r2 points to
-    /// GOT+0x8000, while those for Power10 uses r2 as a scratch register.
+    /// GOT+0x8000, while those for Power10 use r2 as a scratch register.
     /// We need a thunk to recompute r2 for interworking.
     fn always_needs_thunk(ctx: &Context<Self>, sym: &Symbol, rel: &ElfRel<Self>) -> bool {
         sym.has_plt(&ctx.symbols)

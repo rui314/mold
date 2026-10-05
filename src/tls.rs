@@ -15,7 +15,7 @@
 //! TLV needs a coordination between the compiler, the linker and the
 //! runtime to work correctly.
 //!
-//! An ELF exectuable or a shared library using TLV contains a "TLS template
+//! An ELF executable or a shared library using TLV contains a "TLS template
 //! image" in the PT_TLS segment. For each newly created thread including the
 //! initial one, the runtime allocates a contiguous memory for an executable
 //! and its depending shared libraries and copies template images there. That
@@ -52,7 +52,7 @@
 //!     We can solve the problem with an indirection. Specifically, for
 //!     each TLV whose TP-relative address is known only at process startup
 //!     time, we create a GOT entry to store its TP-relative address. We
-//!     then emit a dynamic relocation to let the runtime to fill the GOT
+//!     then emit a dynamic relocation to let the runtime fill the GOT
 //!     entry with a TP-relative address.
 //!
 //!     Computing a TLV address in this scheme needs at least two machine
@@ -60,7 +60,7 @@
 //!     the GOT entry, and the second one adds the loaded value to TP.
 //!
 //!  3. Now, think about libraries that are dynamically loaded with dlopen.
-//!     The TLS block for such library may not be allocated next to the
+//!     The TLS block for such a library may not be allocated next to the
 //!     initial TLS block, so we can have two or more discontiguous TLS
 //!     blocks. There's no easy formula to compute an address of a TLV in a
 //!     separate TLS block.
@@ -99,12 +99,12 @@
 //!     shared library. In this case, Initial Exec is used to access the
 //!     variable.
 //!
-//!  3. If -fPIC is given, it may be compiling code for dlopen'able shared
+//!  3. If -fPIC is given, it may be compiling code for a dlopen'able shared
 //!     library. In this case, Local Dynamic or General Dynamic is used to
 //!     access TLVs.
 //!
 //! You can also manually control how the compiler emits TLV access code
-//! globally with `-ftls-model=<model-name>` or per-variable basis with
+//! globally with `-ftls-model=<model-name>` or on a per-variable basis with
 //! `__attribute__((tls_model(<model-name>)))`. For example, if you are
 //! building a shared library that you have no plan to use with dlopen(), you
 //! may want to compile the source files with `-ftls-model=initial-exec` to
@@ -134,10 +134,10 @@
 //! The runtime chooses the best access method depending on the situation
 //! and sets a pointer to the most efficient code to the first GOT slot.
 //! For example, if a TLV's TP-relative address is known at process startup
-//! time, the runtime sets that address to the second GOT slot and set a
+//! time, the runtime sets that address to the second GOT slot and sets a
 //! function that just returns its argument to the first GOT slot.
 //!
-//! With TLSDECS, the compiler can always emit the same code for TLVs
+//! With TLSDESC, the compiler can always emit the same code for TLVs
 //! without sacrificing runtime performance.
 //!
 //! TLSDESC is better than the traditional, non-TLSDESC TLS access models.
@@ -169,20 +169,20 @@ pub fn tp_addr<E: Target>(phdr: &ElfPhdr<E>) -> u64 {
             align_to(phdr.p_vaddr() + phdr.p_memsz(), phdr.p_align())
         }
         // On ARM and SH4, the runtime appends two words at the beginning
-        // of TLV template image when copying TLVs to the TLS block, so we need
+        // of the TLV template image when copying TLVs to the TLS block, so we need
         // to offset it.
         Family::Arm64 | Family::Arm32 | Family::Sh4 => {
             align_down(phdr.p_vaddr().wrapping_sub(E::WORD_SIZE as u64 * 2), phdr.p_align())
         }
         // On PowerPC and m68k, TP is 0x7000 (28 KiB) past the beginning
         // of the TLV block to maximize the addressable range of load/store
-        // instructions with 16-bits signed immediates. It's not exactly 0x8000
+        // instructions with 16-bit signed immediates. It's not exactly 0x8000
         // (32 KiB) off because there's a small implementation-defined piece of
         // data before the initial TLV block, and the runtime wants to access
         // them efficiently too.
         Family::Ppc32 | Family::Ppc64V1 | Family::Ppc64V2 | Family::M68k => phdr.p_vaddr() + 0x7000,
-        // RISC-V and LoongArch just uses the beginning of the main executable's
-        // TLV block as TP. Their load/store instructions usually take 12-bits
+        // RISC-V and LoongArch just use the beginning of the main executable's
+        // TLV block as TP. Their load/store instructions usually take 12-bit
         // signed immediates, so the beginning of the TLS block ± 2 KiB is
         // accessible with a single load/store instruction.
         Family::RiscV | Family::LoongArch => phdr.p_vaddr(),
@@ -196,9 +196,9 @@ pub fn dtp_addr<E: Target>(phdr: &ElfPhdr<E>) -> u64 {
     match E::FAMILY {
         // On PowerPC and m68k, R_DTPOFF is resolved to the address 0x8000
         // (32 KiB) past the start of the TLS block. The bias maximizes the
-        // accessible range of load/store instructions with 16-bits signed
+        // accessible range of load/store instructions with 16-bit signed
         // immediates. That is, if the offset were right at the beginning of the
-        // start of the TLS block, the half of addressible space (negative
+        // start of the TLS block, the half of addressable space (negative
         // immediates) would have been wasted.
         Family::Ppc32 | Family::Ppc64V1 | Family::Ppc64V2 | Family::M68k => phdr.p_vaddr() + 0x8000,
         // On RISC-V, the bias is 0x800 as the load/store instructions in the

@@ -122,7 +122,7 @@ fn merged_output_name(
     }
 
     // GCC seems to create sections named ".rodata.strN.<mangled-symbol-name>.M"
-    // or ".rodata.cst.<mangled-symbol-name.cstN". We want to eliminate the
+    // or ".rodata.cst.<mangled-symbol-name>.cstN". We want to eliminate the
     // symbol name part from the section name.
     if name.starts_with(b".rodata.") {
         let name2 = if flags & SHF_STRINGS as u64 != 0 {
@@ -285,7 +285,7 @@ pub fn resolve<E: Target>(ctx: &mut Context<E>, id: MergedSectionId) {
         .reduce(HyperLogLog::default, |a, b| a.merged(&b));
     drop(t);
 
-    // We aim 2/3 occupation ratio
+    // We aim for a 2/3 occupancy ratio
     let t = timers.start("resize");
     let msec = &mut merged_sections[id.index()];
     msec.estimation = estimate.cardinality();
@@ -367,7 +367,7 @@ pub fn resolve_sections<E: Target>(
         .collect();
     drop(t);
 
-    // We aim 2/3 occupation ratio
+    // We aim for a 2/3 occupancy ratio
     let t = timers.start("resize");
     sections.par_iter_mut().zip(&estimates).for_each(|(section, estimate)| {
         if let Some(estimate) = estimate {

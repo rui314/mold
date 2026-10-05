@@ -31,7 +31,7 @@
 //! that overlap with each other in memory.
 //!
 //! .gdb_index contains an on-disk hash table for names, so gdb can
-//! lookup names without loading all strings into memory and construct an
+//! look up names without loading all strings into memory and constructing an
 //! in-memory hash table.
 //!
 //! Names are in .debug_gnu_pubnames and .debug_gnu_pubtypes input
@@ -48,7 +48,7 @@
 //! A compunit contains one or more function address ranges. If an
 //! object file is compiled without -ffunction-sections, it contains
 //! only one .text section and therefore contains a single address range.
-//! Such range is typically stored directly to the compunit.
+//! Such a range is typically stored directly to the compunit.
 //!
 //! If an object file is compiled with -ffunction-sections, it contains
 //! more than one .text section, and it has as many address ranges as
@@ -87,7 +87,7 @@ use crate::util::hyperloglog::HyperLogLog;
 use crate::util::perf::Timer;
 use crate::util::{leak_bytes, read_sleb, read_uleb};
 
-/// A public name and its GNU kind before the name is interned in GdbNameMap.
+/// A public name and its GNU kind before the name is interned in the name map.
 #[derive(Clone, Copy)]
 #[repr(C)]
 struct NameType {
@@ -168,7 +168,7 @@ const _: () = assert!(size_of::<NameRecord>() <= 16);
 /// CUs own address ranges; both CUs and TUs below may own public names.
 struct Compunit {
     /// Initially relative to the input contribution selected by file_idx/shndx;
-    /// rebased to the output .debug_info section in build_gdb_index_tables.
+    /// rebased to the output .debug_info section in prepare_tables.
     offset: u64,
     size: u64,
     file: u32,

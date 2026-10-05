@@ -5,7 +5,7 @@ use crate::chunks::ChunkHeader;
 use crate::elf::*;
 
 // PT_GNU_RELRO works on page granularity. We want to align its end to
-// a page boundary. We append this section at end of a segment so that
+// a page boundary. We append this section at the end of a segment so that
 // the segment always ends at a page boundary.
 pub fn new_header<E: Target>() -> ChunkHeader<E> {
     let mut hdr =

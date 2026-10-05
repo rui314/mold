@@ -1,12 +1,12 @@
 //! RISC instructions are usually up to 4 bytes long, so the immediates of
 //! their branch instructions are naturally smaller than 32 bits.  This is
-//! contrary to x86-64 on which branch instructions take 4 bytes immediates
+//! contrary to x86-64 on which branch instructions take 4-byte immediates
 //! and can jump to anywhere within PC ± 2 GiB.
 //!
 //! In fact, ARM32's branch instructions can jump only within ±16 MiB and
 //! ARM64's ±128 MiB, for example. If a branch target is further than that,
 //! we need to let it branch to a linker-synthesized code sequence that
-//! construct a full 32 bit address in a register and jump there. That
+//! constructs a full 32 bit address in a register and jumps there. That
 //! linker-synthesized code is called "thunk".
 //!
 //! The function in this file creates thunks.
@@ -83,7 +83,7 @@ fn max_thunk_size<E: Target>() -> u64 {
 }
 
 /// Power10 prefixed instructions must not cross a 64-byte boundary.
-/// Aligning each thunk group to a 8-byte boundary guarantees that.
+/// Aligning each thunk group to an 8-byte boundary guarantees that.
 const THUNK_ALIGN: u64 = 8;
 
 /// Whether a call needs a thunk. On the first pass, before addresses are
@@ -105,7 +105,7 @@ fn requires_thunk<E: Target>(
         match sym.input_section_ref(ctx) {
             Some(target) if target.output_section == isec.output_section => {
                 // If the target section is in the same output section but
-                // hasn't got any address yet, that's unreacahble.
+                // hasn't got any address yet, that's unreachable.
                 if target.offset() == UNPLACED {
                     return true;
                 }
@@ -157,7 +157,7 @@ fn executable_sections<E: Target>(ctx: &Context<E>) -> Vec<OutputSectionId> {
 ///
 /// Input sections between B and C are the current batch.
 ///
-/// A is the input section with the smallest address than can reach
+/// A is the input section with the smallest address that can be reached
 /// from the current batch.
 ///
 /// D is the input section with the largest address such that the thunk
@@ -166,9 +166,9 @@ fn executable_sections<E: Target>(ctx: &Context<E>) -> Vec<OutputSectionId> {
 ///  ................................ <input sections> ............
 ///     A    B    C    D
 ///                    ^ We insert a thunk for the current batch just before D
-///          <--->       The current batch, which is smaller than BATCH_SIZE
-///     <-------->       Smaller than BRANCH_DISTANCE
-///          <-------->  Smaller than BRANCH_DISTANCE
+///          <--->       The current batch, which is smaller than batch_size()
+///     <-------->       Smaller than branch_distance()
+///          <-------->  Smaller than branch_distance()
 ///     <------------->  Reachable from the current batch
 pub fn create_range_extension_thunks<E: Target>(ctx: &mut Context<E>, id: OutputSectionId) {
     let members = std::mem::take(&mut ctx.output_sections[id.index()].members);
@@ -202,7 +202,7 @@ pub fn create_range_extension_thunks<E: Target>(ctx: &mut Context<E>, id: Output
     let mut t = 0usize;
 
     while b < n {
-        // Move D foward as far as we can jump from B to a thunk at D.
+        // Move D forward as far as we can jump from B to a thunk at D.
         let placed = d;
         while d < n {
             let (_, size, p2align) = layout[d];
@@ -282,7 +282,7 @@ pub fn create_range_extension_thunks<E: Target>(ctx: &mut Context<E>, id: Output
         offset += thunk.size();
         thunks.push(thunk);
 
-        // Move B forward to point to the begining of the next batch.
+        // Move B forward to point to the beginning of the next batch.
         b = c;
     }
 

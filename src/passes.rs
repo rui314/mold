@@ -191,11 +191,10 @@ pub fn create_synthetic_sections<E: Target>(ctx: &mut Context<E>) {
     ctx.chunks.extend(chunks);
 }
 
-/// Marks the files that the given files depend on reachable, recursively.
-/// Marks the files reachable from `roots` live. A file found live is
-/// visited as a task of its own: there are at most thousands of files,
-/// so the tasks are cheap, and the pool stays busy rather than draining
-/// between rounds of a search whose frontier is often small.
+/// Marks every file that `roots` transitively depend on as live. A file
+/// found live is visited as a task of its own: there are at most thousands
+/// of files, so the tasks are cheap, and the pool stays busy rather than
+/// draining between rounds of a search whose frontier is often small.
 fn mark_live_files<E: Target>(ctx: &Context<E>, roots: Vec<FileId>) {
     fn visit<'s, E: Target>(ctx: &'s Context<E>, id: FileId, scope: &rayon::Scope<'s>) {
         for found in mark_live_file(ctx, id) {
@@ -332,7 +331,7 @@ fn mark_live_objects<E: Target>(ctx: &mut Context<E>) {
 
 // Symbol resolution involving a default symbol version is tricky because
 // a symbol that provides the default version has two names by which it
-// can be referred. Specifically, a symbol `foo` with the default version
+// can be referred to. Specifically, a symbol `foo` with the default version
 // `VER1` can be referred to either as `foo` or `foo@VER1`. No other
 // symbols have two names like that.
 //
@@ -1049,7 +1048,7 @@ fn output_section_key<E: Target>(
     // relocations. They contain sentinel values, 0 and -1, to mark the
     // beginning and the end of the initializer/finalizer pointer arrays.
     // We do not place them into .init_array/.fini_array because such
-    // invalid pointer values would simply make the program to crash.
+    // invalid pointer values would simply make the program crash.
     if ctors_in_init_array && isec.has_relocations() {
         if name == b".ctors" || name.starts_with(b".ctors.") {
             return (BStr::new(b".init_array"), SHT_INIT_ARRAY);
@@ -1092,7 +1091,7 @@ type OutputSectionShared<E> = (HashMap<OutputSectionKey, OutputSectionId>, Vec<O
 // program is being loaded. After that, the page becomes read-only.
 //
 // Some sections, such as .init, .fini, .got, .dynamic, contain
-// dynamic relocations but doesn't have to be writable at runtime,
+// dynamic relocations but don't have to be writable at runtime,
 // so they are put into a RELRO segment.
 fn is_relro<E: Target>(osec: &OutputSection<E>) -> bool {
     let name = osec.hdr.name;
@@ -1819,7 +1818,7 @@ fn has_dso_definition<E: Target>(ctx: &Context<E>, id: SymbolId) -> bool {
 // including ones in shared libraries have been resolved.
 //
 // If you do not pass --no-allow-shlib-undefined, undefined symbols in
-// shared libraries will be reported as run-time error by the dynamic
+// shared libraries will be reported as run-time errors by the dynamic
 // linker.
 pub fn check_shlib_undefined<E: Target>(ctx: &Context<E>) {
     let _t = ctx.timer("check_shlib_undefined");
@@ -2055,8 +2054,8 @@ pub fn sort_ctor_dtor<E: Target>(ctx: &mut Context<E>) {
 //
 // You can change the format to DWARF64 by passing `-gdwarf64`. Therefore,
 // the "right" approach to build an extremely large program in debug mode is
-// to recompile everything with `-gdwarf64`. However, that’s often not
-// feasiable for various reasons.
+// to recompile everything with `-gdwarf64`. However, that's often not
+// feasible for various reasons.
 //
 // If we don't do anything about it, a relocation overflow could occur if
 // any output debug section exceeds 4 GiB in size, making it almost
@@ -2114,7 +2113,7 @@ pub fn sort_debug_info_sections<E: Target>(ctx: &mut Context<E>) {
     }
 
     // Reorder input sections in the output section so that DWARF32
-    // precededs DWARF64.
+    // precedes DWARF64.
     for id in vec1 {
         let objs = &ctx.objs;
         let osec = &mut ctx.output_sections[id.index()];
@@ -2142,7 +2141,7 @@ pub fn sort_debug_info_sections<E: Target>(ctx: &mut Context<E>) {
 }
 
 // .ctors/.dtors serves the same purpose as .init_array/.fini_array,
-// albeit with very subtly differences. Both contain pointers to
+// albeit with very subtle differences. Both contain pointers to
 // initializer/finalizer functions. The runtime executes them one by one
 // but in the exact opposite order to one another. Therefore, if we are to
 // place the contents of .ctors/.dtors into .init_array/.fini_array, we
@@ -2343,7 +2342,7 @@ pub fn compute_section_sizes<E: Target>(ctx: &mut Context<E>) {
 // Find all unresolved symbols and attach them to the most appropriate files.
 //
 // Note that even a symbol that will be reported as an undefined symbol
-// will get an owner file in this function. Such symbol will be reported
+// will get an owner file in this function. Such a symbol will be reported
 // by ObjectFile<E>::scan_relocations(). This is because we want to report
 // errors only on symbols that are actually referenced.
 pub fn claim_unresolved_symbols<E: Target>(ctx: &mut Context<E>) {
@@ -2425,8 +2424,8 @@ pub fn claim_unresolved_symbols<E: Target>(ctx: &mut Context<E>) {
                 // for an executable as long as they don't need copy relocations
                 // (i.e. they need only PLT entries.) That may result in an
                 // inconsistent behavior of a linked program depending on whether
-                // whether its object files were compiled with -fPIC or not. I think
-                // that's bad semantics, so we don't do that.
+                // its object files were compiled with -fPIC or not. I think that's
+                // bad semantics, so we don't do that.
                 claim(ctx, true);
             } else {
                 // Otherwise, weak undefs are converted to absolute symbols with value 0.
@@ -2466,7 +2465,7 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
         let ctx_ref: &Context<E> = ctx;
         ctx_ref.objs.par_iter().for_each(|file| file.scan_relocations(ctx_ref));
     }
-    // Exit if there was a relocation that refers an undefined symbol.
+    // Exit if there was a relocation that refers to an undefined symbol.
     crate::error::checkpoint();
 
     // Word-size absolute relocations (e.g. R_X86_64_64) are handled
@@ -2854,7 +2853,7 @@ pub fn apply_version_script<E: Target>(ctx: &mut Context<E>) {
     }
 
     // Next, assign versions to symbols specified by exact name.
-    // In other words, exact matches have higher precedence over
+    // In other words, exact matches have higher precedence than
     // wildcard or `extern "C++"` patterns. Unlike wildcards, if the same
     // name appears more than once, the first one takes precedence, as in
     // GNU ld and lld.
@@ -3068,11 +3067,11 @@ pub fn compute_import_export<E: Target>(ctx: &mut Context<E>) {
     // --export-dynamic-symbol-list options.
     //
     // The semantics of these options vary depending on whether we are
-    // creating an executalbe or a shared object.
+    // creating an executable or a shared object.
     //
-    // For executable, matched symbols are exported.
+    // For executables, matched symbols are exported.
     //
-    // For shared objects, matched symbols are imported if it is already
+    // For shared objects, matched symbols are imported if they are already
     // exported so that they are interposable. In other words, symbols
     // that did not match will be bound locally within the output file,
     // effectively turning them into protected symbols.
@@ -3146,7 +3145,7 @@ pub fn compute_import_export<E: Target>(ctx: &mut Context<E>) {
 //
 // In C/C++, two pointers are equivalent if and only if they are taken for
 // the same object. Merging two objects into a single object can break
-// this assumption because two distinctive pointers would become
+// this assumption because two distinct pointers would become
 // equivalent as a result of merging. We can still merge one object with
 // another if no pointer to the object was taken in code, because without
 // a pointer, comparing its address becomes moot.
@@ -3254,7 +3253,7 @@ pub fn compute_address_significance<E: Target>(ctx: &mut Context<E>) {
 //   .gdb_index
 //
 // .interp and some other linker-synthesized sections are placed at the
-// beginning of a file because they are needed by loader. Especially on
+// beginning of a file because they are needed by the loader. Especially on
 // a hard drive with spinning disks, it is important to read these
 // sections in a single seek.
 //
@@ -3264,10 +3263,10 @@ pub fn compute_address_significance<E: Target>(ctx: &mut Context<E>) {
 // can at least identify which executable has crashed.
 //
 // .gdb_index cannot be constructed before applying relocations to
-// other debug sections, so we create it after completing other part
+// other debug sections, so we create it after completing other parts
 // of the output file and append it to the very end of the file.
 //
-// A PT_NOTE segment will contain multiple .note sections if exist,
+// A PT_NOTE segment will contain multiple .note sections if they exist,
 // but there's no way to represent a gap between .note sections.
 // Therefore, we sort .note sections by decreasing alignment
 // requirement. I believe each .note section size is a multiple of its
@@ -3431,7 +3430,7 @@ fn tls_segment_alignment<E: Target>(ctx: &Context<E>) -> u64 {
 // There are a few tricks we can use to minimize paddings as below:
 //
 // - We want to place sections with the same memory attributes
-//   contiguous as possible.
+//   as contiguous as possible.
 //
 // - We can map the same file region to memory more than once. For
 //   example, we can write code (with R and X bits) and read-only data
@@ -3512,7 +3511,7 @@ fn set_virtual_addresses_regular<E: Target>(ctx: &mut Context<E>) {
             }
         }
 
-        // TLS sections are included only in PT_LOAD but also in PT_TLS.
+        // TLS sections are included not only in PT_LOAD but also in PT_TLS.
         // We align the first TLS section so that the PT_TLS segment starts
         // at an address that meets the segment's alignment requirement.
         if is_tls(ctx, id) && (i == 0 || !is_tls(ctx, ctx.chunks[i - 1])) {
@@ -3520,12 +3519,12 @@ fn set_virtual_addresses_regular<E: Target>(ctx: &mut Context<E>) {
         }
 
         // TLS BSS sections are laid out so that they overlap with the
-        // subsequent non-tbss sections. Overlapping is fine because a STT_TLS
+        // subsequent non-tbss sections. Overlapping is fine because a PT_TLS
         // segment contains an initialization image for newly-created threads,
         // and no one except the runtime reads its contents. Even the runtime
         // doesn't need a BSS part of a TLS initialization image; it just
         // leaves zero-initialized bytes as-is instead of copying zeros.
-        // So no one really read tbss at runtime.
+        // So no one really reads tbss at runtime.
         //
         // We can instead allocate a dedicated virtual address space to tbss,
         // but that would be just a waste of the address and disk space.
@@ -3660,7 +3659,7 @@ fn set_file_offsets<E: Target>(ctx: &mut Context<E>) -> u64 {
             if next.sh_flags.get() & SHF_ALLOC as u64 == 0 || next.sh_type.get() == SHT_NOBITS {
                 break;
             }
-            // If --start-section is given, addresses may not increase
+            // If --section-start is given, addresses may not increase
             // monotonically.
             if next.sh_addr.get() < first.sh_addr.get() {
                 break;
@@ -3673,9 +3672,9 @@ fn set_file_offsets<E: Target>(ctx: &mut Context<E>) -> u64 {
             {
                 break;
             }
-            // If --start-section is given, there may be a large gap between
+            // If --section-start is given, there may be a large gap between
             // sections. We don't want to allocate a disk space for a gap if
-            // exists.
+            // one exists.
             let gap = next.sh_addr.get() - prev.sh_addr.get() - prev.sh_size.get();
             if gap >= page_size {
                 break;
@@ -3754,7 +3753,7 @@ pub fn compute_section_headers<E: Target>(ctx: &mut Context<E>) {
         shdr.shdr.sh_size.set(size);
     }
 
-    // Some types of section header refer to other section by index.
+    // Some types of section header refer to other sections by index.
     // Recompute all section headers to fill such fields with correct values.
     for i in 0..ctx.chunks.len() {
         let id = ctx.chunks[i];
@@ -3787,7 +3786,7 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) -> u64 {
         crate::error::checkpoint();
 
         // Assigning new offsets may change the contents and the length
-        // of the program header, so repeat it until converge.
+        // of the program header, so repeat it until it converges.
         let fileoff = set_file_offsets(ctx);
         if ctx.phdr.is_some() {
             let before = ctx.phdr.as_ref().unwrap().hdr.shdr.sh_size.get();
@@ -3887,14 +3886,14 @@ pub fn fix_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
 
     // __rel_iplt_start and __rel_iplt_end. These symbols need to be
     // defined in a statically-linked non-relocatable executable because
-    // such executable lacks the .dynamic section and thus there's no way
+    // such an executable lacks the .dynamic section and thus there's no way
     // to find ifunc relocations other than these symbols.
     if ctx.chunks.contains(&ChunkId::RelDyn) && ctx.args.is_static && !ctx.args.pie {
         let n = num_irelative_relocs(ctx) as i64 * size_of::<ElfRel<E>>() as i64;
         stop(ctx, ctx.syms.rel_iplt_start, Some(ChunkId::RelDyn), -n);
         stop(ctx, ctx.syms.rel_iplt_end, Some(ChunkId::RelDyn), 0);
     } else {
-        // If the symbols are not ncessary, we turn them to absolute
+        // If the symbols are not necessary, we turn them to absolute
         // symbols at address 0.
         for sym in [ctx.syms.rel_iplt_start, ctx.syms.rel_iplt_end].into_iter().flatten() {
             ctx.symbols[sym].clear_origin();
@@ -4059,7 +4058,7 @@ pub fn fix_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
 pub fn compress_debug_sections<E: Target>(ctx: &mut Context<E>) {
     let _t = ctx.timer("compress_debug_sections");
 
-    // Since this pass is embarassingly parallel, we want to use all
+    // Since this pass is embarrassingly parallel, we want to use all
     // available cores by default.
     let compressed: Vec<_> = ctx
         .chunks
@@ -4131,7 +4130,7 @@ pub fn write_build_id<E: Target>(ctx: &mut Context<E>, buf: &mut [u8], is_mmappe
 // reproducibility. We also don't want to write a fixed value for all
 // files because the CRC checksum is in this section to prevent using
 // wrong file on debugging. gdb rejects a debug info file if its CRC
-// doesn't match with the one in .gdb_debuglink.
+// doesn't match with the one in .gnu_debuglink.
 //
 // Therefore, we'll try to make our CRC checksum as unique as possible.
 // We'll remember that checksum, and after creating a debug info file, add
@@ -4176,7 +4175,7 @@ fn crc32_parallel(buf: &[u8]) -> u32 {
 // This function "forges" a CRC. That is, given the current and a desired
 // CRC32 value, crc32_solve() returns a binary blob to add to the end of
 // the original data to yield the desired CRC. Trailing garbage is ignored
-// by many bianry file formats, so you can create a file with a desired
+// by many binary file formats, so you can create a file with a desired
 // CRC using crc32_solve(). We need it for --separate-debug-file.
 fn crc32_solve(current: u32, desired: u32) -> [u8; 4] {
     const POLY: u32 = 0xedb8_8320;
@@ -4304,7 +4303,7 @@ pub fn write_separate_debug_file<E: Target>(ctx: &mut Context<E>) {
         crate::gdb_index::write(ctx, &mut output);
     }
 
-    // Reverse-compute a CRC32 value so that the CRC32 checksum embedded to
+    // Reverse-compute a CRC32 value so that the CRC32 checksum embedded in
     // the .gnu_debuglink section in the main executable matches with the
     // debug info file's CRC32 checksum.
     let trailer =
@@ -4455,8 +4454,8 @@ pub fn show_stats<E: Target>(ctx: &Context<E>) {
 // protecting control flow integrity. If the feature is enabled, indirect
 // branches (i.e. branch instructions that take a register instead of an
 // immediate) must land on a "landing pad" instruction, or a CPU-level fault
-// will raise. That prevents an attacker from branching to a middle of a random
-// function, making ROP or JOP much harder to conduct.
+// will be raised. That prevents an attacker from branching to the middle of a
+// random function, making ROP or JOP much harder to conduct.
 //
 // On x86-64, the landing pad instruction is ENDBR64. On ARM64, it's `bti c`.
 // In both cases the instruction is a repurposed NOP so that the same binary

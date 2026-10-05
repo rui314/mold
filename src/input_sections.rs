@@ -809,14 +809,14 @@ impl<E: Target> InputSection<E> {
 
     // Input object files may contain duplicate code for inline functions
     // and such. Linkers de-duplicate them at link-time. However, linkers
-    // generaly don't remove debug info for de-duplicated functions because
+    // generally don't remove debug info for de-duplicated functions because
     // doing that requires parsing the entire debug section.
     //
     // Instead, linkers write "tombstone" values to dead debug info records
     // instead of bogus values so that debuggers can skip them.
     //
     // This function returns a tombstone value for the symbol if the symbol
-    // refers a dead debug info section.
+    // refers to a dead debug info section.
     #[inline(always)]
     pub fn tombstone(
         &self,
@@ -875,7 +875,7 @@ impl<E: Target> InputSection<E> {
     }
 
     /// Test if the symbol a given relocation refers to has already been resolved.
-    /// If not, record that error and returns true, so that the caller skips the
+    /// If not, record that error and return true, so that the caller skips the
     /// relocation. With --noinhibit-exec, the error is reported as a warning and
     /// we create an output file anyway, so the relocation has to be processed.
     #[inline(always)]
@@ -911,7 +911,7 @@ impl<E: Target> InputSection<E> {
         }
 
         // A non-weak undefined symbol must be promoted to an imported symbol
-        // or resolved to an defined symbol. Otherwise, we need to report an
+        // or resolved to a defined symbol. Otherwise, we need to report an
         // error or warn on it.
         //
         // Every ELF file has an absolute local symbol as its first symbol.
@@ -997,11 +997,11 @@ impl<E: Target> InputSection<E> {
         let input = file.base.section_contents_from_shdr(file.shdr(self.shndx as usize));
 
         // Copy data. In RISC-V and LoongArch object files, sections are not
-        // atomic unit of copying because of relaxation. That is, some
+        // atomic units of copying because of relaxation. That is, some
         // relocations are allowed to remove bytes from the middle of a
         // section and shrink the overall size of it.
         if self.r_deltas().is_empty() {
-            // If a section is not relaxed, we can copy it as a one big chunk.
+            // If a section is not relaxed, we can copy it as one big chunk.
             self.copy_contents_to(file, self.name(file), input, buf);
         } else {
             // A relaxed section is copied piece-wise.
@@ -1241,7 +1241,7 @@ pub fn scan_tlsdesc<E: Target>(ctx: &Context<E>, sym: &Symbol) {
     } else if ctx.args.relax && sym.is_tprel_runtime_const(ctx) {
         // In this condition, TP-relative offset of a thread-local variable
         // is known at process startup time, so we can relax TLSDESC to the
-        // code that reads the TP-relative offset from GOT and add TP to it.
+        // code that reads the TP-relative offset from GOT and adds TP to it.
         sym.add_flags(NEEDS_GOTTP);
     } else {
         // If no relaxation is doable, we simply create a TLSDESC dynamic

@@ -89,7 +89,7 @@ extern "C" fn on_signal(
     _context: *mut libc::c_void,
 ) {
     // mold mmap's an output file, and the mmap succeeds even if there's
-    // no enough space left on the filesystem. The actual disk blocks are
+    // not enough space left on the filesystem. The actual disk blocks are
     // not allocated on the mmap call but when the program writes to it
     // for the first time.
     //

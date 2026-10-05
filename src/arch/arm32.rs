@@ -8,17 +8,17 @@
 //! ARM processors originally supported only ARM instructions. Thumb
 //! instructions were later added to increase code density.
 //!
-//! ARM processors runs in either ARM mode or Thumb mode. The mode can
+//! ARM processors run in either ARM mode or Thumb mode. The mode can
 //! be switched using BX (branch and mode exchange)-family instructions.
-//! We need to use that instructions to, for example, call a function
+//! We need to use those instructions to, for example, call a function
 //! encoded in Thumb from a function encoded in ARM. Sometimes, the
 //! linker even has to emit interworking thunk code to switch mode.
 //!
-//! ARM instructions are aligned to 4 byte boundaries. Thumb are to 2
-//! byte boundaries. So the least significant bit of a function address
-//! is always 0.
+//! ARM instructions are aligned to 4-byte boundaries and Thumb
+//! instructions to 2-byte boundaries. So the least significant bit
+//! of a function address is always 0.
 //!
-//! To distinguish Thumb functions from ARM fucntions, the LSB of a
+//! To distinguish Thumb functions from ARM functions, the LSB of a
 //! function address is repurposed as a boolean flag. If the LSB is 0,
 //! the function referred to by the address is encoded in ARM;
 //! otherwise, Thumb.
@@ -27,7 +27,7 @@
 //! 0x2001, `foo` is a function using Thumb instructions whose address
 //! is 0x2000 (not 0x2001, as Thumb instructions are always 2-byte
 //! aligned). Likewise, if a function pointer has value 0x2001, it
-//! refers a Thumb function at 0x2000.
+//! refers to a Thumb function at 0x2000.
 //!
 //! https://github.com/ARM-software/abi-aa/blob/main/aaelf32/aaelf32.rst
 //!
@@ -241,9 +241,9 @@ fn mapping_symbol_kind(name: &[u8]) -> Option<MappingKind> {
 //
 // A tricky thing is that instructions in an object file are always
 // big-endian if the file is compiled for big-endian mode. In other words,
-// the compiler always emit code in BE32 if -mbig-endian is specified. It
+// the compiler always emits code in BE32 if -mbig-endian is specified. It
 // is the linker's responsibility to rewrite instructions from big-endian
-// to little-endian for an BE8 output. This function does that.
+// to little-endian for a BE8 output. This function does that.
 //
 // The text section may contain a mix of 32-bit ARM instructions, 16-bit
 // Thumb instructions, and data. We need to distinguish them to swap 4
@@ -560,7 +560,7 @@ impl<const LE: bool> Target for Arm32Target<LE> {
                 }
                 R_ARM_THM_CALL => {
                     if sym.is_remaining_undef_weak() {
-                        // On ARM, calling an weak undefined symbol jumps to the
+                        // On ARM, calling a weak undefined symbol jumps to the
                         // next instruction.
                         // NOP.W
                         write_thm32::<Self>(loc, THM_NOP_W);
@@ -624,9 +624,9 @@ impl<const LE: bool> Target for Arm32Target<LE> {
                         write32(loc, ARM_NOP); // NOP
                         continue;
                     }
-                    // These relocs refers to a B (unconditional branch) instruction.
+                    // These relocs refer to a B (unconditional branch) instruction.
                     // Unlike BL or BLX, we can't rewrite B to BX in place when the
-                    // processor mode switch is required because BX doesn't takes an
+                    // processor mode switch is required because BX doesn't take an
                     // immediate; it takes only a register. So if mode switch is
                     // required, we jump to a linker-synthesized thunk which does the
                     // job with a longer code sequence.
@@ -823,7 +823,7 @@ impl<const LE: bool> Target for Arm32Target<LE> {
     fn write_thunk(ctx: &Context<Self>, thunk: &Thunk, addr: u64, buf: &mut [u8]) {
         // TLS trampoline code. ARM32's TLSDESC is designed so that this
         // common piece of code is factored out from object files to reduce
-        // output size. Since no one provide, the linker has to synthesize it.
+        // output size. Since no one provides it, the linker has to synthesize it.
         const HDR: [u32; 4] = [
             0xe08e_0000, // add r0, lr, r0
             0xe590_1004, // ldr r1, [r0, #4]

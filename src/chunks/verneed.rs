@@ -35,14 +35,14 @@ impl<E: Target> Default for VerneedSection<E> {
 // section and store base relocation records to that section instead of
 // to the usual .rela.dyn section.
 //
-// .relr.dyn is relatively new feature and not supported by glibc until
+// .relr.dyn is a relatively new feature and not supported by glibc until
 // 2.38 which was released in 2022. If we don't do anything, executables
 // built with `-z pack-relative-relocs` would just crash immediately on
 // startup with an older version of glibc.
 //
 // As a workaround, we'll add a dependency to a dummy version name
 // "GLIBC_ABI_DT_RELR" if `-z pack-relative-relocs` is given so that
-// executables built with the option failed with a more friendly "version
+// executables built with the option fail with a more friendly "version
 // `GLIBC_ABI_DT_RELR' not found" error message. glibc 2.38 or later knows
 // about this dummy version name and simply ignores it.
 fn is_glibc2<E: Target>(dso: &crate::input_files::SharedFile<E>) -> bool {

@@ -114,7 +114,7 @@ fn collect_root_set<'a, E: Target>(ctx: &'a Context<E>) -> Vec<&'a InputSection<
 
             // .eh_frame consists of variable-length records called CIE and FDE
             // records, and they are a unit of inclusion or exclusion.
-            // We just keep all CIEs and everything that are referenced by them.
+            // We just keep all CIEs and everything that is referenced by them.
             for cie in &file.cies {
                 for rel in cie.rels(file) {
                     enqueue_symbol(file.base.symbols[rel.r_sym() as usize], &mut roots);

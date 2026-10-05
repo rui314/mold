@@ -10,8 +10,8 @@
 //! bootstrapping the entire ecosystem for LoongArch, sending patches to
 //! Linux, GCC, LLVM, etc.
 //!
-//! Speaking of the ISA, all instructions are 4 byte long and aligned to 4
-//! byte boundaries in LoongArch. It has 32 general-purpose registers.
+//! Speaking of the ISA, all instructions are 4 bytes long and aligned to
+//! 4-byte boundaries in LoongArch. It has 32 general-purpose registers.
 //! Among these, $t0 - $t8 (aliases for $r12 - $r20) are temporary
 //! registers that we can use in our PLT.
 //!
@@ -56,12 +56,12 @@ fn page(val: u64) -> u64 {
 // addi.d    $rN, $rN, %lo12(sym)
 //
 // PCALAU12I materializes bits [63:12] by computing (pc + imm << 12)
-// and zero-clear [11:0]. ADDI.D sign-extends its 12 bit immediate and
-// add it to the register. To compensate the sign-extension, PCALAU12I
+// and zero-clears [11:0]. ADDI.D sign-extends its 12-bit immediate and
+// adds it to the register. To compensate for the sign-extension, PCALAU12I
 // needs to materialize a 0x1000 larger value than the desired [63:12]
 // if [11:0] is sign-extended.
 //
-// This is similar but different from RISC-V because RISC-V's AUIPC
+// This is similar to but different from RISC-V because RISC-V's AUIPC
 // doesn't zero-clear [11:0].
 //
 // PCALAU12I also begins the extreme code model's 64-bit sequence shown
@@ -185,7 +185,7 @@ fn add_uleb(loc: &mut [u8], val: u64, subtract: bool) {
 }
 
 // Returns true if isec's i'th relocation refers to the following
-// relaxable instructioon pair.
+// relaxable instruction pair.
 //
 // pcalau12i $t0, 0         # R_LARCH_GOT_PC_HI20, R_LARCH_RELAX
 // ld.d      $t0, $t0, 0    # R_LARCH_GOT_PC_LO12, R_LARCH_RELAX
@@ -899,14 +899,14 @@ where
             let r = &rels[i];
             let sym = &ctx.symbols[file.base.symbols[r.r_sym() as usize]];
 
-            // A R_LARCH_ALIGN relocation refers to the beginning of a nop
+            // An R_LARCH_ALIGN relocation refers to the beginning of a nop
             // sequence. We need to remove some or all of them so that the
             // instruction that immediately follows that is aligned to a specified
-            // boundary. To allow that, a R_LARCH_ALIGN relocation that requests
+            // boundary. To allow that, an R_LARCH_ALIGN relocation that requests
             // 2^n alignment refers to 2^n - 4 bytes of nop instructions.
             if r.r_type() == R_LARCH_ALIGN {
                 // The actual rule for storing the alignment size is a bit weird.
-                // In particular, the most significant 56 bits of r_addend is
+                // In particular, the most significant 56 bits of r_addend are
                 // sometimes used to store the upper limit of the alignment,
                 // allowing the instruction that follows nops _not_ to be aligned at
                 // all. I think that's a spec bug, so we don't want to support that.
@@ -1000,7 +1000,7 @@ where
                         }
                     }
                 }
-                // A CALL36 relocation referes to the following instruction pair
+                // A CALL36 relocation refers to the following instruction pair
                 // to jump to PC ± 128 GiB.
                 //
                 // pcaddu18i $t0,       0         # R_LARCH_CALL36

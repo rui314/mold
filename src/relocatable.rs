@@ -19,7 +19,7 @@
 //! as the symbol table or the string table. That works, but that's not
 //! compatible with GNU ld.
 //!
-//! To be compatible with GNU ld, we need to do the followings:
+//! To be compatible with GNU ld, we need to do the following:
 //!
 //!  - Regular sections containing opaque data (e.g. ".text" or ".data")
 //!    are just copied as-is. Two sections with the same name are merged.
@@ -170,7 +170,7 @@ fn create_comdat_group_sections<E: Target>(ctx: &mut Context<E>) {
 
 /// Unresolved undefined symbols in the -r mode are simply propagated to an
 /// output file as undefined symbols. This function guarantees that
-/// unresolved undefined symbols belongs to some input file.
+/// unresolved undefined symbols belong to some input file.
 fn claim_unresolved_symbols<E: Target>(ctx: &mut Context<E>) {
     let _t = ctx.timer("r_claim_unresolved_symbols");
     for file in &ctx.objs {

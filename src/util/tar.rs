@@ -16,7 +16,7 @@ const BLOCK_SIZE: u64 = 512;
 // into `<output-file-path>.repro.tar`, making it easy to run the same command
 // with the same command-line arguments.
 //
-/// A tar file consists of one or more Ustar header followed by data.
+/// A tar file consists of one or more Ustar headers followed by data.
 /// Each Ustar header represents a single file in an archive.
 ///
 /// tar is an old file format, and its `name` field is only 100 bytes long.
@@ -95,7 +95,7 @@ impl TarWriter {
         self.out.write_all(data)?;
         self.pad()?;
 
-        // A tar file must ends with two empty blocks
+        // A tar file must end with two empty blocks
         let pos = self.out.stream_position()?;
         self.out.set_len(pos + BLOCK_SIZE * 2)
     }

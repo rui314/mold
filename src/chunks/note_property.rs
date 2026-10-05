@@ -7,7 +7,7 @@ use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 
-// .note.gnu.property section contains an additional runtime information
+// .note.gnu.property section contains additional runtime information
 // about ISA variant.
 #[derive(Debug)]
 pub struct NotePropertySection<E: Target> {
@@ -57,7 +57,7 @@ pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
             .contains(&key)
         {
             // An OR-AND feature is set if all input object files have the property
-            // and some of them has the feature.
+            // and some of them have the feature.
             if files.iter().all(|f| f.gnu_properties.contains_key(&key)) {
                 map.insert(key, files.iter().fold(0, |acc, f| acc | value(f, key)));
             }

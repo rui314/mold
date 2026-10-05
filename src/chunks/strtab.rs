@@ -23,7 +23,7 @@ pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
 
     // ARM32 uses $a, $t and $d mapping symbols to mark the beginning of
     // ARM, Thumb and data in text, respectively. These symbols don't
-    // affect correctness of the program but helps disassembler to
+    // affect correctness of the program but help disassemblers to
     // disassemble machine code appropriately.
     if E::FAMILY == Family::Arm32 && !ctx.args.strip_all {
         offset += b"$a\0$t\0$d\0".len() as u64;

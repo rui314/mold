@@ -24,7 +24,7 @@ pub fn djb_hash(name: &[u8]) -> u32 {
 }
 
 // .gnu.hash is an alternative format for .hash. It contains not only an
-// on-disk hash table but also contains a bloom filter to quickly identify
+// on-disk hash table but also a bloom filter to quickly identify
 // whether or not a given symbol name exists in .dynsym.
 #[derive(Debug)]
 pub struct GnuHashSection<E: Target> {

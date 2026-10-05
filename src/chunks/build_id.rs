@@ -6,7 +6,7 @@ use crate::context::Context;
 use crate::elf::*;
 
 // .note.gnu.build-id contains an identifier for an output ELF file. The
-// contents of the section is usually a cryptogrpahic hash of the output
+// contents of the section are usually a cryptographic hash of the output
 // file itself to guarantee uniqueness of build-id.
 #[derive(Debug)]
 pub struct BuildIdSection<E: Target> {

@@ -56,7 +56,7 @@ pub fn add_symbol<E: Target>(ctx: &mut Context<E>, relro: bool, id: SymbolId) {
     let size = sym.esym(ctx).st_size();
     // We need to create dynamic symbols not only for this particular symbol
     // but also for its aliases (i.e. other symbols at the same address)
-    // becasue otherwise the aliases are broken apart at runtime.
+    // because otherwise the aliases are broken apart at runtime.
     // For example, `environ`, `_environ` and `__environ` in libc.so are
     // aliases. If one of the symbols is copied by a copy relocation, other
     // symbols have to refer to the copied place as well.

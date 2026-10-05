@@ -575,23 +575,23 @@ fn create_phdr<E: Target>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
     // Set p_paddr if --physical-image-base was given. --physical-image-base
     // is typically used in embedded programming to specify the base address
     // of a memory-mapped ROM area. In that environment, paddr refers to a
-    // segment's initial location in ROM and vaddr refers the its run-time
+    // segment's initial location in ROM and vaddr refers to its run-time
     // address.
     //
-    // When a device is turned on, it start executing code at a fixed
+    // When a device is turned on, it starts executing code at a fixed
     // location in the ROM area. At that location is a startup routine that
     // copies data or code from ROM to RAM before using them.
     //
     // .data must have different paddr and vaddr because ROM is not writable.
-    // paddr of .rodata and .text may or may be equal to vaddr. They can be
+    // paddr of .rodata and .text may or may not be equal to vaddr. They can be
     // directly read or executed from ROM, but oftentimes they are copied
     // from ROM to RAM because Flash or EEPROM are usually much slower than
     // DRAM.
     //
-    // We want to keep vaddr == pvaddr for as many segments as possible so
+    // We want to keep vaddr == paddr for as many segments as possible so
     // that they can be directly read/executed from ROM. If a gap between
-    // two segments is two page size or larger, we give up and pack segments
-    // tightly so that we don't waste too much ROM area.
+    // two segments is twice the page size or larger, we give up and pack
+    // segments tightly so that we don't waste too much ROM area.
     if let Some(base) = ctx.args.physical_image_base
         && let Some(first) = vec.iter().position(|p| p.p_type() == PT_LOAD)
     {

@@ -9,7 +9,7 @@
 //! mergeable sections.
 //!
 //! We've implemented this ourselves because the performance of
-//! conrurent hash map is critical for our linker.
+//! a concurrent hash map is critical for our linker.
 //!
 //! The map is an open-addressing table. Insertion is lock-free: a thread
 //! claims an empty bucket with a compare-and-swap on its key pointer,
@@ -43,7 +43,7 @@ const _: () = assert!(MIN_NBUCKETS / NUM_SHARDS >= MAX_RETRY);
 const CLAIMED: *mut u8 = usize::MAX as *mut u8;
 
 // In order to avoid unnecessary cache-line false sharing, we want
-// to make this object to be aligned to a reasonably large
+// to make this object aligned to a reasonably large
 // power-of-two address.
 #[repr(C, align(32))]
 struct Entry<T> {

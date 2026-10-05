@@ -20,7 +20,7 @@ pub fn elf_hash(name: &[u8]) -> u32 {
 }
 
 // .hash contains an on-disk hash table for .dynsym so that the runtime
-// can look up a symbol name quickly without scannin all entries in
+// can look up a symbol name quickly without scanning all entries in
 // .dynsym.
 //
 // Quickly identifying whether or not a .dynsym contains a given symbol is
@@ -30,7 +30,7 @@ pub fn elf_hash(name: &[u8]) -> u32 {
 // minimizing the cost of each dynamic symbol lookup is important.
 pub fn new_header<E: Target>() -> ChunkHeader<E> {
     let mut hdr = ChunkHeader::<E>::new(".hash", SHT_HASH, SHF_ALLOC as u64);
-    // Even though u32 should suffice as an etnry size for all targets,
+    // Even though u32 should suffice as an entry size for all targets,
     // s390x uses u64. It looks like a spec bug, but we need to follow
     // suit for the sake of binary compatibility.
     let entry = entry_size::<E>() as u64;

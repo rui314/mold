@@ -1,14 +1,14 @@
 //! Supporting x86-64 is straightforward. Unlike its predecessor, i386,
 //! x86-64 supports PC-relative addressing for position-independent code.
 //! Being CISC, its instructions are variable in size. Branch instructions
-//! take 4 bytes offsets, so we don't need range extension thunks.
+//! take 4-byte offsets, so we don't need range extension thunks.
 //!
 //! The psABI specifies %r11 as neither caller- nor callee-saved. It's
 //! intentionally left out so that we can use it as a scratch register in
 //! PLT.
 //!
 //! Thread Pointer (TP) is stored not to a general-purpose register but to
-//! FS segment register. Segment register is a 64-bits register which can
+//! FS segment register. Segment register is a 64-bit register which can
 //! be used as a base address for memory access. Each thread has a unique
 //! FS value, and they access their thread-local variables relative to FS
 //! as %fs:offset_from_tp.
@@ -77,7 +77,7 @@ impl Target for X86_64 {
     }
 
     // This is a security-enhanced version of the regular PLT. The PLT
-    // header and each PLT entry starts with endbr64 for the Intel's
+    // header and each PLT entry starts with endbr64 for Intel's
     // control-flow enforcement security mechanism.
     //
     // Note that our IBT-enabled PLT instruction sequence is different
@@ -170,7 +170,7 @@ impl Target for X86_64 {
 
     fn scan_relocations(ctx: &Context<Self>, isec: &InputSection<Self>) {
         // Linker has to create data structures in an output file to apply
-        // some type of relocations. For example, if a relocation refers a GOT
+        // some type of relocations. For example, if a relocation refers to a GOT
         // or a PLT entry of a symbol, linker has to create an entry in .got
         // or in .plt for that symbol. In order to fix the file layout, we
         // need to scan relocations.
@@ -512,7 +512,7 @@ impl Target for X86_64 {
     // at runtime).
     //
     // Relocations against non-SHF_ALLOC sections are much easier to
-    // handle than that against SHF_ALLOC sections. It is because, since
+    // handle than those against SHF_ALLOC sections. It is because, since
     // they are not mapped to memory, they don't contain any variable or
     // function and never need PLT or GOT. Non-SHF_ALLOC sections are
     // mostly debug info sections.
@@ -856,8 +856,8 @@ fn relax_ld_to_le(buf: &mut [u8], off: usize, rel: &ElfRel<X86_64>, tls_size: u6
             //  48 8d 3d 00 00 00 00    lea    foo@tlsld(%rip), %rdi
             //  e8 00 00 00 00          call   __tls_get_addr
             //
-            // Because the original instruction sequence is so short that we need a
-            // little bit of code golfing here. "mov %fs:0, %rax" is 9 byte long, so
+            // The original instruction sequence is so short that we need a
+            // little bit of code golfing here. "mov %fs:0, %rax" is 9 bytes long, so
             // xor + mov is shorter. Note that `xor %eax, %eax` zero-clears %eax.
             const INSN: [u8; 12] = [
                 0x31, 0xc0, // xor %eax, %eax

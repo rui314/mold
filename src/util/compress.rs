@@ -78,11 +78,11 @@ fn zlib_compress(input: &[u8], level: u32) -> Vec<u8> {
     // This is a workaround for libbacktrace before 2022-04-06.
     //
     // Zlib is a bit stream, and what Z_SYNC_FLUSH does is to write a
-    // three bit value indicating the start of an uncompressed data
-    // block followed by four byte data 00 00 ff ff which indicates that
+    // three-bit value indicating the start of an uncompressed data
+    // block followed by four bytes 00 00 ff ff which indicate that
     // the length of the block is zero. libbacktrace uses its own zlib
-    // inflate routine, and it had a bug that if that particular three
-    // bit value happens to end at a byte boundary, it accidentally
+    // inflate routine, and it had a bug that if that particular
+    // three-bit value happens to end at a byte boundary, it accidentally
     // skipped the next byte.
     //
     // In order to avoid triggering that bug, we should avoid calling

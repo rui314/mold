@@ -4,14 +4,14 @@
 //! byte is stored in the "reverse" order compared to little-endian
 //! processors such as x86-64.
 //!
-//! All instructions are 4 bytes long and aligned to 4 bytes boundaries.
+//! All instructions are 4 bytes long and aligned to 4-byte boundaries.
 //!
 //! A notable feature of SPARC is that, unlike other RISC ISAs, it doesn't
 //! need range extension thunks. It is because the SPARC's CALL instruction
-//! contains a whopping 30 bits immediate. The processor scales it by 4 to
+//! contains a whopping 30-bit immediate. The processor scales it by 4 to
 //! extend it to 32 bits (this is doable because all instructions are
-//! aligned to 4 bytes boundaries, so the least significant two bits are
-//! always zero). That means CALL's reach is PC ± 2 GiB, elinating the
+//! aligned to 4-byte boundaries, so the least significant two bits are
+//! always zero). That means CALL's reach is PC ± 2 GiB, eliminating the
 //! need of range extension thunks. It comes with the cost that the CALL
 //! instruction alone takes 1/4th of the instruction encoding space,
 //! though.
@@ -34,7 +34,7 @@
 //!   retl
 //!   add  %o7, %l7, %l7
 //!
-//! . SETHI and the following ADD materialize a 32 bits offset to .got.
+//! . SETHI and the following ADD materialize a 32-bit offset to .got.
 //! CALL instruction sets a return address to $o7, and the subsequent ADD
 //! adds it to the GOT offset to materialize the absolute address of .got.
 //!
@@ -175,7 +175,7 @@ impl Target for Sparc64 {
     // own address, and the loader derives which symbol to resolve from that
     // address. Nothing may sit between two stubs, so each stub's pointer lives
     // in the block's pointer region, which it reaches with a signed 13-bit ldx
-    // offset (see to_plt_offset). This layout is dictated by the loader; we
+    // offset (see plt::entry_offset). This layout is dictated by the loader; we
     // cannot rearrange or simplify it.
     fn write_plt_entry(ctx: &Context<Self>, buf: &mut [u8], sym: &Symbol) {
         let idx = sym.plt_idx(&ctx.symbols).unwrap() as u64;

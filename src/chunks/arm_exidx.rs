@@ -107,7 +107,7 @@ fn text_end<E: Target>(ctx: &Context<E>) -> u64 {
 // handling record for the current instruction pointer. The table needs
 // to be sorted by their addresses.
 //
-// Other target uses .eh_frame_hdr instead for the same purpose.
+// Other targets use .eh_frame_hdr instead for the same purpose.
 // I don't know why only ARM uses the different mechanism, but it's
 // likely that it's due to some historical reason.
 //
@@ -117,10 +117,10 @@ fn contents<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     let osec = &ctx.output_sections[sec.output_section.index()];
     let base = sec.hdr.shdr.sh_addr.get();
 
-    // .ARM.exidx records consists of a signed 31-bit relative address
+    // .ARM.exidx records consist of a signed 31-bit relative address
     // and a 32-bit value. The relative address indicates the start
     // address of a function that the record covers. The value is one of
-    // the followings:
+    // the following:
     //
     // 1. CANTUNWIND indicating that there's no unwinding info for the function,
     // 2. a compact unwinding record encoded into a 32-bit value, or
@@ -128,7 +128,7 @@ fn contents<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     // the .ARM.extab section.
     //
     // CANTUNWIND is value 1. The most significant bit is set in (2) but
-    // not in (3). So we can distinguished them just by looking at a value.
+    // not in (3). So we can distinguish them just by looking at a value.
 
     // We reserve one extra slot for the sentinel
     let num_entries = osec.hdr.shdr.sh_size.get() as usize / ENTRY_SIZE + 1;
@@ -146,7 +146,7 @@ fn contents<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     // Fill in sentinel fields
     entries[num_entries - 1] = (text_end(ctx).wrapping_sub(sentinel_addr) as u32, CANTUNWIND);
 
-    // Entry's addresses are relative to themselves. In order to sort
+    // Entries' addresses are relative to themselves. In order to sort
     // records by address, we first translate them so that the addresses
     // are relative to the beginning of the section.
     let is_relative = |val: u32| val != CANTUNWIND && val & 0x8000_0000 == 0;

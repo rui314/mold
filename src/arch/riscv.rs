@@ -1,13 +1,13 @@
 //! RISC-V is a clean RISC ISA. It supports PC-relative load/store for
 //! position-independent code. Its 32-bit and 64-bit ISAs are almost
-//! identical. That is, you can think RV32 as a RV64 without 64-bit
+//! identical. That is, you can think of RV32 as an RV64 without 64-bit
 //! operations. In this file, we support both RV64 and RV32.
 //!
 //! RISC-V is essentially little-endian, but the big-endian version is
 //! available as an extension. GCC supports `-mbig-endian` to generate
 //! big-endian code. Even in big-endian mode, machine instructions are
 //! defined to be encoded in little-endian, though. Only the behavior of
-//! load/store instructions are different between LE RISC-V and BE RISC-V.
+//! load/store instructions is different between LE RISC-V and BE RISC-V.
 //!
 //! From the linker's point of view, the RISC-V's psABI is unique because
 //! sections in input object files can be shrunk while being copied to the
@@ -77,7 +77,7 @@ fn write_btype(loc: &mut [u8], val: u64) {
 fn write_utype(loc: &mut [u8], val: u64) {
     // U-type instructions are used in combination with I-type
     // instructions. U-type insn sets an immediate to the upper 20-bits
-    // of a register. I-type insn sign-extends a 12-bits immediate and
+    // of a register. I-type insn sign-extends a 12-bit immediate and
     // adds it to a register value to construct a complete value. 0x800
     // is added here to compensate for the sign-extension.
     write_ul32(
@@ -196,7 +196,7 @@ fn find_paired_reloc<E: Target>(
 }
 
 // Returns true if isec's i'th relocation refers to the following
-// GOT-load instructioon pair, which is an expeanded form of
+// GOT-load instruction pair, which is an expanded form of
 // `la t0, foo` pseudo assembly instruction.
 //
 // .L0
@@ -976,7 +976,8 @@ where
                         remove(6);
                     } else if use_rvc && !IS_64 && rd == 1 && is_int(dist, 12) {
                         // If rd is x1 and the jump target is within ±2 KiB, we can use
-                        // C.JAL. This is RV32 only because C.JAL is RV32-only instruction.
+                        // C.JAL. This is RV32 only because C.JAL is an RV32-only
+                        // instruction.
                         remove(6);
                     } else if is_int(dist, 21) {
                         // If the jump target is within ±1 MiB, we can use JAL.
@@ -1016,7 +1017,7 @@ where
                 }
                 R_RISCV_TPREL_HI20 | R_RISCV_TPREL_ADD => {
                     // These relocations are used to add a high 20-bit value to the
-                    // thread pointer. The following two instructions materializes
+                    // thread pointer. The following two instructions materialize
                     // TP + %tprel_hi20(foo) in %t0, for example.
                     //
                     //  lui  t0, %tprel_hi(foo)         # R_RISCV_TPREL_HI20
@@ -1102,7 +1103,7 @@ fn write_plt_stub<const IS_64: bool>(buf: &mut [u8], disp: u64) {
 // There are lots of ISA extensions defined for RISC-V, and they are
 // identified by name. Some extensions are of single-letter alphabet such
 // as "m" or "q". Newer extension names start with "z" followed by one or
-// more alphabets (i.e. "zicsr"). "s" and "x" prefixes are reserved
+// more letters (e.g. "zicsr"). "s" and "x" prefixes are reserved
 // for supervisor-level extensions and private extensions, respectively.
 //
 // Each extension consists of a name, a major version and a minor version.
@@ -1118,7 +1119,7 @@ fn write_plt_stub<const IS_64: bool>(buf: &mut [u8], disp: u64) {
 // In order to guarantee string uniqueness, extensions have to be ordered
 // in a specific manner. The exact rule is unfortunately a bit complicated.
 //
-// The following functions takes care of ISA strings.
+// The following functions take care of ISA strings.
 
 #[derive(Clone, Copy, Debug)]
 struct Extension<'a> {

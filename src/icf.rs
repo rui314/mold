@@ -35,25 +35,25 @@
 //! This problem boils down to one in graph theory. Input to ICF can be
 //! considered as a directed graph in which vertices are sections and edges
 //! are relocations. Vertices have labels (section contents, etc.), and so
-//! are edges (relocation offsets, etc.). Two vertices are considered
-//! identical if and only if the (possibly infinite) their unfoldings into
+//! do edges (relocation offsets, etc.). Two vertices are considered
+//! identical if and only if their (possibly infinite) unfoldings into
 //! regular trees are equal. Given this formulation, we want to find as
 //! many identical vertices as possible.
 //!
-//! Just like a lot of problems with graph, this problem doesn't have a
+//! Just like a lot of problems with graphs, this problem doesn't have a
 //! straightforward "optimal" solution, and we need to resort to heuristics.
 //!
 //! mold approaches this problem by hashing program trees with increasing depth
 //! on each iteration.
 //! For example, when we start, we only hash individual functions with
-//! their call into other functions omitted. From the second iteration, we
-//! put the function they call into the hash by appending the hash of those
+//! their calls into other functions omitted. From the second iteration, we
+//! put the functions they call into the hash by appending the hash of those
 //! functions from the previous iteration. This means that the nth iteration
-//! hashes call chain up to (n-1) levels deep.
-//! We use a cryptographic hash function, so the unique number of hashes will
-//! only monotonically increase as we take into account of deeper trees with
+//! hashes call chains up to (n-1) levels deep.
+//! We use a cryptographic hash function, so the number of unique hashes will
+//! only monotonically increase as we take into account deeper trees with
 //! iterations (otherwise, that means we have found a hash collision). We stop
-//! when the unique number of hashes stop increasing; this is based on the fact
+//! when the number of unique hashes stops increasing; this is based on the fact
 //! that once we observe an iteration with the same amount of unique hashes as
 //! the previous iteration, it will remain unchanged for further iterations.
 //! This is provable, but here we omit the proof for brevity.

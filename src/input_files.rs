@@ -1538,7 +1538,7 @@ impl<E: Target> ObjectFile<E> {
     }
 
     // <format-version>
-    // [ <section-length> "vendor-name" <file-tag> <size> <attribute>*]+ ]*
+    // [ <section-length> "vendor-name" [ <file-tag> <size> <attribute>*]+ ]*
     fn read_riscv_attributes(&mut self, data: &'static [u8]) {
         if data.is_empty() {
             fatal!("{self}: corrupted .riscv.attributes section");
@@ -1676,7 +1676,7 @@ impl<E: Target> ObjectFile<E> {
                     }
 
                     // Ignore a build-id section in an input file. This doesn't normally
-                    // happen, but you can create such object file with
+                    // happen, but you can create such an object file with
                     // `ld.bfd -r --build-id`.
                     if name == b".note.gnu.build-id" {
                         continue;
@@ -1699,7 +1699,7 @@ impl<E: Target> ObjectFile<E> {
                         continue;
                     }
 
-                    // Ignore section is specified by --discard-section.
+                    // Ignore sections specified by --discard-section.
                     if !args.discard_section.is_empty() && args.discard_section.contains(name) {
                         continue;
                     }
@@ -1723,8 +1723,8 @@ impl<E: Target> ObjectFile<E> {
                     // Save .llvm_addrsig for --icf=safe.
                     if shdr.sh_type.get() == SHT_LLVM_ADDRSIG && !args.relocatable {
                         // sh_link should be the index of the symbol table section.
-                        // Tools that mutates the symbol table, such as objcopy or `ld -r`
-                        // tend to not preserve sh_link, so we ignore such section.
+                        // Tools that mutate the symbol table, such as objcopy or `ld -r`
+                        // tend to not preserve sh_link, so we ignore such a section.
                         if shdr.sh_link.get() != 0 {
                             self.llvm_addrsig = Some(isec.contents());
                         }
@@ -1980,12 +1980,12 @@ impl<E: Target> ObjectFile<E> {
     }
 
     // .eh_frame contains data records explaining how to handle exceptions.
-    // When an exception is thrown, the runtime searches a record from
+    // When an exception is thrown, the runtime searches for a record in
     // .eh_frame with the current program counter as a key. A record that
     // covers the current PC explains how to find a handler and how to
-    // transfer the control ot it.
+    // transfer the control to it.
     //
-    // Unlike the most other sections, linker has to parse .eh_frame contents
+    // Unlike most other sections, linker has to parse .eh_frame contents
     // because of the following reasons:
     //
     // - There's usually only one .eh_frame section for each object file,
@@ -1995,7 +1995,7 @@ impl<E: Target> ObjectFile<E> {
     //   functions). We want to copy only records for live functions.
     //
     // - .eh_frame contains two types of records: CIE and FDE. There's usually
-    //   only one CIE at beginning of .eh_frame section followed by FDEs.
+    //   only one CIE at the beginning of the .eh_frame section followed by FDEs.
     //   Compiler usually emits the identical CIE record for all object files.
     //   We want to merge identical CIEs in an output .eh_frame section to
     //   reduce the section size.
@@ -2057,8 +2057,8 @@ impl<E: Target> ObjectFile<E> {
                     // This is FDE.
                     if rel_begin == rel_idx || rels[rel_begin].r_sym() == 0 {
                         // FDE has no valid relocation, which means FDE is dead from
-                        // the beginning. Compilers usually don't create such FDE, but
-                        // `ld -r` tend to generate such dead FDEs.
+                        // the beginning. Compilers usually don't create such an FDE, but
+                        // `ld -r` tends to generate such dead FDEs.
                         continue;
                     }
                     if rels[rel_begin].r_offset() as usize - begin_offset != 8 {
@@ -2280,7 +2280,7 @@ impl<E: Target> ObjectFile<E> {
     // place in the section. This kind of "out-of-bound" reference occurs
     // only when a symbol is a section symbol. In other words, the compiler
     // may use an offset from the beginning of a section to refer to any
-    // section piece in a section, but it doesn't do for any other types
+    // section piece in a section, but it doesn't do so for any other types
     // of symbols.
     //
     // Section garbage collection and Identical Code Folding work on graphs
@@ -2474,7 +2474,7 @@ impl<E: Target> ObjectFile<E> {
     }
 
     pub fn scan_relocations(&self, ctx: &Context<E>) {
-        // Scan relocations against seciton contents
+        // Scan relocations against section contents
         for isec in self.input_sections() {
             if isec.is_alive() && isec.is_alloc() {
                 E::scan_relocations(ctx, isec);
@@ -2503,7 +2503,7 @@ impl<E: Target> ObjectFile<E> {
         }
     }
 
-    // Common symbols are used by C's tantative definitions. Tentative
+    // Common symbols are used by C's tentative definitions. Tentative
     // definition is an obscure C feature which allows users to omit `extern`
     // from global variable declarations in a header file. For example, if you
     // have a tentative definition `int foo;` in a header which is included
@@ -2512,7 +2512,7 @@ impl<E: Target> ObjectFile<E> {
     // the linker will merge them into a single instance of `foo`.
     //
     // If a header file contains a tentative definition `int foo;` and one of
-    // a C file contains a definition with initial value such as `int foo = 5;`,
+    // the C files contains a definition with initial value such as `int foo = 5;`,
     // then the "real" definition wins. The symbol for the tentative definition
     // will be resolved to the real definition. If there is no "real"
     // definition, the tentative definition gets the default initial value 0.
@@ -2673,7 +2673,7 @@ impl<E: Target> ObjectFile<E> {
             // the end of the section.
             //
             // An input .debug_info section may be compressed using zlib or zstd, so
-            // we need to uncompress it before accessing `isec->contents`.
+            // we need to uncompress it before accessing `isec.contents()`.
             let isec = self.sections.section_mut(shndx as usize).unwrap();
             isec.uncompress(&name, section_name, input);
             let contents = isec.contents();
@@ -2977,7 +2977,7 @@ pub struct SharedFile<E: Target> {
     pub symbols2: Vec<SymbolId>,
     pub versyms: Vec<u16>,
 
-    // Used by get_symbols_at()
+    // Used by symbols_at()
     sorted_syms: OnceLock<Vec<SymbolId>>,
 }
 
@@ -3133,7 +3133,7 @@ impl<E: Target> SharedFile<E> {
             // with two atsigns as `foo@@VERSION` and can be referred to either
             // as `foo` or `foo@VERSION`. No other symbols have two names like that.
             //
-            // On contrary, a versioned non-default symbol can be referred only
+            // In contrast, a versioned non-default symbol can be referred to only
             // with an explicit version suffix, e.g., `foo@VERSION`.
             //
             // Here is how we resolve versioned default symbols. We resolve `foo`
@@ -3183,7 +3183,7 @@ impl<E: Target> SharedFile<E> {
     //
     // Let me explain what symbol versioning is. Symbol versioning is a
     // mechanism to allow multiple symbols of the same name but of different
-    // versions live together in a shared object file. It's convenient if you
+    // versions to live together in a shared object file. It's convenient if you
     // want to make an API-breaking change to some function but want to keep
     // old programs working with the newer libraries.
     //
@@ -3203,7 +3203,7 @@ impl<E: Target> SharedFile<E> {
     // parallel table.
     //
     // One version is considered the "default" version for each shared object.
-    // If an undefiend symbol `foo` is resolved to a symbol defined by the
+    // If an undefined symbol `foo` is resolved to a symbol defined by the
     // shared object, it's marked so that it'll be resolved to (`foo`, the
     // default version of the library) at load-time.
     //
@@ -3282,7 +3282,7 @@ impl<E: Target> SharedFile<E> {
         &sorted[begin..end]
     }
 
-    // Infer an alignment of a DSO symbol. An alignment of a symbol in other
+    // Infer an alignment of a DSO symbol. An alignment of a symbol in another
     // .so is not something we usually care about, but when we create a copy
     // relocation for a symbol, we need to preserve its alignment requirement.
     //
@@ -3348,7 +3348,7 @@ impl<E: Target> SharedFile<E> {
     }
 }
 
-// Symbols with higher priorities overwrites symbols with lower priorities.
+// Symbols with higher priorities overwrite symbols with lower priorities.
 // Here is the list of priorities, from the highest to the lowest.
 //
 //  1. Strong defined symbol
@@ -3591,8 +3591,8 @@ impl<E: Target> SharedFile<E> {
             });
 
             // A symbol with the default version is a special case because, unlike
-            // other symbols, the symbol can be referred by two names, `foo` and
-            // `foo@VERSION`. Here, we resolve `foo@VERSOIN` as a proxy of `foo`.
+            // other symbols, the symbol can be referred to by two names, `foo` and
+            // `foo@VERSION`. Here, we resolve `foo@VERSION` as a proxy of `foo`.
             let alias_id = self.symbols2[i];
             if alias_id != SymbolId::NONE && alias_id != sym_id {
                 resolver.with_symbol(alias_id, |sym| {

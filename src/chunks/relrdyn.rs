@@ -8,8 +8,8 @@ use crate::elf::*;
 // .relr.dyn is a relatively new section to contain base relocation
 // information.
 //
-// A relocatable executable/DSO contains a lot of certain type of
-// relocation entries, called "base relocations", to specify the locations
+// A relocatable executable/DSO contains a lot of relocation entries of a
+// certain type, called "base relocations", to specify the locations
 // of pointers in the FILE that need to be adjusted according to the
 // desired load address and the actual load address. As an example,
 // consider the following C code.
@@ -17,25 +17,25 @@ use crate::elf::*;
 // extern int foo;
 // int *bar = &foo;
 //
-// If an executable containing the above code is built as relocatable
+// If an executable containing the above code is built as a relocatable
 // executable, meaning that the executable can be loaded not to a specific
 // address in memory but anywhere in the virtual address space, then the
 // pointer `bar`'s address is not known at link-time.
 //
-// The linker temporarily links the executable to a base address, record
+// The linker temporarily links the executable to a base address, records
 // that information to the ELF header, and emits dynamic relocations to
 // refer to the location of `bar`. At runtime, the loader adds the
 // difference of the expected load address and the actual one to the
 // pointer value to fix the pointer value.
 //
 // Relocatable executables/DSOs usually contain a fairly large number of
-// base relocations. In particular, C++ virtual function table is an array
+// base relocations. In particular, a C++ virtual function table is an array
 // of statically-initialized pointers which need base relocations.
 //
 // Notice that base relocations don't contain symbol information. They
 // need only pointer locations in the ELF file that need fixing at
 // load-time. Therefore, storing that information to the usual ELF
-// relocation table is waste of space.
+// relocation table is a waste of space.
 //
 // .relr.dyn is designed to store base relocations in a space-efficient way.
 pub fn new_header<E: Target>(args: &crate::cmdline::Args) -> ChunkHeader<E> {
@@ -60,21 +60,21 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 }
 
 // .relr.dyn contains base relocations encoded in a space-efficient form.
-// The contents of the section is essentially just a list of addresses
+// The contents of the section are essentially just a list of addresses
 // that have to be fixed up at runtime.
 //
 // Here is the encoding scheme (we assume 64-bit ELF in this description
 // for the sake of simplicity): .relr.dyn contains zero or more address
 // groups. Each address group consists of a 64-bit start address followed
 // by zero or more 63-bit bitmaps. Let A be the address of a start
-// address. Then, the loader fixes address A. If Nth bit in the following
+// address. Then, the loader fixes address A. If the Nth bit in the following
 // bitmap is on, the loader also fixes address A + N * 8. In this scheme,
 // one address and one bitmap can represent up to 64 base relocations in a
-// 512 bytes range.
+// 512-byte range.
 //
-// A start address and a bitmap is distinguished by the lowest significant
-// bit. An address must be even and thus its LSB is 0 (odd address is not
-// representable in this encoding and such relocation must be stored to
+// A start address and a bitmap are distinguished by the least significant
+// bit. An address must be even and thus its LSB is 0 (an odd address is not
+// representable in this encoding and such a relocation must be stored to
 // the .rel.dyn section). A bitmap has LSB 1.
 pub fn encode_relr<E: Target>(offsets: &[u64]) -> Vec<u64> {
     let word = E::WORD_SIZE as u64;

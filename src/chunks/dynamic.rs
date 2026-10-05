@@ -32,7 +32,7 @@ pub fn new_header<E: Target>(args: &crate::cmdline::Args) -> ChunkHeader<E> {
 // preserved in a non-standard calling convention.
 //
 // To solve the problem, the dynamic linker scans the dynamic symbol table
-// at process startup time and resolve symbols with STO_AARCH64_VARIANT_PCS
+// at process startup time and resolves symbols with STO_AARCH64_VARIANT_PCS
 // bit eagerly, so that the PLT resolver won't be called for that symbol
 // lazily. As an optimization, it does so only when DT_AARCH64_VARIANT_PCS
 // is set in the dynamic section.

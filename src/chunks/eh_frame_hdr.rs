@@ -44,7 +44,7 @@ pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
 pub fn write_header<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let sec = ctx.eh_frame_hdr.as_ref().unwrap();
 
-    // Write a header. The actual table is written by EhFrameSection::copy_buf.
+    // Write a header. The actual table is written by eh_frame::copy_buf.
     buf[0] = 1;
     buf[1] = (DW_EH_PE_pcrel | DW_EH_PE_sdata4) as u8;
     buf[2] = DW_EH_PE_udata4 as u8;

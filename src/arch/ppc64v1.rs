@@ -3,7 +3,7 @@
 //! the processor in the little-endian mode use the ELFv2 ABI instead. For
 //! ELFv2, see ppc64v2.rs.
 //!
-//! Even though they are similiar, ELFv1 isn't only different from ELFv2 in
+//! Even though they are similar, ELFv1 isn't only different from ELFv2 in
 //! endianness. The most notable difference is, in ELFv1, a function
 //! pointer doesn't directly refer to the entry point of a function but
 //! instead refers to a data structure so-called "function descriptor".
@@ -12,16 +12,16 @@
 //! address and a value that should be set to %r2 before calling that
 //! function. There is also a third member for "the environment pointer for
 //! languages such as Pascal and PL/1" according to the psABI, but it looks
-//! like no one acutally uses it. In total, the function descriptor is 24
+//! like no one actually uses it. In total, the function descriptor is 24
 //! bytes long. Here is why we need it.
 //!
 //! PPC generally lacks PC-relative data access instructions. Position-
-//! independent code sets GOT + 0x8000 to %r2 and access global variables
+//! independent code sets GOT + 0x8000 to %r2 and accesses global variables
 //! relative to %r2.
 //!
 //! Each ELF file has its own GOT. If a function calls another function in
 //! the same ELF file, it doesn't have to reset %r2. However, if it is in
-//! other file (e.g. other .so), it has to set a new value to %r2 so that
+//! another file (e.g. another .so), it has to set a new value to %r2 so that
 //! the register contains the callee's GOT + 0x8000.
 //!
 //! In this way, you can't call a function just by knowing the function's
@@ -36,11 +36,11 @@
 //! .opd (short for "official procedure descriptors") contains function
 //! descriptors.
 //!
-//! You can think OPD as this: even in other targets, a function can have a
+//! You can think of OPD as this: even in other targets, a function can have a
 //! few different addresses for different purposes. It may not only have an
 //! entry point address but may also have PLT and/or GOT addresses.
 //! In PPCV1, it may have an OPD address in addition to these. OPD address
-//! is used for relocations that refers to the address of a function as a
+//! is used for relocations that refer to the address of a function as a
 //! function pointer.
 //!
 //! https://github.com/rui314/psabi/blob/main/ppc64v1.pdf
@@ -126,13 +126,13 @@ fn toc(ctx: &Context<Ppc64V1>) -> u64 {
 //
 // 2. Output .opd entries are needed only for functions whose addresses
 //    are taken. Just copying input .opd sections to an output would
-//    produces lots of dead .opd entries.
+//    produce lots of dead .opd entries.
 //
 // 3. In this design, all function symbols refer to an .opd section, and
 //    that doesn't work well with graph traversal optimizations such as
 //    garbage collection or identical comdat folding. For example, garbage
-//    collector would mark an .opd alive which in turn mark all functions
-//    thatare referenced by .opd as alive, effectively keeping all
+//    collector would mark an .opd alive which in turn marks all functions
+//    that are referenced by .opd as alive, effectively keeping all
 //    functions as alive.
 //
 // The problem is that the compiler creates a half-baked .opd section, and
@@ -246,7 +246,7 @@ fn rewrite_opd(ctx: &mut Context<Ppc64V1>) {
 }
 
 // When a function is exported, the dynamic symbol for the function should
-// refers to the function's .opd entry. This function marks such symbols
+// refer to the function's .opd entry. This function marks such symbols
 // with NEEDS_PPC_OPD.
 fn scan_symbols(ctx: &mut Context<Ppc64V1>) {
     let _t = ctx.timer("scan_symbols");
@@ -345,11 +345,11 @@ impl Target for Ppc64V1 {
         let idx = sym.plt_idx(&ctx.symbols).unwrap() as u64;
         let plt0 = ctx.plt.hdr.shdr.sh_addr.get();
 
-        // The PPC64 ELFv1 ABI requires PLT entries to be vary in size depending
+        // The PPC64 ELFv1 ABI requires PLT entries to vary in size depending
         // on their indices. Unlike other targets, .got.plt is filled not by us
         // but by the loader, so we don't have a control over where the initial
         // call to the PLT entry jumps to. So we need to strictly follow the PLT
-        // section layout as the loader expect it to be.
+        // section layout as the loader expects it to be.
         if idx < 0x8000 {
             write_insns(buf, &[0x3800_0000, 0x4b00_0000]); // li r0, PLT_INDEX; b plt0
             or32(buf, idx);

@@ -2,7 +2,7 @@
 //! psABI doesn't have anything peculiar. ARM64 is a clean RISC
 //! instruction set that supports PC-relative load/store instructions.
 //!
-//! Unlike ARM32, instructions length doesn't vary. All ARM64
+//! Unlike ARM32, instruction length doesn't vary. All ARM64
 //! instructions are 4 bytes long.
 //!
 //! Branch instructions used for function call can jump within ±128 MiB.
@@ -491,7 +491,7 @@ impl<const LE: bool> Target for Arm64Target<LE> {
                 }
                 R_AARCH64_CALL26 | R_AARCH64_JUMP26 => {
                     if sym.is_remaining_undef_weak() {
-                        // On ARM, calling an weak undefined symbol jumps to the
+                        // On ARM, calling a weak undefined symbol jumps to the
                         // next instruction.
                         write_ul32(loc, NOP);
                     } else {
@@ -743,9 +743,9 @@ impl<const LE: bool> Target for Arm64Target<LE> {
     // The size of a thunk entry varies on ARM64 depending on the distance to
     // the branch target. This function computes the size of each thunk entry.
     fn thunk_offsets(ctx: &Context<Self>, thunk: &Thunk, addr: u64) -> Vec<u64> {
-        // The distance between S and P is only reduced by shrink_size(), but
-        // page(S) – page(P) may still increase by one page due to address
-        // changes, so we add a safety margin.
+        // The distance between S and P is only reduced by
+        // remove_redundant_thunks(), but page(S) – page(P) may still increase
+        // by one page due to address changes, so we add a safety margin.
         //
         // For example, page(0x1200) – page(0x1000) is 0, whereas
         // page(0x1100) – page(0xfff) is 0x1000, even though the latter

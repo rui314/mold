@@ -382,7 +382,7 @@ impl AhoCorasick {
         // We handle "foo" as if "\0foo\0", "*foo" as if "foo\0", "foo*" as
         // if "\0foo", and "*foo*" as if "foo". Aho-Corasick can do only
         // substring matching, so we use \0 as a beginning/end-of-string
-        // markers.
+        // marker.
         let mut idx = 0;
         if !pat.starts_with(b"*") {
             idx = self.add_child(idx, 0);

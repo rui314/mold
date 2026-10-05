@@ -8,9 +8,9 @@
 //! address and CTR which we can use to store a branch target address.
 //!
 //! It feels that the PPC32 psABI is unnecessarily complicated at first
-//! glance, but that is mainly stemmed from the fact that the ISA lacks
+//! glance, but that mainly stems from the fact that the ISA lacks
 //! PC-relative load/store instructions. Since machine instructions cannot
-//! load data relative to its own address, it is not straightforward to
+//! load data relative to their own address, it is not straightforward to
 //! support position-independent code (PIC) on PPC32.
 //!
 //! A position-independent function typically contains the following code
@@ -23,7 +23,7 @@
 //!
 //! An object file compiled with -fPIC contains a data section named
 //! `.got2` to store addresses of locally-defined global variables and
-//! constants. A PIC function usually computes its .got2+0x8000 and set it
+//! constants. A PIC function usually computes its .got2+0x8000 and sets it
 //! to %r30. This scheme allows the function to access global objects
 //! defined in the same input file with a single %r30-relative load/store
 //! instruction with a 16-bit offset, given that .got2 is smaller than
@@ -35,7 +35,7 @@
 //!
 //! Technically, we can reuse a %r30 value in our PLT if we create a PLT
 //! _for each input file_ (that's what GNU ld seems to be doing), but that
-//! doesn't seems to be worth its complexity. Our PLT simply doesn't rely
+//! doesn't seem to be worth its complexity. Our PLT simply doesn't rely
 //! on a %r30 value.
 //!
 //! https://github.com/rui314/psabi/blob/main/ppc32.pdf

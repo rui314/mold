@@ -7,8 +7,8 @@ use crate::elf::*;
 use crate::util::align_to;
 use crate::util::write_cstr;
 
-// .note.package is an optional hint section that can contain arbitrary
-// string. Package managers, such as dpkg or rpm, uses the section to
+// .note.package is an optional hint section that can contain an arbitrary
+// string. Package managers, such as dpkg or rpm, use the section to
 // embed package metadata into each ELF file so that it is easy to find
 // the origin of an ELF file without any additional information.
 pub fn new_header<E: Target>() -> ChunkHeader<E> {

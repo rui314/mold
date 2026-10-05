@@ -7,7 +7,7 @@ use crate::elf::*;
 use crate::util::write_cstr;
 
 // .interp contains the pathname of a dynamic linker. Dynamically-linked
-// executables have the section. If exists, the kernel runs the program at
+// executables have the section. If it exists, the kernel runs the program at
 // the specified path with the executable pathname as an argument,
 // allowing the dynamic linker to run the program.
 pub fn new_header<E: Target>() -> ChunkHeader<E> {

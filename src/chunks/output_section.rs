@@ -120,7 +120,7 @@ pub fn layout<E: Target>(ctx: &Context<E>, id: OutputSectionId) -> u64 {
 
     let osec = &ctx.output_sections[id.index()];
 
-    // Text sections must to be handled by create_range_extension_thunks()
+    // Text sections must be handled by create_range_extension_thunks()
     // if they may need range extension thunks.
     debug_assert!(
         !E::NEEDS_THUNK
@@ -543,7 +543,7 @@ pub fn compute_symtab_size<E: Target>(ctx: &mut Context<E>, id: OutputSectionId)
     osec.hdr.strtab_size = 0;
     osec.hdr.num_local_symtab = 0;
     for thunk in &osec.thunks {
-        // For ARM32, we emit additional symbol "$t", "$a" and "$d" for
+        // For ARM32, we emit additional symbols "$t", "$a" and "$d" for
         // each thunk to mark the beginning of Thumb code, ARM code and
         // data, respectively.
         let per_entry = if E::FAMILY == Family::Arm32 { 4 } else { 1 };

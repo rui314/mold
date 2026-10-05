@@ -9,7 +9,7 @@ use crate::symbol::SymbolId;
 
 // .plt.got is similar to .plt but doesn't support lazy symbol resolution.
 // If we have the same symbol already in .got, resolving the same symbol
-// lazily for .plt is just waste of time. Therefore, in such case, we use
+// lazily for .plt is just a waste of time. Therefore, in such a case, we use
 // .plt.got for that symbol instead.
 #[derive(Debug)]
 pub struct PltGotSection<E: Target> {

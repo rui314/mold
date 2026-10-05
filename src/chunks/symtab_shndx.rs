@@ -8,7 +8,7 @@ use crate::elf::*;
 // indices for symbols.
 //
 // Symbol table entry contains a field for section index, but that's only
-// 16 bit in size, so it cannot refer to a section whose section index is
+// 16 bits in size, so it cannot refer to a section whose section index is
 // greater than 65535. We use .symtab_shndx for ELF files containing a lot
 // of sections.
 //

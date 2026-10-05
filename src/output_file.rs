@@ -259,9 +259,9 @@ impl OutputFile {
             };
         }
 
-        // Reuse an existing file if exists and writable because on Linux,
-        // writing to an existing file is much faster than creating a fresh
-        // file and writing to it. A file mapped as an input is not reused, as
+        // Reuse an existing file if it exists and is writable because on
+        // Linux, writing to an existing file is much faster than creating a
+        // fresh file and writing to it. A file mapped as an input is not reused, as
         // the linker is still reading it.
         let reuse_existing = || -> Option<File> {
             if !overwrite_in_place
@@ -325,7 +325,7 @@ impl OutputFile {
         unsafe {
             libc::flock(file.as_raw_fd(), libc::LOCK_EX);
         }
-        // We may be overwriting to an existing debug info file. We want to
+        // We may be overwriting an existing debug info file. We want to
         // make the file unusable so that gdb won't use it by accident until
         // it's ready.
         file.write_all(&[0; 256])
@@ -458,7 +458,7 @@ impl OutputFile {
         if let Some(tmp) = self.tmp_path {
             // If an output file already exists, open a file and then remove it.
             // This is the fastest way to unlink a file, as it does not make the
-            // system to immediately release disk blocks occupied by the file.
+            // system immediately release disk blocks occupied by the file.
             // The descriptor is kept until the process exits.
             if let Ok(old) = File::open(&self.path) {
                 let _ = std::fs::remove_file(&self.path);

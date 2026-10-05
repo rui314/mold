@@ -9,7 +9,7 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::util::encode_sleb;
 
-// .rel.dyn contains relocation infromation for other sections.
+// .rel.dyn contains relocation information for other sections.
 #[derive(Debug)]
 pub struct RelDynSection<E: Target> {
     pub hdr: ChunkHeader<E>,

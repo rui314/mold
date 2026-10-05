@@ -492,9 +492,8 @@ unsafe fn get_symbols<E: Target>(
         return LDPS_BAD_HANDLE;
     };
 
-    // If file is an archive member which was not chose to be included in
-    // to the final result, we need to make the plugin to ignore all
-    // symbols.
+    // If file is an archive member which was not chosen to be included in
+    // the final result, we need to make the plugin ignore all symbols.
     if !file.base.is_reachable() {
         for psym in psyms {
             psym.resolution = LDPR_PREEMPTED_REG;
@@ -754,7 +753,7 @@ pub fn read_lto_object<E: Target>(
     // Create plugin's object instance
     let (input, file) = plugin_input_file(mf);
     let mut claimed: c_int = 0;
-    // claim_file_hook() calls add_symbols() which initializes `plugin_symbols`
+    // claim_file_hook() calls add_symbols() which initializes `CLAIMED_SYMBOLS`
     // SAFETY: `input` describes an open file.
     unsafe { claim_file(&raw const input, &raw mut claimed) };
     drop(file);
@@ -870,7 +869,7 @@ pub fn run_plugin<E: Target>(ctx: &mut Context<E>) {
         ctx.symbols[id].set_referenced_by_regular_obj(true);
     }
 
-    // Symbols specified by the --wrap option needs to be visible from
+    // Symbols specified by the --wrap option need to be visible from
     // regular object files.
     for name in &ctx.args.wrap {
         let id = ctx.symbols.get_or_intern(name);
@@ -887,8 +886,8 @@ pub fn run_plugin<E: Target>(ctx: &mut Context<E>) {
     }
 
     // Object files containing .gnu.offload_lto_.* sections need to be
-    // given to the LTO backend. Such sections contains code and data for
-    // peripherails (typically GPUs).
+    // given to the LTO backend. Such sections contain code and data for
+    // peripherals (typically GPUs).
     let claim_file =
         HOOKS.lock().unwrap().claim_file.expect("the plugin registered a claim_file hook");
     for file in &ctx.objs {

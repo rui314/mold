@@ -1,4 +1,4 @@
-//! This file implements HyperLogLog algorithm, which estimates
+//! This file implements the HyperLogLog algorithm, which estimates
 //! the number of unique items in a given multiset.
 //!
 //! For more info, read

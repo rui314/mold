@@ -82,9 +82,9 @@ fn is_gcc_lto_obj<E: Target>(data: &[u8], has_gcc_plugin: bool) -> bool {
     for shdr in shdrs {
         // GCC FAT LTO objects contain both regular ELF sections and GCC-
         // specific LTO sections, so that they can be linked as LTO objects if
-        // the LTO linker plugin is available and falls back as regular
-        // objects otherwise. GCC FAT LTO object can be identified by the
-        // presence of `.gcc.lto_.symtab` section.
+        // the LTO linker plugin is available and fall back to regular
+        // objects otherwise. A GCC FAT LTO object can be identified by the
+        // presence of a `.gnu.lto_.symtab` section.
         if let Some(offset) = shstrtab_offset {
             let name = crate::util::cstr_at(data, offset + shdr.sh_name.get() as usize);
             if name.starts_with(b".gnu.lto_.symtab.") {
@@ -96,7 +96,7 @@ fn is_gcc_lto_obj<E: Target>(data: &[u8], has_gcc_plugin: bool) -> bool {
             continue;
         }
 
-        // GCC non-FAT LTO object contains only sections symbols followed by
+        // GCC non-FAT LTO object contains only section symbols followed by
         // a common symbol whose name is `__gnu_lto_slim` (or `__gnu_lto_v1`
         // for older GCC releases).
         let off = shdr.sh_offset.get() as usize;
@@ -241,7 +241,7 @@ pub fn get_elf_target(data: &[u8]) -> Option<&'static str> {
     Some(name)
 }
 
-// Read the beginning of a given file and returns its machine type
+// Reads the beginning of a given file and returns its machine type
 // (e.g. EM_X86_64 or EM_386).
 pub fn get_machine_type(
     plugin: &std::path::Path,

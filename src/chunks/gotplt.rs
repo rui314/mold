@@ -32,7 +32,7 @@ pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
 }
 
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
-    // On PPC64, it's dynamic loader responsibility to fill the .got.plt
+    // On PPC64, it's the dynamic loader's responsibility to fill the .got.plt
     // section. Dynamic loader finds the address of the first PLT entry by
     // DT_PPC64_GLINK and assumes that each PLT entry is 4 bytes long.
     if E::IS_PPC64 {
