@@ -17,7 +17,7 @@ int main() {}
 EOF
 
 $CC -B. -o $t/exe $t/a.o $t/b.o $t/c.o
-$t/exe
+$QEMU $t/exe
 
 readelf -SW $t/exe > $t/log
 grep '.rodata.str1.1 .* AMS ' $t/log

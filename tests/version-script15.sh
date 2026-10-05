@@ -25,11 +25,11 @@ EOF
 $CC -B. -shared -Wl,--version-script=$t/a.ver -o $t/c.so $t/b.o
 
 readelf --dyn-syms $t/c.so > $t/log
-grep ' azZ$' $t/log
-grep ' czZ$' $t/log
-not grep ' azC$' $t/log
-not grep ' aaZ$' $t/log
-grep ' azZ_$' $t/log
-grep ' czZ_$' $t/log
-not grep ' azC_$' $t/log
-not grep ' aaZ_$' $t/log
+grep -E ' azZ( |$)' $t/log
+grep -E ' czZ( |$)' $t/log
+not grep -E ' azC( |$)' $t/log
+not grep -E ' aaZ( |$)' $t/log
+grep -E ' azZ_( |$)' $t/log
+grep -E ' czZ_( |$)' $t/log
+not grep -E ' azC_( |$)' $t/log
+not grep -E ' aaZ_( |$)' $t/log

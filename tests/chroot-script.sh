@@ -10,4 +10,4 @@ echo '' | $CC -c -xc -o "$root/empty.o" -
 echo 'INPUT(a.o)' > "$root/sub/script.ld"
 
 ./mold --chroot "$root" /empty.o /sub/script.ld -o $t/exe
-readelf -Ws $t/exe | grep ' _start$'
+readelf -Ws $t/exe | grep -E ' _start( |$)'

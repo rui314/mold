@@ -46,4 +46,4 @@ echo -e 'BC\xc0\xde' > $t/dir/b.bc
 rm -f $t/dir/exe
 
 ./mold -C $t/dir -plugin $PWD/$t/plugin.so $PWD/$t/a.o b.bc -o exe
-readelf -Ws $t/dir/exe | grep ' _start$'
+readelf -Ws $t/dir/exe | grep -E ' _start( |$)'

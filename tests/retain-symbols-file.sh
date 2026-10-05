@@ -16,8 +16,8 @@ EOF
 $CC -B. -o $t/exe $t/a.o -Wl,--retain-symbols-file=$t/symbols
 readelf -W --symbols $t/exe > $t/log
 
-not grep ' foo$' $t/log
-not grep ' bar$' $t/log
-not grep ' main$' $t/log
+not grep -E ' foo( |$)' $t/log
+not grep -E ' bar( |$)' $t/log
+not grep -E ' main( |$)' $t/log
 
-grep ' baz$' $t/log
+grep -E ' baz( |$)' $t/log

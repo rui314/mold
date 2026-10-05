@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
+[ "$(uname)" = FreeBSD ] && skip
+
 # Assemblers emit calls to static functions as relocations against a
 # section symbol plus an offset. A range extension thunk jumps to the
 # start of a symbol, so such a call must get a thunk entry that jumps to

@@ -18,4 +18,4 @@ int z()  { return A + B; }
 EOF
 
 $CC -B. -o $t/exe $t/b.o $t/c.o
-$OBJDUMP --dwarf=macro $t/exe | not grep 'DW_MACRO_import -.* 0x0$'
+$OBJDUMP --dwarf=macro $t/exe | not grep -E 'DW_MACRO_import -.* (0x)?0$'

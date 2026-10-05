@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
-cat <<EOF | $CC -o $t/a.o -c -xc - -fPIC
+# Old assemblers cannot give one symbol more than one version.
+cat <<EOF | $CC -o $t/a.o -c -xc - -fPIC || skip
 void foo() {}
 __asm__(".symver foo, foo@TEST1");
 __asm__(".symver foo, foo@@TEST2");

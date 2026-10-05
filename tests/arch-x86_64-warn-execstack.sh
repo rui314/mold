@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
+command -v $GCC >& /dev/null || skip
+
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .section .note.GNU-stack, "x"
 EOF

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
+command -v $GCC >& /dev/null || skip
+
 cat <<EOF | $GCC -mtls-dialect=gnu -fPIC -c -o $t/a.o -xc - -mcmodel=large
 #include <stdio.h>
 

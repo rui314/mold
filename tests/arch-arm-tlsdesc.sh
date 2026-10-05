@@ -3,6 +3,7 @@
 
 is_musl && skip
 test_cflags -mthumb || skip
+command -v $GCC >& /dev/null || skip
 
 cat <<EOF > $t/a.c
 extern _Thread_local int foo;

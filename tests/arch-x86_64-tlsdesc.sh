@@ -2,6 +2,7 @@
 . $(dirname $0)/common.inc
 
 supports_tlsdesc || skip
+command -v $GCC >& /dev/null || skip
 
 cat <<EOF | $GCC -c -o $t/a.o -xassembler -
 .globl  get_foo

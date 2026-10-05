@@ -3,6 +3,7 @@
 
 # ppc64v1 reports a bad .opd relocation before reaching this error.
 [ $MACHINE = ppc64 ] && skip
+command -v $GXX >& /dev/null || skip
 
 # GCC puts all destructor variants in one COMDAT group, unlike Clang.
 cat <<'EOF' | $GXX -fPIC -c -o $t/a.o -xc++ -

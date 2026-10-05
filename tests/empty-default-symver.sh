@@ -19,4 +19,4 @@ $CC -B. -shared -o $t/c.so $t/a.o \
   -Wl,--version-script=$t/b.ver -Wl,--exclude-libs,ALL
 
 readelf --dyn-syms $t/c.so > $t/log
-grep -Eq ' FUNC +GLOBAL +DEFAULT +.*[0-9]+ foo$' $t/log
+grep -Eq ' FUNC +GLOBAL +DEFAULT +.*[0-9]+ foo( |$)' $t/log

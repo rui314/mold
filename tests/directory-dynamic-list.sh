@@ -18,6 +18,6 @@ echo '{ bar; };' > $t/dyn2
   --export-dynamic-symbol-list=$t/dyn2
 
 readelf --dyn-syms $t/dir/exe > $t/log
-grep ' foo$' $t/log
-grep ' bar$' $t/log
-not grep ' baz$' $t/log
+grep -E ' foo( |$)' $t/log
+grep -E ' bar( |$)' $t/log
+not grep -E ' baz( |$)' $t/log

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
+test_cflags -mtls-dialect=desc || skip
+
 # Depending on the symbol, mold relaxes a TLSDESC sequence into a local-exec
 # (LE) or initial-exec (IE) sequence. The four-instruction sequence is rewritten
 # in place: the ADRP and LDR become NOPs, and the ADD and BLR become the two
@@ -80,7 +82,7 @@ awk '
 # every relocation must be passed through unchanged rather than rewritten as if
 # it had been relaxed to LE/IE.
 #
-$CC -B. -o $t/reloc.o $t/b.o -r
+./mold -r -o $t/reloc.o $t/b.o
 $OBJDUMP -r $t/reloc.o > $t/reloc.objdump
 grep -Fw R_AARCH64_TLSDESC_ADR_PAGE21 $t/reloc.objdump
 grep -Fw R_AARCH64_TLSDESC_LD64_LO12 $t/reloc.objdump

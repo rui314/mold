@@ -31,17 +31,6 @@ if [ -z "$TRIPLE" ]; then
   OBJCOPY=objcopy
   STRIP=strip
   QEMU=
-elif [ "$TRIPLE" = powerpc64le-linux-gnu -a "$CPU" = power10 ]; then
-  MACHINE=ppc64le
-  TESTDIR=out/test/ppc64le-power10
-  CC="${TEST_CC:-$TRIPLE-gcc} -mcpu=power10"
-  CXX="${TEST_CXX:-$TRIPLE-g++} -mcpu=power10"
-  GCC="${TEST_GCC:-$TRIPLE-gcc} -mcpu=power10"
-  GXX="${TEST_GXX:-$TRIPLE-g++} -mcpu=power10"
-  OBJDUMP="$TRIPLE-objdump"
-  OBJCOPY="$TRIPLE-objcopy"
-  STRIP="$TRIPLE-strip"
-  QEMU="qemu-ppc64le -L /usr/$TRIPLE -cpu power10"
 else
   MACHINE=$(canonical_name $(echo $TRIPLE | sed 's/-.*//'))
   TESTDIR=out/test/$MACHINE
@@ -58,6 +47,15 @@ else
   sh4aeb) QEMU="qemu-sh4eb -L /usr/$TRIPLE" ;;
   *)      QEMU="qemu-$MACHINE -L /usr/$TRIPLE" ;;
   esac
+fi
+
+if [ "$CPU" = power10 ]; then
+  TESTDIR=out/test/ppc64le-power10
+  CC="$CC -mcpu=power10"
+  CXX="$CXX -mcpu=power10"
+  GCC="$GCC -mcpu=power10"
+  GXX="$GXX -mcpu=power10"
+  [ -z "$QEMU" ] || QEMU="$QEMU -cpu power10"
 fi
 
 testname=$(basename "$0" .sh)
@@ -120,7 +118,7 @@ supports_tlsdesc() {
 }
 
 on_qemu() {
-  [ "$QEMU" != '' ] || grep -w qemu /proc/cpuinfo >& /dev/null
+  [ "$QEMU" != '' ]
 }
 
 skip() {

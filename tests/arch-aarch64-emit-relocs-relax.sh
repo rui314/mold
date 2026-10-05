@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
+[ "$(uname)" = FreeBSD ] && skip
+
 # When mold relaxes an instruction sequence, the relocations attached to the
 # original instructions no longer match the relaxed code. With --emit-relocs,
 # mold must rewrite the emitted relocations so that their types describe the

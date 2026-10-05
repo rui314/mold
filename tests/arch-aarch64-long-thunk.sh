@@ -47,6 +47,11 @@ $QEMU $t/exe2 | grep 'main fn1 fn3 fn2 fn4'
 flags="$flags -fno-PIC -mcmodel=large"
 starts="-Wl,--section-start=.low=0x10000000,--section-start=.high=0x400000000"
 
+# Clang's large code model materializes addresses with absolute MOVZ/MOVK
+# sequences, which a position-independent executable cannot contain.
+echo 'int x; int main() { return x; }' |
+  $CC -B. -o /dev/null -xc - $flags -pie >& /dev/null || skip
+
 $CC -c -o $t/g.o $t/a.c $flags -DSEC1='".low"' -DSEC2='".high"'
 $CC -c -o $t/h.o $t/b.c $flags -DSEC1='".low"' -DSEC2='".high"'
 $CC -B. -o $t/exe3 $t/g.o $t/h.o -pie $starts
