@@ -1910,9 +1910,7 @@ fn mark_dsos_needed_by_dsos<E: Target>(ctx: &Context<E>) {
                 continue;
             };
             let dso = &ctx.dsos[target.index()];
-            if is_live[target.index()]
-                && !listed.contains(dso.soname)
-                && dso.base.mark_reachable()
+            if is_live[target.index()] && !listed.contains(dso.soname) && dso.base.mark_reachable()
             {
                 listed.extend(dso.dt_needed());
                 worklist.push(target);
