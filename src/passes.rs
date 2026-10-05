@@ -3183,7 +3183,9 @@ pub fn compute_address_significance<E: Target>(ctx: &mut Context<E>) {
             return;
         }
 
-        // Otherwise, infer address significance.
+        // Otherwise, infer address significance. Any reference to data may
+        // take its address, even if the data is in a file with the table,
+        // and so may a reference to a function other than a call.
         for isec in file.input_sections() {
             if !isec.is_alive() || !isec.is_alloc() {
                 continue;
@@ -3192,13 +3194,11 @@ pub fn compute_address_significance<E: Target>(ctx: &mut Context<E>) {
                 isec.set_address_taken();
             }
             for r in isec.rels(file) {
-                if !r.is_func_call::<E>() {
-                    let sym = &ctx_ref.symbols[file.base.symbols[r.r_sym() as usize]];
-                    if let Some(dst) = sym.input_section_ref(ctx_ref)
-                        && dst.sh_flags & SHF_EXECINSTR as u64 != 0
-                    {
-                        dst.set_address_taken();
-                    }
+                let sym = &ctx_ref.symbols[file.base.symbols[r.r_sym() as usize]];
+                if let Some(dst) = sym.input_section_ref(ctx_ref)
+                    && (dst.sh_flags & SHF_EXECINSTR as u64 == 0 || !r.is_func_call::<E>())
+                {
+                    dst.set_address_taken();
                 }
             }
         }
