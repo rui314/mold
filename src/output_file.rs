@@ -22,27 +22,60 @@ use memmap2::MmapOptions;
 use crate::error::strerror;
 use crate::fatal;
 
-/// The temporary file being written, removed on a fatal error.
+/// The temporary files being written, removed on a fatal error. At most two files
+/// are alive at once: the intermediate output file (in the temp dir if
+/// --temp-dir was given, otherwise directly next to the output file),
+/// and, while it is being copied across filesystems, the copy of it
+/// written next to the output file that is renamed into place.
 #[cfg(windows)]
-static TMPFILE: Mutex<Option<PathBuf>> = Mutex::new(None);
+static TMPFILE: Mutex<[Option<PathBuf>; 2]> = Mutex::new([None, None]);
 #[cfg(not(windows))]
-static TMPFILE: AtomicPtr<libc::c_char> = AtomicPtr::new(std::ptr::null_mut());
+static TMPFILE: [AtomicPtr<libc::c_char>; 2] =
+    [AtomicPtr::new(std::ptr::null_mut()), AtomicPtr::new(std::ptr::null_mut())];
 
+/// The raw OS error code reported by rename when the two paths are on
+/// different filesystems.
+#[cfg(not(windows))]
+const CROSS_FILESYSTEM: i32 = libc::EXDEV;
+#[cfg(windows)]
+const CROSS_FILESYSTEM: i32 = 17; // ERROR_NOT_SAME_DEVICE
+
+/// Converts a path into a NUL-terminated string that is leaked on
+/// purpose: published paths live until process exit, as a signal on
+/// another thread may still be using the old pointer when the
+/// registration changes.
+#[cfg(not(windows))]
+fn publish_path(path: &Path) -> *mut libc::c_char {
+    std::ffi::CString::new(path.as_os_str().as_encoded_bytes())
+        .expect("temporary path contains NUL")
+        .into_raw()
+}
+
+/// Registers the file to remove on a fatal error, replacing any
+/// previously registered files.
 fn set_tmpfile(path: Option<&Path>) {
     #[cfg(not(windows))]
     {
-        // Published paths live until process exit: a signal on another thread
-        // may still be using the old pointer when this registration changes.
-        let ptr = path.map_or(std::ptr::null_mut(), |path| {
-            std::ffi::CString::new(path.as_os_str().as_encoded_bytes())
-                .expect("temporary path contains NUL")
-                .into_raw()
-        });
-        TMPFILE.store(ptr, Ordering::Release);
+        TMPFILE[0].store(path.map_or(std::ptr::null_mut(), publish_path), Ordering::Release);
+        TMPFILE[1].store(std::ptr::null_mut(), Ordering::Release);
     }
     #[cfg(windows)]
     {
-        *TMPFILE.lock().unwrap() = path.map(Path::to_path_buf);
+        *TMPFILE.lock().unwrap() = [path.map(Path::to_path_buf), None];
+    }
+}
+
+/// Registers an additional file to remove on a fatal error, as two files
+/// are transiently alive while the output is being published across
+/// filesystems.
+fn add_tmpfile(path: &Path) {
+    #[cfg(not(windows))]
+    {
+        TMPFILE[1].store(publish_path(path), Ordering::Release);
+    }
+    #[cfg(windows)]
+    {
+        TMPFILE.lock().unwrap()[1] = Some(path.to_path_buf());
     }
 }
 
@@ -91,11 +124,12 @@ fn set_permissions(file: &File, perm: u32) -> io::Result<()> {
     }
 }
 
-/// Removes a partially written output file.
+/// Removes the partially written files registered with `set_tmpfile` and
+/// `add_tmpfile`.
 pub fn cleanup() {
     #[cfg(not(windows))]
-    {
-        let path = TMPFILE.swap(std::ptr::null_mut(), Ordering::AcqRel);
+    for slot in &TMPFILE {
+        let path = slot.swap(std::ptr::null_mut(), Ordering::AcqRel);
         if !path.is_null() {
             // SAFETY: path is a published, NUL-terminated string that is never
             // freed. This path is also called from a signal handler, so it must
@@ -105,8 +139,10 @@ pub fn cleanup() {
     }
     #[cfg(windows)]
     if let Ok(mut guard) = TMPFILE.lock() {
-        if let Some(path) = guard.take() {
-            let _ = std::fs::remove_file(path);
+        for slot in guard.iter_mut() {
+            if let Some(path) = slot.take() {
+                let _ = std::fs::remove_file(path);
+            }
         }
     }
 }
@@ -161,6 +197,39 @@ fn buffer_len(path: &Path, size: u64) -> usize {
     size as usize
 }
 
+/// Returns the path of the temporary file for the given output file,
+/// placed in the given directory, or next to the output file if none is
+/// given.
+fn temp_path(dir: Option<&Path>, path: &Path) -> PathBuf {
+    let dir = dir.unwrap_or_else(|| {
+        path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."))
+    });
+    let mut name = std::ffi::OsString::from(".");
+    name.push(path.file_name().unwrap_or_default());
+    name.push(format!(".{}", std::process::id()));
+    dir.join(name)
+}
+
+/// Publishes the output file from an intermediate file that is on a
+/// different filesystem than the output file. The intermediate file is
+/// copied to a temporary file next to the output file, which is then
+/// renamed into place, so that the output is still published atomically.
+fn publish_cross_device(path: &Path, tmp: &Path) {
+    let staging = temp_path(None, path);
+    // Register the staging file as well, so that a fatal error or a signal
+    // during the copy removes both the partially written file and the
+    // intermediate file.
+    add_tmpfile(&staging);
+    if let Err(e) = std::fs::copy(tmp, &staging) {
+        fatal!("cannot copy {} to {}: {}", tmp.display(), staging.display(), strerror(&e));
+    }
+    // The intermediate file has been fully copied and is no longer needed.
+    let _ = std::fs::remove_file(tmp);
+    std::fs::rename(&staging, path).unwrap_or_else(|e| {
+        fatal!("cannot rename {} to {}: {}", staging.display(), path.display(), strerror(&e))
+    });
+}
+
 fn map_file(file: &File, len: usize) -> io::Result<Option<MmapMut>> {
     if len == 0 {
         return Ok(None);
@@ -212,6 +281,9 @@ impl OutputFile {
     /// isn't modified underneath the kernel. Anything else — a device, a
     /// pipe, or standard output — is assembled in memory and written out
     /// at the end.
+    ///
+    /// The temporary file is created next to the output file, or in the
+    /// directory given by --temp-dir if set.
     pub fn open(
         args: &crate::cmdline::Args,
         size: u64,
@@ -219,14 +291,23 @@ impl OutputFile {
         overwrite_in_place: bool,
     ) -> Self {
         let path = crate::mapped_file::apply_chroot(&args.chroot, &args.output);
-        let mut output = Self::open_impl(&path, size, perm, overwrite_in_place);
+        let temp_dir =
+            args.temp_dir.as_ref().map(|dir| crate::mapped_file::apply_chroot(&args.chroot, dir));
+        let mut output =
+            Self::open_impl(&path, temp_dir.as_deref(), size, perm, overwrite_in_place);
         if let Some(filler) = args.filler {
             output.buf().fill(filler);
         }
         output
     }
 
-    fn open_impl(path: &Path, size: u64, perm: u32, overwrite_in_place: bool) -> Self {
+    fn open_impl(
+        path: &Path,
+        temp_dir: Option<&Path>,
+        size: u64,
+        perm: u32,
+        overwrite_in_place: bool,
+    ) -> Self {
         let len = buffer_len(path, size);
         let is_special =
             path == Path::new("-") || std::fs::metadata(path).is_ok_and(|m| !m.is_file());
@@ -239,14 +320,7 @@ impl OutputFile {
             };
         }
 
-        let dir = Path::new(path)
-            .parent()
-            .filter(|p| !p.as_os_str().is_empty())
-            .unwrap_or(Path::new("."));
-        let mut name = std::ffi::OsString::from(".");
-        name.push(path.file_name().unwrap_or_default());
-        name.push(format!(".{}", std::process::id()));
-        let tmp = dir.join(name);
+        let tmp = temp_path(temp_dir, path);
 
         // Reuse an existing file if exists and writable because on Linux,
         // writing to an existing file is much faster than creating a fresh
@@ -451,14 +525,23 @@ impl OutputFile {
                 let _ = std::fs::remove_file(&self.path);
                 std::mem::forget(old);
             }
-            std::fs::rename(&tmp, &self.path).unwrap_or_else(|e| {
-                fatal!(
+            // A file cannot be renamed across filesystems, so fall back to
+            // copying when the rename fails for that reason. The copy goes
+            // to a temporary file next to the output file, which is then
+            // renamed into place, so that the output is still published
+            // atomically.
+            match std::fs::rename(&tmp, &self.path) {
+                Ok(()) => {}
+                Err(e) if e.raw_os_error() == Some(CROSS_FILESYSTEM) => {
+                    publish_cross_device(&self.path, &tmp);
+                }
+                Err(e) => fatal!(
                     "cannot rename {} to {}: {}",
                     tmp.display(),
                     self.path.display(),
                     strerror(&e)
-                )
-            });
+                ),
+            }
             set_tmpfile(None);
         }
     }
@@ -550,11 +633,12 @@ mod tests {
                 }
             }
         }
-        // Cover empty regular files, remapping on growth, and the locked
-        // staging state used by separate debug output. Keep this in the same
-        // test because output publication uses process-global state.
+        // Cover empty regular files, remapping on growth, the locked staging
+        // state used by separate debug output, --temp-dir, and
+        // cross-filesystem publication. Keep this in the same test because
+        // output publication uses process-global state.
         for initial in [0, 8] {
-            let mut file = OutputFile::open_impl(&path, initial, 0o600, true);
+            let mut file = OutputFile::open_impl(&path, None, initial, 0o600, true);
             file.buf().fill(7);
             file.extend(65536);
             assert!(file.buf()[..initial as usize].iter().all(|&b| b == 7));
@@ -571,5 +655,34 @@ mod tests {
         file.close();
         assert_eq!(std::fs::read(&path).unwrap(), b"test");
         std::fs::remove_file(path).unwrap();
+
+        // --temp-dir moves the intermediate file out of the output file's
+        // directory.
+        let out = std::env::temp_dir().join(format!("mold-temp-out-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("mold-temp-dir-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let args = crate::cmdline::Args {
+            output: out.clone(),
+            temp_dir: Some(dir.clone()),
+            ..Default::default()
+        };
+        let mut file = OutputFile::open(&args, 4096, 0o600, false);
+        file.buf().fill(1);
+        file.close();
+        assert_eq!(std::fs::read(&out).unwrap(), vec![1; 4096]);
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
+        std::fs::remove_file(out).unwrap();
+        std::fs::remove_dir(dir).unwrap();
+
+        // Publishing an intermediate file across a filesystem boundary
+        // copies it to a staging file next to the output file.
+        let tmp = std::env::temp_dir().join(format!("mold-cross-tmp-{}", std::process::id()));
+        let out = std::env::temp_dir().join(format!("mold-cross-out-{}", std::process::id()));
+        std::fs::write(&tmp, [2u8; 8192]).unwrap();
+        publish_cross_device(&out, &tmp);
+        assert_eq!(std::fs::read(&out).unwrap(), vec![2; 8192]);
+        assert!(!tmp.exists());
+        set_tmpfile(None);
+        std::fs::remove_file(out).unwrap();
     }
 }

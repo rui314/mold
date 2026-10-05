@@ -438,6 +438,9 @@ Do not link against shared libraries\.
 \fB\-\-sysroot\fR=\fIdir\fR
 Set target system root directory to \fIdir\fR\.
 .TP
+\fB\-\-temp\-dir\fR=\fIdir\fR
+Write the intermediate output file to \fIdir\fR instead of next to the output file, and move it to the final location once linking is complete\. This is useful if the directory containing the output file is much slower than other storage available to the system\. The setting can also be specified with the \fBMOLD_TEMP_DIR\fR environment variable\.
+.TP
 \fB\-\-trace\fR
 Print name of each input file\.
 .TP

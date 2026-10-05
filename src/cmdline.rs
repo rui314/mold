@@ -168,6 +168,7 @@ Options:
     --end-lib                 End the effect of --start-lib
   --stats                     Print input statistics
   --sysroot DIR               Set the target system root directory
+  --temp-dir=DIR              Write the intermediate output file to DIR
   --thread-count COUNT, --threads=COUNT
                               Use COUNT number of threads
   --threads                   Use multiple threads (default)
@@ -531,6 +532,9 @@ pub struct Args {
     pub separate_debug_file: PathBuf,
     pub soname: OsString,
     pub sysroot: PathBuf,
+    /// A directory to write the intermediate output file to. If unset, the
+    /// file is written next to the output file.
+    pub temp_dir: Option<PathBuf>,
     pub emulation: &'static str,
     pub section_align: HashMap<Vec<u8>, u64>,
     pub section_start: HashMap<Vec<u8>, u64>,
@@ -667,6 +671,7 @@ impl Default for Args {
             separate_debug_file: PathBuf::new(),
             soname: OsString::new(),
             sysroot: PathBuf::new(),
+            temp_dir: None,
             emulation: "",
             section_align: HashMap::new(),
             section_start: HashMap::new(),
@@ -1403,6 +1408,8 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             a.library_paths.push(PathBuf::from(raw_arg));
         } else if read_arg!("sysroot", true) {
             a.sysroot = PathBuf::from(raw_arg);
+        } else if read_arg!("temp-dir", true) {
+            a.temp_dir = Some(PathBuf::from(raw_arg));
         } else if read_arg!("unique", true) {
             if !unique.add(raw_arg.as_encoded_bytes(), 1) {
                 fatal!("-unique: invalid glob pattern: {}", raw_arg.to_string_lossy());
@@ -2067,6 +2074,11 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
 
     if std::env::var_os("MOLD_REPRO").is_some_and(|v| !v.is_empty()) {
         a.repro = true;
+    }
+
+    // --temp-dir may also be set with the MOLD_TEMP_DIR environment variable.
+    if a.temp_dir.is_none() {
+        a.temp_dir = std::env::var_os("MOLD_TEMP_DIR").filter(|v| !v.is_empty()).map(PathBuf::from);
     }
 
     if a.default_symver {

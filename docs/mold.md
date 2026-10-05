@@ -778,6 +778,13 @@ point symbol in a script.
 * `--sysroot`=_dir_:
   Set target system root directory to _dir_.
 
+* `--temp-dir`=_dir_:
+  Write the intermediate output file to _dir_ instead of next to the
+  output file, and move it to the final location once linking is complete.
+  This is useful if the directory containing the output file is much
+  slower than other storage available to the system. The setting can also
+  be specified with the `MOLD_TEMP_DIR` environment variable.
+
 * `--trace`:
   Print name of each input file.
 
