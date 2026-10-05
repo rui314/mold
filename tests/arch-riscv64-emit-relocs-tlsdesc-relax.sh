@@ -7,10 +7,8 @@
 # LO12 relocations from finding their paired TLSDESC_HI20.
 
 # GNU as may not support TLSDESC for RISC-V, so we use clang instead.
-clang_args=()
-[ "$TRIPLE" = "" ] || clang_args+=(--target=$TRIPLE)
-echo 'auipc a0, %tlsdesc_hi(foo)' | clang "${clang_args[@]}" -c -o /dev/null -xassembler - ||
-  skip
+echo 'auipc a0, %tlsdesc_hi(foo)' |
+  clang ${TRIPLE:+--target=$TRIPLE} -c -o /dev/null -xassembler - || skip
 
 cat <<'EOF' | $CC -o $t/a.o -c -xc - -fPIC
 _Thread_local char foo[4] = "foo";
@@ -18,7 +16,7 @@ _Thread_local char padding[100000] = "pad";
 _Thread_local char bar[4] = "bar";
 EOF
 
-cat <<'EOF' | clang "${clang_args[@]}" -o $t/b.o -c -xassembler -
+cat <<'EOF' | clang ${TRIPLE:+--target=$TRIPLE} -o $t/b.o -c -xassembler -
 .globl get_foo, get_bar
 get_foo:
 .Ltlsdesc_hi0:

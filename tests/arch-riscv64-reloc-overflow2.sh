@@ -2,10 +2,7 @@
 . $(dirname $0)/common.inc
 
 # GNU as doesn't support R_RISCV_PLT32 or R_RISCV_GOT32_PCREL.
-clang_args=()
-[ "$TRIPLE" = "" ] || clang_args+=(--target=$TRIPLE)
-
-cat <<EOF | clang "${clang_args[@]}" -o $t/a.o -c -x assembler - || skip
+cat <<EOF | clang ${TRIPLE:+--target=$TRIPLE} -o $t/a.o -c -x assembler - || skip
 .section .foo, "aw"
 .reloc ., R_RISCV_32_PCREL, bar
 .reloc .+4, R_RISCV_PLT32, bar

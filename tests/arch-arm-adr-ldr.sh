@@ -58,10 +58,8 @@ bar:
   .word 12
 EOF
 
-clang_args=()
-[ "$TRIPLE" = "" ] || clang_args+=(--target=$TRIPLE)
-clang "${clang_args[@]}" -c -o $t/a.o $t/a.s
-clang "${clang_args[@]}" -c -o $t/b.o $t/b.s
+clang ${TRIPLE:+--target=$TRIPLE} -c -o $t/a.o $t/a.s
+clang ${TRIPLE:+--target=$TRIPLE} -c -o $t/b.o $t/b.s
 
 cat <<EOF | $CC -c -o $t/c.o -xc -
 #include <stdio.h>

@@ -120,9 +120,7 @@ EOF
 
 # GNU as cannot assemble the 128-bit load/store form, so use clang for the
 # assembly.
-clang_args=()
-[ "$TRIPLE" = "" ] || clang_args+=(--target=$TRIPLE)
-clang "${clang_args[@]}" -c -o $t/a.o $t/a.s
+clang ${TRIPLE:+--target=$TRIPLE} -c -o $t/a.o $t/a.s
 $CC -c -o $t/main.o $t/main.c
 
 # GNU objdump cannot read R_AARCH64_TLSLE_LDST128_TPREL_LO12_NC, so use readelf
