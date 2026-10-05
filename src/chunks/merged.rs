@@ -14,6 +14,7 @@ use std::sync::atomic::Ordering;
 use bstr::BStr;
 use rayon::prelude::*;
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::cmdline::Args;
 use crate::context::Context;
@@ -22,7 +23,6 @@ use crate::input_files::display_file;
 use crate::input_sections::{MergeInfo, SectionFragment, SectionRef};
 use crate::out;
 use crate::output_file::split_at_offsets;
-use crate::target::Target;
 use crate::util::align_to;
 use crate::util::concurrent_map::{ConcurrentMap, EntryId, FrozenMap, NUM_SHARDS};
 use crate::util::hyperloglog::HyperLogLog;

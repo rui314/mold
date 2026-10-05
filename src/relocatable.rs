@@ -32,6 +32,7 @@
 
 use std::collections::HashMap;
 
+use crate::arch::Target;
 use crate::chunks::comdat_group::ComdatGroupSection;
 use crate::chunks::note_property::NotePropertySection;
 use crate::chunks::output_section::{self, OutputSection};
@@ -43,7 +44,6 @@ use crate::input_files::FileId;
 use crate::input_sections::InputSectionId;
 use crate::output_file::OutputFile;
 use crate::passes;
-use crate::target::Target;
 use crate::util::align_to;
 
 /// An output section's sh_link can refer to only one section, so

@@ -1,5 +1,5 @@
 [package]
-name = "mold-target-ppc32"
+name = "mold-arch-ppc32"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

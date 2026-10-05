@@ -4,10 +4,10 @@ use std::collections::HashMap;
 
 use bstr::BStr;
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
-use crate::target::Target;
 use crate::util::write_cstr;
 
 // .shstrtab contains section names, such as ".text" or ".data". Just like

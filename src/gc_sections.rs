@@ -6,12 +6,12 @@ use std::collections::HashMap;
 
 use rayon::prelude::*;
 
+use crate::arch::{Family, Target};
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{FileId, ObjectFile};
 use crate::input_sections::{InputSection, SectionRef};
 use crate::symbol::{OriginValue, SymbolId, is_c_identifier};
-use crate::target::{Family, Target};
 
 fn should_keep<E: Target>(file: &ObjectFile<E>, isec: &InputSection<E>) -> bool {
     let ty = isec.sh_type(file);

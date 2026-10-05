@@ -9,6 +9,7 @@ use hashbrown::HashMap;
 
 use rayon::prelude::*;
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::chunks::eh_frame_hdr::EhFrameHdrSection;
 use crate::context::Context;
@@ -17,7 +18,6 @@ use crate::input_files::ObjectFile;
 use crate::input_sections::CieRecord;
 use crate::output_file::split_at_offsets;
 use crate::symbol::Symbol;
-use crate::target::Target;
 use crate::util::is_int;
 use crate::util::siphash::SipHash13_128;
 use crate::{error, fatal};

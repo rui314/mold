@@ -1,5 +1,6 @@
 //! `.gnu.version_r`, required symbol versions.
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::chunks::dynstr::DynstrSection;
 use crate::chunks::hash::elf_hash;
@@ -7,7 +8,6 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{DsoId, FileId};
 use crate::symbol::SymbolId;
-use crate::target::Target;
 
 // .gnu.version_r contains information to refer to shared libraries and
 // their symbol versions.

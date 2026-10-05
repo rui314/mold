@@ -1,5 +1,5 @@
 [package]
-name = "mold-target-riscv32"
+name = "mold-arch-riscv32"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

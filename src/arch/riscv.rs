@@ -20,6 +20,7 @@
 // Binary literals are grouped by instruction field.
 #![allow(clippy::unusual_byte_groupings)]
 
+use crate::arch::{Class, ElfClass, Family, Target};
 use crate::chunks::eh_frame;
 use crate::context::Context;
 use crate::elf::*;
@@ -30,7 +31,6 @@ use crate::input_sections::{
 };
 use crate::shrink_sections::compute_distance;
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
-use crate::target::{Class, ElfClass, Family, Target};
 use crate::util::endian::{read_ul16, read_ul32, write_ul16, write_ul32};
 use crate::util::{align_to, bit, bits, encode_uleb, is_int, overwrite_uleb, read_uleb};
 use crate::{error, fatal};

@@ -2,13 +2,13 @@
 
 use rayon::prelude::*;
 
+use crate::arch::{Family, Target};
 use crate::chunks::{self, ChunkHeader, ChunkId, strtab};
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{SymtabBlock, SymtabEntries};
 use crate::input_sections::{InputSection, r_delta};
 use crate::symbol::{AddrFlags, OriginValue, Symbol};
-use crate::target::{Family, Target};
 
 // .symtab contains non-dynamic symbols. The section is not needed at
 // runtime and can be stripped from an ELF file without affecting the

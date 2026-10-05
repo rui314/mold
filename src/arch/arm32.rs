@@ -46,6 +46,7 @@
 
 use rayon::prelude::*;
 
+use crate::arch::{Family, Target, ThunkLayout};
 use crate::chunks::eh_frame;
 use crate::chunks::output_section::for_each_member;
 use crate::context::Context;
@@ -53,7 +54,6 @@ use crate::elf::*;
 use crate::input_sections::NonAllocReloc;
 use crate::input_sections::{InputSection, check_tlsle, scan_absrel, scan_pcrel, scan_tlsdesc};
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
-use crate::target::{Family, Target, ThunkLayout};
 use crate::thunks::Thunk;
 use crate::util::endian::write_ul32;
 use crate::util::{align_to, bit, bits, is_int, sign_extend};

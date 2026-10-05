@@ -2,11 +2,11 @@
 //! reconstructed: live FDEs are gathered, their FREs concatenated, and the
 //! FDE index sorted by address.
 
+use crate::arch::{Family, Target};
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::ObjId;
-use crate::target::{Family, Target};
 
 // .sframe is a compact stack-unwinding format. Like .eh_frame, the linker
 // has to parse and reconstruct it: the output section is a single sorted

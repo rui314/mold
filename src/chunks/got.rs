@@ -2,12 +2,12 @@
 
 use rayon::prelude::*;
 
+use crate::arch::{Family, Target};
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::SymtabBlock;
 use crate::symbol::{AddrFlags, SymbolId};
-use crate::target::{Family, Target};
 
 // .got is a linker-synthesized constant pool whose entry size is the same
 // as the pointer size. It is used to store runtime addresses of global

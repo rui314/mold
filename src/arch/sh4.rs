@@ -61,13 +61,13 @@
 
 use std::sync::atomic::Ordering;
 
+use crate::arch::{Family, Target};
 use crate::chunks::eh_frame;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::NonAllocReloc;
 use crate::input_sections::{InputSection, check_tlsle, scan_pcrel};
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
-use crate::target::{Family, Target};
 use crate::{error, fatal};
 
 #[derive(Clone, Copy, Debug, Default)]

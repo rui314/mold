@@ -1,10 +1,10 @@
 //! Section groups in relocatable outputs.
 
+use crate::arch::Target;
 use crate::chunks::{ChunkHeader, ChunkId};
 use crate::context::Context;
 use crate::elf::*;
 use crate::symbol::SymbolId;
-use crate::target::Target;
 
 // ComdatGroupSection represents a section group for an output file.
 // This is used only for the relocatable output (i.e. the `-r` output).

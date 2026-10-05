@@ -1,9 +1,9 @@
 //! `.eh_frame_hdr`, the lookup table for exception-handling records.
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
-use crate::target::Target;
 
 // .eh_frame_hdr is a lookup table for .eh_frame. Entries in .eh_frame_hdr
 // are sorted by their corresponding function addresses, so that the

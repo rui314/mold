@@ -20,13 +20,13 @@
 //! Instructions are little-endian even on big-endian targets, where only
 //! data is byte-swapped.
 
+use crate::arch::{Family, Target, ThunkLayout};
 use crate::chunks::eh_frame;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::NonAllocReloc;
 use crate::input_sections::{InputSection, check_tlsle, scan_absrel, scan_pcrel, scan_tlsdesc};
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
-use crate::target::{Family, Target, ThunkLayout};
 use crate::thunks::Thunk;
 use crate::util::endian::{read_ul32, write_ul32};
 use crate::util::{bits, is_int};

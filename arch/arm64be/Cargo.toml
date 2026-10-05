@@ -1,5 +1,5 @@
 [package]
-name = "mold-target-arm64be"
+name = "mold-arch-arm64be"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

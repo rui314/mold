@@ -70,13 +70,13 @@ use std::sync::atomic::Ordering;
 use portable_atomic::AtomicU64;
 use rayon::prelude::*;
 
+use crate::arch::Target;
 use crate::cmdline::ReportOutput;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{ObjId, ObjectFile};
 use crate::input_sections::{InputSection, SectionRef};
 use crate::symbol::{OriginValue, Symbol, SymbolId, is_c_identifier};
-use crate::target::Target;
 use crate::util::perf::Counter;
 use crate::util::siphash::SipHash13_128;
 

@@ -1,5 +1,5 @@
 [package]
-name = "mold-target-x86_64"
+name = "mold-arch-x86_64"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

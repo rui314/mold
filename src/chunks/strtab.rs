@@ -1,9 +1,9 @@
 //! `.strtab`, names of non-dynamic symbols.
 
+use crate::arch::{Family, Target};
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
-use crate::target::{Family, Target};
 
 // .strtab is referenced by .symtab and contains symbol names. Note that
 // .strtab is not needed at runtime; one can remove the section from an

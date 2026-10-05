@@ -1,8 +1,8 @@
 //! Padding at the end of a RELRO segment.
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::elf::*;
-use crate::target::Target;
 
 // PT_GNU_RELRO works on page granularity. We want to align its end to
 // a page boundary. We append this section at end of a segment so that

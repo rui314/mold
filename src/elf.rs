@@ -21,7 +21,7 @@ use std::marker::PhantomData;
 
 pub use crate::elf_consts::*;
 
-use crate::target::{I386, Sparc64, Target, X86_64};
+use crate::arch::{I386, Sparc64, Target, X86_64};
 
 // ELF types
 /// An integer stored in the target's byte order. The type carries the

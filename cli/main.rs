@@ -15,45 +15,45 @@ type LinkFn = fn(mold::driver::Cmdline) -> mold::driver::LinkResult;
 // enabled target and switch to the matching function if the inputs differ.
 const TARGETS: &[(&str, LinkFn)] = &[
     #[cfg(feature = "x86_64")]
-    ("x86_64", mold_target_x86_64::link),
+    ("x86_64", mold_arch_x86_64::link),
     #[cfg(feature = "i386")]
-    ("i386", mold_target_i386::link),
+    ("i386", mold_arch_i386::link),
     #[cfg(feature = "arm32")]
-    ("arm32", mold_target_arm32::link),
+    ("arm32", mold_arch_arm32::link),
     #[cfg(feature = "arm32be")]
-    ("arm32be", mold_target_arm32be::link),
+    ("arm32be", mold_arch_arm32be::link),
     #[cfg(feature = "arm64")]
-    ("arm64", mold_target_arm64::link),
+    ("arm64", mold_arch_arm64::link),
     #[cfg(feature = "arm64be")]
-    ("arm64be", mold_target_arm64be::link),
+    ("arm64be", mold_arch_arm64be::link),
     #[cfg(feature = "riscv64")]
-    ("riscv64", mold_target_riscv64::link),
+    ("riscv64", mold_arch_riscv64::link),
     #[cfg(feature = "riscv64be")]
-    ("riscv64be", mold_target_riscv64be::link),
+    ("riscv64be", mold_arch_riscv64be::link),
     #[cfg(feature = "riscv32")]
-    ("riscv32", mold_target_riscv32::link),
+    ("riscv32", mold_arch_riscv32::link),
     #[cfg(feature = "riscv32be")]
-    ("riscv32be", mold_target_riscv32be::link),
+    ("riscv32be", mold_arch_riscv32be::link),
     #[cfg(feature = "ppc64v2")]
-    ("ppc64v2", mold_target_ppc64v2::link),
+    ("ppc64v2", mold_arch_ppc64v2::link),
     #[cfg(feature = "ppc32")]
-    ("ppc32", mold_target_ppc32::link),
+    ("ppc32", mold_arch_ppc32::link),
     #[cfg(feature = "ppc64v1")]
-    ("ppc64v1", mold_target_ppc64v1::link),
+    ("ppc64v1", mold_arch_ppc64v1::link),
     #[cfg(feature = "s390x")]
-    ("s390x", mold_target_s390x::link),
+    ("s390x", mold_arch_s390x::link),
     #[cfg(feature = "sparc64")]
-    ("sparc64", mold_target_sparc64::link),
+    ("sparc64", mold_arch_sparc64::link),
     #[cfg(feature = "m68k")]
-    ("m68k", mold_target_m68k::link),
+    ("m68k", mold_arch_m68k::link),
     #[cfg(feature = "sh4")]
-    ("sh4", mold_target_sh4::link),
+    ("sh4", mold_arch_sh4::link),
     #[cfg(feature = "sh4be")]
-    ("sh4be", mold_target_sh4be::link),
+    ("sh4be", mold_arch_sh4be::link),
     #[cfg(feature = "loongarch64")]
-    ("loongarch64", mold_target_loongarch64::link),
+    ("loongarch64", mold_arch_loongarch64::link),
     #[cfg(feature = "loongarch32")]
-    ("loongarch32", mold_target_loongarch32::link),
+    ("loongarch32", mold_arch_loongarch32::link),
 ];
 
 fn link_for_target(target: &str, cmdline: mold::driver::Cmdline) -> mold::driver::LinkResult {

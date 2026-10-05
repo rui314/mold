@@ -1,9 +1,9 @@
 //! `.relr.dyn`, packed base relocations.
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
-use crate::target::Target;
 
 // .relr.dyn is a relatively new section to contain base relocation
 // information.

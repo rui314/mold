@@ -23,6 +23,7 @@
 
 use rayon::prelude::*;
 
+use crate::arch::{Family, Target};
 use crate::chunks::output_section::OutputSection;
 use crate::chunks::{ChunkId, OutputSectionId};
 use crate::context::Context;
@@ -30,7 +31,6 @@ use crate::elf::*;
 use crate::error;
 use crate::input_sections::InputSection;
 use crate::symbol::{AddrFlags, Symbol, SymbolId};
-use crate::target::{Family, Target};
 use crate::util::align_to;
 
 /// A block of branch stubs placed between input sections.

@@ -1,11 +1,11 @@
 //! `.plt.got`, PLT stubs for symbols already resolved through the GOT.
 
+use crate::arch::{Family, Target};
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::SymtabBlock;
 use crate::symbol::SymbolId;
-use crate::target::{Family, Target};
 
 // .plt.got is similar to .plt but doesn't support lazy symbol resolution.
 // If we have the same symbol already in .got, resolving the same symbol

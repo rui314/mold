@@ -10,6 +10,7 @@ use std::sync::{Mutex, RwLock};
 use bstr::BStr;
 use rayon::prelude::*;
 
+use crate::arch::{Family, Target};
 use crate::chunks::build_id::{self, BuildIdSection};
 use crate::chunks::eh_frame_hdr::EhFrameHdrSection;
 use crate::chunks::gnu_debuglink::{self, GnuDebuglinkSection};
@@ -38,7 +39,6 @@ use crate::symbol::{
     Bins, NEEDS_CANONICAL, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_PPC_OPD, NEEDS_TLSDESC,
     NEEDS_TLSGD, Symbol, SymbolId, is_c_identifier,
 };
-use crate::target::{Family, Target};
 use crate::util::glob::GlobBuilder;
 use crate::util::perf::Counter;
 use crate::util::{align_to, leak_bytes};

@@ -6,6 +6,7 @@ use std::fmt::{LowerHex, Write};
 
 use rayon::prelude::*;
 
+use crate::arch::Target;
 use crate::chunks::ChunkId;
 use crate::cmdline::ReportOutput;
 use crate::context::Context;
@@ -13,7 +14,6 @@ use crate::elf::*;
 use crate::input_files::FileId;
 use crate::input_sections::InputSectionId;
 use crate::symbol::SymbolId;
-use crate::target::Target;
 
 // An address in a map file. Zero is written as "0" instead of "0x0".
 struct Addr(u64);

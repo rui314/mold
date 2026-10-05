@@ -18,12 +18,12 @@ use bstr::BStr;
 use hashbrown::{Equivalent, HashMap};
 use rayon::prelude::*;
 
+use crate::arch::Target;
 use crate::context::Context;
 use crate::elf::*;
 use crate::error::demangle_enabled;
 use crate::input_files::FileId;
 use crate::input_sections::{FragmentRef, InputSection, InputSectionId};
-use crate::target::Target;
 use crate::util::SyncUnsafeCell;
 use crate::util::demangle::{demangle_cpp, demangle_rust};
 use crate::util::hyperloglog::HyperLogLog;
@@ -1056,9 +1056,7 @@ impl Symbol {
             return chunk.hdr.shdr.sh_addr.get() + self.value;
         }
 
-        if E::FAMILY == crate::target::Family::Ppc64V1
-            && !flags.no_opd
-            && self.has_opd(&ctx.symbols)
+        if E::FAMILY == crate::arch::Family::Ppc64V1 && !flags.no_opd && self.has_opd(&ctx.symbols)
         {
             return self.opd_addr(ctx);
         }

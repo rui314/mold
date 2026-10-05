@@ -35,6 +35,7 @@ use std::sync::{Mutex, OnceLock};
 
 use rayon::prelude::*;
 
+use crate::arch::Target;
 use crate::cmdline::VERSION;
 use crate::context::Context;
 use crate::elf::*;
@@ -42,7 +43,6 @@ use crate::error::strerror;
 use crate::input_files::{FileId, ObjectFile, ObjectOrigin};
 use crate::mapped_file::{MappedFile, must_open_file};
 use crate::symbol::SymbolId;
-use crate::target::Target;
 use crate::util::leak_bytes;
 use crate::{fatal, out, warn};
 

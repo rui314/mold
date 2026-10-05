@@ -14,10 +14,10 @@
 
 use rayon::prelude::*;
 
+use crate::arch::Target;
 use crate::chunks::{ChunkHeader, ChunkId, OutputSectionId, output_section};
 use crate::context::Context;
 use crate::elf::*;
-use crate::target::Target;
 use crate::util::sign_extend;
 
 const CANTUNWIND: u32 = 1;

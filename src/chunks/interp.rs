@@ -1,9 +1,9 @@
 //! `.interp`, the dynamic linker's pathname.
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
-use crate::target::Target;
 use crate::util::write_cstr;
 
 // .interp contains the pathname of a dynamic linker. Dynamically-linked

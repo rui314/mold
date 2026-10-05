@@ -1,8 +1,8 @@
 //! `.symtab_shndx`, extended section indices for the symbol table.
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::elf::*;
-use crate::target::Target;
 
 // .symtab_shndx is a parallel table for .symtab to contain section
 // indices for symbols.

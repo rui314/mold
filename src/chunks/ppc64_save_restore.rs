@@ -1,9 +1,9 @@
 //! PowerPC64 register save and restore functions.
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
-use crate::target::Target;
 
 // GCC may emit references to the following functions in function prologue
 // and epilogue if -Os is specified. For some reason, these functions are

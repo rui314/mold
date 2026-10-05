@@ -1,9 +1,9 @@
 //! `.gnu.version`, symbol version indices.
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
-use crate::target::Target;
 
 // .gnu.version section contains version indices as a parallel array for
 // .dynsym. If a dynamic symbol is a defined one, its version information

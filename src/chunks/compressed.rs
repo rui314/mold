@@ -1,10 +1,10 @@
 //! Compressed output sections.
 
+use crate::arch::Target;
 use crate::chunks::{self, ChunkHeader, ChunkId};
 use crate::cmdline::DebugCompression;
 use crate::context::Context;
 use crate::elf::*;
-use crate::target::Target;
 use crate::util::compress::Compressor;
 
 // Debug sections can be compressed with zlib or zstd to reduce the

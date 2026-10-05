@@ -8,12 +8,12 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::arch::Target;
 use crate::cmdline::{DefsymValue, ReaderContext};
 use crate::context::Context;
 use crate::elf::*;
 use crate::mapped_file::{MappedFile, apply_chroot, must_open_file};
 use crate::reader;
-use crate::target::Target;
 use crate::util;
 use crate::{fatal, warn};
 

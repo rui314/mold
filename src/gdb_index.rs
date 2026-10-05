@@ -70,13 +70,13 @@
 
 use rayon::prelude::*;
 
+use crate::arch::Target;
 use crate::chunks::ChunkId;
 use crate::context::Context;
 use crate::elf::*;
 use crate::fatal;
 use crate::input_files::{ObjectFile, display_file};
 use crate::output_file::{OutputFile, split_at_offsets};
-use crate::target::Target;
 use std::borrow::Cow;
 use std::path::Path;
 use std::sync::atomic::{AtomicU32, Ordering};

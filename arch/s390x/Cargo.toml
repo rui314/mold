@@ -1,5 +1,5 @@
 [package]
-name = "mold-target-s390x"
+name = "mold-arch-s390x"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

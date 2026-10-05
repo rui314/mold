@@ -1,9 +1,9 @@
 //! `.rel.plt` and `.rela.plt`, relocations for PLT entries.
 
+use crate::arch::Target;
 use crate::chunks::{ChunkHeader, plt};
 use crate::context::Context;
 use crate::elf::*;
-use crate::target::Target;
 
 // .rel.plt contains relocation information for .plt.
 pub fn new_header<E: Target>() -> ChunkHeader<E> {
@@ -51,7 +51,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
                 // (target - call) there (see target/sparc64.rs).
                 let call = sym.plt_addr(ctx) + 4;
                 let ptr = ctx.plt.hdr.shdr.sh_addr.get()
-                    + crate::target::sparc64::plt_ptr_offset(ctx.plt.symbols.len(), idx);
+                    + crate::arch::sparc64::plt_ptr_offset(ctx.plt.symbols.len(), idx);
                 ElfRel::<E>::new(
                     ptr,
                     E::R_JUMP_SLOT,

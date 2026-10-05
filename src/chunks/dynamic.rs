@@ -1,11 +1,11 @@
 //! `.dynamic`, information consumed by the dynamic linker.
 
+use crate::arch::{Family, Target};
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::FileId;
 use crate::symbol::SymbolId;
-use crate::target::{Family, Target};
 
 // .dynamic contains various information for dynamically-linked ELF files.
 // At runtime, the dynamic linker reads the information to work

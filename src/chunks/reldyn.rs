@@ -2,11 +2,11 @@
 
 use rayon::prelude::*;
 
+use crate::arch::Target;
 use crate::chunks::relrdyn::encode_relr;
 use crate::chunks::{self, ChunkHeader};
 use crate::context::Context;
 use crate::elf::*;
-use crate::target::Target;
 use crate::util::encode_sleb;
 
 // .rel.dyn contains relocation infromation for other sections.

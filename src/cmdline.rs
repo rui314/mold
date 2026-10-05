@@ -8,10 +8,10 @@ use std::path::{Path, PathBuf};
 
 use bstr::{ByteSlice, ByteVec};
 
+use crate::arch::{Family, emulation_to_target};
 use crate::elf::*;
 use crate::error::strerror;
 use crate::mapped_file::MappedFile;
-use crate::target::{Family, emulation_to_target};
 use crate::util::glob::{Glob, GlobBuilder};
 use crate::util::perf::Counter;
 use crate::util::{self, align_down};

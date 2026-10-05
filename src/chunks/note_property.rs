@@ -2,10 +2,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
-use crate::target::Target;
 
 // .note.gnu.property section contains an additional runtime information
 // about ISA variant.

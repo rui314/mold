@@ -2,12 +2,12 @@
 
 use rayon::prelude::*;
 
+use crate::arch::{Family, Target};
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::SymtabBlock;
 use crate::symbol::SymbolId;
-use crate::target::{Family, Target};
 
 // .plt contains linker-synthesized stub code that acts as if they are
 // functions. They are in fact immediately branches to real function entry

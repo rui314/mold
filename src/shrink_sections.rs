@@ -57,13 +57,13 @@
 
 use rayon::prelude::*;
 
+use crate::arch::Target;
 use crate::chunks::{self, ChunkId};
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{FileId, SymbolEditor};
 use crate::input_sections::{InputSection, RelocDelta, r_delta};
 use crate::symbol::Symbol;
-use crate::target::Target;
 
 /// Returns the distance between a relocated place and a symbol.
 pub fn compute_distance<E: Target>(

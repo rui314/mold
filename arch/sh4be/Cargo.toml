@@ -1,5 +1,5 @@
 [package]
-name = "mold-target-sh4be"
+name = "mold-arch-sh4be"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -2,11 +2,11 @@
 
 use rayon::prelude::*;
 
+use crate::arch::{Family, Target};
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::ObjectFile;
-use crate::target::{Family, Target};
 
 // EhFrameRelocSection contains relocation records for .eh_frame. It is used
 // only for relocatable outputs (an .o file rather than an executable or .so).

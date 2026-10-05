@@ -1,5 +1,5 @@
 [package]
-name = "mold-target-loongarch64"
+name = "mold-arch-loongarch64"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

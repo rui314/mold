@@ -7,12 +7,12 @@ use std::sync::Arc;
 
 use rayon::prelude::*;
 
+use crate::arch::{Family, Target};
 use crate::chunks::{self, ChunkId};
 use crate::cmdline::{self, Args, TargetTraits};
 use crate::context::Context;
 use crate::elf::*;
 use crate::output_file::{OutputFile, split_ranges};
-use crate::target::{Family, Target};
 use crate::util::parallel::Background;
 use crate::{error, fatal, passes};
 

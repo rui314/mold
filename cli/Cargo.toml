@@ -18,26 +18,26 @@ harness = false
 [dependencies]
 mimalloc = { git = "https://github.com/rui314/mimalloc_rust", rev = "3979460494f1cd1e7f936cb8e10f41e927c9f698" }
 mold.workspace = true
-mold-target-x86_64 = { path = "../arch/x86_64", optional = true }
-mold-target-i386 = { path = "../arch/i386", optional = true }
-mold-target-arm32 = { path = "../arch/arm32", optional = true }
-mold-target-arm32be = { path = "../arch/arm32be", optional = true }
-mold-target-arm64 = { path = "../arch/arm64", optional = true }
-mold-target-arm64be = { path = "../arch/arm64be", optional = true }
-mold-target-riscv64 = { path = "../arch/riscv64", optional = true }
-mold-target-riscv64be = { path = "../arch/riscv64be", optional = true }
-mold-target-riscv32 = { path = "../arch/riscv32", optional = true }
-mold-target-riscv32be = { path = "../arch/riscv32be", optional = true }
-mold-target-ppc64v2 = { path = "../arch/ppc64v2", optional = true }
-mold-target-ppc32 = { path = "../arch/ppc32", optional = true }
-mold-target-ppc64v1 = { path = "../arch/ppc64v1", optional = true }
-mold-target-s390x = { path = "../arch/s390x", optional = true }
-mold-target-sparc64 = { path = "../arch/sparc64", optional = true }
-mold-target-m68k = { path = "../arch/m68k", optional = true }
-mold-target-sh4 = { path = "../arch/sh4", optional = true }
-mold-target-sh4be = { path = "../arch/sh4be", optional = true }
-mold-target-loongarch64 = { path = "../arch/loongarch64", optional = true }
-mold-target-loongarch32 = { path = "../arch/loongarch32", optional = true }
+mold-arch-x86_64 = { path = "../arch/x86_64", optional = true }
+mold-arch-i386 = { path = "../arch/i386", optional = true }
+mold-arch-arm32 = { path = "../arch/arm32", optional = true }
+mold-arch-arm32be = { path = "../arch/arm32be", optional = true }
+mold-arch-arm64 = { path = "../arch/arm64", optional = true }
+mold-arch-arm64be = { path = "../arch/arm64be", optional = true }
+mold-arch-riscv64 = { path = "../arch/riscv64", optional = true }
+mold-arch-riscv64be = { path = "../arch/riscv64be", optional = true }
+mold-arch-riscv32 = { path = "../arch/riscv32", optional = true }
+mold-arch-riscv32be = { path = "../arch/riscv32be", optional = true }
+mold-arch-ppc64v2 = { path = "../arch/ppc64v2", optional = true }
+mold-arch-ppc32 = { path = "../arch/ppc32", optional = true }
+mold-arch-ppc64v1 = { path = "../arch/ppc64v1", optional = true }
+mold-arch-s390x = { path = "../arch/s390x", optional = true }
+mold-arch-sparc64 = { path = "../arch/sparc64", optional = true }
+mold-arch-m68k = { path = "../arch/m68k", optional = true }
+mold-arch-sh4 = { path = "../arch/sh4", optional = true }
+mold-arch-sh4be = { path = "../arch/sh4be", optional = true }
+mold-arch-loongarch64 = { path = "../arch/loongarch64", optional = true }
+mold-arch-loongarch32 = { path = "../arch/loongarch32", optional = true }
 
 [dev-dependencies]
 mold-tests = { path = "../tests" }
@@ -50,23 +50,23 @@ default = [
     "ppc64v2", "ppc32", "ppc64v1", "s390x", "sparc64", "m68k", "sh4", "sh4be", "loongarch64", "loongarch32",
 ]
 system-allocator = []
-x86_64 = ["dep:mold-target-x86_64"]
-i386 = ["dep:mold-target-i386"]
-arm32 = ["dep:mold-target-arm32"]
-arm32be = ["dep:mold-target-arm32be"]
-arm64 = ["dep:mold-target-arm64"]
-arm64be = ["dep:mold-target-arm64be"]
-riscv64 = ["dep:mold-target-riscv64"]
-riscv64be = ["dep:mold-target-riscv64be"]
-riscv32 = ["dep:mold-target-riscv32"]
-riscv32be = ["dep:mold-target-riscv32be"]
-ppc64v2 = ["dep:mold-target-ppc64v2"]
-ppc32 = ["dep:mold-target-ppc32"]
-ppc64v1 = ["dep:mold-target-ppc64v1"]
-s390x = ["dep:mold-target-s390x"]
-sparc64 = ["dep:mold-target-sparc64"]
-m68k = ["dep:mold-target-m68k"]
-sh4 = ["dep:mold-target-sh4"]
-sh4be = ["dep:mold-target-sh4be"]
-loongarch64 = ["dep:mold-target-loongarch64"]
-loongarch32 = ["dep:mold-target-loongarch32"]
+x86_64 = ["dep:mold-arch-x86_64"]
+i386 = ["dep:mold-arch-i386"]
+arm32 = ["dep:mold-arch-arm32"]
+arm32be = ["dep:mold-arch-arm32be"]
+arm64 = ["dep:mold-arch-arm64"]
+arm64be = ["dep:mold-arch-arm64be"]
+riscv64 = ["dep:mold-arch-riscv64"]
+riscv64be = ["dep:mold-arch-riscv64be"]
+riscv32 = ["dep:mold-arch-riscv32"]
+riscv32be = ["dep:mold-arch-riscv32be"]
+ppc64v2 = ["dep:mold-arch-ppc64v2"]
+ppc32 = ["dep:mold-arch-ppc32"]
+ppc64v1 = ["dep:mold-arch-ppc64v1"]
+s390x = ["dep:mold-arch-s390x"]
+sparc64 = ["dep:mold-arch-sparc64"]
+m68k = ["dep:mold-arch-m68k"]
+sh4 = ["dep:mold-arch-sh4"]
+sh4be = ["dep:mold-arch-sh4be"]
+loongarch64 = ["dep:mold-arch-loongarch64"]
+loongarch32 = ["dep:mold-arch-loongarch32"]

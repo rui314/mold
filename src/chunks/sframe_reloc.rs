@@ -1,9 +1,9 @@
 //! `.rela.sframe`, SFrame relocations for relocatable outputs.
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
-use crate::target::Target;
 
 // SFrameRelocSection holds the relocations for .sframe. We use it only for
 // relocatable outputs, where function addresses aren't known yet and each

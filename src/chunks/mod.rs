@@ -51,10 +51,10 @@ use std::num::NonZeroU32;
 
 use bstr::BStr;
 
+use crate::arch::Target;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{FileId, SymtabBlock};
-use crate::target::Target;
 use crate::tls;
 use crate::{error, warn};
 

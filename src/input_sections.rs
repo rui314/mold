@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use bstr::BStr;
 use portable_atomic::AtomicU64;
 
+use crate::arch::{Family, Target};
 use crate::chunks::OutputSectionId;
 use crate::chunks::merged::{MergedSection, MergedSectionId};
 use crate::cmdline::UnresolvedKind;
@@ -13,7 +14,6 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{ObjId, ObjectFile};
 use crate::symbol::{NEEDS_CANONICAL, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSDESC, Symbol, SymbolId};
-use crate::target::{Family, Target};
 use crate::util::compress::{zlib_decompress, zstd_decompress};
 use crate::util::concurrent_map::EntryId;
 use crate::util::hyperloglog::HyperLogLog;

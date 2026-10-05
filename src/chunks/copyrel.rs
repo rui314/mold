@@ -1,12 +1,12 @@
 //! `.copyrel` and `.copyrel.rel.ro`, storage for copy relocations.
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::error;
 use crate::input_files::FileId;
 use crate::symbol::SymbolId;
-use crate::target::Target;
 use crate::util::align_to;
 
 // .copyrel and .copyrel.rel.ro represent memory regions to which the

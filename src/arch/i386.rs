@@ -36,13 +36,13 @@
 //! Relocations are of the REL type: addends live in the relocated
 //! locations rather than in the relocation entries.
 
+use crate::arch::{Family, Target};
 use crate::chunks::eh_frame;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::NonAllocReloc;
 use crate::input_sections::{InputSection, check_tlsle, scan_absrel, scan_pcrel, scan_tlsdesc};
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
-use crate::target::{Family, Target};
 use crate::util::endian::{read_il16, read_il32, write_ul16, write_ul32};
 use crate::{error, fatal};
 

@@ -4,13 +4,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use rayon::prelude::*;
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::chunks::symtab::to_output_esym;
 use crate::context::Context;
 use crate::elf::*;
 use crate::error;
 use crate::symbol::{SymbolId, SymbolTable};
-use crate::target::Target;
 
 // .dynsym contains symbols for dynamic linking. This is similar to
 // .symtab, but .dynsym contains data that the runtime uses.

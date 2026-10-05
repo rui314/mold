@@ -4,15 +4,15 @@
 //! descriptor: the entry point, the TOC pointer the function expects in
 //! `r2`, and an environment pointer nobody uses. The compiler emits a
 //! descriptor for every function into an input `.opd`; the linker
-//! dissolves those (see [`crate::target::ppc64v1`]) and synthesizes
+//! dissolves those (see [`crate::arch::ppc64v1`]) and synthesizes
 //! descriptors here only for functions whose addresses are taken, in the
 //! same way it synthesizes GOT and PLT entries.
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::symbol::{AddrFlags, SymbolId};
-use crate::target::Target;
 
 pub const ENTRY_SIZE: u64 = 24;
 

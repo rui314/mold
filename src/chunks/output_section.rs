@@ -5,13 +5,13 @@ use std::sync::atomic::Ordering;
 use bstr::BStr;
 use rayon::prelude::*;
 
+use crate::arch::{Family, Target};
 use crate::chunks::{ChunkHeader, OutputSectionId};
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::SymtabBlock;
 use crate::input_sections::{InputSection, InputSectionId, r_delta};
 use crate::symbol::{AddrFlags, NEEDS_CANONICAL, SymbolId};
-use crate::target::{Family, Target};
 use crate::thunks::Thunk;
 use crate::util::align_to;
 use crate::{error, warn};

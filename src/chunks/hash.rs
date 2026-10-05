@@ -1,9 +1,9 @@
 //! `.hash`, the ELF hash table for dynamic symbol lookup.
 
+use crate::arch::{Family, Target};
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
-use crate::target::{Family, Target};
 
 // The hash function for .hash.
 pub fn elf_hash(name: &[u8]) -> u32 {

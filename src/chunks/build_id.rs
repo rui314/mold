@@ -1,9 +1,9 @@
 //! `.note.gnu.build-id`, the output file's build identifier.
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
-use crate::target::Target;
 
 // .note.gnu.build-id contains an identifier for an output ELF file. The
 // contents of the section is usually a cryptogrpahic hash of the output

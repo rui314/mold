@@ -15,6 +15,7 @@ use std::sync::{OnceLock, RwLock};
 
 use rayon::prelude::*;
 
+use crate::arch::{Family, Target};
 use crate::chunks::merged::{MergedSection, MergedSectionCache};
 use crate::cmdline::Args;
 use crate::context::Context;
@@ -28,7 +29,6 @@ use crate::symbol::{
     Bins, NEEDS_PLT, Origin, OriginValue, ParallelSymbolAllocator, Symbol, SymbolId, SymbolSlot,
     SymbolTable, hash_key,
 };
-use crate::target::{Family, Target};
 use crate::util::perf::Counter;
 use crate::util::{
     self, SyncUnsafeCell, align_to, bits, cstr_at, leak_bytes, path_clean, read_uleb,
@@ -3624,7 +3624,7 @@ pub fn print_trace_symbol<R: SymbolRecord>(file: &dyn fmt::Display, esym: &R, sy
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::target::X86_64;
+    use crate::arch::X86_64;
 
     #[test]
     fn parallel_file_iteration_preserves_live_order_and_stable_storage() {

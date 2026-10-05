@@ -2,12 +2,12 @@
 
 use bstr::BStr;
 
+use crate::arch::{Family, Target};
 use crate::chunks::{ChunkHeader, OutputSectionId};
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::{FragmentLookup, InputSection, r_delta};
 use crate::symbol::{OriginValue, Symbol};
-use crate::target::{Family, Target};
 
 // RelocSection represents a relocation table for an output file.
 // These tables are emitted for `-r` and for final links with `--emit-relocs`.
@@ -169,8 +169,8 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, i: u32, buf: &mut [u8], osec_buf: O
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::arch::I386;
     use crate::cmdline::Args;
-    use crate::target::I386;
 
     #[test]
     fn discarded_section_does_not_read_implicit_addend() {

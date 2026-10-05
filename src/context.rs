@@ -9,6 +9,7 @@ use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
+use crate::arch::Target;
 use crate::chunks::build_id::BuildIdSection;
 use crate::chunks::comdat_group::ComdatGroupSection;
 use crate::chunks::compressed::CompressedSection;
@@ -41,7 +42,6 @@ use crate::input_sections::{
 use crate::linker_script::{DynamicPattern, VersionPattern};
 use crate::mapped_file::MappedFile;
 use crate::symbol::{Bins, Symbol, SymbolChunkId, SymbolId, SymbolSlot, SymbolTable};
-use crate::target::Target;
 use crate::util::perf::Timers;
 use crate::util::worker_local::WorkerLocal;
 

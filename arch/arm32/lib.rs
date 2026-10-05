@@ -1,3 +1,3 @@
 pub fn link(cmdline: mold::driver::Cmdline) -> mold::driver::LinkResult {
-    mold::driver::link::<mold::target::Arm32>(cmdline)
+    mold::driver::link::<mold::arch::Arm32>(cmdline)
 }

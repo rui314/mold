@@ -2,10 +2,10 @@
 
 use std::sync::atomic::Ordering;
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
-use crate::target::Target;
 
 /// The hash function for `.gnu.hash`.
 #[inline]
