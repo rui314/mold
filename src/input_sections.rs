@@ -1081,7 +1081,7 @@ fn find_comdat_owner<E: Target>(
     }
     let shndx = file.shndx_at(sym_idx);
     for group in &file.comdat_groups {
-        if group.is_owner() || !file.comdat_members(group).any(|m| m == shndx as u32) {
+        if group.is_owner() || !file.group_members(group.sect_idx).any(|m| m == shndx as u32) {
             continue;
         }
         for other in &ctx.objs {

@@ -743,6 +743,12 @@ pub struct ObjectFile<E: Target> {
     pub(crate) pending_comdat_signatures: Vec<PendingComdatSignature>,
     pub comdat_discarded: Vec<bool>,
 
+    /// The section indices of SHT_GROUP sections whose flag word is 0.
+    /// Such a group only ties its members together so that they are kept
+    /// or discarded as a unit; unlike a COMDAT group, it is never
+    /// deduplicated. Only -r output, which preserves groups, uses them.
+    pub non_comdat_groups: Vec<u32>,
+
     pub eh_frame_sections: Vec<u32>,
     pub sframe_sections: Vec<u32>,
     pub sframe_fdes: Vec<SFrameFde>,
@@ -1048,6 +1054,7 @@ impl<E: Target> ObjectFile<E> {
             comdat_groups: Vec::new(),
             pending_comdat_signatures: Vec::new(),
             comdat_discarded: Vec::new(),
+            non_comdat_groups: Vec::new(),
             eh_frame_sections: Vec::new(),
             sframe_sections: Vec::new(),
             sframe_fdes: Vec::new(),
@@ -1287,11 +1294,11 @@ impl<E: Target> ObjectFile<E> {
         self.sections.merge_infos()
     }
 
-    /// The section indices of a COMDAT group's members, read from the
-    /// group section as they are needed.
+    /// The section indices of a group's members, read from its SHT_GROUP
+    /// section at `shndx` as they are needed.
     #[inline]
-    pub fn comdat_members(&self, group: &ComdatGroupRef) -> impl Iterator<Item = u32> + '_ {
-        let bytes = self.base.section_contents_from_shdr(&self.base.shdrs[group.sect_idx as usize]);
+    pub fn group_members(&self, shndx: u32) -> impl Iterator<Item = u32> + '_ {
+        let bytes = self.base.section_contents_from_shdr(&self.base.shdrs[shndx as usize]);
         let is_little_endian = self.base.is_little_endian;
         bytes.as_chunks::<4>().0.iter().skip(1).map(move |b| {
             let b = [b[0], b[1], b[2], b[3]];
@@ -1402,8 +1409,8 @@ impl<E: Target> ObjectFile<E> {
         }
     }
 
-    // Read COMDAT groups and detect GCC offload objects. Both affect which input
-    // sections can be discarded before LTO.
+    // Read section groups and detect GCC offload objects. COMDAT groups and
+    // offload objects affect which input sections can be discarded before LTO.
     pub fn read_section_metadata(&mut self) {
         debug_assert!(!self.sections_parsed);
 
@@ -1443,6 +1450,7 @@ impl<E: Target> ObjectFile<E> {
             }
             let kind = E::read_u32(contents);
             if kind == 0 {
+                self.non_comdat_groups.push(i as u32);
                 continue;
             }
             if kind != GRP_COMDAT {
@@ -1849,7 +1857,7 @@ impl<E: Target> ObjectFile<E> {
         if !keep_discarded_comdat && !self.comdat_groups.is_empty() {
             let mut discarded = vec![false; n];
             for group in self.comdat_groups.iter().filter(|group| !group.is_owner()) {
-                for member in self.comdat_members(group) {
+                for member in self.group_members(group.sect_idx) {
                     if let Some(slot) = discarded.get_mut(member as usize) {
                         *slot = true;
                     }

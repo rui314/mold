@@ -1,4 +1,4 @@
-//! COMDAT groups in relocatable outputs.
+//! Section groups in relocatable outputs.
 
 use crate::chunks::{ChunkHeader, ChunkId};
 use crate::context::Context;
@@ -6,22 +6,25 @@ use crate::elf::*;
 use crate::symbol::SymbolId;
 use crate::target::Target;
 
-// ComdatGroupSection represents a comdat group for an output file.
+// ComdatGroupSection represents a section group for an output file.
 // This is used only for the relocatable output (i.e. the `-r` output).
+// Its contents are a flag word, which is GRP_COMDAT for a COMDAT group
+// and 0 otherwise, followed by the section indices of its members.
 #[derive(Debug)]
 pub struct ComdatGroupSection<E: Target> {
     pub hdr: ChunkHeader<E>,
     pub sym: SymbolId,
+    pub flags: u32,
     pub members: Vec<ChunkId>,
 }
 
 impl<E: Target> ComdatGroupSection<E> {
-    pub fn new(sym: SymbolId, members: Vec<ChunkId>) -> Self {
+    pub fn new(sym: SymbolId, flags: u32, members: Vec<ChunkId>) -> Self {
         let mut hdr = ChunkHeader::<E>::new(".group", SHT_GROUP, 0);
         hdr.shdr.sh_entsize.set(4);
         hdr.shdr.sh_addralign.set(4);
         hdr.shdr.sh_size.set((members.len() * 4 + 4) as u64);
-        Self { hdr, sym, members }
+        Self { hdr, sym, flags, members }
     }
 }
 
@@ -43,7 +46,7 @@ pub fn update_shdr<E: Target>(ctx: &mut Context<E>, i: u32) {
 
 pub fn copy_buf<E: Target>(ctx: &Context<E>, i: u32, buf: &mut [u8]) {
     let sec = &ctx.comdat_group_sections[i as usize];
-    E::write_u32(buf, GRP_COMDAT);
+    E::write_u32(buf, sec.flags);
     for (j, &member) in sec.members.iter().enumerate() {
         E::write_u32(&mut buf[4 + j * 4..], ctx.chunk_header(member).shndx);
     }

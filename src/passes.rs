@@ -629,7 +629,7 @@ fn parse_input_sections<E: Target>(ctx: &mut Context<E>) {
                 }
                 // Reapply ownership to groups parsed before LTO as well.
                 for group in &file.comdat_groups {
-                    for member in file.comdat_members(group) {
+                    for member in file.group_members(group.sect_idx) {
                         if let Some(isec) = file.section(member as usize) {
                             if group.is_owner() {
                                 isec.revive();
@@ -4336,7 +4336,7 @@ pub fn show_stats<E: Target>(ctx: &Context<E>) {
             if group.is_owner() {
                 unique_comdats += 1;
             } else {
-                removed_comdat_mem += file.comdat_members(group).count() as i64;
+                removed_comdat_mem += file.group_members(group.sect_idx).count() as i64;
             }
         }
         num_cies += file.cies.len() as i64;
