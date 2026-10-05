@@ -188,6 +188,17 @@ set -e
 export CARGO_TARGET_DIR=/build/target
 cd /mold
 cargo build --release --frozen --config /vendor/config.toml --package mold-cli
+
+# Link mold again with the mold just built, so that every release binary
+# gets Identical Code Folding (see cli/build.rs). The default linker for
+# most targets here is GNU ld, which does not support it. The first mold
+# runs from a copy because the link replaces the files in the target
+# directory.
+mkdir /build/stage1
+cp $CARGO_TARGET_DIR/release/mold $CARGO_TARGET_DIR/release/mold-wrapper.so /build/stage1
+/build/stage1/mold -run cargo rustc --release --frozen --config /vendor/config.toml \
+  --package mold-cli --bin mold -- -Clink-arg=-Wl,--icf=all
+
 stage=/build/$DEST
 DESTDIR=/build PREFIX=/$DEST ./install-mold.sh
 strip --strip-unneeded "$stage/bin/mold" "$stage/lib/mold/mold-wrapper.so"
