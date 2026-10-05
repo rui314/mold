@@ -123,6 +123,8 @@ Options:
                               Allow merging non-executable sections with --icf
   --image-base ADDR           Set the base address to a given value
   --init SYMBOL               Call SYMBOL at load-time
+  --mmap-output-file          Write the output file using mmap (default)
+    --no-mmap-output-file
   --nmagic                    Do not page align sections
     --no-nmagic
   --no-undefined              Report undefined symbols (even with --shared)
@@ -457,6 +459,7 @@ pub struct Args {
     pub icf_all: bool,
     pub ignore_data_address_equality: bool,
     pub lto_pass2: bool,
+    pub mmap_output_file: bool,
     pub nmagic: bool,
     pub oformat_binary: bool,
     pub omagic: bool,
@@ -594,6 +597,7 @@ impl Default for Args {
             icf_all: false,
             ignore_data_address_equality: false,
             lto_pass2: false,
+            mmap_output_file: true,
             nmagic: false,
             oformat_binary: false,
             omagic: false,
@@ -1718,6 +1722,9 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             crate::error::set_suppress_warnings(true);
         } else if let Some(value) = cursor.read_switch("fork", "no-fork") {
             a.fork = value;
+        } else if let Some(value) = cursor.read_switch("--mmap-output-file", "no-mmap-output-file")
+        {
+            a.mmap_output_file = value;
         } else if let Some(value) = cursor.read_switch("gc-sections", "no-gc-sections") {
             a.gc_sections = value;
         } else if cursor.read_flag("print-gc-sections") {
@@ -1868,8 +1875,6 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             || read_z_arg!("common-page-size")
             || cursor.read_flag("no-keep-memory")
             || read_arg!("max-cache-size", true)
-            || cursor.read_flag("--mmap-output-file")
-            || cursor.read_flag("no-mmap-output-file")
         {
             // Ignored for compatibility.
         } else if read_arg!("m") {

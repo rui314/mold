@@ -211,7 +211,8 @@ impl OutputFile {
     /// doesn't leave a truncated output behind and a running executable
     /// isn't modified underneath the kernel. Anything else — a device, a
     /// pipe, or standard output — is assembled in memory and written out
-    /// at the end.
+    /// at the end. With --no-mmap-output-file, a regular file is assembled
+    /// in memory too and then written out to the temporary file.
     pub fn open(
         args: &crate::cmdline::Args,
         size: u64,
@@ -219,14 +220,15 @@ impl OutputFile {
         overwrite_in_place: bool,
     ) -> Self {
         let path = crate::mapped_file::apply_chroot(&args.chroot, &args.output);
-        let mut output = Self::open_impl(&path, size, perm, overwrite_in_place);
+        let mut output =
+            Self::open_impl(&path, size, perm, overwrite_in_place, args.mmap_output_file);
         if let Some(filler) = args.filler {
             output.buf().fill(filler);
         }
         output
     }
 
-    fn open_impl(path: &Path, size: u64, perm: u32, overwrite_in_place: bool) -> Self {
+    fn open_impl(path: &Path, size: u64, perm: u32, overwrite_in_place: bool, mmap: bool) -> Self {
         let len = buffer_len(path, size);
         let is_special =
             path == Path::new("-") || std::fs::metadata(path).is_ok_and(|m| !m.is_file());
@@ -247,6 +249,15 @@ impl OutputFile {
         name.push(path.file_name().unwrap_or_default());
         name.push(format!(".{}", std::process::id()));
         let tmp = dir.join(name);
+
+        if !mmap {
+            return Self {
+                path: path.to_path_buf(),
+                tmp_path: Some(tmp),
+                storage: Storage::Memory(vec![0; len]),
+                perm,
+            };
+        }
 
         // Reuse an existing file if exists and writable because on Linux,
         // writing to an existing file is much faster than creating a fresh
@@ -428,16 +439,18 @@ impl OutputFile {
                     }
                     return;
                 }
+                // A regular file is written to the temporary file, which is
+                // renamed below.
+                let dest = self.tmp_path.as_deref().unwrap_or(&self.path);
+                set_tmpfile(self.tmp_path.as_deref());
                 let mut file = open_options(self.perm)
                     .write(true)
                     .create(true)
                     .truncate(true)
-                    .open(&self.path)
-                    .unwrap_or_else(|e| {
-                        fatal!("cannot open {}: {}", self.path.display(), strerror(&e))
-                    });
+                    .open(dest)
+                    .unwrap_or_else(|e| fatal!("cannot open {}: {}", dest.display(), strerror(&e)));
                 file.write_all(&vec).unwrap_or_else(|e| {
-                    fatal!("{}: write failed: {}", self.path.display(), strerror(&e))
+                    fatal!("{}: write failed: {}", dest.display(), strerror(&e))
                 });
                 None
             }
@@ -550,17 +563,22 @@ mod tests {
                 }
             }
         }
-        // Cover empty regular files, remapping on growth, and the locked
-        // staging state used by separate debug output. Keep this in the same
-        // test because output publication uses process-global state.
-        for initial in [0, 8] {
-            let mut file = OutputFile::open_impl(&path, initial, 0o600, true);
-            file.buf().fill(7);
-            file.extend(65536);
-            assert!(file.buf()[..initial as usize].iter().all(|&b| b == 7));
-            assert!(file.buf()[initial as usize..].iter().all(|&b| b == 0));
-            file.close();
-            assert_eq!(std::fs::metadata(&path).unwrap().len(), initial + 65536);
+        // Cover empty regular files, remapping on growth, buffering with
+        // --no-mmap-output-file, and the locked staging state used by
+        // separate debug output. Keep this in the same test because output
+        // publication uses process-global state.
+        for mmap in [true, false] {
+            for initial in [0, 8] {
+                let mut file = OutputFile::open_impl(&path, initial, 0o600, true, mmap);
+                file.buf().fill(7);
+                file.extend(65536);
+                assert!(file.buf()[..initial as usize].iter().all(|&b| b == 7));
+                assert!(file.buf()[initial as usize..].iter().all(|&b| b == 0));
+                file.close();
+                let contents = std::fs::read(&path).unwrap();
+                assert_eq!(contents.len() as u64, initial + 65536);
+                assert!(contents[..initial as usize].iter().all(|&b| b == 7));
+            }
         }
         let mut file = OutputFile::open_locked(&path, 0o600);
         assert!(file.buf().is_empty());

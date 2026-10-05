@@ -665,6 +665,12 @@ point symbol in a script.
 * `--init`=_symbol_:
   Call _symbol_ at load-time.
 
+* `--mmap-output-file`, `--no-mmap-output-file`:
+  Write or do not write the output file through a memory mapping. With
+  `--no-mmap-output-file`, `mold` assembles the output in memory and writes it
+  to the file in one go at the end, which may be faster on a filesystem that is
+  slow at random writes. By default, the output file is memory-mapped.
+
 * `--no-undefined`:
   Report undefined symbols (even with `--shared`).
 
