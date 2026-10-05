@@ -5,3 +5,12 @@
 # the model explicitly to make the cc crate pass -mcmodel=medium.
 [target.'cfg(target_arch = "loongarch64")']
 rustflags = ["-Ccode-model=medium"]
+
+# LLVM's address-significance table tells the linker which symbols'
+# addresses the program uses. Without it, Identical Code Folding (see
+# cli/build.rs) has to assume that every piece of read-only data has a
+# significant address, so it can't merge two functions that refer to
+# identical constants, such as the panic locations that each crate
+# instantiating the linker has its own copies of.
+[target.'cfg(all())']
+rustflags = ["-Cllvm-args=-addrsig"]
