@@ -52,3 +52,6 @@ cc = "1"
 
 [profile.release]
 panic = "abort"
+# Copying generic and inline functions once per crate instead of once per
+# codegen unit makes the executable about a quarter smaller.
+codegen-units = 1
