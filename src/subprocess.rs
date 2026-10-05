@@ -152,12 +152,12 @@ pub fn process_run_subcommand(argv: &[std::ffi::OsString]) -> ! {
         fatal!("-run: argument missing");
     }
     let self_path = std::env::current_exe().expect("cannot get current executable path");
-    // The library directory can be set with MOLD_LIBDIR at build time.
-    let libdir = option_env!("MOLD_LIBDIR").unwrap_or("/usr/local/lib");
+    // The library directory can be set with LIBDIR at build time.
+    let libdir = option_env!("LIBDIR").unwrap_or("/usr/local/lib");
     let candidates = [
         // Look for mold-wrapper.so from the same directory as the executable is.
         self_path.parent().map(|p| p.join("mold-wrapper.so")),
-        // If not found, search $(MOLD_LIBDIR)/mold, which is /usr/local/lib/mold
+        // If not found, search $(LIBDIR)/mold, which is /usr/local/lib/mold
         // by default.
         Some(std::path::Path::new(libdir).join("mold/mold-wrapper.so")),
         // Look for ../lib/mold/mold-wrapper.so

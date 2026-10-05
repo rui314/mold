@@ -153,7 +153,7 @@ Run `sudo ./install-mold.sh` to install mold under `/usr/local`. To install it
 under a different prefix, set `PREFIX`, as in
 `sudo PREFIX=/usr ./install-mold.sh`. `mold-wrapper.so` is installed to
 `$PREFIX/lib/mold`. If your system uses another library directory, such as
-`/usr/lib64`, set `MOLD_LIBDIR` to it for both `cargo build` and
+`/usr/lib64`, set `LIBDIR` to it for both `cargo build` and
 `install-mold.sh`.
 
 You can also run `target/release/mold` directly without installing it.

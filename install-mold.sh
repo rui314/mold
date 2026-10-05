@@ -2,7 +2,10 @@
 set -e
 
 PREFIX=${PREFIX:-/usr/local}
-MOLD_LIBDIR=${MOLD_LIBDIR:-$PREFIX/lib}
+LIBDIR=${LIBDIR:-$PREFIX/lib}
+LIBEXECDIR=${LIBEXECDIR:-$PREFIX/libexec}
+MANDIR=${MANDIR:-$PREFIX/share/man}
+DOCDIR=${DOCDIR:-$PREFIX/share/doc/mold}
 
 srcdir=$(CDPATH= cd "$(dirname "$0")" && pwd)
 artifact_dir="${CARGO_TARGET_DIR:-$srcdir/target}/release"
@@ -14,11 +17,19 @@ if [ ! -x "$artifact_dir/mold" ] ||
   exit 1
 fi
 
+case $LIBEXECDIR in
+  "$PREFIX"/*) ;;
+  *)
+    echo "install-mold.sh: LIBEXECDIR must be a directory under $PREFIX" >&2
+    exit 1
+    ;;
+esac
+
 bindir="$DESTDIR$PREFIX/bin"
-libdir="$DESTDIR$MOLD_LIBDIR/mold"
-libexecdir="$DESTDIR$PREFIX/libexec/mold"
-mandir="$DESTDIR$PREFIX/share/man/man1"
-docdir="$DESTDIR$PREFIX/share/doc/mold"
+libdir="$DESTDIR$LIBDIR/mold"
+libexecdir="$DESTDIR$LIBEXECDIR/mold"
+mandir="$DESTDIR$MANDIR/man1"
+docdir="$DESTDIR$DOCDIR"
 
 install -d "$bindir" "$libdir" "$libexecdir" "$mandir" "$docdir"
 install -m 755 "$artifact_dir/mold" "$bindir"
@@ -27,5 +38,10 @@ install -m 644 "$srcdir/docs/mold.1" "$mandir"
 install -m 644 "$srcdir/LICENSE" "$docdir"
 
 ln -sf mold "$bindir/ld.mold"
-ln -sf ../../bin/mold "$libexecdir/ld"
 ln -sf mold.1 "$mandir/ld.mold.1"
+
+# The ld symlink for GCC's -B option points to the executable with a relative
+# path, so that the installed tree can be moved as a whole. Each directory
+# below $PREFIX becomes a "..".
+up=$(echo "${LIBEXECDIR#"$PREFIX"/}/mold" | sed 's,[^/][^/]*,..,g')
+ln -sf "$up/bin/mold" "$libexecdir/ld"
