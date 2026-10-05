@@ -749,6 +749,12 @@ pub struct ObjectFile<E: Target> {
     /// deduplicated. Only -r output, which preserves groups, uses them.
     pub non_comdat_groups: Vec<u32>,
 
+    /// The section indices of the COMDAT groups GCC emits for .debug_macro.
+    /// We don't deduplicate them (see read_section_metadata), so they are
+    /// handled like `non_comdat_groups`, except that they are COMDAT groups
+    /// in -r output.
+    pub debug_macro_groups: Vec<u32>,
+
     pub eh_frame_sections: Vec<u32>,
     pub sframe_sections: Vec<u32>,
     pub sframe_fdes: Vec<SFrameFde>,
@@ -1057,6 +1063,7 @@ impl<E: Target> ObjectFile<E> {
             pending_comdat_signatures: Vec::new(),
             comdat_discarded: Vec::new(),
             non_comdat_groups: Vec::new(),
+            debug_macro_groups: Vec::new(),
             eh_frame_sections: Vec::new(),
             sframe_sections: Vec::new(),
             sframe_fdes: Vec::new(),
@@ -1440,12 +1447,6 @@ impl<E: Target> ObjectFile<E> {
                 self.base.symbol_name_in(shdr.sh_info.get() as usize)
             };
 
-            // Ignore a broken comdat group GCC emits for .debug_macros.
-            // https://github.com/rui314/mold/issues/438
-            if name.starts_with(b"wm4.") {
-                continue;
-            }
-
             let contents = self.base.section_contents_from_shdr(shdr);
             if contents.len() < 4 {
                 fatal!("{self}: empty SHT_GROUP");
@@ -1457,6 +1458,18 @@ impl<E: Target> ObjectFile<E> {
             }
             if kind != GRP_COMDAT {
                 fatal!("{self}: unsupported SHT_GROUP format");
+            }
+
+            // With -g3, GCC puts the .debug_macro contents of each header
+            // file into a COMDAT group, but the CU's own .debug_macro section
+            // outside the group refers to it, which the ELF spec doesn't
+            // allow. If we discarded a duplicate group, the references to it
+            // would be resolved to 0, breaking the macro information. So we
+            // keep all copies of such groups.
+            // https://github.com/rui314/mold/issues/438
+            if name.starts_with(b"wm4.") {
+                self.debug_macro_groups.push(i as u32);
+                continue;
             }
 
             // Reuse the version flag from registration. A bare trailing '@'

@@ -122,15 +122,17 @@ fn create_synthetic_sections<E: Target>(ctx: &mut Context<E>) {
 /// Create SHT_GROUP sections. We uniquify comdat sections by signature.
 /// We want to propagate input comdat groups as output comdat groups if
 /// they are still alive after uniquification. Groups whose flag word is 0
-/// are never uniquified, so all of them are propagated.
+/// and GCC's .debug_macro groups are never uniquified, so all of them are
+/// propagated.
 fn create_comdat_group_sections<E: Target>(ctx: &mut Context<E>) {
     let _t = ctx.timer("create_comdat_group_sections");
     let mut sections = Vec::new();
     for file in &ctx.objs {
         let comdat_groups =
             file.comdat_groups.iter().filter(|g| g.is_owner()).map(|g| (g.sect_idx, GRP_COMDAT));
-        let non_comdat_groups = file.non_comdat_groups.iter().map(|&sect_idx| (sect_idx, 0));
-        for (sect_idx, flags) in comdat_groups.chain(non_comdat_groups) {
+        let debug_macro_groups = file.debug_macro_groups.iter().map(|&i| (i, GRP_COMDAT));
+        let non_comdat_groups = file.non_comdat_groups.iter().map(|&i| (i, 0));
+        for (sect_idx, flags) in comdat_groups.chain(debug_macro_groups).chain(non_comdat_groups) {
             let sym = file.base.symbols[file.base.shdrs[sect_idx as usize].sh_info.get() as usize];
             let mut members = Vec::new();
             for j in file.group_members(sect_idx) {
