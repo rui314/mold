@@ -569,7 +569,7 @@ impl GlobBuilder {
         }
 
         // For duplicate names, retain the largest value.
-        glob.exacts.sort_by(|a, b| a.pat.cmp(&b.pat).then(b.value.cmp(&a.value)));
+        glob.exacts.sort_unstable_by(|a, b| a.pat.cmp(&b.pat).then(b.value.cmp(&a.value)));
         glob.exacts.dedup_by(|a, b| a.pat == b.pat);
         if glob.patterns.len() >= 64 {
             glob.nfa = Nfa::compile(&glob.patterns);

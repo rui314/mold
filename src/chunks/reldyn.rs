@@ -197,7 +197,7 @@ pub fn sort<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
         }
     };
     let relocs = rels_from_bytes_mut::<E>(buf);
-    relocs.par_sort_by_key(|r| (rank(r.r_type()), r.r_sym(), r.r_offset()));
+    relocs.par_sort_unstable_by_key(|r| (rank(r.r_type()), r.r_sym(), r.r_offset()));
 }
 
 // Encode dynamic relocations using the Android Packed Relocation format
@@ -233,7 +233,7 @@ pub fn encode_android<E: Target>(mut rels: Vec<ElfRel<E>>) -> Vec<u8> {
     // R_RELATIVE, ~90% of dynrels in a real Android binary) land in one
     // contiguous block. That collapses dozens of type-broken groups into
     // a few large info-grouped runs.
-    rels.sort_by_key(|r| (r.r_type(), r.r_sym(), r.r_offset()));
+    rels.sort_unstable_by_key(|r| (r.r_type(), r.r_sym(), r.r_offset()));
 
     let mut prev_offset = 0i64;
     let mut prev_addend = 0i64;

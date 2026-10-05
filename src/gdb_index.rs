@@ -1339,8 +1339,8 @@ pub fn build_tables(timer: Timer, mut data: GdbIndexData, workers: usize) -> Gdb
 
     // Units are numbered by their position in the output: all
     // compilation units, then all type units.
-    data.cus.sort_by_key(|cu| cu.offset);
-    data.tus.sort_by_key(|tu| tu.offset);
+    data.cus.sort_unstable_by_key(|cu| cu.offset);
+    data.tus.sort_unstable_by_key(|tu| tu.offset);
 
     let names = data.names.as_ref().unwrap();
 

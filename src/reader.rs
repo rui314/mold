@@ -404,7 +404,7 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
 
     // Parse linker scripts and read the files they name.
     let mut scripts: Vec<_> = scripts.into_values().flatten().collect();
-    scripts.sort_by(|(a, _), (b, _)| a.pos.cmp(&b.pos));
+    scripts.sort_unstable_by(|(a, _), (b, _)| a.pos.cmp(&b.pos));
     for (mut rctx, mf) in scripts {
         Script::new(ctx, &mut rctx, mf).parse_linker_script();
     }
@@ -417,7 +417,7 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
     // copies' internal symbols become undefined references in the LTO
     // result.
     let mut lto_jobs = std::mem::take(ctx.lto_jobs.get_mut().unwrap());
-    lto_jobs.sort_by(|(a, ..), (b, ..)| a.pos.cmp(&b.pos));
+    lto_jobs.sort_unstable_by(|(a, ..), (b, ..)| a.pos.cmp(&b.pos));
     for (rctx, mf, archive_name) in lto_jobs {
         if let Some(file) = new_lto_object(ctx, &rctx, mf, archive_name) {
             ctx.pending_files.push(Loaded::Obj(rctx.pos, Box::new(file)));
@@ -426,7 +426,7 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
 
     // Sort the files into the command line order and assign priorities.
     let mut pending = std::mem::take(&mut ctx.pending_files);
-    pending.sort_by(|a, b| a.position().cmp(b.position()));
+    pending.sort_unstable_by(|a, b| a.position().cmp(b.position()));
 
     // Priority 0 is reserved for the internal object file. LTO-generated
     // files use priorities beginning at 100, so regular files begin at 10000.

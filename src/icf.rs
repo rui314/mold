@@ -560,7 +560,7 @@ fn print_icf_sections<E: Target>(ctx: &Context<E>, sections: &[SectionRef], outp
             leaders[idx].1.push(r);
         }
     }
-    leaders.sort_by_key(|(l, _)| ctx.section(*l).priority(&ctx.objs[l.file.index()]));
+    leaders.sort_unstable_by_key(|(l, _)| ctx.section(*l).priority(&ctx.objs[l.file.index()]));
 
     output.with_writer("--print-icf-sections", |out| {
         let mut saved = 0usize;

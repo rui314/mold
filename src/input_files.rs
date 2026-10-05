@@ -3242,7 +3242,7 @@ impl<E: Target> SharedFile<E> {
                 .copied()
                 .filter(|&s| ctx.symbols[s].file() == Some(FileId::Dso(id)))
                 .collect();
-            syms.sort_by_key(|&s| (ctx.symbols[s].esym(ctx).st_value(), s));
+            syms.sort_unstable_by_key(|&s| (ctx.symbols[s].esym(ctx).st_value(), s));
             syms
         });
         let value = sym.esym(ctx).st_value();

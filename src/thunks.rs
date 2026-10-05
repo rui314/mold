@@ -425,8 +425,8 @@ pub fn create_range_extension_thunks<E: Target>(
     {
         let ctx: &Context<E> = ctx;
         thunks.par_iter_mut().for_each(|thunk| {
-            thunk.landing_pads.sort_by_key(|&id| sort_key(ctx, id));
-            thunk.symbols.sort_by_key(|&id| sort_key(ctx, id));
+            thunk.landing_pads.sort_unstable_by_key(|&id| sort_key(ctx, id));
+            thunk.symbols.sort_unstable_by_key(|&id| sort_key(ctx, id));
         });
     }
 
