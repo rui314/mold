@@ -1573,7 +1573,7 @@ pub fn print_dependencies<E: Target>(ctx: &Context<E>) {
         for file in &ctx.objs {
             for isec in file.input_sections() {
                 visited.clear();
-                for r in isec.rels(file) {
+                for r in isec.relocations(ctx) {
                     if r.r_type() == R_NONE || file.base.elf_syms.len() <= r.r_sym() as usize {
                         continue;
                     }

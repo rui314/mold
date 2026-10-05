@@ -822,8 +822,10 @@ impl<E: Target> ObjectFile<E> {
         }
     }
 
-    /// Returns a relocation table from the file unless a compressed table
-    /// was decoded into the side table.
+    /// Returns a relocation table as an array. A CREL table must have been
+    /// decoded into the side table, which isn't done up front for
+    /// non-allocated sections unless -r or --emit-relocs is given. Use
+    /// relocation_iter() to read relocations of any section.
     #[inline(always)]
     pub(crate) fn relocations(&self, relsec_idx: Option<u32>) -> &[ElfRel<E>] {
         let Some(relsec_idx) = relsec_idx else {
