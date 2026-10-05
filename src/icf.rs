@@ -351,9 +351,15 @@ fn compute_digest<E: Target>(ctx: &Context<E>, key: &[u8; 16], r: SectionRef) ->
     for fde in fdes {
         let cie = &file.cies[fde.cie_idx as usize];
         hash_u32(&mut h, cie.icf_idx);
-        // Bytes 0 to 4 contain the length of this record, and
-        // bytes 4 to 8 contain an offset to CIE.
-        hash_bytes(&mut h, &fde.contents::<E>(file)[8..]);
+        // Bytes 0 to 4 contain the length of this record, and bytes 4 to 8
+        // contain an offset to CIE. A record may end with any number of
+        // DW_CFA_nops, which are zero bytes; LLVM pads the last record of
+        // .eh_frame to the section's alignment. Two records that differ only
+        // in the number of trailing zeros mean the same thing, so trailing
+        // zeros are not hashed.
+        let body = &fde.contents::<E>(file)[8..];
+        let len = body.iter().rposition(|&b| b != 0).map_or(0, |i| i + 1);
+        hash_bytes(&mut h, &body[..len]);
         let rels = fde.rels(file);
         h.update(&rels.len().to_ne_bytes());
         for rel in rels.iter().skip(1) {
