@@ -773,8 +773,8 @@ pub struct ObjectFile<E: Target> {
     pub fde_offset: u64,
     pub fde_size: u64,
 
-    // For ICF
-    pub llvm_addrsig: Option<InputSection<E>>,
+    // The contents of .llvm_addrsig, for ICF
+    pub llvm_addrsig: Option<&'static [u8]>,
 
     // .debug_info sections
     pub debug_info_sections: Vec<u32>,
@@ -1726,7 +1726,7 @@ impl<E: Target> ObjectFile<E> {
                         // Tools that mutates the symbol table, such as objcopy or `ld -r`
                         // tend to not preserve sh_link, so we ignore such section.
                         if shdr.sh_link.get() != 0 {
-                            self.llvm_addrsig = Some(isec);
+                            self.llvm_addrsig = Some(isec.contents());
                         }
                         continue;
                     }

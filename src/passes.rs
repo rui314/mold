@@ -3174,8 +3174,7 @@ pub fn compute_address_significance<E: Target>(ctx: &mut Context<E>) {
 
     ctx_ref.objs.par_iter().for_each(|file| {
         // If .llvm_addrsig is available, use it.
-        if let Some(sec) = &file.llvm_addrsig {
-            let mut p = sec.contents();
+        if let Some(mut p) = file.llvm_addrsig {
             while !p.is_empty() {
                 let idx = crate::util::read_uleb(&mut p) as usize;
                 let sym = &ctx_ref.symbols[file.base.symbols[idx]];
