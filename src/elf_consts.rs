@@ -230,6 +230,7 @@ pub const DF_BIND_NOW: u32 = 0x08;
 pub const DF_STATIC_TLS: u32 = 0x10;
 
 pub const DF_1_NOW: u32 = 0x00000001;
+pub const DF_1_GLOBAL: u32 = 0x00000002;
 pub const DF_1_NODELETE: u32 = 0x00000008;
 pub const DF_1_INITFIRST: u32 = 0x00000020;
 pub const DF_1_NOOPEN: u32 = 0x00000040;

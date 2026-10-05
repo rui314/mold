@@ -208,6 +208,9 @@ fn for_each_entry<E: Target>(ctx: &Context<E>, mut define: impl FnMut(u32, u64))
     if !ctx.args.z_dump {
         flags1 |= DF_1_NODUMP as u64;
     }
+    if ctx.args.z_global {
+        flags1 |= DF_1_GLOBAL as u64;
+    }
     if ctx.args.z_initfirst {
         flags1 |= DF_1_INITFIRST as u64;
     }
