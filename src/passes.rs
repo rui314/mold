@@ -4091,10 +4091,8 @@ pub fn write_build_id<E: Target>(ctx: &mut Context<E>, buf: &mut [u8], is_mmappe
         BuildId::Hex(value) => value.clone(),
         BuildId::Hash(size) => {
             const SHARD: usize = 4 * 1024 * 1024; // 4 MiB
-            let hashes: Vec<[u8; 32]> = buf
-                .par_chunks_mut(SHARD)
-                .map(|shard| *blake3::hash(shard).as_bytes())
-                .collect();
+            let hashes: Vec<[u8; 32]> =
+                buf.par_chunks_mut(SHARD).map(|shard| *blake3::hash(shard).as_bytes()).collect();
             // All shards are finalized and hashed. Drop the mapping's page
             // table entries in one operation, keeping the first shard mapped
             // for the build-id write below.
