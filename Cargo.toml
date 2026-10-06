@@ -43,6 +43,8 @@ mold-elf-loongarch32 = { path = "arch/elf-loongarch32", version = "=3.0.0" }
 mold-macho = { path = "macho", version = "=3.0.0" }
 mold-macho-arm64 = { path = "arch/macho-arm64", version = "=3.0.0" }
 mold-macho-x86_64 = { path = "arch/macho-x86_64", version = "=3.0.0" }
+# Parse the command line with winnow-args instead of the built-in parser.
+winnow-args = { path = "../winnow-args/winnow-args", default-features = false, features = ["derive"] }
 
 [profile.release]
 panic = "abort"

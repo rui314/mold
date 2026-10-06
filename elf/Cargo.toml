@@ -23,7 +23,12 @@ mold-common.workspace = true
 portable-atomic = "1"
 rayon = "1"
 uuid = { version = "1.27", default-features = false, features = ["v4"] }
+winnow-args = { workspace = true, optional = true }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
+
+[features]
+# Parse the command line with winnow-args instead of the built-in parser.
+winnow-args = ["dep:winnow-args"]
 
 [build-dependencies]
 cc = "1"

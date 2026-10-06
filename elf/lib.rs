@@ -3,6 +3,8 @@
 pub mod arch;
 pub(crate) mod chunks;
 pub(crate) mod cmdline;
+#[cfg(feature = "winnow-args")]
+pub(crate) mod cmdline_winnow;
 pub(crate) mod context;
 pub mod driver;
 pub mod elf;
