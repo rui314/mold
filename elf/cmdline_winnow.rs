@@ -719,8 +719,9 @@ pub(crate) enum Item {
     /// `-no-keep-memory`
     #[arg(long = "no-keep-memory")]
     IgnoredNoKeepMemory,
-    /// `-max-cache-size`
-    #[arg(long = "max-cache-size")]
+    /// `--max-cache-size`; GNU ld reads `-max-cache-size` as `-m
+    /// ax-cache-size`, so the long name needs two dashes.
+    #[arg(long = "max-cache-size", two_dashes)]
     IgnoredMaxCacheSize(OsString),
     /// `--mmap-output-file`
     #[arg(long = "mmap-output-file", two_dashes)]
@@ -1069,4 +1070,55 @@ pub(crate) fn z_opt(word: &OsStr) -> Option<Item> {
 /// An option's value as UTF-8, as the options that read text need it.
 pub(crate) fn utf8_arg<'a>(value: &'a OsStr, opt: &str) -> &'a str {
     value.to_str().unwrap_or_else(|| fatal!("option {opt}: expected a UTF-8 argument"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse_items(args: &[&str]) -> Vec<Item> {
+        let cmdline: Vec<_> = std::iter::once("mold")
+            .chain(args.iter().copied())
+            .map(|s| Cow::Borrowed(OsStr::new(s)))
+            .collect();
+        parse(&cmdline)
+    }
+
+    #[test]
+    fn a_single_dash_long_wins_over_a_short_with_an_attached_value() {
+        // As in GNU ld: a long option spelled with one dash is not a short
+        // option followed by the rest of its name.
+        let items =
+            parse_items(&["-shared", "-entry=main", "-eh-frame-hdr", "-filter", "libf.so", "a.o"]);
+        assert!(matches!(&items[0], Item::Shared));
+        assert!(matches!(&items[1], Item::Entry(v) if v.as_os_str() == "main"));
+        assert!(matches!(&items[2], Item::EhFrameHdr));
+        assert!(matches!(&items[3], Item::Filter(v) if v.as_os_str() == "libf.so"));
+        assert!(matches!(&items[4], Item::Input(v) if v.as_os_str() == "a.o"));
+
+        // What names no long option still reads as a short one.
+        let items = parse_items(&["-emain", "-Tlink.ld"]);
+        assert!(matches!(&items[0], Item::EntryShort(v) if v.as_os_str() == "main"));
+        assert!(matches!(&items[1], Item::ScriptShort(v) if v.as_os_str() == "link.ld"));
+    }
+
+    #[test]
+    fn some_long_options_need_two_dashes_as_in_gnu_ld_and_lld() {
+        // -output is -o utput, as in GNU ld.
+        let items = parse_items(&["-output"]);
+        assert!(matches!(&items[0], Item::OutputShort(v) if v.as_os_str() == "utput"));
+        // -export-dynamic-symbol is -e xport-dynamic-symbol, so a.o is an
+        // input file.
+        let items = parse_items(&["-export-dynamic-symbol", "a.o"]);
+        assert!(
+            matches!(&items[0], Item::EntryShort(v) if v.as_os_str() == "xport-dynamic-symbol")
+        );
+        assert!(matches!(&items[1], Item::Input(_)));
+        // -max-cache-size=1 is -m ax-cache-size=1.
+        let items = parse_items(&["-max-cache-size=1"]);
+        assert!(matches!(&items[0], Item::ShortMLower(v) if v.as_os_str() == "ax-cache-size=1"));
+        // GNU ld reads every -lX as --library=X.
+        let items = parse_items(&["-library"]);
+        assert!(matches!(&items[0], Item::LibraryShort(v) if v.as_os_str() == "ibrary"));
+    }
 }
