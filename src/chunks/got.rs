@@ -1,13 +1,14 @@
 //! `.got`, addresses and thread-local offsets used at runtime.
 
 use rayon::prelude::*;
+use std::sync::atomic::Ordering;
 
 use crate::arch::{Family, Target};
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::SymtabBlock;
-use crate::symbol::{AddrFlags, SymbolId};
+use crate::symbol::{AddrFlags, NEEDS_GOT, NEEDS_GOTTP, NEEDS_TLSDESC, NEEDS_TLSGD, SymbolId};
 
 // .got is a linker-synthesized constant pool whose entry size is the same
 // as the pointer size. It is used to store runtime addresses of global
@@ -61,12 +62,110 @@ fn word<E: Target>() -> u64 {
     E::WORD_SIZE as u64
 }
 
+/// Assigns GOT entries in file and symbol order, filling each file's range
+/// in parallel. Returns requests that also need the ordered dynamic-table
+/// pass (PLT entries, copy relocations, or dynamic symbols).
+pub fn allocate_entries<E: Target>(
+    ctx: &mut Context<E>,
+    groups: Vec<Vec<SymbolId>>,
+) -> Vec<(SymbolId, u8)> {
+    const GOT_FLAGS: u8 = NEEDS_GOT | NEEDS_GOTTP | NEEDS_TLSGD | NEEDS_TLSDESC;
+    struct Request {
+        id: SymbolId,
+        flags: u8,
+        extra_slot: bool,
+        ordered: bool,
+    }
+    let ctx_ref: &Context<E> = ctx;
+    let groups: Vec<_> = groups
+        .into_par_iter()
+        .map(|ids| {
+            let mut words = 0;
+            let requests: Vec<_> = ids
+                .into_iter()
+                .map(|id| {
+                    let sym = &ctx_ref.symbols[id];
+                    // A symbol belongs to one file group. Repeated ids within
+                    // that group consume the request only on their first use.
+                    let flags = sym.take_flags();
+                    let extra_slot = flags & NEEDS_GOT != 0 && sym.is_pde_ifunc(ctx_ref);
+                    words += u64::from(flags & NEEDS_GOT != 0)
+                        + u64::from(extra_slot)
+                        + u64::from(flags & NEEDS_GOTTP != 0)
+                        + 2 * u64::from(flags & NEEDS_TLSGD != 0)
+                        + 2 * u64::from(flags & NEEDS_TLSDESC != 0);
+                    let ordered = flags & !GOT_FLAGS != 0
+                        || (ctx_ref.dynamic.is_some() && (sym.is_imported() || sym.is_exported()));
+                    Request { id, flags, extra_slot, ordered }
+                })
+                .collect();
+            (requests, words)
+        })
+        .collect();
+
+    let mut next = ctx.got.hdr.shdr.sh_size.get() / word::<E>();
+    let groups: Vec<_> = groups
+        .into_iter()
+        .map(|(requests, words)| {
+            let first = next;
+            next += words;
+            (requests, first)
+        })
+        .collect();
+    let tables: Vec<_> = groups
+        .into_par_iter()
+        .map(|(requests, mut next)| {
+            let mut got = Vec::new();
+            let mut gottp = Vec::new();
+            let mut tlsgd = Vec::new();
+            let mut tlsdesc = Vec::new();
+            let mut ordered = Vec::new();
+            for Request { id, flags, extra_slot, ordered: needs_order } in requests {
+                let aux = ctx_ref.symbols[id].aux(&ctx_ref.symbols).unwrap();
+                let mut assign =
+                    |flag, index: &std::sync::atomic::AtomicU32, words, out: &mut Vec<_>| {
+                        if flags & flag != 0 {
+                            assert!(next < u32::MAX as u64);
+                            index.store(next as u32, Ordering::Relaxed);
+                            next += words;
+                            out.push(id);
+                        }
+                    };
+                assign(NEEDS_GOT, &aux.got_idx, 1 + u64::from(extra_slot), &mut got);
+                assign(NEEDS_GOTTP, &aux.gottp_idx, 1, &mut gottp);
+                assign(NEEDS_TLSGD, &aux.tlsgd_idx, 2, &mut tlsgd);
+                assign(NEEDS_TLSDESC, &aux.tlsdesc_idx, 2, &mut tlsdesc);
+                if flags & NEEDS_TLSDESC != 0 {
+                    // Static links relax TLSDESC relocations because the
+                    // runtime cannot initialize their GOT entries.
+                    debug_assert!(E::SUPPORTS_TLSDESC);
+                    debug_assert!(!ctx_ref.args.is_static);
+                }
+                if needs_order {
+                    ordered.push((id, flags));
+                }
+            }
+            (got, gottp, tlsgd, tlsdesc, ordered)
+        })
+        .collect();
+    ctx.got.hdr.shdr.sh_size.set(next * word::<E>());
+    let mut ordered = Vec::new();
+    for (got, gottp, tlsgd, tlsdesc, requests) in tables {
+        ctx.got.got_syms.extend(got);
+        ctx.got.gottp_syms.extend(gottp);
+        ctx.got.tlsgd_syms.extend(tlsgd);
+        ctx.got.tlsdesc_syms.extend(tlsdesc);
+        ordered.extend(requests);
+    }
+    ordered
+}
+
 pub fn add_got_symbol<E: Target>(ctx: &mut Context<E>, sym: SymbolId) {
     let size = ctx.got.hdr.shdr.sh_size.get();
     let idx = (size / word::<E>()) as u32;
     let is_pde_ifunc = ctx.symbols[sym].is_pde_ifunc(ctx);
     assert_ne!(idx, u32::MAX);
-    ctx.symbols.aux_mut(sym).got_idx = idx;
+    *ctx.symbols.aux_mut(sym).got_idx.get_mut() = idx;
     // An IFUNC symbol uses two GOT slots in a position-dependent
     // executable.
     let increment = if is_pde_ifunc { 2 * word::<E>() } else { word::<E>() };
@@ -78,7 +177,7 @@ pub fn add_gottp_symbol<E: Target>(ctx: &mut Context<E>, sym: SymbolId) {
     let size = ctx.got.hdr.shdr.sh_size.get();
     let idx = (size / word::<E>()) as u32;
     assert_ne!(idx, u32::MAX);
-    ctx.symbols.aux_mut(sym).gottp_idx = idx;
+    *ctx.symbols.aux_mut(sym).gottp_idx.get_mut() = idx;
     ctx.got.hdr.shdr.sh_size.set(size + word::<E>());
     ctx.got.gottp_syms.push(sym);
 }
@@ -87,7 +186,7 @@ pub fn add_tlsgd_symbol<E: Target>(ctx: &mut Context<E>, sym: SymbolId) {
     let size = ctx.got.hdr.shdr.sh_size.get();
     let idx = (size / word::<E>()) as u32;
     assert_ne!(idx, u32::MAX);
-    ctx.symbols.aux_mut(sym).tlsgd_idx = idx;
+    *ctx.symbols.aux_mut(sym).tlsgd_idx.get_mut() = idx;
     ctx.got.hdr.shdr.sh_size.set(size + 2 * word::<E>());
     ctx.got.tlsgd_syms.push(sym);
 }
@@ -104,7 +203,7 @@ pub fn add_tlsdesc_symbol<E: Target>(ctx: &mut Context<E>, sym: SymbolId) {
     let size = ctx.got.hdr.shdr.sh_size.get();
     let idx = (size / word::<E>()) as u32;
     assert_ne!(idx, u32::MAX);
-    ctx.symbols.aux_mut(sym).tlsdesc_idx = idx;
+    *ctx.symbols.aux_mut(sym).tlsdesc_idx.get_mut() = idx;
     ctx.got.hdr.shdr.sh_size.set(size + 2 * word::<E>());
     ctx.got.tlsdesc_syms.push(sym);
 }
@@ -420,5 +519,87 @@ pub fn populate_symtab<E: Target>(ctx: &Context<E>, block: &mut SymtabBlock<'_>)
     }
     if got.tlsld_idx.is_some() {
         block.push_synthetic::<E>(b"", b"$tlsld", object(got.tlsld_addr()));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::arch::{I386, X86_64};
+    use crate::cmdline::Args;
+    use crate::symbol::NEEDS_PLT;
+
+    fn check_layout<E: Target>(pic: bool, repeats: usize) {
+        let args = Args { pic, ..Args::default() };
+        let mut ctx = Context::<E>::new(args, Vec::new());
+        ctx.dynamic = Some(crate::chunks::dynamic::new_header(&ctx.args));
+        let a = ctx.symbols.intern(b"a");
+        let b = ctx.symbols.intern(b"b");
+        let c = ctx.symbols.intern(b"c");
+        let d = ctx.symbols.intern(b"d");
+        let e = ctx.symbols.intern(b"e");
+        let f = ctx.symbols.intern(b"f");
+        ctx.symbols[a].add_flags(NEEDS_GOT | NEEDS_PLT);
+        ctx.symbols[a].set_write_to_symtab();
+        ctx.symbols[b].add_flags(NEEDS_GOT | NEEDS_GOTTP | NEEDS_TLSGD | NEEDS_TLSDESC);
+        ctx.symbols[c].add_flags(NEEDS_GOT | NEEDS_PLT);
+        let mut esym = ElfSym::<E>::default();
+        esym.set_type(STT_GNU_IFUNC);
+        ctx.symbols[c].set_esym(&esym);
+        ctx.symbols[d].add_flags(NEEDS_TLSDESC);
+        ctx.symbols[e].set_exported(true);
+        ctx.symbols[f].set_imported(true);
+        ctx.symbols[f].add_flags(NEEDS_GOT);
+        ctx.symbols.aux_mut(b).plt_idx = 17;
+
+        // Mix single- and double-word entries, repeats, an empty file and
+        // existing auxiliary data. TLSLD occupies the first two free slots.
+        add_tlsld(&mut ctx);
+        let mut first = vec![a, b];
+        first.extend(std::iter::repeat_n(a, repeats));
+        let groups = vec![first, vec![], vec![c, d, e, f]];
+        ctx.symbols.allocate_aux(&groups);
+        let ordered = allocate_entries(&mut ctx, groups);
+        assert_eq!(
+            ordered,
+            [(a, NEEDS_GOT | NEEDS_PLT), (c, NEEDS_GOT | NEEDS_PLT), (e, 0), (f, NEEDS_GOT)]
+        );
+        assert_eq!(ctx.got.tlsld_idx, Some(1));
+        assert_eq!(ctx.symbols[a].got_idx(&ctx.symbols), Some(3));
+        assert_eq!(ctx.symbols[b].got_idx(&ctx.symbols), Some(4));
+        assert_eq!(ctx.symbols[b].gottp_idx(&ctx.symbols), Some(5));
+        assert_eq!(ctx.symbols[b].tlsgd_idx(&ctx.symbols), Some(6));
+        assert_eq!(ctx.symbols[b].tlsdesc_idx(&ctx.symbols), Some(8));
+        assert_eq!(ctx.symbols[b].plt_idx(&ctx.symbols), Some(17));
+        assert_eq!(ctx.symbols[c].got_idx(&ctx.symbols), Some(10));
+        let extra = u32::from(!pic);
+        assert_eq!(ctx.symbols[d].tlsdesc_idx(&ctx.symbols), Some(11 + extra));
+        assert_eq!(ctx.symbols[f].got_idx(&ctx.symbols), Some(13 + extra));
+        assert_eq!(ctx.got.hdr.shdr.sh_size.get(), (14 + extra as u64) * E::WORD_SIZE as u64);
+        assert_eq!(ctx.got.got_syms, [a, b, c, f]);
+        assert_eq!(ctx.got.gottp_syms, [b]);
+        assert_eq!(ctx.got.tlsgd_syms, [b]);
+        assert_eq!(ctx.got.tlsdesc_syms, [b, d]);
+        assert!(ctx.symbols[a].write_to_symtab());
+        for id in [a, b, c, d, e, f] {
+            assert_eq!(ctx.symbols[id].flags(), 0);
+        }
+        assert!(allocate_entries(&mut ctx, vec![]).is_empty());
+        assert_eq!(ctx.got.got_syms, [a, b, c, f]);
+    }
+
+    #[test]
+    fn got_ranges_preserve_order_and_ifunc_width() {
+        for threads in [1, 4] {
+            let pool = rayon::ThreadPoolBuilder::new().num_threads(threads).build().unwrap();
+            pool.install(|| {
+                for pic in [false, true] {
+                    for repeats in [1, 4096] {
+                        check_layout::<X86_64>(pic, repeats);
+                        check_layout::<I386>(pic, repeats);
+                    }
+                }
+            });
+        }
     }
 }

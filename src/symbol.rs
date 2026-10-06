@@ -160,10 +160,11 @@ impl AddrFlags {
 #[derive(Debug)]
 pub struct SymbolAux {
     // Zero-based table indices, with u32::MAX meaning no entry.
-    pub got_idx: u32,
-    pub gottp_idx: u32,
-    pub tlsgd_idx: u32,
-    pub tlsdesc_idx: u32,
+    // GOT ranges are assigned in parallel through shared symbol records.
+    pub got_idx: AtomicU32,
+    pub gottp_idx: AtomicU32,
+    pub tlsgd_idx: AtomicU32,
+    pub tlsdesc_idx: AtomicU32,
     pub plt_idx: u32,
     pub pltgot_idx: u32,
     pub opd_idx: u32,
@@ -181,10 +182,10 @@ const _: () = assert!(size_of::<SymbolAux>() == 64);
 impl Default for SymbolAux {
     fn default() -> Self {
         Self {
-            got_idx: u32::MAX,
-            gottp_idx: u32::MAX,
-            tlsgd_idx: u32::MAX,
-            tlsdesc_idx: u32::MAX,
+            got_idx: AtomicU32::new(u32::MAX),
+            gottp_idx: AtomicU32::new(u32::MAX),
+            tlsgd_idx: AtomicU32::new(u32::MAX),
+            tlsdesc_idx: AtomicU32::new(u32::MAX),
             plt_idx: u32::MAX,
             pltgot_idx: u32::MAX,
             opd_idx: u32::MAX,
@@ -718,6 +719,12 @@ impl Symbol {
         self.flags.fetch_and(WRITE_TO_SYMTAB, Ordering::Relaxed);
     }
 
+    #[inline]
+    /// Consumes relocation requests, retaining the output-symbol-table bit.
+    pub fn take_flags(&self) -> u8 {
+        self.flags.fetch_and(WRITE_TO_SYMTAB, Ordering::Relaxed) & NEEDS_MASK
+    }
+
     /// Marks the symbol, returning true if it wasn't marked yet. Once the
     /// NEEDS_* flags have been turned into GOT and PLT entries, the field
     /// is free to serve as a scratch mark, which thunk creation uses.
@@ -750,22 +757,22 @@ impl Symbol {
     }
 
     pub fn got_idx(&self, symbols: &SymbolTable) -> Option<u32> {
-        let idx = self.aux(symbols)?.got_idx;
+        let idx = self.aux(symbols)?.got_idx.load(Ordering::Relaxed);
         (idx != u32::MAX).then_some(idx)
     }
 
     pub fn gottp_idx(&self, symbols: &SymbolTable) -> Option<u32> {
-        let idx = self.aux(symbols)?.gottp_idx;
+        let idx = self.aux(symbols)?.gottp_idx.load(Ordering::Relaxed);
         (idx != u32::MAX).then_some(idx)
     }
 
     pub fn tlsgd_idx(&self, symbols: &SymbolTable) -> Option<u32> {
-        let idx = self.aux(symbols)?.tlsgd_idx;
+        let idx = self.aux(symbols)?.tlsgd_idx.load(Ordering::Relaxed);
         (idx != u32::MAX).then_some(idx)
     }
 
     pub fn tlsdesc_idx(&self, symbols: &SymbolTable) -> Option<u32> {
-        let idx = self.aux(symbols)?.tlsdesc_idx;
+        let idx = self.aux(symbols)?.tlsdesc_idx.load(Ordering::Relaxed);
         (idx != u32::MAX).then_some(idx)
     }
 
@@ -1891,7 +1898,7 @@ mod tests {
         let b = table.intern(b"b");
         let c = table.intern(b"c");
         let old = table.intern(b"old");
-        table.aux_mut(old).got_idx = 17;
+        *table.aux_mut(old).got_idx.get_mut() = 17;
 
         table.allocate_aux(&[vec![b, a, b], vec![old, c, c]]);
         let aux_idx = |id: SymbolId| table[id].aux_idx.load(Ordering::Relaxed);
