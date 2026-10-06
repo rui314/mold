@@ -199,6 +199,9 @@ pub struct ThreadPoolBuilder<S = DefaultSpawn> {
     /// "depth-first" fashion. If true, they will do a "breadth-first"
     /// fashion. Depth-first is the default.
     breadth_first: bool,
+
+    /// How long idle workers yield and search before they may sleep.
+    idle_timeout: std::time::Duration,
 }
 
 /// Contains the rayon thread pool configuration. Use [`ThreadPoolBuilder`] instead.
@@ -235,6 +238,7 @@ impl Default for ThreadPoolBuilder {
             exit_handler: None,
             spawn_handler: DefaultSpawn,
             breadth_first: false,
+            idle_timeout: std::time::Duration::ZERO,
         }
     }
 }
@@ -445,7 +449,20 @@ impl<S> ThreadPoolBuilder<S> {
             start_handler: self.start_handler,
             exit_handler: self.exit_handler,
             breadth_first: self.breadth_first,
+            idle_timeout: self.idle_timeout,
         }
+    }
+
+    /// Delays parking idle workers by at least this duration while they keep
+    /// searching for work and yielding the processor. This can reduce wake-up
+    /// latency between short bursts of parallel work, at the cost of CPU time.
+    ///
+    /// Zero (the default) retains Rayon's normal round-based sleep policy.
+    /// This is a minimum idle period before parking, not a scheduling deadline;
+    /// a worker may take longer to park if it is descheduled or new work arrives.
+    pub fn idle_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.idle_timeout = timeout;
+        self
     }
 
     /// Returns a reference to the current spawn handler.
@@ -800,6 +817,7 @@ impl<S> fmt::Debug for ThreadPoolBuilder<S> {
             ref exit_handler,
             spawn_handler: _,
             ref breadth_first,
+            ref idle_timeout,
         } = *self;
 
         // Just print `Some(<closure>)` or `None` to the debug
@@ -816,6 +834,7 @@ impl<S> fmt::Debug for ThreadPoolBuilder<S> {
         let exit_handler = exit_handler.as_ref().map(|_| ClosurePlaceholder);
 
         f.debug_struct("ThreadPoolBuilder")
+            .field("idle_timeout", idle_timeout)
             .field("num_threads", num_threads)
             .field("use_current_thread", use_current_thread)
             .field("get_thread_name", &get_thread_name)

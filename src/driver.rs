@@ -111,6 +111,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     let threads = thread_count(&ctx.args);
     rayon::ThreadPoolBuilder::new()
         .num_threads(threads)
+        .idle_timeout(std::time::Duration::from_millis(2))
         .use_current_thread()
         .build_global()
         .unwrap_or_else(|err| fatal!("failed to build linker thread pool: {err}"));
@@ -162,10 +163,6 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
             }
         }
     }
-
-    // Keep the worker threads from sleeping between passes until the link
-    // is done.
-    let _keep_warm = crate::util::parallel::KeepWarm::start();
 
     // Parse input files
     crate::reader::read_input_files(&mut ctx, jobs);

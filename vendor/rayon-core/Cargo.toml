@@ -93,3 +93,7 @@ version = "1.0"
 version = "0.2"
 
 [workspace]
+
+[[test]]
+name = "idle_timeout"
+path = "tests/idle_timeout.rs"

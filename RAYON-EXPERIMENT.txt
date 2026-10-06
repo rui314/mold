@@ -1,0 +1,18 @@
+Rayon idle policy experiment (mold PR #1694)
+
+The branch starts at original PR commit 28d46ec7 and removes KeepWarm,
+Context::timer rearming, and broadcast polling jobs. A vendored Rayon-core
+1.13.0 adds ThreadPoolBuilder::idle_timeout; mold requests 2 milliseconds.
+Default zero preserves Rayon's original policy and performs no clock reads.
+Polling uses the existing worker search and yield loop, with the existing
+sleep notification protocol intact. There is no special pass-boundary wakeup.
+
+Validation includes upstream rayon-core tests, repeated bursts, nested joins,
+broadcasts, parked-worker wakeups, shutdown, mold unit tests, native linker
+integration tests, and byte comparison over eight captured link workloads.
+See /Users/callen/work/mold/.codex/perf/rayon-20261006 for host benchmark data.
+
+This is a Rayon API prototype, not functionality in released Rayon. The
+vendored crate makes the experiment self-contained and should be replaced by
+an upstream Rayon release if the API is accepted. It is not a proposal to
+permanently maintain a private scheduler in mold.

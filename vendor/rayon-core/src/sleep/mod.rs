@@ -6,6 +6,7 @@ use crate::sync::{Condvar, Mutex};
 use crossbeam_utils::CachePadded;
 use std::sync::atomic::Ordering;
 use std::thread;
+use std::time::{Duration, Instant};
 
 mod counters;
 pub(crate) use self::counters::THREADS_MAX;
@@ -24,6 +25,7 @@ pub(super) struct Sleep {
     worker_sleep_states: Vec<CachePadded<WorkerSleepState>>,
 
     counters: AtomicCounters,
+    idle_timeout: Duration,
 }
 
 /// An instance of this struct is created when a thread becomes idle.
@@ -37,6 +39,9 @@ pub(super) struct IdleState {
 
     /// How many rounds have we been circling without sleeping?
     rounds: u32,
+
+    /// Avoid clock reads altogether when the idle timeout is disabled.
+    idle_since: Option<Instant>,
 
     /// Once we become sleepy, what was the sleepy counter value?
     /// Set to `INVALID_SLEEPY_COUNTER` otherwise.
@@ -57,11 +62,12 @@ const ROUNDS_UNTIL_SLEEPY: u32 = 32;
 const ROUNDS_UNTIL_SLEEPING: u32 = ROUNDS_UNTIL_SLEEPY + 1;
 
 impl Sleep {
-    pub(super) fn new(n_threads: usize) -> Sleep {
+    pub(super) fn new(n_threads: usize, idle_timeout: Duration) -> Sleep {
         assert!(n_threads <= THREADS_MAX);
         Sleep {
             worker_sleep_states: (0..n_threads).map(|_| Default::default()).collect(),
             counters: AtomicCounters::new(),
+            idle_timeout,
         }
     }
 
@@ -72,6 +78,7 @@ impl Sleep {
         IdleState {
             worker_index,
             rounds: 0,
+            idle_since: (!self.idle_timeout.is_zero()).then(Instant::now),
             jobs_counter: JobsEventCounter::DUMMY,
         }
     }
@@ -91,6 +98,16 @@ impl Sleep {
         latch: &CoreLatch,
         has_injected_jobs: impl FnOnce() -> bool,
     ) {
+        // Extend only the pre-sleep search. The existing sleepy announcement,
+        // job-event counter, latch and condition-variable protocol is unchanged.
+        if idle_state.rounds == ROUNDS_UNTIL_SLEEPY
+            && idle_state
+                .idle_since
+                .is_some_and(|since| since.elapsed() < self.idle_timeout)
+        {
+            thread::yield_now();
+            return;
+        }
         if idle_state.rounds < ROUNDS_UNTIL_SLEEPY {
             thread::yield_now();
             idle_state.rounds += 1;
@@ -314,6 +331,9 @@ impl Sleep {
 impl IdleState {
     fn wake_fully(&mut self) {
         self.rounds = 0;
+        if self.idle_since.is_some() {
+            self.idle_since = Some(Instant::now());
+        }
         self.jobs_counter = JobsEventCounter::DUMMY;
     }
 
