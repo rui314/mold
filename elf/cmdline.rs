@@ -1918,6 +1918,18 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             || cursor.read_z_flag("combreloc")
             || cursor.read_z_flag("nocombreloc")
             || read_z_arg!("common-page-size")
+            // GNU ld's -z keywords mold has no use for: they mark the
+            // output (DF_1_GLOBAL, DF_1_UNIQUE, global auditing), or do
+            // nothing on the targets mold supports.
+            || cursor.read_z_flag("global")
+            || cursor.read_z_flag("globalaudit")
+            || cursor.read_z_flag("loadfltr")
+            || cursor.read_z_flag("start-stop-gc")
+            || cursor.read_z_flag("nostart-stop-gc")
+            || cursor.read_z_flag("unique")
+            || cursor.read_z_flag("nounique")
+            || cursor.read_z_flag("unique-symbol")
+            || cursor.read_z_flag("nounique-symbol")
             || cursor.read_flag("no-keep-memory")
             // GNU ld reads "-max-cache-size" as "-m ax-cache-size", so the
             // long name needs two dashes, like the other options a
@@ -2652,5 +2664,30 @@ mod tests {
         assert!(!is_short_bundle(OsStr::new("-s")));
         assert!(!is_short_bundle(OsStr::new("--sS")));
         assert!(!is_short_bundle(OsStr::new("a.o")));
+    }
+
+    #[test]
+    fn gnu_ld_z_keywords_mold_has_no_use_for_are_accepted() {
+        let parsed = parse(&[
+            "-z",
+            "global",
+            "-zglobalaudit",
+            "-z",
+            "loadfltr",
+            "-z",
+            "start-stop-gc",
+            "-z",
+            "nostart-stop-gc",
+            "-z",
+            "unique",
+            "-z",
+            "nounique",
+            "-z",
+            "unique-symbol",
+            "-z",
+            "nounique-symbol",
+            "a.o",
+        ]);
+        assert_eq!(parsed.jobs.len(), 1);
     }
 }

@@ -146,3 +146,10 @@ not ./mold -sO2 $t/a.o |& grep 'unknown command line option: -sO2'
 # A word that names a long option is not a bundle: -init is --init, not
 # -i -n -i -t, so main is the init symbol, not an input file.
 $CC -B. -o $t/exe -Wl,-init,main $t/a.o
+
+# -z keywords GNU ld accepts and mold has no use for.
+for kw in global globalaudit loadfltr start-stop-gc nostart-stop-gc unique nounique \
+  unique-symbol nounique-symbol; do
+  $CC -B. -o $t/exe -Wl,-z -Wl,$kw $t/a.o
+done
+$CC -B. -o $t/exe -Wl,-zglobal $t/a.o
