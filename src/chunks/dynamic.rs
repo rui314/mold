@@ -183,51 +183,51 @@ fn for_each_entry<E: Target>(ctx: &Context<E>, mut define: impl FnMut(u32, u64))
         define(DT_TEXTREL, 0);
     }
 
-    let mut flags = 0u64;
-    let mut flags1 = 0u64;
+    let mut flags = 0u32;
+    let mut flags1 = 0u32;
     if ctx.args.pie {
-        flags1 |= DF_1_PIE as u64;
+        flags1 |= DF_1_PIE;
     }
     if ctx.args.z_now {
-        flags |= DF_BIND_NOW as u64;
-        flags1 |= DF_1_NOW as u64;
+        flags |= DF_BIND_NOW;
+        flags1 |= DF_1_NOW;
     }
     if ctx.args.z_origin {
-        flags |= DF_ORIGIN as u64;
-        flags1 |= DF_1_ORIGIN as u64;
+        flags |= DF_ORIGIN;
+        flags1 |= DF_1_ORIGIN;
     }
     if !ctx.args.z_dlopen {
-        flags1 |= DF_1_NOOPEN as u64;
+        flags1 |= DF_1_NOOPEN;
     }
     if ctx.args.z_nodefaultlib {
-        flags1 |= DF_1_NODEFLIB as u64;
+        flags1 |= DF_1_NODEFLIB;
     }
     if !ctx.args.z_delete {
-        flags1 |= DF_1_NODELETE as u64;
+        flags1 |= DF_1_NODELETE;
     }
     if !ctx.args.z_dump {
-        flags1 |= DF_1_NODUMP as u64;
+        flags1 |= DF_1_NODUMP;
     }
     if ctx.args.z_global {
-        flags1 |= DF_1_GLOBAL as u64;
+        flags1 |= DF_1_GLOBAL;
     }
     if ctx.args.z_initfirst {
-        flags1 |= DF_1_INITFIRST as u64;
+        flags1 |= DF_1_INITFIRST;
     }
     if ctx.args.z_interpose {
-        flags1 |= DF_1_INTERPOSE as u64;
+        flags1 |= DF_1_INTERPOSE;
     }
     if !ctx.got.gottp_syms.is_empty() {
-        flags |= DF_STATIC_TLS as u64;
+        flags |= DF_STATIC_TLS;
     }
     if has_textrel {
-        flags |= DF_TEXTREL as u64;
+        flags |= DF_TEXTREL;
     }
     if flags != 0 {
-        define(DT_FLAGS, flags);
+        define(DT_FLAGS, flags.into());
     }
     if flags1 != 0 {
-        define(DT_FLAGS_1, flags1);
+        define(DT_FLAGS_1, flags1.into());
     }
 
     if E::FAMILY == Family::Arm64 && contains_variant_pcs(ctx) {
