@@ -97,3 +97,35 @@ $CC -B. -o $t/exe36 -Wl,--no-stats $t/a.o
 
 # A name that merely starts like an option is still unknown.
 not ./mold --sort-commonplace |& grep 'unknown command line option: --sort-commonplace'
+
+# GNU ld's informational and no-op options: accepted and ignored.
+for opt in --print-map-discarded --no-print-map-discarded --print-map-locals \
+  --no-print-map-locals --strip-discarded --no-strip-discarded --map-whole-files \
+  --no-map-whole-files --cref --print-memory-usage --print-sysroot \
+  --print-output-format --target-help --force-exe-suffix --traditional-format \
+  --qmagic --reduce-memory-overheads --accept-unknown-input-arch \
+  --no-accept-unknown-input-arch --no-warn-mismatch --no-warn-search-mismatch \
+  --force-group-allocation --enable-non-contiguous-regions \
+  --enable-non-contiguous-regions-warnings --disable-linker-version \
+  --enable-linker-version --no-enum-size-warning --no-wchar-size-warning \
+  --default-imported-symver --warn-execstack-objects --warn-section-align \
+  --warn-multiple-gp --warn-alternate-em --error-execstack --warn-rwx-segments \
+  --error-rwx-segments --no-define-common --dynamic-list-cpp-new \
+  --dynamic-list-cpp-typeinfo --check-sections --no-check-sections; do
+  $CC -B. -o $t/exe -Wl,$opt $t/a.o
+done
+
+# The ones that take a value, separately or attached by an equal sign.
+for opt in --hash-size=1024 --remap-inputs=a=b --error-handling-script=$t/err.sh \
+  --version-exports-section=VER; do
+  $CC -B. -o $t/exe -Wl,$opt $t/a.o
+done
+$CC -B. -o $t/exe -Wl,--hash-size -Wl,2048 $t/a.o
+$CC -B. -o $t/exe -Wl,--remap-inputs-file -Wl,$t/remap.txt $t/a.o
+
+# Single-dash spellings of long options that start with a short option's
+# letter: -qmagic is --qmagic, not -q magic, and -hash-size=1024 is
+# --hash-size=1024, not -h ash-size=1024.
+$CC -B. -o $t/exe -Wl,-qmagic $t/a.o
+$CC -B. -o $t/exe -Wl,-hash-size=1024 $t/a.o
+$CC -B. -o $t/exe -Wl,-hash-size -Wl,2048 $t/a.o

@@ -1926,6 +1926,55 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             || read_arg!("mri-script", true)
             || read_arg!("dT", true)
             || read_arg!("default-script", true)
+            // GNU ld's informational options, which print something, and
+            // its no-op options, which do nothing on the targets mold
+            // supports. All are accepted and ignored.
+            || cursor.read_flag("print-map-discarded")
+            || cursor.read_flag("no-print-map-discarded")
+            || cursor.read_flag("print-map-locals")
+            || cursor.read_flag("no-print-map-locals")
+            || cursor.read_flag("strip-discarded")
+            || cursor.read_flag("no-strip-discarded")
+            || cursor.read_flag("map-whole-files")
+            || cursor.read_flag("no-map-whole-files")
+            || cursor.read_flag("cref")
+            || cursor.read_flag("print-memory-usage")
+            || cursor.read_flag("print-sysroot")
+            || cursor.read_flag("print-output-format")
+            || cursor.read_flag("target-help")
+            || cursor.read_flag("force-exe-suffix")
+            || cursor.read_flag("traditional-format")
+            || cursor.read_flag("qmagic")
+            || cursor.read_flag("reduce-memory-overheads")
+            || read_arg!("hash-size", true)
+            || read_arg!("remap-inputs", true)
+            || read_arg!("remap-inputs-file", true)
+            || read_arg!("error-handling-script", true)
+            || read_arg!("version-exports-section", true)
+            || cursor.read_flag("accept-unknown-input-arch")
+            || cursor.read_flag("no-accept-unknown-input-arch")
+            || cursor.read_flag("no-warn-mismatch")
+            || cursor.read_flag("no-warn-search-mismatch")
+            || cursor.read_flag("force-group-allocation")
+            || cursor.read_flag("enable-non-contiguous-regions")
+            || cursor.read_flag("enable-non-contiguous-regions-warnings")
+            || cursor.read_flag("disable-linker-version")
+            || cursor.read_flag("enable-linker-version")
+            || cursor.read_flag("no-enum-size-warning")
+            || cursor.read_flag("no-wchar-size-warning")
+            || cursor.read_flag("default-imported-symver")
+            || cursor.read_flag("warn-execstack-objects")
+            || cursor.read_flag("warn-section-align")
+            || cursor.read_flag("warn-multiple-gp")
+            || cursor.read_flag("warn-alternate-em")
+            || cursor.read_flag("error-execstack")
+            || cursor.read_flag("warn-rwx-segments")
+            || cursor.read_flag("error-rwx-segments")
+            || cursor.read_flag("no-define-common")
+            || cursor.read_flag("dynamic-list-cpp-new")
+            || cursor.read_flag("dynamic-list-cpp-typeinfo")
+            || cursor.read_flag("check-sections")
+            || cursor.read_flag("no-check-sections")
         {
             // Ignored for compatibility.
         } else if read_arg!("m") {
@@ -2437,5 +2486,75 @@ mod tests {
         let mut cursor = ArgCursor { args: &args, index: 1, attached_shorts: true };
         assert!(!cursor.read_optional_arg("sort-common"));
         assert_eq!(cursor.index, 1);
+    }
+
+    #[test]
+    fn gnu_ld_no_op_options_are_accepted() {
+        let parsed = parse(&[
+            "--print-map-discarded",
+            "--no-print-map-discarded",
+            "--print-map-locals",
+            "--no-print-map-locals",
+            "--strip-discarded",
+            "--no-strip-discarded",
+            "--map-whole-files",
+            "--no-map-whole-files",
+            "--cref",
+            "--print-memory-usage",
+            "--print-sysroot",
+            "--print-output-format",
+            "--target-help",
+            "--force-exe-suffix",
+            "--traditional-format",
+            "--qmagic",
+            "--reduce-memory-overheads",
+            "--hash-size=1024",
+            "--hash-size",
+            "2048",
+            "--remap-inputs=a=b",
+            "--remap-inputs",
+            "c=d",
+            "--remap-inputs-file=remap.txt",
+            "--error-handling-script=err.sh",
+            "--version-exports-section=VER",
+            "--accept-unknown-input-arch",
+            "--no-accept-unknown-input-arch",
+            "--no-warn-mismatch",
+            "--no-warn-search-mismatch",
+            "--force-group-allocation",
+            "--enable-non-contiguous-regions",
+            "--enable-non-contiguous-regions-warnings",
+            "--disable-linker-version",
+            "--enable-linker-version",
+            "--no-enum-size-warning",
+            "--no-wchar-size-warning",
+            "--default-imported-symver",
+            "--warn-execstack-objects",
+            "--warn-section-align",
+            "--warn-multiple-gp",
+            "--warn-alternate-em",
+            "--error-execstack",
+            "--warn-rwx-segments",
+            "--error-rwx-segments",
+            "--no-define-common",
+            "--dynamic-list-cpp-new",
+            "--dynamic-list-cpp-typeinfo",
+            "--check-sections",
+            "--no-check-sections",
+            "a.o",
+        ]);
+        assert_eq!(parsed.jobs.len(), 1);
+
+        // Single-dash spellings of long options that start with a letter
+        // that is a short option: -hash-size=1024 is --hash-size=1024, not
+        // -h ash-size=1024, and -qmagic is --qmagic, not -q magic.
+        for args in [&["-hash-size=1024", "a.o"][..], &["-hash-size", "2048", "a.o"][..]] {
+            let parsed = parse(args);
+            assert_eq!(parsed.jobs.len(), 1, "{args:?}");
+            assert!(parsed.args.soname.is_empty(), "{args:?}");
+        }
+        let parsed = parse(&["-qmagic", "a.o"]);
+        assert_eq!(parsed.jobs.len(), 1);
+        assert!(!parsed.args.emit_relocs);
     }
 }
