@@ -1,6 +1,18 @@
 Rayon idle policy experiment (mold PR #1694)
 
-The branch starts at original PR commit 28d46ec7 and removes KeepWarm,
+Current base: upstream main b2e5a7084f7391fca5c13631d20d36f64f72fe3a.
+The benchmark numbers below describe the pre-rebase versions identified by
+their source commits. They have not been remeasured on this newer base.
+
+Rebase validation on wx-workstation: release build, 32 mold library tests,
+2 harness library tests, 550 native integration passes (14 skips, no failures),
+and upstream Rayon plus added tests pass. All eight captured workloads match
+current upstream byte-for-byte at 1, 8 and 32 workers. Rayon source/tests are
+unchanged; upstream dependencies, release settings and fatal startup-error
+reporting are preserved. Validation logs and output hashes:
+https://github.com/bitemyapp/mold/tree/9d45d6949b00e6c97dbef5eee6ba5793c86a33da/rebase-20261006
+
+This experiment originated at PR commit 28d46ec7. It removes KeepWarm,
 Context::timer rearming, and broadcast polling jobs. A vendored Rayon-core
 1.13.0 adds ThreadPoolBuilder::idle_timeout; mold requests 2 milliseconds.
 Default zero preserves Rayon's original policy and performs no clock reads.
@@ -19,8 +31,8 @@ vendored crate makes the experiment self-contained and should be replaced by
 an upstream Rayon release if the API is accepted. It is not a proposal to
 permanently maintain a private scheduler in mold.
 
-Workstation comparison (6 October 2026)
-======================================
+Pre-rebase workstation comparison (6 October 2026)
+=================================================
 Original PR #1694: 28d46ec70515269e1fff4aa39d178e8c07e260e4
 Benchmarked implementation: e28a30fcc0acba52bb110cc8508d85deb1dacac6
 Shared baseline: 99d79c429bda8630330c806b33ca724a770ac637
