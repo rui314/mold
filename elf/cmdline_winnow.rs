@@ -137,9 +137,10 @@ pub(crate) enum Item {
     /// `-:ignore-ir-file`
     #[arg(long = ":ignore-ir-file")]
     InternalIgnoreIrFile(OsString),
-    /// `-demangle`
-    #[arg(long = "demangle")]
-    Demangle,
+    /// `-demangle`, optionally with a style; mold demangles in every style
+    /// it knows, so the style is not read.
+    #[arg(long = "demangle", require_equals, default_missing = "\0")]
+    Demangle(OsString),
     /// `-no-demangle`
     #[arg(long = "no-demangle")]
     NoDemangle,
@@ -650,9 +651,9 @@ pub(crate) enum Item {
     /// `-O2`
     #[arg(long = "O2")]
     IgnoredO2,
-    /// `-verbose`
-    #[arg(long = "verbose")]
-    IgnoredVerbose,
+    /// `-verbose`, optionally with a number
+    #[arg(long = "verbose", require_equals, default_missing = "\0")]
+    IgnoredVerbose(OsString),
     /// `-start-group`
     #[arg(long = "start-group")]
     IgnoredStartGroup,
@@ -680,9 +681,9 @@ pub(crate) enum Item {
     /// `-sort-section`
     #[arg(long = "sort-section")]
     IgnoredSortSection(OsString),
-    /// `-sort-common`
-    #[arg(long = "sort-common")]
-    IgnoredSortCommon,
+    /// `-sort-common`, optionally with an order
+    #[arg(long = "sort-common", require_equals, default_missing = "\0")]
+    IgnoredSortCommon(OsString),
     /// `-dc`
     #[arg(long = "dc")]
     IgnoredDc,
@@ -692,9 +693,21 @@ pub(crate) enum Item {
     /// `-fix-cortex-a53-835769`
     #[arg(long = "fix-cortex-a53-835769")]
     IgnoredFixCortexA53835769,
-    /// `-fix-cortex-a53-843419`
-    #[arg(long = "fix-cortex-a53-843419")]
-    IgnoredFixCortexA53843419,
+    /// `-fix-cortex-a53-843419`, optionally with a workaround
+    #[arg(long = "fix-cortex-a53-843419", require_equals, default_missing = "\0")]
+    IgnoredFixCortexA53843419(OsString),
+    /// `-split-by-file`, optionally with a size
+    #[arg(long = "split-by-file", require_equals, default_missing = "\0")]
+    IgnoredSplitByFile(OsString),
+    /// `-split-by-reloc`, optionally with a count
+    #[arg(long = "split-by-reloc", require_equals, default_missing = "\0")]
+    IgnoredSplitByReloc(OsString),
+    /// `-orphan-handling` with a place; mold places no orphans
+    #[arg(long = "orphan-handling")]
+    IgnoredOrphanHandling(OsString),
+    /// `-no-stats`
+    #[arg(long = "no-stats")]
+    IgnoredNoStats,
     /// `-nodefaultlibs`
     #[arg(long = "nodefaultlibs")]
     IgnoredNodefaultlibs,
@@ -1248,5 +1261,61 @@ mod tests {
         assert!(matches!(&items[0], Item::Unknown(v) if v.as_os_str() == "-auxiliaries"));
         let items = parse_items(&["-c", "script.mri"]);
         assert!(matches!(&items[0], Item::Unknown(v) if v.as_os_str() == "-c"));
+    }
+
+    #[test]
+    fn gnu_ld_optional_value_forms_are_accepted() {
+        // The options whose value GNU ld makes optional: accepted bare,
+        // and with the value attached by an equal sign.
+        let items = parse_items(&[
+            "--verbose",
+            "--verbose=3",
+            "--sort-common",
+            "--sort-common=descending",
+            "--demangle",
+            "--demangle=gnu",
+            "--fix-cortex-a53-843419",
+            "--fix-cortex-a53-843419=adr",
+            "--split-by-file",
+            "--split-by-file=4096",
+            "--split-by-reloc",
+            "--split-by-reloc=10",
+            "--orphan-handling=place",
+            "--orphan-handling",
+            "warn",
+            "--no-stats",
+            "a.o",
+        ]);
+        assert!(matches!(&items[0], Item::IgnoredVerbose(v) if v.as_encoded_bytes() == b"\0"));
+        assert!(matches!(&items[1], Item::IgnoredVerbose(v) if v.as_os_str() == "3"));
+        assert!(matches!(&items[2], Item::IgnoredSortCommon(v) if v.as_encoded_bytes() == b"\0"));
+        assert!(matches!(&items[3], Item::IgnoredSortCommon(v) if v.as_os_str() == "descending"));
+        assert!(matches!(&items[4], Item::Demangle(v) if v.as_encoded_bytes() == b"\0"));
+        assert!(matches!(&items[5], Item::Demangle(v) if v.as_os_str() == "gnu"));
+        assert!(
+            matches!(&items[6], Item::IgnoredFixCortexA53843419(v) if v.as_encoded_bytes() == b"\0")
+        );
+        assert!(matches!(&items[7], Item::IgnoredFixCortexA53843419(v) if v.as_os_str() == "adr"));
+        assert!(matches!(&items[8], Item::IgnoredSplitByFile(v) if v.as_encoded_bytes() == b"\0"));
+        assert!(matches!(&items[9], Item::IgnoredSplitByFile(v) if v.as_os_str() == "4096"));
+        assert!(
+            matches!(&items[10], Item::IgnoredSplitByReloc(v) if v.as_encoded_bytes() == b"\0")
+        );
+        assert!(matches!(&items[11], Item::IgnoredSplitByReloc(v) if v.as_os_str() == "10"));
+        assert!(matches!(&items[12], Item::IgnoredOrphanHandling(v) if v.as_os_str() == "place"));
+        assert!(matches!(&items[13], Item::IgnoredOrphanHandling(v) if v.as_os_str() == "warn"));
+        assert!(matches!(&items[14], Item::IgnoredNoStats));
+        assert!(matches!(&items[15], Item::Input(v) if v.as_os_str() == "a.o"));
+
+        // The value is attached by an equal sign only; a separate word is
+        // an input file, as in GNU ld.
+        let items = parse_items(&["--verbose", "3", "a.o"]);
+        assert!(matches!(&items[0], Item::IgnoredVerbose(_)));
+        assert!(matches!(&items[1], Item::Input(v) if v.as_os_str() == "3"));
+        assert!(matches!(&items[2], Item::Input(v) if v.as_os_str() == "a.o"));
+
+        // A name that merely starts like an option is still unknown.
+        let items = parse_items(&["--sort-commonplace"]);
+        assert!(matches!(&items[0], Item::Unknown(v) if v.as_os_str() == "--sort-commonplace"));
     }
 }

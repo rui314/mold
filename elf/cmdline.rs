@@ -2067,7 +2067,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                     let raw_arg: &OsStr = value_os;
                     a.ignore_ir_file.insert(raw_arg.to_os_string());
                 }
-                Item::Demangle => {
+                Item::Demangle(_) => {
                     mold_common::error::set_demangle(true);
                 }
                 Item::NoDemangle => {
@@ -2811,7 +2811,11 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                 | Item::IgnoredO0
                 | Item::IgnoredO1
                 | Item::IgnoredO2
-                | Item::IgnoredVerbose
+                | Item::IgnoredVerbose(_)
+                | Item::IgnoredSplitByFile(_)
+                | Item::IgnoredSplitByReloc(_)
+                | Item::IgnoredOrphanHandling(_)
+                | Item::IgnoredNoStats
                 | Item::IgnoredStartGroup
                 | Item::IgnoredEndGroup
                 | Item::IgnoredOpenParen
@@ -2825,11 +2829,11 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                 Item::IgnoredSortSection(_) => {
                     // Ignored for compatibility.
                 }
-                Item::IgnoredSortCommon
+                Item::IgnoredSortCommon(_)
                 | Item::IgnoredDc
                 | Item::IgnoredDp
                 | Item::IgnoredFixCortexA53835769
-                | Item::IgnoredFixCortexA53843419
+                | Item::IgnoredFixCortexA53843419(_)
                 | Item::IgnoredNodefaultlibs
                 | Item::IgnoredWarnConstructors
                 | Item::IgnoredWarnExecstack
