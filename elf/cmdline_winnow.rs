@@ -1140,6 +1140,36 @@ pub(crate) enum Item {
     /// `-z norewrite-endbr`.
     #[arg(skip)]
     ZNorewriteEndbr,
+    // GNU ld's -z keywords mold has no use for: they mark the output
+    // (DF_1_GLOBAL, DF_1_UNIQUE, global auditing), or do nothing on the
+    // targets mold supports.
+    /// `-z global`.
+    #[arg(skip)]
+    ZGlobal,
+    /// `-z globalaudit`.
+    #[arg(skip)]
+    ZGlobalaudit,
+    /// `-z loadfltr`.
+    #[arg(skip)]
+    ZLoadfltr,
+    /// `-z start-stop-gc`.
+    #[arg(skip)]
+    ZStartStopGc,
+    /// `-z nostart-stop-gc`.
+    #[arg(skip)]
+    ZNoStartStopGc,
+    /// `-z unique`.
+    #[arg(skip)]
+    ZUnique,
+    /// `-z nounique`.
+    #[arg(skip)]
+    ZNounique,
+    /// `-z unique-symbol`.
+    #[arg(skip)]
+    ZUniqueSymbol,
+    /// `-z nounique-symbol`.
+    #[arg(skip)]
+    ZNouniqueSymbol,
     /// A flag nothing above names, whole: `--lto-O3`, or an error.
     #[arg(unknown)]
     Unknown(OsString),
@@ -1255,6 +1285,15 @@ pub(crate) fn z_opt(word: &OsStr) -> Option<Item> {
         "x86-64-v4" => Item::ZX8664V4,
         "rewrite-endbr" => Item::ZRewriteEndbr,
         "norewrite-endbr" => Item::ZNorewriteEndbr,
+        "global" => Item::ZGlobal,
+        "globalaudit" => Item::ZGlobalaudit,
+        "loadfltr" => Item::ZLoadfltr,
+        "start-stop-gc" => Item::ZStartStopGc,
+        "nostart-stop-gc" => Item::ZNoStartStopGc,
+        "unique" => Item::ZUnique,
+        "nounique" => Item::ZNounique,
+        "unique-symbol" => Item::ZUniqueSymbol,
+        "nounique-symbol" => Item::ZNouniqueSymbol,
         "combreloc" => Item::IgnoredShortO(OsString::new()),
         "nocombreloc" => Item::IgnoredShortO(OsString::new()),
         _ => {
@@ -1554,5 +1593,46 @@ mod tests {
         assert!(bundle_takes_value(OsStr::new("-sO2")));
         assert!(!bundle_takes_value(OsStr::new("-sS")));
         assert!(!bundle_takes_value(OsStr::new("a.o")));
+    }
+
+    #[test]
+    fn gnu_ld_z_keywords_mold_has_no_use_for_are_accepted() {
+        // As the dispatch does: -z KEYWORD is the option it stands for.
+        let items: Vec<Item> = parse_items(&[
+            "-z",
+            "global",
+            "-zglobalaudit",
+            "-z",
+            "loadfltr",
+            "-z",
+            "start-stop-gc",
+            "-z",
+            "nostart-stop-gc",
+            "-z",
+            "unique",
+            "-z",
+            "nounique",
+            "-z",
+            "unique-symbol",
+            "-z",
+            "nounique-symbol",
+            "a.o",
+        ])
+        .into_iter()
+        .map(|item| match item {
+            Item::Z(z) => z_opt(&z.value).unwrap_or(Item::Z(z)),
+            item => item,
+        })
+        .collect();
+        assert!(matches!(&items[0], Item::ZGlobal));
+        assert!(matches!(&items[1], Item::ZGlobalaudit));
+        assert!(matches!(&items[2], Item::ZLoadfltr));
+        assert!(matches!(&items[3], Item::ZStartStopGc));
+        assert!(matches!(&items[4], Item::ZNoStartStopGc));
+        assert!(matches!(&items[5], Item::ZUnique));
+        assert!(matches!(&items[6], Item::ZNounique));
+        assert!(matches!(&items[7], Item::ZUniqueSymbol));
+        assert!(matches!(&items[8], Item::ZNouniqueSymbol));
+        assert!(matches!(&items[9], Item::Input(_)));
     }
 }

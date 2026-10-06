@@ -3152,6 +3152,17 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                 Item::ZNorewriteEndbr => {
                     a.z_rewrite_endbr = false;
                 }
+                Item::ZGlobal
+                | Item::ZGlobalaudit
+                | Item::ZLoadfltr
+                | Item::ZStartStopGc
+                | Item::ZNoStartStopGc
+                | Item::ZUnique
+                | Item::ZNounique
+                | Item::ZUniqueSymbol
+                | Item::ZNouniqueSymbol => {
+                    // Ignored for compatibility.
+                }
                 Item::Grouped(value_os) => {
                     // A letter that takes a value ends the bundle, and GNU ld
                     // rejects the word, so it stays unknown.
