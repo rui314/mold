@@ -18,3 +18,44 @@ This is a Rayon API prototype, not functionality in released Rayon. The
 vendored crate makes the experiment self-contained and should be replaced by
 an upstream Rayon release if the API is accepted. It is not a proposal to
 permanently maintain a private scheduler in mold.
+
+Workstation comparison (6 October 2026)
+======================================
+Original PR #1694: 28d46ec70515269e1fff4aa39d178e8c07e260e4
+Benchmarked implementation: e28a30fcc0acba52bb110cc8508d85deb1dacac6
+Shared baseline: 99d79c429bda8630330c806b33ca724a770ac637
+
+AMD Threadripper PRO 9985WX; 32 physical cores (CPUs 32-63); 32 workers.
+Fresh x86_64-only release builds, line-table debug info and frame pointers.
+Warm inputs, ext4 output, --no-fork; 40 interleaved samples per arm/case.
+The host also had unrelated build/VM activity. Small differences are uncertain.
+
+Case                  PR p50 ms   Rayon p50 ms   PR CPU ms   Rayon CPU ms
+hello                       6.81           6.80       98.64         100.66
+rhello                     13.06          13.17      258.82         274.30
+tblgen                     16.33          16.27      350.30         354.53
+lld                        78.61          76.20     1944.97        1962.22
+clang                     122.25         121.74     3026.21        3050.08
+clang-s                    54.29          53.84     1343.90        1342.60
+ra                        127.72         126.50     2898.64        2888.10
+ra-s                      111.78         111.69     2346.35        2372.10
+
+Equal-case geometric mean change vs PR: elapsed -0.63%, CPU +1.43%.
+This average is descriptive, not a production-workload forecast.
+
+Concurrent batches (10 interleaved samples, each link uses 32 workers):
+640 hello, 32 at once: 0.3176 -> 0.3255 seconds (+2.49%).
+48 clang-s, 8 at once: 1.5324 -> 1.5660 seconds (+2.19%).
+
+The 1- and 8-worker sensitivity checks are included in the full report.
+Correctness: 32 mold library tests, 2 harness library tests, and native
+integration: 503 pass, 14 skip, 0 fail for baseline and both candidates.
+Upstream rayon-core tests and the new targeted tests pass. Captured outputs
+match byte-for-byte across all eight workloads and all tested worker counts.
+
+Verdict: no broad efficiency win over #1694. The concurrent Clang batch uses
+6.1% more CPU and takes 2.2% longer; most single-link differences are small.
+
+Full evidence, raw samples, uncertainty intervals and charts:
+/Users/callen/work/mold/.codex/perf/rayon-20261006/report/report.html
+wx-workstation:/home/callen/work/mold-rayon-20261006
