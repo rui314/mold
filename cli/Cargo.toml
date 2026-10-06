@@ -1,5 +1,5 @@
 [package]
-name = "mold-cli"
+name = "mold"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -17,7 +17,7 @@ harness = false
 
 [dependencies]
 mimalloc = { git = "https://github.com/rui314/mimalloc_rust", rev = "3979460494f1cd1e7f936cb8e10f41e927c9f698" }
-mold.workspace = true
+libmold.workspace = true
 mold-arch-x86_64 = { path = "../arch/x86_64", optional = true }
 mold-arch-i386 = { path = "../arch/i386", optional = true }
 mold-arch-arm32 = { path = "../arch/arm32", optional = true }

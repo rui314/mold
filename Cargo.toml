@@ -1,5 +1,5 @@
 [package]
-name = "mold"
+name = "libmold"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -24,7 +24,7 @@ license = "MIT"
 
 [workspace.dependencies]
 libc = "0.2"
-mold = { path = "." }
+libmold = { path = "." }
 
 [dependencies]
 blake3 = "1.8.7"

@@ -10,4 +10,4 @@ license.workspace = true
 path = "lib.rs"
 
 [dependencies]
-mold.workspace = true
+libmold.workspace = true

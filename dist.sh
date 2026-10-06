@@ -187,7 +187,7 @@ podman run --arch "$arch" -it --rm --userns=host --pids-limit=-1 --network=none 
 set -e
 export CARGO_TARGET_DIR=/build/target
 cd /mold
-cargo build --release --frozen --config /vendor/config.toml --package mold-cli
+cargo build --release --frozen --config /vendor/config.toml --package mold
 
 # Link mold again with the mold just built, so that every release binary
 # gets Identical Code Folding (see cli/build.rs). The default linker for
@@ -197,7 +197,7 @@ cargo build --release --frozen --config /vendor/config.toml --package mold-cli
 mkdir /build/stage1
 cp $CARGO_TARGET_DIR/release/mold /build/stage1
 /build/stage1/mold -run cargo rustc --release --frozen --config /vendor/config.toml \
-  --package mold-cli --bin mold -- -Clink-arg=-Wl,--icf=all
+  --package mold --bin mold -- -Clink-arg=-Wl,--icf=all
 
 stage=/build/$DEST
 DESTDIR=/build PREFIX=/$DEST ./install-mold.sh

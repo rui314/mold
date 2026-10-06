@@ -1,3 +1,3 @@
-pub fn link(cmdline: mold::driver::Cmdline) -> mold::driver::LinkResult {
-    mold::driver::link::<mold::arch::LoongArch64>(cmdline)
+pub fn link(cmdline: libmold::driver::Cmdline) -> libmold::driver::LinkResult {
+    libmold::driver::link::<libmold::arch::LoongArch64>(cmdline)
 }

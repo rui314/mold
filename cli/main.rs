@@ -9,7 +9,7 @@
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-type LinkFn = fn(mold::driver::Cmdline) -> mold::driver::LinkResult;
+type LinkFn = fn(libmold::driver::Cmdline) -> libmold::driver::LinkResult;
 
 // Each target has its own monomorphized link function. Start with the first
 // enabled target and switch to the matching function if the inputs differ.
@@ -56,7 +56,7 @@ const TARGETS: &[(&str, LinkFn)] = &[
     ("loongarch32", mold_arch_loongarch32::link),
 ];
 
-fn link_for_target(target: &str, cmdline: mold::driver::Cmdline) -> mold::driver::LinkResult {
+fn link_for_target(target: &str, cmdline: libmold::driver::Cmdline) -> libmold::driver::LinkResult {
     for &(name, link) in TARGETS {
         if name == target {
             return link(cmdline);
@@ -74,6 +74,6 @@ fn main() {
         std::process::exit(1);
     };
     let args = std::env::args_os().collect();
-    let status = mold::driver::main(args, initial_target, link_for_target);
+    let status = libmold::driver::main(args, initial_target, link_for_target);
     std::process::exit(status);
 }
