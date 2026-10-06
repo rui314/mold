@@ -1,0 +1,23 @@
+Rayon asynchronous global startup experiment (mold PR #1695)
+
+The branch starts at original PR commit 6920f80d and removes mold's local
+pool, spawn channel, helper thread, and mem::forget workaround. A vendored
+Rayon-core 1.13.0 exposes ThreadPoolBuilder::build_global_async; mold changes
+one builder call. Rayon owns the helper and publishes a real global pool,
+retaining thread names, stack sizes, start/exit handlers and current-worker
+behavior. A single current worker needs no helper.
+
+Errors starting the helper are returned. Worker creation errors after return
+abort the process, since silently omitting a worker can strand broadcast
+jobs. Applications needing recoverable spawn errors must use build_global.
+This error policy and API shape need upstream Rayon review.
+
+Validation includes upstream rayon-core tests and dedicated subprocess tests
+for delayed worker readiness, immediate caller work, external-thread global
+pool access, duplicate initialization, one worker, and late spawn failure.
+Mold unit/native integration tests and eight captured link output comparisons
+exercise the linker. See /Users/callen/work/mold/.codex/perf/rayon-20261006 for
+host benchmark data.
+
+This is an experimental Rayon dependency patch, not an existing released API.
+The original PR did not preserve the global pool; this version does.

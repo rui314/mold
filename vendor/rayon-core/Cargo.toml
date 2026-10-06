@@ -93,3 +93,19 @@ version = "1.0"
 version = "0.2"
 
 [workspace]
+
+[[test]]
+name = "async_global"
+path = "tests/async_global.rs"
+
+[[test]]
+name = "async_global_one"
+path = "tests/async_global_one.rs"
+
+[[test]]
+name = "async_global_external"
+path = "tests/async_global_external.rs"
+
+[[test]]
+name = "async_global_failure"
+path = "tests/async_global_failure.rs"

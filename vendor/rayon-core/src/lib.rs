@@ -282,6 +282,48 @@ where
 }
 
 impl ThreadPoolBuilder {
+    /// Initializes the global pool while a helper starts the worker threads.
+    ///
+    /// Unlike `build_global`, this returns without waiting for every worker to
+    /// be spawned or primed. Work may be submitted immediately; it is queued
+    /// until a worker can execute it. With `use_current_thread`, the caller can
+    /// also execute work immediately. All other global-pool semantics, thread
+    /// names, stack sizes and start/exit handlers are retained.
+    ///
+    /// Creating the helper can fail synchronously. A later worker creation
+    /// failure aborts the process: after publishing the registry, Rayon cannot
+    /// safely remove an unstarted worker that may already have broadcast jobs
+    /// queued for it. Use `build_global` if recoverable spawn errors are needed.
+    /// This experimental API is available only with the default spawn handler.
+    pub fn build_global_async(self) -> Result<(), ThreadPoolBuildError> {
+        // There are no workers to defer when the caller is the sole worker.
+        if self.use_current_thread && self.get_num_threads() == 1 {
+            return self.build_global();
+        }
+
+        let (sender, receiver) = std::sync::mpsc::channel::<ThreadBuilder>();
+        std::thread::Builder::new()
+            .name("rayon-startup".into())
+            .spawn(move || {
+                let abort = unwind::AbortIfPanic;
+                for worker in receiver {
+                    if let Err(error) = DefaultSpawn.spawn(worker) {
+                        panic!("Rayon: failed to start a worker: {error}");
+                    }
+                }
+                std::mem::forget(abort);
+            })
+            .map_err(|error| ThreadPoolBuildError::new(ErrorKind::IOError(error)))?;
+
+        let builder = self.spawn_handler(move |worker| {
+            sender
+                .send(worker)
+                .map_err(|_| io::Error::other("Rayon startup helper exited"))
+        });
+        registry::init_global_registry(builder)?;
+        Ok(())
+    }
+
     /// Creates a scoped `ThreadPool` initialized using this configuration.
     ///
     /// This is a convenience function for building a pool using [`std::thread::scope`]
