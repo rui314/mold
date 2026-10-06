@@ -1623,14 +1623,17 @@ impl SymbolTable {
         additional_capacity: usize,
         assign: impl Fn(S, SymbolId) + Sync,
     ) {
-        // Reserve the Rust vector once, then hand each shard 256-slot blocks
-        // from an atomic bump pointer. At most one partial block per shard is
-        // left unused.
+        // Reserve the Rust vector once, then hand each shard blocks of at
+        // most 256 slots. Small shards never need a full block; their input
+        // count is an upper bound on the number of new symbols.
         const BLOCK_SIZE: usize = 256;
-        let count: usize = bins.iter().flat_map(|bin| &bin.0).map(Vec::len).sum();
+        let counts: Vec<usize> = (0..NUM_SHARDS)
+            .map(|i| bins.iter().map(|bin| bin.0[i].len()).sum())
+            .collect();
+        let count: usize = counts.iter().sum();
+        let padding: usize = counts.iter().map(|&n| n.min(BLOCK_SIZE).saturating_sub(1)).sum();
         let first = self.symbols.len();
-        let capacity =
-            count.saturating_add(NUM_SHARDS * (BLOCK_SIZE - 1)).saturating_add(additional_capacity);
+        let capacity = count.saturating_add(padding).saturating_add(additional_capacity);
         let old_capacity = self.symbols.capacity();
         self.symbols.reserve(capacity);
         if self.symbols.capacity() != old_capacity {
@@ -1644,6 +1647,11 @@ impl SymbolTable {
             .par_iter_mut()
             .enumerate()
             .map(|(i, shard)| {
+                let count = counts[i];
+                if count == 0 {
+                    return Vec::new();
+                }
+                let block_size = count.min(BLOCK_SIZE);
                 // Most names occur in many files, so reserve for the
                 // estimated number of distinct names rather than for all
                 // occurrences. An oversized table spreads its entries over
@@ -1656,16 +1664,15 @@ impl SymbolTable {
                     sketch.insert(p.key.hash.wrapping_mul(0x9e37_79b9_7f4a_7c15));
                 }
                 let estimate = sketch.cardinality() as usize;
-                let count: usize = bins.iter().map(|bin| bin.0[i].len()).sum();
                 shard.reserve(count.min(estimate + estimate / 8));
                 let mut blocks: Vec<(usize, usize)> = Vec::new();
                 for p in bins.iter().flat_map(|bin| &bin.0[i]) {
                     let id = match shard.entry(p.key) {
                         hashbrown::hash_map::Entry::Occupied(entry) => *entry.get(),
                         hashbrown::hash_map::Entry::Vacant(entry) => {
-                            if blocks.last().is_none_or(|&(_, used)| used == BLOCK_SIZE) {
-                                let start = next.fetch_add(BLOCK_SIZE, Ordering::Relaxed);
-                                assert!(first + start + BLOCK_SIZE < u32::MAX as usize);
+                            if blocks.last().is_none_or(|&(_, used)| used == block_size) {
+                                let start = next.fetch_add(block_size, Ordering::Relaxed);
+                                assert!(first + start + block_size < u32::MAX as usize);
                                 blocks.push((start, 0));
                             }
                             let (start, used) = blocks.last_mut().unwrap();
@@ -1684,7 +1691,7 @@ impl SymbolTable {
                 }
 
                 for &(start, used) in &blocks {
-                    for slot in &slots[start + used..start + BLOCK_SIZE] {
+                    for slot in &slots[start + used..start + block_size] {
                         // SAFETY: these are the unused slots in this shard's
                         // exclusive block. Initializing them makes the whole
                         // vector prefix valid while global scans skip them.
