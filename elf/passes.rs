@@ -2548,23 +2548,27 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
         crate::chunks::got::add_tlsld(ctx);
     }
 
-    // Every dynamic symbol gets its auxiliary record. The loop below
-    // assigns table entries in order and so runs on one thread; the
-    // records are allocated beforehand in the side vector.
+    // Every dynamic symbol gets its auxiliary record before assigning
+    // GOT entries in parallel and the remaining table entries in order.
     ctx.symbols.allocate_aux(&groups);
-    let mut syms = Vec::with_capacity(groups.iter().map(Vec::len).sum());
-    syms.extend(groups.into_iter().flatten());
+    // Small tables do not repay the extra passes needed to assign ranges.
+    let parallel_got = groups.iter().map(Vec::len).sum::<usize>() >= 4096;
+    let syms = if parallel_got {
+        crate::chunks::got::allocate_entries(ctx, groups)
+    } else {
+        groups.into_iter().flatten().map(|id| (id, 0)).collect()
+    };
 
     // Fetch symbols before their auxiliary records to hide both loads.
     // Assign table entries in command-line order.
-    for (i, &id) in syms.iter().enumerate() {
-        if let Some(&next) = syms.get(i + 64) {
+    for (i, &(id, flags)) in syms.iter().enumerate() {
+        if let Some(&(next, _)) = syms.get(i + 64) {
             mold_common::prefetch(std::ptr::from_ref(&ctx.symbols[next]).cast());
         }
-        if let Some(aux) = syms.get(i + 16).and_then(|&id| ctx.symbols[id].aux(&ctx.symbols)) {
+        if let Some(aux) = syms.get(i + 16).and_then(|&(id, _)| ctx.symbols[id].aux(&ctx.symbols)) {
             mold_common::prefetch(std::ptr::from_ref(aux).cast());
         }
-        let flags = ctx.symbols[id].flags();
+        let flags = if parallel_got { flags } else { ctx.symbols[id].flags() };
         let (is_imported, is_exported, ty) = {
             let sym = &ctx.symbols[id];
             (sym.is_imported(), sym.is_exported(), sym.ty())
@@ -2575,7 +2579,7 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
         if (is_imported || is_exported) && ctx.dynamic.is_some() {
             ctx.dynsym.add_symbol(&mut ctx.symbols, id);
         }
-        if flags & NEEDS_GOT != 0 {
+        if !parallel_got && flags & NEEDS_GOT != 0 {
             crate::chunks::got::add_got_symbol(ctx, id);
         }
         if flags & NEEDS_CANONICAL != 0 && ty == STT_FUNC {
@@ -2596,14 +2600,16 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
                 crate::chunks::plt::add_symbol(ctx, id);
             }
         }
-        if flags & NEEDS_GOTTP != 0 {
-            crate::chunks::got::add_gottp_symbol(ctx, id);
-        }
-        if flags & NEEDS_TLSGD != 0 {
-            crate::chunks::got::add_tlsgd_symbol(ctx, id);
-        }
-        if flags & NEEDS_TLSDESC != 0 {
-            crate::chunks::got::add_tlsdesc_symbol(ctx, id);
+        if !parallel_got {
+            if flags & NEEDS_GOTTP != 0 {
+                crate::chunks::got::add_gottp_symbol(ctx, id);
+            }
+            if flags & NEEDS_TLSGD != 0 {
+                crate::chunks::got::add_tlsgd_symbol(ctx, id);
+            }
+            if flags & NEEDS_TLSDESC != 0 {
+                crate::chunks::got::add_tlsdesc_symbol(ctx, id);
+            }
         }
         if flags & NEEDS_CANONICAL != 0 && ty != STT_FUNC {
             let relro = ctx.args.z_relro
@@ -2616,7 +2622,9 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
         if E::FAMILY == Family::Ppc64V1 && flags & NEEDS_PPC_OPD != 0 {
             crate::chunks::opd::add_symbol(ctx, id);
         }
-        ctx.symbols[id].clear_flags();
+        if !parallel_got {
+            ctx.symbols[id].clear_flags();
+        }
     }
 
     if ctx.has_textrel.load(Ordering::Relaxed) && ctx.args.warn_textrel {
