@@ -24,11 +24,4 @@ args=(
   --features mold-cli/system-allocator,mold-cli/x86_64,blake3/pure,zstd/no_asm
   --test integration
 )
-cargo +nightly test "${args[@]}" --no-run
-
-# The preload wrapper runs inside uninstrumented compiler processes, not
-# inside mold. Rebuild it without MSan so those processes can load it.
-clang -shared -fPIC -o "$CARGO_TARGET_DIR/x86_64-unknown-linux-gnu/debug/mold-wrapper.so" \
-  c/mold-wrapper.c -ldl
-
 cargo +nightly test "${args[@]}" -- --native --test-threads 1 --timeout 60 "$@"

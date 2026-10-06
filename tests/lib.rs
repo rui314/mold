@@ -399,20 +399,12 @@ fn prepare_work_dir(mold: &Path) -> io::Result<PathBuf> {
             format!("{} has no parent directory", mold.display()),
         )
     })?;
-    let wrapper = profile_dir.join("mold-wrapper.so");
-    if !wrapper.is_file() {
-        return Err(io::Error::new(
-            io::ErrorKind::NotFound,
-            format!("{} does not exist", wrapper.display()),
-        ));
-    }
 
-    // C++ mold runs its tests from the build directory, which contains mold,
-    // ld and mold-wrapper.so. Give Cargo's test binary the same layout without
-    // writing generated files into the source tree.
+    // C++ mold runs its tests from the build directory, which contains mold
+    // and ld. Give Cargo's test binary the same layout without writing
+    // generated files into the source tree.
     let work_dir = profile_dir.join("mold-test");
     fs::create_dir_all(&work_dir)?;
-    replace_file_link(&wrapper, &work_dir.join("mold-wrapper.so"))?;
 
     // FreeBSD defaults to ld.lld on llvm upstream. Overriding ld is not enough with -B.
     for name in ["mold", "ld", "ld.lld"] {

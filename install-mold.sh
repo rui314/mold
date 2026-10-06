@@ -2,7 +2,6 @@
 set -e
 
 PREFIX=${PREFIX:-/usr/local}
-LIBDIR=${LIBDIR:-$PREFIX/lib}
 LIBEXECDIR=${LIBEXECDIR:-$PREFIX/libexec}
 MANDIR=${MANDIR:-$PREFIX/share/man}
 DOCDIR=${DOCDIR:-$PREFIX/share/doc/mold}
@@ -10,9 +9,8 @@ DOCDIR=${DOCDIR:-$PREFIX/share/doc/mold}
 srcdir=$(CDPATH= cd "$(dirname "$0")" && pwd)
 artifact_dir="${CARGO_TARGET_DIR:-$srcdir/target}/release"
 
-if [ ! -x "$artifact_dir/mold" ] ||
-  [ ! -f "$artifact_dir/mold-wrapper.so" ]; then
-  echo "install-mold.sh: release artifacts are missing" >&2
+if [ ! -x "$artifact_dir/mold" ]; then
+  echo "install-mold.sh: $artifact_dir/mold is missing" >&2
   echo "Run 'cargo build --release' first." >&2
   exit 1
 fi
@@ -26,14 +24,12 @@ case $LIBEXECDIR in
 esac
 
 bindir="$DESTDIR$PREFIX/bin"
-libdir="$DESTDIR$LIBDIR/mold"
 libexecdir="$DESTDIR$LIBEXECDIR/mold"
 mandir="$DESTDIR$MANDIR/man1"
 docdir="$DESTDIR$DOCDIR"
 
-install -d "$bindir" "$libdir" "$libexecdir" "$mandir" "$docdir"
+install -d "$bindir" "$libexecdir" "$mandir" "$docdir"
 install -m 755 "$artifact_dir/mold" "$bindir"
-install -m 755 "$artifact_dir/mold-wrapper.so" "$libdir"
 install -m 644 "$srcdir/docs/mold.1" "$mandir"
 install -m 644 "$srcdir/LICENSE" "$docdir"
 

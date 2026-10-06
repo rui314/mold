@@ -145,28 +145,27 @@ pub fn install_signal_handler() {
 pub fn install_signal_handler() {}
 
 /// `mold -run COMMAND ARGS...` runs a command with mold interposed as the
-/// linker, which requires the `mold-wrapper.so` preload library.
-#[cfg(not(any(windows, target_os = "macos")))]
+/// linker. The preload library `mold-wrapper.so`, which is embedded in the
+/// executable, intercepts the exec family of functions in the processes
+/// that the command starts and replaces `ld` with mold.
+///
+/// The library is passed to the command in a sealed memfd. Child processes
+/// inherit the descriptor and preload the library from it, so no file is
+/// installed or left behind, and the kernel frees the memfd when the last
+/// process using it exits. c/mold-wrapper.c describes how the library
+/// keeps the descriptor valid in descendant processes.
+#[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd"))]
 pub fn process_run_subcommand(argv: &[std::ffi::OsString]) -> ! {
+    static WRAPPER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/mold-wrapper.so"));
+
     if argv.len() < 3 {
         fatal!("-run: argument missing");
     }
+    if WRAPPER.is_empty() {
+        fatal!("-run: mold was built without mold-wrapper.so");
+    }
     let self_path = std::env::current_exe().expect("cannot get current executable path");
-    // The library directory can be set with LIBDIR at build time.
-    let libdir = option_env!("LIBDIR").unwrap_or("/usr/local/lib");
-    let candidates = [
-        // Look for mold-wrapper.so from the same directory as the executable is.
-        self_path.parent().map(|p| p.join("mold-wrapper.so")),
-        // If not found, search $(LIBDIR)/mold, which is /usr/local/lib/mold
-        // by default.
-        Some(std::path::Path::new(libdir).join("mold/mold-wrapper.so")),
-        // Look for ../lib/mold/mold-wrapper.so
-        self_path.parent().map(|p| p.join("../lib/mold/mold-wrapper.so")),
-    ];
-    // Get the mold-wrapper.so path
-    let Some(dso) = candidates.into_iter().flatten().find(|p| p.is_file()) else {
-        fatal!("mold-wrapper.so is missing");
-    };
+    let fd = create_sealed_memfd(WRAPPER).to_string();
 
     // If ld, ld.lld or ld.gold is specified, run mold instead
     let cmd = std::path::Path::new(&argv[2]).file_name().unwrap_or_default();
@@ -178,20 +177,61 @@ pub fn process_run_subcommand(argv: &[std::ffi::OsString]) -> ! {
 
     // Execute a given command with the wrapper preloaded
     use std::os::unix::process::CommandExt;
-    let err = std::process::Command::new(program)
-        .args(&argv[3..])
-        .env("LD_PRELOAD", &dso)
-        .env("MOLD_PATH", &self_path)
-        .exec();
+    let mut command = std::process::Command::new(program);
+    command.args(&argv[3..]).env("MOLD_PATH", &self_path).env("MOLD_WRAPPER_FD", &fd);
+    if cfg!(target_os = "freebsd") {
+        command.env("LD_PRELOAD_FDS", &fd);
+    } else {
+        command.env("LD_PRELOAD", format!("/proc/self/fd/{fd}"));
+    }
+    let err = command.exec();
     fatal!("mold -run failed: {}: {}", argv[2].to_string_lossy(), crate::error::strerror(&err));
 }
 
-#[cfg(target_os = "macos")]
-pub fn process_run_subcommand(_argv: &[std::ffi::OsString]) -> ! {
-    fatal!("-run is not supported on macOS");
+/// Copies `contents` to a sealed memfd and returns its descriptor, which
+/// programs executed by this process inherit.
+#[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd"))]
+fn create_sealed_memfd(contents: &[u8]) -> i32 {
+    let flags = libc::MFD_CLOEXEC | libc::MFD_ALLOW_SEALING;
+    // SAFETY: the name is a NUL-terminated string.
+    #[cfg(target_os = "freebsd")]
+    let fd = unsafe { libc::memfd_create(c"mold-wrapper.so".as_ptr(), flags) };
+    // glibc provides memfd_create() only since 2.27.
+    // SAFETY: the name is a NUL-terminated string.
+    #[cfg(not(target_os = "freebsd"))]
+    let fd =
+        unsafe { libc::syscall(libc::SYS_memfd_create, c"mold-wrapper.so".as_ptr(), flags) } as i32;
+    if fd == -1 {
+        let err = std::io::Error::last_os_error();
+        fatal!("-run: memfd_create failed: {}", crate::error::strerror(&err));
+    }
+
+    // SAFETY: `fd` is a new descriptor that nothing else owns.
+    let mut file = unsafe { File::from_raw_fd(fd) };
+    if let Err(err) = file.write_all(contents) {
+        fatal!("-run: cannot write mold-wrapper.so: {}", crate::error::strerror(&err));
+    }
+
+    // Seal the memfd so that its contents never change, and duplicate it to
+    // a descriptor number above those that shells and build tools usually
+    // pick. Unlike the original, the duplicate is inherited across exec.
+    let seals = libc::F_SEAL_SEAL | libc::F_SEAL_SHRINK | libc::F_SEAL_GROW | libc::F_SEAL_WRITE;
+    // SAFETY: fcntl only changes the state of a descriptor we own.
+    let new_fd = unsafe {
+        if libc::fcntl(fd, libc::F_ADD_SEALS, seals) == -1 {
+            -1
+        } else {
+            libc::fcntl(fd, libc::F_DUPFD, 100)
+        }
+    };
+    if new_fd == -1 {
+        let err = std::io::Error::last_os_error();
+        fatal!("-run: cannot seal mold-wrapper.so: {}", crate::error::strerror(&err));
+    }
+    new_fd
 }
 
-#[cfg(windows)]
+#[cfg(not(any(target_os = "linux", target_os = "android", target_os = "freebsd")))]
 pub fn process_run_subcommand(_argv: &[std::ffi::OsString]) -> ! {
-    fatal!("-run is supported only on Unix");
+    fatal!("-run is supported only on Linux and FreeBSD");
 }

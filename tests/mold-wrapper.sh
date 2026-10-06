@@ -3,8 +3,6 @@
 
 [ "$CC" = cc ] || skip
 
-ldd mold-wrapper.so | grep libasan && skip
-
 nm mold | grep '__[at]san_init' && skip
 
 cat <<'EOF' > $t/a.sh
@@ -67,9 +65,9 @@ int main(int argc, char **argv) {
 }
 EOF
 
-LD_PRELOAD=`pwd`/mold-wrapper.so MOLD_PATH=$t/a.sh $t/exe execl | grep 'a.sh execl'
-LD_PRELOAD=`pwd`/mold-wrapper.so MOLD_PATH=$t/a.sh $t/exe execlp | grep 'a.sh execlp'
-LD_PRELOAD=`pwd`/mold-wrapper.so MOLD_PATH=$t/a.sh $t/exe execle | grep 'a.sh execle'
-LD_PRELOAD=`pwd`/mold-wrapper.so MOLD_PATH=$t/a.sh $t/exe execv | grep 'a.sh execv'
-LD_PRELOAD=`pwd`/mold-wrapper.so MOLD_PATH=$t/a.sh $t/exe execvp | grep 'a.sh execvp'
-LD_PRELOAD=`pwd`/mold-wrapper.so MOLD_PATH=$t/a.sh $t/exe execvpe | grep 'a.sh execvpe bar'
+./mold -run env MOLD_PATH=$t/a.sh $t/exe execl | grep 'a.sh execl'
+./mold -run env MOLD_PATH=$t/a.sh $t/exe execlp | grep 'a.sh execlp'
+./mold -run env MOLD_PATH=$t/a.sh $t/exe execle | grep 'a.sh execle'
+./mold -run env MOLD_PATH=$t/a.sh $t/exe execv | grep 'a.sh execv'
+./mold -run env MOLD_PATH=$t/a.sh $t/exe execvp | grep 'a.sh execvp'
+./mold -run env MOLD_PATH=$t/a.sh $t/exe execvpe | grep 'a.sh execvpe bar'

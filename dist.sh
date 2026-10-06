@@ -195,13 +195,13 @@ cargo build --release --frozen --config /vendor/config.toml --package mold-cli
 # runs from a copy because the link replaces the files in the target
 # directory.
 mkdir /build/stage1
-cp $CARGO_TARGET_DIR/release/mold $CARGO_TARGET_DIR/release/mold-wrapper.so /build/stage1
+cp $CARGO_TARGET_DIR/release/mold /build/stage1
 /build/stage1/mold -run cargo rustc --release --frozen --config /vendor/config.toml \
   --package mold-cli --bin mold -- -Clink-arg=-Wl,--icf=all
 
 stage=/build/$DEST
 DESTDIR=/build PREFIX=/$DEST ./install-mold.sh
-strip --strip-unneeded "$stage/bin/mold" "$stage/lib/mold/mold-wrapper.so"
+strip --strip-unneeded "$stage/bin/mold"
 find "$stage" -print | xargs touch --no-dereference --date="@$SOURCE_DATE_EPOCH"
 cd /build
 find "$DEST" -print | sort | tar -cf - --no-recursion --files-from=- | gzip -9nc > "/dist/$DEST.tar.gz"

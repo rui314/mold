@@ -2,8 +2,8 @@
 //!
 //! `mold-wrapper.so` is the preload library behind `mold -run`. It
 //! interposes the exec family, including the C-variadic `execl` functions
-//! that stable Rust cannot define, so it is a C file. It is placed next to
-//! the `mold` executable, where `-run` looks for it.
+//! that stable Rust cannot define, so it is a C file. The `mold`
+//! executable embeds it.
 //!
 //! `lto-message.c` adapts the LTO plugin's printf-like diagnostics
 //! callback, which is C-variadic as well, and is linked into mold.
@@ -90,19 +90,23 @@ fn main() {
     }
     build.file("c/lto-message.c").compile("ltomessage");
 
-    if target_os == "windows" || target_os == "macos" {
+    if !matches!(target_os.as_str(), "linux" | "android" | "freebsd") {
         return;
     }
 
-    // The build directory is inside the actual profile directory. PROFILE
-    // only describes inheritance and need not be that directory's name.
-    let profile_dir = out_dir
-        .ancestors()
-        .find(|path| path.file_name().is_some_and(|name| name == "build"))
-        .and_then(Path::parent)
-        .expect("OUT_DIR must be inside Cargo's build directory");
-    let wrapper = profile_dir.join("mold-wrapper.so");
-    let mut command = build.get_compiler().to_command();
+    // The library is loaded into the processes that `mold -run` starts,
+    // which are not built with sanitizers, so we leave them out even if
+    // CFLAGS asks for them.
+    let compiler = cc::Build::new().opt_level(2).pic(true).get_compiler();
+    let mut command = Command::new(compiler.path());
+    command.args(
+        compiler
+            .args()
+            .iter()
+            .filter(|arg| !arg.to_str().is_some_and(|arg| arg.starts_with("-fsanitize"))),
+    );
+
+    let wrapper = out_dir.join("mold-wrapper.so");
     command.args(["-shared", "-o"]);
     command.arg(&wrapper).arg("c/mold-wrapper.c");
     if target_os == "android" || target_os == "linux" {
@@ -111,5 +115,7 @@ fn main() {
     let status = command.status();
     if !matches!(status, Ok(s) if s.success()) {
         println!("cargo:warning=could not build mold-wrapper.so; `mold -run` will not work");
+        // The executable embeds the file, and `-run` fails if it is empty.
+        std::fs::write(&wrapper, b"").unwrap();
     }
 }
