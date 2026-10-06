@@ -8,6 +8,9 @@ on:
 jobs:
   check-changes:
     runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
     outputs:
       has_changes: ${{ github.event_name == 'workflow_dispatch' || steps.check.outputs.has_changes }}
     steps:
@@ -39,7 +42,6 @@ jobs:
 
     permissions:
       contents: read
-      packages: write
 
     steps:
     - name: Checkout Repository
@@ -47,13 +49,6 @@ jobs:
 
     - name: Install Podman
       run: sudo apt-get update && sudo apt-get install -y podman qemu-user-static
-
-    - name: Login to GitHub Container Registry
-      uses: redhat-actions/podman-login@v2
-      with:
-        registry: ghcr.io
-        username: ${{ github.repository_owner }}
-        password: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Build a tarball
       run: ./dist.sh ${{ matrix.target }}
@@ -69,6 +64,8 @@ jobs:
     needs: check-changes
     if: needs.check-changes.outputs.has_changes == 'true'
     runs-on: windows-latest
+    permissions:
+      contents: read
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v7

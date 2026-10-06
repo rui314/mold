@@ -17,7 +17,6 @@ jobs:
 
     permissions:
       contents: read
-      packages: write
 
     steps:
     - name: Checkout Repository
@@ -25,13 +24,6 @@ jobs:
 
     - name: Install Podman
       run: sudo apt-get update && sudo apt-get install -y podman qemu-user-static
-
-    - name: Login to GitHub Container Registry
-      uses: redhat-actions/podman-login@v2
-      with:
-        registry: ghcr.io
-        username: ${{ github.repository_owner }}
-        password: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Build a tarball
       run: ./dist.sh ${{ matrix.target }}
