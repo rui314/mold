@@ -16,8 +16,8 @@ Validation includes upstream rayon-core tests and dedicated subprocess tests
 for delayed worker readiness, immediate caller work, external-thread global
 pool access, duplicate initialization, one worker, and late spawn failure.
 Mold unit/native integration tests and eight captured link output comparisons
-exercise the linker. See /Users/callen/work/mold/.codex/perf/rayon-20261006 for
-host benchmark data.
+exercise the linker. The published evidence linked below contains the raw
+benchmark data.
 
 This is an experimental Rayon dependency patch, not an existing released API.
 The original PR did not preserve the global pool; this version does.
@@ -54,11 +54,11 @@ The 1- and 8-worker sensitivity checks are included in the full report.
 Correctness: 32 mold library tests, 2 harness library tests, and native
 integration: 503 pass, 14 skip, 0 fail for baseline and both candidates.
 Upstream rayon-core tests and the new targeted tests pass. Captured outputs
-match byte-for-byte across all eight workloads and all tested worker counts.
+match byte-for-byte for all eight workloads at 32 workers, with three selected
+workloads also checked at 1 and 8 workers.
 
 Verdict: approximately preserves #1695 performance while keeping the global
 pool and moving startup into Rayon. The fail-stop error policy needs API review.
 
 Full evidence, raw samples, uncertainty intervals and charts:
-/Users/callen/work/mold/.codex/perf/rayon-20261006/report/report.html
-wx-workstation:/home/callen/work/mold-rayon-20261006
+https://github.com/bitemyapp/mold/tree/028de42c72ac6fd60dc6d45aafc6be2b5b752ded
