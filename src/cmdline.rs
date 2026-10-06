@@ -200,6 +200,7 @@ Options:
   -z execstack                Require an executable stack
     -z noexecstack
   -z execstack-if-needed      Make the stack area executable if an input file explicitly requests it
+  -z global                   Mark DSO as global at runtime
   -z initfirst                Mark DSO to be initialized first at runtime
   -z interpose                Mark object to interpose all DSOs but the executable
   -z keep-text-section-prefix Keep .text.{hot,unknown,unlikely,startup,exit} as separate sections in the final binary
@@ -493,6 +494,7 @@ pub struct Args {
     pub z_dynamic_undefined_weak: bool,
     pub z_execstack: bool,
     pub z_execstack_if_needed: bool,
+    pub z_global: bool,
     pub z_ibt: bool,
     pub z_initfirst: bool,
     pub z_interpose: bool,
@@ -631,6 +633,7 @@ impl Default for Args {
             z_dynamic_undefined_weak: true,
             z_execstack: false,
             z_execstack_if_needed: false,
+            z_global: false,
             z_ibt: false,
             z_initfirst: false,
             z_interpose: false,
@@ -1654,6 +1657,8 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             a.z_copyreloc = false;
         } else if cursor.read_z_flag("nodump") {
             a.z_dump = false;
+        } else if cursor.read_z_flag("global") {
+            a.z_global = true;
         } else if cursor.read_z_flag("initfirst") {
             a.z_initfirst = true;
         } else if cursor.read_z_flag("interpose") {
