@@ -106,6 +106,11 @@ fn main() {
             .filter(|arg| !arg.to_str().is_some_and(|arg| arg.starts_with("-fsanitize"))),
     );
 
+    // The executable embeds the library as plain bytes, which strip and
+    // debuginfo extraction tools cannot see, so we omit debug info even if
+    // CFLAGS asks for it. -g0 overrides any -g option that comes before it.
+    command.arg("-g0");
+
     let wrapper = out_dir.join("mold-wrapper.so");
     command.args(["-shared", "-o"]);
     command.arg(&wrapper).arg("c/mold-wrapper.c");
