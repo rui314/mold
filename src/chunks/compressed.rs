@@ -5,7 +5,7 @@ use crate::chunks::{self, ChunkHeader, ChunkId};
 use crate::cmdline::DebugCompression;
 use crate::context::Context;
 use crate::elf::*;
-use crate::util::compress::Compressor;
+use crate::util::compress::{Compressor, ZstdCompressors};
 
 // Debug sections can be compressed with zlib or zstd to reduce the
 // overall size of an ELF file. CompressedSection represents a compressed
@@ -19,7 +19,11 @@ pub struct CompressedSection<E: Target> {
     pub uncompressed_data: Option<Vec<u8>>,
 }
 
-pub fn new<E: Target>(ctx: &Context<E>, original: ChunkId) -> CompressedSection<E> {
+pub fn new<E: Target>(
+    ctx: &Context<E>,
+    original: ChunkId,
+    compressors: &ZstdCompressors,
+) -> CompressedSection<E> {
     let hdr = ctx.chunk_header(original);
 
     // C++ mold uses uninitialized storage here to avoid zero-filling a
@@ -32,7 +36,9 @@ pub fn new<E: Target>(ctx: &Context<E>, original: ChunkId) -> CompressedSection<
 
     let (kind, compressor) = match ctx.args.compress_debug_sections {
         DebugCompression::Zlib(level) => (ELFCOMPRESS_ZLIB, Compressor::zlib(&buf, level)),
-        DebugCompression::Zstd(level) => (ELFCOMPRESS_ZSTD, Compressor::zstd(&buf, level)),
+        DebugCompression::Zstd(level) => {
+            (ELFCOMPRESS_ZSTD, Compressor::zstd(&buf, level, compressors))
+        }
         DebugCompression::None => unreachable!("debug compression is disabled"),
     };
 

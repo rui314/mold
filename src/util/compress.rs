@@ -20,7 +20,11 @@ use flate2::FlushDecompress;
 use rayon::prelude::*;
 use zlib_rs::adler32::{adler32, adler32_combine};
 
+use crate::util::worker_local::WorkerLocal;
+
 const SHARD_SIZE: usize = 1024 * 1024;
+
+pub type ZstdCompressors = WorkerLocal<Option<zstd::bulk::Compressor<'static>>>;
 
 pub enum Compressor {
     Zlib { shards: Vec<Vec<u8>>, checksum: u32 },
@@ -128,11 +132,17 @@ impl Compressor {
         Self::Zlib { shards, checksum }
     }
 
-    pub fn zstd(input: &[u8], level: i32) -> Self {
+    pub fn zstd(input: &[u8], level: i32, compressors: &ZstdCompressors) -> Self {
         // Compress each shard
         let shards = input
             .par_chunks(SHARD_SIZE)
-            .map(|shard| zstd::bulk::compress(shard, level).expect("zstd compression failed"))
+            .map(|shard| {
+                let mut slot = compressors.get();
+                let compressor = slot.get_or_insert_with(|| {
+                    zstd::bulk::Compressor::new(level).expect("zstd compression failed")
+                });
+                compressor.compress(shard).expect("zstd compression failed")
+            })
             .collect();
         Self::Zstd { shards }
     }

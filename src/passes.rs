@@ -39,6 +39,7 @@ use crate::symbol::{
     Bins, NEEDS_CANONICAL, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_PPC_OPD, NEEDS_TLSDESC,
     NEEDS_TLSGD, Symbol, SymbolId, is_c_identifier,
 };
+use crate::util::compress::ZstdCompressors;
 use crate::util::glob::GlobBuilder;
 use crate::util::perf::Counter;
 use crate::util::{align_to, leak_bytes};
@@ -4058,6 +4059,8 @@ pub fn fix_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
 pub fn compress_debug_sections<E: Target>(ctx: &mut Context<E>) {
     let _t = ctx.timer("compress_debug_sections");
 
+    let compressors = ZstdCompressors::new(|| None);
+
     // Since this pass is embarrassingly parallel, we want to use all
     // available cores by default.
     let compressed: Vec<_> = ctx
@@ -4068,7 +4071,7 @@ pub fn compress_debug_sections<E: Target>(ctx: &mut Context<E>) {
             let hdr = ctx.chunk_header(id);
             !hdr.is_alloc() && hdr.shdr.sh_size.get() != 0 && hdr.name.starts_with(b".debug_")
         })
-        .map(|(i, &id)| (i, compressed::new(ctx, id)))
+        .map(|(i, &id)| (i, compressed::new(ctx, id, &compressors)))
         .collect();
     for (i, sec) in compressed {
         ctx.compressed_sections.push(sec);
