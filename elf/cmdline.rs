@@ -1049,6 +1049,21 @@ impl<'a> ArgCursor<'a> {
         true
     }
 
+    /// Like `read_flag`, but also accepts `--name=value`, for the options
+    /// whose value GNU ld makes optional, as in `--verbose[=NUMBER]`. The
+    /// value is not returned; every option read this way is ignored.
+    fn read_optional_arg(&mut self, name: &str) -> bool {
+        if self.read_flag(name) {
+            return true;
+        }
+        let Some(rest) = match_option(self.current(), name) else { return false };
+        if rest.as_encoded_bytes().first() != Some(&b'=') {
+            return false;
+        }
+        self.index += 1;
+        true
+    }
+
     fn read_lto_option(&mut self) -> Option<Vec<u8>> {
         // Flags precede argument forms, so that a bare --thinlto-index-only
         // does not take the next argument as its value.
@@ -1346,7 +1361,9 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             a.lto_pass2 = true;
         } else if read_arg!(":ignore-ir-file", true) {
             a.ignore_ir_file.insert(raw_arg.to_os_string());
-        } else if cursor.read_flag("demangle") {
+        } else if cursor.read_optional_arg("demangle") {
+            // GNU ld's --demangle[=STYLE]: mold demangles in every style it
+            // knows, so the style is not read.
             mold_common::error::set_demangle(true);
         } else if cursor.read_flag("no-demangle") {
             mold_common::error::set_demangle(false);
@@ -1847,7 +1864,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             || cursor.read_flag("O0")
             || cursor.read_flag("O1")
             || cursor.read_flag("O2")
-            || cursor.read_flag("verbose")
+            || cursor.read_optional_arg("verbose")
             || cursor.read_flag("start-group")
             || cursor.read_flag("end-group")
             || cursor.read_flag("(")
@@ -1857,11 +1874,19 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             || cursor.read_flag("no-call-graph-profile-sort")
             || cursor.read_flag("no-copy-dt-needed-entries")
             || read_arg!("sort-section", true)
-            || cursor.read_flag("sort-common")
+            || cursor.read_optional_arg("sort-common")
             || cursor.read_flag("dc")
             || cursor.read_flag("dp")
             || cursor.read_flag("fix-cortex-a53-835769")
-            || cursor.read_flag("fix-cortex-a53-843419")
+            || cursor.read_optional_arg("fix-cortex-a53-843419")
+            // The options whose value GNU ld makes optional, and the ones
+            // it has that mold ignores: --split-by-file[=SIZE] and
+            // --split-by-reloc[=COUNT] split the output, --orphan-handling=MODE
+            // places orphan sections and --no-stats silences --stats.
+            || cursor.read_optional_arg("split-by-file")
+            || cursor.read_optional_arg("split-by-reloc")
+            || read_arg!("orphan-handling", true)
+            || cursor.read_flag("no-stats")
             || cursor.read_flag("nodefaultlibs")
             || cursor.read_flag("warn-constructors")
             || cursor.read_flag("warn-execstack")
@@ -2376,6 +2401,41 @@ mod tests {
             ["mold", "-auxiliaries"].into_iter().map(|s| Cow::Borrowed(OsStr::new(s))).collect();
         let mut cursor = ArgCursor { args: &args, index: 1, attached_shorts: true };
         assert_eq!(cursor.read_exact_arg("a"), None);
+        assert_eq!(cursor.index, 1);
+    }
+
+    #[test]
+    fn gnu_ld_optional_value_forms_are_accepted() {
+        // The options whose value GNU ld makes optional: accepted bare,
+        // and with the value attached by an equal sign.
+        let parsed = parse(&[
+            "--verbose",
+            "--verbose=3",
+            "--sort-common",
+            "--sort-common=descending",
+            "--demangle",
+            "--demangle=gnu",
+            "--fix-cortex-a53-843419",
+            "--fix-cortex-a53-843419=adr",
+            "--split-by-file",
+            "--split-by-file=4096",
+            "--split-by-reloc",
+            "--split-by-reloc=10",
+            "--orphan-handling=place",
+            "--orphan-handling",
+            "warn",
+            "--no-stats",
+            "a.o",
+        ]);
+        assert_eq!(parsed.jobs.len(), 1);
+
+        // A name that merely starts like an option is still unknown.
+        let args: Vec<_> = ["mold", "--sort-commonplace"]
+            .into_iter()
+            .map(|s| Cow::Borrowed(OsStr::new(s)))
+            .collect();
+        let mut cursor = ArgCursor { args: &args, index: 1, attached_shorts: true };
+        assert!(!cursor.read_optional_arg("sort-common"));
         assert_eq!(cursor.index, 1);
     }
 }

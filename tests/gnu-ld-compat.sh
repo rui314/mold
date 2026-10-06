@@ -79,3 +79,21 @@ $CC -B. -o $t/exe24 -Wl,--default-script -Wl,$t/nosuchscript $t/a.o
 
 # A name that merely starts like an option is still unknown.
 not ./mold -auxiliaries |& grep 'unknown command line option: -auxiliaries'
+
+# Options whose value GNU ld makes optional: accepted bare, and with the
+# value attached by an equal sign.
+$CC -B. -o $t/exe25 -Wl,--verbose $t/a.o
+$CC -B. -o $t/exe26 -Wl,--verbose=3 $t/a.o
+$CC -B. -o $t/exe27 -Wl,--sort-common $t/a.o
+$CC -B. -o $t/exe28 -Wl,--sort-common=descending $t/a.o
+$CC -B. -o $t/exe29 -Wl,--demangle $t/a.o
+$CC -B. -o $t/exe30 -Wl,--demangle=gnu $t/a.o
+$CC -B. -o $t/exe31 -Wl,--fix-cortex-a53-843419=adr $t/a.o
+$CC -B. -o $t/exe32 -Wl,--split-by-file=4096 $t/a.o
+$CC -B. -o $t/exe33 -Wl,--split-by-reloc=10 $t/a.o
+$CC -B. -o $t/exe34 -Wl,--orphan-handling=place $t/a.o
+$CC -B. -o $t/exe35 -Wl,--orphan-handling -Wl,place $t/a.o
+$CC -B. -o $t/exe36 -Wl,--no-stats $t/a.o
+
+# A name that merely starts like an option is still unknown.
+not ./mold --sort-commonplace |& grep 'unknown command line option: --sort-commonplace'
