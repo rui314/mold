@@ -19,11 +19,11 @@
 use std::fmt;
 use std::marker::PhantomData;
 
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
+
 pub use crate::elf_consts::*;
 
 use crate::arch::{I386, Sparc64, Target, X86_64};
-
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
 // ELF types
 /// An integer stored in the target's byte order. The type carries the
@@ -170,14 +170,14 @@ pub(crate) fn record_from_bytes_mut<R: FileRecord>(data: &mut [u8]) -> &mut R {
 
 /// Views records directly in their file representation.
 pub(crate) fn records_from_bytes<R: FileRecord>(data: &[u8]) -> &[R] {
-    assert!(size_of::<R>() != 0);
+    const { assert!(size_of::<R>() != 0) };
     assert!(data.len().is_multiple_of(size_of::<R>()));
     <[R]>::ref_from_bytes(data).unwrap()
 }
 
 /// Mutably views records directly in their file representation.
 pub(crate) fn records_from_bytes_mut<R: FileRecord>(data: &mut [u8]) -> &mut [R] {
-    assert!(size_of::<R>() != 0);
+    const { assert!(size_of::<R>() != 0) };
     assert!(data.len().is_multiple_of(size_of::<R>()));
     <[R]>::mut_from_bytes(data).unwrap()
 }
