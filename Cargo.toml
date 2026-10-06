@@ -3,10 +3,12 @@ name = "libmold"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "A high-performance ELF linker, rewritten in Rust"
+description = "The internal library of the mold linker, whose API is not stable"
 license.workspace = true
+repository.workspace = true
 # tests/lib.rs belongs to the mold-tests workspace crate.
 autotests = false
+include = ["/src", "/c", "/build.rs", "/LICENSE", "/README.md"]
 
 # The linker is generic over the target. Instantiating it for all twenty
 # targets in one crate keeps the compiler on a single core for minutes, so
@@ -21,10 +23,34 @@ version = "3.0.0"
 edition = "2024"
 rust-version = "1.95"
 license = "MIT"
+repository = "https://github.com/rui314/mold"
 
+# The workspace crates are published together and depend on each other's
+# internals, so each one requires the exact version of the others. Keep
+# these versions equal to the workspace version above.
 [workspace.dependencies]
 libc = "0.2"
-libmold = { path = "." }
+libmold = { path = ".", version = "=3.0.0" }
+mold-arch-x86_64 = { path = "arch/x86_64", version = "=3.0.0" }
+mold-arch-i386 = { path = "arch/i386", version = "=3.0.0" }
+mold-arch-arm32 = { path = "arch/arm32", version = "=3.0.0" }
+mold-arch-arm32be = { path = "arch/arm32be", version = "=3.0.0" }
+mold-arch-arm64 = { path = "arch/arm64", version = "=3.0.0" }
+mold-arch-arm64be = { path = "arch/arm64be", version = "=3.0.0" }
+mold-arch-riscv64 = { path = "arch/riscv64", version = "=3.0.0" }
+mold-arch-riscv64be = { path = "arch/riscv64be", version = "=3.0.0" }
+mold-arch-riscv32 = { path = "arch/riscv32", version = "=3.0.0" }
+mold-arch-riscv32be = { path = "arch/riscv32be", version = "=3.0.0" }
+mold-arch-ppc64v2 = { path = "arch/ppc64v2", version = "=3.0.0" }
+mold-arch-ppc32 = { path = "arch/ppc32", version = "=3.0.0" }
+mold-arch-ppc64v1 = { path = "arch/ppc64v1", version = "=3.0.0" }
+mold-arch-s390x = { path = "arch/s390x", version = "=3.0.0" }
+mold-arch-sparc64 = { path = "arch/sparc64", version = "=3.0.0" }
+mold-arch-m68k = { path = "arch/m68k", version = "=3.0.0" }
+mold-arch-sh4 = { path = "arch/sh4", version = "=3.0.0" }
+mold-arch-sh4be = { path = "arch/sh4be", version = "=3.0.0" }
+mold-arch-loongarch64 = { path = "arch/loongarch64", version = "=3.0.0" }
+mold-arch-loongarch32 = { path = "arch/loongarch32", version = "=3.0.0" }
 
 [dependencies]
 blake3 = "1.8.7"

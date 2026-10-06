@@ -3,8 +3,9 @@ name = "mold-arch-s390x"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "The mold linker instantiated for s390x"
+description = "An internal crate of the mold linker, which instantiates it for s390x"
 license.workspace = true
+repository.workspace = true
 
 [lib]
 path = "lib.rs"

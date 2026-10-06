@@ -3,8 +3,9 @@ name = "mold-arch-ppc64v1"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "The mold linker instantiated for ppc64v1"
+description = "An internal crate of the mold linker, which instantiates it for ppc64v1"
 license.workspace = true
+repository.workspace = true
 
 [lib]
 path = "lib.rs"

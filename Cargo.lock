@@ -186,14 +186,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
 
 [[package]]
-name = "libmimalloc-sys"
-version = "0.1.49"
-source = "git+https://github.com/rui314/mimalloc_rust?rev=3979460494f1cd1e7f936cb8e10f41e927c9f698#3979460494f1cd1e7f936cb8e10f41e927c9f698"
-dependencies = [
- "cc",
-]
-
-[[package]]
 name = "libmold"
 version = "3.0.0"
 dependencies = [
@@ -243,19 +235,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "mimalloc"
-version = "0.1.52"
-source = "git+https://github.com/rui314/mimalloc_rust?rev=3979460494f1cd1e7f936cb8e10f41e927c9f698#3979460494f1cd1e7f936cb8e10f41e927c9f698"
-dependencies = [
- "libmimalloc-sys",
-]
-
-[[package]]
 name = "mold"
 version = "3.0.0"
 dependencies = [
  "libmold",
- "mimalloc",
  "mold-arch-arm32",
  "mold-arch-arm32be",
  "mold-arch-arm64",
@@ -276,6 +259,7 @@ dependencies = [
  "mold-arch-sh4be",
  "mold-arch-sparc64",
  "mold-arch-x86_64",
+ "mold-mimalloc",
  "mold-tests",
 ]
 
@@ -417,6 +401,24 @@ name = "mold-arch-x86_64"
 version = "3.0.0"
 dependencies = [
  "libmold",
+]
+
+[[package]]
+name = "mold-mimalloc"
+version = "0.1.52"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b7efd1b6c74e7a09c1d296af4875b79118a5ea32d70736601a8323ddcbcb4c2"
+dependencies = [
+ "mold-mimalloc-sys",
+]
+
+[[package]]
+name = "mold-mimalloc-sys"
+version = "0.1.49"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "66a79c372cdbf45bf4548fd4aa40a0b2805ef2ee8e25e5185e11bf2b5c5de366"
+dependencies = [
+ "cc",
 ]
 
 [[package]]

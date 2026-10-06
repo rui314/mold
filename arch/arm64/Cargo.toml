@@ -3,8 +3,9 @@ name = "mold-arch-arm64"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "The mold linker instantiated for arm64"
+description = "An internal crate of the mold linker, which instantiates it for arm64"
 license.workspace = true
+repository.workspace = true
 
 [lib]
 path = "lib.rs"
