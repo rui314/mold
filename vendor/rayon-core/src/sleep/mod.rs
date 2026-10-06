@@ -72,13 +72,13 @@ impl Sleep {
     }
 
     #[inline]
-    pub(super) fn start_looking(&self, worker_index: usize) -> IdleState {
+    pub(super) fn start_looking(&self, worker_index: usize, poll_idle: bool) -> IdleState {
         self.counters.add_inactive_thread();
 
         IdleState {
             worker_index,
             rounds: 0,
-            idle_since: (!self.idle_timeout.is_zero()).then(Instant::now),
+            idle_since: (poll_idle && !self.idle_timeout.is_zero()).then(Instant::now),
             jobs_counter: JobsEventCounter::DUMMY,
         }
     }

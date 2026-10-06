@@ -453,8 +453,10 @@ impl<S> ThreadPoolBuilder<S> {
         }
     }
 
-    /// Delays parking idle workers by at least this duration while they keep
-    /// searching for work and yielding the processor. This can reduce wake-up
+    /// After a worker has executed a job, delays parking it between jobs by
+    /// this duration while it searches for work and yields the processor.
+    /// Initial startup and nested join/scope waits retain the normal policy.
+    /// This can reduce wake-up
     /// latency between short bursts of parallel work, at the cost of CPU time.
     ///
     /// Zero (the default) retains Rayon's normal round-based sleep policy.

@@ -4,6 +4,8 @@ The branch starts at original PR commit 28d46ec7 and removes KeepWarm,
 Context::timer rearming, and broadcast polling jobs. A vendored Rayon-core
 1.13.0 adds ThreadPoolBuilder::idle_timeout; mold requests 2 milliseconds.
 Default zero preserves Rayon's original policy and performs no clock reads.
+The timeout applies between top-level jobs after the worker has done work,
+not to initial pool startup or nested join/scope waits.
 Polling uses the existing worker search and yield loop, with the existing
 sleep notification protocol intact. There is no special pass-boundary wakeup.
 

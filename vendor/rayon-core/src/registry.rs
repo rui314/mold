@@ -785,19 +785,35 @@ impl WorkerThread {
         // accesses, which would be *very bad*
         let abort_guard = unwind::AbortIfPanic;
 
+        // Extend idle search only between top-level jobs. Threads waiting for
+        // a join/scope still use the normal parking policy, and a new worker
+        // does not spin before it has ever participated in the workload.
+        let between_jobs = ptr::eq(
+            latch,
+            self.registry.thread_infos[self.index]
+                .terminate
+                .as_core_latch(),
+        );
+        let mut did_work = false;
+
         'outer: while !latch.probe() {
             // Check for local work *before* we start marking ourself idle,
             // especially to avoid modifying shared sleep state.
             if let Some(job) = self.take_local_job() {
                 self.execute(job);
+                did_work = true;
                 continue;
             }
 
-            let mut idle_state = self.registry.sleep.start_looking(self.index);
+            let mut idle_state = self
+                .registry
+                .sleep
+                .start_looking(self.index, between_jobs && did_work);
             while !latch.probe() {
                 if let Some(job) = self.find_work() {
                     self.registry.sleep.work_found();
                     self.execute(job);
+                    did_work = true;
                     // The job might have injected local work, so go back to the outer loop.
                     continue 'outer;
                 } else {
