@@ -2207,7 +2207,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                     let value = false;
                     a.apply_dynamic_relocs = value;
                 }
-                Item::Trace => {
+                Item::Trace | Item::TraceShort => {
                     a.trace = true;
                 }
                 Item::EhFrameHdr => {
@@ -2242,7 +2242,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                     let value = false;
                     a.gdb_index = value;
                 }
-                Item::RelocatableShort | Item::Relocatable => {
+                Item::RelocatableShort | Item::RelocatableShortI | Item::Relocatable => {
                     a.relocatable = true;
                     a.emit_relocs = true;
                 }
@@ -2466,7 +2466,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                 Item::NoSeparateDebugFile => {
                     separate_debug_file = None;
                 }
-                Item::Nmagic => {
+                Item::Nmagic | Item::NmagicShort => {
                     let value = true;
                     a.nmagic = value;
                 }
@@ -2851,6 +2851,19 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                     // Ignored for compatibility.
                 }
                 Item::IgnoredMmapOutputFile | Item::IgnoredNoMmapOutputFile => {
+                    // Ignored for compatibility.
+                }
+                Item::IgnoredG
+                | Item::IgnoredD
+                | Item::IgnoredArchitecture(_)
+                | Item::IgnoredGpsize(_)
+                | Item::IgnoredUr
+                | Item::IgnoredQy
+                | Item::IgnoredA(_)
+                | Item::IgnoredAssert(_)
+                | Item::IgnoredY(_)
+                | Item::IgnoredMriScript(_)
+                | Item::IgnoredDefaultScript(_) => {
                     // Ignored for compatibility.
                 }
                 Item::ShortMLower(value_os) => {

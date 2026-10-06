@@ -233,6 +233,9 @@ pub(crate) enum Item {
     /// `-trace`
     #[arg(long = "trace")]
     Trace,
+    /// `-t`
+    #[arg(short = 't')]
+    TraceShort,
     /// `-eh-frame-hdr`
     #[arg(long = "eh-frame-hdr")]
     EhFrameHdr,
@@ -269,6 +272,9 @@ pub(crate) enum Item {
     /// `-r`
     #[arg(short = 'r')]
     RelocatableShort,
+    /// `-i`
+    #[arg(short = 'i')]
+    RelocatableShortI,
     /// `-relocatable`
     #[arg(long = "relocatable")]
     Relocatable,
@@ -392,6 +398,9 @@ pub(crate) enum Item {
     /// `-nmagic`
     #[arg(long = "nmagic")]
     Nmagic,
+    /// `-n`
+    #[arg(short = 'n')]
+    NmagicShort,
     /// `-no-nmagic`
     #[arg(long = "no-nmagic")]
     NoNmagic,
@@ -729,6 +738,49 @@ pub(crate) enum Item {
     /// `-no-mmap-output-file`
     #[arg(long = "no-mmap-output-file")]
     IgnoredNoMmapOutputFile,
+    // GNU ld's short options mold had no spelling for, and the long
+    // names some of them stand for. -g, -d (mold defines common symbols
+    // anyway), -A and -G (mold has -m), -Ur and -Qy (vendor-specific),
+    // -a and -assert (HP/UX and SunOS compatibility), -Y, -c (an MRI
+    // script) and -dT (a default linker script) are accepted and ignored.
+    // long_only tries a single-dash word as a long option before a short
+    // one takes the rest of it, so -auxiliary, -as-needed, -compress-*,
+    // -cref and friends keep their meaning.
+    /// `-g`
+    #[arg(short = 'g')]
+    IgnoredG,
+    /// `-d`
+    #[arg(short = 'd')]
+    IgnoredD,
+    /// `-A`, `--architecture`
+    #[arg(short = 'A', long = "architecture")]
+    IgnoredArchitecture(OsString),
+    /// `-G`, `--gpsize`
+    #[arg(short = 'G', long = "gpsize")]
+    IgnoredGpsize(OsString),
+    /// `-Ur`
+    #[arg(long = "Ur")]
+    IgnoredUr,
+    /// `-Qy`
+    #[arg(long = "Qy")]
+    IgnoredQy,
+    /// `-a`; only `=value` is accepted, not a separate word, so that this
+    /// does not also match `-auxiliary`.
+    #[arg(long = "a")]
+    IgnoredA(OsString),
+    /// `-assert`
+    #[arg(long = "assert")]
+    IgnoredAssert(OsString),
+    /// `-Y`
+    #[arg(short = 'Y')]
+    IgnoredY(OsString),
+    /// `-c`, `--mri-script`; only `=value` is accepted, not a separate
+    /// word, so that this does not also match `-compress-debug-sections`.
+    #[arg(long = "c", long = "mri-script")]
+    IgnoredMriScript(OsString),
+    /// `-dT`, `--default-script`
+    #[arg(long = "dT", long = "default-script")]
+    IgnoredDefaultScript(OsString),
     /// `-m`
     #[arg(short = 'm')]
     ShortMLower(OsString),
@@ -1120,5 +1172,81 @@ mod tests {
         // GNU ld reads every -lX as --library=X.
         let items = parse_items(&["-library"]);
         assert!(matches!(&items[0], Item::LibraryShort(v) if v.as_os_str() == "ibrary"));
+    }
+
+    #[test]
+    fn gnu_ld_short_aliases_are_accepted() {
+        // -i is -r, -n is --nmagic, -t is --trace.
+        let items = parse_items(&["-i", "-n", "-t", "a.o"]);
+        assert!(matches!(&items[0], Item::RelocatableShortI));
+        assert!(matches!(&items[1], Item::NmagicShort));
+        assert!(matches!(&items[2], Item::TraceShort));
+        assert!(matches!(&items[3], Item::Input(_)));
+
+        // The options GNU ld accepts and ignores.
+        let items = parse_items(&[
+            "-g",
+            "-d",
+            "-A",
+            "x86-64",
+            "--architecture=riscv64",
+            "-G",
+            "8",
+            "--gpsize=16",
+            "-Ur",
+            "-Qy",
+            "-a=shared",
+            "-assert",
+            "definitions",
+            "-Y",
+            "/tmp",
+            "-c=script.mri",
+            "--mri-script=script.mri",
+            "-dT",
+            "script.ld",
+            "--default-script",
+            "script.ld",
+            "a.o",
+        ]);
+        assert!(matches!(&items[0], Item::IgnoredG));
+        assert!(matches!(&items[1], Item::IgnoredD));
+        assert!(matches!(&items[2], Item::IgnoredArchitecture(v) if v.as_os_str() == "x86-64"));
+        assert!(matches!(&items[3], Item::IgnoredArchitecture(v) if v.as_os_str() == "riscv64"));
+        assert!(matches!(&items[4], Item::IgnoredGpsize(v) if v.as_os_str() == "8"));
+        assert!(matches!(&items[5], Item::IgnoredGpsize(v) if v.as_os_str() == "16"));
+        assert!(matches!(&items[6], Item::IgnoredUr));
+        assert!(matches!(&items[7], Item::IgnoredQy));
+        assert!(matches!(&items[8], Item::IgnoredA(v) if v.as_os_str() == "shared"));
+        assert!(matches!(&items[9], Item::IgnoredAssert(v) if v.as_os_str() == "definitions"));
+        assert!(matches!(&items[10], Item::IgnoredY(v) if v.as_os_str() == "/tmp"));
+        assert!(matches!(&items[11], Item::IgnoredMriScript(v) if v.as_os_str() == "script.mri"));
+        assert!(matches!(&items[12], Item::IgnoredMriScript(v) if v.as_os_str() == "script.mri"));
+        assert!(
+            matches!(&items[13], Item::IgnoredDefaultScript(v) if v.as_os_str() == "script.ld")
+        );
+        assert!(
+            matches!(&items[14], Item::IgnoredDefaultScript(v) if v.as_os_str() == "script.ld")
+        );
+        assert!(matches!(&items[15], Item::Input(_)));
+
+        // -a and -c are spelled as long names, so they take an attached
+        // value only; a name that merely starts like them is kept as
+        // unknown, and the dispatch rejects it, as GNU ld rejects an
+        // unrecognized -a keyword.
+        let items = parse_items(&["-auxiliary", "liba.so", "a.o"]);
+        assert!(matches!(&items[0], Item::Auxiliary(v) if v.as_os_str() == "liba.so"));
+        let items = parse_items(&["--as-needed", "a.o"]);
+        assert!(matches!(&items[0], Item::AsNeeded));
+        let items = parse_items(&["--compress-debug-sections=zlib", "a.o"]);
+        assert!(matches!(&items[0], Item::CompressDebugSections(v) if v.as_os_str() == "zlib"));
+        let items = parse_items(&["-dc", "-dp", "a.o"]);
+        assert!(matches!(&items[0], Item::IgnoredDc));
+        assert!(matches!(&items[1], Item::IgnoredDp));
+        let items = parse_items(&["-a", "shared"]);
+        assert!(matches!(&items[0], Item::Unknown(v) if v.as_os_str() == "-a"));
+        let items = parse_items(&["-auxiliaries"]);
+        assert!(matches!(&items[0], Item::Unknown(v) if v.as_os_str() == "-auxiliaries"));
+        let items = parse_items(&["-c", "script.mri"]);
+        assert!(matches!(&items[0], Item::Unknown(v) if v.as_os_str() == "-c"));
     }
 }
