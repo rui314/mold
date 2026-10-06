@@ -2870,6 +2870,54 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                 | Item::IgnoredDefaultScript(_) => {
                     // Ignored for compatibility.
                 }
+                Item::IgnoredPrintMapDiscarded
+                | Item::IgnoredNoPrintMapDiscarded
+                | Item::IgnoredPrintMapLocals
+                | Item::IgnoredNoPrintMapLocals
+                | Item::IgnoredStripDiscarded
+                | Item::IgnoredNoStripDiscarded
+                | Item::IgnoredMapWholeFiles
+                | Item::IgnoredNoMapWholeFiles
+                | Item::IgnoredCref
+                | Item::IgnoredPrintMemoryUsage
+                | Item::IgnoredPrintSysroot
+                | Item::IgnoredPrintOutputFormat
+                | Item::IgnoredTargetHelp
+                | Item::IgnoredForceExeSuffix
+                | Item::IgnoredTraditionalFormat
+                | Item::IgnoredQmagic
+                | Item::IgnoredReduceMemoryOverheads
+                | Item::IgnoredHashSize(_)
+                | Item::IgnoredRemapInputs(_)
+                | Item::IgnoredRemapInputsFile(_)
+                | Item::IgnoredErrorHandlingScript(_)
+                | Item::IgnoredVersionExportsSection(_)
+                | Item::IgnoredAcceptUnknownInputArch
+                | Item::IgnoredNoAcceptUnknownInputArch
+                | Item::IgnoredNoWarnMismatch
+                | Item::IgnoredNoWarnSearchMismatch
+                | Item::IgnoredForceGroupAllocation
+                | Item::IgnoredEnableNonContiguousRegions
+                | Item::IgnoredEnableNonContiguousRegionsWarnings
+                | Item::IgnoredDisableLinkerVersion
+                | Item::IgnoredEnableLinkerVersion
+                | Item::IgnoredNoEnumSizeWarning
+                | Item::IgnoredNoWcharSizeWarning
+                | Item::IgnoredDefaultImportedSymver
+                | Item::IgnoredWarnExecstackObjects
+                | Item::IgnoredWarnSectionAlign
+                | Item::IgnoredWarnMultipleGp
+                | Item::IgnoredWarnAlternateEm
+                | Item::IgnoredErrorExecstack
+                | Item::IgnoredWarnRwxSegments
+                | Item::IgnoredErrorRwxSegments
+                | Item::IgnoredNoDefineCommon
+                | Item::IgnoredDynamicListCppNew
+                | Item::IgnoredDynamicListCppTypeinfo
+                | Item::IgnoredCheckSections
+                | Item::IgnoredNoCheckSections => {
+                    // Ignored for compatibility.
+                }
                 Item::ShortMLower(value_os) => {
                     let arg = utf8_arg(value_os, "-m");
                     match emulation_to_target(arg) {

@@ -794,6 +794,147 @@ pub(crate) enum Item {
     /// `-dT`, `--default-script`
     #[arg(long = "dT", long = "default-script")]
     IgnoredDefaultScript(OsString),
+    // GNU ld's informational options, which print something, and its
+    // no-op options, which do nothing on the targets mold supports. All
+    // are accepted and ignored.
+    /// `-print-map-discarded`
+    #[arg(long = "print-map-discarded")]
+    IgnoredPrintMapDiscarded,
+    /// `-no-print-map-discarded`
+    #[arg(long = "no-print-map-discarded")]
+    IgnoredNoPrintMapDiscarded,
+    /// `-print-map-locals`
+    #[arg(long = "print-map-locals")]
+    IgnoredPrintMapLocals,
+    /// `-no-print-map-locals`
+    #[arg(long = "no-print-map-locals")]
+    IgnoredNoPrintMapLocals,
+    /// `-strip-discarded`
+    #[arg(long = "strip-discarded")]
+    IgnoredStripDiscarded,
+    /// `-no-strip-discarded`
+    #[arg(long = "no-strip-discarded")]
+    IgnoredNoStripDiscarded,
+    /// `-map-whole-files`
+    #[arg(long = "map-whole-files")]
+    IgnoredMapWholeFiles,
+    /// `-no-map-whole-files`
+    #[arg(long = "no-map-whole-files")]
+    IgnoredNoMapWholeFiles,
+    /// `-cref`
+    #[arg(long = "cref")]
+    IgnoredCref,
+    /// `-print-memory-usage`
+    #[arg(long = "print-memory-usage")]
+    IgnoredPrintMemoryUsage,
+    /// `-print-sysroot`
+    #[arg(long = "print-sysroot")]
+    IgnoredPrintSysroot,
+    /// `-print-output-format`
+    #[arg(long = "print-output-format")]
+    IgnoredPrintOutputFormat,
+    /// `-target-help`
+    #[arg(long = "target-help")]
+    IgnoredTargetHelp,
+    /// `-force-exe-suffix`
+    #[arg(long = "force-exe-suffix")]
+    IgnoredForceExeSuffix,
+    /// `-traditional-format`
+    #[arg(long = "traditional-format")]
+    IgnoredTraditionalFormat,
+    /// `-qmagic`
+    #[arg(long = "qmagic")]
+    IgnoredQmagic,
+    /// `-reduce-memory-overheads`
+    #[arg(long = "reduce-memory-overheads")]
+    IgnoredReduceMemoryOverheads,
+    /// `-hash-size`
+    #[arg(long = "hash-size")]
+    IgnoredHashSize(OsString),
+    /// `-remap-inputs`
+    #[arg(long = "remap-inputs")]
+    IgnoredRemapInputs(OsString),
+    /// `-remap-inputs-file`
+    #[arg(long = "remap-inputs-file")]
+    IgnoredRemapInputsFile(OsString),
+    /// `-error-handling-script`
+    #[arg(long = "error-handling-script")]
+    IgnoredErrorHandlingScript(OsString),
+    /// `-version-exports-section`
+    #[arg(long = "version-exports-section")]
+    IgnoredVersionExportsSection(OsString),
+    /// `-accept-unknown-input-arch`
+    #[arg(long = "accept-unknown-input-arch")]
+    IgnoredAcceptUnknownInputArch,
+    /// `-no-accept-unknown-input-arch`
+    #[arg(long = "no-accept-unknown-input-arch")]
+    IgnoredNoAcceptUnknownInputArch,
+    /// `-no-warn-mismatch`
+    #[arg(long = "no-warn-mismatch")]
+    IgnoredNoWarnMismatch,
+    /// `-no-warn-search-mismatch`
+    #[arg(long = "no-warn-search-mismatch")]
+    IgnoredNoWarnSearchMismatch,
+    /// `-force-group-allocation`
+    #[arg(long = "force-group-allocation")]
+    IgnoredForceGroupAllocation,
+    /// `-enable-non-contiguous-regions`
+    #[arg(long = "enable-non-contiguous-regions")]
+    IgnoredEnableNonContiguousRegions,
+    /// `-enable-non-contiguous-regions-warnings`
+    #[arg(long = "enable-non-contiguous-regions-warnings")]
+    IgnoredEnableNonContiguousRegionsWarnings,
+    /// `-disable-linker-version`
+    #[arg(long = "disable-linker-version")]
+    IgnoredDisableLinkerVersion,
+    /// `-enable-linker-version`
+    #[arg(long = "enable-linker-version")]
+    IgnoredEnableLinkerVersion,
+    /// `-no-enum-size-warning`
+    #[arg(long = "no-enum-size-warning")]
+    IgnoredNoEnumSizeWarning,
+    /// `-no-wchar-size-warning`
+    #[arg(long = "no-wchar-size-warning")]
+    IgnoredNoWcharSizeWarning,
+    /// `-default-imported-symver`
+    #[arg(long = "default-imported-symver")]
+    IgnoredDefaultImportedSymver,
+    /// `-warn-execstack-objects`
+    #[arg(long = "warn-execstack-objects")]
+    IgnoredWarnExecstackObjects,
+    /// `-warn-section-align`
+    #[arg(long = "warn-section-align")]
+    IgnoredWarnSectionAlign,
+    /// `-warn-multiple-gp`
+    #[arg(long = "warn-multiple-gp")]
+    IgnoredWarnMultipleGp,
+    /// `-warn-alternate-em`
+    #[arg(long = "warn-alternate-em")]
+    IgnoredWarnAlternateEm,
+    /// `-error-execstack`
+    #[arg(long = "error-execstack")]
+    IgnoredErrorExecstack,
+    /// `-warn-rwx-segments`
+    #[arg(long = "warn-rwx-segments")]
+    IgnoredWarnRwxSegments,
+    /// `-error-rwx-segments`
+    #[arg(long = "error-rwx-segments")]
+    IgnoredErrorRwxSegments,
+    /// `-no-define-common`
+    #[arg(long = "no-define-common")]
+    IgnoredNoDefineCommon,
+    /// `-dynamic-list-cpp-new`
+    #[arg(long = "dynamic-list-cpp-new")]
+    IgnoredDynamicListCppNew,
+    /// `-dynamic-list-cpp-typeinfo`
+    #[arg(long = "dynamic-list-cpp-typeinfo")]
+    IgnoredDynamicListCppTypeinfo,
+    /// `-check-sections`
+    #[arg(long = "check-sections")]
+    IgnoredCheckSections,
+    /// `-no-check-sections`
+    #[arg(long = "no-check-sections")]
+    IgnoredNoCheckSections,
     /// `-m`
     #[arg(short = 'm')]
     ShortMLower(OsString),
@@ -1317,5 +1458,77 @@ mod tests {
         // A name that merely starts like an option is still unknown.
         let items = parse_items(&["--sort-commonplace"]);
         assert!(matches!(&items[0], Item::Unknown(v) if v.as_os_str() == "--sort-commonplace"));
+    }
+
+    #[test]
+    fn gnu_ld_no_op_options_are_accepted() {
+        let items = parse_items(&[
+            "--print-map-discarded",
+            "--no-print-map-discarded",
+            "--print-map-locals",
+            "--no-print-map-locals",
+            "--strip-discarded",
+            "--no-strip-discarded",
+            "--map-whole-files",
+            "--no-map-whole-files",
+            "--cref",
+            "--print-memory-usage",
+            "--print-sysroot",
+            "--print-output-format",
+            "--target-help",
+            "--force-exe-suffix",
+            "--traditional-format",
+            "--qmagic",
+            "--reduce-memory-overheads",
+            "--hash-size=1024",
+            "--hash-size",
+            "2048",
+            "--remap-inputs=a=b",
+            "--remap-inputs",
+            "c=d",
+            "--remap-inputs-file=remap.txt",
+            "--error-handling-script=err.sh",
+            "--version-exports-section=VER",
+            "--accept-unknown-input-arch",
+            "--no-accept-unknown-input-arch",
+            "--no-warn-mismatch",
+            "--no-warn-search-mismatch",
+            "--force-group-allocation",
+            "--enable-non-contiguous-regions",
+            "--enable-non-contiguous-regions-warnings",
+            "--disable-linker-version",
+            "--enable-linker-version",
+            "--no-enum-size-warning",
+            "--no-wchar-size-warning",
+            "--default-imported-symver",
+            "--warn-execstack-objects",
+            "--warn-section-align",
+            "--warn-multiple-gp",
+            "--warn-alternate-em",
+            "--error-execstack",
+            "--warn-rwx-segments",
+            "--error-rwx-segments",
+            "--no-define-common",
+            "--dynamic-list-cpp-new",
+            "--dynamic-list-cpp-typeinfo",
+            "--check-sections",
+            "--no-check-sections",
+            "a.o",
+        ]);
+        assert!(matches!(&items[0], Item::IgnoredPrintMapDiscarded));
+        assert!(matches!(&items[8], Item::IgnoredCref));
+        assert!(matches!(&items[17], Item::IgnoredHashSize(v) if v.as_os_str() == "1024"));
+        assert!(matches!(&items[18], Item::IgnoredHashSize(v) if v.as_os_str() == "2048"));
+        assert!(matches!(&items[47], Item::IgnoredNoCheckSections));
+        assert!(matches!(&items[48], Item::Input(v) if v.as_os_str() == "a.o"));
+        assert_eq!(items.len(), 49);
+
+        // Single-dash spellings of long options that start with a letter
+        // that is a short option: -hash-size=1024 is --hash-size=1024, not
+        // -h ash-size=1024, and -qmagic is --qmagic, not -q magic.
+        let items = parse_items(&["-hash-size=1024", "-qmagic", "a.o"]);
+        assert!(matches!(&items[0], Item::IgnoredHashSize(v) if v.as_os_str() == "1024"));
+        assert!(matches!(&items[1], Item::IgnoredQmagic));
+        assert!(matches!(&items[2], Item::Input(_)));
     }
 }
