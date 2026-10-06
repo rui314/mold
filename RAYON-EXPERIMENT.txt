@@ -12,7 +12,7 @@ sleep notification protocol intact. There is no special pass-boundary wakeup.
 Validation includes upstream rayon-core tests, repeated bursts, nested joins,
 broadcasts, parked-worker wakeups, shutdown, mold unit tests, native linker
 integration tests, and byte comparison over eight captured link workloads.
-See /Users/callen/work/mold/.codex/perf/rayon-20261006 for host benchmark data.
+The published evidence linked below contains the raw benchmark data.
 
 This is a Rayon API prototype, not functionality in released Rayon. The
 vendored crate makes the experiment self-contained and should be replaced by
@@ -51,11 +51,11 @@ The 1- and 8-worker sensitivity checks are included in the full report.
 Correctness: 32 mold library tests, 2 harness library tests, and native
 integration: 503 pass, 14 skip, 0 fail for baseline and both candidates.
 Upstream rayon-core tests and the new targeted tests pass. Captured outputs
-match byte-for-byte across all eight workloads and all tested worker counts.
+match byte-for-byte for all eight workloads at 32 workers, with three selected
+workloads also checked at 1 and 8 workers.
 
 Verdict: no broad efficiency win over #1694. The concurrent Clang batch uses
 6.1% more CPU and takes 2.2% longer; most single-link differences are small.
 
 Full evidence, raw samples, uncertainty intervals and charts:
-/Users/callen/work/mold/.codex/perf/rayon-20261006/report/report.html
-wx-workstation:/home/callen/work/mold-rayon-20261006
+https://github.com/bitemyapp/mold/tree/028de42c72ac6fd60dc6d45aafc6be2b5b752ded
