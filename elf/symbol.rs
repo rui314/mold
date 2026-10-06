@@ -1925,6 +1925,83 @@ mod tests {
     }
 
     #[test]
+    fn gather_preserves_identity_across_sparse_and_repeated_batches() {
+        fn gather(table: &mut SymbolTable, names: &[&'static [u8]]) -> Vec<SymbolId> {
+            let mut bins: Vec<Bins<usize>> = (0..4).map(|_| Bins::new()).collect();
+            for (slot, &name) in names.iter().enumerate() {
+                // Leave one input bin empty, and distribute duplicates over
+                // separate bins rather than only repeating inside one bin.
+                bins[slot % 3].record(name, name.len(), slot);
+            }
+            let slots: Vec<_> = names.iter().map(|_| AtomicU32::new(u32::MAX)).collect();
+            table.gather(bins, 7, |slot, id| slots[slot].store(id.0, Ordering::Relaxed));
+            slots.iter().map(|slot| SymbolId(slot.load(Ordering::Relaxed))).collect()
+        }
+
+        // Exercise sparse shards and record counts around the allocation
+        // boundary, using real hashes so ordinary lookup checks the result.
+        let needed = [2, 256, 257, 258, 2, 2];
+        let mut keys: [Vec<&'static [u8]>; 6] = std::array::from_fn(|_| Vec::new());
+        for serial in 0.. {
+            let name = format!("gather-{serial}").into_bytes();
+            let shard = shard_of(hash_key(&name));
+            if shard < keys.len() && keys[shard].len() < needed[shard] {
+                keys[shard].push(Box::leak(name.into_boxed_slice()));
+            }
+            if keys.iter().zip(needed).all(|(keys, n)| keys.len() == n) {
+                break;
+            }
+        }
+        let mut table = SymbolTable::new();
+        let existing = table.intern(keys[1][0]);
+        let existing_only = table.intern(keys[5][0]);
+        table.gather(Vec::<Bins<usize>>::new(), 0, |_, _| panic!("empty gather assigned a slot"));
+
+        let mut first = Vec::new();
+        for (keys, count) in keys.iter().zip([1, 255, 256, 257]) {
+            first.extend_from_slice(&keys[..count]);
+        }
+        first.extend(std::iter::repeat_n(keys[4][0], 257));
+        first.extend(std::iter::repeat_n(keys[5][0], 256));
+        let first_ids = gather(&mut table, &first);
+        let mut expected = std::collections::HashMap::new();
+        for (&name, id) in first.iter().zip(first_ids) {
+            if let Some(old) = expected.insert(name, id) {
+                assert_eq!(old, id, "duplicate name received a different symbol");
+            }
+            assert_eq!(table.lookup(name), Some(id));
+            assert_eq!(table[id].name(), BStr::new(name));
+        }
+        assert_eq!(expected[keys[1][0]], existing);
+        assert_eq!(expected[keys[5][0]], existing_only);
+        let old_ids: std::collections::HashSet<_> = expected.values().copied().collect();
+        assert_eq!(old_ids.len(), expected.len(), "different names alias one symbol");
+        assert_eq!(table.global_ids().collect::<std::collections::HashSet<_>>(), old_ids);
+
+        let local = table.add(Symbol::new(BStr::new(b"local-between-gathers")));
+        let mut second = first;
+        second.reverse();
+        second.extend(keys.iter().map(|keys| *keys.last().unwrap()));
+        let second_ids = gather(&mut table, &second);
+        for (&name, id) in second.iter().zip(second_ids) {
+            assert_ne!(id, local);
+            if let Some(old) = expected.insert(name, id) {
+                assert_eq!(old, id, "existing symbol changed across gathers");
+            } else {
+                assert!(!old_ids.contains(&id), "new name aliases an existing symbol");
+            }
+            assert_eq!(table.lookup(name), Some(id));
+            assert_eq!(table[id].name(), BStr::new(name));
+        }
+        let ids: std::collections::HashSet<_> = expected.values().copied().collect();
+        assert_eq!(ids.len(), expected.len());
+        assert_eq!(table.global_ids().collect::<std::collections::HashSet<_>>(), ids);
+        assert_eq!(table[local].name(), BStr::new(b"local-between-gathers"));
+        assert!(gather(&mut table, &[]).is_empty());
+        assert_eq!(table.lookup(keys[1][0]), Some(existing));
+    }
+
+    #[test]
     fn shard_hash_distributes_buckets_and_lookup_tags() {
         for shard in 0..NUM_SHARDS as u64 {
             let mut buckets = std::collections::HashSet::new();
