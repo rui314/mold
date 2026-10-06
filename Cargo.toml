@@ -70,6 +70,7 @@ rayon = "1"
 rustc-demangle = "0.1"
 uuid = { version = "1.27", default-features = false, features = ["v4"] }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
+zerocopy = { version = "0.8.60", features = ["derive"] }
 zlib-rs = { version = "0.6.8", default-features = false }
 zstd = "0.13"
 

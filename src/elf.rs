@@ -23,13 +23,17 @@ pub use crate::elf_consts::*;
 
 use crate::arch::{I386, Sparc64, Target, X86_64};
 
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
+
 // ELF types
 /// An integer stored in the target's byte order. The type carries the
 /// target so that a record field needs no accessor of its own.
 macro_rules! endian_integer {
     ($name:ident, $int:ty, $size:expr, $read:ident, $write:ident) => {
         #[repr(transparent)]
-        #[derive(Clone, Copy, Debug, Default)]
+        #[derive(
+            Clone, Copy, Debug, Default, FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned,
+        )]
         pub struct $name<E: Target> {
             bytes: [u8; $size],
             target: PhantomData<E>,
@@ -72,7 +76,19 @@ endian_integer!(I32, i32, 4, read_i32, write_i32);
 endian_integer!(I64, i64, 8, read_i64, write_i64);
 
 #[repr(transparent)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    FromBytes,
+    IntoBytes,
+    KnownLayout,
+    Immutable,
+    Unaligned,
+)]
 pub struct U24<E: Target> {
     bytes: [u8; 3],
     target: PhantomData<E>,
@@ -100,32 +116,27 @@ impl<E: Target> U24<E> {
 }
 
 /// A record stored in its target-dependent file representation.
-///
-/// # Safety
-///
-/// Implementations must have alignment one, contain no padding or references,
-/// and accept every bit pattern. These requirements let records in possibly
-/// unaligned archive members be read and written without host dependencies.
-pub unsafe trait FileRecord: Clone + Copy + Default + Send + Sync + 'static {
+pub trait FileRecord:
+    FromBytes
+    + IntoBytes
+    + KnownLayout
+    + Immutable
+    + Unaligned
+    + Clone
+    + Copy
+    + Default
+    + Send
+    + Sync
+    + 'static
+{
     fn parse(bytes: &[u8]) -> Self {
-        const { assert!(align_of::<Self>() == 1) };
         assert!(bytes.len() >= size_of::<Self>());
-        // SAFETY: the trait guarantees that every bit pattern is valid, and
-        // the length check proves that a complete record is available.
-        unsafe { bytes.as_ptr().cast::<Self>().read_unaligned() }
+        Self::read_from_prefix(bytes).unwrap().0
     }
 
     fn write(&self, buf: &mut [u8]) {
         assert!(buf.len() >= size_of::<Self>());
-        // SAFETY: `buf` has room for the complete record, and copying bytes
-        // does not depend on its alignment.
-        unsafe {
-            std::ptr::copy_nonoverlapping(
-                std::ptr::from_ref(self).cast::<u8>(),
-                buf.as_mut_ptr(),
-                size_of::<Self>(),
-            );
-        }
+        self.write_to_prefix(buf).unwrap();
     }
 
     fn write_all(records: &[Self], buf: &mut [u8]) {
@@ -135,38 +146,56 @@ pub unsafe trait FileRecord: Clone + Copy + Default + Send + Sync + 'static {
     }
 }
 
+impl<T> FileRecord for T where
+    T: FromBytes
+        + IntoBytes
+        + KnownLayout
+        + Immutable
+        + Unaligned
+        + Clone
+        + Copy
+        + Default
+        + Send
+        + Sync
+        + 'static
+{
+}
+
 /// Views one record directly in its file representation.
 pub(crate) fn record_from_bytes<R: FileRecord>(data: &[u8]) -> &R {
-    const { assert!(align_of::<R>() == 1) };
     assert!(data.len() >= size_of::<R>());
-    // SAFETY: FileRecord requires alignment one and every bit pattern to be
-    // valid. The length check proves that one complete record is present.
-    unsafe { &*data.as_ptr().cast() }
+    R::ref_from_prefix(data).unwrap().0
 }
 
 /// Views records directly in their file representation.
 pub(crate) fn records_from_bytes<R: FileRecord>(data: &[u8]) -> &[R] {
-    const { assert!(align_of::<R>() == 1 && size_of::<R>() != 0) };
-    let size = size_of::<R>();
-    assert!(data.len().is_multiple_of(size));
-    // SAFETY: FileRecord requires alignment one and every bit pattern to be
-    // valid. The resulting slice covers exactly `data`.
-    unsafe { std::slice::from_raw_parts(data.as_ptr().cast(), data.len() / size) }
+    assert!(size_of::<R>() != 0);
+    assert!(data.len().is_multiple_of(size_of::<R>()));
+    <[R]>::ref_from_bytes(data).unwrap()
 }
 
 /// Mutably views records directly in their file representation.
 pub(crate) fn records_from_bytes_mut<R: FileRecord>(data: &mut [u8]) -> &mut [R] {
-    const { assert!(align_of::<R>() == 1 && size_of::<R>() != 0) };
-    let size = size_of::<R>();
-    assert!(data.len().is_multiple_of(size));
-    // SAFETY: FileRecord requires alignment one and every bit pattern to be
-    // valid. `data` is exclusively borrowed for the returned slice.
-    unsafe { std::slice::from_raw_parts_mut(data.as_mut_ptr().cast(), data.len() / size) }
+    assert!(size_of::<R>() != 0);
+    assert!(data.len().is_multiple_of(size_of::<R>()));
+    <[R]>::mut_from_bytes(data).unwrap()
 }
 
 /// The ELF file header.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    FromBytes,
+    IntoBytes,
+    KnownLayout,
+    Immutable,
+    Unaligned,
+)]
 pub struct ElfEhdr<E: Target> {
     pub e_ident: [u8; 16],
     pub e_type: U16<E>,
@@ -184,10 +213,6 @@ pub struct ElfEhdr<E: Target> {
     pub e_shstrndx: U16<E>,
 }
 
-// SAFETY: all fields are byte-backed integers or bytes, and `repr(C)` does
-// not insert padding between fields with alignment one.
-unsafe impl<E: Target> FileRecord for ElfEhdr<E> {}
-
 const _: () = assert!(size_of::<ElfEhdr<I386>>() == 52);
 const _: () = assert!(size_of::<ElfEhdr<X86_64>>() == 64);
 const _: () = assert!(align_of::<ElfEhdr<I386>>() == 1);
@@ -195,7 +220,19 @@ const _: () = assert!(align_of::<ElfEhdr<X86_64>>() == 1);
 
 /// A section header.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    FromBytes,
+    IntoBytes,
+    KnownLayout,
+    Immutable,
+    Unaligned,
+)]
 pub struct ElfShdr<E: Target> {
     pub sh_name: U32<E>,
     pub sh_type: U32<E>,
@@ -209,10 +246,6 @@ pub struct ElfShdr<E: Target> {
     pub sh_entsize: Word<E>,
 }
 
-// SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
-// padding between fields with alignment one.
-unsafe impl<E: Target> FileRecord for ElfShdr<E> {}
-
 const _: () = assert!(size_of::<ElfShdr<I386>>() == 40);
 const _: () = assert!(size_of::<ElfShdr<X86_64>>() == 64);
 const _: () = assert!(align_of::<ElfShdr<I386>>() == 1);
@@ -220,7 +253,19 @@ const _: () = assert!(align_of::<ElfShdr<X86_64>>() == 1);
 
 /// A program header.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    FromBytes,
+    IntoBytes,
+    KnownLayout,
+    Immutable,
+    Unaligned,
+)]
 pub struct Elf64Phdr<E: Target> {
     pub p_type: U32<E>,
     pub p_flags: U32<E>,
@@ -233,7 +278,19 @@ pub struct Elf64Phdr<E: Target> {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    FromBytes,
+    IntoBytes,
+    KnownLayout,
+    Immutable,
+    Unaligned,
+)]
 pub struct Elf32Phdr<E: Target> {
     pub p_type: U32<E>,
     pub p_offset: U32<E>,
@@ -244,12 +301,6 @@ pub struct Elf32Phdr<E: Target> {
     pub p_flags: U32<E>,
     pub p_align: U32<E>,
 }
-
-// SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
-// padding between fields with alignment one.
-unsafe impl<E: Target> FileRecord for Elf64Phdr<E> {}
-// SAFETY: see the Elf64 implementation.
-unsafe impl<E: Target> FileRecord for Elf32Phdr<E> {}
 
 const _: () = assert!(size_of::<Elf32Phdr<I386>>() == 32);
 const _: () = assert!(size_of::<Elf64Phdr<X86_64>>() == 56);
@@ -310,7 +361,19 @@ pub type ElfPhdr<E> = <E as Target>::Phdr;
 
 /// A symbol table entry.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    FromBytes,
+    IntoBytes,
+    KnownLayout,
+    Immutable,
+    Unaligned,
+)]
 pub struct Elf64Sym<E: Target> {
     pub st_name: U32<E>,
     st_info: u8,
@@ -321,7 +384,19 @@ pub struct Elf64Sym<E: Target> {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    FromBytes,
+    IntoBytes,
+    KnownLayout,
+    Immutable,
+    Unaligned,
+)]
 pub struct Elf32Sym<E: Target> {
     pub st_name: U32<E>,
     pub st_value: U32<E>,
@@ -330,12 +405,6 @@ pub struct Elf32Sym<E: Target> {
     st_other: u8,
     pub st_shndx: U16<E>,
 }
-
-// SAFETY: all fields are byte-backed integers or bytes, and `repr(C)` does
-// not insert padding between fields with alignment one.
-unsafe impl<E: Target> FileRecord for Elf64Sym<E> {}
-// SAFETY: see the Elf64 implementation.
-unsafe impl<E: Target> FileRecord for Elf32Sym<E> {}
 
 const _: () = assert!(size_of::<Elf32Sym<I386>>() == 16);
 const _: () = assert!(size_of::<Elf64Sym<X86_64>>() == 24);
@@ -475,9 +544,6 @@ pub trait ElfWord: FileRecord + fmt::Debug + PartialEq + Eq {
     fn get_signed(&self) -> i64;
 }
 
-// SAFETY: U32 is a transparent wrapper around a byte array.
-unsafe impl<E: Target> FileRecord for U32<E> {}
-
 impl<E: Target> ElfWord for U32<E> {
     #[inline(always)]
     fn new(value: u64) -> Self {
@@ -499,9 +565,6 @@ impl<E: Target> ElfWord for U32<E> {
         i64::from(Self::get(self) as i32)
     }
 }
-
-// SAFETY: U64 is a transparent wrapper around a byte array.
-unsafe impl<E: Target> FileRecord for U64<E> {}
 
 impl<E: Target> ElfWord for U64<E> {
     #[inline(always)]
@@ -571,7 +634,7 @@ pub trait RelRecord: FileRecord + fmt::Debug {
 
 /// A RELA relocation record.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned)]
 pub struct ElfRela<E: Target> {
     r_offset: Word<E>,
     r_info: Word<E>,
@@ -580,17 +643,11 @@ pub struct ElfRela<E: Target> {
 
 /// A REL relocation record.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned)]
 pub struct ElfRelNoAddend<E: Target> {
     r_offset: Word<E>,
     r_info: Word<E>,
 }
-
-// SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
-// padding between fields with alignment one.
-unsafe impl<E: Target> FileRecord for ElfRela<E> {}
-// SAFETY: see ElfRela.
-unsafe impl<E: Target> FileRecord for ElfRelNoAddend<E> {}
 
 const _: () = assert!(size_of::<ElfRela<I386>>() == 12);
 const _: () = assert!(size_of::<ElfRela<X86_64>>() == 24);
@@ -670,7 +727,7 @@ impl<E: Target> RelRecord for ElfRelNoAddend<E> {
 //
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, FromBytes, IntoBytes, KnownLayout, Immutable, Unaligned)]
 pub struct Sparc64Rela {
     r_offset: U64<Sparc64>,
     r_sym: U32<Sparc64>,
@@ -681,10 +738,6 @@ pub struct Sparc64Rela {
     r_type: u8,
     r_addend: I64<Sparc64>,
 }
-
-// SAFETY: all fields are byte-backed integers or bytes, and `repr(C)` does
-// not insert padding between fields with alignment one.
-unsafe impl FileRecord for Sparc64Rela {}
 
 const _: () = assert!(size_of::<Sparc64Rela>() == 24);
 const _: () = assert!(align_of::<Sparc64Rela>() == 1);
@@ -728,15 +781,23 @@ pub(crate) fn rels_from_bytes_mut<E: Target>(data: &mut [u8]) -> &mut [ElfRel<E>
 
 /// An entry of the `.dynamic` section.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    FromBytes,
+    IntoBytes,
+    KnownLayout,
+    Immutable,
+    Unaligned,
+)]
 pub struct ElfDyn<E: Target> {
     pub d_tag: Word<E>,
     pub d_val: Word<E>,
 }
-
-// SAFETY: both fields are byte-backed integers, and `repr(C)` does not insert
-// padding between fields with alignment one.
-unsafe impl<E: Target> FileRecord for ElfDyn<E> {}
 
 const _: () = assert!(size_of::<ElfDyn<I386>>() == 8);
 const _: () = assert!(size_of::<ElfDyn<X86_64>>() == 16);
@@ -745,7 +806,19 @@ const _: () = assert!(align_of::<ElfDyn<X86_64>>() == 1);
 
 /// The header of a compressed section.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    FromBytes,
+    IntoBytes,
+    KnownLayout,
+    Immutable,
+    Unaligned,
+)]
 pub struct Elf64Chdr<E: Target> {
     pub ch_type: U32<E>,
     pub ch_reserved: U32<E>,
@@ -754,18 +827,24 @@ pub struct Elf64Chdr<E: Target> {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    FromBytes,
+    IntoBytes,
+    KnownLayout,
+    Immutable,
+    Unaligned,
+)]
 pub struct Elf32Chdr<E: Target> {
     pub ch_type: U32<E>,
     pub ch_size: U32<E>,
     pub ch_addralign: U32<E>,
 }
-
-// SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
-// padding between fields with alignment one.
-unsafe impl<E: Target> FileRecord for Elf64Chdr<E> {}
-// SAFETY: see the Elf64 implementation.
-unsafe impl<E: Target> FileRecord for Elf32Chdr<E> {}
 
 const _: () = assert!(size_of::<Elf32Chdr<I386>>() == 12);
 const _: () = assert!(size_of::<Elf64Chdr<X86_64>>() == 24);
@@ -808,23 +887,43 @@ pub type ElfChdr<E> = <E as Target>::Chdr;
 
 /// A note header.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    FromBytes,
+    IntoBytes,
+    KnownLayout,
+    Immutable,
+    Unaligned,
+)]
 pub struct ElfNhdr<E: Target> {
     pub n_namesz: U32<E>,
     pub n_descsz: U32<E>,
     pub n_type: U32<E>,
 }
 
-// SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
-// padding between fields with alignment one.
-unsafe impl<E: Target> FileRecord for ElfNhdr<E> {}
-
 const _: () = assert!(size_of::<ElfNhdr<I386>>() == 12);
 const _: () = assert!(align_of::<ElfNhdr<I386>>() == 1);
 
 /// A `.gnu.version_r` file entry.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    FromBytes,
+    IntoBytes,
+    KnownLayout,
+    Immutable,
+    Unaligned,
+)]
 pub struct ElfVerneed<E: Target> {
     pub vn_version: U16<E>,
     pub vn_cnt: U16<E>,
@@ -833,15 +932,23 @@ pub struct ElfVerneed<E: Target> {
     pub vn_next: U32<E>,
 }
 
-// SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
-// padding between fields with alignment one.
-unsafe impl<E: Target> FileRecord for ElfVerneed<E> {}
-
 const _: () = assert!(size_of::<ElfVerneed<I386>>() == 16);
 
 /// A `.gnu.version_r` version entry.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    FromBytes,
+    IntoBytes,
+    KnownLayout,
+    Immutable,
+    Unaligned,
+)]
 pub struct ElfVernaux<E: Target> {
     pub vna_hash: U32<E>,
     pub vna_flags: U16<E>,
@@ -850,15 +957,23 @@ pub struct ElfVernaux<E: Target> {
     pub vna_next: U32<E>,
 }
 
-// SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
-// padding between fields with alignment one.
-unsafe impl<E: Target> FileRecord for ElfVernaux<E> {}
-
 const _: () = assert!(size_of::<ElfVernaux<I386>>() == 16);
 
 /// A `.gnu.version_d` definition entry.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    FromBytes,
+    IntoBytes,
+    KnownLayout,
+    Immutable,
+    Unaligned,
+)]
 pub struct ElfVerdef<E: Target> {
     pub vd_version: U16<E>,
     pub vd_flags: U16<E>,
@@ -869,23 +984,27 @@ pub struct ElfVerdef<E: Target> {
     pub vd_next: U32<E>,
 }
 
-// SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
-// padding between fields with alignment one.
-unsafe impl<E: Target> FileRecord for ElfVerdef<E> {}
-
 const _: () = assert!(size_of::<ElfVerdef<I386>>() == 20);
 
 /// A `.gnu.version_d` name entry.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    FromBytes,
+    IntoBytes,
+    KnownLayout,
+    Immutable,
+    Unaligned,
+)]
 pub struct ElfVerdaux<E: Target> {
     pub vda_name: U32<E>,
     pub vda_next: U32<E>,
 }
-
-// SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
-// padding between fields with alignment one.
-unsafe impl<E: Target> FileRecord for ElfVerdaux<E> {}
 
 const _: () = assert!(size_of::<ElfVerdaux<I386>>() == 8);
 
@@ -896,7 +1015,19 @@ const _: () = assert!(size_of::<ElfVerdaux<I386>>() == 8);
 ///
 /// https://sourceware.org/binutils/docs/sframe-spec.html
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    FromBytes,
+    IntoBytes,
+    KnownLayout,
+    Immutable,
+    Unaligned,
+)]
 pub struct SFrameHeader<E: Target> {
     pub magic: U16<E>,
     pub version: u8,
@@ -912,10 +1043,6 @@ pub struct SFrameHeader<E: Target> {
     pub freoff: U32<E>,
 }
 
-// SAFETY: all fields are byte-backed integers or bytes, and `repr(C)` does
-// not insert padding between fields with alignment one.
-unsafe impl<E: Target> FileRecord for SFrameHeader<E> {}
-
 const _: () = assert!(size_of::<SFrameHeader<I386>>() == 28);
 const _: () = assert!(align_of::<SFrameHeader<I386>>() == 1);
 
@@ -923,16 +1050,24 @@ const _: () = assert!(align_of::<SFrameHeader<I386>>() == 1);
 /// is PC-relative (relative to its own address) when the section flag
 /// SFRAME_F_FDE_FUNC_START_PCREL is set, which is how mold always emits it.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    FromBytes,
+    IntoBytes,
+    KnownLayout,
+    Immutable,
+    Unaligned,
+)]
 pub struct SFrameFdeIdx<E: Target> {
     pub func_start_offset: I64<E>,
     pub func_size: U32<E>,
     pub func_start_fre_off: U32<E>,
 }
-
-// SAFETY: all fields are byte-backed integers, and `repr(C)` does not insert
-// padding between fields with alignment one.
-unsafe impl<E: Target> FileRecord for SFrameFdeIdx<E> {}
 
 const _: () = assert!(size_of::<SFrameFdeIdx<I386>>() == 16);
 const _: () = assert!(align_of::<SFrameFdeIdx<I386>>() == 1);
