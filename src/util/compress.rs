@@ -28,7 +28,7 @@ const SHARD_SIZE: usize = 1024 * 1024;
 pub struct Compressor(Method);
 
 enum Method {
-    Zlib(u32),
+    Zlib(i32),
     Zstd(i32, ZstdContexts),
 }
 
@@ -50,7 +50,7 @@ impl std::fmt::Debug for CompressedData {
 
 /// Compresses a shard as a raw deflate stream ending with a sync flush,
 /// so that the stream ends on a byte boundary and can be concatenated.
-fn zlib_compress_shard(input: &[u8], level: u32) -> Vec<u8> {
+fn zlib_compress_shard(input: &[u8], level: i32) -> Vec<u8> {
     // Initialize zlib stream. Since debug info is generally compressed
     // pretty well with lower compression levels, the default level is 1.
     let mut stream = libz_rs_sys::z_stream::default();
@@ -59,7 +59,7 @@ fn zlib_compress_shard(input: &[u8], level: u32) -> Vec<u8> {
     let status = unsafe {
         libz_rs_sys::deflateInit2_(
             &mut stream,
-            level as i32,
+            level,
             libz_rs_sys::Z_DEFLATED,
             -15,
             8,
@@ -128,7 +128,7 @@ fn zlib_compress_shard(input: &[u8], level: u32) -> Vec<u8> {
 }
 
 impl Compressor {
-    pub fn zlib(level: u32) -> Self {
+    pub fn zlib(level: i32) -> Self {
         Self(Method::Zlib(level))
     }
 
@@ -144,7 +144,7 @@ impl Compressor {
     }
 }
 
-fn zlib_compress(input: &[u8], level: u32) -> CompressedData {
+fn zlib_compress(input: &[u8], level: i32) -> CompressedData {
     // Compress each shard
     let (shards, adlers): (Vec<Vec<u8>>, Vec<u32>) = input
         .par_chunks(SHARD_SIZE)

@@ -305,7 +305,7 @@ pub enum ShuffleSections {
 pub enum DebugCompression {
     #[default]
     None,
-    Zlib(u32),
+    Zlib(i32),
     Zstd(i32),
 }
 
@@ -1557,7 +1557,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                             "invalid --compress-debug-sections argument: {arg} (zlib level must be between 0 and 9)"
                         );
                     }
-                    DebugCompression::Zlib(level as u32)
+                    DebugCompression::Zlib(level as i32)
                 }
                 s if s.starts_with("zstd:") => {
                     let level = parse_number("compress-debug-sections", &s[5..]);
