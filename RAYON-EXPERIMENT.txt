@@ -1,6 +1,18 @@
 Rayon asynchronous global startup experiment (mold PR #1695)
 
-The branch starts at original PR commit 6920f80d and removes mold's local
+Current base: upstream main b2e5a7084f7391fca5c13631d20d36f64f72fe3a.
+The benchmark numbers below describe the pre-rebase versions identified by
+their source commits. They have not been remeasured on this newer base.
+
+Rebase validation on wx-workstation: release build, 32 mold library tests,
+2 harness library tests, 550 native integration passes (14 skips, no failures),
+and upstream Rayon plus added tests pass. All eight captured workloads match
+current upstream byte-for-byte at 1, 8 and 32 workers. Rayon source/tests are
+unchanged; upstream dependencies, release settings and fatal startup-error
+reporting are preserved. Validation logs and output hashes:
+https://github.com/bitemyapp/mold/tree/9d45d6949b00e6c97dbef5eee6ba5793c86a33da/rebase-20261006
+
+This experiment originated at PR commit 6920f80d. It removes mold's local
 pool, spawn channel, helper thread, and mem::forget workaround. A vendored
 Rayon-core 1.13.0 exposes ThreadPoolBuilder::build_global_async; mold changes
 one builder call. Rayon owns the helper and publishes a real global pool,
@@ -22,8 +34,8 @@ benchmark data.
 This is an experimental Rayon dependency patch, not an existing released API.
 The original PR did not preserve the global pool; this version does.
 
-Workstation comparison (6 October 2026)
-======================================
+Pre-rebase workstation comparison (6 October 2026)
+=================================================
 Original PR #1695: 6920f80dc4e2488b78b32dcf6ace9c32969dfd1a
 Benchmarked implementation: bcf50b97220adbe47f510a97969c18429857b1f3
 Shared baseline: 99d79c429bda8630330c806b33ca724a770ac637
