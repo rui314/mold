@@ -1160,6 +1160,31 @@ pub struct ParsedArgs {
     pub jobs: Vec<ReaderJob>,
 }
 
+/// The single-letter options that take no value, so that they may be
+/// bundled in one word (`-sS`), as GNU ld accepts with a deprecation
+/// warning. A letter that takes a value ends the bundle, and GNU ld
+/// rejects the word, so such words are left alone to fail as unknown.
+const SHORT_FLAG_LETTERS: &[u8] = b"EMNSVXdginqstvwx";
+
+/// Whether `word` is a bundle of short flags (`-sS`): a single dash and
+/// two or more letters, each naming a short option that takes no value.
+fn is_short_bundle(word: &OsStr) -> bool {
+    let bytes = word.as_encoded_bytes();
+    let [b'-', rest @ ..] = bytes else { return false };
+    rest.len() >= 2 && rest.iter().all(|&letter| SHORT_FLAG_LETTERS.contains(&letter))
+}
+
+fn print_version_with_targets() {
+    out!(
+        "{}\n  Supported emulations:\n   elf_x86_64\n   elf_i386\n   aarch64elf\n   \
+                 aarch64linux\n   aarch64elfb\n   aarch64linuxb\n   armelf_linux_eabi\n   elf64lriscv\n   \
+                 elf64briscv\n   elf32lriscv\n   elf32briscv\n   elf32ppc\n   elf64ppc\n   elf64lppc\n   \
+                 elf64_s390\n   elf64_sparc\n   m68kelf\n   shlelf_linux\n   shelf_linux\n   \
+                 elf64loongarch\n   elf32loongarch",
+        *VERSION
+    );
+}
+
 /// Parses all options. `cmdline` includes the program name.
 pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> ParsedArgs {
     // Input file arguments are turned into ReaderJobs for
@@ -1291,14 +1316,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             out!("{}", *VERSION);
             std::process::exit(0);
         } else if cursor.read_flag("V") {
-            out!(
-                "{}\n  Supported emulations:\n   elf_x86_64\n   elf_i386\n   aarch64elf\n   \
-                 aarch64linux\n   aarch64elfb\n   aarch64linuxb\n   armelf_linux_eabi\n   elf64lriscv\n   \
-                 elf64briscv\n   elf32lriscv\n   elf32briscv\n   elf32ppc\n   elf64ppc\n   elf64lppc\n   \
-                 elf64_s390\n   elf64_sparc\n   m68kelf\n   shlelf_linux\n   shelf_linux\n   \
-                 elf64loongarch\n   elf32loongarch",
-                *VERSION
-            );
+            print_version_with_targets();
             version_shown = true;
         } else if read_arg!("mllvm", true) {
             a.plugin_opt.push(raw_arg.as_encoded_bytes().to_vec());
@@ -2041,6 +2059,53 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             fatal!(
                 "unknown command line option: -dynamic; -dynamic is a macOS linker's option. mold does not support macOS."
             );
+        } else if is_short_bundle(cursor.current()) {
+            // Nothing above named the word, so GNU ld reads it as several
+            // short flags in one, with a deprecation warning. A letter that
+            // takes a value ends the bundle, and GNU ld rejects the word,
+            // so it stays unknown.
+            warn!(
+                "grouped short command line options are deprecated: {}",
+                cursor.current().to_string_lossy()
+            );
+            for &letter in &cursor.current().as_encoded_bytes()[1..] {
+                match letter {
+                    b'E' => a.export_dynamic = true,
+                    b'M' => {
+                        map_path.get_or_insert_with(PathBuf::new);
+                    }
+                    b'N' => {
+                        a.omagic = true;
+                        rctx.is_static = true;
+                    }
+                    b'S' => a.strip_debug = true,
+                    b'V' => {
+                        print_version_with_targets();
+                        version_shown = true;
+                    }
+                    b'X' => a.discard_locals = true,
+                    b'd' | b'g' => {}
+                    b'i' => {
+                        a.relocatable = true;
+                        a.emit_relocs = true;
+                    }
+                    b'n' => a.nmagic = true,
+                    b'q' => {
+                        a.emit_relocs = true;
+                        a.discard_locals = false;
+                    }
+                    b's' => a.strip_all = true,
+                    b't' => a.trace = true,
+                    b'v' => {
+                        out!("{}", *VERSION);
+                        version_shown = true;
+                    }
+                    b'w' => mold_common::error::set_suppress_warnings(true),
+                    b'x' => a.discard_all = true,
+                    _ => unreachable!("is_short_bundle checked the letter"),
+                }
+            }
+            cursor.index += 1;
         } else {
             fatal!("unknown command line option: {}", cursor.current().to_string_lossy());
         }
@@ -2556,5 +2621,36 @@ mod tests {
         let parsed = parse(&["-qmagic", "a.o"]);
         assert_eq!(parsed.jobs.len(), 1);
         assert!(!parsed.args.emit_relocs);
+    }
+
+    #[test]
+    fn grouped_short_flags_are_split_with_a_warning() {
+        // -sS is -s -S, as GNU ld reads it (with a warning).
+        let parsed = parse(&["-sS", "a.o"]);
+        assert!(parsed.args.strip_all);
+        assert!(parsed.args.strip_debug);
+        assert_eq!(parsed.jobs.len(), 1);
+
+        let parsed = parse(&["-sX", "a.o"]);
+        assert!(parsed.args.strip_all);
+        assert!(parsed.args.discard_locals);
+        assert_eq!(parsed.jobs.len(), 1);
+
+        // A word that names a long option is not a bundle: -init is
+        // --init, not -i -n -i -t.
+        let parsed = parse(&["-init", "foo", "a.o"]);
+        assert_eq!(parsed.args.init, b"foo");
+        assert!(!parsed.args.relocatable);
+        assert!(!parsed.args.nmagic);
+        assert!(!parsed.args.trace);
+        assert_eq!(parsed.jobs.len(), 1);
+
+        // A letter that takes a value ends the bundle, and GNU ld rejects
+        // the word, so it is not split.
+        assert!(is_short_bundle(OsStr::new("-sS")));
+        assert!(!is_short_bundle(OsStr::new("-sO2")));
+        assert!(!is_short_bundle(OsStr::new("-s")));
+        assert!(!is_short_bundle(OsStr::new("--sS")));
+        assert!(!is_short_bundle(OsStr::new("a.o")));
     }
 }

@@ -129,3 +129,20 @@ $CC -B. -o $t/exe -Wl,--remap-inputs-file -Wl,$t/remap.txt $t/a.o
 $CC -B. -o $t/exe -Wl,-qmagic $t/a.o
 $CC -B. -o $t/exe -Wl,-hash-size=1024 $t/a.o
 $CC -B. -o $t/exe -Wl,-hash-size -Wl,2048 $t/a.o
+
+# Several short flags in one word: accepted, with GNU ld's deprecation
+# warning, as -s -S. -s strips the symbol table.
+$CC -B. -o $t/exe -Wl,-sS $t/a.o 2> $t/log
+grep 'grouped short command line options are deprecated: -sS' $t/log
+test -z "$(readelf -SW $t/exe | grep '\.symtab')"
+
+$CC -B. -o $t/exe -Wl,-sx $t/a.o 2> $t/log
+grep 'grouped short command line options are deprecated: -sx' $t/log
+
+# A letter that takes a value ends the bundle, and GNU ld rejects the
+# word, so it stays unknown.
+not ./mold -sO2 $t/a.o |& grep 'unknown command line option: -sO2'
+
+# A word that names a long option is not a bundle: -init is --init, not
+# -i -n -i -t, so main is the init symbol, not an input file.
+$CC -B. -o $t/exe -Wl,-init,main $t/a.o
