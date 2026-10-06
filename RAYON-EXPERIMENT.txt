@@ -21,3 +21,44 @@ host benchmark data.
 
 This is an experimental Rayon dependency patch, not an existing released API.
 The original PR did not preserve the global pool; this version does.
+
+Workstation comparison (6 October 2026)
+======================================
+Original PR #1695: 6920f80dc4e2488b78b32dcf6ace9c32969dfd1a
+Benchmarked implementation: bcf50b97220adbe47f510a97969c18429857b1f3
+Shared baseline: 99d79c429bda8630330c806b33ca724a770ac637
+
+AMD Threadripper PRO 9985WX; 32 physical cores (CPUs 32-63); 32 workers.
+Fresh x86_64-only release builds, line-table debug info and frame pointers.
+Warm inputs, ext4 output, --no-fork; 40 interleaved samples per arm/case.
+The host also had unrelated build/VM activity. Small differences are uncertain.
+
+Case                  PR p50 ms   Rayon p50 ms   PR CPU ms   Rayon CPU ms
+hello                       6.92           6.84       86.62          84.29
+rhello                     13.45          13.76      194.00         195.32
+tblgen                     17.47          17.59      272.47         276.37
+lld                        78.94          80.52     1744.34        1757.96
+clang                     125.93         128.17     2753.01        2723.54
+clang-s                    57.09          56.94     1101.01        1111.00
+ra                        128.97         130.74     2391.14        2396.18
+ra-s                      113.81         114.09     1892.61        1901.44
+
+Equal-case geometric mean change vs PR: elapsed +0.86%, CPU +0.08%.
+This average is descriptive, not a production-workload forecast.
+
+Concurrent batches (10 interleaved samples, each link uses 32 workers):
+640 hello, 32 at once: 0.3038 -> 0.3128 seconds (+2.94%).
+48 clang-s, 8 at once: 1.5292 -> 1.5300 seconds (+0.05%).
+
+The 1- and 8-worker sensitivity checks are included in the full report.
+Correctness: 32 mold library tests, 2 harness library tests, and native
+integration: 503 pass, 14 skip, 0 fail for baseline and both candidates.
+Upstream rayon-core tests and the new targeted tests pass. Captured outputs
+match byte-for-byte across all eight workloads and all tested worker counts.
+
+Verdict: approximately preserves #1695 performance while keeping the global
+pool and moving startup into Rayon. The fail-stop error policy needs API review.
+
+Full evidence, raw samples, uncertainty intervals and charts:
+/Users/callen/work/mold/.codex/perf/rayon-20261006/report/report.html
+wx-workstation:/home/callen/work/mold-rayon-20261006
