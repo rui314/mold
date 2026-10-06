@@ -6,4 +6,4 @@ void foo() {}
 EOF
 
 $CC -B. -shared -o $t/b.so $t/a.o -Wl,-z,global
-readelf --dynamic $t/b.so | grep -E 'Flags:.*GLOBAL'
+readelf --dynamic $t/b.so | grep 'Flags:.*GLOBAL'

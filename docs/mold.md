@@ -963,6 +963,9 @@ point symbol in a script.
 * `-z nocopyreloc`:
   Do not create copy relocations.
 
+* `-z global`:
+  Set the `DF_1_GLOBAL` flag in the `DT_FLAGS_1` dynamic section field.
+
 * `-z initfirst`:
   Mark DSO to be initialized first at runtime.
 

@@ -200,7 +200,7 @@ Options:
   -z execstack                Require an executable stack
     -z noexecstack
   -z execstack-if-needed      Make the stack area executable if an input file explicitly requests it
-  -z global                   Mark DSO as global at runtime
+  -z global                   Set DF_1_GLOBAL flag
   -z initfirst                Mark DSO to be initialized first at runtime
   -z interpose                Mark object to interpose all DSOs but the executable
   -z keep-text-section-prefix Keep .text.{hot,unknown,unlikely,startup,exit} as separate sections in the final binary
