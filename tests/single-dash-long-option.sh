@@ -4,7 +4,7 @@
 # -entry=foo is --entry=foo, not -e ntry=foo.
 
 # On PPC64, a given entry point address is set to .opd, and the
-# address in .opd address is set to the ELF header.
+# address in .opd is set to the ELF header.
 [ $MACHINE = ppc64 ] && skip
 
 cat <<EOF | $CC -o $t/a.o -c -x assembler -

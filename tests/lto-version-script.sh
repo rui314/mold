@@ -18,7 +18,7 @@ EOF
 $CC -B. -shared -o $t/c.so -flto $t/a.o -Wl,-version-script=$t/b.script
 
 if [ $MACHINE = ppc64 ]; then
-  # On PPC64V1, function symbol refers a function descriptor in .opd
+  # On PPC64V1, function symbol refers to a function descriptor in .opd
   nm -D $t/c.so | grep 'D foo'
   nm -D $t/c.so | not grep 'D bar'
 else

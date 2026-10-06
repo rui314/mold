@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
-# On PPC64V1, function pointers refer function descriptors in .opd
-# instead of directly referring .text section.
+# On PPC64V1, function pointers refer to function descriptors in .opd
+# instead of directly referring to .text section.
 [ $MACHINE = ppc64 ] && skip
 
 cat <<EOF | $CC -c -o $t/a.o -ffunction-sections -fPIC -xc -

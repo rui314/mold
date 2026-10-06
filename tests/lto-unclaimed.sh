@@ -14,5 +14,5 @@ cat <<EOF | $CC -o $t/c.o -c -xc -
 int main() {}
 EOF
 
-# mold should not report an "not claimed by the LTO plugin" error
+# mold should not report a "not claimed by the LTO plugin" error
 $CC -B. -o $t/exe -flto $t/c.o $t/b.a

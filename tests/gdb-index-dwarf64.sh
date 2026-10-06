@@ -75,8 +75,8 @@ int main() {
 }
 EOF
 
-# Older versions of gdb are buggy that they complain DWARF64 debug sections
-# even without .gdb_index. Skip if such version.
+# Older versions of gdb are buggy in that they complain about DWARF64 debug
+# sections even without .gdb_index. Skip if gdb is such a version.
 $CC -B. -o $t/exe1 $t/e.so $t/g.o
 
 DEBUGINFOD_URLS= gdb $t/exe1 -nx -batch -ex 'b main' -ex r -ex quit |&

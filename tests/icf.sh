@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
-# On PPC64V1, function pointers refer function descriptors in .opd
-# instead of directly referring .text section. We create a .opd entry
+# On PPC64V1, function pointers refer to function descriptors in .opd
+# instead of directly referring to .text section. We create a .opd entry
 # for each symbol. So function pointer comparison on two different
-# symbols are always the same, even if their function body are at the
+# symbols is always the same, even if their function bodies are at the
 # same location.
 [ $MACHINE = ppc64 ] && skip
 

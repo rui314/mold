@@ -9,7 +9,7 @@ int bar() {}
 int main() {}
 EOF
 
-# Older versions of GCC does not support __attribute__((retain))
+# Older versions of GCC do not support __attribute__((retain))
 readelf -WS $t/a.o | grep '\.text\.foo.*AXR' || skip
 
 $CC -B. -o $t/exe $t/a.o -Wl,-gc-sections

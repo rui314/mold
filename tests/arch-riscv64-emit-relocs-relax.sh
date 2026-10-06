@@ -81,7 +81,7 @@ awk '
   END { exit bad+0 }
 ' $t/exe.objdump
 
-# TLS local-exec: `lui + add` that materializes TP + %tprel_hi are deleted for
+# TLS local-exec: `lui + add` that materialize TP + %tprel_hi are deleted for
 # a variable within 2 KiB of TP (TPREL_HI20 and TPREL_ADD => NONE), while the
 # access relative to TP keeps its low-part relocation.
 cat <<'EOF' | $CC -o $t/tls.o -c -xc - -O2 -fno-section-anchors

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
-# On PPC64V1, function pointers do not refer function entry addresses
-# but instead refers "function descriptors" in .opd.
+# On PPC64V1, function pointers do not refer to function entry addresses
+# but instead refer to "function descriptors" in .opd.
 [ $MACHINE = ppc64 ] && skip
 
-# The crt*.o compiled with B26 caused far form GOT.
+# The crt*.o compiled with B26 caused far from GOT.
 [[ $MACHINE = loongarch* ]] && skip
 
 [ $MACHINE = arm ] && flags=-marm
