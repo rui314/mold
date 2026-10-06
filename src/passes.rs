@@ -4094,27 +4094,23 @@ pub fn write_build_id<E: Target>(ctx: &mut Context<E>, buf: &mut [u8], is_mmappe
             let hashes: Vec<[u8; 32]> = buf
                 .par_chunks_mut(SHARD)
                 .enumerate()
-                .map(|(i, shard)| {
-                    let hash = *blake3::hash(shard).as_bytes();
-                    // Make the kernel page out the file contents we've just written
-                    // so that subsequent close(2) call will become quicker.
-                    if i > 0 && is_mmapped {
-                        #[cfg(not(windows))]
-                        // SAFETY: the shard is part of the output mapping,
-                        // which is shared with the file, so the advice only
-                        // drops the process's page table entries and loses no
-                        // written bytes.
-                        unsafe {
-                            libc::madvise(
-                                shard.as_mut_ptr().cast(),
-                                shard.len(),
-                                libc::MADV_DONTNEED,
-                            )
-                        };
-                    }
-                    hash
-                })
+                .map(|(_, shard)| *blake3::hash(shard).as_bytes())
                 .collect();
+            // All shards are finalized and hashed. Drop the mapping's page
+            // table entries in one operation, keeping the first shard mapped
+            // for the build-id write below.
+            if is_mmapped && buf.len() > SHARD {
+                #[cfg(not(windows))]
+                // SAFETY: this range belongs to the shared output mapping;
+                // discarding its page table entries does not discard file data.
+                unsafe {
+                    libc::madvise(
+                        buf.as_mut_ptr().add(SHARD).cast(),
+                        buf.len() - SHARD,
+                        libc::MADV_DONTNEED,
+                    );
+                }
+            }
             let digest = *blake3::hash(hashes.as_flattened()).as_bytes();
             digest[..*size].to_vec()
         }
