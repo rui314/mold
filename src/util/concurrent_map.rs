@@ -54,26 +54,6 @@ struct Entry<T> {
     value: UnsafeCell<MaybeUninit<T>>,
 }
 
-#[cfg(not(windows))]
-fn allocate_entries<T>(bufsize: usize) -> *mut Entry<T> {
-    // SAFETY: this creates fresh private anonymous storage.
-    let entries = unsafe {
-        libc::mmap(
-            ptr::null_mut(),
-            bufsize,
-            libc::PROT_READ | libc::PROT_WRITE,
-            libc::MAP_ANONYMOUS | libc::MAP_PRIVATE,
-            -1,
-            0,
-        )
-    };
-    if entries == libc::MAP_FAILED {
-        let err = std::io::Error::last_os_error();
-        panic!("mmap of {bufsize} bytes failed: {}", crate::error::strerror(&err));
-    }
-    entries.cast()
-}
-
 #[cfg(windows)]
 fn allocate_entries<T>(bufsize: usize) -> *mut Entry<T> {
     let layout = Layout::from_size_align(bufsize, align_of::<Entry<T>>())
@@ -84,12 +64,6 @@ fn allocate_entries<T>(bufsize: usize) -> *mut Entry<T> {
         panic!("cannot allocate {bufsize} bytes for concurrent map");
     }
     entries
-}
-
-#[cfg(not(windows))]
-unsafe fn deallocate_entries<T>(entries: *mut Entry<T>, bufsize: usize) {
-    // SAFETY: `entries` was mapped by `allocate_entries` with this size.
-    let _ = unsafe { libc::munmap(entries.cast(), bufsize) };
 }
 
 #[cfg(windows)]
@@ -120,6 +94,8 @@ impl EntryId {
 /// to look up and traverse its entries.
 pub struct ConcurrentMap<T> {
     entries: *mut Entry<T>,
+    #[cfg(not(windows))]
+    _mapping: Option<memmap2::MmapMut>,
     nbuckets: usize,
 }
 
@@ -131,7 +107,12 @@ unsafe impl<T: Send + Sync> Sync for ConcurrentMap<T> {}
 impl<T> Default for ConcurrentMap<T> {
     /// A map without buckets, to be replaced before use.
     fn default() -> Self {
-        Self { entries: ptr::null_mut(), nbuckets: 0 }
+        Self {
+            entries: ptr::null_mut(),
+            #[cfg(not(windows))]
+            _mapping: None,
+            nbuckets: 0,
+        }
     }
 }
 
@@ -142,11 +123,26 @@ impl<T> ConcurrentMap<T> {
         let bufsize = Self::bufsize(nbuckets);
         // mmap is faster than malloc + memset on Unix; the platform allocator
         // returns equivalently zeroed storage on Windows.
+        #[cfg(not(windows))]
+        let (entries, mapping) = {
+            let mut mapping = memmap2::MmapMut::map_anon(bufsize).unwrap_or_else(|e| {
+                panic!("mmap of {bufsize} bytes failed: {}", crate::error::strerror(&e))
+            });
+            let entries = mapping.as_mut_ptr().cast::<Entry<T>>();
+            debug_assert!(entries.is_aligned());
+            (entries, mapping)
+        };
+        #[cfg(windows)]
         let entries = allocate_entries(bufsize);
         // SAFETY: the range is the fresh allocation; the advice is only a
         // hint on targets that support it.
         unsafe { crate::util::madvise_hugepage(entries.cast(), bufsize) };
-        Self { entries, nbuckets }
+        Self {
+            entries,
+            #[cfg(not(windows))]
+            _mapping: Some(mapping),
+            nbuckets,
+        }
     }
 
     fn bufsize(nbuckets: usize) -> usize {
@@ -318,8 +314,11 @@ impl<T> Drop for ConcurrentMap<T> {
                 }
             }
         }
+        #[cfg(windows)]
         // SAFETY: allocated in with_capacity and not yet released.
-        unsafe { deallocate_entries(self.entries, Self::bufsize(self.nbuckets)) };
+        unsafe {
+            deallocate_entries(self.entries, Self::bufsize(self.nbuckets))
+        };
     }
 }
 
