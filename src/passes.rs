@@ -22,8 +22,8 @@ use crate::chunks::{
     self, ChunkHeader, ChunkId, OutputPhdr, OutputSectionId, compressed, copyrel, dynsym, reloc,
 };
 use crate::cmdline::{
-    BsymbolicKind, BuildId, CetReportKind, DefsymValue, ReportOutput, SectionOrder,
-    SeparateCodeKind, ShuffleSections, UnresolvedKind,
+    BsymbolicKind, BuildId, CetReportKind, DebugCompression, DefsymValue, ReportOutput,
+    SectionOrder, SeparateCodeKind, ShuffleSections, UnresolvedKind,
 };
 use crate::context::Context;
 use crate::elf::*;
@@ -39,7 +39,7 @@ use crate::symbol::{
     Bins, NEEDS_CANONICAL, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_PPC_OPD, NEEDS_TLSDESC,
     NEEDS_TLSGD, Symbol, SymbolId, is_c_identifier,
 };
-use crate::util::compress::ZstdCompressors;
+use crate::util::compress::Compressor;
 use crate::util::glob::GlobBuilder;
 use crate::util::perf::Counter;
 use crate::util::{align_to, leak_bytes};
@@ -4059,7 +4059,11 @@ pub fn fix_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
 pub fn compress_debug_sections<E: Target>(ctx: &mut Context<E>) {
     let _t = ctx.timer("compress_debug_sections");
 
-    let compressors = ZstdCompressors::new(|| None);
+    let compressor = match ctx.args.compress_debug_sections {
+        DebugCompression::Zlib(level) => Compressor::zlib(level),
+        DebugCompression::Zstd(level) => Compressor::zstd(level),
+        DebugCompression::None => unreachable!("debug compression is disabled"),
+    };
 
     // Since this pass is embarrassingly parallel, we want to use all
     // available cores by default.
@@ -4071,7 +4075,7 @@ pub fn compress_debug_sections<E: Target>(ctx: &mut Context<E>) {
             let hdr = ctx.chunk_header(id);
             !hdr.is_alloc() && hdr.shdr.sh_size.get() != 0 && hdr.name.starts_with(b".debug_")
         })
-        .map(|(i, &id)| (i, compressed::new(ctx, id, &compressors)))
+        .map(|(i, &id)| (i, compressed::new(ctx, id, &compressor)))
         .collect();
     for (i, sec) in compressed {
         ctx.compressed_sections.push(sec);
@@ -4261,7 +4265,7 @@ pub fn write_separate_debug_file<E: Target>(ctx: &mut Context<E>) {
     sort_debug_info_sections(ctx);
 
     // Handle --compress-debug-info
-    if ctx.args.compress_debug_sections != crate::cmdline::DebugCompression::None {
+    if ctx.args.compress_debug_sections != DebugCompression::None {
         compress_debug_sections(ctx);
     }
 

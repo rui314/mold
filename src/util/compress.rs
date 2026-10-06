@@ -24,22 +24,33 @@ use crate::util::worker_local::WorkerLocal;
 
 const SHARD_SIZE: usize = 1024 * 1024;
 
-pub type ZstdCompressors = WorkerLocal<Option<zstd::bulk::Compressor<'static>>>;
+/// Compresses data with zlib or zstd at a fixed level, using all threads.
+pub struct Compressor(Method);
 
-pub enum Compressor {
+enum Method {
+    Zlib(u32),
+    Zstd(i32, ZstdContexts),
+}
+
+// Creating a zstd context costs nearly as much as compressing a shard at
+// higher levels, so each Rayon worker reuses one for all shards.
+type ZstdContexts = WorkerLocal<Option<zstd::bulk::Compressor<'static>>>;
+
+/// Compressed data, kept as shards until it is written to the output.
+pub enum CompressedData {
     Zlib { shards: Vec<Vec<u8>>, checksum: u32 },
     Zstd { shards: Vec<Vec<u8>> },
 }
 
-impl std::fmt::Debug for Compressor {
+impl std::fmt::Debug for CompressedData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Compressor({} bytes)", self.compressed_size())
+        write!(f, "CompressedData({} bytes)", self.compressed_size())
     }
 }
 
 /// Compresses a shard as a raw deflate stream ending with a sync flush,
 /// so that the stream ends on a byte boundary and can be concatenated.
-fn zlib_compress(input: &[u8], level: u32) -> Vec<u8> {
+fn zlib_compress_shard(input: &[u8], level: u32) -> Vec<u8> {
     // Initialize zlib stream. Since debug info is generally compressed
     // pretty well with lower compression levels, the default level is 1.
     let mut stream = libz_rs_sys::z_stream::default();
@@ -117,36 +128,53 @@ fn zlib_compress(input: &[u8], level: u32) -> Vec<u8> {
 }
 
 impl Compressor {
-    pub fn zlib(input: &[u8], level: u32) -> Self {
-        // Compress each shard
-        let (shards, adlers): (Vec<Vec<u8>>, Vec<u32>) = input
-            .par_chunks(SHARD_SIZE)
-            .map(|shard| (zlib_compress(shard, level), adler32(1, shard)))
-            .unzip();
+    pub fn zlib(level: u32) -> Self {
+        Self(Method::Zlib(level))
+    }
 
-        // Combine checksums
-        let mut checksum = adlers.first().copied().unwrap_or(1);
-        for (adler, shard) in adlers.iter().zip(input.chunks(SHARD_SIZE)).skip(1) {
-            checksum = adler32_combine(checksum, *adler, shard.len() as u64);
+    pub fn zstd(level: i32) -> Self {
+        Self(Method::Zstd(level, WorkerLocal::new(|| None)))
+    }
+
+    pub fn compress(&self, input: &[u8]) -> CompressedData {
+        match &self.0 {
+            Method::Zlib(level) => zlib_compress(input, *level),
+            Method::Zstd(level, contexts) => zstd_compress(input, *level, contexts),
         }
-        Self::Zlib { shards, checksum }
     }
+}
 
-    pub fn zstd(input: &[u8], level: i32, compressors: &ZstdCompressors) -> Self {
-        // Compress each shard
-        let shards = input
-            .par_chunks(SHARD_SIZE)
-            .map(|shard| {
-                let mut slot = compressors.get();
-                let compressor = slot.get_or_insert_with(|| {
-                    zstd::bulk::Compressor::new(level).expect("zstd compression failed")
-                });
-                compressor.compress(shard).expect("zstd compression failed")
-            })
-            .collect();
-        Self::Zstd { shards }
+fn zlib_compress(input: &[u8], level: u32) -> CompressedData {
+    // Compress each shard
+    let (shards, adlers): (Vec<Vec<u8>>, Vec<u32>) = input
+        .par_chunks(SHARD_SIZE)
+        .map(|shard| (zlib_compress_shard(shard, level), adler32(1, shard)))
+        .unzip();
+
+    // Combine checksums
+    let mut checksum = adlers.first().copied().unwrap_or(1);
+    for (adler, shard) in adlers.iter().zip(input.chunks(SHARD_SIZE)).skip(1) {
+        checksum = adler32_combine(checksum, *adler, shard.len() as u64);
     }
+    CompressedData::Zlib { shards, checksum }
+}
 
+fn zstd_compress(input: &[u8], level: i32, contexts: &ZstdContexts) -> CompressedData {
+    // Compress each shard
+    let shards = input
+        .par_chunks(SHARD_SIZE)
+        .map(|shard| {
+            let mut slot = contexts.get();
+            let cctx = slot.get_or_insert_with(|| {
+                zstd::bulk::Compressor::new(level).expect("cannot create a zstd context")
+            });
+            cctx.compress(shard).expect("zstd compression failed")
+        })
+        .collect();
+    CompressedData::Zstd { shards }
+}
+
+impl CompressedData {
     pub fn compressed_size(&self) -> usize {
         // Compute the total size
         match self {
