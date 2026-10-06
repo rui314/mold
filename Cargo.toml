@@ -13,6 +13,7 @@ autotests = false
 # each target is instantiated in a crate of its own under arch/, and the
 # executable in cli/ dispatches to them.
 [workspace]
+exclude = ["vendor/rayon-core"]
 members = ["cli", "arch/*", "tests"]
 default-members = [".", "cli", "arch/*", "tests"]
 
@@ -55,3 +56,6 @@ panic = "abort"
 # Copying generic and inline functions once per crate instead of once per
 # codegen unit makes the executable about a quarter smaller.
 codegen-units = 1
+
+[patch.crates-io]
+rayon-core = { path = "vendor/rayon-core" }

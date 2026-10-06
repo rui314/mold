@@ -1,0 +1,4 @@
+Vendored rayon-core 1.13.0 from crates.io, retaining its MIT/Apache-2.0 licenses.
+The .cargo_vcs_info.json file records the upstream source revision.
+This is an experimental dependency patch for comparison with mold PR #1695.
+It is not an API provided by released Rayon.
