@@ -1025,6 +1025,22 @@ impl<'a> ArgCursor<'a> {
         Some(value)
     }
 
+    fn read_exact_arg(&mut self, name: &str) -> Option<&'a OsStr> {
+        let rest = match_option(self.current(), name)?;
+        // A single-letter option is matched by prefix, so `-a` would also
+        // match `-auxiliary`. Require the whole word to be the option and
+        // take the next word as the value, as GNU ld does for the options
+        // that take one.
+        if !rest.is_empty() {
+            return None;
+        }
+        let value = self.args.get(self.index + 1).unwrap_or_else(|| {
+            fatal!("option {}: argument missing", self.current().to_string_lossy())
+        });
+        self.index += 2;
+        Some(value.as_ref())
+    }
+
     fn read_flag(&mut self, name: &str) -> bool {
         if match_option(self.current(), name) != Some(OsStr::new("")) {
             return false;
@@ -1213,6 +1229,9 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
     }
     macro_rules! read_eq {
         ($($args:tt)*) => { read_value!(read_eq, $($args)*) };
+    }
+    macro_rules! read_exact_arg {
+        ($($args:tt)*) => { read_value!(read_exact_arg, $($args)*) };
     }
     macro_rules! read_z_arg {
         ($name:expr) => {{
@@ -1414,7 +1433,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             cursor.read_switch("apply-dynamic-relocs", "no-apply-dynamic-relocs")
         {
             a.apply_dynamic_relocs = value;
-        } else if cursor.read_flag("trace") {
+        } else if cursor.read_flag("trace") || cursor.read_flag("t") {
             a.trace = true;
         } else if let Some(value) = cursor.read_switch("eh-frame-hdr", "no-eh-frame-hdr") {
             a.eh_frame_hdr = value;
@@ -1431,7 +1450,8 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             a.relax = value;
         } else if let Some(value) = cursor.read_switch("gdb-index", "no-gdb-index") {
             a.gdb_index = value;
-        } else if cursor.read_flag("r") || cursor.read_flag("relocatable") {
+        } else if cursor.read_flag("r") || cursor.read_flag("i") || cursor.read_flag("relocatable")
+        {
             a.relocatable = true;
             a.emit_relocs = true;
         } else if cursor.read_flag("relocatable-merge-sections") {
@@ -1693,6 +1713,9 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             a.z_rewrite_endbr = false;
         } else if let Some(value) = cursor.read_switch("nmagic", "no-nmagic") {
             a.nmagic = value;
+        } else if cursor.read_flag("n") {
+            // GNU ld's alias for --nmagic.
+            a.nmagic = true;
         } else if cursor.read_flag("fatal-warnings") {
             mold_common::error::set_fatal_warnings(true);
         } else if cursor.read_flag("no-fatal-warnings") {
@@ -1857,6 +1880,27 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             // long name needs two dashes, like the other options a
             // single-dash spelling would shadow with a short option's value.
             || read_arg!("--max-cache-size", true)
+            // GNU ld's short options mold had no spelling for, and the
+            // long names some of them stand for. -g, -d (mold defines
+            // common symbols anyway), -A and -G (mold has -m), -Ur and
+            // -Qy (vendor-specific), -a and -assert (HP/UX and SunOS
+            // compatibility), -Y, -c (an MRI script) and -dT (a default
+            // linker script) are accepted and ignored.
+            || cursor.read_flag("g")
+            || cursor.read_flag("d")
+            || read_arg!("A", true)
+            || read_arg!("architecture", true)
+            || read_arg!("G", true)
+            || read_arg!("gpsize", true)
+            || cursor.read_flag("Ur")
+            || cursor.read_flag("Qy")
+            || read_exact_arg!("a")
+            || read_arg!("assert", true)
+            || read_arg!("Y", true)
+            || read_exact_arg!("c")
+            || read_arg!("mri-script", true)
+            || read_arg!("dT", true)
+            || read_arg!("default-script", true)
         {
             // Ignored for compatibility.
         } else if read_arg!("m") {
@@ -2272,5 +2316,66 @@ mod tests {
         let parsed = parse(&["-library"]);
         assert!(parsed.jobs[0].is_lib);
         assert_eq!(parsed.jobs[0].name, Path::new("ibrary"));
+    }
+
+    #[test]
+    fn gnu_ld_short_aliases_are_accepted() {
+        // -i is -r, -n is --nmagic, -t is --trace.
+        let parsed = parse(&["-i", "-n", "-t", "a.o"]);
+        assert!(parsed.args.relocatable);
+        assert!(parsed.args.nmagic);
+        assert!(parsed.args.trace);
+        assert_eq!(parsed.jobs.len(), 1);
+
+        // The options GNU ld accepts and ignores.
+        let parsed = parse(&[
+            "-g",
+            "-d",
+            "-A",
+            "x86-64",
+            "--architecture=riscv64",
+            "-G",
+            "8",
+            "--gpsize=16",
+            "-Ur",
+            "-Qy",
+            "-a",
+            "shared",
+            "-assert",
+            "definitions",
+            "-Y",
+            "/tmp",
+            "-c",
+            "script.mri",
+            "--mri-script=script.mri",
+            "-dT",
+            "script.ld",
+            "--default-script",
+            "script.ld",
+            "a.o",
+        ]);
+        assert_eq!(parsed.jobs.len(), 1);
+
+        // -a and -c take a separate argument, so they must not be confused
+        // with the longer options that start with the same letter.
+        let parsed = parse(&["-auxiliary", "liba.so", "-shared", "a.o"]);
+        assert_eq!(parsed.args.auxiliary, [b"liba.so".to_vec()]);
+        let parsed = parse(&["--as-needed", "a.o"]);
+        assert!(parsed.jobs[0].rctx.as_needed);
+        let parsed = parse(&["--compress-debug-sections=zlib", "a.o"]);
+        assert!(matches!(parsed.args.compress_debug_sections, DebugCompression::Zlib(_)));
+
+        let args: Vec<_> =
+            ["mold", "-a", "KEYWORD"].into_iter().map(|s| Cow::Borrowed(OsStr::new(s))).collect();
+        let mut cursor = ArgCursor { args: &args, index: 1, attached_shorts: false };
+        assert_eq!(cursor.read_exact_arg("a"), Some(OsStr::new("KEYWORD")));
+        assert_eq!(cursor.index, 3);
+
+        // A name that merely starts like the option is not the option.
+        let args: Vec<_> =
+            ["mold", "-auxiliaries"].into_iter().map(|s| Cow::Borrowed(OsStr::new(s))).collect();
+        let mut cursor = ArgCursor { args: &args, index: 1, attached_shorts: true };
+        assert_eq!(cursor.read_exact_arg("a"), None);
+        assert_eq!(cursor.index, 1);
     }
 }

@@ -36,3 +36,46 @@ not ./mold -max-cache-size=1 $t/a.o |& grep 'unknown -m argument: ax-cache-size=
 # -omagic is -o magic, as in GNU ld.
 (cd $t && $OLDPWD/mold -omagic a.o)
 test -f $t/magic
+
+# GNU ld's short aliases, and the options GNU ld accepts and ignores.
+
+# -i is an alias for -r, so it makes a relocatable output.
+$CC -B. -o $t/exe4 -Wl,-i $t/a.o
+readelf -h $t/exe4 > $t/log4
+grep 'Type:.*REL ' $t/log4
+
+# -n does not page-align data, so the result is not run; -t traces inputs.
+$CC -B. -o $t/exe5 -Wl,-n $t/a.o
+$CC -B. -o $t/exe6 -Wl,-t $t/a.o > $t/log6
+grep $t/a.o $t/log6
+
+# A short option that GNU ld ignores, and one that forces common symbols
+# to be defined.
+$CC -B. -o $t/exe7 -Wl,-g $t/a.o
+$CC -B. -o $t/exe8 -Wl,-d $t/a.o
+
+# -a and -c take a separate argument, so they must not be confused with
+# the longer options that start with the same letter.
+$CC -B. -o $t/exe9 -Wl,-a -Wl,KEYWORD $t/a.o
+$CC -B. -o $t/exe10 -Wl,-auxiliary -Wl,$t/a.o -Wl,-shared
+$CC -B. -o $t/exe11 -Wl,--as-needed $t/a.o
+$CC -B. -o $t/exe12 -Wl,--compress-debug-sections=zlib $t/a.o
+$CC -B. -o $t/exe13 -Wl,-assert -Wl,KEYWORD $t/a.o
+$CC -B. -o $t/exe14 -Wl,-Y -Wl,$t $t/a.o
+
+# Vendor-specific spellings mold has no use for.
+$CC -B. -o $t/exe15 -Wl,-Ur $t/a.o
+$CC -B. -o $t/exe16 -Wl,-Qy $t/a.o
+$CC -B. -o $t/exe17 -Wl,-A -Wl,x86-64 $t/a.o
+$CC -B. -o $t/exe18 -Wl,-G -Wl,8 $t/a.o
+$CC -B. -o $t/exe19 -Wl,-dT -Wl,$t/nosuchscript $t/a.o
+$CC -B. -o $t/exe20 -Wl,-c -Wl,$t/nosuchscript $t/a.o
+
+# The long names the short options stand for.
+$CC -B. -o $t/exe21 -Wl,--architecture -Wl,x86-64 $t/a.o
+$CC -B. -o $t/exe22 -Wl,--gpsize -Wl,8 $t/a.o
+$CC -B. -o $t/exe23 -Wl,--mri-script -Wl,$t/nosuchscript $t/a.o
+$CC -B. -o $t/exe24 -Wl,--default-script -Wl,$t/nosuchscript $t/a.o
+
+# A name that merely starts like an option is still unknown.
+not ./mold -auxiliaries |& grep 'unknown command line option: -auxiliaries'
