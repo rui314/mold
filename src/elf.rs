@@ -129,11 +129,6 @@ pub trait FileRecord:
     + Sync
     + 'static
 {
-    fn parse(bytes: &[u8]) -> Self {
-        assert!(bytes.len() >= size_of::<Self>());
-        Self::read_from_prefix(bytes).unwrap().0
-    }
-
     fn write(&self, buf: &mut [u8]) {
         assert!(buf.len() >= size_of::<Self>());
         self.write_to_prefix(buf).unwrap();
@@ -165,6 +160,12 @@ impl<T> FileRecord for T where
 pub(crate) fn record_from_bytes<R: FileRecord>(data: &[u8]) -> &R {
     assert!(data.len() >= size_of::<R>());
     R::ref_from_prefix(data).unwrap().0
+}
+
+/// Mutably views one record directly in its file representation.
+pub(crate) fn record_from_bytes_mut<R: FileRecord>(data: &mut [u8]) -> &mut R {
+    assert!(data.len() >= size_of::<R>());
+    R::mut_from_prefix(data).unwrap().0
 }
 
 /// Views records directly in their file representation.

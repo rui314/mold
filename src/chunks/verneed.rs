@@ -9,6 +9,8 @@ use crate::elf::*;
 use crate::input_files::{DsoId, FileId};
 use crate::symbol::SymbolId;
 
+use zerocopy::IntoBytes;
+
 // .gnu.version_r contains information to refer to shared libraries and
 // their symbol versions.
 #[derive(Debug)]
@@ -134,46 +136,46 @@ impl<E: Target> VerneedBuilder<E> {
     fn start_group(&mut self, vn_file: u32) {
         self.num_groups += 1;
         if let Some(gp) = self.group_pos {
-            let mut vn = ElfVerneed::<E>::parse(&self.contents[gp..]);
-            vn.vn_next.set((self.contents.len() - gp) as u32);
-            vn.write(&mut self.contents[gp..]);
+            let next = (self.contents.len() - gp) as u32;
+            record_from_bytes_mut::<ElfVerneed<E>>(&mut self.contents[gp..]).vn_next.set(next);
         }
         let pos = self.contents.len();
         self.group_pos = Some(pos);
         self.aux_pos = None;
-        self.contents.resize(pos + size_of::<ElfVerneed<E>>(), 0);
-        ElfVerneed::<E> {
-            vn_version: U16::new(1),
-            vn_cnt: U16::default(),
-            vn_file: U32::new(vn_file),
-            vn_aux: U32::new(size_of::<ElfVerneed<E>>() as u32),
-            vn_next: U32::default(),
-        }
-        .write(&mut self.contents[pos..]);
+        self.contents.extend_from_slice(
+            ElfVerneed::<E> {
+                vn_version: U16::new(1),
+                vn_cnt: U16::default(),
+                vn_file: U32::new(vn_file),
+                vn_aux: U32::new(size_of::<ElfVerneed<E>>() as u32),
+                vn_next: U32::default(),
+            }
+            .as_bytes(),
+        );
     }
 
     fn add_entry(&mut self, dynstr: &mut DynstrSection<E>, verstr: &[u8]) {
         let gp = self.group_pos.unwrap();
-        let mut vn = ElfVerneed::<E>::parse(&self.contents[gp..]);
+        let vn = record_from_bytes_mut::<ElfVerneed<E>>(&mut self.contents[gp..]);
         vn.vn_cnt.set(vn.vn_cnt.get() + 1);
-        vn.write(&mut self.contents[gp..]);
         if let Some(ap) = self.aux_pos {
-            let mut aux = ElfVernaux::<E>::parse(&self.contents[ap..]);
-            aux.vna_next.set(size_of::<ElfVernaux<E>>() as u32);
-            aux.write(&mut self.contents[ap..]);
+            record_from_bytes_mut::<ElfVernaux<E>>(&mut self.contents[ap..])
+                .vna_next
+                .set(size_of::<ElfVernaux<E>>() as u32);
         }
         self.veridx += 1;
-        let aux = ElfVernaux::<E> {
-            vna_hash: U32::new(elf_hash(verstr)),
-            vna_flags: U16::default(),
-            vna_other: U16::new(self.veridx),
-            vna_name: U32::new(dynstr.add_string(verstr) as u32),
-            vna_next: U32::default(),
-        };
         let pos = self.contents.len();
         self.aux_pos = Some(pos);
-        self.contents.resize(pos + size_of::<ElfVernaux<E>>(), 0);
-        aux.write(&mut self.contents[pos..]);
+        self.contents.extend_from_slice(
+            ElfVernaux::<E> {
+                vna_hash: U32::new(elf_hash(verstr)),
+                vna_flags: U16::default(),
+                vna_other: U16::new(self.veridx),
+                vna_name: U32::new(dynstr.add_string(verstr) as u32),
+                vna_next: U32::default(),
+            }
+            .as_bytes(),
+        );
     }
 }
 

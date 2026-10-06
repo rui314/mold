@@ -1499,7 +1499,7 @@ impl<E: Target> ObjectFile<E> {
 
     fn parse_note_gnu_property(&mut self, mut data: &'static [u8]) {
         while data.len() >= size_of::<ElfNhdr<E>>() {
-            let hdr = ElfNhdr::<E>::parse(data);
+            let hdr = record_from_bytes::<ElfNhdr<E>>(data);
             data = &data[size_of::<ElfNhdr<E>>()..];
 
             let name_len = hdr.n_namesz.get() as usize;
@@ -2160,7 +2160,7 @@ impl<E: Target> ObjectFile<E> {
             if data.len() < size_of::<SFrameHeader<E>>() {
                 fatal!("{}: corrupted .sframe section", isec.display(self));
             }
-            let hdr = SFrameHeader::<E>::parse(data);
+            let hdr = record_from_bytes::<SFrameHeader<E>>(data);
             if hdr.magic.get() != SFRAME_MAGIC {
                 fatal!("{}: corrupted .sframe section", isec.display(self));
             }
@@ -2183,7 +2183,7 @@ impl<E: Target> ObjectFile<E> {
 
             for i in 0..hdr.num_fdes.get() as usize {
                 let idx_off = fde_off + i * size_of::<SFrameFdeIdx<E>>();
-                let ent = SFrameFdeIdx::<E>::parse(&data[idx_off..]);
+                let ent = record_from_bytes::<SFrameFdeIdx<E>>(&data[idx_off..]);
 
                 // Find the relocation for this FDE's func_start field. An FDE without
                 // one isn't tied to any function (`ld -r` can emit such dead FDEs),
@@ -3022,7 +3022,7 @@ impl<E: Target> SharedFile<E> {
             self.base
                 .section_contents(idx)
                 .chunks_exact(size_of::<ElfDyn<E>>())
-                .map(ElfDyn::<E>::parse)
+                .map(record_from_bytes::<ElfDyn<E>>)
                 .filter(move |entry| entry.d_tag.get() == tag)
                 .map(move |entry| cstr_at(strtab, entry.d_val.get() as usize))
         })
@@ -3225,11 +3225,12 @@ impl<E: Target> SharedFile<E> {
             let strtab = self.base.section_contents(self.base.shdrs[idx].sh_link.get() as usize);
             let mut pos = 0;
             loop {
-                let ver = ElfVerdef::<E>::parse(&verdef[pos..]);
+                let ver = record_from_bytes::<ElfVerdef<E>>(&verdef[pos..]);
                 if u32::from(ver.vd_ndx.get()) == VER_NDX_UNSPECIFIED {
                     fatal!("{self}: symbol version too large");
                 }
-                let aux = ElfVerdaux::<E>::parse(&verdef[pos + ver.vd_aux.get() as usize..]);
+                let aux =
+                    record_from_bytes::<ElfVerdaux<E>>(&verdef[pos + ver.vd_aux.get() as usize..]);
                 set(ver.vd_ndx.get() as usize, cstr_at(strtab, aux.vda_name.get() as usize));
                 if ver.vd_next.get() == 0 {
                     break;
@@ -3243,10 +3244,10 @@ impl<E: Target> SharedFile<E> {
             let strtab = self.base.section_contents(self.base.shdrs[idx].sh_link.get() as usize);
             let mut pos = 0;
             loop {
-                let vn = ElfVerneed::<E>::parse(&verneed[pos..]);
+                let vn = record_from_bytes::<ElfVerneed<E>>(&verneed[pos..]);
                 let mut aux_pos = pos + vn.vn_aux.get() as usize;
                 for _ in 0..vn.vn_cnt.get() {
-                    let aux = ElfVernaux::<E>::parse(&verneed[aux_pos..]);
+                    let aux = record_from_bytes::<ElfVernaux<E>>(&verneed[aux_pos..]);
                     let idx = (aux.vna_other.get() & !(VERSYM_HIDDEN as u16)) as usize;
                     set(idx, cstr_at(strtab, aux.vna_name.get() as usize));
                     if aux.vna_next.get() == 0 {

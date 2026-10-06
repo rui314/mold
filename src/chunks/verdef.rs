@@ -10,6 +10,8 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::FileId;
 
+use zerocopy::IntoBytes;
+
 // .gnu.version contains a parallel table for .dynsym to specify symbol
 // versions of defined symbols. This section appears only in .so files,
 // and it specifies the symbol version for each defined dynamic symbol.
@@ -89,28 +91,30 @@ pub fn construct<E: Target>(ctx: &mut Context<E>) {
                      flags: u16| {
         count += 1;
         if let Some(p) = prev {
-            let mut vd = ElfVerdef::<E>::parse(&contents[p..]);
-            vd.vd_next.set((contents.len() - p) as u32);
-            vd.write(&mut contents[p..]);
+            let next = (contents.len() - p) as u32;
+            record_from_bytes_mut::<ElfVerdef<E>>(&mut contents[p..]).vd_next.set(next);
         }
         let pos = contents.len();
         prev = Some(pos);
-        contents.resize(pos + verdef_size + verdaux_size, 0);
-        ElfVerdef::<E> {
-            vd_version: U16::new(1),
-            vd_flags: U16::new(flags),
-            vd_ndx: U16::new(idx),
-            vd_cnt: U16::new(1),
-            vd_hash: U32::new(elf_hash(verstr)),
-            vd_aux: U32::new(verdef_size as u32),
-            vd_next: U32::default(),
-        }
-        .write(&mut contents[pos..]);
-        ElfVerdaux::<E> {
-            vda_name: U32::new(dynstr.add_string(verstr) as u32),
-            vda_next: U32::default(),
-        }
-        .write(&mut contents[pos + verdef_size..]);
+        contents.extend_from_slice(
+            ElfVerdef::<E> {
+                vd_version: U16::new(1),
+                vd_flags: U16::new(flags),
+                vd_ndx: U16::new(idx),
+                vd_cnt: U16::new(1),
+                vd_hash: U32::new(elf_hash(verstr)),
+                vd_aux: U32::new(verdef_size as u32),
+                vd_next: U32::default(),
+            }
+            .as_bytes(),
+        );
+        contents.extend_from_slice(
+            ElfVerdaux::<E> {
+                vda_name: U32::new(dynstr.add_string(verstr) as u32),
+                vda_next: U32::default(),
+            }
+            .as_bytes(),
+        );
     };
 
     let soname = if ctx.args.soname.is_empty() {
