@@ -3153,6 +3153,11 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                     a.z_rewrite_endbr = false;
                 }
                 Item::Grouped(value_os) => {
+                    // A letter that takes a value ends the bundle, and GNU ld
+                    // rejects the word, so it stays unknown.
+                    if crate::cmdline_winnow::bundle_takes_value(value_os) {
+                        fatal!("unknown command line option: {}", value_os.to_string_lossy());
+                    }
                     warn!(
                         "grouped short command line options are deprecated: {}",
                         value_os.to_string_lossy()

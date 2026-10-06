@@ -1278,6 +1278,14 @@ pub(crate) fn utf8_arg<'a>(value: &'a OsStr, opt: &str) -> &'a str {
     value.to_str().unwrap_or_else(|| fatal!("option {opt}: expected a UTF-8 argument"))
 }
 
+/// Whether a short bundle (`-sO2`) has a letter that takes a value. GNU ld
+/// rejects such a word ("unable to disambiguate"), so the dispatch rejects
+/// it too, instead of reading the rest of the word as that letter's value.
+pub(crate) fn bundle_takes_value(word: &OsStr) -> bool {
+    let Some(rest) = word.as_encoded_bytes().strip_prefix(b"-") else { return false };
+    rest.iter().any(|&letter| matches!(Item::short(letter as char), Some(true)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1530,5 +1538,21 @@ mod tests {
         assert!(matches!(&items[0], Item::IgnoredHashSize(v) if v.as_os_str() == "1024"));
         assert!(matches!(&items[1], Item::IgnoredQmagic));
         assert!(matches!(&items[2], Item::Input(_)));
+    }
+
+    #[test]
+    fn grouped_short_flags_are_accepted_with_a_warning() {
+        // -sS is Grouped("-sS") before its letters, -s and -S.
+        let items = parse_items(&["-sS", "a.o"]);
+        assert!(matches!(&items[0], Item::Grouped(v) if v.as_os_str() == "-sS"));
+        assert!(matches!(&items[1], Item::StripAllShort));
+        assert!(matches!(&items[2], Item::StripDebugShort));
+        assert!(matches!(&items[3], Item::Input(_)));
+
+        // A letter that takes a value ends the bundle, and GNU ld rejects
+        // the word.
+        assert!(bundle_takes_value(OsStr::new("-sO2")));
+        assert!(!bundle_takes_value(OsStr::new("-sS")));
+        assert!(!bundle_takes_value(OsStr::new("a.o")));
     }
 }
