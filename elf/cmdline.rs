@@ -756,6 +756,7 @@ pub struct TargetTraits {
 // single-letter options that could consume the rest as an argument.
 // Thus "-export-dynamic" means "--export-dynamic", while "-execute-only"
 // is interpreted as "-e xecute-only".
+#[cfg_attr(feature = "winnow-args", allow(dead_code))]
 fn match_option<'a>(arg: &'a OsStr, name: &str) -> Option<&'a OsStr> {
     let arg = arg.as_encoded_bytes();
     if let Some(name) = name.strip_prefix("--") {
@@ -972,11 +973,13 @@ fn returns_etxtbsy() -> bool {
 }
 
 /// The GNU option grammar, with values borrowed from the original OS strings.
+#[cfg_attr(feature = "winnow-args", allow(dead_code))]
 struct ArgCursor<'a> {
     args: &'a [Cow<'a, OsStr>],
     index: usize,
 }
 
+#[cfg_attr(feature = "winnow-args", allow(dead_code))]
 impl<'a> ArgCursor<'a> {
     fn current(&self) -> &'a OsStr {
         &self.args[self.index]
@@ -1144,8 +1147,11 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
     let mut report_undefined: Option<bool> = None;
     let mut z_relro: Option<bool> = None;
     let mut z_dynamic_undefined_weak: Option<bool> = None;
+    #[cfg_attr(feature = "winnow-args", allow(unused_mut))]
     let mut z_bti_report: Option<ReportKind> = None;
+    #[cfg_attr(feature = "winnow-args", allow(unused_mut))]
     let mut z_gcs_report: Option<ReportKind> = None;
+    #[cfg_attr(feature = "winnow-args", allow(unused_mut))]
     let mut z_gcs_report_dynamic: Option<ReportKind> = None;
     let mut separate_debug_file: Option<PathBuf> = None;
     // An explicit seed survives intervening --reverse-sections options.
@@ -1167,10 +1173,15 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
     // we write addends to relocated places.
     a.apply_dynamic_relocs = !matches!(target.family, Family::Sparc64 | Family::RiscV);
 
+    // The built-in parser: each option tried in turn against the current word.
+    #[cfg(not(feature = "winnow-args"))]
     let mut cursor = ArgCursor { args: raw_cmdline, index: 1 };
+    #[cfg(not(feature = "winnow-args"))]
     let mut arg = "";
+    #[cfg(not(feature = "winnow-args"))]
     let mut raw_arg = OsStr::new("");
 
+    #[cfg(not(feature = "winnow-args"))]
     macro_rules! read_value {
         ($method:ident, $name:expr) => {
             read_value!($method, $name, false)
@@ -1190,12 +1201,15 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             }
         }};
     }
+    #[cfg(not(feature = "winnow-args"))]
     macro_rules! read_arg {
         ($($args:tt)*) => { read_value!(read_arg, $($args)*) };
     }
+    #[cfg(not(feature = "winnow-args"))]
     macro_rules! read_eq {
         ($($args:tt)*) => { read_value!(read_eq, $($args)*) };
     }
+    #[cfg(not(feature = "winnow-args"))]
     macro_rules! read_z_arg {
         ($name:expr) => {{
             if let Some(value) = cursor.read_z_arg($name) {
@@ -1207,6 +1221,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
         }};
     }
 
+    #[cfg(not(feature = "winnow-args"))]
     while cursor.index < raw_cmdline.len() {
         if !cursor.current().as_encoded_bytes().starts_with(b"-") {
             let mut job = ReaderJob {
@@ -1899,6 +1914,1204 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             );
         } else {
             fatal!("unknown command line option: {}", cursor.current().to_string_lossy());
+        }
+    }
+
+    // winnow-args lexes the whole command line into options, in order;
+    // each is handled as the built-in parser handles it.
+    #[cfg(feature = "winnow-args")]
+    {
+        use crate::cmdline_winnow::{Item, utf8_arg};
+
+        let mut opts = crate::cmdline_winnow::parse(raw_cmdline);
+        for opt in &mut opts {
+            if let Item::Z(z) = opt
+                && let Some(known) = crate::cmdline_winnow::z_opt(&z.value)
+            {
+                *opt = known;
+            }
+            match opt {
+                Item::Input(value_os) => {
+                    let mut job = ReaderJob {
+                        rctx: rctx.clone(),
+                        name: PathBuf::from(std::mem::take(value_os)),
+                        ..Default::default()
+                    };
+                    job.rctx.pos = vec![jobs.len() as u32];
+                    jobs.push(job);
+                }
+                Item::Help => {
+                    out!("Usage: {} [options] file...\n{}", raw_cmdline[0].to_string_lossy(), HELP);
+                    std::process::exit(0);
+                }
+                Item::OutputShort(value_os) | Item::Output(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    a.output = PathBuf::from(raw_arg);
+                }
+                Item::DynamicLinker(value_os) | Item::DynamicLinkerShort(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    a.dynamic_linker = PathBuf::from(raw_arg);
+                }
+                Item::NoDynamicLinker => {
+                    a.dynamic_linker.clear();
+                }
+                Item::ShortVLower => {
+                    out!("{}", *VERSION);
+                    version_shown = true;
+                }
+                Item::Version => {
+                    out!("{}", *VERSION);
+                    std::process::exit(0);
+                }
+                Item::ShortV => {
+                    out!(
+                        "{}\n  Supported emulations:\n   elf_x86_64\n   elf_i386\n   aarch64elf\n   \
+                             aarch64linux\n   aarch64elfb\n   aarch64linuxb\n   armelf_linux_eabi\n   elf64lriscv\n   \
+                             elf64briscv\n   elf32lriscv\n   elf32briscv\n   elf32ppc\n   elf64ppc\n   elf64lppc\n   \
+                             elf64_s390\n   elf64_sparc\n   m68kelf\n   shlelf_linux\n   shelf_linux\n   \
+                             elf64loongarch\n   elf32loongarch",
+                        *VERSION
+                    );
+                    version_shown = true;
+                }
+                Item::Mllvm(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    a.plugin_opt.push(raw_arg.as_encoded_bytes().to_vec());
+                }
+                Item::EndLib => {
+                    rctx.in_lib = false;
+                }
+                Item::ExportDynamic | Item::ExportDynamicShort => {
+                    a.export_dynamic = true;
+                }
+                Item::NoExportDynamic => {
+                    a.export_dynamic = false;
+                }
+                Item::Bsymbolic => {
+                    a.bsymbolic = BsymbolicKind::All;
+                }
+                Item::BsymbolicFunctions => {
+                    a.bsymbolic = BsymbolicKind::Functions;
+                }
+                Item::BsymbolicNonWeak => {
+                    a.bsymbolic = BsymbolicKind::NonWeak;
+                }
+                Item::BsymbolicNonWeakFunctions => {
+                    a.bsymbolic = BsymbolicKind::NonWeakFunctions;
+                }
+                Item::BnoSymbolic => {
+                    a.bsymbolic = BsymbolicKind::None;
+                }
+                Item::ExcludeLibs(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    for lib in raw_arg.as_encoded_bytes().split(|b| matches!(b, b',' | b':')) {
+                        a.exclude_libs.insert(lib.to_vec());
+                    }
+                }
+                Item::EmitRelocsShort | Item::EmitRelocs => {
+                    a.emit_relocs = true;
+                    a.discard_locals = false;
+                }
+                Item::Map(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    map_path = Some(PathBuf::from(raw_arg));
+                }
+                Item::PrintDependencies => {
+                    a.print_dependencies = true;
+                }
+                Item::PrintMap | Item::PrintMapShort => {
+                    map_path.get_or_insert_with(PathBuf::new);
+                }
+                Item::Bstatic | Item::Dn | Item::Static => {
+                    rctx.is_static = true;
+                }
+                Item::Bdynamic | Item::Dy => {
+                    rctx.is_static = false;
+                }
+                Item::Shared | Item::Bshareable => {
+                    a.shared = true;
+                }
+                Item::SpareDynamicTags(value_os) => {
+                    let arg = utf8_arg(value_os, "--spare-dynamic-tags");
+                    a.spare_dynamic_tags = parse_number("spare-dynamic-tags", arg);
+                }
+                Item::SpareProgramHeaders(value_os) => {
+                    let arg = utf8_arg(value_os, "--spare-program-headers");
+                    a.spare_program_headers = parse_number("spare-program-headers", arg);
+                }
+                Item::StartLib => {
+                    rctx.in_lib = true;
+                }
+                Item::StartStop => {
+                    a.start_stop = true;
+                }
+                Item::DependencyFile(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    a.dependency_file = PathBuf::from(raw_arg);
+                }
+                Item::Defsym(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    let Some((name, value)) = raw_arg
+                        .as_encoded_bytes()
+                        .split_once_str(b"=")
+                        .filter(|(_, v)| !v.is_empty())
+                    else {
+                        fatal!("-defsym: syntax error: {}", raw_arg.to_string_lossy());
+                    };
+                    a.defsyms.push((name.to_vec(), parse_defsym_value(value)));
+                }
+                Item::InternalLtoPass2 => {
+                    a.lto_pass2 = true;
+                }
+                Item::InternalIgnoreIrFile(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    a.ignore_ir_file.insert(raw_arg.to_os_string());
+                }
+                Item::Demangle => {
+                    mold_common::error::set_demangle(true);
+                }
+                Item::NoDemangle => {
+                    mold_common::error::set_demangle(false);
+                }
+                Item::Detach => {
+                    let value = true;
+                    a.detach = value;
+                }
+                Item::NoDetach => {
+                    let value = false;
+                    a.detach = value;
+                }
+                Item::DefaultSymver => {
+                    a.default_symver = true;
+                }
+                Item::NoinhibitExec => {
+                    mold_common::error::set_noinhibit_exec(true);
+                }
+                Item::ShuffleSections(value_os) if value_os.as_encoded_bytes() == b"\0" => {
+                    // Resolve the seed after parsing all options.
+                    a.shuffle_sections = ShuffleSections::Shuffle(0);
+                }
+                Item::ShuffleSections(value_os) => {
+                    let arg = utf8_arg(value_os, "--shuffle-sections");
+                    let seed = parse_number("shuffle-sections", arg) as u64;
+                    a.shuffle_sections = ShuffleSections::Shuffle(seed);
+                    shuffle_sections_seed = Some(seed);
+                }
+                Item::ReverseSections => {
+                    a.shuffle_sections = ShuffleSections::Reverse;
+                }
+                Item::Rosegment => {
+                    let value = true;
+                    a.rosegment = value;
+                }
+                Item::NoRosegment => {
+                    let value = false;
+                    a.rosegment = value;
+                }
+                Item::TraceSymbolShort(value_os) | Item::TraceSymbol(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    a.trace_symbol.push(raw_arg.as_encoded_bytes().to_vec());
+                }
+                Item::Filler(value_os) => {
+                    let arg = utf8_arg(value_os, "--filler");
+                    a.filler = Some(parse_hex("filler", arg) as u8);
+                }
+                Item::LibraryPathShort(value_os) | Item::LibraryPath(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    a.library_paths.push(PathBuf::from(raw_arg));
+                }
+                Item::Sysroot(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    a.sysroot = PathBuf::from(raw_arg);
+                }
+                Item::Unique(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    if !unique.add(raw_arg.as_encoded_bytes(), 1) {
+                        fatal!("-unique: invalid glob pattern: {}", raw_arg.to_string_lossy());
+                    }
+                }
+                Item::UnresolvedSymbols(value_os) => {
+                    let arg = utf8_arg(value_os, "--unresolved-symbols");
+                    match arg {
+                        "report-all" | "ignore-in-shared-libs" => report_undefined = Some(true),
+                        "ignore-all" | "ignore-in-object-files" => report_undefined = Some(false),
+                        _ => fatal!("unknown --unresolved-symbols argument: {arg}"),
+                    }
+                }
+                Item::UndefinedGlob(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    if !undefined_glob.add(raw_arg.as_encoded_bytes(), 0) {
+                        fatal!("--undefined-glob: invalid pattern: {}", raw_arg.to_string_lossy());
+                    }
+                }
+                Item::RequireDefined(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    a.require_defined.push(raw_arg.as_encoded_bytes().to_vec());
+                }
+                Item::Init(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    a.init = raw_arg.as_encoded_bytes().to_vec();
+                }
+                Item::Fini(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    a.fini = raw_arg.as_encoded_bytes().to_vec();
+                }
+                Item::HashStyle(value_os) => {
+                    let arg = utf8_arg(value_os, "--hash-style");
+                    match arg {
+                        "sysv" => {
+                            a.hash_style_sysv = true;
+                            a.hash_style_gnu = false;
+                        }
+                        "gnu" => {
+                            a.hash_style_sysv = false;
+                            a.hash_style_gnu = true;
+                        }
+                        "both" => {
+                            a.hash_style_sysv = true;
+                            a.hash_style_gnu = true;
+                        }
+                        "none" => {
+                            a.hash_style_sysv = false;
+                            a.hash_style_gnu = false;
+                        }
+                        _ => fatal!("invalid --hash-style argument: {arg}"),
+                    }
+                }
+                Item::Soname(value_os) | Item::SonameShort(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    a.soname = raw_arg.to_os_string();
+                }
+                Item::Audit(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    if !a.audit.is_empty() {
+                        a.audit.push(b':');
+                    }
+                    a.audit.extend_from_slice(raw_arg.as_encoded_bytes());
+                }
+                Item::Depaudit(value_os) | Item::DepauditShort(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    if !a.depaudit.is_empty() {
+                        a.depaudit.push(b':');
+                    }
+                    a.depaudit.extend_from_slice(raw_arg.as_encoded_bytes());
+                }
+                Item::AllowMultipleDefinition => {
+                    a.allow_multiple_definition = true;
+                }
+                Item::ApplyDynamicRelocs => {
+                    let value = true;
+                    a.apply_dynamic_relocs = value;
+                }
+                Item::NoApplyDynamicRelocs => {
+                    let value = false;
+                    a.apply_dynamic_relocs = value;
+                }
+                Item::Trace => {
+                    a.trace = true;
+                }
+                Item::EhFrameHdr => {
+                    let value = true;
+                    a.eh_frame_hdr = value;
+                }
+                Item::NoEhFrameHdr => {
+                    let value = false;
+                    a.eh_frame_hdr = value;
+                }
+                Item::Pie | Item::PicExecutable => {
+                    a.pic = true;
+                    a.pie = true;
+                }
+                Item::NoPie | Item::NoPicExecutable | Item::Nopie => {
+                    a.pic = false;
+                    a.pie = false;
+                }
+                Item::Relax => {
+                    let value = true;
+                    a.relax = value;
+                }
+                Item::NoRelax => {
+                    let value = false;
+                    a.relax = value;
+                }
+                Item::GdbIndex => {
+                    let value = true;
+                    a.gdb_index = value;
+                }
+                Item::NoGdbIndex => {
+                    let value = false;
+                    a.gdb_index = value;
+                }
+                Item::RelocatableShort | Item::Relocatable => {
+                    a.relocatable = true;
+                    a.emit_relocs = true;
+                }
+                Item::RelocatableMergeSections => {
+                    a.relocatable_merge_sections = true;
+                }
+                Item::Perf => {
+                    a.perf = true;
+                }
+                Item::PackDynRelocs(value_os) if value_os.as_encoded_bytes() == b"relr" => {
+                    a.pack_dyn_relocs_relr = true;
+                    a.pack_dyn_relocs_android = false;
+                }
+                Item::PackDynRelocs(value_os) if value_os.as_encoded_bytes() == b"android" => {
+                    a.pack_dyn_relocs_android = true;
+                    a.pack_dyn_relocs_relr = false;
+                }
+                Item::PackDynRelocs(value_os) if value_os.as_encoded_bytes() == b"android+relr" => {
+                    a.pack_dyn_relocs_android = true;
+                    a.pack_dyn_relocs_relr = true;
+                }
+                Item::PackDynRelocs(value_os) if value_os.as_encoded_bytes() == b"none" => {
+                    a.pack_dyn_relocs_relr = false;
+                    a.pack_dyn_relocs_android = false;
+                }
+                Item::PackDynRelocs(value_os) => {
+                    fatal!(
+                        "unknown command line option: --pack-dyn-relocs={}",
+                        value_os.to_string_lossy()
+                    );
+                }
+                Item::UseAndroidRelrTags => {
+                    let value = true;
+                    a.use_android_relr_tags = value;
+                }
+                Item::NoUseAndroidRelrTags => {
+                    let value = false;
+                    a.use_android_relr_tags = value;
+                }
+                Item::PackageMetadata(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    a.package_metadata = parse_package_metadata(raw_arg.as_encoded_bytes());
+                }
+                Item::Stats => {
+                    a.stats = true;
+                    Counter::enable();
+                }
+                Item::DirectoryShort(value_os) | Item::Directory(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    directory = PathBuf::from(raw_arg);
+                }
+                Item::Chroot(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    a.chroot = PathBuf::from(raw_arg);
+                }
+                Item::ColorDiagnostics(value_os) if value_os.as_encoded_bytes() == b"\0" => {
+                    mold_common::error::set_color(std::io::stderr().is_terminal());
+                }
+                Item::ColorDiagnostics(value_os) if value_os.as_encoded_bytes() == b"auto" => {
+                    mold_common::error::set_color(std::io::stderr().is_terminal());
+                }
+                Item::ColorDiagnostics(value_os) if value_os.as_encoded_bytes() == b"always" => {
+                    mold_common::error::set_color(true);
+                }
+                Item::ColorDiagnostics(value_os) if value_os.as_encoded_bytes() == b"never" => {
+                    mold_common::error::set_color(false);
+                }
+                Item::ColorDiagnostics(value_os) => {
+                    fatal!(
+                        "unknown command line option: --color-diagnostics={}",
+                        value_os.to_string_lossy()
+                    );
+                }
+                Item::NoColorDiagnostics => {
+                    mold_common::error::set_color(false);
+                }
+                Item::WarnCommon => {
+                    let value = true;
+                    a.warn_common = value;
+                }
+                Item::NoWarnCommon => {
+                    let value = false;
+                    a.warn_common = value;
+                }
+                Item::IgnoredWarnOnce => {
+                    // Ignored for GNU ld compatibility, as in C++ mold.
+                }
+                Item::WarnSharedTextrel => {
+                    warn_shared_textrel = true;
+                }
+                Item::WarnTextrel => {
+                    a.warn_textrel = true;
+                }
+                Item::EnableNewDtags => {
+                    let value = true;
+                    a.enable_new_dtags = value;
+                }
+                Item::DisableNewDtags => {
+                    let value = false;
+                    a.enable_new_dtags = value;
+                }
+                Item::ExecuteOnly => {
+                    a.execute_only = true;
+                }
+                Item::ZeroToBss => {
+                    a.zero_to_bss = true;
+                }
+                Item::CompressDebugSections(value_os) => {
+                    let arg = utf8_arg(value_os, "--compress-debug-sections");
+                    a.compress_debug_sections = match arg {
+                        "zlib" | "zlib-gabi" => DebugCompression::Zlib(1),
+                        "zstd" => DebugCompression::Zstd(3),
+                        "none" => DebugCompression::None,
+                        s if s.starts_with("zlib:") => {
+                            let level = parse_number("compress-debug-sections", &s[5..]);
+                            if !(0..=9).contains(&level) {
+                                fatal!(
+                                    "invalid --compress-debug-sections argument: {arg} (zlib level must be between 0 and 9)"
+                                );
+                            }
+                            DebugCompression::Zlib(level as i32)
+                        }
+                        s if s.starts_with("zstd:") => {
+                            let level = parse_number("compress-debug-sections", &s[5..]);
+                            if !(1..=22).contains(&level) {
+                                fatal!(
+                                    "invalid --compress-debug-sections argument: {arg} (zstd level must be between 1 and 22)"
+                                );
+                            }
+                            DebugCompression::Zstd(level as i32)
+                        }
+                        _ => fatal!("invalid --compress-debug-sections argument: {arg}"),
+                    };
+                }
+                Item::Wrap(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    a.wrap.insert(raw_arg.as_encoded_bytes().to_vec());
+                }
+                Item::Omagic | Item::OmagicShort => {
+                    a.omagic = true;
+                    rctx.is_static = true;
+                }
+                Item::NoOmagic => {
+                    a.omagic = false;
+                }
+                Item::Oformat(value_os) => {
+                    let arg = utf8_arg(value_os, "--oformat");
+                    if arg != "binary" {
+                        fatal!("--oformat: {arg} is not supported");
+                    }
+                    a.oformat_binary = true;
+                }
+                Item::RetainSymbolsFile(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    a.retain_symbols_file =
+                        Some(read_retain_symbols_file(&a.chroot, Path::new(raw_arg)));
+                }
+                Item::SectionAlign(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    let arg = raw_arg.as_encoded_bytes();
+                    let Some((name, value)) =
+                        arg.split_once_str(b"=").filter(|(_, v)| !v.is_empty())
+                    else {
+                        fatal!("--section-align: syntax error: {}", arg.as_bstr());
+                    };
+                    let value = std::str::from_utf8(value).unwrap_or_else(|_| {
+                        fatal!("--section-align: invalid number: {}", value.as_bstr())
+                    });
+                    let value = parse_number("section-align", value);
+                    if value <= 0 || !(value as u64).is_power_of_two() {
+                        fatal!("--section-align={}: value must be a power of 2", arg.as_bstr());
+                    }
+                    a.section_align.insert(name.to_vec(), value as u64);
+                }
+                Item::SectionStart(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    let arg = raw_arg.as_encoded_bytes();
+                    let Some((name, value)) =
+                        arg.split_once_str(b"=").filter(|(_, v)| !v.is_empty())
+                    else {
+                        fatal!("--section-start: syntax error: {}", arg.as_bstr());
+                    };
+                    let value = std::str::from_utf8(value).unwrap_or_else(|_| {
+                        fatal!("--section-start: invalid number: {}", value.as_bstr())
+                    });
+                    a.section_start.insert(name.to_vec(), parse_hex("section-start", value));
+                }
+                Item::SectionOrder(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    a.section_order = parse_section_order(raw_arg.as_encoded_bytes());
+                }
+                Item::Tbss(value_os) => {
+                    let arg = utf8_arg(value_os, "--Tbss");
+                    a.section_start.insert(b".bss".to_vec(), parse_hex("Tbss", arg));
+                }
+                Item::Tdata(value_os) => {
+                    let arg = utf8_arg(value_os, "--Tdata");
+                    a.section_start.insert(b".data".to_vec(), parse_hex("Tdata", arg));
+                }
+                Item::Ttext(value_os) => {
+                    let arg = utf8_arg(value_os, "--Ttext");
+                    a.section_start.insert(b".text".to_vec(), parse_hex("Ttext", arg));
+                }
+                Item::TtextSegment(value_os) => {
+                    let arg = utf8_arg(value_os, "--Ttext-segment");
+                    a.ttext_segment = Some(parse_number("Ttext-segment", arg) as u64);
+                }
+                Item::Repro => {
+                    a.repro = true;
+                }
+                Item::NoUndefined => {
+                    report_undefined = Some(true);
+                }
+                Item::SeparateDebugFile(value_os) if value_os.as_encoded_bytes() == b"\0" => {
+                    separate_debug_file = Some(PathBuf::new());
+                }
+                Item::SeparateDebugFile(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    separate_debug_file = Some(PathBuf::from(raw_arg));
+                }
+                Item::NoSeparateDebugFile => {
+                    separate_debug_file = None;
+                }
+                Item::Nmagic => {
+                    let value = true;
+                    a.nmagic = value;
+                }
+                Item::NoNmagic => {
+                    let value = false;
+                    a.nmagic = value;
+                }
+                Item::FatalWarnings => {
+                    mold_common::error::set_fatal_warnings(true);
+                }
+                Item::NoFatalWarnings => {
+                    mold_common::error::set_fatal_warnings(false);
+                }
+                Item::NoWarningsShort | Item::NoWarnings => {
+                    mold_common::error::set_suppress_warnings(true);
+                }
+                Item::Fork => {
+                    let value = true;
+                    a.fork = value;
+                }
+                Item::NoFork => {
+                    let value = false;
+                    a.fork = value;
+                }
+                Item::GcSections => {
+                    let value = true;
+                    a.gc_sections = value;
+                }
+                Item::NoGcSections => {
+                    let value = false;
+                    a.gc_sections = value;
+                }
+                Item::PrintGcSections(value_os) if value_os.as_encoded_bytes() == b"\0" => {
+                    a.print_gc_sections = Some(ReportOutput::Stdout);
+                }
+                Item::PrintGcSections(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    a.print_gc_sections = parse_report_output(raw_arg);
+                }
+                Item::NoPrintGcSections => {
+                    a.print_gc_sections = None;
+                }
+                Item::DiscardSection(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    a.discard_section.insert(raw_arg.as_encoded_bytes().to_vec());
+                }
+                Item::NoDiscardSection(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    a.discard_section.remove(raw_arg.as_encoded_bytes());
+                }
+                Item::Icf(value_os) => {
+                    let arg = utf8_arg(value_os, "--icf");
+                    match arg {
+                        "all" => {
+                            a.icf = true;
+                            a.icf_all = true;
+                        }
+                        "safe" => a.icf = true,
+                        "none" => a.icf = false,
+                        _ => fatal!("unknown --icf argument: {arg}"),
+                    }
+                }
+                Item::NoIcf => {
+                    a.icf = false;
+                }
+                Item::IgnoreDataAddressEquality => {
+                    a.ignore_data_address_equality = true;
+                }
+                Item::ImageBase(value_os) => {
+                    let arg = utf8_arg(value_os, "--image-base");
+                    a.image_base = parse_number("image-base", arg) as u64;
+                }
+                Item::PhysicalImageBase(value_os) => {
+                    let arg = utf8_arg(value_os, "--physical-image-base");
+                    a.physical_image_base = Some(parse_number("physical-image-base", arg) as u64);
+                }
+                Item::PrintIcfSections(value_os) if value_os.as_encoded_bytes() == b"\0" => {
+                    a.print_icf_sections = Some(ReportOutput::Stdout);
+                }
+                Item::PrintIcfSections(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    a.print_icf_sections = parse_report_output(raw_arg);
+                }
+                Item::NoPrintIcfSections => {
+                    a.print_icf_sections = None;
+                }
+                Item::QuickExit => {
+                    let value = true;
+                    a.quick_exit = value;
+                }
+                Item::NoQuickExit => {
+                    let value = false;
+                    a.quick_exit = value;
+                }
+                Item::Plugin(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    a.plugin = PathBuf::from(raw_arg);
+                }
+                Item::PluginOpt(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    a.plugin_opt.push(raw_arg.as_encoded_bytes().to_vec());
+                }
+                Item::LtoCsProfileGenerate => {
+                    let option = b"cs-profile-generate".to_vec();
+                    a.plugin_opt.push(option);
+                }
+                Item::LtoDebugPassManager => {
+                    let option = b"debug-pass-manager".to_vec();
+                    a.plugin_opt.push(option);
+                }
+                Item::DisableVerify => {
+                    let option = b"disable-verify".to_vec();
+                    a.plugin_opt.push(option);
+                }
+                Item::LtoEmitAsm => {
+                    let option = b"emit-asm".to_vec();
+                    a.plugin_opt.push(option);
+                }
+                Item::NoLegacyPassManager => {
+                    let option = b"legacy-pass-manager".to_vec();
+                    a.plugin_opt.push(option);
+                }
+                Item::NoLtoLegacyPassManager => {
+                    let option = b"new-pass-manager".to_vec();
+                    a.plugin_opt.push(option);
+                }
+                Item::OptRemarksWithHotness => {
+                    let option = b"opt-remarks-with-hotness".to_vec();
+                    a.plugin_opt.push(option);
+                }
+                Item::LtoPseudoProbeForProfiling => {
+                    let option = b"pseudo-probe-for-profiling".to_vec();
+                    a.plugin_opt.push(option);
+                }
+                Item::SaveTemps => {
+                    let option = b"save-temps".to_vec();
+                    a.plugin_opt.push(option);
+                }
+                Item::ThinltoEmitImportsFiles => {
+                    let option = b"thinlto-emit-imports-files".to_vec();
+                    a.plugin_opt.push(option);
+                }
+                Item::ThinltoIndexOnly(value_os) if value_os.as_encoded_bytes() == b"\0" => {
+                    let option = b"thinlto-index-only".to_vec();
+                    a.plugin_opt.push(option);
+                }
+                Item::ThinltoIndexOnly(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    let option =
+                        [b"thinlto-index-only=".as_slice(), raw_arg.as_encoded_bytes()].concat();
+                    a.plugin_opt.push(option);
+                }
+                Item::LtoCsProfileFile(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    let option =
+                        [b"cs-profile-path=".as_slice(), raw_arg.as_encoded_bytes()].concat();
+                    a.plugin_opt.push(option);
+                }
+                Item::LtoPartitions(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    let option =
+                        [b"lto-partitions=".as_slice(), raw_arg.as_encoded_bytes()].concat();
+                    a.plugin_opt.push(option);
+                }
+                Item::LtoObjPath(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    let option = [b"obj-path=".as_slice(), raw_arg.as_encoded_bytes()].concat();
+                    a.plugin_opt.push(option);
+                }
+                Item::OptRemarksFilename(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    let option =
+                        [b"opt-remarks-filename=".as_slice(), raw_arg.as_encoded_bytes()].concat();
+                    a.plugin_opt.push(option);
+                }
+                Item::OptRemarksFormat(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    let option =
+                        [b"opt-remarks-format=".as_slice(), raw_arg.as_encoded_bytes()].concat();
+                    a.plugin_opt.push(option);
+                }
+                Item::OptRemarksHotnessThreshold(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    let option =
+                        [b"opt-remarks-hotness-threshold=".as_slice(), raw_arg.as_encoded_bytes()]
+                            .concat();
+                    a.plugin_opt.push(option);
+                }
+                Item::OptRemarksPasses(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    let option =
+                        [b"opt-remarks-passes=".as_slice(), raw_arg.as_encoded_bytes()].concat();
+                    a.plugin_opt.push(option);
+                }
+                Item::LtoSampleProfile(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    let option =
+                        [b"sample-profile=".as_slice(), raw_arg.as_encoded_bytes()].concat();
+                    a.plugin_opt.push(option);
+                }
+                Item::ThinltoObjectSuffixReplace(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    let option =
+                        [b"thinlto-object-suffix-replace=".as_slice(), raw_arg.as_encoded_bytes()]
+                            .concat();
+                    a.plugin_opt.push(option);
+                }
+                Item::ThinltoPrefixReplace(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    let option =
+                        [b"thinlto-prefix-replace=".as_slice(), raw_arg.as_encoded_bytes()]
+                            .concat();
+                    a.plugin_opt.push(option);
+                }
+                Item::ThinltoCacheDir(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    let option = [b"cache-dir=".as_slice(), raw_arg.as_encoded_bytes()].concat();
+                    a.plugin_opt.push(option);
+                }
+                Item::ThinltoCachePolicy(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    let option = [b"cache-policy=".as_slice(), raw_arg.as_encoded_bytes()].concat();
+                    a.plugin_opt.push(option);
+                }
+                Item::ThinltoJobs(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    let option = [b"jobs=".as_slice(), raw_arg.as_encoded_bytes()].concat();
+                    a.plugin_opt.push(option);
+                }
+                Item::ThreadCount(value_os) => {
+                    let arg = utf8_arg(value_os, "--thread-count");
+                    a.thread_count = Some(parse_number("thread-count", arg).max(1) as usize);
+                }
+                Item::Threads(value_os) if value_os.as_encoded_bytes() == b"\0" => {
+                    a.thread_count = None;
+                }
+                Item::Threads(value_os) => {
+                    let arg = utf8_arg(value_os, "--threads");
+                    a.thread_count = Some(parse_number("threads", arg).max(1) as usize);
+                }
+                Item::NoThreads => {
+                    a.thread_count = Some(1);
+                }
+                Item::DiscardAll | Item::DiscardAllShort => {
+                    a.discard_all = true;
+                }
+                Item::DiscardLocals | Item::DiscardLocalsShort => {
+                    a.discard_locals = true;
+                }
+                Item::DiscardNone => {
+                    a.discard_all = false;
+                    a.discard_locals = false;
+                }
+                Item::StripAll | Item::StripAllShort => {
+                    a.strip_all = true;
+                }
+                Item::StripDebug | Item::StripDebugShort => {
+                    a.strip_debug = true;
+                }
+                Item::WarnUnresolvedSymbols => {
+                    error_unresolved_symbols = false;
+                }
+                Item::ErrorUnresolvedSymbols => {
+                    error_unresolved_symbols = true;
+                }
+                Item::Rpath(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    add_rpath(&mut a, &mut rpaths, raw_arg);
+                }
+                Item::ShortR(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    if Path::new(raw_arg).metadata().is_ok_and(|m| !m.is_dir()) {
+                        fatal!(
+                            "-R{}: -R as an alias for --just-symbols is not supported",
+                            raw_arg.to_string_lossy()
+                        );
+                    }
+                    add_rpath(&mut a, &mut rpaths, raw_arg);
+                }
+                Item::UndefinedVersion => {
+                    let value = true;
+                    a.undefined_version = value;
+                }
+                Item::NoUndefinedVersion => {
+                    let value = false;
+                    a.undefined_version = value;
+                }
+                Item::Undefined(value_os) | Item::UndefinedShort(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    a.undefined.push(raw_arg.as_encoded_bytes().to_vec());
+                }
+                Item::BuildId(value_os) if value_os.as_encoded_bytes() == b"\0" => {
+                    a.build_id = BuildId::Hash(20);
+                }
+                Item::BuildId(value_os) => {
+                    let arg = utf8_arg(value_os, "--build-id");
+                    a.build_id = match arg {
+                        "none" => BuildId::None,
+                        "uuid" => BuildId::Uuid,
+                        "md5" => BuildId::Hash(16),
+                        "sha1" => BuildId::Hash(20),
+                        "sha256" | "fast" => BuildId::Hash(32),
+                        s if s.starts_with("0x") || s.starts_with("0X") => {
+                            BuildId::Hex(parse_hex_build_id(s))
+                        }
+                        _ => fatal!("invalid --build-id argument: {arg}"),
+                    };
+                }
+                Item::NoBuildId => {
+                    a.build_id = BuildId::None;
+                }
+                Item::Be8 => {
+                    let value = true;
+                    be8 = value;
+                }
+                Item::Be32 => {
+                    let value = false;
+                    be8 = value;
+                }
+                Item::Format(value_os) | Item::FormatShort(value_os) => {
+                    let arg = utf8_arg(value_os, "--format");
+                    if arg == "binary" {
+                        fatal!(
+                            "mold does not support `-b binary`. If you want to convert a binary file into an \
+                                 object file, use `objcopy -I binary -O default <input-file> <output-file.o>` instead."
+                        );
+                    }
+                    fatal!("unknown command line option: -b {arg}");
+                }
+                Item::IgnoredFuseLd(_) => {}
+                Item::AllowShlibUndefined => {
+                    allow_shlib_undefined = Some(true);
+                }
+                Item::NoAllowShlibUndefined => {
+                    allow_shlib_undefined = Some(false);
+                }
+                Item::IgnoredShortO(_) => {
+                    // Ignored for compatibility.
+                }
+                Item::IgnoredEB
+                | Item::IgnoredEL
+                | Item::IgnoredO0
+                | Item::IgnoredO1
+                | Item::IgnoredO2
+                | Item::IgnoredVerbose
+                | Item::IgnoredStartGroup
+                | Item::IgnoredEndGroup
+                | Item::IgnoredOpenParen
+                | Item::IgnoredCloseParen
+                | Item::IgnoredNostdlib
+                | Item::IgnoredNoAddNeeded
+                | Item::IgnoredNoCallGraphProfileSort
+                | Item::IgnoredNoCopyDtNeededEntries => {
+                    // Ignored for compatibility.
+                }
+                Item::IgnoredSortSection(_) => {
+                    // Ignored for compatibility.
+                }
+                Item::IgnoredSortCommon
+                | Item::IgnoredDc
+                | Item::IgnoredDp
+                | Item::IgnoredFixCortexA53835769
+                | Item::IgnoredFixCortexA53843419
+                | Item::IgnoredNodefaultlibs
+                | Item::IgnoredWarnConstructors
+                | Item::IgnoredWarnExecstack
+                | Item::IgnoredNoWarnExecstack
+                | Item::IgnoredNoErrorExecstack
+                | Item::IgnoredNoWarnRwxSegments
+                | Item::IgnoredNoErrorRwxSegments
+                | Item::IgnoredLongPlt
+                | Item::IgnoredSecurePlt => {
+                    // Ignored for compatibility.
+                }
+                Item::IgnoredRpathLink(_) => {
+                    // Ignored for compatibility.
+                }
+                Item::IgnoredNoKeepMemory => {
+                    // Ignored for compatibility.
+                }
+                Item::IgnoredMaxCacheSize(_) => {
+                    // Ignored for compatibility.
+                }
+                Item::IgnoredMmapOutputFile | Item::IgnoredNoMmapOutputFile => {
+                    // Ignored for compatibility.
+                }
+                Item::ShortMLower(value_os) => {
+                    let arg = utf8_arg(value_os, "-m");
+                    match emulation_to_target(arg) {
+                        Some(name) => a.emulation = name,
+                        None => fatal!("unknown -m argument: {arg}"),
+                    }
+                }
+                Item::Filter(value_os) | Item::FilterShort(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    a.filter.push(raw_arg.as_encoded_bytes().to_vec());
+                }
+                Item::Auxiliary(value_os) | Item::AuxiliaryShort(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    a.auxiliary.push(raw_arg.as_encoded_bytes().to_vec());
+                }
+                Item::VersionScript(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    a.version_scripts.push(PathBuf::from(raw_arg));
+                }
+                Item::DynamicList(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    a.bsymbolic = BsymbolicKind::All;
+                    let mf = mold_common::mapped_file::must_open_file(&a.chroot, raw_arg);
+                    a.dynamic_list.push(DynamicListSource::File(mf));
+                }
+                Item::DynamicListData => {
+                    a.dynamic_list_data = true;
+                }
+                Item::ExportDynamicSymbol(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    a.dynamic_list
+                        .push(DynamicListSource::Pattern(raw_arg.as_encoded_bytes().to_vec()));
+                }
+                Item::ExportDynamicSymbolList(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    let mf = mold_common::mapped_file::must_open_file(&a.chroot, raw_arg);
+                    a.dynamic_list.push(DynamicListSource::File(mf));
+                }
+                Item::Entry(value_os) | Item::EntryShort(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    a.entry = raw_arg.as_encoded_bytes().to_vec();
+                }
+                Item::AsNeeded => {
+                    let value = true;
+                    rctx.as_needed = value;
+                }
+                Item::NoAsNeeded => {
+                    let value = false;
+                    rctx.as_needed = value;
+                }
+                Item::WholeArchive => {
+                    let value = true;
+                    rctx.whole_archive = value;
+                }
+                Item::NoWholeArchive => {
+                    let value = false;
+                    rctx.whole_archive = value;
+                }
+                Item::Library(value_os) | Item::LibraryShort(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    if visited_libs.insert(raw_arg) {
+                        let mut job = ReaderJob {
+                            rctx: rctx.clone(),
+                            name: PathBuf::from(raw_arg),
+                            is_lib: true,
+                        };
+                        job.rctx.pos = vec![jobs.len() as u32];
+                        jobs.push(job);
+                    }
+                }
+                Item::Script(value_os) | Item::ScriptShort(value_os) => {
+                    let raw_arg: &OsStr = value_os;
+                    let mut job = ReaderJob {
+                        rctx: rctx.clone(),
+                        name: PathBuf::from(raw_arg),
+                        ..Default::default()
+                    };
+                    job.rctx.pos = vec![jobs.len() as u32];
+                    jobs.push(job);
+                }
+                Item::PushState => {
+                    rctx_stack.push(rctx.clone());
+                }
+                Item::PopState => {
+                    rctx = rctx_stack
+                        .pop()
+                        .unwrap_or_else(|| fatal!("no state pushed before popping"));
+                }
+                Item::ZNow => {
+                    let value = true;
+                    a.z_now = value;
+                }
+                Item::ZLazy => {
+                    let value = false;
+                    a.z_now = value;
+                }
+                Item::ZCetReportNone => {
+                    a.z_cet_report = ReportKind::None;
+                }
+                Item::ZCetReportWarning => {
+                    a.z_cet_report = ReportKind::Warning;
+                }
+                Item::ZCetReportError => {
+                    a.z_cet_report = ReportKind::Error;
+                }
+                Item::ZExecstack => {
+                    a.z_execstack = true;
+                }
+                Item::ZExecstackIfNeeded => {
+                    a.z_execstack_if_needed = true;
+                }
+                Item::ZMaxPageSize(value_os) => {
+                    let arg = utf8_arg(value_os, "-z max-page-size");
+                    a.page_size = parse_number("-z max-page-size", arg) as u64;
+                    if !a.page_size.is_power_of_two() {
+                        fatal!("-z max-page-size {arg}: value must be a power of 2");
+                    }
+                }
+                Item::ZStartStopVisibilityProtected => {
+                    let value = true;
+                    a.z_start_stop_visibility_protected = value;
+                }
+                Item::ZStartStopVisibilityHidden => {
+                    let value = false;
+                    a.z_start_stop_visibility_protected = value;
+                }
+                Item::ZNoexecstack => {
+                    a.z_execstack = false;
+                }
+                Item::ZRelro => {
+                    z_relro = Some(true);
+                }
+                Item::ZNorelro => {
+                    z_relro = Some(false);
+                }
+                Item::ZUndefs => {
+                    report_undefined = Some(false);
+                }
+                Item::ZNodlopen => {
+                    a.z_dlopen = false;
+                }
+                Item::ZNodelete => {
+                    a.z_delete = false;
+                }
+                Item::ZNocopyreloc => {
+                    a.z_copyreloc = false;
+                }
+                Item::ZNodump => {
+                    a.z_dump = false;
+                }
+                Item::ZInitfirst => {
+                    a.z_initfirst = true;
+                }
+                Item::ZInterpose => {
+                    a.z_interpose = true;
+                }
+                Item::ZIbt => {
+                    a.z_ibt = true;
+                }
+                Item::ZIbtplt => {}
+                Item::ZMuldefs => {
+                    a.allow_multiple_definition = true;
+                }
+                Item::ZKeepTextSectionPrefix => {
+                    let value = true;
+                    a.z_keep_text_section_prefix = value;
+                }
+                Item::ZNokeepTextSectionPrefix => {
+                    let value = false;
+                    a.z_keep_text_section_prefix = value;
+                }
+                Item::ZShstk => {
+                    a.z_shstk = true;
+                }
+                Item::ZText => {
+                    a.z_text = true;
+                }
+                Item::ZNotext | Item::ZTextoff => {
+                    a.z_text = false;
+                }
+                Item::ZOrigin => {
+                    a.z_origin = true;
+                }
+                Item::ZNodefaultlib => {
+                    a.z_nodefaultlib = true;
+                }
+                Item::ZSeparateLoadableSegments => {
+                    z_separate_code = Some(SeparateCodeKind::SeparateLoadableSegments);
+                }
+                Item::ZSeparateCode => {
+                    z_separate_code = Some(SeparateCodeKind::SeparateCode);
+                }
+                Item::ZNoseparateCode => {
+                    z_separate_code = Some(SeparateCodeKind::NoSeparateCode);
+                }
+                Item::ZStackSize(value_os) => {
+                    let arg = utf8_arg(value_os, "-z stack-size");
+                    a.z_stack_size = parse_number("-z stack-size", arg) as u64;
+                }
+                Item::ZDynamicUndefinedWeak => {
+                    z_dynamic_undefined_weak = Some(true);
+                }
+                Item::ZNodynamicUndefinedWeak => {
+                    z_dynamic_undefined_weak = Some(false);
+                }
+                Item::ZSectionheader => {
+                    let value = true;
+                    a.z_sectionheader = value;
+                }
+                Item::ZNosectionheader => {
+                    let value = false;
+                    a.z_sectionheader = value;
+                }
+                Item::ZRodynamic => {
+                    a.z_rodynamic = true;
+                }
+                Item::ZX8664V2 => {
+                    a.z_x86_64_isa_level |= GNU_PROPERTY_X86_ISA_1_V2;
+                }
+                Item::ZX8664V3 => {
+                    a.z_x86_64_isa_level |= GNU_PROPERTY_X86_ISA_1_V3;
+                }
+                Item::ZX8664V4 => {
+                    a.z_x86_64_isa_level |= GNU_PROPERTY_X86_ISA_1_V4;
+                }
+                Item::ZRewriteEndbr => {
+                    if !matches!(target.family, Family::X86_64 | Family::Arm64) {
+                        fatal!("-z rewrite-endbr is supported only on x86-64 and arm64");
+                    }
+                    a.z_rewrite_endbr = true;
+                }
+                Item::ZNorewriteEndbr => {
+                    a.z_rewrite_endbr = false;
+                }
+                Item::Grouped(value_os) => {
+                    warn!(
+                        "grouped short command line options are deprecated: {}",
+                        value_os.to_string_lossy()
+                    );
+                }
+                Item::Unknown(value_os) => {
+                    if let Some(level) = value_os.as_encoded_bytes().strip_prefix(b"--lto-O") {
+                        a.plugin_opt.push([b"O", level].concat());
+                    } else if value_os.as_os_str() == "-dynamic" {
+                        fatal!(
+                            "unknown command line option: -dynamic; -dynamic is a macOS linker's option. mold does not support macOS."
+                        );
+                    } else {
+                        fatal!("unknown command line option: {}", value_os.to_string_lossy());
+                    }
+                }
+                Item::Z(z) => {
+                    if z.attached {
+                        warn!("unknown command line option: -z{}", z.value.to_string_lossy());
+                    } else {
+                        warn!("unknown command line option: -z {}", z.value.to_string_lossy());
+                    }
+                }
+            }
         }
     }
 
