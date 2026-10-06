@@ -1627,9 +1627,12 @@ impl SymbolTable {
         // most 256 slots. Small shards never need a full block; their input
         // count is an upper bound on the number of new symbols.
         const BLOCK_SIZE: usize = 256;
-        let counts: Vec<usize> = (0..NUM_SHARDS)
-            .map(|i| bins.iter().map(|bin| bin.0[i].len()).sum())
-            .collect();
+        let mut counts = [0usize; NUM_SHARDS];
+        for bin in &bins {
+            for (count, entries) in counts.iter_mut().zip(&bin.0) {
+                *count += entries.len();
+            }
+        }
         let count: usize = counts.iter().sum();
         let padding: usize = counts.iter().map(|&n| n.min(BLOCK_SIZE).saturating_sub(1)).sum();
         let first = self.symbols.len();
