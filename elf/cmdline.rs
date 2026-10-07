@@ -2857,14 +2857,32 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                 Item::IgnoredMmapOutputFile | Item::IgnoredNoMmapOutputFile => {
                     // Ignored for compatibility.
                 }
+                Item::IgnoredA(value_os) => {
+                    // GNU ld accepts only the HP/UX keywords below, and
+                    // rejects any other value, including one attached with
+                    // '=' ("-a=shared" would abbreviate several long
+                    // options, so getopt reports it as unrecognized).
+                    let value = utf8_arg(value_os, "-a");
+                    if !matches!(value, "archive" | "shared" | "default") {
+                        fatal!("unrecognized -a option `{value}'");
+                    }
+                }
+                Item::IgnoredAssert(value_os) => {
+                    // Likewise, GNU ld knows only these SunOS keywords.
+                    let value = utf8_arg(value_os, "-assert");
+                    if !matches!(
+                        value,
+                        "definitions" | "nodefinitions" | "nosymbolic" | "pure-text"
+                    ) {
+                        fatal!("unrecognized -assert option `{value}'");
+                    }
+                }
                 Item::IgnoredG
                 | Item::IgnoredD
                 | Item::IgnoredArchitecture(_)
                 | Item::IgnoredGpsize(_)
                 | Item::IgnoredUr
                 | Item::IgnoredQy
-                | Item::IgnoredA(_)
-                | Item::IgnoredAssert(_)
                 | Item::IgnoredY(_)
                 | Item::IgnoredMriScript(_)
                 | Item::IgnoredDefaultScript(_) => {

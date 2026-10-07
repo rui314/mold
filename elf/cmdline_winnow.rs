@@ -765,8 +765,9 @@ pub(crate) enum Item {
     /// `-d`
     #[arg(short = 'd')]
     IgnoredD,
-    /// `-A`, `--architecture`
-    #[arg(short = 'A', long = "architecture")]
+    /// `-A`, `--architecture`; GNU ld reads "-architecture" as "-a
+    /// rchitecture", so the long name needs two dashes.
+    #[arg(short = 'A', long = "architecture", two_dashes)]
     IgnoredArchitecture(OsString),
     /// `-G`, `--gpsize`
     #[arg(short = 'G', long = "gpsize")]
@@ -777,9 +778,10 @@ pub(crate) enum Item {
     /// `-Qy`
     #[arg(long = "Qy")]
     IgnoredQy,
-    /// `-a`; only `=value` is accepted, not a separate word, so that this
-    /// does not also match `-auxiliary`.
-    #[arg(long = "a")]
+    /// `-a`, a short option whose value is attached or in the next word.
+    /// long_only tries a single-dash word as a long option first, so
+    /// `-auxiliary` and friends keep their meaning.
+    #[arg(short = 'a')]
     IgnoredA(OsString),
     /// `-assert`
     #[arg(long = "assert")]
@@ -787,9 +789,9 @@ pub(crate) enum Item {
     /// `-Y`
     #[arg(short = 'Y')]
     IgnoredY(OsString),
-    /// `-c`, `--mri-script`; only `=value` is accepted, not a separate
-    /// word, so that this does not also match `-compress-debug-sections`.
-    #[arg(long = "c", long = "mri-script")]
+    /// `-c`, `--mri-script`; GNU ld reads "-mri-script" as "-m
+    /// ri-script", so the long name needs two dashes.
+    #[arg(short = 'c', long = "mri-script", two_dashes)]
     IgnoredMriScript(OsString),
     /// `-dT`, `--default-script`
     #[arg(long = "dT", long = "default-script")]
@@ -1409,12 +1411,17 @@ mod tests {
             "--gpsize=16",
             "-Ur",
             "-Qy",
-            "-a=shared",
+            "-a",
+            "shared",
+            "-ashared",
             "-assert",
             "definitions",
+            "-assert=pure-text",
             "-Y",
             "/tmp",
-            "-c=script.mri",
+            "-c",
+            "script.mri",
+            "-cscript.mri",
             "--mri-script=script.mri",
             "-dT",
             "script.ld",
@@ -1431,22 +1438,25 @@ mod tests {
         assert!(matches!(&items[6], Item::IgnoredUr));
         assert!(matches!(&items[7], Item::IgnoredQy));
         assert!(matches!(&items[8], Item::IgnoredA(v) if v.as_os_str() == "shared"));
-        assert!(matches!(&items[9], Item::IgnoredAssert(v) if v.as_os_str() == "definitions"));
-        assert!(matches!(&items[10], Item::IgnoredY(v) if v.as_os_str() == "/tmp"));
-        assert!(matches!(&items[11], Item::IgnoredMriScript(v) if v.as_os_str() == "script.mri"));
-        assert!(matches!(&items[12], Item::IgnoredMriScript(v) if v.as_os_str() == "script.mri"));
+        assert!(matches!(&items[9], Item::IgnoredA(v) if v.as_os_str() == "shared"));
+        assert!(matches!(&items[10], Item::IgnoredAssert(v) if v.as_os_str() == "definitions"));
+        assert!(matches!(&items[11], Item::IgnoredAssert(v) if v.as_os_str() == "pure-text"));
+        assert!(matches!(&items[12], Item::IgnoredY(v) if v.as_os_str() == "/tmp"));
+        assert!(matches!(&items[13], Item::IgnoredMriScript(v) if v.as_os_str() == "script.mri"));
+        assert!(matches!(&items[14], Item::IgnoredMriScript(v) if v.as_os_str() == "script.mri"));
+        assert!(matches!(&items[15], Item::IgnoredMriScript(v) if v.as_os_str() == "script.mri"));
         assert!(
-            matches!(&items[13], Item::IgnoredDefaultScript(v) if v.as_os_str() == "script.ld")
+            matches!(&items[16], Item::IgnoredDefaultScript(v) if v.as_os_str() == "script.ld")
         );
         assert!(
-            matches!(&items[14], Item::IgnoredDefaultScript(v) if v.as_os_str() == "script.ld")
+            matches!(&items[17], Item::IgnoredDefaultScript(v) if v.as_os_str() == "script.ld")
         );
-        assert!(matches!(&items[15], Item::Input(_)));
+        assert!(matches!(&items[18], Item::Input(_)));
 
-        // -a and -c are spelled as long names, so they take an attached
-        // value only; a name that merely starts like them is kept as
-        // unknown, and the dispatch rejects it, as GNU ld rejects an
-        // unrecognized -a keyword.
+        // -a and -c take their value attached as well as in a separate
+        // word; a longer option that starts with the same letter keeps its
+        // meaning, and a name that merely starts like -a is -a with the
+        // rest of the name as its keyword.
         let items = parse_items(&["-auxiliary", "liba.so", "a.o"]);
         assert!(matches!(&items[0], Item::Auxiliary(v) if v.as_os_str() == "liba.so"));
         let items = parse_items(&["--as-needed", "a.o"]);
@@ -1457,11 +1467,19 @@ mod tests {
         assert!(matches!(&items[0], Item::IgnoredDc));
         assert!(matches!(&items[1], Item::IgnoredDp));
         let items = parse_items(&["-a", "shared"]);
-        assert!(matches!(&items[0], Item::Unknown(v) if v.as_os_str() == "-a"));
+        assert!(matches!(&items[0], Item::IgnoredA(v) if v.as_os_str() == "shared"));
         let items = parse_items(&["-auxiliaries"]);
-        assert!(matches!(&items[0], Item::Unknown(v) if v.as_os_str() == "-auxiliaries"));
+        assert!(matches!(&items[0], Item::IgnoredA(v) if v.as_os_str() == "uxiliaries"));
         let items = parse_items(&["-c", "script.mri"]);
-        assert!(matches!(&items[0], Item::Unknown(v) if v.as_os_str() == "-c"));
+        assert!(matches!(&items[0], Item::IgnoredMriScript(v) if v.as_os_str() == "script.mri"));
+
+        // GNU ld reads "-architecture" as "-a rchitecture" and
+        // "-mri-script" as "-m ri-script", so those long names need two
+        // dashes.
+        let items = parse_items(&["-architecture", "x86-64", "a.o"]);
+        assert!(matches!(&items[0], Item::IgnoredA(v) if v.as_os_str() == "rchitecture"));
+        let items = parse_items(&["-mri-script", "foo", "a.o"]);
+        assert!(matches!(&items[0], Item::ShortMLower(v) if v.as_os_str() == "ri-script"));
 
         // A "-G" that names no size is rewritten to "--shared" before
         // parsing, and its would-be argument stays a positional input.
