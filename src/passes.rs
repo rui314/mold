@@ -4091,11 +4091,21 @@ pub fn write_build_id<E: Target>(ctx: &mut Context<E>, buf: &mut [u8], is_mmappe
         BuildId::Hex(value) => value.clone(),
         BuildId::Hash(size) => {
             const SHARD: usize = 4 * 1024 * 1024; // 4 MiB
-            let hashes: Vec<[u8; 32]> = buf
+            let results: Vec<([u8; 32], Vec<[u8; 32]>)> = buf
                 .par_chunks_mut(SHARD)
                 .enumerate()
                 .map(|(i, shard)| {
-                    let hash = *blake3::hash(shard).as_bytes();
+                    if let Some(plan) = &ctx.incremental_plan
+                        && !plan.dirty_shards[i]
+                    {
+                        return (plan.leaves[i], Vec::new());
+                    }
+                    let (hash, subtrees) = if ctx.args.incremental && crate::incremental::tracking()
+                    {
+                        crate::build_id_tree::hash(shard)
+                    } else {
+                        (*blake3::hash(shard).as_bytes(), Vec::new())
+                    };
                     // Make the kernel page out the file contents we've just written
                     // so that subsequent close(2) call will become quicker.
                     if i > 0 && is_mmapped {
@@ -4112,10 +4122,17 @@ pub fn write_build_id<E: Target>(ctx: &mut Context<E>, buf: &mut [u8], is_mmappe
                             )
                         };
                     }
-                    hash
+                    (hash, subtrees)
                 })
                 .collect();
+            let hashes: Vec<_> = results.iter().map(|r| r.0).collect();
+            if ctx.args.incremental {
+                ctx.build_id_subtrees = results.into_iter().flat_map(|r| r.1).collect();
+            }
             let digest = *blake3::hash(hashes.as_flattened()).as_bytes();
+            if ctx.args.incremental {
+                ctx.build_id_leaves = hashes;
+            }
             digest[..*size].to_vec()
         }
         BuildId::Uuid => uuid::Uuid::new_v4().into_bytes().to_vec(),

@@ -161,7 +161,7 @@ fn buffer_len(path: &Path, size: u64) -> usize {
     size as usize
 }
 
-fn map_file(file: &File, len: usize) -> io::Result<Option<MmapMut>> {
+fn map_file(file: &File, len: usize, huge: bool) -> io::Result<Option<MmapMut>> {
     if len == 0 {
         return Ok(None);
     }
@@ -189,7 +189,9 @@ fn map_file(file: &File, len: usize) -> io::Result<Option<MmapMut>> {
     // it, the kernel backs the mapping with large folios and the
     // number of faults drops by an order of magnitude.
     // SAFETY: the range is the mapping; the advice is only a hint.
-    unsafe { crate::util::madvise_hugepage(map.as_mut_ptr(), map.len()) };
+    if huge {
+        unsafe { crate::util::madvise_hugepage(map.as_mut_ptr(), map.len()) };
+    }
     Ok(Some(map))
 }
 
@@ -226,6 +228,60 @@ impl OutputFile {
             output.buf().fill(filler);
         }
         output
+    }
+
+    pub(crate) fn write_at(&self, offset: u64, bytes: &[u8]) -> io::Result<()> {
+        match &self.storage {
+            Storage::File { file, .. } => {
+                #[cfg(unix)]
+                {
+                    std::os::unix::fs::FileExt::write_all_at(file, bytes, offset)
+                }
+                #[cfg(not(unix))]
+                {
+                    let _ = (file, bytes, offset);
+                    Err(io::Error::other("positioned output unsupported"))
+                }
+            }
+            _ => Err(io::Error::other("positioned output requires file")),
+        }
+    }
+
+    pub fn reuse_existing(args: &crate::cmdline::Args, size: u64, perm: u32) -> Option<Self> {
+        let path = crate::mapped_file::apply_chroot(&args.chroot, &args.output);
+        if !args.mmap_output_file
+            || !args.overwrite_output_file
+            || args.filler.is_some()
+            || crate::mapped_file::is_mmapped(&path)
+        {
+            return None;
+        }
+        let len = buffer_len(&path, size);
+        let file = open_options(perm).read(true).write(true).open(&path).ok()?;
+        let metadata = file.metadata().ok()?;
+        if !metadata.is_file() || metadata.len() != size {
+            return None;
+        }
+        let dir = path.parent().unwrap_or(Path::new("."));
+        let mut name = std::ffi::OsString::from(".");
+        name.push(path.file_name()?);
+        name.push(format!(".{}", std::process::id()));
+        let tmp = dir.join(name);
+        let map =
+            map_file(&file, len, std::env::var_os("MOLD_INCREMENTAL_HUGEPAGE").is_some()).ok()?;
+        std::fs::rename(&path, &tmp).ok()?;
+        set_tmpfile(Some(&tmp));
+        set_permissions(&file, perm)
+            .unwrap_or_else(|e| fatal!("{}: fchmod failed: {}", tmp.display(), strerror(&e)));
+        let output = Self {
+            path: path.into_owned(),
+            tmp_path: Some(tmp),
+            storage: Storage::File { file, map, len },
+            perm,
+        };
+        #[cfg(not(windows))]
+        output.publish_output_buffer();
+        Some(output)
     }
 
     fn open_impl(path: &Path, size: u64, perm: u32, overwrite_in_place: bool, mmap: bool) -> Self {
@@ -295,7 +351,7 @@ impl OutputFile {
             .unwrap_or_else(|e| fatal!("{}: ftruncate failed: {}", tmp.display(), strerror(&e)));
         preallocate(&file, 0, size);
 
-        let map = map_file(&file, len)
+        let map = map_file(&file, len, true)
             .unwrap_or_else(|e| fatal!("{}: mmap failed: {}", path.display(), strerror(&e)));
         let output = Self {
             path: path.to_path_buf(),
@@ -352,7 +408,7 @@ impl OutputFile {
         file.set_len(size).unwrap_or_else(|e| {
             fatal!("{}: ftruncate failed: {}", self.path.display(), strerror(&e))
         });
-        *map = map_file(file, new_len)
+        *map = map_file(file, new_len, true)
             .unwrap_or_else(|e| fatal!("{}: mmap failed: {}", self.path.display(), strerror(&e)));
         *len = new_len;
         #[cfg(not(windows))]
@@ -399,7 +455,7 @@ impl OutputFile {
                 if map.as_ref().is_none_or(|map| new_len > map.len()) {
                     // The appended data does not fit in the existing mapping, so map
                     // the grown file again.
-                    *map = map_file(file, new_len).unwrap_or_else(|e| {
+                    *map = map_file(file, new_len, true).unwrap_or_else(|e| {
                         fatal!("{}: mmap failed: {}", self.path.display(), strerror(&e))
                     });
                 }
@@ -478,7 +534,7 @@ impl OutputFile {
 }
 
 #[cfg(not(windows))]
-fn umask() -> u32 {
+pub(crate) fn umask() -> u32 {
     // SAFETY: umask is thread-safe in the sense that it just swaps a
     // process-wide value; restoring it immediately keeps it unchanged.
     unsafe {

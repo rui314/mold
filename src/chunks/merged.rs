@@ -234,6 +234,13 @@ impl<E: Target> MergedSection<E> {
         // Even if GC is enabled, we garbage-collect only memory-mapped strings.
         // Non-memory-allocated strings are typically identifiers used by debug info.
         // To remove such strings, use the `strip` command.
+        crate::merge_image::inserted(
+            self.hdr.name,
+            self.hdr.shdr.sh_flags.get(),
+            self.hdr.shdr.sh_entsize.get(),
+            p2align,
+            data,
+        );
         let is_alive = !gc_sections || !self.is_alloc();
         let (id, frag, _) = self.map.insert_with(data, hash, || SectionFragment::new(is_alive));
         // Most insertions find the fragment there already, so the alignment
@@ -537,6 +544,20 @@ pub fn write_to<E: Target>(ctx: &Context<E>, id: MergedSectionId, buf: &mut [u8]
                 };
                 let start = (frag.offset() - base) as usize;
                 region[start..start + key.len()].copy_from_slice(key);
+                if crate::incremental::semantic_tracking()
+                    && crate::merge_image::eligible(
+                        msec.hdr.name,
+                        msec.hdr.shdr.sh_flags.get(),
+                        msec.hdr.shdr.sh_entsize.get(),
+                        msec.hdr.shdr.sh_addralign.get(),
+                    )
+                {
+                    crate::merge_image::placed(
+                        msec.hdr.name,
+                        key,
+                        msec.hdr.shdr.sh_offset.get() + frag.offset(),
+                    );
+                }
             }
         }
     });

@@ -134,6 +134,9 @@ Options:
                               Pack dynamic relocations
   --package-metadata=PERCENT_ENCODED_STRING
                               Set a given string to .note.package
+  --incremental               Enable experimental persistent incremental linking
+  --incremental-verify        Compare patched output with a forced full link
+  --no-incremental            Disable persistent incremental linking
   --perf                      Print performance statistics
   --pie, --pic-executable     Create a position-independent executable
     --no-pie, --no-pic-executable
@@ -467,6 +470,8 @@ pub struct Args {
     pub pack_dyn_relocs_android: bool,
     pub pack_dyn_relocs_relr: bool,
     pub perf: bool,
+    pub incremental: bool,
+    pub incremental_verify: bool,
     pub pic: bool,
     pub pie: bool,
     pub print_dependencies: bool,
@@ -606,6 +611,8 @@ impl Default for Args {
             pack_dyn_relocs_android: false,
             pack_dyn_relocs_relr: false,
             perf: false,
+            incremental: false,
+            incremental_verify: false,
             pic: false,
             pie: false,
             print_dependencies: false,
@@ -735,6 +742,7 @@ fn read_response_file(path: &Path, depth: usize) -> Vec<Cow<'static, OsStr>> {
     }
 
     let mf = MappedFile::must_open(path);
+    crate::incremental::record_response(&mf.name);
     mf.set_dependency(false);
     let data = mf.data();
 
@@ -1490,6 +1498,11 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             a.emit_relocs = true;
         } else if cursor.read_flag("relocatable-merge-sections") {
             a.relocatable_merge_sections = true;
+        } else if cursor.read_flag("incremental-verify") {
+            a.incremental = true;
+            a.incremental_verify = true;
+        } else if let Some(value) = cursor.read_switch("incremental", "no-incremental") {
+            a.incremental = value;
         } else if cursor.read_flag("perf") {
             a.perf = true;
         } else if cursor.read_flag("pack-dyn-relocs=relr")

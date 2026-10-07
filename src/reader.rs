@@ -235,6 +235,10 @@ fn open_library<E: Target>(
     rctx: &ReaderContext,
     path: &std::path::Path,
 ) -> Option<&'static MappedFile> {
+    crate::incremental::record_search_path(&crate::mapped_file::apply_chroot(
+        &ctx.args.chroot,
+        path,
+    ));
     let mf = open_file(&ctx.args.chroot, path)?;
     if let Some(target) = get_machine_type(ctx, rctx, mf)
         && target != E::NAME
@@ -339,6 +343,7 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
             let mf = if job.is_lib {
                 let mf = find_library(ctx_ref, &rctx, job.name.as_os_str());
                 crate::util::leak(MappedFile {
+                    identity: mf.identity,
                     name: mf.name.clone(),
                     data: mf.data,
                     given_fullpath: false,

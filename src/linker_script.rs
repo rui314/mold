@@ -145,6 +145,7 @@ fn resolve_path<E: Target>(
     let chroot = &ctx.args.chroot;
     // Opens `path`, to which --chroot has already been applied.
     let open = |path: &Path| -> Option<&'static MappedFile> {
+        crate::incremental::record_search_path(path);
         let mf = MappedFile::open(path)?;
         if check_target
             && let Some(target) = reader::get_machine_type(ctx, rctx, mf)

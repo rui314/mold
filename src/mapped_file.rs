@@ -104,6 +104,7 @@ pub struct MappedFile {
     /// The path this file was opened by, which already has --chroot
     /// applied, or the member name for a slice of an archive.
     pub name: PathBuf,
+    pub(crate) identity: Option<crate::incremental::Identity>,
     /// The contents, in an allocation that is deliberately leaked with the
     /// input file. The bytes are cells because the linker modifies private
     /// relocation records in place, as C++ mold does.
@@ -165,6 +166,7 @@ impl MappedFile {
 
         let mf = util::leak(Self {
             name: path.to_path_buf(),
+            identity: crate::incremental::Identity::from_metadata(&metadata),
             data,
             given_fullpath: true,
             parent: None,
@@ -201,6 +203,7 @@ impl MappedFile {
     pub fn slice(&'static self, name: PathBuf, start: usize, size: usize) -> &'static Self {
         let mf = util::leak(Self {
             name,
+            identity: self.identity,
             data: &self.data[start..start + size],
             given_fullpath: true,
             parent: Some(self),
@@ -216,6 +219,7 @@ impl MappedFile {
         let member = Self::must_open(path);
         util::leak(Self {
             name: member.name.clone(),
+            identity: member.identity,
             data: member.data,
             given_fullpath: true,
             parent: None,
@@ -304,4 +308,23 @@ pub fn must_open_file(chroot: &Path, path: impl AsRef<Path>) -> &'static MappedF
     let path = path.as_ref();
     MappedFile::open_impl(&apply_chroot(chroot, path))
         .unwrap_or_else(|e| fatal!("cannot open {}: {}", path.display(), strerror(&e)))
+}
+
+pub(crate) fn map_state(file: &File) -> io::Result<memmap2::Mmap> {
+    unsafe { memmap2::MmapOptions::new().map(file) }
+}
+
+pub(crate) fn sealed_fd(fd: i32) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        let seals = unsafe { libc::fcntl(fd, libc::F_GET_SEALS) };
+        let required =
+            libc::F_SEAL_SEAL | libc::F_SEAL_SHRINK | libc::F_SEAL_GROW | libc::F_SEAL_WRITE;
+        seals >= 0 && seals & required == required
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = fd;
+        false
+    }
 }

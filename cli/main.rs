@@ -73,6 +73,9 @@ fn main() {
         eprintln!("mold: no targets enabled; rebuild mold with the appropriate target support");
         std::process::exit(1);
     };
+    if let Some(status) = libmold::driver::try_fast_invocation(initial_target) {
+        std::process::exit(status);
+    }
     let args = std::env::args_os().collect();
     let status = libmold::driver::main(args, initial_target, link_for_target);
     std::process::exit(status);

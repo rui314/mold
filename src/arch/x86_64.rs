@@ -323,6 +323,24 @@ impl Target for X86_64 {
                 write_ul32(&mut buf[off..], val as u32);
             };
 
+            let cell_value = relocation_cell(rel.r_type()).map(|cell| match cell {
+                crate::reloc_env::RelocCell::Symbol => s,
+                crate::reloc_env::RelocCell::Got => sym.got_addr(ctx),
+                crate::reloc_env::RelocCell::GotTp => sym.gottp_addr(ctx),
+                crate::reloc_env::RelocCell::TpOffset => s.wrapping_sub(ctx.tp_addr),
+                crate::reloc_env::RelocCell::DtpOffset => s.wrapping_sub(ctx.dtp_addr),
+                crate::reloc_env::RelocCell::RelaxPredicate => unreachable!(),
+            });
+            if let Some(encoded) = cell_value.and_then(|v| cell_relocation(rel.r_type(), v, a, p))
+                && !(rel.r_type() == R_X86_64_PLT32 && sym.is_remaining_undef_weak())
+            {
+                if let Some((lo, hi)) = encoded.bounds {
+                    check(encoded.value as i64, lo, hi);
+                }
+                encoded.write(&mut buf[off..]).unwrap();
+                continue;
+            }
+
             match rel.r_type() {
                 R_X86_64_8 => {
                     check(s.wrapping_add(a) as i64, 0, 1 << 8);
@@ -373,20 +391,23 @@ impl Target for X86_64 {
                     // We always want to relax GOTPCRELX relocs even if --no-relax
                     // was given because some static PIE runtime code depends on these
                     // relaxations.
-                    let v = s.wrapping_add(a).wrapping_sub(p);
-                    if sym.is_pcrel_linktime_const(ctx) && is_int(v as i64, 32) {
-                        let insn = relax_gotpcrelx(&buf[..off], &rel);
-                        if insn != 0 {
-                            buf[off - 2] = (insn >> 8) as u8;
-                            buf[off - 1] = insn as u8;
-                            write_ul32(&mut buf[off..], v as u32);
-                            if ctx.args.emit_relocs {
-                                rels[rel_idx].set_r_type(R_X86_64_PC32);
-                            }
-                            continue;
+                    match apply_gotpcrelx(
+                        buf,
+                        &rel,
+                        s,
+                        sym.got_addr(ctx),
+                        p,
+                        sym.is_pcrel_linktime_const(ctx),
+                    ) {
+                        Some(true) if ctx.args.emit_relocs => {
+                            rels[rel_idx].set_r_type(R_X86_64_PC32)
                         }
+                        Some(_) => {}
+                        None => write32s(
+                            buf,
+                            g().wrapping_add(got_base).wrapping_add(a).wrapping_sub(p),
+                        ),
                     }
-                    write32s(buf, g().wrapping_add(got_base).wrapping_add(a).wrapping_sub(p));
                 }
                 R_X86_64_TLSGD => {
                     if sym.has_tlsgd(&ctx.symbols) {
@@ -540,6 +561,16 @@ impl Target for X86_64 {
                 write_ul32(&mut buf[off..], val as u32);
             };
 
+            if matches!(rel.r_type(), R_X86_64_32 | R_X86_64_32S)
+                && let Some(encoded) = simple_relocation(rel.r_type(), s, a, 0)
+            {
+                if let Some((lo, hi)) = encoded.bounds {
+                    check(encoded.value as i64, lo, hi);
+                }
+                encoded.write(&mut buf[off..]).unwrap();
+                continue;
+            }
+
             match rel.r_type() {
                 R_X86_64_8 => {
                     check(s.wrapping_add(a) as i64, 0, 1 << 8);
@@ -553,7 +584,10 @@ impl Target for X86_64 {
                 R_X86_64_32S => write32s(buf, s.wrapping_add(a)),
                 R_X86_64_64 => match isec.tombstone_with_file(ctx, file, sym, frag) {
                     Some(v) => write_ul64(&mut buf[off..], v),
-                    None => write_ul64(&mut buf[off..], s.wrapping_add(a)),
+                    None => simple_relocation(R_X86_64_64, s, a, 0)
+                        .unwrap()
+                        .write(&mut buf[off..])
+                        .unwrap(),
                 },
                 R_X86_64_DTPOFF32 => match isec.tombstone_with_file(ctx, file, sym, frag) {
                     Some(v) => write_ul32(&mut buf[off..], v as u32),
@@ -897,4 +931,92 @@ fn relax_ld_to_le(buf: &mut [u8], off: usize, rel: &ElfRel<X86_64>, tls_size: u6
         }
         _ => unreachable!(),
     }
+}
+
+pub(crate) struct SimpleRelocation {
+    pub value: u64,
+    pub width: usize,
+    pub bounds: Option<(i64, i64)>,
+}
+
+impl SimpleRelocation {
+    pub fn fits(&self) -> bool {
+        self.bounds.is_none_or(|(lo, hi)| lo <= self.value as i64 && (self.value as i64) < hi)
+    }
+    pub fn write(&self, buf: &mut [u8]) -> Option<()> {
+        buf.get_mut(..self.width)?.copy_from_slice(&self.value.to_le_bytes()[..self.width]);
+        Some(())
+    }
+}
+
+pub(crate) fn simple_relocation(kind: u32, s: u64, a: u64, p: u64) -> Option<SimpleRelocation> {
+    let absolute = s.wrapping_add(a);
+    let (value, width, bounds) = match kind {
+        R_X86_64_32 => (absolute, 4, Some((0, 1 << 32))),
+        R_X86_64_32S => (absolute, 4, Some((-(1 << 31), 1 << 31))),
+        R_X86_64_PC32 | R_X86_64_PLT32 => {
+            (absolute.wrapping_sub(p), 4, Some((-(1 << 31), 1 << 31)))
+        }
+        R_X86_64_PC64 => (absolute.wrapping_sub(p), 8, None),
+        R_X86_64_64 => (absolute, 8, None),
+        _ => return None,
+    };
+    Some(SimpleRelocation { value, width, bounds })
+}
+
+pub(crate) fn relocation_cell(kind: u32) -> Option<crate::reloc_env::RelocCell> {
+    use crate::reloc_env::RelocCell;
+    Some(match kind {
+        R_X86_64_GOTPCREL | R_X86_64_GOTPCREL64 => RelocCell::Got,
+        R_X86_64_CODE_6_GOTTPOFF => RelocCell::GotTp,
+        R_X86_64_TPOFF32 | R_X86_64_TPOFF64 => RelocCell::TpOffset,
+        R_X86_64_DTPOFF32 | R_X86_64_DTPOFF64 => RelocCell::DtpOffset,
+        R_X86_64_32 | R_X86_64_32S | R_X86_64_64 | R_X86_64_PC32 | R_X86_64_PC64
+        | R_X86_64_PLT32 => RelocCell::Symbol,
+        _ => return None,
+    })
+}
+
+pub(crate) fn cell_relocation(
+    kind: u32,
+    value: u64,
+    addend: u64,
+    place: u64,
+) -> Option<SimpleRelocation> {
+    let encoding = match kind {
+        R_X86_64_GOTPCREL | R_X86_64_CODE_6_GOTTPOFF => R_X86_64_PC32,
+        R_X86_64_GOTPCREL64 => R_X86_64_PC64,
+        R_X86_64_TPOFF32 | R_X86_64_DTPOFF32 => R_X86_64_32S,
+        R_X86_64_TPOFF64 | R_X86_64_DTPOFF64 => R_X86_64_64,
+        _ => kind,
+    };
+    simple_relocation(encoding, value, addend, place)
+}
+
+pub(crate) fn apply_gotpcrelx(
+    buf: &mut [u8],
+    rel: &ElfRel<X86_64>,
+    symbol: u64,
+    got: u64,
+    place: u64,
+    predicate: bool,
+) -> Option<bool> {
+    let off = usize::try_from(rel.r_offset()).ok()?;
+    let value = symbol.wrapping_add(rel.r_addend() as u64).wrapping_sub(place);
+    if predicate && is_int(value as i64, 32) {
+        let insn = relax_gotpcrelx(buf.get(..off)?, rel);
+        if insn != 0 {
+            buf.get_mut(off.checked_sub(2)?)?.clone_from(&((insn >> 8) as u8));
+            buf.get_mut(off.checked_sub(1)?)?.clone_from(&(insn as u8));
+            simple_relocation(R_X86_64_PC32, symbol, rel.r_addend() as u64, place)?
+                .write(buf.get_mut(off..)?)?;
+            return Some(true);
+        }
+    }
+    let encoded = simple_relocation(R_X86_64_PC32, got, rel.r_addend() as u64, place)?;
+    if !encoded.fits() {
+        return None;
+    }
+    encoded.write(buf.get_mut(off..)?)?;
+    Some(false)
 }

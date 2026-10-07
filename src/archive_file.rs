@@ -159,6 +159,7 @@ pub fn get_thin_archive_member_paths<'a>(
     chroot: &'a Path,
     mf: &'static MappedFile,
 ) -> impl Iterator<Item = PathBuf> + 'a {
+    crate::micro_link::capture_archive(mf);
     archive_members(mf, true).map(move |(name, _)| member_path(chroot, mf, name))
 }
 
@@ -178,6 +179,7 @@ pub fn read_archive_members<'a>(
     chroot: &'a Path,
     mf: &'static MappedFile,
 ) -> impl Iterator<Item = &'static MappedFile> + 'a {
+    crate::micro_link::capture_archive(mf);
     let thin = mf.data().starts_with(b"!<thin>\n");
     debug_assert!(thin || mf.data().starts_with(b"!<arch>\n"));
     let base = mf.data().as_ptr() as usize;

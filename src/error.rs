@@ -27,6 +27,7 @@ static COLOR: AtomicBool = AtomicBool::new(false);
 static FATAL_WARNINGS: AtomicBool = AtomicBool::new(false);
 static SUPPRESS_WARNINGS: AtomicBool = AtomicBool::new(false);
 static NOINHIBIT_EXEC: AtomicBool = AtomicBool::new(false);
+static HAS_WARNING: AtomicBool = AtomicBool::new(false);
 static HAS_ERROR: AtomicBool = AtomicBool::new(false);
 static OUTPUT_LOCK: Mutex<()> = Mutex::new(());
 
@@ -68,6 +69,7 @@ pub fn fatal(msg: fmt::Arguments) -> ! {
 /// Reports an error. With `--noinhibit-exec` it is downgraded to a warning.
 pub fn error(msg: fmt::Arguments) {
     if NOINHIBIT_EXEC.load(Ordering::Relaxed) {
+        HAS_WARNING.store(true, Ordering::Relaxed);
         emit("mold: warning: ", "mold: \x1b[0;1;35mwarning:\x1b[0m ", msg);
     } else {
         emit("mold: error: ", "mold: \x1b[0;1;31merror:\x1b[0m ", msg);
@@ -75,11 +77,16 @@ pub fn error(msg: fmt::Arguments) {
     }
 }
 
+pub fn has_warning() -> bool {
+    HAS_WARNING.load(Ordering::Relaxed)
+}
+
 /// Reports a warning. With `--fatal-warnings` it is promoted to an error.
 pub fn warn(msg: fmt::Arguments) {
     if SUPPRESS_WARNINGS.load(Ordering::Relaxed) {
         return;
     }
+    HAS_WARNING.store(true, Ordering::Relaxed);
     if FATAL_WARNINGS.load(Ordering::Relaxed) {
         emit("mold: error: ", "mold: \x1b[0;1;31merror:\x1b[0m ", msg);
         HAS_ERROR.store(true, Ordering::Relaxed);

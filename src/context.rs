@@ -149,6 +149,9 @@ pub struct Context<E: Target> {
     // Fully-expanded command line args
     pub cmdline_args: Arc<[Cow<'static, OsStr>]>,
     pub timers: Timers,
+    pub(crate) incremental_plan: Option<crate::incremental::Plan>,
+    pub build_id_leaves: Vec<[u8; 32]>,
+    pub build_id_subtrees: Vec<[u8; 32]>,
 
     // Symbol table. Input file parsing records global symbols and their
     // SymbolId slots in worker bins; gather_symbols() interns those names
@@ -300,6 +303,9 @@ impl<E: Target> Context<E> {
             args,
             cmdline_args: cmdline_args.into(),
             timers,
+            incremental_plan: None,
+            build_id_leaves: Vec::new(),
+            build_id_subtrees: Vec::new(),
             symbols,
             symbol_chunks: Vec::new(),
             symbol_bins: OnceLock::new(),

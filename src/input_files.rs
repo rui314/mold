@@ -765,6 +765,7 @@ pub struct ObjectFile<E: Target> {
     pub origin: ObjectOrigin,
     pub is_gcc_offload_obj: bool,
     pub is_rust_obj: bool,
+    pub(crate) incremental_image: Option<(std::path::PathBuf, u64)>,
     pub is_dwarf32: bool,
     pub has_init_array: bool,
     pub has_ctors: bool,
@@ -1073,6 +1074,7 @@ impl<E: Target> ObjectFile<E> {
             origin: ObjectOrigin::Regular,
             is_gcc_offload_obj: false,
             is_rust_obj: false,
+            incremental_image: None,
             is_dwarf32: false,
             has_init_array: false,
             has_ctors: false,
@@ -1099,6 +1101,7 @@ impl<E: Target> ObjectFile<E> {
             InputFile::<E>::parse(mf, &display_file(&mf.name.to_string_lossy(), archive_name));
         let mut file = Self::with_base(base, archive_name);
         file.parse_symbols();
+        file.incremental_image = crate::micro_link::capture_object(&file);
         file
     }
 

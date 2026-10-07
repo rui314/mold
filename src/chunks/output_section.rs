@@ -215,7 +215,15 @@ pub fn write_to<E: Target>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]
 
     // Copy section contents to an output file.
     for_each_member(ctx, osec, buf, |i, isec, slice| {
+        if ctx.incremental_plan.as_ref().is_some_and(|p| !p.dirty_objects[isec.file.index()]) {
+            return;
+        }
         let (own, padding) = slice.split_at_mut(isec.sh_size as usize);
+        crate::micro_link::capture_section(
+            ctx,
+            isec,
+            osec.hdr.shdr.sh_offset.get() + isec.offset(),
+        );
         isec.write_to(ctx, own);
 
         // abs_rels is sorted by member, so this member's absolute

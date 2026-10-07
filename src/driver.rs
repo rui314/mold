@@ -70,6 +70,25 @@ pub fn main(
     }
 }
 
+pub fn try_fast_invocation(initial_target: &str) -> Option<i32> {
+    use std::io::Read;
+    if initial_target != "x86_64"
+        || !cfg!(target_os = "linux")
+        || std::env::var_os("MOLD_CHANGESET_FD").is_none()
+    {
+        return None;
+    }
+    let mut prefix = [0; 256];
+    let length = std::fs::File::open("/proc/self/cmdline").ok()?.read(&mut prefix).ok()?;
+    let name = prefix[..length].iter().position(|b| *b == 0)?;
+    let rest = prefix.get(name.checked_add(1)?..length)?;
+    let first = rest.get(..rest.iter().position(|b| *b == 0)?)?;
+    if matches!(first, b"-run" | b"--run") {
+        return None;
+    }
+    crate::incremental::fast_invocation()
+}
+
 fn target_traits<E: Target>() -> TargetTraits {
     TargetTraits { name: E::NAME, is_rela: E::IS_RELA, family: E::FAMILY, page_size: E::PAGE_SIZE }
 }
@@ -87,6 +106,23 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     let cmdline::ParsedArgs { args, jobs, .. } = parsed;
     let mut ctx = Context::<E>::new(args, cmdline);
 
+    let mut incremental = crate::incremental::Session::begin(&ctx);
+    if incremental.as_mut().is_some_and(|s| s.null_hit(&ctx)) {
+        if ctx.args.perf {
+            eprintln!("incremental: null link, rewritten=0, parsing/resolution/copy skipped");
+            ctx.timers.print();
+        }
+        crate::mapped_file::drop_mappings();
+        error::checkpoint();
+        return Ok(0);
+    }
+
+    if incremental.as_mut().is_some_and(|s| s.micro_link(&ctx)) {
+        crate::mapped_file::drop_mappings();
+        error::checkpoint();
+        return Ok(0);
+    }
+
     // If no -m option is given, deduce it from input files.
     if ctx.args.emulation.is_empty() {
         ctx.args.emulation = crate::reader::detect_machine_type(&mut ctx, &jobs);
@@ -95,6 +131,10 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     // Redo if -m does not match with our speculation.
     if ctx.args.emulation != E::NAME {
         return Err(ctx.args.emulation);
+    }
+
+    if ctx.args.incremental && ctx.args.perf && incremental.is_none() {
+        eprintln!("incremental: full rewrite (target/options/cache unavailable)");
     }
 
     let t_all = ctx.timer("all");
@@ -135,10 +175,15 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     // Version scripts and dynamic lists given on the command line.
     for path in std::mem::take(&mut ctx.args.version_scripts) {
         let chroot = &ctx.args.chroot;
+        crate::incremental::record_search_path(&crate::mapped_file::apply_chroot(chroot, &path));
         let mf = crate::mapped_file::open_file(chroot, &path).or_else(|| {
             ctx.args.library_paths.iter().find_map(|dir| {
                 let name = path.strip_prefix("/").unwrap_or(&path);
-                crate::mapped_file::open_file(chroot, dir.join(name))
+                let candidate = dir.join(name);
+                crate::incremental::record_search_path(&crate::mapped_file::apply_chroot(
+                    chroot, &candidate,
+                ));
+                crate::mapped_file::open_file(chroot, candidate)
             })
         });
         let Some(mf) = mf else {
@@ -524,8 +569,19 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
 
     // Create an output file
     // Output buffer
+    ctx.incremental_plan = incremental.as_mut().and_then(|s| s.prepare(&ctx, filesize));
     let t_open = ctx.timer("open_file");
-    let mut output = OutputFile::open(&ctx.args, filesize, 0o777, ctx.args.overwrite_output_file);
+    let mut output = if ctx.incremental_plan.is_some() {
+        OutputFile::reuse_existing(&ctx.args, filesize, 0o777).unwrap_or_else(|| {
+            ctx.incremental_plan = None;
+            if let Some(s) = &mut incremental {
+                s.reason = "output reuse unavailable";
+            }
+            OutputFile::open(&ctx.args, filesize, 0o777, ctx.args.overwrite_output_file)
+        })
+    } else {
+        OutputFile::open(&ctx.args, filesize, 0o777, ctx.args.overwrite_output_file)
+    };
     drop(t_open);
     {
         let mut t_copy = ctx.timer("copy");
@@ -568,6 +624,9 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
         if ctx.gnu_debuglink.is_some() {
             passes::write_gnu_debuglink(&mut ctx, output.buf());
         }
+        if ctx.args.incremental_verify && ctx.incremental_plan.is_some() {
+            crate::incremental::verify(&ctx, output.buf());
+        }
         t_copy.stop();
     }
     error::checkpoint();
@@ -576,6 +635,18 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     let t_close = ctx.timer("close_file");
     output.close();
     drop(t_close);
+
+    if let Some(s) = &mut incremental {
+        let state_size = s.publish(&ctx);
+        if ctx.args.perf {
+            if let Some(plan) = &ctx.incremental_plan {
+                plan.print();
+            } else {
+                eprintln!("incremental: full rewrite ({})", s.reason);
+            }
+            eprintln!("incremental: state_bytes={}", state_size.unwrap_or(0));
+        }
+    }
 
     // Handle --dependency-file
     if !ctx.args.dependency_file.as_os_str().is_empty() {
