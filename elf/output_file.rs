@@ -211,24 +211,9 @@ impl OutputFile {
     /// doesn't leave a truncated output behind and a running executable
     /// isn't modified underneath the kernel. Anything else — a device, a
     /// pipe, or standard output — is assembled in memory and written out
-    /// at the end. With --no-mmap-output-file, a regular file is assembled
-    /// in memory too and then written out to the temporary file.
-    pub fn open(
-        args: &crate::cmdline::Args,
-        size: u64,
-        perm: u32,
-        overwrite_in_place: bool,
-    ) -> Self {
-        let path = crate::mapped_file::apply_chroot(&args.chroot, &args.output);
-        let mut output =
-            Self::open_impl(&path, size, perm, overwrite_in_place, args.mmap_output_file);
-        if let Some(filler) = args.filler {
-            output.buf().fill(filler);
-        }
-        output
-    }
-
-    fn open_impl(path: &Path, size: u64, perm: u32, overwrite_in_place: bool, mmap: bool) -> Self {
+    /// at the end. If `mmap` is false, a regular file is assembled in
+    /// memory too and then written out to the temporary file.
+    pub fn open(path: &Path, size: u64, perm: u32, overwrite_in_place: bool, mmap: bool) -> Self {
         let len = buffer_len(path, size);
         let is_special =
             path == Path::new("-") || std::fs::metadata(path).is_ok_and(|m| !m.is_file());
@@ -533,7 +518,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn initializes_output_buffer_and_tracks_its_addresses() {
+    fn tracks_output_buffer_addresses() {
         set_output_buffer_range(0x1000, 0x100);
         assert!(!output_buffer_contains(0x0fff));
         assert!(output_buffer_contains(0x1000));
@@ -541,35 +526,22 @@ mod tests {
         assert!(!output_buffer_contains(0x1100));
         set_output_buffer_range(0, 0);
 
-        // Finished ELF files should have no filler left. Check initialization
-        // here so the end-to-end filler test cannot pass by ignoring the flag.
-        let path = std::env::temp_dir().join(format!("mold-filler-{}", std::process::id()));
-        for output in [PathBuf::from("-"), path.clone()] {
-            for filler in [0xfe, 0x00] {
-                let args = crate::cmdline::Args {
-                    output: output.clone(),
-                    filler: Some(filler),
-                    ..Default::default()
-                };
-                let mut file = OutputFile::open(&args, 8192, 0o600, true);
-                assert!(file.buf().iter().all(|&byte| byte == filler));
-                if output != Path::new("-") {
-                    let start = file.buf().as_ptr() as usize;
-                    assert!(output_buffer_contains(start));
-                    assert!(output_buffer_contains(start + 8191));
-                    assert!(!output_buffer_contains(start + 8192));
-                    file.close();
-                    assert!(!output_buffer_contains(start));
-                }
-            }
-        }
-        // Cover empty regular files, remapping on growth, buffering with
-        // --no-mmap-output-file, and the locked staging state used by
-        // separate debug output. Keep this in the same test because output
-        // publication uses process-global state.
+        let path = std::env::temp_dir().join(format!("mold-output-{}", std::process::id()));
+        let mut file = OutputFile::open(&path, 8192, 0o600, true, true);
+        let start = file.buf().as_ptr() as usize;
+        assert!(output_buffer_contains(start));
+        assert!(output_buffer_contains(start + 8191));
+        assert!(!output_buffer_contains(start + 8192));
+        file.close();
+        assert!(!output_buffer_contains(start));
+
+        // Cover empty regular files, remapping on growth, buffering in
+        // memory, and the locked staging state used by separate debug
+        // output. Keep this in the same test because output publication
+        // uses process-global state.
         for mmap in [true, false] {
             for initial in [0, 8] {
-                let mut file = OutputFile::open_impl(&path, initial, 0o600, true, mmap);
+                let mut file = OutputFile::open(&path, initial, 0o600, true, mmap);
                 file.buf().fill(7);
                 file.extend(65536);
                 assert!(file.buf()[..initial as usize].iter().all(|&b| b == 7));

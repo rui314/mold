@@ -42,7 +42,6 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::FileId;
 use crate::input_sections::InputSectionId;
-use crate::output_file::OutputFile;
 use crate::passes;
 use crate::util::align_to;
 
@@ -226,7 +225,7 @@ pub fn combine_objects<E: Target>(ctx: &mut Context<E>) {
     passes::compute_section_headers(ctx);
 
     let filesize = set_osec_offsets(ctx);
-    let mut output = OutputFile::open(&ctx.args, filesize, 0o666, false);
+    let mut output = crate::driver::open_output_file(&ctx.args, filesize, 0o666, false);
     crate::driver::copy_chunks(ctx, output.buf());
     output.close();
     crate::error::checkpoint();

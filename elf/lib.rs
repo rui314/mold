@@ -28,6 +28,7 @@ pub(crate) mod output_file;
 pub(crate) mod passes;
 pub(crate) mod reader;
 pub(crate) mod relocatable;
+pub(crate) mod run;
 pub(crate) mod shrink_sections;
 pub(crate) mod subprocess;
 pub(crate) mod symbol;

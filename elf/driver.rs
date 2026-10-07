@@ -45,7 +45,7 @@ pub fn main(
 
     // Process -run option first. process_run_subcommand() does not return.
     if argv.get(1).is_some_and(|a| a == "-run" || a == "--run") {
-        crate::subprocess::process_run_subcommand(&argv);
+        crate::run::process_run_subcommand(&argv);
     }
 
     // parse_nonpositional_args() may chdir(2) for -C. If we end up
@@ -525,7 +525,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     // Create an output file
     // Output buffer
     let t_open = ctx.timer("open_file");
-    let mut output = OutputFile::open(&ctx.args, filesize, 0o777, ctx.args.overwrite_output_file);
+    let mut output = open_output_file(&ctx.args, filesize, 0o777, ctx.args.overwrite_output_file);
     drop(t_open);
     {
         let mut t_copy = ctx.timer("copy");
@@ -615,6 +615,21 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     }
     error::checkpoint();
     Ok(0)
+}
+
+/// Opens the output file that the command line names.
+pub(crate) fn open_output_file(
+    args: &Args,
+    size: u64,
+    perm: u32,
+    overwrite_in_place: bool,
+) -> OutputFile {
+    let path = crate::mapped_file::apply_chroot(&args.chroot, &args.output);
+    let mut output = OutputFile::open(&path, size, perm, overwrite_in_place, args.mmap_output_file);
+    if let Some(filler) = args.filler {
+        output.buf().fill(filler);
+    }
+    output
 }
 
 fn file_range<E: Target>(ctx: &Context<E>, id: ChunkId) -> Range<u64> {
@@ -753,5 +768,31 @@ fn run_tasks<E: Target>(
     if tasks.iter().any(|t| t.chunk == ChunkId::EhFrame) && ctx.eh_frame_hdr.is_some() {
         let r = file_range(ctx, ChunkId::EhFrameHdr);
         chunks::eh_frame_hdr::write_header(ctx, &mut buf[r.start as usize..r.end as usize]);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+
+    use super::*;
+
+    // Finished ELF files should have no filler left. Check initialization
+    // here so the end-to-end filler test cannot pass by ignoring the flag.
+    #[test]
+    fn fills_output_file() {
+        let path = std::env::temp_dir().join(format!("mold-filler-{}", std::process::id()));
+        for output in [PathBuf::from("-"), path.clone()] {
+            for filler in [0xfe, 0x00] {
+                let args =
+                    Args { output: output.clone(), filler: Some(filler), ..Default::default() };
+                let mut file = open_output_file(&args, 8192, 0o600, true);
+                assert!(file.buf().iter().all(|&byte| byte == filler));
+                if output != Path::new("-") {
+                    file.close();
+                }
+            }
+        }
+        std::fs::remove_file(path).unwrap();
     }
 }
