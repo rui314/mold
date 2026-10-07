@@ -16,6 +16,7 @@ use std::env;
 use std::ffi::OsStr;
 use std::fs::{self, File};
 use std::io;
+use std::iter;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
@@ -26,11 +27,13 @@ use std::time::{Duration, Instant};
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(60);
 
-/// The simulator configurations `--all` runs besides the host's, each
-/// when a runtime runs programs of its architecture (and an x86_64 one
-/// on Rosetta).
-const SIMULATORS: &[&str] =
-    &["arm64-apple-ios-simulator", "arm64-apple-tvos-simulator", "arm64-apple-xros-simulator"];
+/// The simulator configurations a run adds to the host's by default,
+/// and those --all adds too, each when a runtime runs programs of its
+/// architecture (an x86_64 one also needs Rosetta). Only an older
+/// runtime runs x86_64 programs, iOS 17's.
+const DEFAULT_SIMULATORS: &[&str] = &["arm64-apple-ios-simulator"];
+const MORE_SIMULATORS: &[&str] =
+    &["x86_64-apple-ios-simulator", "arm64-apple-tvos-simulator", "arm64-apple-xros-simulator"];
 
 /// A configuration the scripts run in. A host configuration builds and
 /// runs macOS programs; a simulator configuration builds for the target
@@ -74,10 +77,10 @@ enum Mode {
     /// The host architecture only.
     Native,
     /// The host architecture, plus x86_64 under Rosetta when available.
-    /// This is the default until mold links for the simulators as
-    /// ld-prime does; then --all is.
     Host,
-    /// The host's configurations plus SIMULATORS.
+    /// The host's configurations plus DEFAULT_SIMULATORS.
+    Default,
+    /// The host's configurations plus every simulator's.
     All,
     /// One simulator configuration.
     Triple(String),
@@ -150,7 +153,11 @@ impl Counts {
 fn usage() -> ! {
     eprintln!(
         "Usage: cargo test [pattern] [-- [--test-threads N] \
-         [--native | --host | --all | --triple TRIPLE] [--timeout SECONDS] [--list]]"
+         [--native | --host | --all | --triple TRIPLE] [--timeout SECONDS] [--list]]\n\
+         By default the tests run for macOS (arm64, and x86_64 under Rosetta) and the arm64 \
+         iOS simulator. --all adds the x86_64 iOS, tvOS and visionOS simulators; --host runs \
+         macOS's alone, --native the host architecture's, --triple one simulator's (e.g. \
+         arm64-apple-tvos-simulator)."
     );
     std::process::exit(2);
 }
@@ -161,7 +168,7 @@ fn parse_usize(value: Option<String>) -> usize {
 
 fn parse_options() -> Options {
     let mut jobs = thread::available_parallelism().map_or(1, usize::from);
-    let mut mode = Mode::Host;
+    let mut mode = Mode::Default;
     let mut mode_was_set = false;
     let mut patterns = Vec::new();
     let mut timeout = DEFAULT_TIMEOUT;
@@ -225,23 +232,26 @@ fn rosetta_available() -> bool {
         .is_ok_and(|status| status.success())
 }
 
-/// Returns the configurations to run and the simulator triples that
-/// `--all` skips for want of a runtime.
+/// Returns the configurations to run and the simulator triples that a
+/// run skips, silently, for want of a runtime (as on a machine without
+/// Xcode's simulators).
 fn selected_targets(options: &Options) -> (Vec<Target>, Vec<&'static str>) {
     let native = native_arch();
     let mut targets = vec![Target::host(native)];
     let mut unavailable = Vec::new();
     match &options.mode {
         Mode::Native => {}
-        Mode::Host | Mode::All => {
+        Mode::Host | Mode::Default | Mode::All => {
             let rosetta = native == "arm64" && rosetta_available();
             if rosetta {
                 targets.push(Target::host("x86_64"));
             }
-            if options.mode == Mode::Host {
-                return (targets, unavailable);
-            }
-            for &triple in SIMULATORS {
+            let simulators: &[&[&str]] = match options.mode {
+                Mode::Default => &[DEFAULT_SIMULATORS],
+                Mode::All => &[DEFAULT_SIMULATORS, MORE_SIMULATORS],
+                _ => &[],
+            };
+            for triple in simulators.concat() {
                 let simulator = Simulator::parse(triple).unwrap();
                 match simulator::find_runtime(&simulator) {
                     Some(runtime) if simulator.arch == native || rosetta => {
@@ -325,36 +335,41 @@ fn prepare_work_dir(mold: &Path) -> io::Result<PathBuf> {
     Ok(work_dir)
 }
 
-fn make_jobs(
+/// The scripts in `cases_dirs` that the patterns select, by name.
+fn selected_scripts(
     cases_dirs: &[PathBuf],
-    work_dir: &Path,
-    targets: Vec<Target>,
     patterns: &[String],
-    clean: bool,
-) -> io::Result<Vec<TestJob>> {
+) -> io::Result<Vec<(String, PathBuf)>> {
     let mut scripts = Vec::new();
     for dir in cases_dirs {
         scripts.extend(discover_scripts(dir)?);
     }
+    scripts.retain(|(name, _)| matches_patterns(name, patterns));
     scripts.sort_by(|a, b| a.0.cmp(&b.0));
-    let mut jobs = Vec::new();
+    Ok(scripts)
+}
 
+fn make_jobs(
+    scripts: &[(String, PathBuf)],
+    work_dir: &Path,
+    targets: Vec<Target>,
+    clean: bool,
+) -> io::Result<Vec<TestJob>> {
+    let mut jobs = Vec::new();
     for target in targets {
         let target = Arc::new(target);
         let result_dir = work_dir.join("out/test/results").join(&target.label);
         if clean {
             clear_results(&result_dir)?;
         }
-        for (name, script) in &scripts {
-            if matches_patterns(name, patterns) {
-                jobs.push(TestJob {
-                    target: Arc::clone(&target),
-                    script: script.clone(),
-                    name: name.clone(),
-                    log: result_dir.join(format!("{name}.log")),
-                    status_file: result_dir.join(format!("{name}.status")),
-                });
-            }
+        for (name, script) in scripts {
+            jobs.push(TestJob {
+                target: Arc::clone(&target),
+                script: script.clone(),
+                name: name.clone(),
+                log: result_dir.join(format!("{name}.log")),
+                status_file: result_dir.join(format!("{name}.status")),
+            });
         }
     }
     Ok(jobs)
@@ -550,38 +565,49 @@ pub fn run(cases_dirs: &[PathBuf], mold: &Path) -> ExitCode {
         std::process::exit(1);
     });
     let linker = mold.canonicalize().expect("linker not found");
-    let (mut targets, unavailable) = selected_targets(&options);
+    let (targets, unavailable) = selected_targets(&options);
+    let scripts = selected_scripts(cases_dirs, &options.patterns).unwrap_or_else(|err| {
+        eprintln!("mold-macho-tests: {err}");
+        std::process::exit(1);
+    });
     if options.list {
-        let jobs = make_jobs(cases_dirs, &work_dir, targets, &options.patterns, false)
-            .unwrap_or_else(|err| {
-                eprintln!("mold-macho-tests: {err}");
-                std::process::exit(1);
-            });
+        let jobs = make_jobs(&scripts, &work_dir, targets, false).unwrap_or_else(|err| {
+            eprintln!("mold-macho-tests: {err}");
+            std::process::exit(1);
+        });
         print_inventory(&jobs, &unavailable);
         return ExitCode::SUCCESS;
     }
-    if !unavailable.is_empty() {
-        eprintln!("skipping simulators without a runtime: {}", unavailable.join(", "));
-    }
 
-    // Errors return rather than exit from here on, so that the devices
-    // are shut down.
-    let devices = match boot_devices(&mut targets) {
-        Ok(devices) => devices,
-        Err(err) => {
-            eprintln!("mold-macho-tests: {err}");
-            return ExitCode::FAILURE;
+    // The host's configurations run together, then each simulator's on
+    // its own, its device booted for it alone and shut down once it is
+    // done: a booted simulator is a whole OS, and one at a time is load
+    // enough. Errors return rather than exit, so that a device is shut
+    // down.
+    let (hosts, simulators): (Vec<_>, Vec<_>) =
+        targets.into_iter().partition(|target| target.runtime.is_none());
+    let mut results = Vec::new();
+    for mut phase in iter::once(hosts).chain(simulators.into_iter().map(|target| vec![target])) {
+        if phase.is_empty() || scripts.is_empty() {
+            continue;
         }
-    };
-    let jobs = match make_jobs(cases_dirs, &work_dir, targets, &options.patterns, true) {
-        Ok(jobs) => jobs,
-        Err(err) => {
-            eprintln!("mold-macho-tests: {err}");
-            return ExitCode::FAILURE;
-        }
-    };
-    let results = run_jobs(&work_dir, jobs, &linker, &options);
-    drop(devices);
+        let devices = match boot_devices(&mut phase) {
+            Ok(devices) => devices,
+            Err(err) => {
+                eprintln!("mold-macho-tests: {err}");
+                return ExitCode::FAILURE;
+            }
+        };
+        let jobs = match make_jobs(&scripts, &work_dir, phase, true) {
+            Ok(jobs) => jobs,
+            Err(err) => {
+                eprintln!("mold-macho-tests: {err}");
+                return ExitCode::FAILURE;
+            }
+        };
+        results.extend(run_jobs(&work_dir, jobs, &linker, &options));
+        drop(devices);
+    }
     if print_summary(&results) { ExitCode::SUCCESS } else { ExitCode::FAILURE }
 }
 

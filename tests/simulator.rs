@@ -6,17 +6,18 @@
 //! on a booted device of the simulator's runtime, which `xcrun simctl
 //! spawn` starts them on. The runner keeps a device of its own per
 //! runtime, named mold-test- and the runtime, so that the user's devices
-//! stay untouched. A run boots it once for all of its tests and shuts it
-//! down at the end unless another run (another worktree's) is still using
-//! it.
+//! stay untouched. A run boots it once for all of a configuration's tests
+//! and shuts it down after them, holding the machine's one simulator slot
+//! all the while, which serializes the runs that use a simulator.
 
 use serde_json::Value;
 use std::ffi::CStr;
-use std::fs::File;
+use std::fs;
 use std::io;
-use std::os::fd::AsRawFd;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::thread;
+use std::time::Duration;
 
 /// The simulator platforms, by their names in target triples and in
 /// simctl's runtime list.
@@ -137,41 +138,70 @@ fn user_temp_dir() -> io::Result<PathBuf> {
     Ok(PathBuf::from(dir))
 }
 
-fn open_lock(name: &str, kind: &str) -> io::Result<File> {
-    let path = user_temp_dir()?.join(format!("{name}.{kind}.lock"));
-    File::options().create(true).truncate(false).write(true).open(path)
+/// The one simulator slot of the user's machine, which a run holds while
+/// a device of its is booted: a booted simulator is a whole OS, and
+/// several at once leave the Mac so busy that their own system apps miss
+/// their launch watchdog's deadline. The slot is a directory holding its
+/// owner's pid, which a shell script can take with mkdir as well; one
+/// whose owner is gone is taken over.
+struct Slot {
+    dir: PathBuf,
 }
 
-fn flock(file: &File, operation: libc::c_int) -> io::Result<()> {
-    // SAFETY: flock only operates on the descriptor, which `file` owns.
-    if unsafe { libc::flock(file.as_raw_fd(), operation) } == 0 {
-        Ok(())
-    } else {
-        Err(io::Error::last_os_error())
+impl Slot {
+    fn take() -> io::Result<Self> {
+        let dir = user_temp_dir()?.join("mold-test-simulator-slot");
+        let mut waited = 0;
+        loop {
+            match fs::create_dir(&dir) {
+                Ok(()) => {
+                    fs::write(dir.join("pid"), format!("{}\n", std::process::id()))?;
+                    return Ok(Self { dir });
+                }
+                Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {}
+                Err(err) => return Err(err),
+            }
+            let owner = fs::read_to_string(dir.join("pid")).ok();
+            if let Some(pid) = owner.and_then(|pid| pid.trim().parse::<libc::pid_t>().ok())
+                && !process_exists(pid)
+            {
+                fs::remove_dir_all(&dir)?;
+                continue;
+            }
+            thread::sleep(Duration::from_secs(1));
+            waited += 1;
+            if waited % 60 == 0 {
+                eprintln!("mold-macho-tests: waiting for the simulator slot ({waited}s)");
+            }
+        }
     }
 }
 
-/// A booted device. Runs that share a device coordinate through two lock
-/// files: each run holds the users lock shared while it uses the device,
-/// and the setup lock exclusively while it boots the device or, at its
-/// end, gives up its users lock and shuts the device down if it can then
-/// take the users lock exclusively, i.e. if no other run is using it.
+impl Drop for Slot {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.dir);
+    }
+}
+
+fn process_exists(pid: libc::pid_t) -> bool {
+    // SAFETY: signal 0 only checks that the process exists.
+    let sent = unsafe { libc::kill(pid, 0) } == 0;
+    sent || io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
+/// A booted device of a runtime, named mold-test- and the runtime, which
+/// the runner creates the first time. It holds the simulator slot from
+/// before it boots until it has shut down.
 pub struct Device {
     pub udid: String,
-    name: String,
-    users: File,
+    _slot: Slot,
 }
 
 impl Device {
     pub fn boot(runtime: &Runtime) -> Result<Self, String> {
+        let slot = Slot::take().map_err(|err| format!("cannot take the simulator slot: {err}"))?;
         let suffix = runtime.identifier.rsplit('.').next().unwrap();
         let name = format!("mold-test-{suffix}");
-        let lock_error = |err: io::Error| format!("cannot lock {name}: {err}");
-        let setup = open_lock(&name, "setup").map_err(lock_error)?;
-        flock(&setup, libc::LOCK_EX).map_err(lock_error)?;
-        let users = open_lock(&name, "users").map_err(lock_error)?;
-        flock(&users, libc::LOCK_SH).map_err(lock_error)?;
-
         let devices = simctl_list("devices")?;
         let found = devices["devices"][&runtime.identifier].as_array().and_then(|devices| {
             devices.iter().find(|device| device["name"] == *name && device["isAvailable"] == true)
@@ -189,21 +219,13 @@ impl Device {
         if state == "Shutdown" {
             simctl(&["boot", &udid])?;
         }
-        Ok(Self { udid, name, users })
+        Ok(Self { udid, _slot: slot })
     }
 }
 
 impl Drop for Device {
     fn drop(&mut self) {
-        let Ok(setup) = open_lock(&self.name, "setup") else {
-            return;
-        };
-        if flock(&setup, libc::LOCK_EX).is_err() || flock(&self.users, libc::LOCK_UN).is_err() {
-            return;
-        }
-        let last = open_lock(&self.name, "users")
-            .is_ok_and(|users| flock(&users, libc::LOCK_EX | libc::LOCK_NB).is_ok());
-        if last && let Err(err) = simctl(&["shutdown", &self.udid]) {
+        if let Err(err) = simctl(&["shutdown", &self.udid]) {
             eprintln!("mold-macho-tests: {err}");
         }
     }
