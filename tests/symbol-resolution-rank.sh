@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
-# Tentative definitions merge into the largest, whatever the input
-# order, which keeps its own alignment (see common-merge.sh).
+# Tentative definitions merge into the largest size and the greatest
+# alignment, whatever the input order (see common-merge.sh; ld-prime
+# keeps the largest one's alignment).
 echo 'char buffer[4096];' | $CC -fcommon -c -xc - -o $t/large.o
 echo 'char buffer[1] __attribute__((aligned(4096)));' | $CC -fcommon -c -xc - -o $t/aligned.o
 for inputs in "$t/large.o $t/aligned.o" "$t/aligned.o $t/large.o"; do
   $mold -r -arch $ARCH $inputs -o $t/common.o
   nm -m $t/common.o > $t/syms
-  grep -E '^0*1000 \(common\) (\(alignment 2\^4\) )?external _buffer$' $t/syms
+  grep -E '^0*1000 \(common\) .*external _buffer$' $t/syms
+  if $mold -v 2>&1 | grep -q mold-macho; then
+    grep -E '\(alignment 2\^12\) external _buffer$' $t/syms
+  fi
 done
 
 echo 'int choice() { return 1; }' | $CC -c -xc - -o $t/archive.o

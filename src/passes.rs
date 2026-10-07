@@ -497,11 +497,10 @@ fn live_common_symbols<E: Target>(ctx: &Context<E>) -> Vec<(SymbolId, u64, u8, b
         .collect()
 }
 
-/// Common symbols merge as ld-prime merges them, from every common
-/// claim once the class-4 winners are known: the largest tentative
-/// definition wins whole - its size, its alignment, whatever the
-/// others', and whether it is a private external - and of those of one
-/// size the first claimed (the winner's to start with).
+/// Common symbols merge as in mold, from every common claim once the
+/// class-4 winners are known: into the largest size and the greatest
+/// alignment of them all, and a private external if any is one (mold's
+/// most restrictive visibility), whatever the input order.
 fn merge_common_symbols<E: Target>(
     ctx: &mut Context<E>,
     commons: &[(SymbolId, u64, u8, bool)],
@@ -513,10 +512,10 @@ fn merge_common_symbols<E: Target>(
             continue;
         }
         let sym = &mut ctx.symbols[sym_id];
-        if size > sym.value {
-            sym.value = size;
-            sym.common_p2align = p2align;
-            sym.set_is_private_extern(pext);
+        sym.value = sym.value.max(size);
+        sym.common_p2align = sym.common_p2align.max(p2align);
+        if pext {
+            sym.set_is_private_extern(true);
         }
     }
 }
