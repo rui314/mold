@@ -479,6 +479,24 @@ pub fn platform_name(platform: u32) -> String {
     .to_string()
 }
 
+/// Whether mold links for a platform: macOS, iOS, tvOS and visionOS,
+/// on devices and in their simulators, and firmware. (A watchOS device
+/// runs arm64_32 code, an ILP32 target mold has no port to; Mac
+/// Catalyst, driverKit and bridgeOS aren't supported either.)
+pub fn is_supported_platform(platform: u32) -> bool {
+    matches!(
+        platform,
+        PLATFORM_MACOS
+            | PLATFORM_IOS
+            | PLATFORM_IOSSIMULATOR
+            | PLATFORM_TVOS
+            | PLATFORM_TVOSSIMULATOR
+            | PLATFORM_VISIONOS
+            | PLATFORM_VISIONOSSIMULATOR
+            | PLATFORM_FIRMWARE
+    )
+}
+
 /// The platforms a .tbd file has targets for, for a diagnostic.
 pub fn platforms_name(platforms: &[u32]) -> String {
     platforms.iter().map(|&p| platform_name(p)).collect::<Vec<_>>().join(" ")

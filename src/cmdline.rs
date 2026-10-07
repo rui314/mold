@@ -938,17 +938,38 @@ fn parse_source_version(arg: &str) -> Option<u64> {
 
 /// ld64 takes the platform by name, in any case, or by its PLATFORM_*
 /// number; Xcode passes the number for some prelink steps
-/// (`-platform_version 1 11.0`). mold links for macOS and firmware.
+/// (`-platform_version 1 11.0`). A simulator's name is its OS's with
+/// "-simulator" after it.
 fn parse_platform(arg: &str) -> u32 {
     let name = arg.to_ascii_lowercase();
-    let number = match name.bytes().all(|c| c.is_ascii_digit()) {
-        true => name.parse::<u32>().ok(),
-        false => None,
+    let platform = if name.bytes().all(|c| c.is_ascii_digit()) {
+        name.parse().unwrap_or(0)
+    } else if let Some(os) = name.strip_suffix("-simulator") {
+        os_platform(os, true)
+    } else {
+        os_platform(&name, false)
     };
-    match (name.as_str(), number) {
-        ("macos" | "macosx", _) | (_, Some(PLATFORM_MACOS)) => PLATFORM_MACOS,
-        ("firmware", _) | (_, Some(PLATFORM_FIRMWARE)) => PLATFORM_FIRMWARE,
-        _ => fatal!("unsupported platform: {arg}"),
+    if !is_supported_platform(platform) {
+        fatal!("unsupported platform: {arg}");
+    }
+    platform
+}
+
+/// The platform an OS's name stands for, on a device or in its
+/// simulator, as -platform_version and target triples spell them (in
+/// lower case); 0 for one mold doesn't link for. visionOS goes by its
+/// development name, xros, too.
+fn os_platform(os: &str, simulator: bool) -> u32 {
+    match (os, simulator) {
+        ("macos" | "macosx", false) => PLATFORM_MACOS,
+        ("ios", false) => PLATFORM_IOS,
+        ("ios", true) => PLATFORM_IOSSIMULATOR,
+        ("tvos", false) => PLATFORM_TVOS,
+        ("tvos", true) => PLATFORM_TVOSSIMULATOR,
+        ("xros" | "visionos", false) => PLATFORM_VISIONOS,
+        ("xros" | "visionos", true) => PLATFORM_VISIONOSSIMULATOR,
+        ("firmware", false) => PLATFORM_FIRMWARE,
+        _ => 0,
     }
 }
 
@@ -1017,25 +1038,28 @@ fn triple_arch(arch: &str, triple: &str) -> &'static str {
         .unwrap_or_else(|| fatal!("unknown architecture in target triple '{triple}'"))
 }
 
-/// Splits a target triple, <arch>-<vendor>-<os><version>, into its
-/// architecture, platform and OS version.
+/// Splits a target triple, <arch>-<vendor>-<os><version>[-<environment>],
+/// into its architecture, platform and OS version. The one environment
+/// mold knows is "simulator" (arm64-apple-ios17.0-simulator), and only
+/// of a mobile OS: clang makes x86-64 firmware
+/// x86_64-apple-firmware1.0.0-simulator, which names no OS mold links
+/// for.
 fn parse_triple(triple: &str) -> (&str, u32, u32) {
     let mut parts = triple.splitn(3, '-');
     let (Some(arch), Some(_vendor), Some(os)) = (parts.next(), parts.next(), parts.next()) else {
         fatal!("missing dashes in target triple '{triple}'");
     };
+    let (os, env) = os.split_once('-').unwrap_or((os, ""));
     let (os_name, version) = os.split_at(os.find(|c: char| c.is_ascii_digit()).unwrap_or(os.len()));
-    let platform = match os_name.to_ascii_lowercase().as_str() {
-        "macos" | "macosx" => PLATFORM_MACOS,
-        "firmware" => PLATFORM_FIRMWARE,
+    let platform = match env.to_ascii_lowercase().as_str() {
+        "" => os_platform(&os_name.to_ascii_lowercase(), false),
+        "simulator" => os_platform(&os_name.to_ascii_lowercase(), true),
         _ => 0,
     };
-    // An environment after the version (clang makes x86-64 firmware
-    // x86_64-apple-firmware1.0.0-simulator) names no OS either.
-    if platform == 0 || version.contains('-') {
+    if platform == 0 {
         fatal!("unknown OS in target triple '{triple}'");
     }
-    // Firmware tracks no OS versions; macOS must say which.
+    // Firmware tracks no OS versions; the other OSes must say which.
     let minos = match version {
         "" if platform == PLATFORM_FIRMWARE => encode_version(0, 0, 0),
         "" => fatal!("missing OS version in target triple '{triple}'"),
@@ -1492,14 +1516,21 @@ fn read_platform_version(cur: &mut ArgCursor, args: &mut Args, st: &mut ParseSta
     args.platform_sdk = sdk;
 }
 
-/// -macos_version_min <version>, the old pre-LC_BUILD_VERSION way of
-/// stating the deployment target, still emitted by clang for older
-/// -mmacosx-version-min targets. It fixes the platform to macOS; ld64
-/// records the SDK as the same version (the flag carries no separate
-/// SDK). -macosx_version_min is its old spelling.
-fn read_macos_version_min(cur: &mut ArgCursor, args: &mut Args, st: &mut ParseState, opt: &str) {
+/// -macos_version_min <version> or -ios_version_min <version>, the old
+/// pre-LC_BUILD_VERSION way of stating the deployment target, still
+/// emitted by clang for older -mmacosx-version-min targets. It fixes
+/// the platform - for -ios_version_min the device's on any
+/// architecture: no such option names a simulator - and ld64 records
+/// the SDK as the same version (the flag carries no separate SDK).
+fn read_version_min(
+    cur: &mut ArgCursor,
+    args: &mut Args,
+    st: &mut ParseState,
+    opt: &str,
+    platform: u32,
+) {
     let minos = parse_version(opt, cur.next_text(opt));
-    set_platform(args, st, PLATFORM_MACOS, minos);
+    set_platform(args, st, platform, minos);
     args.platform_sdk = minos;
 }
 
@@ -1893,16 +1924,22 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-target" => st.target_triple = Some(cur.next_text(name)),
             b"-platform_version" => read_platform_version(&mut cur, &mut args, &mut st, name),
+            // The minimum versions of macOS and iOS, under their old
+            // names too; ld-prime says the iOS one was renamed.
             b"-macos_version_min" | b"-macosx_version_min" => {
-                read_macos_version_min(&mut cur, &mut args, &mut st, name)
+                read_version_min(&mut cur, &mut args, &mut st, name, PLATFORM_MACOS)
             }
-            // The minimum versions of iOS and Mac Catalyst, under their
-            // old names too: mold links for neither.
-            b"-ios_version_min"
-            | b"-iphoneos_version_min"
-            | b"-maccatalyst_version_min"
-            | b"-iosmac_version_min"
-            | b"-uikitformac_version_min" => fatal!("{name}: unsupported platform"),
+            b"-ios_version_min" => {
+                read_version_min(&mut cur, &mut args, &mut st, name, PLATFORM_IOS)
+            }
+            b"-iphoneos_version_min" => {
+                crate::warn!("-iphoneos_version_min has been renamed to -ios_version_min");
+                read_version_min(&mut cur, &mut args, &mut st, name, PLATFORM_IOS)
+            }
+            // Mac Catalyst's, which mold doesn't link for.
+            b"-maccatalyst_version_min" | b"-iosmac_version_min" | b"-uikitformac_version_min" => {
+                fatal!("{name}: unsupported platform")
+            }
             // An architecture's variant (of arm64e's pointer
             // authentication ABI), which no -arch mold links for has.
             b"-arch_variant" => {
@@ -2698,7 +2735,7 @@ fn infer_platform(args: &mut Args) {
                 let Some(v) = PlatformVersion::of_object(mf.data()) else {
                     continue;
                 };
-                if v.platform != PLATFORM_MACOS && v.platform != PLATFORM_FIRMWARE {
+                if !is_supported_platform(v.platform) {
                     fatal!(
                         "{}: unsupported platform: {}",
                         mf.name.raw(),

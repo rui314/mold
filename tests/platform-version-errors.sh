@@ -3,7 +3,7 @@ source "$(dirname "$0")"/common.inc
 
 # -platform_version takes a platform by name, in any case, or by its
 # number, and a version made of decimal numbers that must fit
-# LC_BUILD_VERSION's 16.8.8 bits. mold links for macOS and firmware.
+# LC_BUILD_VERSION's 16.8.8 bits.
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .text
 .globl _main
