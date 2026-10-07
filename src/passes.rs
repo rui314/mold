@@ -2986,7 +2986,7 @@ fn check_shared_cache_deps<E: Target>(ctx: &Context<E>) {
         .dylibs
         .iter()
         .filter(|d| !d.is_bundle_loader && !d.is_lazy)
-        .filter(|d| !crate::cmdline::in_shared_cache_path(&d.install_name))
+        .filter(|d| !crate::cmdline::in_shared_cache_path(&d.install_name, ctx.args.platform))
         .min_by_key(|d| d.dylib_idx)
     {
         error!(

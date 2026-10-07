@@ -3285,7 +3285,7 @@ fn resolve_shared_region(target: &TargetTraits, args: &mut Args) {
             || args.kernel
             || (args.is_kext() && target.name == "arm64")
             || args.is_dylinker()
-            || (is_dylib && in_shared_cache_path(args.output_install_name())));
+            || (is_dylib && in_shared_cache_path(args.output_install_name(), args.platform)));
     if !args.shared_region {
         return;
     }
@@ -3309,18 +3309,22 @@ fn resolve_shared_region(target: &TargetTraits, args: &mut Args) {
     }
 }
 
-/// Whether an install name lies where the dyld shared cache takes
-/// libraries from: /usr/lib, /System/Library or their counterparts
-/// under /Library/Apple.
-pub fn in_shared_cache_path(install_name: &[u8]) -> bool {
-    [
-        &b"/usr/lib/"[..],
-        b"/System/Library/",
-        b"/Library/Apple/usr/lib/",
-        b"/Library/Apple/System/Library/",
-    ]
-    .iter()
-    .any(|dir| install_name.starts_with(dir))
+/// Whether an install name lies where the platform's dyld shared cache
+/// takes libraries from: /usr/lib, /System/Library or, on macOS alone
+/// (not for iOS, its simulator or firmware, as ld-prime has it), their
+/// counterparts under /Library/Apple.
+pub fn in_shared_cache_path(install_name: &[u8], platform: u32) -> bool {
+    let dirs: &[&[u8]] = if platform == PLATFORM_MACOS {
+        &[
+            b"/usr/lib/",
+            b"/System/Library/",
+            b"/Library/Apple/usr/lib/",
+            b"/Library/Apple/System/Library/",
+        ]
+    } else {
+        &[b"/usr/lib/", b"/System/Library/"]
+    };
+    dirs.iter().any(|dir| install_name.starts_with(dir))
 }
 
 /// The segment alignment: -segalign's, rounded down to a power of two
