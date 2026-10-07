@@ -305,10 +305,6 @@ pub struct Args {
     pub lto_library: Option<PathBuf>,
     /// -mcpu: the CPU libLTO compiles the bitcode for.
     pub lto_cpu: Option<String>,
-    /// -lto_softload_runtime_symbols / -no_lto_softload_runtime_symbols,
-    /// the last one given, or else whether the image is -static or
-    /// -preload (see passes::LTO_RUNTIME_ROUTINES).
-    pub lto_softload: bool,
     /// -save-temps: keep LTO's intermediate bitcode and objects beside
     /// the output.
     pub save_temps: bool,
@@ -1442,7 +1438,6 @@ struct ParseState<'a> {
     stack_size: Option<u64>,
     stack_addr: Option<u64>,
     x86_64_layout_emulation: bool,
-    lto_softload: Option<bool>,
     lists: SymbolLists,
     export_choice: Option<ExportChoice>,
     reexports_listed: bool,
@@ -2452,8 +2447,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-no_use_lto_filenames_in_order_file_matching" => {
                 args.lto_filenames_in_order_file = false;
             }
-            b"-lto_softload_runtime_symbols" => st.lto_softload = Some(true),
-            b"-no_lto_softload_runtime_symbols" => st.lto_softload = Some(false),
+            // ld-prime loads the routines LTO code may call (memset,
+            // __udivdi3 ...) from the libraries before LTO, by default
+            // in a -static or -preload image; mold resolves the calls
+            // after LTO instead.
+            b"-lto_softload_runtime_symbols" | b"-no_lto_softload_runtime_symbols" => {}
 
             // Diagnostics, reports and traces.
             b"-w" => args.suppress_warnings = true,
@@ -2988,7 +2986,6 @@ fn resolve_options(target: &TargetTraits, args: &mut Args, st: &mut ParseState) 
     resolve_pagezero_size(args, st.pagezero_size);
     resolve_stack(target, args, st.stack_size, st.stack_addr);
     args.const_selrefs = st.const_selrefs.unwrap_or(args.shared_region);
-    args.lto_softload = st.lto_softload.unwrap_or(args.static_link || args.preload);
     args.warn_unused_dylibs =
         st.warn_unused_dylibs.unwrap_or(args.shared_region && args.output_type == MH_DYLIB);
     args.data_const = st.data_const.unwrap_or_else(|| default_data_const(args, st.pie));
