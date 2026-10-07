@@ -3004,17 +3004,20 @@ fn check_shared_cache_deps<E: Target>(ctx: &Context<E>) {
 /// shared cache gets by default (see Args::warn_unused_dylibs). A
 /// -needed_* or -reexport_* library is linked on purpose, and
 /// libSystem, libc++ and Foundation, which compiler drivers and project
-/// templates link by habit, are let off. ld-prime warns once the link
-/// has turned out to be sound, before it warns of redundant re-exports
-/// and weak exports.
+/// templates link by habit, are let off - by the start of the install
+/// name, so a simulator's shallow Foundation.framework/Foundation too
+/// (and, as ld-prime has it, /usr/lib/libSystemX.dylib, but not
+/// /usr/lib/libc++abi.dylib). ld-prime warns once the link has turned
+/// out to be sound, before it warns of redundant re-exports and weak
+/// exports.
 pub fn warn_unused_dylibs<E: Target>(ctx: &Context<E>) {
     if !ctx.args.warn_unused_dylibs {
         return;
     }
     const EXEMPT: [&[u8]; 3] = [
-        b"/usr/lib/libSystem.B.dylib",
-        b"/usr/lib/libc++.1.dylib",
-        b"/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation",
+        b"/usr/lib/libSystem",
+        b"/usr/lib/libc++.",
+        b"/System/Library/Frameworks/Foundation.framework/",
     ];
     let mut bound = vec![false; ctx.dylibs.len()];
     for sym in &ctx.symbols.syms {
@@ -3036,7 +3039,7 @@ pub fn warn_unused_dylibs<E: Target>(ctx: &Context<E>) {
             && !dylib.is_needed
             && !dylib.is_reexported
             && !dylib.is_bundle_loader
-            && !EXEMPT.contains(&dylib.install_name.as_slice())
+            && !EXEMPT.iter().any(|prefix| dylib.install_name.starts_with(prefix))
         {
             crate::warn!(
                 "linking with ({}) but not using any symbols from it",

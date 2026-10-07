@@ -23,6 +23,21 @@ grep -Eq 'linking with \(/System/Library/Frameworks/CoreFoundation.framework/(Ve
 not grep -q 'libc++.1.dylib' $t/log
 not grep -Eq '/Foundation.framework/(Versions/C/)?Foundation\)' $t/log
 
+# They are let off by the start of the install name (as a simulator's
+# shallow Foundation.framework/Foundation is): even libSystemX, but not
+# libc++abi.
+echo 'int y(void) { return 2; }' | $CC -o $t/y.o -c -xc -
+for name in /usr/lib/libSystemX.dylib /usr/lib/libc++.2.dylib \
+  /System/Library/Frameworks/Foundation.framework/Bar /usr/lib/libc++abi.dylib; do
+  $CC -shared -o $t/libdep.dylib $t/y.o -Wl,-install_name,$name
+  link -Wl,-install_name,/usr/lib/libb.dylib $t/libdep.dylib
+  if [ $name = /usr/lib/libc++abi.dylib ]; then
+    grep -qF "linking with ($name) but not using any symbols from it" $t/log
+  else
+    not grep -q 'not using any symbols' $t/log
+  fi
+done
+
 link -Wl,-install_name,/usr/lib/libb.dylib -Wl,-needed-lz
 not grep -q 'not using any symbols' $t/log
 link -Wl,-install_name,/usr/local/lib/libb.dylib -lz
