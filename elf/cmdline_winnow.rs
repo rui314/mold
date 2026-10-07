@@ -139,8 +139,8 @@ pub(crate) enum Item {
     InternalIgnoreIrFile(OsString),
     /// `-demangle`, optionally with a style; mold demangles in every style
     /// it knows, so the style is not read.
-    #[arg(long = "demangle", require_equals, default_missing = "\0")]
-    Demangle(OsString),
+    #[arg(long = "demangle", require_equals)]
+    Demangle(Option<OsString>),
     /// `-no-demangle`
     #[arg(long = "no-demangle")]
     NoDemangle,
@@ -157,8 +157,8 @@ pub(crate) enum Item {
     #[arg(long = "noinhibit-exec")]
     NoinhibitExec,
     /// `-shuffle-sections`
-    #[arg(long = "shuffle-sections", require_equals, default_missing = "\0")]
-    ShuffleSections(OsString),
+    #[arg(long = "shuffle-sections", require_equals)]
+    ShuffleSections(Option<OsString>),
     /// `-reverse-sections`
     #[arg(long = "reverse-sections")]
     ReverseSections,
@@ -310,8 +310,8 @@ pub(crate) enum Item {
     #[arg(long = "chroot")]
     Chroot(OsString),
     /// `-color-diagnostics, -color-diagnostics=always, -color-diagnostics=auto, -color-diagnostics=never`
-    #[arg(long = "color-diagnostics", require_equals, default_missing = "\0")]
-    ColorDiagnostics(OsString),
+    #[arg(long = "color-diagnostics", require_equals)]
+    ColorDiagnostics(Option<OsString>),
     /// `-no-color-diagnostics`
     #[arg(long = "no-color-diagnostics")]
     NoColorDiagnostics,
@@ -391,8 +391,8 @@ pub(crate) enum Item {
     #[arg(long = "no-undefined")]
     NoUndefined,
     /// `-separate-debug-file`
-    #[arg(long = "separate-debug-file", require_equals, default_missing = "\0")]
-    SeparateDebugFile(OsString),
+    #[arg(long = "separate-debug-file", require_equals)]
+    SeparateDebugFile(Option<OsString>),
     /// `-no-separate-debug-file`
     #[arg(long = "no-separate-debug-file")]
     NoSeparateDebugFile,
@@ -430,8 +430,8 @@ pub(crate) enum Item {
     #[arg(long = "no-gc-sections")]
     NoGcSections,
     /// `-print-gc-sections`
-    #[arg(long = "print-gc-sections", require_equals, default_missing = "\0")]
-    PrintGcSections(OsString),
+    #[arg(long = "print-gc-sections", require_equals)]
+    PrintGcSections(Option<OsString>),
     /// `-no-print-gc-sections`
     #[arg(long = "no-print-gc-sections")]
     NoPrintGcSections,
@@ -457,8 +457,8 @@ pub(crate) enum Item {
     #[arg(long = "physical-image-base")]
     PhysicalImageBase(OsString),
     /// `-print-icf-sections`
-    #[arg(long = "print-icf-sections", require_equals, default_missing = "\0")]
-    PrintIcfSections(OsString),
+    #[arg(long = "print-icf-sections", require_equals)]
+    PrintIcfSections(Option<OsString>),
     /// `-no-print-icf-sections`
     #[arg(long = "no-print-icf-sections")]
     NoPrintIcfSections,
@@ -505,8 +505,8 @@ pub(crate) enum Item {
     #[arg(long = "thinlto-emit-imports-files")]
     ThinltoEmitImportsFiles,
     /// `-thinlto-index-only`
-    #[arg(long = "thinlto-index-only", require_equals, default_missing = "\0")]
-    ThinltoIndexOnly(OsString),
+    #[arg(long = "thinlto-index-only", require_equals)]
+    ThinltoIndexOnly(Option<OsString>),
     /// `--lto-cs-profile-file`
     #[arg(long = "lto-cs-profile-file", two_dashes)]
     LtoCsProfileFile(OsString),
@@ -550,8 +550,8 @@ pub(crate) enum Item {
     #[arg(long = "thread-count")]
     ThreadCount(OsString),
     /// `-threads`
-    #[arg(long = "threads", require_equals, default_missing = "\0")]
-    Threads(OsString),
+    #[arg(long = "threads", require_equals)]
+    Threads(Option<OsString>),
     /// `-no-threads`
     #[arg(long = "no-threads")]
     NoThreads,
@@ -607,8 +607,8 @@ pub(crate) enum Item {
     #[arg(short = 'u')]
     UndefinedShort(OsString),
     /// `-build-id`
-    #[arg(long = "build-id", require_equals, default_missing = "\0")]
-    BuildId(OsString),
+    #[arg(long = "build-id", require_equals)]
+    BuildId(Option<OsString>),
     /// `-no-build-id`
     #[arg(long = "no-build-id")]
     NoBuildId,
@@ -652,8 +652,8 @@ pub(crate) enum Item {
     #[arg(long = "O2")]
     IgnoredO2,
     /// `-verbose`, optionally with a number
-    #[arg(long = "verbose", require_equals, default_missing = "\0")]
-    IgnoredVerbose(OsString),
+    #[arg(long = "verbose", require_equals)]
+    IgnoredVerbose(Option<OsString>),
     /// `-start-group`
     #[arg(long = "start-group")]
     IgnoredStartGroup,
@@ -682,8 +682,8 @@ pub(crate) enum Item {
     #[arg(long = "sort-section")]
     IgnoredSortSection(OsString),
     /// `-sort-common`, optionally with an order
-    #[arg(long = "sort-common", require_equals, default_missing = "\0")]
-    IgnoredSortCommon(OsString),
+    #[arg(long = "sort-common", require_equals)]
+    IgnoredSortCommon(Option<OsString>),
     /// `-dc`
     #[arg(long = "dc")]
     IgnoredDc,
@@ -694,20 +694,20 @@ pub(crate) enum Item {
     #[arg(long = "fix-cortex-a53-835769")]
     IgnoredFixCortexA53835769,
     /// `-fix-cortex-a53-843419`, optionally with a workaround
-    #[arg(long = "fix-cortex-a53-843419", require_equals, default_missing = "\0")]
-    IgnoredFixCortexA53843419(OsString),
+    #[arg(long = "fix-cortex-a53-843419", require_equals)]
+    IgnoredFixCortexA53843419(Option<OsString>),
     /// `-split-by-file`, optionally with a size
-    #[arg(long = "split-by-file", require_equals, default_missing = "\0")]
-    IgnoredSplitByFile(OsString),
+    #[arg(long = "split-by-file", require_equals)]
+    IgnoredSplitByFile(Option<OsString>),
     /// `-split-by-reloc`, optionally with a count
-    #[arg(long = "split-by-reloc", require_equals, default_missing = "\0")]
-    IgnoredSplitByReloc(OsString),
+    #[arg(long = "split-by-reloc", require_equals)]
+    IgnoredSplitByReloc(Option<OsString>),
     /// `-orphan-handling` with a place; mold places no orphans
     #[arg(long = "orphan-handling")]
     IgnoredOrphanHandling(OsString),
     /// `-no-stats`, optionally with a value
-    #[arg(long = "no-stats", require_equals, default_missing = "\0")]
-    IgnoredNoStats(OsString),
+    #[arg(long = "no-stats", require_equals)]
+    IgnoredNoStats(Option<OsString>),
     /// `-nodefaultlibs`
     #[arg(long = "nodefaultlibs")]
     IgnoredNodefaultlibs,
@@ -1523,26 +1523,26 @@ mod tests {
             "--no-stats=1",
             "a.o",
         ]);
-        assert!(matches!(&items[0], Item::IgnoredVerbose(v) if v.as_encoded_bytes() == b"\0"));
-        assert!(matches!(&items[1], Item::IgnoredVerbose(v) if v.as_os_str() == "3"));
-        assert!(matches!(&items[2], Item::IgnoredSortCommon(v) if v.as_encoded_bytes() == b"\0"));
-        assert!(matches!(&items[3], Item::IgnoredSortCommon(v) if v.as_os_str() == "descending"));
-        assert!(matches!(&items[4], Item::Demangle(v) if v.as_encoded_bytes() == b"\0"));
-        assert!(matches!(&items[5], Item::Demangle(v) if v.as_os_str() == "gnu-v3"));
+        assert!(matches!(&items[0], Item::IgnoredVerbose(None)));
+        assert!(matches!(&items[1], Item::IgnoredVerbose(Some(v)) if v.as_os_str() == "3"));
+        assert!(matches!(&items[2], Item::IgnoredSortCommon(None)));
         assert!(
-            matches!(&items[6], Item::IgnoredFixCortexA53843419(v) if v.as_encoded_bytes() == b"\0")
+            matches!(&items[3], Item::IgnoredSortCommon(Some(v)) if v.as_os_str() == "descending")
         );
-        assert!(matches!(&items[7], Item::IgnoredFixCortexA53843419(v) if v.as_os_str() == "adr"));
-        assert!(matches!(&items[8], Item::IgnoredSplitByFile(v) if v.as_encoded_bytes() == b"\0"));
-        assert!(matches!(&items[9], Item::IgnoredSplitByFile(v) if v.as_os_str() == "4096"));
+        assert!(matches!(&items[4], Item::Demangle(None)));
+        assert!(matches!(&items[5], Item::Demangle(Some(v)) if v.as_os_str() == "gnu-v3"));
+        assert!(matches!(&items[6], Item::IgnoredFixCortexA53843419(None)));
         assert!(
-            matches!(&items[10], Item::IgnoredSplitByReloc(v) if v.as_encoded_bytes() == b"\0")
+            matches!(&items[7], Item::IgnoredFixCortexA53843419(Some(v)) if v.as_os_str() == "adr")
         );
-        assert!(matches!(&items[11], Item::IgnoredSplitByReloc(v) if v.as_os_str() == "10"));
+        assert!(matches!(&items[8], Item::IgnoredSplitByFile(None)));
+        assert!(matches!(&items[9], Item::IgnoredSplitByFile(Some(v)) if v.as_os_str() == "4096"));
+        assert!(matches!(&items[10], Item::IgnoredSplitByReloc(None)));
+        assert!(matches!(&items[11], Item::IgnoredSplitByReloc(Some(v)) if v.as_os_str() == "10"));
         assert!(matches!(&items[12], Item::IgnoredOrphanHandling(v) if v.as_os_str() == "place"));
         assert!(matches!(&items[13], Item::IgnoredOrphanHandling(v) if v.as_os_str() == "warn"));
-        assert!(matches!(&items[14], Item::IgnoredNoStats(v) if v.as_encoded_bytes() == b"\0"));
-        assert!(matches!(&items[15], Item::IgnoredNoStats(v) if v.as_os_str() == "1"));
+        assert!(matches!(&items[14], Item::IgnoredNoStats(None)));
+        assert!(matches!(&items[15], Item::IgnoredNoStats(Some(v)) if v.as_os_str() == "1"));
         assert!(matches!(&items[16], Item::Input(v) if v.as_os_str() == "a.o"));
 
         // The value is attached by an equal sign only; a separate word is

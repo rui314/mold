@@ -2071,16 +2071,15 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                     // GNU ld's --demangle[=STYLE] takes auto, none, gnu-v3,
                     // java and gnat. mold demangles in every style it knows,
                     // so only "none" matters: it turns demangling off.
-                    let demangle = if value_os.as_encoded_bytes() == b"\0" {
-                        true
-                    } else {
-                        match value_os.to_str() {
+                    let demangle = match value_os {
+                        None => true,
+                        Some(value_os) => match value_os.to_str() {
                             Some("none") => false,
                             Some("auto" | "gnu-v3" | "java" | "gnat") => true,
                             _ => {
                                 fatal!("unknown demangling style `{}'", value_os.to_string_lossy())
                             }
-                        }
+                        },
                     };
                     mold_common::error::set_demangle(demangle);
                 }
@@ -2101,11 +2100,11 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                 Item::NoinhibitExec => {
                     mold_common::error::set_noinhibit_exec(true);
                 }
-                Item::ShuffleSections(value_os) if value_os.as_encoded_bytes() == b"\0" => {
+                Item::ShuffleSections(None) => {
                     // Resolve the seed after parsing all options.
                     a.shuffle_sections = ShuffleSections::Shuffle(0);
                 }
-                Item::ShuffleSections(value_os) => {
+                Item::ShuffleSections(Some(value_os)) => {
                     let arg = utf8_arg(value_os, "--shuffle-sections");
                     let seed = parse_number("shuffle-sections", arg) as u64;
                     a.shuffle_sections = ShuffleSections::Shuffle(seed);
@@ -2312,19 +2311,25 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                     let raw_arg: &OsStr = value_os;
                     a.chroot = PathBuf::from(raw_arg);
                 }
-                Item::ColorDiagnostics(value_os) if value_os.as_encoded_bytes() == b"\0" => {
+                Item::ColorDiagnostics(None) => {
                     mold_common::error::set_color(std::io::stderr().is_terminal());
                 }
-                Item::ColorDiagnostics(value_os) if value_os.as_encoded_bytes() == b"auto" => {
+                Item::ColorDiagnostics(Some(value_os))
+                    if value_os.as_encoded_bytes() == b"auto" =>
+                {
                     mold_common::error::set_color(std::io::stderr().is_terminal());
                 }
-                Item::ColorDiagnostics(value_os) if value_os.as_encoded_bytes() == b"always" => {
+                Item::ColorDiagnostics(Some(value_os))
+                    if value_os.as_encoded_bytes() == b"always" =>
+                {
                     mold_common::error::set_color(true);
                 }
-                Item::ColorDiagnostics(value_os) if value_os.as_encoded_bytes() == b"never" => {
+                Item::ColorDiagnostics(Some(value_os))
+                    if value_os.as_encoded_bytes() == b"never" =>
+                {
                     mold_common::error::set_color(false);
                 }
-                Item::ColorDiagnostics(value_os) => {
+                Item::ColorDiagnostics(Some(value_os)) => {
                     fatal!(
                         "unknown command line option: --color-diagnostics={}",
                         value_os.to_string_lossy()
@@ -2470,10 +2475,10 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                 Item::NoUndefined => {
                     report_undefined = Some(true);
                 }
-                Item::SeparateDebugFile(value_os) if value_os.as_encoded_bytes() == b"\0" => {
+                Item::SeparateDebugFile(None) => {
                     separate_debug_file = Some(PathBuf::new());
                 }
-                Item::SeparateDebugFile(value_os) => {
+                Item::SeparateDebugFile(Some(value_os)) => {
                     let raw_arg: &OsStr = value_os;
                     separate_debug_file = Some(PathBuf::from(raw_arg));
                 }
@@ -2513,10 +2518,10 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                     let value = false;
                     a.gc_sections = value;
                 }
-                Item::PrintGcSections(value_os) if value_os.as_encoded_bytes() == b"\0" => {
+                Item::PrintGcSections(None) => {
                     a.print_gc_sections = Some(ReportOutput::Stdout);
                 }
-                Item::PrintGcSections(value_os) => {
+                Item::PrintGcSections(Some(value_os)) => {
                     let raw_arg: &OsStr = value_os;
                     a.print_gc_sections = parse_report_output(raw_arg);
                 }
@@ -2557,10 +2562,10 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                     let arg = utf8_arg(value_os, "--physical-image-base");
                     a.physical_image_base = Some(parse_number("physical-image-base", arg) as u64);
                 }
-                Item::PrintIcfSections(value_os) if value_os.as_encoded_bytes() == b"\0" => {
+                Item::PrintIcfSections(None) => {
                     a.print_icf_sections = Some(ReportOutput::Stdout);
                 }
-                Item::PrintIcfSections(value_os) => {
+                Item::PrintIcfSections(Some(value_os)) => {
                     let raw_arg: &OsStr = value_os;
                     a.print_icf_sections = parse_report_output(raw_arg);
                 }
@@ -2623,11 +2628,11 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                     let option = b"thinlto-emit-imports-files".to_vec();
                     a.plugin_opt.push(option);
                 }
-                Item::ThinltoIndexOnly(value_os) if value_os.as_encoded_bytes() == b"\0" => {
+                Item::ThinltoIndexOnly(None) => {
                     let option = b"thinlto-index-only".to_vec();
                     a.plugin_opt.push(option);
                 }
-                Item::ThinltoIndexOnly(value_os) => {
+                Item::ThinltoIndexOnly(Some(value_os)) => {
                     let raw_arg: &OsStr = value_os;
                     let option =
                         [b"thinlto-index-only=".as_slice(), raw_arg.as_encoded_bytes()].concat();
@@ -2714,10 +2719,10 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                     let arg = utf8_arg(value_os, "--thread-count");
                     a.thread_count = Some(parse_number("thread-count", arg).max(1) as usize);
                 }
-                Item::Threads(value_os) if value_os.as_encoded_bytes() == b"\0" => {
+                Item::Threads(None) => {
                     a.thread_count = None;
                 }
-                Item::Threads(value_os) => {
+                Item::Threads(Some(value_os)) => {
                     let arg = utf8_arg(value_os, "--threads");
                     a.thread_count = Some(parse_number("threads", arg).max(1) as usize);
                 }
@@ -2772,10 +2777,10 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                     let raw_arg: &OsStr = value_os;
                     a.undefined.push(raw_arg.as_encoded_bytes().to_vec());
                 }
-                Item::BuildId(value_os) if value_os.as_encoded_bytes() == b"\0" => {
+                Item::BuildId(None) => {
                     a.build_id = BuildId::Hash(20);
                 }
-                Item::BuildId(value_os) => {
+                Item::BuildId(Some(value_os)) => {
                     let arg = utf8_arg(value_os, "--build-id");
                     a.build_id = match arg {
                         "none" => BuildId::None,
@@ -2815,7 +2820,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                     // value is read as GNU ld reads it: in C syntax, or
                     // empty (strtoul then reads no digits and reports no
                     // error).
-                    if value_os.as_encoded_bytes() != b"\0" {
+                    if let Some(value_os) = value_os {
                         let ok = value_os
                             .to_str()
                             .is_some_and(|s| s.is_empty() || parse_c_number(s).is_some());
@@ -2828,7 +2833,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                     // GNU ld sorts common symbols by size, in the order
                     // given; mold ignores the order, but reads the value as
                     // GNU ld does.
-                    if value_os.as_encoded_bytes() != b"\0"
+                    if let Some(value_os) = value_os
                         && !matches!(value_os.to_str(), Some("ascending" | "descending"))
                     {
                         fatal!(
