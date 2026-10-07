@@ -29,9 +29,9 @@ int visible_fn(void);
 int main() { printf("%d\n", visible_fn()); }
 EOF
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/r.o
-$t/exe | grep '^2$'
+$RUN $t/exe | grep '^2$'
 $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/k.o
-$t/exe2 | grep '^2$'
+$RUN $t/exe2 | grep '^2$'
 
 # The way strip drives it.
 $mold -keep_private_externs -r -S $t/a.o -o $t/s.o

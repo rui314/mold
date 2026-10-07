@@ -10,4 +10,4 @@ int main() {
 EOF2
 
 $CC --ld-path=$mold -framework CoreFoundation -o $t/exe $t/a.o
-$t/exe | grep '^5$'
+$RUN $t/exe | grep '^5$'

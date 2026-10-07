@@ -24,7 +24,7 @@ int main() {
 EOF
 printf '2147483647\n2147483648\n4294967295\n-2147483648\n-2147483649\n' > $t/expected
 $CC --ld-path=$mold $t/main.o $t/pointers.o $t/libdata.dylib -Wl,-fixup_chains -o $t/exe
-$t/exe > $t/log
+$RUN $t/exe > $t/log
 cmp $t/log $t/expected
 
 # A positive out-of-range addend alone must select ADDEND64 too.
@@ -43,5 +43,5 @@ extern char data[], *value;
 int main() { return (uintptr_t)value - (uintptr_t)data != (uintptr_t)(${addend}LL); }
 EOF
   $CC --ld-path=$mold $t/check.o $t/single.o $t/libdata.dylib -Wl,-fixup_chains -o $t/single
-  $t/single
+  $RUN $t/single
 done

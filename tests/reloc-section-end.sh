@@ -44,7 +44,7 @@ EOF
 
 $mold -r -arch $ARCH -o $t/r.o $t/a.o
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/r.o
-$t/exe | grep '^5 ok$'
+$RUN $t/exe | grep '^5 ok$'
 
 # Empty sections (an emptied coverage section, say) share a file
 # offset with a neighbor and must not confuse the copy.
@@ -59,7 +59,7 @@ _Thread_local int tls_var = 3;
 int get_tls(void) { return tls_var; }
 EOF
 $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/a.o $t/b.o $t/c.o
-$t/exe2 | grep '^5 ok$'
+$RUN $t/exe2 | grep '^5 ok$'
 # An empty section with no symbol in it makes no output section, as
 # with ld-prime. The arm64 assembler gives every section an ltmp
 # symbol, so there all three stay.

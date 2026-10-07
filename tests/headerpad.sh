@@ -29,10 +29,10 @@ $CC --ld-path=$mold -o $t/exe4 $t/a.o -Wl,-headerpad,0x10 2> $t/log4
 grep -q -- '-headerpad 0x10 is too small, at least 32 bytes are required to reserve space for code signature' $t/log4
 $CC --ld-path=$mold -o $t/exe5 $t/a.o -lz -Wl,-headerpad_max_install_names
 [ $(free $t/exe5) -ge 2048 ]
-$t/exe5
+$RUN $t/exe5
 $CC --ld-path=$mold -o $t/exe6 $t/a.o -Wl,-headerpad,0x1000
 [ $(free $t/exe6) -ge 4096 ]
-$t/exe6
+$RUN $t/exe6
 
 # The free space is what install_name_tool needs to rename a dylib in
 # place, and codesign to add its command.
@@ -51,7 +51,7 @@ cp $t/libfoo.dylib $long/libfoo.dylib
 install_name_tool -change @rpath/libfoo.dylib $long/libfoo.dylib $t/exe7 2> /dev/null
 codesign -f -s - $t/exe7 2> /dev/null
 otool -L $t/exe7 | grep -q "$long/libfoo.dylib"
-$t/exe7
+$RUN $t/exe7
 
 # Without -headerpad_max_install_names the room is no less than
 # ld-prime's, which places the sections after an estimate of the load
@@ -73,7 +73,7 @@ for i in 1 2 3; do
 done
 codesign -f -s - $t/exe8 2> /dev/null
 [ $(otool -L $t/exe8 | grep -c '@loader_path/libbar') = 3 ]
-$t/exe8
+$RUN $t/exe8
 
 # An image no dyld loads gets -headerpad, whatever it says.
 $mold -arch $ARCH -static -e _main -o $t/static $t/a.o

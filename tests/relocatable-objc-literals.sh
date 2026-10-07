@@ -38,10 +38,10 @@ int main() {
 }
 EOF
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/r.o -framework Foundation
-$t/exe | grep -q '^42 2.5 a,1 v cfstr 3$'
+$RUN $t/exe | grep -q '^42 2.5 a,1 v cfstr 3$'
 nm $t/exe > $t/nm1
 grep -q ' s __unnamed_array_storage$' $t/nm1
 $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/a.o -framework Foundation
-$t/exe2 | grep -q '^42 2.5 a,1 v cfstr 3$'
+$RUN $t/exe2 | grep -q '^42 2.5 a,1 v cfstr 3$'
 nm $t/exe2 > $t/nm2
 grep -q ' s __unnamed_array_storage$' $t/nm2

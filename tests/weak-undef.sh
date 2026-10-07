@@ -14,7 +14,7 @@ int foo() { return 42; }
 EOF
 
 $CC --ld-path=$mold -o $t/exe1 $t/a.o -Wl,-U,_foo
-$t/exe1 | grep '^5$'
+$RUN $t/exe1 | grep '^5$'
 
 $CC --ld-path=$mold -o $t/exe2 $t/a.o $t/b.o -Wl,-U,_foo
-$t/exe2 | grep '^42$'
+$RUN $t/exe2 | grep '^42$'

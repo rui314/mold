@@ -25,7 +25,7 @@ int main() {
 }
 EOF2
 $CC --ld-path=$mold -o $t/exe $t/a.o -framework AppKit -mmacosx-version-min=15.0
-$t/exe
+$RUN $t/exe
 otool -L $t/exe | tail -n +2 | awk '{print $1}' | sed 's|.*/||' > $t/loads
 [ "$(sort $t/loads | tr '\n' ' ')" = "AppKit CoreFoundation Foundation libSystem.B.dylib " ]
 [ "$(grep -e '^AppKit$' -e '^libSystem' $t/loads | tr '\n' ' ')" = "AppKit libSystem.B.dylib " ]
@@ -36,7 +36,7 @@ grep -q '^Foundation/_NSHomeDirectory$' $t/binds
 grep -q '^CoreFoundation/_CFRelease$' $t/binds
 
 $CC --ld-path=$mold -o $t/exe2 $t/a.o -framework AppKit -Wl,-no_implicit_dylibs
-$t/exe2
+$RUN $t/exe2
 [ "$(otool -L $t/exe2 | tail -n +2 | awk '{print $1}' | sed 's|.*/||' | tr '\n' ' ')" = "AppKit libSystem.B.dylib " ]
 dyld_info -fixups $t/exe2 | grep bind | awk '{print $NF}' | sort -u > $t/binds2
 grep -q '^AppKit/_NSHomeDirectory$' $t/binds2
@@ -45,7 +45,7 @@ grep -q '^AppKit/_CFRelease$' $t/binds2
 # Named explicitly as well: an explicit library keeps its command-line
 # position even when a re-export reached it first.
 $CC --ld-path=$mold -o $t/exe3 $t/a.o -framework AppKit -framework Foundation
-$t/exe3
+$RUN $t/exe3
 otool -L $t/exe3 | tail -n +2 | awk '{print $1}' | sed 's|.*/||' > $t/loads3
 [ "$(sort $t/loads3 | tr '\n' ' ')" = "AppKit CoreFoundation Foundation libSystem.B.dylib " ]
 [ "$(grep -v CoreFoundation $t/loads3 | tr '\n' ' ')" = "AppKit Foundation libSystem.B.dylib " ]

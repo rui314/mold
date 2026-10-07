@@ -10,5 +10,5 @@ EOF
 $CC --ld-path=$mold -o $t/exe $t/a.o
 
 code=0
-$t/exe || code=$?
+$RUN $t/exe || code=$?
 [ $code = 42 ]

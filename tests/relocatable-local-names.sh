@@ -39,6 +39,6 @@ const char *f3(void); NSString *cf(void); Class getcls(void); SEL getsel(void);
 int main() { return (getcls() == [NSObject class] && sel_isEqual(getsel(), @selector(count)) && [cf() isEqualToString:@"cfstr"] && f3()[0] == 'p') ? 0 : 1; }
 EOF2
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/r.o -framework Foundation
-$t/exe
+$RUN $t/exe
 $CC -o $t/exe2 $t/main.o $t/r.o -framework Foundation
-$t/exe2
+$RUN $t/exe2

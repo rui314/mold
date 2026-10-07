@@ -58,4 +58,4 @@ a, b, c, d = [int(l, 16) for l in open(sys.argv[1])]
 assert b == a + 24 and b % 16 == 8, hex(b - a)
 assert c == b + 8 and d == c + 8
 EOF2
-$t/exe2 | grep '^16$'
+$RUN $t/exe2 | grep '^16$'

@@ -58,7 +58,7 @@ EOF
 $CC -shared -o $t/libfoo.dylib $t/a.o -framework Foundation -Wl,-make_mergeable \
   -Wl,-install_name,@rpath/libfoo.dylib
 $CC --ld-path=$mold -o $t/exe $t/main.o -L$t -Wl,-merge-lfoo -Wl,-no_merged_libraries_hook
-$t/exe | grep -q '^Alice greets Bob (30) / ALICE GREETS WORLD (30) / 6 1$'
+$RUN $t/exe | grep -q '^Alice greets Bob (30) / ALICE GREETS WORLD (30) / 6 1$'
 otool -L $t/exe > $t/libs
 not grep -q libfoo $t/libs
 grep -q Foundation $t/libs
@@ -66,6 +66,6 @@ grep -q Foundation $t/libs
 nm $t/exe > $t/syms
 not grep -Eq '___mold_bundle_hook_table|_relinkableLibraryClasses' $t/syms
 $CC --ld-path=$mold -o $t/exe2 $t/main.o -L$t -Wl,-merge-lfoo
-$t/exe2 | grep -q '^Alice greets Bob (30) / ALICE GREETS WORLD (30) / 6 1$'
+$RUN $t/exe2 | grep -q '^Alice greets Bob (30) / ALICE GREETS WORLD (30) / 6 1$'
 nm $t/exe2 > $t/syms
 grep -Eq '___mold_bundle_hook_table|_relinkableLibraryClasses' $t/syms

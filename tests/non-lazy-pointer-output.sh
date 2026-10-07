@@ -77,7 +77,7 @@ int main() {
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o
-$t/exe > $t/out
+$RUN $t/exe > $t/out
 printf 'hello\nworld\n42\n' | cmp - $t/out
 
 otool -l $t/exe > $t/lc
@@ -97,7 +97,7 @@ grep -A2 '(__FOO,__bar) 1 entries' $t/indirect | grep -q ' _puts$'
 
 # Only data that needs no writes after fixups goes to __DATA_CONST.
 $CC --ld-path=$mold -o $t/exe2 $t/a.o $t/b.o -Wl,-no_data_const
-$t/exe2 | cmp - $t/out
+$RUN $t/exe2 | cmp - $t/out
 otool -l $t/exe2 | grep -A10 'sectname __foo$' > $t/foo2
 grep -q 'segname __DATA$' $t/foo2
 grep -q 'flags 0x00000006' $t/foo2
@@ -125,5 +125,5 @@ if $mold -v 2>&1 | grep -q mold-macho; then
   otool -l $t/r.o | grep -A10 'sectname __foo$' | grep -q 'flags 0x00000006'
   objdump --macho -r $t/r.o | grep -q ' _puts$'
   $CC --ld-path=$mold -o $t/exe3 $t/r.o $t/b.o
-  $t/exe3 | cmp - $t/out
+  $RUN $t/exe3 | cmp - $t/out
 fi

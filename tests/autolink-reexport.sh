@@ -22,7 +22,7 @@ int main() { CFRelease(CFRetain(NSHomeDirectory())); }
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/opt.o -framework Foundation
-$t/exe
+$RUN $t/exe
 [ "$(otool -L $t/exe | tail -n +2 | awk '{print $1}' | sed 's|.*/||' | tr '\n' ' ')" = "Foundation libSystem.B.dylib " ]
 
 $CC --ld-path=$mold -o $t/exe2 $t/b.o $t/opt.o -framework Foundation

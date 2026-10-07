@@ -152,7 +152,7 @@ int main() {
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o $t/libext.dylib
-$t/exe
+$RUN $t/exe
 objdump -d --no-show-raw-insn $t/exe > $t/dis
 
 # A function's instructions, with a literal load written ldr=.
@@ -184,12 +184,12 @@ ops() {
 }
 $mold -r -arch $ARCH -o $t/r.o $t/a.o $t/b.o
 $CC --ld-path=$mold -o $t/exe3 $t/r.o $t/libext.dylib
-$t/exe3
+$RUN $t/exe3
 [ "$(ops $t/exe3)" = "$(ops $t/exe)" ]
 
 # -ignore_optimization_hints keeps the compiler's sequences.
 $CC --ld-path=$mold -o $t/exe2 $t/a.o $t/b.o $t/libext.dylib -Wl,-ignore_optimization_hints
-$t/exe2
+$RUN $t/exe2
 objdump -d --no-show-raw-insn $t/exe2 > $t/dis
 [ "$(insns add)" = 'adrp add ret ' ]
 
@@ -228,4 +228,4 @@ $CC --ld-path=$mold -o $t/exe4 $t/c.o
 objdump --no-show-raw-insn -d $t/exe4 | grep -A6 '<_main>:' > $t/c.dis
 grep -q 'adrp.*x8' $t/c.dis
 not grep -q 'adrp.*x9' $t/c.dis
-$t/exe4 > /dev/null || [ $? = 7 ]
+$RUN $t/exe4 > /dev/null || [ $? = 7 ]

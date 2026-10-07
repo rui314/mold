@@ -33,7 +33,7 @@ EOF2
 otool -l $t/a.o | grep 'sectname __objc_classrefs'
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o -framework Foundation -mmacosx-version-min=15.0
-$t/exe | grep '^Foo NSMutableArray 1 1$'
+$RUN $t/exe | grep '^Foo NSMutableArray 1 1$'
 otool -l $t/exe > $t/lc
 not grep -q '__objc_classrefs' $t/lc
 nm $t/exe > $t/nm
@@ -43,7 +43,7 @@ dyld_info -fixups $t/exe > $t/fixups
 [ "$(grep '__got' $t/fixups | grep -c 'OBJC_CLASS_\$_NSMutableArray')" = 1 ]
 
 $CC --ld-path=$mold -o $t/exe14 $t/a.o $t/b.o -framework Foundation -mmacosx-version-min=14.0
-$t/exe14 | grep '^Foo NSMutableArray 1 1$'
+$RUN $t/exe14 | grep '^Foo NSMutableArray 1 1$'
 otool -l $t/exe14 | grep 'sectname __objc_classrefs'
 # Both objects' references to NSMutableArray coalesce into one slot,
 # as ld64 keeps one class reference per class.

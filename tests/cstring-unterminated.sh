@@ -28,7 +28,7 @@ int main() { printf("%s %d %d\n", ptr, !strncmp(tail, "abc", 3), tail == ptr); }
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o $t/main.o
-$t/exe > $t/out
+$RUN $t/exe > $t/out
 grep -qx 'abc 1 0' $t/out
 
 if $mold -v 2> /dev/null | grep -q mold-macho; then
@@ -37,6 +37,6 @@ if $mold -v 2> /dev/null | grep -q mold-macho; then
   size=$(otool -l $t/r.o | awk '$1 == "sectname" { n = $2 } n == "__cstring" && $1 == "size" { print $2 }')
   [ $((size)) = 10 ]
   $CC --ld-path=$mold -o $t/exe2 $t/r.o $t/main.o
-  $t/exe2 > $t/out2
+  $RUN $t/exe2 > $t/out2
   grep -qx 'abc 1 0' $t/out2
 fi

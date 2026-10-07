@@ -19,4 +19,4 @@ int main() { std::cout << "bar\n"; }
 EOF2
 
 $CXX --ld-path=$mold -o $t/exe $t/a.o $t/b.o $t/c.o
-$t/exe | grep '^foo foo bar$'
+$RUN $t/exe | grep '^foo foo bar$'

@@ -15,7 +15,7 @@ EOF
 
 rm -f $t/exe.lto.*
 $CC -flto --ld-path=$mold -o $t/exe $t/a.o $t/b.o -Wl,-save-temps
-$t/exe | grep -q '^42$'
+$RUN $t/exe | grep -q '^42$'
 [ -s $t/exe.lto.bc ]
 [ -s $t/exe.lto.opt.bc ]
 otool -hv $t/exe.lto.o | grep -q OBJECT
@@ -45,11 +45,11 @@ int main() { printf("%d\n", times2(21)); }'
 thinlink() { $CC -flto=thin --ld-path=$mold -o $t/exe $t/c.o $t/d.o "$@"; }
 thinlink -Wl,-cache_path_lto,$t/cache,-prune_interval_lto,-1,-prune_after_lto,3600 \
   -Wl,-max_relative_cache_size_lto,50
-$t/exe | grep -q '^42$'
+$RUN $t/exe | grep -q '^42$'
 [ "$(stat -f %Lp $t/cache)" = 700 ]
 ls $t/cache | grep -q '^llvmcache-'
 thinlink -Wl,-cache_path_lto,$t/cache
-$t/exe | grep -q '^42$'
+$RUN $t/exe | grep -q '^42$'
 thinlink -Wl,-cache_path_lto,$t/exe 2> $t/log
 grep -q "warning: unable to create ThinLTO cache directory: $t/exe (17)" $t/log
 # -mllvm options go to libLTO, which parses them as LLVM's command line
@@ -57,7 +57,7 @@ grep -q "warning: unable to create ThinLTO cache directory: $t/exe (17)" $t/log
 not link -Wl,-mllvm,-bogus-option 2> $t/log
 grep -q "Unknown command line argument '-bogus-option'" $t/log
 link -Wl,-mllvm,-inline-threshold=100
-$t/exe | grep -q '^42$'
+$RUN $t/exe | grep -q '^42$'
 
 for opt in -prune_interval_lto -prune_after_lto -max_relative_cache_size_lto; do
   not link -Wl,$opt,0x10 2> $t/log
@@ -71,5 +71,5 @@ grep -q -- '-arch_variant_lto_cache_mismatch invalid option (warning | error | s
 for opt in -no_lto_softload_runtime_symbols -lto_softload_runtime_symbols \
   -use_lto_filenames_in_order_file_matching -no_use_lto_filenames_in_order_file_matching; do
   link -Wl,$opt
-  $t/exe | grep -q '^42$'
+  $RUN $t/exe | grep -q '^42$'
 done

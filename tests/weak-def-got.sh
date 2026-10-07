@@ -45,5 +45,5 @@ got_size() {
 }
 $CC --ld-path=$mold -o $t/exe1 $t/main.o $t/a.o
 $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/a.o $t/b.o
-$t/exe2 | grep -q '^42$'
+$RUN $t/exe2 | grep -q '^42$'
 [ "$(got_size $t/exe1)" = "$(got_size $t/exe2)" ]

@@ -42,14 +42,14 @@ grep -qx '__DATA,__datacoal_nt 0x00000000' $t/sects
 grep -qx '__DATA_CONST,__const 0x00000000' $t/sects
 nm -m $t/exe > $t/syms
 grep -q '(__TEXT,__textcoal_nt) external _t$' $t/syms
-$t/exe
+$RUN $t/exe
 
 $mold -arch $ARCH -r -o $t/r.o $t/a.o
 sects $t/r.o > $t/sects-r
 grep -q '^__TEXT,__textcoal_nt ' $t/sects-r
 grep -q '^__DATA,__datacoal_nt ' $t/sects-r
 $CC --ld-path=$mold -o $t/exe-r $t/r.o $t/main.o
-$t/exe-r
+$RUN $t/exe-r
 
 $CC --ld-path=$mold -o $t/exe2 $t/a.o $t/main2.o \
   -Wl,-rename_section,__TEXT,__textcoal_nt,__TEXT,__foo \

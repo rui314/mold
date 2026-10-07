@@ -51,7 +51,7 @@ EOF
 python3 $t/opcode.py $t/a.o $t/lea.o 3 0x8d
 $CC --ld-path=$mold -o $t/exe $t/lea.o
 code=0
-$t/exe || code=$?
+$RUN $t/exe || code=$?
 [ $code = 42 ]
 otool -l $t/exe > $t/lc
 not grep -q 'sectname __got' $t/lc

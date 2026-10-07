@@ -25,5 +25,5 @@ source "$(dirname "$0")"/common.inc
 } | $CC -o $t/a.o -c -xassembler -
 
 $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-map,$t/map
-$t/exe
+$RUN $t/exe
 grep -Eq $'^0x[0-9A-F]+\t0x[0-9A-F]+\t\\[  0\\] _far.island$' $t/map

@@ -31,6 +31,6 @@ else
 fi
 $CC --ld-path=$mold -framework Foundation -dynamiclib -o $t/libgreet.dylib $t/a.o
 otool -l $t/libgreet.dylib | grep 'sectname __objc_methlist'
-$t/exe > $t/log
+$RUN $t/exe > $t/log
 grep greetings $t/log
 grep 'hello objc 10' $t/log

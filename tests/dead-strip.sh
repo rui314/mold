@@ -10,7 +10,7 @@ int main() { live(); }
 EOF2
 
 $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-dead_strip
-$t/exe | grep '^live$'
+$RUN $t/exe | grep '^live$'
 
 nm $t/exe > $t/syms
 grep -q _live $t/syms

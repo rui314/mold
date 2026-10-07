@@ -15,7 +15,7 @@ int main() { printf("%p %p %p %d\n", &zzz_start, &zzz_end, &aaa_start, a); }
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-rename_section,__AAA,__a,__DATA,__a
-read -r s e a v <<< "$($t/exe)"
+read -r s e a v <<< "$($RUN $t/exe)"
 [ $s = $e ] && [ $s = $a ] && [ $v = 3 ]
 
 otool -l $t/exe > $t/lc

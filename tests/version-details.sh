@@ -33,4 +33,4 @@ $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-version_details > $t/details3.json 2> 
 check_json $t/details3.json
 grep '^Library search paths:' $t/err3
 not grep "$banner" $t/err3
-$t/exe
+$RUN $t/exe

@@ -22,7 +22,7 @@ int main(void) {
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o -framework Foundation -mmacosx-version-min=14.0
-$t/exe | grep -q '^42 1$'
+$RUN $t/exe | grep -q '^42 1$'
 
 nm -pm $t/exe | awk '/__objc_const/ { print $NF }' | tr '\n' ' ' > $t/const
 grep -q '__OBJC_CLASS_PROTOCOLS_$_Foo __OBJC_METACLASS_RO_$_Foo __OBJC_$_INSTANCE_VARIABLES_Foo __OBJC_$_PROP_LIST_Foo __OBJC_CLASS_RO_$_Foo ' $t/const

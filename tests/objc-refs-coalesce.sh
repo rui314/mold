@@ -40,7 +40,7 @@ size() {
 }
 
 $CC --ld-path=$mold -o $t/exe $t/base.o $t/ra.o $t/rb.o -framework Foundation
-$t/exe | grep -q '^1 0$'
+$RUN $t/exe | grep -q '^1 0$'
 [ "$(size $t/exe __objc_superrefs)" = 0x0000000000000010 ]
 
 # Unlabeled entries of one target in two objects.

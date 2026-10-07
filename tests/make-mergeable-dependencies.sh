@@ -27,7 +27,7 @@ EOF
 $CC --ld-path=$mold -o $t/exe $t/main.o -L$t -Wl,-merge-lfoo -Wl,-rpath,@loader_path/sub
 $CC -o $t/exe2 $t/main.o -L$t -Wl,-merge-lfoo -Wl,-rpath,@loader_path/sub
 for exe in $t/exe $t/exe2; do
-  $exe
+  $RUN $exe
   otool -L $exe > $t/libs
   grep -A2 libSystem $t/libs | grep -q '@rpath/libw.dylib (compatibility version 3.0.0, current version 3.2.1)'
   grep -A2 libSystem $t/libs | grep -q 'libz'

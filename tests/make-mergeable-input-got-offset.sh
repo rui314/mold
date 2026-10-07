@@ -56,6 +56,6 @@ $CC --ld-path=$mold -shared -o $t/libfoo.dylib $t/a.o -L$t -limp -Wl,-make_merge
   -Wl,-install_name,@rpath/libfoo.dylib
 
 $CC --ld-path=$mold -o $t/exe1 $t/main.o -L$t -Wl,-merge-lfoo
-$t/exe1 | grep -q '^137$'
+$RUN $t/exe1 | grep -q '^137$'
 $CC -o $t/exe2 $t/main.o -L$t -Wl,-merge-lfoo
-$t/exe2 | grep -q '^137$'
+$RUN $t/exe2 | grep -q '^137$'

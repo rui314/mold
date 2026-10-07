@@ -31,9 +31,9 @@ long g3;
 int main() { return 0; }
 EOF
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/r.o
-$t/exe
+$RUN $t/exe
 $CC -o $t/exe2 $t/main.o $t/r.o
-$t/exe2
+$RUN $t/exe2
 
 cat <<EOF | $CXX -o $t/b.o -c -xc++ -
 int f();

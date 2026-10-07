@@ -34,10 +34,10 @@ $CC -shared -o $t/l/liba.dylib $t/a.o -L$t/l -lb -Wl,-make_mergeable \
 
 for lib in m l; do
   $CC --ld-path=$mold -o $t/exe-$lib $t/main.o -L$t/$lib -Wl,-merge-la -Wl,-merge-lb
-  $t/exe-$lib | grep -q '^84$'
+  $RUN $t/exe-$lib | grep -q '^84$'
   otool -L $t/exe-$lib > $t/libs-$lib
   not grep -q 'lib[ab]\.dylib' $t/libs-$lib
 done
 
 $CC -o $t/exe2 $t/main.o -L$t/m -Wl,-merge-la -Wl,-merge-lb
-$t/exe2 | grep -q '^84$'
+$RUN $t/exe2 | grep -q '^84$'

@@ -34,7 +34,7 @@ not $CC --ld-path=$mold -o $t/exe $t/d.o -L$t -lbar 2> $t/log
 grep -q "ignoring missing indirect library: library for install name '@executable_path/x/y/libfoo.dylib' not found" $t/log
 
 $CC --ld-path=$mold -o $t/exe $t/d.o -L$t -L$t/x/y -lbar
-$t/exe
+$RUN $t/exe
 
 # -executable_path, which ld64 took for the output's path, is obsolete:
 # ignored with a warning.

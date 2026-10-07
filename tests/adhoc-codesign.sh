@@ -11,7 +11,7 @@ EOF
 
 $CC --ld-path=$mold -B. -o $t/exe1 $t/a.o -Wl,-adhoc_codesign
 otool -l $t/exe1 | grep LC_CODE_SIGNATURE
-$t/exe1 | grep -F 'Hello world'
+$RUN $t/exe1 | grep -F 'Hello world'
 
 $CC --ld-path=$mold -B. -o $t/exe2 $t/a.o -Wl,-no_adhoc_codesign
 otool -l $t/exe2 > $t/log2
@@ -29,7 +29,7 @@ if [ $ARCH = arm64 ]; then
 else
   not grep -q LC_CODE_SIGNATURE $t/log3
 fi
-$t/exe3 | grep -F 'Hello world'
+$RUN $t/exe3 | grep -F 'Hello world'
 
 # So is a simulator's arm64 image, which Apple silicon runs too, but
 # not a device's: packaging the app signs it with the developer's

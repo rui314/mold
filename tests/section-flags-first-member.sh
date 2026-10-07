@@ -65,12 +65,12 @@ flags() {
 $CC --ld-path=$mold -o $t/exe $t/data.o $t/code.o $t/main.o
 [ "$(flags $t/exe __TEXT __foo)" = 0x00000000 ]
 [ "$(flags $t/exe __TEXT __bar)" = 0x80000400 ]
-$t/exe
+$RUN $t/exe
 
 $CC --ld-path=$mold -o $t/exe2 $t/code.o $t/data.o $t/main.o
 [ "$(flags $t/exe2 __TEXT __foo)" = 0x80000400 ]
 [ "$(flags $t/exe2 __TEXT __bar)" = 0x00000000 ]
-$t/exe2
+$RUN $t/exe2
 
 $CC --ld-path=$mold -o $t/exe3 $t/std.o $t/main.o
 [ "$(flags $t/exe3 __TEXT __text)" = 0x80000400 ]
@@ -78,12 +78,12 @@ $CC --ld-path=$mold -o $t/exe3 $t/std.o $t/main.o
 [ "$(flags $t/exe3 __DATA __data)" = 0x00000000 ]
 [ "$(flags $t/exe3 __TEXT __stub_helper)" = 0x80000400 ]
 [ "$(flags $t/exe3 __TEXT __cstring)" = 0x80000400 ]
-$t/exe3
+$RUN $t/exe3
 
 $CC --ld-path=$mold -o $t/exe4 $t/data.o $t/main.o \
   -Wl,-rename_section,__TEXT,__foo,__TEXT,__text
 [ "$(flags $t/exe4 __TEXT __text)" = 0x80000400 ]
-$t/exe4
+$RUN $t/exe4
 
 $mold -arch $ARCH -r -o $t/r.o $t/std.o
 [ "$(flags $t/r.o __TEXT __text)" = 0x80000400 ]

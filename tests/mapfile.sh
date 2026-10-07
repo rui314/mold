@@ -8,7 +8,7 @@ int main() { hello(); }
 EOF2
 
 $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-map,$t/map
-$t/exe | grep hi
+$RUN $t/exe | grep hi
 grep -q '# Object files:' $t/map
 grep -q 'a.o' $t/map
 grep -q '__TEXT.*__text' $t/map

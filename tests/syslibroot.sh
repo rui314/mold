@@ -92,9 +92,9 @@ int which(void);
 int main() { return which(); }
 EOF2
 $CC --ld-path=$mold -o $t/exe $t/main.o $abs/arc/libw.a -Wl,-syslibroot,$t/root
-$t/exe || [ $? = 2 ]
+$RUN $t/exe || [ $? = 2 ]
 echo $abs/arc/libw.a > $t/arc/list
 $CC --ld-path=$mold -o $t/exe $t/main.o -Wl,-filelist,$t/arc/list -Wl,-syslibroot,$t/root
-$t/exe || [ $? = 1 ]
+$RUN $t/exe || [ $? = 1 ]
 not $CC --ld-path=$mold -o $t/exe $t/main.o -Wl,$t/arc/libnone.a 2> $t/log
 grep -q "library '$t/arc/libnone.a' not found" $t/log

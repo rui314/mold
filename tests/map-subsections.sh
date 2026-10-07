@@ -99,7 +99,7 @@ __attribute__((noinline)) static int h2(int x) { return x * 7 + 3; }
 int main(int argc, char **argv) { return h1(argc) + h2(argc) != 20; }
 EOF
   $CC --ld-path=$mold -o $t/exe2 $t/e.o -Wl,-deduplicate -Wl,-map,$t/map2
-  $t/exe2
+  $RUN $t/exe2
   grep -E '\] _h[12]$' $t/map2 > $t/folded
   [ "$(cut -f1 $t/folded | sort -u | wc -l)" -eq 1 ]
   [ "$(sed -n 2p $t/folded | cut -f2-)" = $'0x00000000\t[  1] _h2' ]

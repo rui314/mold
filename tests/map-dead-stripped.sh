@@ -60,7 +60,7 @@ EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o $t/c.o $t/d.o -Wl,-dead_strip \
   -Wl,-u,_d2 -Wl,-u,_wk -Wl,-u,_zz -Wl,-u,_p2 -Wl,-map,$t/map
-$t/exe || true
+$RUN $t/exe || true
 
 sed -n '/^# Dead Stripped Symbols:/,$p' $t/map | grep -v '^#' > $t/dead
 diff - $t/dead <<EOF

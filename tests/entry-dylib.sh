@@ -12,9 +12,9 @@ int unused = 1;
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-e,_exit
-st=0; $t/exe || st=$?
+st=0; $RUN $t/exe || st=$?
 [ $st = 1 ]
-st=0; $t/exe a b || st=$?
+st=0; $RUN $t/exe a b || st=$?
 [ $st = 3 ]
 
 nm -m $t/exe | grep 'undefined.*_exit'

@@ -16,7 +16,7 @@ cat <<EOF | $CC -o $t/b.o -c -xassembler -
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o -Wl,-dead_strip
-$t/exe
+$RUN $t/exe
 nm $t/exe > $t/syms
 grep -q ' _fini$' $t/syms
 otool -l $t/exe > $t/lc

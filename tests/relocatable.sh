@@ -27,10 +27,10 @@ EOF2
 # ...then use Apple's toolchain for the final link, proving the merged
 # object is a valid input for other linkers, and ours too.
 $CC -o $t/exe1 $t/main.o $t/merged.o
-$t/exe1 | grep '^from a 8$'
+$RUN $t/exe1 | grep '^from a 8$'
 
 $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/merged.o
-$t/exe2 | grep '^from a 8$'
+$RUN $t/exe2 | grep '^from a 8$'
 
 # Unwind info survives the merge: C++ exceptions still work after -r.
 cat <<EOF2 | $CXX -o $t/e1.o -c -xc++ -
@@ -48,6 +48,6 @@ EOF2
 $mold -r -arch $ARCH -platform_version macos 15.0 15.0 -o $t/exc.o $t/e1.o $t/e2.o
 otool -l $t/exc.o | awk '$1 == "sectname" {print $2}' | grep -x __gcc_except_tab
 $CXX --ld-path=$mold -o $t/exc1 $t/exc.o
-$t/exc1 | grep 'caught 42'
+$RUN $t/exc1 | grep 'caught 42'
 $CXX -o $t/exc2 $t/exc.o
-$t/exc2 | grep 'caught 42'
+$RUN $t/exc2 | grep 'caught 42'

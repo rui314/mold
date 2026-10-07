@@ -22,7 +22,7 @@ __attribute__((visibility("hidden"), used)) int *op = &other;
 int main() { return 0; }
 EOF
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/libfoo.dylib -Wl,-rpath,$t
-$t/exe
+$RUN $t/exe
 dyld_info -fixups $t/exe > $t/fixups
 grep -q 'libfoo/__swift_FORCE_LOAD_\$_swiftFoo \[weak-import\]' $t/fixups
 grep -q 'libfoo/_other \[weak-import\]' $t/fixups
@@ -31,7 +31,7 @@ nm -m $t/exe | grep 'undefined) weak external __swift_FORCE_LOAD_\$_swiftFoo (fr
 
 # With classic dyld info too.
 $CC --ld-path=$mold -o $t/exe2 $t/a.o $t/libfoo.dylib -Wl,-rpath,$t -Wl,-no_fixup_chains
-$t/exe2
+$RUN $t/exe2
 dyld_info -fixups $t/exe2 > $t/fixups2
 grep -q 'libfoo/__swift_FORCE_LOAD_\$_swiftFoo \[weak-import\]' $t/fixups2
 grep -q 'libfoo/_other \[weak-import\]' $t/fixups2

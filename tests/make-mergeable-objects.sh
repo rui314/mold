@@ -59,7 +59,7 @@ otool -l $t/libfoo.dylib | grep -q LC_ATOM_INFO
 mkdir -p $t/x $t/y
 $CC --ld-path=$mold -o $t/x/exe $t/main.o -L$t -Wl,-merge-lfoo
 $CC --ld-path=$mold -o $t/y/exe $t/main.o $t/a.o $t/b.o
-$t/x/exe > $t/out
+$RUN $t/x/exe > $t/out
 grep -q 'hello from a two 33 1234' $t/out
 grep -q '^16909092$' $t/out
 otool -L $t/x/exe > $t/libs
@@ -67,11 +67,11 @@ not grep -q libfoo $t/libs
 
 # The merged image has what the objects would give it, if not in their
 # order.
-$t/y/exe > $t/out1
+$RUN $t/y/exe > $t/out1
 cmp $t/out $t/out1
 same_sections_and_symbols $t/x/exe $t/y/exe
 
 # ld-prime merges it as well.
 $CC -o $t/exe2 $t/main.o -L$t -Wl,-merge-lfoo
-$t/exe2 > $t/out2
+$RUN $t/exe2 > $t/out2
 cmp $t/out $t/out2

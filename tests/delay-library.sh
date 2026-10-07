@@ -59,7 +59,7 @@ else
 fi
 
 # The dylibs' initializers run as the program first uses them.
-$t/exe > $t/out
+$RUN $t/exe > $t/out
 printf 'start\nfoo loaded\n5 3 5 6\nqux loaded\n4\n' | cmp - $t/out
 
 # Only calls and GOT loads can be delayed; a pointer in data, which dyld

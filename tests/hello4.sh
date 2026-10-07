@@ -12,5 +12,5 @@ int main() {
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o
-$t/exe 2> /dev/null | grep 'Hello world'
-$t/exe 2>&1 > /dev/null | grep 'Hello stderr'
+$RUN $t/exe 2> /dev/null | grep 'Hello world'
+$RUN $t/exe 2>&1 > /dev/null | grep 'Hello stderr'

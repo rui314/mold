@@ -16,7 +16,7 @@ grep -q '^\[ *[0-9]*\] /tmp/lto.o$' $t/map
 nm -ap $t/exe > $t/nm
 grep -q '^0000000000000000 - .. 0001   OSO /tmp/lto.o$' $t/nm
 not grep -q -a -F /tmp/lto.o $t/dep
-$t/exe | grep -q Hello
+$RUN $t/exe | grep -q Hello
 
 # With -object_path_lto, the object is named after the file written.
 $CC --ld-path=$mold -flto -o $t/exe2 $t/a.o -Wl,-object_path_lto,$t/lto.o \

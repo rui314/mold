@@ -134,7 +134,7 @@ run_app "" -F$t/lib -Wl,-merge_framework,Foo
 check "$in_app"
 rm -rf $t/plain && mkdir $t/plain
 cp $t/MyApp.app/Contents/MacOS/MyApp $t/plain/MyApp
-$t/plain/MyApp $classes > $t/out
+$RUN $t/plain/MyApp $classes > $t/out
 check 'main -'
 run_app "" -F$t/lib -Wl,-merge_framework,Foo -Wl,-no_merged_libraries_hook
 check 'main -'

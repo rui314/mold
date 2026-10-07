@@ -67,7 +67,7 @@ EOF
 $CC -o $t/a.o -c $t/a.c
 $CC -o $t/b.o -c $t/b.c
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o
-$t/exe
+$RUN $t/exe
 
 # The sections' names, and each provider's DOF, by provider.
 dof_dump $t/exe > $t/dof

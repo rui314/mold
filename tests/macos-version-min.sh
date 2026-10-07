@@ -14,7 +14,7 @@ EOF
 $CC --ld-path=$mold -o $t/exe1 $t/a.o -Wl,-macos_version_min,10.9
 otool -l $t/exe1 > $t/log
 if [ $ARCH = x86_64 ]; then
-  $t/exe1
+  $RUN $t/exe1
   grep -A3 'cmd LC_VERSION_MIN_MACOSX' $t/log > $t/vmin
   grep -q 'version 10.9' $t/vmin
   grep -q 'sdk 10.9' $t/vmin

@@ -73,19 +73,19 @@ same_addr() {
 }
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o -Wl,-deduplicate
-$t/exe | grep '^1 0 0$'
+$RUN $t/exe | grep '^1 0 0$'
 nm $t/exe > $t/nm
 same_addr $t/nm _call1 _call2
 same_addr $t/nm _pe1 _pe2
 
 # -no_deduplicate keeps them apart
 $CC --ld-path=$mold -o $t/exe2 $t/a.o $t/b.o -Wl,-no_deduplicate
-$t/exe2 | grep '^0 0 0$'
+$RUN $t/exe2 | grep '^0 0 0$'
 nm $t/exe2 > $t/nm2
 not same_addr $t/nm2 _call1 _call2
 
 # The last of -deduplicate and -no_deduplicate wins.
 $CC --ld-path=$mold -o $t/exe3 $t/a.o $t/b.o -Wl,-deduplicate -Wl,-no_deduplicate
-$t/exe3 | grep '^0 0 0$'
+$RUN $t/exe3 | grep '^0 0 0$'
 $CC --ld-path=$mold -o $t/exe4 $t/a.o $t/b.o -Wl,-no_deduplicate -Wl,-deduplicate
-$t/exe4 | grep '^1 0 0$'
+$RUN $t/exe4 | grep '^1 0 0$'

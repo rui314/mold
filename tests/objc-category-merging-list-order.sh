@@ -36,7 +36,7 @@ int main() {
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o $t/m.o -framework Foundation
-$t/exe | grep -q '^1 2 3 4$'
+$RUN $t/exe | grep -q '^1 2 3 4$'
 otool -ov $t/exe | sed -n '/__objc_catlist/,/Contents of/p' > $t/log
 grep -E '^[0-9a-f]+ ' $t/log | awk '{ print $NF }' | tr '\n' ' ' > $t/order
 [ "$(cat $t/order)" = '__OBJC_$_CATEGORY_NSString_$_A1 __OBJC_$_CATEGORY_NSData_$_D1 __OBJC_$_CATEGORY_NSArray_$_R1 ' ]

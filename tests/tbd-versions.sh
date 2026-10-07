@@ -121,7 +121,7 @@ for v in v1 v2 v3 v4 v5; do
   not $CC --ld-path=$mold -o $t/exe-$v $t/main.o $t/$v.tbd 2> $t/log-$v
   grep -q 'not an allowed client' $t/log-$v
   $CC --ld-path=$mold -o $t/exe-$v $t/main.o $t/$v.tbd -Wl,-client_name,Friend
-  $t/exe-$v | grep -q '^3 4 5 6 7$'
+  $RUN $t/exe-$v | grep -q '^3 4 5 6 7$'
   otool -L $t/exe-$v > $t/libs-$v
   grep -q "$dir/libfoo.dylib (compatibility version 1.5.0, current version 2.1.0)" $t/libs-$v
   dyld_info -fixups $t/exe-$v | grep -q 'libfoo/_qux'

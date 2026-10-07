@@ -44,7 +44,7 @@ echo 'int foo(); int main() { return foo(); }' | $CC -o $t/b.o -c -xc -
 for lib in other v5; do
   $CC --ld-path=$mold -o $t/exe-$lib $t/a.o $t/lib$lib.tbd 2> $t/log-$lib
   grep -q "warning: ignoring file '$t/lib$lib.tbd': tapi error: missing required architecture $ARCH in file $t/lib$lib.tbd$" $t/log-$lib
-  $t/exe-$lib
+  $RUN $t/exe-$lib
   otool -L $t/exe-$lib > $t/libs-$lib
   not grep -q lib$lib $t/libs-$lib
 done

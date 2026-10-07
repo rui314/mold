@@ -38,7 +38,13 @@ grep -q 'symbol stub for: _foo' $t/text
 not grep -q 'symbol stub for: _hid' $t/text
 $CC --ld-path=$mold -o $t/exe $t/b.o $t/liba.dylib
 $CC --ld-path=$mold -o $t/libc.dylib -shared $t/c.o $t/liba.dylib
-run() { DYLD_INSERT_LIBRARIES=$t/libc.dylib $t/exe; }
+run() {
+  if on_simulator; then
+    SIMCTL_CHILD_DYLD_INSERT_LIBRARIES=$t/libc.dylib $RUN $t/exe
+  else
+    DYLD_INSERT_LIBRARIES=$t/libc.dylib $t/exe
+  fi
+}
 if native_arch; then
   run | grep -q '^523$'
 fi

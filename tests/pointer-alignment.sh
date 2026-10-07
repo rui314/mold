@@ -45,7 +45,7 @@ else
   otool -l $t/exe > $t/lc
   grep -q LC_DYLD_INFO_ONLY $t/lc
   not grep -q LC_DYLD_CHAINED_FIXUPS $t/lc
-  $t/exe
+  $RUN $t/exe
 fi
 
 # An unaligned pointer in any section fails an arm64 chain.
@@ -72,7 +72,7 @@ $CC --ld-path=$mold -o $t/exe2 $t/a.o $t/b.o -Wl,-no_fixup_chains 2> $t/log2
 not grep -q 'disabling chained fixups' $t/log2
 grep -q "warning: pointer not aligned.*'_r1' " $t/log2
 grep -q "warning: pointer not aligned.*'_r2' " $t/log2
-$t/exe2
+$RUN $t/exe2
 
 $mold -r -arch $ARCH -o $t/r.o $t/a.o 2> $t/log3
 not grep -q aligned $t/log3
@@ -115,7 +115,7 @@ echo 'extern void *cf; int main() { return !cf; }' | $CC -o $t/g.o -c -xc -
 $CC --ld-path=$mold -o $t/exe5 $t/g.o $t/f.o -framework CoreFoundation 2> $t/log5
 grep -q "section __DATA/__cfstring is not pointer aligned in $t/f.o$" $t/log5
 not grep -q 'pointer not aligned' $t/log5
-$t/exe5
+$RUN $t/exe5
 $mold -r -arch $ARCH -o $t/r.o $t/f.o 2> $t/log6
 grep -q "section __DATA/__cfstring is not pointer aligned in $t/f.o$" $t/log6
 rm -f $t/lib.a
@@ -147,7 +147,7 @@ else
   $CC --ld-path=$mold -o $t/exe11 $t/a.o $t/b.o -Wl,-unaligned_pointers,suppress 2> $t/log11
   grep -v '^+' $t/log11 | sed -E 's/^(ld|mold): //' > $t/msgs11
   [ "$(cat $t/msgs11)" = 'warning: disabling chained fixups because of unaligned pointers' ]
-  $t/exe11
+  $RUN $t/exe11
 fi
 not $mold -o $t/exe12 $t/a.o -unaligned_pointers foo 2> $t/log12
 grep -q -- '-unaligned_pointers invalid option (warning | error | suppress)' $t/log12
@@ -173,4 +173,4 @@ EOF
 echo 'int bar = 3; extern char u3[]; int main() { return !u3[0]; }' | $CC -o $t/n.o -c -xc -
 $CC --ld-path=$mold -o $t/exe13 $t/n.o $t/u.o $t/abs.o -Wl,-dead_strip 2> $t/log13
 not grep -q 'pointer not aligned' $t/log13
-$t/exe13
+$RUN $t/exe13

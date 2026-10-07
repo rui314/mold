@@ -53,7 +53,7 @@ if [ $ARCH = x86_64 ]; then
   }
   [ "$(lengths $t/c.o)" = "$(printf '00000000 3\n00000010 3')" ]
   $CC -o $t/c2 $t/main.o $t/c.o
-  $t/c2
+  $RUN $t/c2
 fi
 
 unwind d '.quad _f

@@ -27,7 +27,7 @@ grep -q 'OSO.*/b.o' $t/stabs
 grep -q 'FUN _compute' $t/stabs
 
 $CC --ld-path=$mold -g -o $t/exe $t/merged.o
-$t/exe | grep '^42$'
+$RUN $t/exe | grep '^42$'
 nm -pa $t/exe > $t/stabs2
 grep -q 'OSO.*/a.o' $t/stabs2
 grep -q 'OSO.*/b.o' $t/stabs2
@@ -35,7 +35,7 @@ not grep -q 'OSO.*merged.o' $t/stabs2
 
 # Apple's linker accepts the merged object too.
 $CC -g -o $t/exe2 $t/merged.o
-$t/exe2 | grep '^42$'
+$RUN $t/exe2 | grep '^42$'
 
 # lldb sets a source-level breakpoint in code that came through -r.
 # Only a native binary is debugged: see native_arch in common.inc.

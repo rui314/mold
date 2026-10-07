@@ -26,10 +26,10 @@ _print
 EOF
 
 $CC --ld-path=$mold -o $t/exe1 $t/a.o -Wl,-order_file,$t/order1
-$t/exe1 | grep '^1$'
+$RUN $t/exe1 | grep '^1$'
 
 $CC --ld-path=$mold -o $t/exe2 $t/a.o -Wl,-order_file,$t/order2
-$t/exe2 | grep '^0$'
+$RUN $t/exe2 | grep '^0$'
 # Arch and object-file qualifiers: lines for other arches are ignored,
 # and a file qualifier restricts the match to that object's symbols.
 OTHER=x86_64; [ $ARCH = x86_64 ] && OTHER=arm64
@@ -39,14 +39,14 @@ $ARCH:_print
 _main
 EOF
 $CC --ld-path=$mold -o $t/exe3 $t/a.o -Wl,-order_file,$t/order3
-$t/exe3 | grep '^1$'
+$RUN $t/exe3 | grep '^1$'
 
 cat <<EOF > $t/order4
 nosuch.o:_main
 a.o:_print
 EOF
 $CC --ld-path=$mold -o $t/exe4 $t/a.o -Wl,-order_file,$t/order4
-$t/exe4 | grep '^1$'
+$RUN $t/exe4 | grep '^1$'
 
 # The qualifier is a leaf name: one with a directory names no file.
 cat <<EOF > $t/order5
@@ -54,7 +54,7 @@ $t/a.o:_main
 _print
 EOF
 $CC --ld-path=$mold -o $t/exe5 $t/a.o -Wl,-order_file,$t/order5
-$t/exe5 | grep '^1$'
+$RUN $t/exe5 | grep '^1$'
 
 # A line names a subsection by any symbol of it, a C string's or a
 # literal's label too. (ld-prime orders only by the names its -map

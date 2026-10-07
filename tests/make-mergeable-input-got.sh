@@ -81,8 +81,8 @@ EOF
 grep -q '^2$' $t/got
 
 $CC --ld-path=$mold -o $t/exe1 $t/main.o -L$t/m -Wl,-merge-lfoo
-$t/exe1 | grep -q '^107$'
+$RUN $t/exe1 | grep -q '^107$'
 $CC -o $t/exe2 $t/main.o -L$t/m -Wl,-merge-lfoo
-$t/exe2 | grep -q '^107$'
+$RUN $t/exe2 | grep -q '^107$'
 $CC --ld-path=$mold -o $t/exe3 $t/main.o -L$t/l -Wl,-merge-lfoo
-$t/exe3 | grep -q '^107$'
+$RUN $t/exe3 | grep -q '^107$'

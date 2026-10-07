@@ -15,4 +15,4 @@ nm $t/exe1 | grep -w _hello
 $CC --ld-path=$mold -o $t/exe2 $t/a.o -Wl,-x
 nm $t/exe2 > $t/log2
 not grep -qw _hello $t/log2
-$t/exe2 | grep 'Hello world'
+$RUN $t/exe2 | grep 'Hello world'

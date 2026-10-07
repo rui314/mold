@@ -16,4 +16,4 @@ not grep -q BINDATLOAD $t/hdr
 otool -l $t/exe > $t/lc
 not grep -q '__la_symbol_ptr' $t/lc
 dyld_info -fixups $t/exe | grep '__got .* bind .*_printf'
-$t/exe | grep hi
+$RUN $t/exe | grep hi

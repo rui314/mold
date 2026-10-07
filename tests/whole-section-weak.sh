@@ -78,7 +78,7 @@ for o in b c d; do
   nm -m $t/exe-$o > $t/syms-$o
   grep -q ') weak external _w$' $t/syms-$o
   $CC --ld-path=$mold -o $t/exe-$o-a $t/main.o $t/$o.o $t/a.o
-  $t/exe-$o-a | grep -q '^1$'
+  $RUN $t/exe-$o-a | grep -q '^1$'
 done
 
 $CC --ld-path=$mold -o $t/exe-e $t/main.o $t/e.o

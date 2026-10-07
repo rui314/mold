@@ -25,7 +25,7 @@ int start(void) { return 7; }
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/entry.o -Wl,-e,$'_st\xffrt'
-$t/exe || [ $? = 7 ]
+$RUN $t/exe || [ $? = 7 ]
 
 not $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/a.o -Wl,-u,$'_x\xff' 2> $t/log2
 grep -q $'_x\xff' $t/log2

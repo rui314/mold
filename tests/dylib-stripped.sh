@@ -26,10 +26,10 @@ extern __thread int xt;
 int main() { printf("%d %d\n", xfn(), xt); }
 EOF
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/libx.dylib -Wl,-rpath,$t
-$t/exe | grep '^7 3$'
+$RUN $t/exe | grep '^7 3$'
 
 # And when reached through a re-export.
 $CC --ld-path=$mold -dynamiclib -o $t/liby.dylib -install_name @rpath/liby.dylib \
   -Wl,-reexport_library,$t/libx.dylib -Wl,-rpath,$t
 $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/liby.dylib -Wl,-rpath,$t
-$t/exe2 | grep '^7 3$'
+$RUN $t/exe2 | grep '^7 3$'

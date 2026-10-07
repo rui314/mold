@@ -17,6 +17,6 @@ fn main() {
 EOF2
 
 rustc -C link-arg=--ld-path=$mold $t/main.rs -o $t/exe
-$t/exe 2>/dev/null > $t/log
+$RUN $t/exe 2>/dev/null > $t/log
 grep 'rust says 42 55' $t/log
 grep 'caught panic: true' $t/log

@@ -37,7 +37,7 @@ int main() { printf("%d\n", bar()); }
 EOF
 $CC --ld-path=$mold -o $t/exe $t/main.o -F$t/Library/Frameworks -framework Foo \
   -Wl,-rpath,$t/Library/Frameworks -Wl,-rpath,$t/Library/PrivateFrameworks
-$t/exe | grep '^7$'
+$RUN $t/exe | grep '^7$'
 
 # A re-export naming a library already in the link by install name
 # resolves to it without any file search: Xcode's
@@ -59,4 +59,4 @@ int main() { printf("%d\n", qux()); }
 EOF
 $CC --ld-path=$mold -o $t/exe2 $t/main2.o $t/libqux.dylib $t/libwrap.dylib -Wl,-rpath,$t 2> $t/log2
 not grep -q 'missing indirect library' $t/log2
-$t/exe2 | grep '^9$'
+$RUN $t/exe2 | grep '^9$'

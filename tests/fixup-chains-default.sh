@@ -25,7 +25,7 @@ $CC --ld-path=$mold -o $t/lo $t/a.o -mmacosx-version-min=$lo
 $CC --ld-path=$mold -o $t/hi $t/a.o -mmacosx-version-min=$hi
 [ "$(fmt $t/hi)" = LC_DYLD_CHAINED_FIXUPS ]
 [ "$(init $t/hi)" = __init_offsets ]
-$t/hi | grep hi
+$RUN $t/hi | grep hi
 
 $CC --ld-path=$mold -o $t/dl $t/a.o -mmacosx-version-min=$hi -Wl,-undefined,dynamic_lookup
 [ "$(fmt $t/dl)" = LC_DYLD_INFO_ONLY ]

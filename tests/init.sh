@@ -21,11 +21,11 @@ int main(int argc, char **argv) {
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/a.o -Wl,-init,_nosuch -Wl,-init,_init
-[ "$($t/exe)" = 'init ctor main 1' ]
+[ "$($RUN $t/exe)" = 'init ctor main 1' ]
 
 $CC --ld-path=$mold -o $t/exe2 $t/main.o
 $CC --ld-path=$mold -o $t/lib.dylib -shared $t/a.o -Wl,-init,_init -Wl,-dead_strip
-[ "$($t/exe2 $t/lib.dylib)" = 'main init ctor 1' ]
+[ "$($RUN $t/exe2 $t/lib.dylib)" = 'main init ctor 1' ]
 otool -l $t/lib.dylib | grep -A4 'sectname __init_offsets' | grep -q 'size 0x0*8$'
 
 # Of an older image, which keeps __mod_init_func, ld-prime runs no
@@ -33,7 +33,7 @@ otool -l $t/lib.dylib | grep -A4 'sectname __init_offsets' | grep -q 'size 0x0*8
 # before the other initializers, and so do we.
 if $mold -v 2>&1 | grep -q mold-macho; then
   $CC --ld-path=$mold -o $t/lib2.dylib -shared $t/a.o -Wl,-init,_init -mmacosx-version-min=11.0
-  [ "$($t/exe2 $t/lib2.dylib)" = 'main init ctor 1' ]
+  [ "$($RUN $t/exe2 $t/lib2.dylib)" = 'main init ctor 1' ]
   otool -l $t/lib2.dylib | grep -q 'cmd LC_ROUTINES_64'
 fi
 

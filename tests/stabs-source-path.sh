@@ -33,7 +33,7 @@ int f1(void), f2(void), f3(void), f4(void), af(void), of(void);
 int main(void) { return f1() + f2() + f3() + f4() + af() + of() - 21; }
 EOF
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/f1.o $t/f2.o $t/f3.o $t/f4.o $t/libfat.a $t/fat.o
-$t/exe
+$RUN $t/exe
 
 nm -ap $t/exe | awk '$5 == "SO" || $5 == "OSO" { print $1, $5, $6 }' > $t/stabs
 grep -A1 " SO $dir/sub/\$" $t/stabs | grep -q ' SO f1.c$'

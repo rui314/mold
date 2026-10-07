@@ -26,4 +26,4 @@ int main() { printf("%d\n", provided() + wrapper()); }
 EOF2
 
 $CC --ld-path=$mold -o $t/exe $t/c.o $t/libouter.dylib
-$t/exe | grep '^10$'
+$RUN $t/exe | grep '^10$'

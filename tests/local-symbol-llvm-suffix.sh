@@ -17,7 +17,7 @@ int main(int c, char **v) { return hid(c) + st(c) + glob(c) == 3 * c + 6 ? 0 : 1
 EOF2
 
 $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-map,$t/map
-$t/exe
+$RUN $t/exe
 nm -ap $t/exe > $t/nm
 grep -q ' t _hid$' $t/nm
 grep -q ' t _st$' $t/nm

@@ -80,12 +80,12 @@ EOF
 # after a -r one and a final link by either linker; the FDE has no LSDA.
 run() {
   $CXX --ld-path=$mold -o $t/$1 $t/$1.o $t/main.o &&
-    $t/$1 | grep -q 'caught 42' &&
+    $RUN $t/$1 | grep -q 'caught 42' &&
     $mold -r -arch $ARCH -o $t/$1-r.o $t/$1.o &&
     $CXX --ld-path=$mold -o $t/$1-r $t/$1-r.o $t/main.o &&
-    $t/$1-r | grep -q 'caught 42' &&
+    $RUN $t/$1-r | grep -q 'caught 42' &&
     $CXX -o $t/$1-r2 $t/$1-r.o $t/main.o &&
-    $t/$1-r2 | grep -q 'caught 42' &&
+    $RUN $t/$1-r2 | grep -q 'caught 42' &&
     objdump --unwind-info $t/$1 | sed -n '/LSDA descriptors:/,/Second level/p' > $t/$1.lsda &&
     f=$(nm $t/$1 | awk '$3 == "_through_asm" { print $1 }') &&
     not grep -q "function offset=0x${f: -8}," $t/$1.lsda

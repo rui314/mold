@@ -18,7 +18,7 @@ EOF
 $CC --ld-path=$mold -shared -o $t/libb.dylib $t/b.o
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/libb.dylib
-$t/exe | grep '^42 7$'
+$RUN $t/exe | grep '^42 7$'
 
 objdump -d $t/exe > $t/dis
 if [ $ARCH = arm64 ]; then

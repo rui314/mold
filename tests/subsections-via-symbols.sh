@@ -47,7 +47,7 @@ $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o $t/c.o 2> $t/log
 grep -q 'reducing alignment of section __TEXT,__text' $t/log
 dyld_info -exports $t/exe | grep _main
 if [ $ARCH = arm64 ]; then
-  $t/exe | grep '^4 1$'
+  $RUN $t/exe | grep '^4 1$'
 else
-  $t/exe | grep '^1 1$'   # a one-byte nop
+  $RUN $t/exe | grep '^1 1$'   # a one-byte nop
 fi

@@ -28,18 +28,18 @@ segments() {
 }
 
 $CC --ld-path=$mold -o $t/exe $t/a.o -framework Foundation -mmacosx-version-min=14.0
-$t/exe | grep -q '^P 7 1$'
+$RUN $t/exe | grep -q '^P 7 1$'
 [ "$(segments $t/exe)" = '__DATA,__data __DATA,__objc_classrefs __DATA,__objc_data __DATA,__objc_protorefs __DATA,__objc_selrefs __DATA,__objc_superrefs ' ]
 $CC --ld-path=$mold -o $t/exe2 $t/a.o -framework Foundation -mmacosx-version-min=14.3
-$t/exe2 | grep -q '^P 7 1$'
+$RUN $t/exe2 | grep -q '^P 7 1$'
 [ "$(segments $t/exe2)" = "$(segments $t/exe)" ]
 
 # From macOS 14.4 on they are read-only after dyld's fixups: the
 # protocol, class and superclass references move to __DATA_CONST, and
 # from macOS 15 on the class references fold into the GOT.
 $CC --ld-path=$mold -o $t/exe3 $t/a.o -framework Foundation -mmacosx-version-min=14.4
-$t/exe3 | grep -q '^P 7 1$'
+$RUN $t/exe3 | grep -q '^P 7 1$'
 [ "$(segments $t/exe3)" = '__DATA,__data __DATA,__objc_data __DATA,__objc_selrefs __DATA_CONST,__objc_classrefs __DATA_CONST,__objc_protorefs __DATA_CONST,__objc_superrefs ' ]
 $CC --ld-path=$mold -o $t/exe4 $t/a.o -framework Foundation -mmacosx-version-min=15.0
-$t/exe4 | grep -q '^P 7 1$'
+$RUN $t/exe4 | grep -q '^P 7 1$'
 [ "$(segments $t/exe4)" = '__DATA,__data __DATA,__objc_data __DATA,__objc_selrefs __DATA_CONST,__objc_protorefs __DATA_CONST,__objc_superrefs ' ]

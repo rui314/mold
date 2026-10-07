@@ -23,7 +23,7 @@ $CXX -O1 -S -o $t/a.s $t/a.cc
 perl -pi -e 's/^(\s*\.cfi_startproc.*)$/$1\n\t.cfi_escape 0x0/' $t/a.s
 $CXX -c -o $t/a.o $t/a.s
 $CXX --ld-path=$mold -o $t/exe $t/a.o
-$t/exe
+$RUN $t/exe
 
 # Prints the personality routine's GOT slot the unwinder finds for a
 # function, from the personality index of its encoding.
@@ -66,7 +66,7 @@ EOF
 echo 'void ext(void) {}' | $CC -c -o $t/d.o -xc -
 printf '_cxxfun\n' > $t/order
 $CXX --ld-path=$mold -o $t/exe2 $t/b.o $t/c.o $t/d.o -Wl,-order_file,$t/order
-$t/exe2
+$RUN $t/exe2
 [ "$(personality $t/exe2 _cxxfun)" = "$(got_slot $t/exe2 ___gxx_personality_v0)" ]
 [ $(mode $t/exe2 _cfun) = $dwarf ] ||
   [ "$(personality $t/exe2 _cfun)" = "$(got_slot $t/exe2 ___gcc_personality_v0)" ]

@@ -14,4 +14,4 @@ int main() {
 EOF2
 
 $CC --ld-path=$mold -o $t/exe $t/a.o
-$t/exe | grep '^0 5 5$'
+$RUN $t/exe | grep '^0 5 5$'

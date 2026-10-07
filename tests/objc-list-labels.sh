@@ -40,7 +40,7 @@ _zzz_d:'
 echo 'int main() { return 0; }' | $CC -o $t/main.o -c -xc -
 
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/a.o $t/b.o $t/c.o $t/d.o
-$t/exe
+$RUN $t/exe
 nm -m $t/exe > $t/nm
 for s in _pe_a _loc_b _pe_b _loc_c _aaa_d _zzz_d; do
   grep -q "(__DATA_CONST,__objc_classlist) non-external $s\$" $t/nm
@@ -53,7 +53,7 @@ for s in 'l_OBJC_LABEL_CLASS_\$' _pe_a _loc_b _pe_b _loc_c _aaa_d _zzz_d; do
   grep -q "(__DATA,__objc_classlist) non-external .*$s\$" $t/nm-r
 done
 $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/r.o
-$t/exe2
+$RUN $t/exe2
 
 # The same goes for the list of class_ro_t records.
 cat <<EOF | $CC -o $t/e.o -c -xassembler -

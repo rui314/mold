@@ -19,4 +19,4 @@ EOF
 $CC --ld-path=$mold -Wl,-v -o $t/exe $t/a.o > $t/out2 2> $t/err2
 [ ! -s $t/out2 ]
 grep "$banner" $t/err2
-$t/exe | grep 'Hello world'
+$RUN $t/exe | grep 'Hello world'

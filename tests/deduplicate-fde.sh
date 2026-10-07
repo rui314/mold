@@ -43,7 +43,7 @@ int main() { return call1() + call2() + call3() != 21; }
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/r.o -Wl,-deduplicate
-$t/exe
+$RUN $t/exe
 addr=$(nm $t/exe | awk '/ _helper$/ { print $1; exit }')
 [ "$(dwarfdump --eh-frame $t/exe | grep -c " FDE .* pc=$(echo $addr | sed 's/^0*//')\\.")" = 1 ]
 objdump --macho --unwind-info $t/exe > $t/unwind
@@ -52,7 +52,7 @@ off=$(printf '0x%08x' $((0x$addr - 0x100000000)))
 
 # main's unwind record, after the copies', keeps its entry.
 $CC --ld-path=$mold -o $t/exe2 $t/a1.o $t/a2.o $t/a3.o $t/main.o -Wl,-deduplicate
-$t/exe2
+$RUN $t/exe2
 [ "$(dwarfdump --eh-frame $t/exe2 | grep -c ' FDE ')" = 1 ]
 addr=$(nm $t/exe2 | awk '/ _main$/ { print $1; exit }')
 off=$(printf '0x%08x' $((0x$addr - 0x100000000)))

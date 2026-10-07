@@ -21,7 +21,7 @@ link -force_flat_namespace 2> $t/log
 grep -q -- 'warning: -force_flat_namespace is no longer supported, using -flat_namespace instead' \
   $t/log
 cmp $t/exe $t/flat
-$t/exe | grep -q Hello
+$RUN $t/exe | grep -q Hello
 
 link -w -force_flat_namespace 2> $t/log
 not grep -q -- 'warning: -force_flat_namespace' $t/log

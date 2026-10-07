@@ -17,7 +17,7 @@ int main() { return foo(); }
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/a.o -Wl,-map,$t/map
-$t/exe || [ $? = 3 ]
+$RUN $t/exe || [ $? = 3 ]
 nm $t/exe > $t/nm
 grep -q $' T _f\xffo$' $t/nm
 grep -q $'] _f\xffo$' $t/map
@@ -29,7 +29,7 @@ grep -q $' T _f\xffo$' $t/nm2
 $CC --ld-path=$mold -o $t/exe2 $t/main.o -L$t -lfoo -Wl,-rpath,$t
 nm -m $t/exe2 > $t/nm3
 grep -q $'(undefined) external _f\xffo (from libfoo)' $t/nm3
-$t/exe2 || [ $? = 3 ]
+$RUN $t/exe2 || [ $? = 3 ]
 
 # An undefined symbol and a duplicate one are named as they are.
 not $CC --ld-path=$mold -o $t/exe3 $t/main.o 2> $t/log3

@@ -47,5 +47,5 @@ nm -m $t/b.o | grep 'weak external automatically hidden __ZNK3BoxIiE3getEv'
 $mold -r -arch $ARCH -o $t/r.o $t/b.o $t/c.o
 nm -m $t/r.o | grep 'weak external automatically hidden __ZNK3BoxIiE3getEv'
 $CC --ld-path=$mold -o $t/exe2 $t/r.o
-$t/exe2
+$RUN $t/exe2
 nm $t/exe2 | grep ' t __ZNK3BoxIiE3getEv$'

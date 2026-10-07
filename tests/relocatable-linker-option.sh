@@ -45,7 +45,7 @@ grep -A5 LC_BUILD_VERSION $t/lc | grep "sdk $(otool -l $t/a.o | grep ' sdk ' | a
 
 # The final link auto-links libz from the carried option.
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/r.o
-$t/exe | grep '^1\.'
+$RUN $t/exe | grep '^1\.'
 
 # The options go through as they are, in input order and each only
 # once, so that the final link reads them as it would the inputs'.

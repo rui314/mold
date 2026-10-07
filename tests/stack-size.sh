@@ -10,7 +10,7 @@ otool -l $t/exe1 | grep 'stacksize 0$'
 
 $CC --ld-path=$mold -o $t/exe2 $t/a.o -Wl,-stack_size,200000
 otool -l $t/exe2 | grep 'stacksize 2097152$'
-$t/exe2
+$RUN $t/exe2
 
 # The size is checked against the most a stack may take on the target,
 # then for a main executable, then for a multiple of the page size. A

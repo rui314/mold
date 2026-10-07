@@ -17,8 +17,8 @@ $CC -dynamiclib -o $t/fw/Foo.framework/Foo $t/foo.c \
 
 (cd $t/lib && $CC --ld-path=$mold -o ../exe1 ../a.o -L. -lfoo \
   -Wl,-rpath,@executable_path/lib)
-$t/exe1
+$RUN $t/exe1
 
 (cd $t/fw && $CC --ld-path=$mold -o ../exe2 ../a.o -F. -framework Foo \
   -Wl,-rpath,@executable_path/fw)
-$t/exe2
+$RUN $t/exe2

@@ -8,7 +8,7 @@ EOF
 # The pass timers, as mold's --perf prints them, then the input and
 # output sizes.
 $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-print_statistics 2> $t/log
-$t/exe
+$RUN $t/exe
 grep -q 'User   System     Real  Name' $t/log
 grep -q ' all$' $t/log
 grep -q ' copy_chunks$' $t/log

@@ -27,5 +27,5 @@ int main() {
 }
 EOF
 $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-delay_library,$t/libfl.dylib -Wl,-rpath,$t
-$t/exe > $t/out
+$RUN $t/exe > $t/out
 printf '10\n10\n' | cmp - $t/out

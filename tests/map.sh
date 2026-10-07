@@ -21,7 +21,7 @@ int main() { hello(); return data1 - 3; }
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o -Wl,-map,$t/map
-$t/exe | grep -q 'Hello world'
+$RUN $t/exe | grep -q 'Hello world'
 
 grep -qx "# Path: $t/exe" $t/map
 grep -qx "# Arch: $ARCH" $t/map

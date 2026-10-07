@@ -24,4 +24,4 @@ int main(int argc, char **argv) {
 EOF2
 
 $CC --ld-path=$mold -o $t/exe $t/b.o
-$t/exe $t/plugin.bundle | grep '^42$'
+$RUN $t/exe $t/plugin.bundle | grep '^42$'

@@ -104,7 +104,7 @@ before("__TEXT,__unwind_info", "__DATA_CONST,__const")
 before("__DATA_CONST,__got", "__DATA,__data")
 assert o[-1] == "__DATA,__common", o
 EOF2
-$t/exe
+$RUN $t/exe
 
 # From macOS 15 on, protocol references are dyld's to fix up and move
 # to __DATA_CONST like the other lists.
@@ -114,11 +114,11 @@ otool -l $t/exe15 | awk '/^ *sectname/{s=$2} /^ *segname/{g=$2} /^ *flags/{if (s
 grep -q '^__DATA_CONST,__objc_protorefs 0x00000000$' $t/sects15
 not grep -q '__DATA,__objc_protorefs' $t/sects15
 grep -q '^__TEXT,__init_offsets 0x00000016$' $t/sects15
-$t/exe15
+$RUN $t/exe15
 
 # -no_data_const keeps everything in __DATA.
 $CC --ld-path=$mold -o $t/exe2 $t/a.o $t/b.o $t/c.o -framework Foundation -Wl,-no_data_const \
   -Wl,-no_objc_category_merging
 otool -l $t/exe2 | grep 'segname __DATA_CONST' && exit 1
 otool -l $t/exe2 | grep -A1 'sectname __cfstring' | grep 'segname __DATA'
-$t/exe2
+$RUN $t/exe2

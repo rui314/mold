@@ -28,8 +28,8 @@ ar rcs $t/x/libfoo.a $t/a.o
 $CC -shared -o $t/y/libfoo.dylib $t/b.o
 
 $CC --ld-path=$mold -o $t/exe $t/c.o -Wl,-L$t/x -Wl,-L$t/y -lfoo
-$t/exe | grep Hello
+$RUN $t/exe | grep Hello
 
 $CC --ld-path=$mold -o $t/exe $t/c.o -Wl,-L$t/x -Wl,-L$t/y -lfoo \
  -Wl,-search_dylibs_first
-$t/exe | grep Howdy
+$RUN $t/exe | grep Howdy

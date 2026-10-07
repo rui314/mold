@@ -94,5 +94,5 @@ extern char *ptrs[];
 int main() { return !(ptrs[0] == w - 1 && ptrs[1] == w && ptrs[2] == w + 1); }
 EOF
   $CC --ld-path=$mold -o $t/exe $t/r.o $t/c.o
-  $t/exe
+  $RUN $t/exe
 done

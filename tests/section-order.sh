@@ -55,7 +55,7 @@ cat <<EOF | $CC -o $t/c.o -c -xassembler -
 .zerofill __DATA,__lbss,_lb,8,3
 EOF
 $CC --ld-path=$mold -o $t/exe2 $t/b.o $t/c.o
-$t/exe2 | grep '^1 0 0 5$'
+$RUN $t/exe2 | grep '^1 0 0 5$'
 order exe2 | grep -o '__DATA,[a-z_]*' > $t/order2
 tr '\n' ' ' < $t/order2 | grep -q '__DATA,__late .*__DATA,__thread_data __DATA,__thread_bss '
 [ "$(sed -n '/__thread_bss/,$p' $t/order2 | sort | tr '\n' ' ')" = \
@@ -70,11 +70,11 @@ int counter = 1;
 int main() { printf("%s %d\n", names[1], counter); }
 EOF
 $CC --ld-path=$mold -o $t/exe3 $t/d.o
-$t/exe3 | grep '^b 1$'
+$RUN $t/exe3 | grep '^b 1$'
 order exe3 > $t/order3
 grep -q '__DATA_CONST,__const .*__DATA,__data ' $t/order3
 $CC --ld-path=$mold -o $t/exe4 $t/d.o -Wl,-no_data_const
-$t/exe4 | grep '^b 1$'
+$RUN $t/exe4 | grep '^b 1$'
 order exe4 > $t/order4
 not grep -q __DATA_CONST $t/order4
 grep -q '__DATA,__const' $t/order4

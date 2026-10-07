@@ -45,7 +45,7 @@ if [ $ARCH = arm64 ]; then
 else
   grep -q "rip 0x$entry" $t/lc
   rc=0
-  $t/exe || rc=$?
+  $RUN $t/exe || rc=$?
   [ $rc = 42 ]
 fi
 

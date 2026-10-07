@@ -47,7 +47,7 @@ otool -l $t/libfoo.dylib > $t/lc
 not grep -q __objc_classrefs $t/lc
 $CC --ld-path=$mold -o $t/exe $t/main.o -L$t -Wl,-merge-lfoo -Wl,-no_merged_libraries_hook \
   -framework Foundation -mmacosx-version-min=15.0
-$t/exe | grep -q '^1 1$'
+$RUN $t/exe | grep -q '^1 1$'
 $CC -o $t/exe2 $t/main.o -L$t -Wl,-merge-lfoo -Wl,-no_merged_libraries_hook \
   -framework Foundation -mmacosx-version-min=15.0
-$t/exe2 | grep -q '^1 1$'
+$RUN $t/exe2 | grep -q '^1 1$'

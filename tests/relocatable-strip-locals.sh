@@ -40,7 +40,7 @@ grep -q ' t _s2$' $t/log3
 grep -q ' FUN _s2$' $t/log3
 echo 'int f(void); int main() { return f() != 15; }' | $CC -o $t/main.o -c -xc -
 $CC --ld-path=$mold -o $t/exe3 $t/main.o $t/r3.o
-$t/exe3
+$RUN $t/exe3
 dsymutil --dump-debug-map $t/exe3 | grep -q 'sym: _s1,'
 
 $mold -arch $ARCH -r -non_global_symbols_no_strip_list $t/strip.txt -o $t/r4.o $t/a.o

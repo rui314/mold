@@ -30,7 +30,7 @@ $CC --ld-path=$mold -o $t/exe $t/a.o $t/main.o
 [ "$(flags $t/exe __DATA __foo)" = 0x00000000 ]
 otool -l $t/exe > $t/lc
 not grep -q __DWARF $t/lc
-$t/exe
+$RUN $t/exe
 
 $mold -arch $ARCH -r -o $t/r.o $t/a.o
 [ "$(flags $t/r.o __DATA __foo)" = 0x02000000 ]

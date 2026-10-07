@@ -15,7 +15,7 @@ EOF
 if [ $ARCH = x86_64 ]; then
   $CC -c $t/a.c -o $t/a107.o -mmacosx-version-min=10.7
   $CC --ld-path=$mold -o $t/exe1 $t/a107.o -mmacosx-version-min=10.7
-  $t/exe1 | grep 'Hello world'
+  $RUN $t/exe1 | grep 'Hello world'
   otool -l $t/exe1 > $t/lc1
   not grep -q 'cmd LC_MAIN' $t/lc1
   start=$(nm $t/exe1 | awk '$3 == "start" { print $1 }' | sed 's/^0*//')
@@ -29,7 +29,7 @@ if [ $ARCH = x86_64 ]; then
 
   $CC -c $t/a.c -o $t/a108.o -mmacosx-version-min=10.8
   $CC --ld-path=$mold -o $t/exe3 $t/a108.o -mmacosx-version-min=10.8
-  $t/exe3 | grep 'Hello world'
+  $RUN $t/exe3 | grep 'Hello world'
   otool -l $t/exe3 > $t/lc3
   grep -q 'cmd LC_MAIN' $t/lc3
   not grep -q 'cmd LC_UNIXTHREAD' $t/lc3

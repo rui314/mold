@@ -44,7 +44,7 @@ EOF
 python3 $t/patch.py $t/e.o $t/e1.o
 $CC --ld-path=$mold -o $t/exe $t/e1.o
 code=0
-$t/exe || code=$?
+$RUN $t/exe || code=$?
 [ $code = 7 ]
 $mold -r -arch $ARCH -o $t/r.o $t/e1.o
 otool -rv $t/r.o > $t/relocs

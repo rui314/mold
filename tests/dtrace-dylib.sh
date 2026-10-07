@@ -29,7 +29,7 @@ $CC -o $t/b.o -c $t/b.c
 
 $CC --ld-path=$mold -o $t/libfoo.dylib -shared $t/a.o
 $CC --ld-path=$mold -o $t/exe $t/b.o $t/libfoo.dylib
-$t/exe
+$RUN $t/exe
 dof_dump $t/libfoo.dylib > $t/dof
 cat > $t/expected <<EOF
 dof __dof_lib lib flags 0xf align 0

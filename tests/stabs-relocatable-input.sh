@@ -27,7 +27,7 @@ $mold -r -arch $ARCH -o $t/yr.o $t/y.o
 nm -ap $t/xr.o | grep -q ' GSYM _wh$'
 
 $CC --ld-path=$mold -o $t/exe $t/xr.o $t/yr.o
-$t/exe
+$RUN $t/exe
 
 nm -ap $t/exe > $t/stabs
 [ "$(grep -c ' STSYM _wh$' $t/stabs)" = 2 ]
@@ -48,7 +48,7 @@ $CC -g -c $t/main.c -o $t/main.o
 $mold -r -arch $ARCH -o $t/r.o $t/live.o $t/dead.o
 grep -q dead.o $t/r.o
 $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/r.o -Wl,-dead_strip
-$t/exe2
+$RUN $t/exe2
 nm -ap $t/exe2 > $t/stabs2
 grep -q ' OSO .*/live.o$' $t/stabs2
 grep -q ' OSO .*/dead.o$' $t/stabs2

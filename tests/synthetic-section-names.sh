@@ -20,7 +20,7 @@ int main() {
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o
-$t/exe | grep '^2222 3 1$'
+$RUN $t/exe | grep '^2222 3 1$'
 otool -l $t/exe > $t/load
 [ "$(grep -c 'sectname __got' $t/load)" = 2 ]
 [ "$(grep -c 'sectname __stubs' $t/load)" = 2 ]
@@ -43,7 +43,7 @@ int main() {
 }
 EOF
 $CC --ld-path=$mold -o $t/exe2 $t/b.o -Wl,-rename_section,__DATA,__foo,__DATA_CONST,__got
-$t/exe2 | grep '^3333 1$'
+$RUN $t/exe2 | grep '^3333 1$'
 otool -Iv $t/exe2 > $t/indirect2
 grep -A3 -F '(__DATA_CONST,__got)' $t/indirect2 | grep -F _malloc
 nm -m $t/exe2 | grep -F '(__DATA_CONST,__got) external _fdata'
@@ -51,7 +51,7 @@ nm -m $t/exe2 | grep -F '(__DATA_CONST,__got) external _fdata'
 # So does a -sectcreate section of the name.
 printf 'ABCDEFGH' > $t/blob
 $CC --ld-path=$mold -o $t/exe3 $t/b.o -Wl,-sectcreate,__DATA_CONST,__got,$t/blob
-$t/exe3 | grep '^3333 1$'
+$RUN $t/exe3 | grep '^3333 1$'
 otool -Iv $t/exe3 > $t/indirect3
 grep -A3 -F '(__DATA_CONST,__got)' $t/indirect3 | grep -F _malloc
 off=$(otool -l $t/exe3 | awk '$1 == "sectname" { s = $2 } s == "__got" && $1 == "size" { z = $2 }
@@ -62,7 +62,7 @@ cmp $t/blob $t/blob3
 # A -sectcreate section of an input section's name joins it, after the
 # input's contents.
 $CC --ld-path=$mold -o $t/exe4 $t/b.o -Wl,-sectcreate,__DATA,__foo,$t/blob
-$t/exe4 | grep '^3333 1$'
+$RUN $t/exe4 | grep '^3333 1$'
 otool -l $t/exe4 > $t/load4
 [ "$(grep -c 'sectname __foo' $t/load4)" = 1 ]
 grep -A3 'sectname __foo' $t/load4 | grep -E 'size 0x0+10$'

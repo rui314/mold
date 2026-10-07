@@ -16,7 +16,7 @@ int main() {
 EOF2
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o
-$t/exe | grep '^1 duplicated string$'
+$RUN $t/exe | grep '^1 duplicated string$'
 
 # The string should appear only once in the output
 [ "$(strings $t/exe | grep -c 'duplicated string')" = 1 ]

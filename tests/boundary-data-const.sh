@@ -42,14 +42,14 @@ grep -q '^__DATA_CONST,__auth_got 0x0*0 0x00000006$' $t/sects15
 grep -q '^__DATA_CONST,__weak_got 0x0*0 0x00000006$' $t/sects15
 grep -q '^__DATA_CONST,__objc_classrefs 0x0*0 ' $t/sects15
 not grep -q '^__DATA,__objc_classrefs' $t/sects15
-$t/exe15 > $t/out15
+$RUN $t/exe15 > $t/out15
 grep -q ' 0$' $t/out15
 
 $CC --ld-path=$mold -o $t/exe14 $t/a.o $t/b.o -framework Foundation -mmacosx-version-min=14.0
 sects $t/exe14 > $t/sects14
 grep -q '^__DATA_CONST,__auth_got ' $t/sects14
 grep -q '^__DATA,__objc_classrefs 0x0*10 ' $t/sects14
-$t/exe14 > $t/out14
+$RUN $t/exe14 > $t/out14
 grep -q ' 16$' $t/out14
 
 $CC --ld-path=$mold -o $t/exe2 $t/a.o $t/b.o -framework Foundation -Wl,-no_data_const

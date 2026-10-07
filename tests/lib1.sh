@@ -13,4 +13,4 @@ int main() {}
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o -L$t -lfoo
-$t/exe
+$RUN $t/exe

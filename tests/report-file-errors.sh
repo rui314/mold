@@ -17,4 +17,4 @@ could not write map file: $t/dir
 can't open SDK imports file for writing at '$t/dir'
 EOF
 diff $t/expected $t/warnings
-$t/exe
+$RUN $t/exe

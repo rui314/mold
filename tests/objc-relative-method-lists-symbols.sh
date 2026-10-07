@@ -50,6 +50,6 @@ $CC --ld-path=$mold -o $t/b.dylib -dynamiclib $t/b.o -framework Foundation \
   -mmacosx-version-min=12.0
 echo 'int bar(void); int main() { return bar() == 3 ? 0 : 1; }' | $CC -o $t/main.o -c -xc -
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/b.dylib
-$t/exe
+$RUN $t/exe
 nm -ap $t/b.dylib > $t/nm2
 grep -q ' s __OBJC_\$_INSTANCE_METHODS_Foo$' $t/nm2

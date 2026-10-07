@@ -14,7 +14,7 @@ int main() { printf("%d %d\n", hidden_fn(), visible_fn()); }
 EOF2
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o
-$t/exe | grep '7 8'
+$RUN $t/exe | grep '7 8'
 
 # The hidden symbol must not be exported
 dyld_info -exports $t/exe > $t/exports

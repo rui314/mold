@@ -77,11 +77,11 @@ int main() {
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o $t/c.o -framework Foundation
-$t/exe | grep -q '^1 2 3 5 6 7 4 8 1 1 1$'
+$RUN $t/exe | grep -q '^1 2 3 5 6 7 4 8 1 1 1$'
 otool -l $t/exe | grep -A4 'sectname __objc_catlist$' | grep -q 'size 0x0*28$'
 
 # So with -no_objc_category_merging.
 $CC --ld-path=$mold -o $t/exe2 $t/a.o $t/b.o $t/c.o -framework Foundation \
   -Wl,-no_objc_category_merging
-$t/exe2 | grep -q '^1 2 3 5 6 7 4 8 1 1 1$'
+$RUN $t/exe2 | grep -q '^1 2 3 5 6 7 4 8 1 1 1$'
 otool -l $t/exe2 | grep -A4 'sectname __objc_catlist$' | grep -q 'size 0x0*28$'

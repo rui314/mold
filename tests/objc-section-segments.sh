@@ -44,14 +44,14 @@ flags() {
 }
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o -framework Foundation
-$t/exe | grep -q '^3 P$'
+$RUN $t/exe | grep -q '^3 P$'
 [ "$(flags $t/exe __DATA_CONST __objc_classlist)" = 0x00000000 ]
 [ "$(flags $t/exe __FOO __objc_nlclslist)" = 0x00000000 ]
 [ "$(flags $t/exe __DATA_CONST __objc_selrefs)" = 0x00000000 ]
 [ "$(flags $t/exe __DATA __objc_selrefs)" = 0x00000000 ]
 
 $CC --ld-path=$mold -o $t/exe2 $t/b.o -framework Foundation -Wl,-no_data_const
-$t/exe2 | grep -q '^3 P$'
+$RUN $t/exe2 | grep -q '^3 P$'
 [ "$(flags $t/exe2 __DATA __objc_protolist)" = 0x00000000 ]
 [ "$(flags $t/exe2 __DATA __objc_protorefs)" = 0x00000000 ]
 [ "$(flags $t/exe2 __DATA __objc_classlist)" = 0x00000000 ]

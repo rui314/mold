@@ -11,7 +11,7 @@ EOF2
 
 $CC -g -c $t/main.c -o $t/main.o
 $CC --ld-path=$mold -g -o $t/exe $t/main.o
-$t/exe | grep '^42$'
+$RUN $t/exe | grep '^42$'
 
 # The output should have OSO stabs pointing at the object file
 nm -pa $t/exe > $t/stabs

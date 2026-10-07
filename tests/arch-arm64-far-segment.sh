@@ -42,7 +42,7 @@ $CC -o $t/a.o -c $t/a.s
 
 $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-segaddr,__FAR,0x300000000 \
   -Wl,-segprot,__FAR,rx,rx
-$t/exe || [ $? = 82 ]
+$RUN $t/exe || [ $? = 82 ]
 otool -tv $t/exe | grep -A8 '^_main:' > $t/main
 grep -Eq 'ldr[[:space:]]+x8, \[x8\]' $t/main
 otool -Iv $t/exe > $t/indirect

@@ -33,18 +33,18 @@ if [ $ARCH = x86_64 ]; then
   $CC --ld-path=$mold -o $t/exe3 $t/a.o -Wl,-no_pie -Wl,-image_base,0x200000000 \
     -mmacosx-version-min=12.0
   [ "$(text $t/exe3)" = 0x0000000200000000 ]
-  $t/exe3
+  $RUN $t/exe3
 
   $CC --ld-path=$mold -o $t/exe8 $t/a.o -Wl,-no_pie -Wl,-image_base,0x200000000 \
     -mmacosx-version-min=14.0 2> /dev/null
   [ "$(text $t/exe8)" = 0x0000000200000000 ]
-  $t/exe8
+  $RUN $t/exe8
 
   $CC --ld-path=$mold -o $t/exe9 $t/a.o -Wl,-no_pie -Wl,-image_base,0x200000000 \
     -mmacosx-version-min=14.0 -Wl,-fixup_chains 2> $t/log9
   grep -q 'prefered load addresses (-seg1addr) are disabled with chained fixups' $t/log9
   [ "$(text $t/exe9)" = 0x0000000100000000 ]
-  $t/exe9
+  $RUN $t/exe9
 fi
 
 not $mold -arch $ARCH -static -e _main $t/a.o -image_base 0x100000 -o $t/exe4 2> $t/log4

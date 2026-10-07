@@ -44,6 +44,6 @@ objdump -d --disassemble-symbols=_far_call $t/libfoo.dylib > $t/disasm
 grep -q 'bl.*_target\.island' $t/disasm
 
 $CC --ld-path=$mold -o $t/exe $t/main.o -L$t -Wl,-merge-lfoo
-$t/exe | grep -q '^42$'
+$RUN $t/exe | grep -q '^42$'
 $CC -o $t/exe2 $t/main.o -L$t -Wl,-merge-lfoo
-$t/exe2 | grep -q '^42$'
+$RUN $t/exe2 | grep -q '^42$'

@@ -22,11 +22,11 @@ int main() { printf("%d\n", choice()); }
 EOF
 
 $CC --ld-path=$mold $t/main.o $t/libchoice.a $t/libchoice.dylib -o $t/archive-first
-$t/archive-first | grep '^1$'
+$RUN $t/archive-first | grep '^1$'
 $CC --ld-path=$mold $t/main.o $t/libchoice.dylib $t/libchoice.a -o $t/dylib-first
-$t/dylib-first | grep '^2$'
+$RUN $t/dylib-first | grep '^2$'
 
 # A live weak definition must also outrank a dylib's definition.
 echo '__attribute__((weak)) int choice() { return 3; }' | $CC -c -xc - -o $t/weak.o
 $CC --ld-path=$mold $t/main.o $t/weak.o $t/libchoice.dylib -o $t/weak
-$t/weak | grep '^3$'
+$RUN $t/weak | grep '^3$'

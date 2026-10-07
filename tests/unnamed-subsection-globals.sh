@@ -78,7 +78,7 @@ $CC -c -o $t/b.o $t/b.s
 $CC -c -o $t/c.o $t/c.s
 
 $CC --ld-path=$mold -o $t/exe1 $t/a.o
-$t/exe1
+$RUN $t/exe1
 nm -m $t/exe1 > $t/log1
 grep -q '(__TEXT,__ustring) non-external _ustr$' $t/log1
 not grep -q ') external _ustr\|) external _selref' $t/log1
@@ -99,4 +99,4 @@ $CC --ld-path=$mold -r -o $t/d.o $t/a.o
 nm -g $t/d.o > $t/log5
 not grep -q '_ustr\|_selref' $t/log5
 $CC --ld-path=$mold -o $t/exe5 $t/d.o
-$t/exe5
+$RUN $t/exe5

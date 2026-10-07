@@ -38,7 +38,7 @@ done
 
 $CC --ld-path=$mold -o $t/exe $t/main15.0.o -Wl,-delay_library,$t/libk.dylib -Wl,-rpath,$t \
   -framework Foundation -mmacosx-version-min=15.0
-$t/exe > $t/out
+$RUN $t/exe > $t/out
 printf 'start\nk loaded\n42\n' | cmp - $t/out
 
 not $CC --ld-path=$mold -o $t/exe2 $t/main14.0.o -Wl,-delay_library,$t/libk.dylib \

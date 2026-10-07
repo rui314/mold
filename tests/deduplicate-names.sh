@@ -41,7 +41,7 @@ EOF
 
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/a1.o $t/a2.o $t/a3.o \
   -Wl,-deduplicate -Wl,-map,$t/map
-$t/exe
+$RUN $t/exe
 nm $t/exe > $t/nm
 [ "$(grep -c ' _helper$' $t/nm)" = 2 ]
 [ "$(awk '/ _helper$/ { print $1 }' $t/nm | sort -u | wc -l)" -eq 1 ]
@@ -56,7 +56,7 @@ $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/a1.o $t/a2.o $t/a3.o -Wl,-no_dedupli
 
 # With the private extern first, the locals fold into it.
 $CC --ld-path=$mold -o $t/exe3 $t/main.o $t/a4.o $t/a1.o $t/a2.o $t/a3.o -Wl,-deduplicate
-$t/exe3
+$RUN $t/exe3
 nm -m $t/exe3 | grep ' _helper$' > $t/nm3
 [ "$(grep -c . $t/nm3)" = 3 ]
 [ "$(awk '{ print $1 }' $t/nm3 | sort -u | wc -l)" -eq 1 ]
@@ -84,7 +84,7 @@ int main() { return call1() + call5() != 14; }
 EOF
 $CC --ld-path=$mold -o $t/exe5 $t/main5.o $t/a1.o $t/a5.o -Wl,-deduplicate \
   -Wl,-map,$t/map5
-$t/exe5
+$RUN $t/exe5
 grep -E '\] (_helper|_x5|_y5)$' $t/map5 > $t/rows5
 [ "$(wc -l < $t/rows5)" -eq 3 ]
 [ "$(cut -f1 $t/rows5 | sort -u | wc -l)" -eq 1 ]

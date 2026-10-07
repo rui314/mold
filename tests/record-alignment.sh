@@ -48,7 +48,7 @@ extern __thread long a, b;
 int main() { return a + b != 3; }
 EOF
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/tlv.o
-$t/exe
+$RUN $t/exe
 [ "$(sect $t/exe __thread_vars)" = '0x0000000000000030 2^3 ' ]
 [ $((0x$(addr $t/exe _b) - 0x$(addr $t/exe _a))) = 24 ]
 

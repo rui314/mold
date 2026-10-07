@@ -60,9 +60,9 @@ int main() {
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/b.o 2> /dev/null
-$t/exe
+$RUN $t/exe
 
 # A relocatable link keeps the targets.
 $mold -arch $ARCH -r -o $t/c.o $t/b.o 2> /dev/null
 $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/c.o 2> /dev/null
-$t/exe2
+$RUN $t/exe2

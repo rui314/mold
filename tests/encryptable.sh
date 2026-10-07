@@ -22,7 +22,7 @@ grep -q 'LC_MAIN LC_ENCRYPTION_INFO_64 LC_LOAD_DYLIB' $t/cmds
 grep -A4 'sectname __text' $t/lc | grep -q 'offset 16384$'
 grep -A4 'sectname __oslogstring' $t/lc | grep -q 'offset 32768$'
 if native_arch; then
-  $t/exe
+  $RUN $t/exe
 fi
 
 $CC --ld-path=$mold -o $t/exe2 $t/a.o -Wl,-encryptable,-no_encryption

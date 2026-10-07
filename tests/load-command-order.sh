@@ -29,4 +29,4 @@ $CC --ld-path=$mold -bundle -o $t/b.bundle $t/b.o -Wl,-rpath,@loader_path -mmaco
 # Classic dyld info in place of the chained fixups.
 $CC --ld-path=$mold -o $t/exe11 $t/a.o -mmacosx-version-min=11.0
 [ "$(seq $t/exe11)" = "LC_SEGMENT_64 LC_DYLD_INFO_ONLY LC_SYMTAB LC_DYSYMTAB LC_LOAD_DYLINKER LC_UUID LC_BUILD_VERSION LC_SOURCE_VERSION LC_MAIN LC_LOAD_DYLIB LC_FUNCTION_STARTS LC_DATA_IN_CODE $sig" ]
-$t/exe | grep hi
+$RUN $t/exe | grep hi

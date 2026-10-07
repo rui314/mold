@@ -62,7 +62,7 @@ int main() {
 }
 EOF
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/r.o -Wl,-dead_strip
-$t/exe | grep '^3 4 4 9$'
+$RUN $t/exe | grep '^3 4 4 9$'
 
 # The whole-section object's output says so too, lacking
 # MH_SUBSECTIONS_VIA_SYMBOLS, and a later link keeps each of its
@@ -73,6 +73,6 @@ $mold -r -arch $ARCH -o $t/whole_r.o $t/whole.o
 otool -h $t/whole_r.o | tail -1 | grep ' 0x00000000$'
 otool -h $t/r.o | tail -1 | grep ' 0x00002000$'
 $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/whole_r.o -Wl,-dead_strip
-$t/exe2 | grep '^3 4 4 9$'
+$RUN $t/exe2 | grep '^3 4 4 9$'
 $CC -o $t/exe3 $t/main.o $t/whole_r.o -Wl,-dead_strip
-$t/exe3 | grep '^3 4 4 9$'
+$RUN $t/exe3 | grep '^3 4 4 9$'

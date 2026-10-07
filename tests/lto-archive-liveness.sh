@@ -14,7 +14,7 @@ ar rcs $t/libmixed.a $t/used.o $t/unused.o
 
 # No live bitcode at all: the archive's constructor must stay out.
 $CC --ld-path=$mold $t/empty.o $t/libunused.a -o $t/empty
-$t/empty > $t/log
+$RUN $t/empty > $t/log
 test ! -s $t/log
 
 cat <<EOF | $CC -c -xc - -o $t/main.o
@@ -23,11 +23,11 @@ int used();
 int main() { printf("%d\n", used()); }
 EOF
 $CC --ld-path=$mold $t/main.o $t/libmixed.a -o $t/mixed
-$t/mixed > $t/log
+$RUN $t/mixed > $t/log
 test "$(cat $t/log)" = 3
 
 # Explicitly loading every member must still keep its initializer.
 $CC --ld-path=$mold $t/main.o -Wl,-force_load,$t/libmixed.a -o $t/forced
-$t/forced > $t/log
+$RUN $t/forced > $t/log
 printf 'constructor\n3\n' > $t/expected
 cmp $t/log $t/expected

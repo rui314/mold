@@ -13,7 +13,7 @@ int main() {
 EOF
 
 $CXX --ld-path=$mold -o $t/exe $t/a.o
-$t/exe
+$RUN $t/exe
 
 # -no_compact_unwind, which GCC's driver passes on every link, leaves
 # out __unwind_info: the image unwinds by its __eh_frame alone, which
@@ -29,7 +29,7 @@ int main(int argc, char **) {
 EOF
 
 $CXX --ld-path=$mold -o $t/exe2 $t/b.o -Wl,-no_compact_unwind
-$t/exe2
+$RUN $t/exe2
 otool -l $t/exe2 > $t/exe2.lc
 not grep -q __unwind_info $t/exe2.lc
 dwarfdump --eh-frame $t/b.o | grep -c ' FDE ' > $t/b.fdes

@@ -30,10 +30,10 @@ int main() {
 }
 EOF2
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/r.o -framework Foundation
-$t/exe
+$RUN $t/exe
 
 $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/1.o $t/2.o -framework Foundation
-$t/exe2
+$RUN $t/exe2
 
 for exe in exe exe2; do
   # Every selector reference slot names a different selector string.

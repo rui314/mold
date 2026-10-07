@@ -26,7 +26,7 @@ grep -q ' T _add1_twice$' $t/r1.nm
 grep -q ' T _twice$' $t/r1.nm
 grep -q ' T _add1$' $t/r1.nm
 $CC --ld-path=$mold -flto -o $t/exe1 $t/main.o $t/r1.o
-$t/exe1 | grep -q '^42$'
+$RUN $t/exe1 | grep -q '^42$'
 
 $mold -r -arch $ARCH -lto_library $lto_library -o $t/r2.o $t/a.o $t/b.o \
   -exported_symbol _add1_twice
@@ -44,4 +44,4 @@ grep -q '(__TEXT,__text) external _add1_twice$' $t/r3.nm
 grep -q '(__TEXT,__text) external _twice$' $t/r3.nm
 grep -q 'non-external (was a private external) _add1$' $t/r3.nm
 $CC --ld-path=$mold -o $t/exe3 $t/main.o $t/r3.o
-$t/exe3 | grep -q '^42$'
+$RUN $t/exe3 | grep -q '^42$'

@@ -78,6 +78,6 @@ not grep -q '_through_asm' $t/eh_relocs
 # The exception unwinds through the assembly frame after a final link
 # by either linker.
 $CXX --ld-path=$mold -o $t/exe $t/merged.o
-$t/exe | grep 'caught 42'
+$RUN $t/exe | grep 'caught 42'
 $CXX -o $t/exe2 $t/merged.o
-$t/exe2 | grep 'caught 42'
+$RUN $t/exe2 | grep 'caught 42'

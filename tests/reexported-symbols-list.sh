@@ -19,7 +19,7 @@ not grep -q LC_REEXPORT_DYLIB $t/loads
 
 echo 'int foo(); int main() { return foo() != 42; }' | $CC -c -xc - -o $t/main.o
 $CC --ld-path=$mold $t/main.o $t/libouter.dylib -o $t/exe
-$t/exe
+$RUN $t/exe
 
 # A listed name is an initial undefine, as a -u name is: one nothing
 # defines is wanted by the command line, even under -undefined

@@ -39,7 +39,7 @@ echo 'int main() { return 0; }' | $CC -o $t/main.o -c -xc -
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/a.o -framework CoreFoundation
 align $t/exe __mod_term_func
 align $t/exe __cfstring
-$t/exe
+$RUN $t/exe
 
 # __LD,__compact_unwind is aligned for its records' pointers, whatever
 # the inputs' alignment, and a later link reads the same unwind info

@@ -102,7 +102,7 @@ $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o $t/main.o
 [ "$(sect $t/exe __io)" = '__DATA 0x00000000' ]
 [ "$(sect $t/exe __code)" = '__DATA 0x80000400' ]
 [ "$(sect $t/exe __gbz)" = '__DATA 0x00000001' ]
-$t/exe
+$RUN $t/exe
 
 $CC --ld-path=$mold -o $t/exe2 $t/b.o $t/a.o $t/main.o
 [ "$(sect $t/exe2 __const)" = '__TEXT 0x00000000' ]

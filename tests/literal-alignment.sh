@@ -100,11 +100,11 @@ EOF2
 
 # The under-aligned copy comes first and survives the merge.
 $CC --ld-path=$mold -o $t/exe1 $t/main.o $t/load.o $t/a.o $t/b.o $t/c.o
-$t/exe1 | grep '^1 0 1 0 400000003 0 0$'
+$RUN $t/exe1 | grep '^1 0 1 0 400000003 0 0$'
 
 # The aligned copy comes first.
 $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/load.o $t/b.o $t/a.o $t/c.o
-$t/exe2 | grep '^1 0 1 0 400000003 0 0$'
+$RUN $t/exe2 | grep '^1 0 1 0 400000003 0 0$'
 
 # Outside a literal section the input offset is honored, and a 16-byte
 # load of an 8-mod-16 address is an error rather than a load of the

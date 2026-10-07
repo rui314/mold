@@ -18,7 +18,7 @@ $CC --ld-path=$mold -flto -o $t/exe $t/a.o $t/other.o $t/armv7.o $t/libother.a 2
 grep -qF "warning: ignoring file '$t/other.o': found architecture '$other', required architecture '$ARCH'" $t/log
 grep -qF "warning: ignoring file '$t/armv7.o': found architecture 'armv7', required architecture '$ARCH'" $t/log
 grep -qF "warning: ignoring file '$t/libother.a(other.o)': found architecture '$other', required architecture '$ARCH'" $t/log
-$t/exe
+$RUN $t/exe
 
 not $CC --ld-path=$mold -flto -o $t/exe2 $t/a.o $t/other.o -Wl,-arch_errors_fatal 2> $t/log2
 grep -qF "found architecture '$other', required architecture '$ARCH' in '$t/other.o'" $t/log2

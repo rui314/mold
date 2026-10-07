@@ -35,7 +35,7 @@ not grep -q host $t/libs
 nm -m $t/plugin.bundle | grep 'undefined.*_host_func (from executable)'
 dyld_info -fixups $t/plugin.bundle | grep '_host_func\|_host_value'
 
-$t/host $t/plugin.bundle | grep '^461$'
+$RUN $t/host $t/plugin.bundle | grep '^461$'
 
 # Xcode also passes -undefined dynamic_lookup, which makes the bundle
 # use classic dyld info with lazy binding. The lazy binds must name
@@ -48,7 +48,7 @@ dyld_info -fixups $t/plugin2.bundle > $t/fixups2
 grep -q 'lazy-bind *<main-executable>/_host_func' $t/fixups2
 grep -q 'bind *<main-executable>/_host_value' $t/fixups2
 not grep -q 'this-image' $t/fixups2
-$t/host $t/plugin2.bundle | grep '^461$'
+$RUN $t/host $t/plugin2.bundle | grep '^461$'
 
 # ld-prime warns about a loader nothing binds to only under
 # -warn_unused_dylibs (a bundle is never bound for the shared cache),

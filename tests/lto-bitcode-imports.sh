@@ -15,7 +15,7 @@ EOF
 for lto in thin full; do
   $CC -O1 -flto=$lto -c $t/a.c -o $t/a-$lto.o
   $CC --ld-path=$mold -flto=$lto -o $t/exe-$lto $t/a-$lto.o
-  $t/exe-$lto
+  $RUN $t/exe-$lto
   nm -m $t/exe-$lto > $t/nm-$lto
   not grep -q -e _getpid -e _nowhere $t/nm-$lto
   dyld_info -fixups $t/exe-$lto > $t/fixups-$lto

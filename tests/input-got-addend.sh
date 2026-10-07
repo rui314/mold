@@ -72,9 +72,9 @@ EOF
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o 2> $t/log
 not grep -q 'too small' $t/log
 if [ $ARCH = arm64 ]; then
-  $t/exe | grep -q '^2 1 2$'
+  $RUN $t/exe | grep -q '^2 1 2$'
 else
-  $t/exe | grep -q '^2 1 3$'
+  $RUN $t/exe | grep -q '^2 1 3$'
 fi
 
 # The arm64 section is of non-lazy pointers, the x86-64 one regular.

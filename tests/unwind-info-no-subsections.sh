@@ -91,8 +91,8 @@ EOF
 fi
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o
-[ "$($t/exe)" = 'trace f main ' ]
-[ "$($t/exe g)" = 'trace ' ]
+[ "$($RUN $t/exe)" = 'trace f main ' ]
+[ "$($RUN $t/exe g)" = 'trace ' ]
 
 # The code ahead of the first record has no unwind info either.
 # (ld-prime cuts such a section at its labels instead: the code of _a

@@ -10,4 +10,4 @@ int main() {
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o -framework foundation -Wl,-ObjC
-$t/exe 2>&1 | grep -F 'processName: exe'
+$RUN $t/exe 2>&1 | grep -F 'processName: exe'

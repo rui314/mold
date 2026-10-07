@@ -49,7 +49,7 @@ $CC -mmacosx-version-min=14.0 -shared -o $t/libfoo.dylib $t/a.o -L$swiftlib \
   -Wl,-make_mergeable -Wl,-install_name,@rpath/libfoo.dylib
 $CC -mmacosx-version-min=14.0 --ld-path=$mold -o $t/exe $t/main.o -L$t -Wl,-merge-lfoo \
   -L$swiftlib -Wl,-no_merged_libraries_hook
-$t/exe > $t/out
+$RUN $t/exe > $t/out
 grep -q '^square$' $t/out
 grep -q '^circle$' $t/out
 grep -q '^woof green 9.0$' $t/out

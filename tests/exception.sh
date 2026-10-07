@@ -14,4 +14,4 @@ int main() {
 EOF2
 
 $CXX --ld-path=$mold -o $t/exe $t/a.o
-$t/exe | grep 'caught 42'
+$RUN $t/exe | grep 'caught 42'

@@ -33,6 +33,6 @@ int main() { fa(); fa(); printf("%d\n", fb()); }
 EOF
 
 $CXX --ld-path=$mold -o $t/exe1 $t/main.o $t/a-thin.o $t/b-full.o
-$t/exe1 | grep -q '^3$'
+$RUN $t/exe1 | grep -q '^3$'
 $CXX --ld-path=$mold -o $t/exe2 $t/main.o $t/a-full.o $t/b-thin.o
-$t/exe2 | grep -q '^3$'
+$RUN $t/exe2 | grep -q '^3$'

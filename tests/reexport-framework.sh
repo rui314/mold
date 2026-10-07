@@ -12,4 +12,4 @@ otool -l $t/libouter.dylib | grep LC_REEXPORT_DYLIB
 
 echo 'int foo(); int main() { return foo() != 42; }' | $CC -c -xc - -o $t/a.o
 $CC --ld-path=$mold $t/a.o $t/libouter.dylib -o $t/exe
-$t/exe
+$RUN $t/exe

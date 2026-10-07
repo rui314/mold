@@ -13,4 +13,4 @@ print("swift \(p.x + p.y) \(arr.reduce(0, +))")
 EOF2
 
 swiftc -o $t/exe $t/main.swift -use-ld=$mold
-$t/exe | grep 'swift 7 12'
+$RUN $t/exe | grep 'swift 7 12'

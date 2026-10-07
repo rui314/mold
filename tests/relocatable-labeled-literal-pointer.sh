@@ -28,4 +28,4 @@ EOF
 $mold -r -arch $ARCH -o $t/r.o $t/a.o
 echo 'int main() { return 0; }' | $CC -o $t/main.o -c -xc -
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/r.o -framework CoreFoundation -lobjc
-$t/exe
+$RUN $t/exe

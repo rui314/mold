@@ -27,7 +27,7 @@ int main() {
 EOF
 
 $CC --ld-path=$mold -mmacosx-version-min=13.0 -o $t/exe $t/a.o -framework Foundation
-$t/exe | grep '^42 responds$'
+$RUN $t/exe | grep '^42 responds$'
 otool -l $t/exe > $t/lc
 [ "$(grep -c 'sectname __objc_selrefs' $t/lc)" = 1 ]
 [ "$(grep -c 'sectname __objc_methname' $t/lc)" = 1 ]

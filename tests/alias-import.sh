@@ -24,7 +24,7 @@ int my_puts(const char *);
 int main() { my_puts("hello via alias"); }
 EOF
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/libfoo.dylib
-$t/exe | grep 'hello via alias'
+$RUN $t/exe | grep 'hello via alias'
 
 # An alias the export lists hide is dropped from the symbol table and
 # the export trie alike; the import it names stays.

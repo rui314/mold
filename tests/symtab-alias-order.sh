@@ -63,13 +63,13 @@ maprows() {
 # Without folding.
 echo 'int call_d(void); int main() { return call_d() != 7; }' | $CC -o $t/main1.o -c -xc -
 $CC --ld-path=$mold -o $t/exe1 $t/main1.o $t/d.o -Wl,-map,$t/map1
-$t/exe1
+$RUN $t/exe1
 [ "$(names $t/exe1)" = "a1 b1 x1 y1 z1 " ]
 maprows $t/map1 5
 
 # With b's, c's and d's functions folded into a's.
 $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/a.o $t/b.o $t/c.o $t/d.o \
   -Wl,-deduplicate -Wl,-map,$t/map2
-$t/exe2
+$RUN $t/exe2
 [ "$(names $t/exe2)" = "a1 b1 b7 c7 j1 k1 w6 x1 x6 x7 y1 z1 " ]
 maprows $t/map2 12

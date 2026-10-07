@@ -17,7 +17,7 @@ int main() {
 EOF2
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o
-$t/exe | grep '^0 0$'
+$RUN $t/exe | grep '^0 0$'
 
 # Without a stated alignment, a common symbol is aligned to its size
 # rounded up to a power of two, at most 2^15, which the segment's page

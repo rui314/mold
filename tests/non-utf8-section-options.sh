@@ -29,7 +29,7 @@ vmaddr() { otool -l $1 | awk -v s="$2" '$1 == "segname" { seg = $2 } seg == s &&
 # -sectcreate and -add_empty_section. A -r output names the contents
 # with a symbol of the names too.
 $link -o $t/exe -Wl,-sectcreate,"$seg","$sect",$t/data
-$t/exe
+$RUN $t/exe
 sects $t/exe | grep -aqx "$seg,$sect"
 $link -o $t/exe2 -Wl,-add_empty_section,"$seg","$sect"
 sects $t/exe2 | grep -aqx "$seg,$sect"
@@ -59,7 +59,7 @@ grep -aqF -- "-segaddr $seg used more than once" $t/log5
 
 # -rename_section and -rename_segment, from and to such names.
 $link -o $t/exe6 -Wl,-rename_section,__DATA,__data,"$seg","$sect"
-$t/exe6
+$RUN $t/exe6
 sects $t/exe6 | grep -aqx "$seg,$sect"
 $link -o $t/exe7 -Wl,-sectcreate,"$seg","$sect",$t/data -Wl,-rename_segment,"$seg",$'__N\xf0W'
 sects $t/exe7 | grep -aqx $'__N\xf0W'",$sect"
@@ -68,7 +68,7 @@ sects $t/exe7 | grep -aqx $'__N\xf0W'",$sect"
 # segment as given.
 echo _x > $t/list
 $link -o $t/exe8 -Wl,-move_to_rw_segment,"$seg",$t/list
-$t/exe8
+$RUN $t/exe8
 sects $t/exe8 | grep -aqx "$seg,__data"
 echo _main > $t/list2
 $link -o $t/exe9 -Wl,-move_to_rw_segment,"$seg",$t/list2 2> $t/log9

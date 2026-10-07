@@ -47,5 +47,5 @@ int main(int argc, char **argv) {
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o -framework Foundation
-$t/exe 2>&1 | grep 'proc_name=objc_exception_throw has_handler=0'
-$t/exe 2>&1 | grep 'proc_name=main has_handler=1'
+$RUN $t/exe 2>&1 | grep 'proc_name=objc_exception_throw has_handler=0'
+$RUN $t/exe 2>&1 | grep 'proc_name=main has_handler=1'

@@ -19,14 +19,14 @@ EOF
 $CC --ld-path=$mold -o $t/exe1 $t/a.o -Wl,-no_pie -mmacosx-version-min=11.0
 otool -l $t/exe1 > $t/lc1
 not grep -q 'segname __DATA_CONST' $t/lc1
-$t/exe1 > $t/out1
+$RUN $t/exe1 > $t/out1
 [ "$(cat $t/out1 | tr '\n' ' ')" = 'init 42 ' ]
 
 $CC --ld-path=$mold -o $t/exe2 $t/a.o -Wl,-no_pie -Wl,-fixup_chains -mmacosx-version-min=14.0 \
   2> /dev/null
 otool -l $t/exe2 > $t/lc2
 not grep -q 'segname __DATA_CONST' $t/lc2
-$t/exe2 > $t/out2
+$RUN $t/exe2 > $t/out2
 [ "$(cat $t/out2 | tr '\n' ' ')" = 'init 42 ' ]
 
 $CC --ld-path=$mold -o $t/exe3 $t/a.o -Wl,-no_pie -Wl,-data_const -mmacosx-version-min=11.0

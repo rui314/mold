@@ -96,4 +96,4 @@ grep -q "ignoring unexpected dylib" $t/log14
 $CC --ld-path=$mold -o $t/exe $t/main.o -Wl,-merge_library,$t/lib/libbar.dylib
 otool -L $t/exe > $t/libs
 not grep -q libbar $t/libs
-[ "$($t/exe)" = 3 ]
+[ "$($RUN $t/exe)" = 3 ]

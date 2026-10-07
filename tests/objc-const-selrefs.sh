@@ -28,7 +28,7 @@ $CC --ld-path=$mold -o $t/exe $t/a.o -framework Foundation
 [ "$(seg $t/exe)" = __DATA ]
 $CC --ld-path=$mold -o $t/exe $t/a.o -framework Foundation -Wl,-const_selrefs
 [ "$(seg $t/exe)" = __DATA_CONST ]
-$t/exe | grep -q '^42 greet$'
+$RUN $t/exe | grep -q '^42 greet$'
 $CC --ld-path=$mold -o $t/exe $t/a.o -framework Foundation -Wl,-const_selrefs \
   -Wl,-no_data_const
 [ "$(seg $t/exe)" = __DATA ]

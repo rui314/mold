@@ -21,7 +21,7 @@ grep -qF "warning: ignoring file '$t/other.o': found architecture '$other', requ
 grep -qF "warning: ignoring file '$t/libother.dylib': found architecture '$other', required architecture '$ARCH'" $t/log
 grep -qF "warning: ignoring file '$t/libother.a(other.o)': found architecture '$other', required architecture '$ARCH'" $t/log
 grep -qF "warning: ignoring file '$t/libfat.dylib': fat file missing arch '$ARCH', file has '$other'" $t/log
-$t/exe
+$RUN $t/exe
 otool -L $t/exe > $t/libs
 not grep -q libother $t/libs
 

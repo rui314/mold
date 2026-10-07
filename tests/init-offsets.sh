@@ -11,4 +11,4 @@ $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-init_offsets
 otool -l $t/exe > $t/lc
 grep -q __init_offsets $t/lc
 not grep -q __mod_init_func $t/lc
-$t/exe | grep '^ctor main$'
+$RUN $t/exe | grep '^ctor main$'

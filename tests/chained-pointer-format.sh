@@ -18,11 +18,11 @@ fmt() { dyld_info -fixup_chains $1 | grep -m1 -o 'pointer_format: *[0-9]*' | awk
 
 $CC --ld-path=$mold -o $t/exe1 $t/a.o -mmacosx-version-min=11.0 -Wl,-fixup_chains
 [ "$(fmt $t/exe1)" = 2 ]
-$t/exe1 | grep -q '^1$'
+$RUN $t/exe1 | grep -q '^1$'
 
 $CC --ld-path=$mold -o $t/exe2 $t/a.o -mmacosx-version-min=12.0 -Wl,-fixup_chains
 [ "$(fmt $t/exe2)" = 6 ]
-$t/exe2 | grep -q '^1$'
+$RUN $t/exe2 | grep -q '^1$'
 
 $CC --ld-path=$mold -o $t/b.dylib -shared $t/a.o -mmacosx-version-min=12.0
 [ "$(fmt $t/b.dylib)" = 6 ]

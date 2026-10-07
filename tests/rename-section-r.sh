@@ -39,4 +39,4 @@ not grep -q '__BAD\|__AAA\|__DATA' $t/sects
 echo 'int main() { return 0; }' | $CC -o $t/c.o -c -xc -
 $mold -r -arch $ARCH -o $t/d.o $t/c.o -rename_section __TEXT __text __TEXT __text2
 $CC --ld-path=$mold -o $t/exe $t/d.o
-$t/exe
+$RUN $t/exe

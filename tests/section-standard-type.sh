@@ -78,4 +78,4 @@ $CC --ld-path=$mold -o $t/exe $t/a.o $t/main.o \
 [ "$(sect $t/exe __const | sort | tr '\n' ' ')" = '__DATA 0x00000000 __TEXT 0x00000000 ' ]
 [ "$(sect $t/exe __literal8)" = '__TEXT 0x00000000' ]
 [ "$(sect $t/exe __StaticInit)" = '__TEXT 0x80000400' ]
-$t/exe
+$RUN $t/exe

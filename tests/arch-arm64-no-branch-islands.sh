@@ -42,7 +42,7 @@ int main() { printf("%d %d\n", far(), far2()); }
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/pad.o $t/far.o
-$t/exe | grep -q '^42 3$'
+$RUN $t/exe | grep -q '^42 3$'
 
 nm $t/exe > $t/syms
 not grep -q island $t/syms

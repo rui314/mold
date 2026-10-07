@@ -75,7 +75,7 @@ _endinit:
 .subsections_via_symbols
 EOF
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/d.o
-$t/exe
+$RUN $t/exe
 nm $t/exe > $t/syms
 not grep -q '_end8\|_endinit' $t/syms
 $mold -r -arch $ARCH -o $t/r.o $t/d.o

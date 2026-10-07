@@ -19,7 +19,7 @@ print(Foo.cm1() + Foo().im(), Foo.perform(NSSelectorFromString("cm2")) != nil)
 EOF
 swiftc -module-name main -emit-object -o $t/a.o $t/a.swift
 swiftc -use-ld=$mold -o $t/exe $t/a.o
-$t/exe | grep -q '^4 true$'
+$RUN $t/exe | grep -q '^4 true$'
 otool -ov $t/exe > $t/objc
 [ "$(grep -A1 'baseMethods.*__CLASS_METHODS__TtC4main3Foo' $t/objc | grep -c 'entsize 12 (relative)')" = 1 ]
 [ "$(grep -A1 'baseMethods.*__INSTANCE_METHODS__TtC4main3Foo' $t/objc | grep -c 'entsize 12 (relative)')" = 1 ]

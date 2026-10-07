@@ -49,7 +49,7 @@ EOF
 classrefs() { dyld_info -fixups $1 | grep '__objc_classrefs' | awk '{print $4, $5}' | sed 's|/| |'; }
 
 $CC --ld-path=$mold -o $t/exe1 $t/a.o $t/b.o -framework Foundation -mmacosx-version-min=15.0
-$t/exe1 | grep -q '^Foo 1$'
+$RUN $t/exe1 | grep -q '^Foo 1$'
 classrefs $t/exe1 > $t/refs1
 grep -q '^bind [^ ]* _OBJC_CLASS_\$_NSDate$' $t/refs1
 [ "$(grep -c . $t/refs1)" = 1 ]
@@ -58,19 +58,19 @@ not grep -q '__got.*NSDate' $t/fixups1
 
 $CC --ld-path=$mold -o $t/exe2 $t/a.o $t/b.o -framework Foundation -mmacosx-version-min=15.0 \
   -Wl,-dead_strip
-$t/exe2 | grep -q '^Foo 1$'
+$RUN $t/exe2 | grep -q '^Foo 1$'
 otool -l $t/exe2 > $t/lc2
 not grep -q __objc_classrefs $t/lc2
 
 $CC --ld-path=$mold -o $t/exe3 $t/a.o $t/b.o -framework Foundation -mmacosx-version-min=14.0
-$t/exe3 | grep -q '^Foo 1$'
+$RUN $t/exe3 | grep -q '^Foo 1$'
 classrefs $t/exe3 > $t/refs3
 [ "$(grep -c . $t/refs3)" = 2 ]
 grep -q '^bind [^ ]* _OBJC_CLASS_\$_NSDate$' $t/refs3
 
 $CC --ld-path=$mold -o $t/exe4 $t/a.o $t/b.o -framework Foundation -mmacosx-version-min=14.0 \
   -Wl,-dead_strip
-$t/exe4 | grep -q '^Foo 1$'
+$RUN $t/exe4 | grep -q '^Foo 1$'
 classrefs $t/exe4 > $t/refs4
 [ "$(grep -c . $t/refs4)" = 1 ]
 not grep -q NSDate $t/refs4

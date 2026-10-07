@@ -47,7 +47,7 @@ grep -q '(__TEXT,__text) external _func1$' $t/nm1
 grep -q '(__DATA,__data) external _data2$' $t/nm1
 segs $t/exe1 | grep -q '__DATA __FOO __LINKEDIT'
 [ "$(prot $t/exe1 __FOO)" = '3 3' ]
-[ "$($t/exe1)" = '15 6 9 9' ]
+[ "$($RUN $t/exe1)" = '15 6 9 9' ]
 
 # ld-prime gives the segment of moved code the read-write protection of
 # any other one it doesn't know, where the code can't run (a Bus error);
@@ -63,7 +63,7 @@ grep -q '(__BAR,__text) external _func2$' $t/nm2
 grep -q '(__BAR,__const) external _const1$' $t/nm2
 grep -q '(__DATA,__data) external _data1$' $t/nm2
 [ "$(prot $t/exe2 __BAR)" = '5 5' ]
-[ "$($t/exe2)" = '15 6 9 9' ]
+[ "$($RUN $t/exe2)" = '15 6 9 9' ]
 
 printf '_data2\n_bss1\n_func2\n' > $t/dirty.txt
 $CC --ld-path=$mold -o $t/exe3 $t/a.o -Wl,-dirty_data_list,$t/dirty.txt 2> $t/log3
@@ -73,7 +73,7 @@ grep -q '(__DATA_DIRTY,__data) external _data2$' $t/nm3
 grep -q '(__DATA_DIRTY,__common) external _bss1$' $t/nm3
 grep -q '(__TEXT,__text) external _func2$' $t/nm3
 segs $t/exe3 | grep -q '__DATA __DATA_DIRTY __LINKEDIT'
-[ "$($t/exe3)" = '15 6 9 9' ]
+[ "$($RUN $t/exe3)" = '15 6 9 9' ]
 
 # A pattern draws no warning; file:name names a symbol of that object
 # alone; the first list naming a symbol wins, and -move_to_rw_segment's
@@ -89,7 +89,7 @@ grep -q '(__FOO,__data) external _data2$' $t/nm4
 grep -q '(__TEXT,__const) external _const1$' $t/nm4
 grep -q '(__TEXT,__text) external _func1$' $t/nm4
 not grep -q '__BAZ\|__DATA_DIRTY' $t/nm4
-[ "$($t/exe4)" = '15 6 9 9' ]
+[ "$($RUN $t/exe4)" = '15 6 9 9' ]
 
 # Moved data with pointers to rebase or bind, in a dylib.
 cat <<EOF | $CC -o $t/b.o -c -xc -
@@ -108,7 +108,7 @@ printf '_ptr\n_put\n_value\n' > $t/b.txt
 $CC --ld-path=$mold -shared -o $t/libb.dylib $t/b.o -Wl,-move_to_rw_segment,__FOO,$t/b.txt
 nm -m $t/libb.dylib | grep -q '(__FOO,__data) external _ptr$'
 $CC --ld-path=$mold -o $t/exe5 $t/c.o $t/libb.dylib
-[ "$($t/exe5)" = hello ]
+[ "$($RUN $t/exe5)" = hello ]
 
 # -move_to_ro_segment refuses every kind of data a list names, each
 # once: initialized, common, absolute, and a thread-local variable's
@@ -198,14 +198,14 @@ grep -q "warning: cannot move symbol '__OBJC_\$_CLASS_METHODS_A' (.*) to segment
 nm -m $t/exe8 > $t/nm8
 grep -q '(__FOO,__objc_const) non-external __OBJC_CLASS_RO_\$_A$' $t/nm8
 grep -q '(__TEXT,__objc_methlist) non-external __OBJC_\$_CLASS_METHODS_A$' $t/nm8
-[ "$($t/exe8)" = '1 2 3' ]
+[ "$($RUN $t/exe8)" = '1 2 3' ]
 $CC --ld-path=$mold -o $t/exe9 $t/d.o -framework Foundation -Wl,-objc_relative_method_lists \
   -Wl,-move_to_ro_segment,__FOO,$t/objc.txt -Wl,-trace_symbol_layout > $t/trace9 2> $t/log9
 grep -q "warning: cannot move symbol '__OBJC_CLASS_RO_\$_A' (.*/d.o) to segment '__FOO' because" $t/log9
 nm -m $t/exe9 > $t/nm9
 grep -q '(__FOO,__objc_methlist) non-external __OBJC_\$_CLASS_METHODS_A$' $t/nm9
 grep -q "^symbol '__OBJC_\$_CLASS_METHODS_A', mapped to __FOO/__objc_methlist$" $t/trace9
-[ "$($t/exe9)" = '1 2 3' ]
+[ "$($RUN $t/exe9)" = '1 2 3' ]
 
 # Only a final link lays out segments: ld-prime refuses the two options
 # in a -r link (-move_to_rw_segment's first), and ignores

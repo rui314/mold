@@ -22,7 +22,7 @@ EOF
 $CC -shared -o $t/libfoo.dylib $t/a.o $t/b.o -Wl,-make_mergeable \
   -Wl,-install_name,@rpath/libfoo.dylib
 $CC --ld-path=$mold -o $t/exe $t/main.o -L$t -Wl,-merge-lfoo
-$t/exe
+$RUN $t/exe
 
 nm -ap $t/exe > $t/syms
 grep -q " OSO .*/$t/a.o$" $t/syms

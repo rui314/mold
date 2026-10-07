@@ -33,10 +33,10 @@ $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o
 otool -l $t/exe > $t/lc
 grep -q __init_offsets $t/lc
 not grep -q __constructor $t/lc
-$t/exe | grep -q '^ctor init1 init2 main$'
+$RUN $t/exe | grep -q '^ctor init1 init2 main$'
 
 $CC --ld-path=$mold -o $t/exe2 $t/b.o $t/a.o
-$t/exe2 | grep -q '^init1 init2 ctor main$'
+$RUN $t/exe2 | grep -q '^init1 init2 ctor main$'
 
 $mold -arch $ARCH -r -o $t/r.o $t/b.o
 [ "$(sect $t/r.o __constructor)" = '__TEXT 0x00000009' ]

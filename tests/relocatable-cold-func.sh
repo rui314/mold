@@ -17,6 +17,6 @@ $mold -r -arch $ARCH -o $t/r.o $t/a.o
 nm -m $t/r.o > $t/nm
 grep -q '\[cold func\] __ZN1S1gEv' $t/nm
 $CXX --ld-path=$mold -o $t/exe $t/r.o
-$t/exe
+$RUN $t/exe
 nm -m $t/exe > $t/nm2
 not grep -q 'cold func' $t/nm2

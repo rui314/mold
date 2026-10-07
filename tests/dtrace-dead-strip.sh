@@ -25,7 +25,7 @@ int main() { live(); return 0; }
 EOF
 $CC -o $t/a.o -c $t/a.c
 $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-dead_strip
-$t/exe
+$RUN $t/exe
 nm $t/exe > $t/syms
 grep -q '_live$' $t/syms
 not grep -q '_dead1$' $t/syms
@@ -69,7 +69,7 @@ int main(int argc, char **argv) {
 EOF
 $CC -o $t/b.o -c $t/b.c
 $CC --ld-path=$mold -o $t/exe2 $t/b.o -Wl,-deduplicate
-$t/exe2
+$RUN $t/exe2
 nm $t/exe2 > $t/syms2
 [ "$(grep -E '_plain_[ab]$' $t/syms2 | cut -d' ' -f1 | uniq | wc -l)" -eq 1 ]
 [ "$(grep -E '_twin_[ab]$' $t/syms2 | cut -d' ' -f1 | uniq | wc -l)" -eq 2 ]

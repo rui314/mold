@@ -12,4 +12,4 @@ int main() { return 1; }
 EOF2
 
 $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-e,_other_main
-$t/exe | grep '^other$'
+$RUN $t/exe | grep '^other$'

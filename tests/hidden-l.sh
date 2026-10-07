@@ -17,7 +17,7 @@ EOF2
 $CC --ld-path=$mold -shared -o $t/lib.dylib $t/b.o -L$t -Wl,-hidden-lfoo \
   -Wl,-undefined,dynamic_lookup -e _main 2>/dev/null || true
 $CC --ld-path=$mold -o $t/exe $t/b.o -L$t -Wl,-hidden-lfoo
-$t/exe | grep '^3$'
+$RUN $t/exe | grep '^3$'
 
 # The archive's symbol resolves but is not exported and shows as a
 # local in the symbol table.

@@ -46,11 +46,11 @@ for obj in b c; do
   done
   grep -q 'external _cg$' $t/nm$obj
   $CC --ld-path=$mold -o $t/exe0$obj $t/main.o $t/$obj.o -Wl,-dead_strip
-  $t/exe0$obj > $t/out0$obj
+  $RUN $t/exe0$obj > $t/out0$obj
   grep -q '^i1 i1 main ' $t/out0$obj
   $CC --ld-path=$mold -o $t/exe$obj $t/main.o $t/r$obj.o -Wl,-dead_strip
-  [ "$($t/exe$obj)" = "$(cat $t/out0$obj)" ]
+  [ "$($RUN $t/exe$obj)" = "$(cat $t/out0$obj)" ]
   otool -l $t/exe$obj | grep -q 'sectname __mod_term_func'
   $CC -o $t/exe2$obj $t/main.o $t/r$obj.o -Wl,-dead_strip
-  [ "$($t/exe2$obj)" = "$(cat $t/out0$obj)" ]
+  [ "$($RUN $t/exe2$obj)" = "$(cat $t/out0$obj)" ]
 done

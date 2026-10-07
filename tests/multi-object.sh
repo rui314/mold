@@ -19,4 +19,4 @@ int main() {
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o $t/c.o
-$t/exe | grep '^7$'
+$RUN $t/exe | grep '^7$'

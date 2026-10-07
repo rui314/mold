@@ -30,7 +30,7 @@ for opts in "-L$t/lib -Wl,-no_merge-lfoo|-L$t/lib -Wl,-reexport-lfoo" \
     -Wl,-rpath,@loader_path/../lib -Wl,-rpath,@loader_path/../Frameworks
   cmp $t/x/exe $t/y/exe
   otool -L $t/x/exe | grep -q 'foo.dylib .*reexport)\|Foo .*reexport)'
-  [ "$($t/x/exe)" = 3 ]
+  [ "$($RUN $t/x/exe)" = 3 ]
 done
 
 # They are spelled as given when repeated, and as the -reexport ones

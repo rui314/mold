@@ -37,11 +37,11 @@ EOF
 $CC --ld-path=$mold -o $t/libfoo.dylib -shared $t/a.o $t/b.o \
   -Wl,-flat_namespace -mmacosx-version-min=11.0
 $CC --ld-path=$mold -o $t/exe $t/c.o $t/libfoo.dylib
-$t/exe | grep -q '^4460$'
+$RUN $t/exe | grep -q '^4460$'
 
 $CC --ld-path=$mold -o $t/libfoo.dylib -shared $t/a.o $t/b.o \
   -Wl,-flat_namespace -mmacosx-version-min=13.0
-$t/exe | grep -q '^4460$'
+$RUN $t/exe | grep -q '^4460$'
 dyld_info -fixups $t/libfoo.dylib > $t/fixups
 grep -Eq '__data .* bind +<flat-namespace>/_gvar$' $t/fixups
 grep -Eq '__data .* bind +<flat-namespace>/_gfunc$' $t/fixups
@@ -51,4 +51,4 @@ grep -Eq '__got .* bind +<flat-namespace>/_gfunc$' $t/fixups
 
 # A two-level namespace dylib keeps them to itself.
 $CC --ld-path=$mold -o $t/libfoo.dylib -shared $t/a.o $t/b.o
-$t/exe | grep -q '^1116$'
+$RUN $t/exe | grep -q '^1116$'

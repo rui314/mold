@@ -44,7 +44,7 @@ $CC --ld-path=$mold -shared -o $t/libb.dylib $t/b.o -mmacosx-version-min=10.5 \
   -Wl,-install_name,@rpath/libb.dylib 2> /dev/null
 $CC --ld-path=$mold -o $t/exe1 $t/a.o $t/libb.dylib -mmacosx-version-min=10.5 \
   -Wl,-rpath,@executable_path 2> /dev/null
-$t/exe1 > $t/out1
+$RUN $t/exe1 > $t/out1
 grep -q 'Hello world' $t/out1
 grep -q '^dylib$' $t/out1
 grep -q '^7$' $t/out1
@@ -80,7 +80,7 @@ sed -n '/Local relocation/,$p' $t/rel2 > $t/locrel2
 # among them.
 $CC --ld-path=$mold -o $t/exe2 $t/a.o $t/libb.dylib -mmacosx-version-min=10.5 \
   -Wl,-pie,-rpath,@executable_path 2> /dev/null
-$t/exe2 | grep -q 'Hello world'
+$RUN $t/exe2 | grep -q 'Hello world'
 otool -hv $t/exe2 | tail -1 | grep -q ' PIE'
 otool -r -v $t/exe2 > $t/rel3
 grep -q '(__TEXT,__stub_helper)$' $t/rel3

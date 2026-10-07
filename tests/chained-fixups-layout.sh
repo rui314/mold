@@ -31,7 +31,7 @@ _a: .quad _free
 EOF
 
 $CC --ld-path=$mold -o $t/exe1 $t/main.o $t/a.o -mmacosx-version-min=13.0
-$t/exe1
+$RUN $t/exe1
 [ $(header $t/exe1 size) = 0x0000001A ]
 [ $(header $t/exe1 imports_offset) = 0x00000054 ]
 [ $(datasize $t/exe1) = 96 ]
@@ -47,7 +47,7 @@ _a: .quad _free + 0x100000000
 EOF
 
 $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/b.o -mmacosx-version-min=13.0
-$t/exe2
+$RUN $t/exe2
 [ $(header $t/exe2 imports_format) = 0x00000003 ]
 [ $(header $t/exe2 imports_offset) = 0x00000058 ]
 [ $(datasize $t/exe2) = 112 ]
@@ -55,7 +55,7 @@ $t/exe2
 # Nothing to fix up: the empty import table follows the starts table.
 echo 'int x = 1;' | $CC -o $t/c.o -c -xc -
 $CC --ld-path=$mold -o $t/exe3 $t/main.o $t/c.o -mmacosx-version-min=13.0
-$t/exe3
+$RUN $t/exe3
 [ $(header $t/exe3 seg_count) = 0x00000004 ]
 [ $(header $t/exe3 imports_offset) = 0x00000034 ]
 [ $(datasize $t/exe3) = 56 ]

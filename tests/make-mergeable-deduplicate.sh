@@ -45,12 +45,12 @@ nm $t/libfoo.dylib > $t/syms
 [ "$(grep -E ' _h[12]$' $t/syms | cut -d' ' -f1 | uniq | wc -l)" -eq 1 ]
 
 $CC --ld-path=$mold -o $t/exe $t/main.o -L$t -Wl,-merge-lfoo
-$t/exe | grep -q '^2 2 27$'
+$RUN $t/exe | grep -q '^2 2 27$'
 nm $t/exe > $t/exe-syms
 grep -q ' _h2$' $t/exe-syms
 
 $CC -o $t/exe2 $t/main.o -L$t -Wl,-merge-lfoo
-$t/exe2 | grep -q '^2 2 27$'
+$RUN $t/exe2 | grep -q '^2 2 27$'
 otool -L $t/exe2 > $t/libs
 not grep -q libfoo $t/libs
 
@@ -95,6 +95,6 @@ EOF
 [ "$(grep -c '^__ZN1TILi3EE1fEi$' $t/names)" = 1 ]
 
 $CC --ld-path=$mold -o $t/exe3 $t/main2.o -L$t -Wl,-merge-lbar
-$t/exe3 | grep -q '^41 80$'
+$RUN $t/exe3 | grep -q '^41 80$'
 $CC -o $t/exe4 $t/main2.o -L$t -Wl,-merge-lbar
-$t/exe4 | grep -q '^41 80$'
+$RUN $t/exe4 | grep -q '^41 80$'

@@ -5,8 +5,8 @@
 # line or in a response file.
 echo 'int main() { return 0; }' | $CC -o $t/a.o -c -xc -
 $CC --ld-path=$mold -o $t/exe $t/a.o -Xlinker ''
-$t/exe
+$RUN $t/exe
 
 echo "'' \"\"" > $t/rsp
 $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,@$t/rsp
-$t/exe
+$RUN $t/exe

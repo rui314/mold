@@ -95,7 +95,7 @@ set_flags $t/c.o __DATA __got 2
 if [ $ARCH = x86_64 ] || $mold -v 2>&1 | grep -q mold-macho; then
   for obj in a c; do
     $CC --ld-path=$mold -o $t/exe-$obj $t/$obj.o $t/b.o
-    $t/exe-$obj > $t/out
+    $RUN $t/exe-$obj > $t/out
     printf 'hello\nworld\n42\n' | cmp - $t/out
     otool -Iv $t/exe-$obj > $t/indirect
     grep -q ' _puts$' $t/indirect
@@ -111,7 +111,7 @@ if $mold -v 2>&1 | grep -q mold-macho; then
     grep -q ' _puts$' $t/relocs
     grep -q ' _bar$' $t/relocs
     $CC --ld-path=$mold -o $t/exe2 $t/r.o $t/b.o
-    $t/exe2 > $t/out
+    $RUN $t/exe2 > $t/out
     printf 'hello\nworld\n42\n' | cmp - $t/out
   done
 fi

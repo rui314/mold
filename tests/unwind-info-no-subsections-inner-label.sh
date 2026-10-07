@@ -69,7 +69,7 @@ EOF
 fi
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o
-[ "$($t/exe)" = 'trace inner main ' ]
+[ "$($RUN $t/exe)" = 'trace inner main ' ]
 objdump --unwind-info $t/exe > $t/unwind
 inner=$(nm $t/exe | awk '$3 == "_inner" { print $1 }' | sed 's/^0*1/0x/')
 not grep -q "function offset=$inner," $t/unwind

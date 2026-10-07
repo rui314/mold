@@ -21,7 +21,7 @@ EOF
 done
 echo 'void f1(void), f2(void); int main() { f1(); f2(); }' | $CC -o $t/a.o -c -xc -
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/1.o $t/2.o
-$t/exe
+$RUN $t/exe
 
 objdump --macho --unwind-info $t/exe > $t/unwind
 python3 - $t/exe $t/unwind $ARCH > $t/records <<'EOF'

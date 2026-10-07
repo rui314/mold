@@ -55,7 +55,7 @@ int main() { puts("hi"); }
 EOF
 $CC --ld-path=$mold -o $t/exe3 $t/c.o $t/d.o -Wl,-sectalign,__DATA,__mid,2 \
   -Wl,-sectalign,__DATA,__big,0x8000 -Wl,-sectalign,__DATA_CONST,__got,1 2> $t/log3
-$t/exe3 | grep -q hi
+$RUN $t/exe3 | grep -q hi
 awk '/alignment/ { for (i = 1; i <= NF; i++) if ($i ~ /^__[A-Z_]+,__/) { print $i; break } }' \
   $t/log3 | tr '\n' ' ' > $t/order
 [ "$(cat $t/order)" = '__TEXT,__tbig __DATA_CONST,__got __DATA,__big __DATA,__big __DATA,__mid ' ]

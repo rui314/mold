@@ -35,7 +35,7 @@ $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o
 [ "$(flags $t/exe __TEXT __const)" = 0x00000000 ]
 [ "$(flags $t/exe __DATA __bar)" = 0x00000000 ]
 [ "$(flags $t/exe __TEXT __baz)" = 0x80000400 ]
-$t/exe
+$RUN $t/exe
 
 $mold -arch $ARCH -r -o $t/r.o $t/a.o
 [ "$(flags $t/r.o __TEXT __foo)" = 0x00000400 ]

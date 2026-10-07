@@ -26,7 +26,7 @@ int main() { printf("%d %d %d\n", a_next(), b_next(), a_next()); }
 EOF2
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/liba.dylib $t/libb.dylib -Wl,-rpath,$t
 # One counter across both dylibs.
-$t/exe | grep '^1 2 3$'
+$RUN $t/exe | grep '^1 2 3$'
 
 # The static local's slot is bound by weak lookup; the header says so.
 dyld_info -fixups $t/liba.dylib > $t/fixups
@@ -53,4 +53,4 @@ done
 otool -l $t/libac.dylib | grep 'LC_DYLD_INFO'
 otool -l $t/libac.dylib | grep -A11 'LC_DYLD_INFO' | grep 'weak_bind_size' | grep -v ' 0$'
 $CC --ld-path=$mold -o $t/exec $t/main.o $t/libac.dylib $t/libbc.dylib -Wl,-rpath,$t
-$t/exec | grep '^1 2 3$'
+$RUN $t/exec | grep '^1 2 3$'

@@ -24,7 +24,7 @@ EOF
 strings_of() { otool -v -s __TEXT $2 $1 | tail -n +3 | awk '{print $2}'; }
 
 $CC --ld-path=$mold -o $t/exe $t/a.o -framework Foundation
-$t/exe | grep -q '^Foo Foo length 6$'
+$RUN $t/exe | grep -q '^Foo Foo length 6$'
 strings_of $t/exe __objc_classname | grep -q '^Foo$'
 strings_of $t/exe __objc_methname | grep -q '^length$'
 strings_of $t/exe __cstring > $t/cstrings

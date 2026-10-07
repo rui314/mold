@@ -60,6 +60,6 @@ int main() {
 }
 EOF
 $CXX --ld-path=$mold -o $t/exe $t/main.o $t/r.o
-$t/exe | grep -q '^1 5$'
+$RUN $t/exe | grep -q '^1 5$'
 $CXX -o $t/exe2 $t/main.o $t/r.o
-$t/exe2 | grep -q '^1 5$'
+$RUN $t/exe2 | grep -q '^1 5$'

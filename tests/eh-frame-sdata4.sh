@@ -92,7 +92,7 @@ int main() { try { through_asm(); } catch (int e) { printf("caught %d\n", e + 2)
 EOF
 
 $CXX --ld-path=$mold -o $t/exe $t/a.o $t/b.o
-$t/exe | grep -q 'caught 42'
+$RUN $t/exe | grep -q 'caught 42'
 
 # The FDE keeps its 4-byte fields, which name the function and the LSDA
 # where they are now.
@@ -112,9 +112,9 @@ otool -rv $t/r.o | sed -n '/(__TEXT,__eh_frame)/,/^Relocation information (__/p'
 [ "$(grep -c '___gxx_personality_v0$' $t/r.relocs)" = 1 ]
 not grep -q 'SUB ' $t/r.relocs
 $CXX --ld-path=$mold -o $t/exe2 $t/r.o $t/b.o
-$t/exe2 | grep -q 'caught 42'
+$RUN $t/exe2 | grep -q 'caught 42'
 $CXX -o $t/exe3 $t/r.o $t/b.o
-$t/exe3 | grep -q 'caught 42'
+$RUN $t/exe3 | grep -q 'caught 42'
 
 # For a shared cache builder that slides the sections apart
 # (-add_split_seg_info), a 4-byte field is a 32-bit delta.

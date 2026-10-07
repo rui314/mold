@@ -71,4 +71,4 @@ _foo:
   ret
 EOF
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/e.o
-$t/exe
+$RUN $t/exe

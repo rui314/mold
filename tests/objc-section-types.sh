@@ -63,17 +63,17 @@ sect() {
 }
 
 $CC --ld-path=$mold -o $t/exe $t/a.o -framework Foundation
-$t/exe | grep -q '^42 7$'
+$RUN $t/exe | grep -q '^42 7$'
 sect $t/exe __objc_selrefs | grep -q ' 0x00000000$'
 sect $t/exe __objc_methname > $t/methname
 grep -q ' 0x00000002$' $t/methname
 
 # b.o's "bar" merges into a.o's.
 $CC --ld-path=$mold -o $t/exe2 $t/a.o $t/b.o -framework Foundation
-$t/exe2 | grep -q '^42 7$'
+$RUN $t/exe2 | grep -q '^42 7$'
 sect $t/exe2 __objc_methname | cmp - $t/methname
 
 $mold -arch $ARCH -r -o $t/r.o $t/a.o
 [ "$(sect $t/r.o __objc_classlist | cut -d' ' -f2)" = 0x10000000 ]
 $CC --ld-path=$mold -o $t/exe3 $t/r.o -framework Foundation
-$t/exe3 | grep -q '^42 7$'
+$RUN $t/exe3 | grep -q '^42 7$'

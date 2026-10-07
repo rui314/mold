@@ -24,7 +24,7 @@ sed -E 's/(\.quad[[:space:]]+[lL]_OBJC_METH_VAR_NAME_\.1)$/\1+1/' $t/a.s > $t/b.
 [ "$(grep -c 'METH_VAR_NAME_\.1+1$' $t/b.s)" = 1 ]
 $CC -c -o $t/b.o $t/b.s
 $CC --ld-path=$mold -o $t/exe $t/b.o -framework Foundation -mmacosx-version-min=14.0
-$t/exe
+$RUN $t/exe
 otool -ov $t/exe | grep -A1 'baseMethods.*INSTANCE_METHODS_Foo' | grep -q 'entsize 24$'
 otool -l $t/exe > $t/lc
 not grep -q 'sectname __objc_selrefs' $t/lc

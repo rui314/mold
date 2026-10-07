@@ -29,14 +29,14 @@ grep -q '(undefined) external ___dtrace_typedefs\$myapp\$v2$' $t/log
 
 # A final link of the output makes the DOF a link of the input does.
 $CC --ld-path=$mold -o $t/exe $t/r.o
-$t/exe
+$RUN $t/exe
 $CC --ld-path=$mold -o $t/exe2 $t/a.o
 dof_dump $t/exe > $t/dof
 dof_dump $t/exe2 > $t/dof2
 diff $t/dof $t/dof2
 grep -q '^probe start(int, char \*) in main: 1 sites, 0 tests$' $t/dof
 $CC -o $t/exe3 $t/r.o
-$t/exe3
+$RUN $t/exe3
 
 # A weak reference stays one.
 cat <<EOF | $CC -o $t/b.o -c -xassembler -

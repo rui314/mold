@@ -56,4 +56,4 @@ $mold -arch $ARCH -o $t/exe4 $t/a.o -sectcreate __TEXT __text $t/d1 \
   -lSystem -syslibroot "$(xcrun --show-sdk-path)"
 otool -l $t/exe4 | grep -c 'sectname __text' > $t/log5
 grep -qx 1 $t/log5
-$t/exe4 || [ $? = 17 ]
+$RUN $t/exe4 || [ $? = 17 ]

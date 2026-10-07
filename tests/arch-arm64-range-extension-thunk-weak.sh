@@ -40,4 +40,4 @@ int main() { printf("%d %d\n", f(), g()); }
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/libfoo.dylib
-$t/exe | grep -q '^1 1$'
+$RUN $t/exe | grep -q '^1 1$'

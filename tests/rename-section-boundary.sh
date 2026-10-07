@@ -27,7 +27,7 @@ sects() {
 
 $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-rename_section,__AAA,__a,__BBB,__b \
   -Wl,-rename_segment,__BBB,__CCC
-$t/exe > $t/out
+$RUN $t/exe > $t/out
 [ "$(sed -n 1p $t/out)" = "$(sed -n 2p $t/out)" ]
 sects $t/exe > $t/sects
 grep -qx '__DATA_CONST,__const' $t/sects

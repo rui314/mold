@@ -19,7 +19,7 @@ int main() { return foo() != 3; }
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/a.o -L$t 2> /dev/null
-$t/exe
+$RUN $t/exe
 not $CC --ld-path=$mold -o $t/exe $t/main.o $t/a.o -L$t -Wl,-ignore_auto_link 2> $t/log
 not grep -q bogus $t/log
 not $CC --ld-path=$mold -o $t/exe $t/main.o -L$t -Wl,-add_linker_option,-lfoo \

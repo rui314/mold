@@ -13,12 +13,12 @@ int main() { return 0; }
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o
-$t/exe
+$RUN $t/exe
 nm $t/exe > $t/nm
 not grep -q nosuch $t/nm
 
 $CC --ld-path=$mold -o $t/exe2 $t/a.o -Wl,-undefined,dynamic_lookup
-$t/exe2
+$RUN $t/exe2
 nm $t/exe2 > $t/nm2
 not grep -q nosuch $t/nm2
 

@@ -27,7 +27,7 @@ grep -A1 'cmd LC_RPATH' $t/cmds | grep -q 'cmdsize 16'
 awk '$1 == "cmd" { print $2 }' $t/cmds | tr '\n' ' ' > $t/order
 grep -q 'LC_RPATH LC_DYLD_ENVIRONMENT LC_DYLD_ENVIRONMENT LC_FUNCTION_STARTS' $t/order
 if native_arch; then
-  $t/exe | grep -q '^3$'
+  $RUN $t/exe | grep -q '^3$'
 fi
 
 # The variable must start with DYLD_ and have a value.

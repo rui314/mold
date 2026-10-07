@@ -33,11 +33,11 @@ if [ $ARCH = arm64 ]; then
   not $CC --ld-path=$mold -o $t/exe4 $t/a.o -Wl,-segalign,0x8000 2> $t/log
   grep -q 'chained fixups' $t/log
   $CC --ld-path=$mold -o $t/exe4 $t/a.o -Wl,-segalign,0x8000,-no_fixup_chains
-  $t/exe4
+  $RUN $t/exe4
 else
   $CC --ld-path=$mold -o $t/exe4 $t/a.o -Wl,-segalign,0x8000
   if native_arch; then
-    $t/exe4
+    $RUN $t/exe4
   fi
 fi
 [ "$(vmsize $t/exe4 __DATA)" = 0x0000000000008000 ]

@@ -75,8 +75,8 @@ otool -rv $t/r2.o > $t/relocs2
 # Programs linked from the outputs, with either linker, read the same
 # values as from the objects.
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/a.o $t/b.o
-$t/exe | grep -q '^6.5 15$'
+$RUN $t/exe | grep -q '^6.5 15$'
 $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/r.o $t/r2.o
-$t/exe2 | grep -q '^6.5 15$'
+$RUN $t/exe2 | grep -q '^6.5 15$'
 $CC -o $t/exe3 $t/main.o $t/r.o $t/r2.o
-$t/exe3 | grep -q '^6.5 15$'
+$RUN $t/exe3 | grep -q '^6.5 15$'

@@ -17,7 +17,7 @@ echo 'int f1(void), f2(void), f3(void); int main() { return f1() + f2() + f3() !
   $CC -o $t/main.o -c -xc -
 
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/r1.o $t/r2.o $t/r3.o
-$t/exe
+$RUN $t/exe
 nm -ap $t/exe > $t/log
 [ "$(grep -c 'GSYM _shared_common$' $t/log)" = 3 ]
 for i in 1 2 3; do

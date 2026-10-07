@@ -40,13 +40,13 @@ if [ $ARCH = arm64 ]; then classic=11.0; else classic=12.0; fi
 
 $CC --ld-path=$mold -o $t/exe1 $t/main.o $t/liba.dylib $t/libb.dylib \
   -Wl,-rpath,$t -mmacosx-version-min=14.0
-$t/exe1 | grep -q x
+$RUN $t/exe1 | grep -q x
 [ "$(slots $t/exe1 __stubs)" = '_Zup _afun _bfun _puts _zfun ' ]
 [ "$(slots $t/exe1 __got)" = '_Zup _aa _afun _bb _bfun _printf _puts _zfun _zz ' ]
 
 $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/liba.dylib $t/libb.dylib \
   -Wl,-rpath,$t -mmacosx-version-min=$classic
-$t/exe2 | grep -q x
+$RUN $t/exe2 | grep -q x
 [ "$(slots $t/exe2 __stubs)" = '_Zup _afun _bfun _puts _zfun ' ]
 [ "$(slots $t/exe2 __got)" = '_aa _bb _printf _zz dyld_stub_binder ' ]
 [ "$(slots $t/exe2 __la_symbol_ptr)" = '_Zup _afun _bfun _puts _zfun ' ]
@@ -66,13 +66,13 @@ template <typename T> struct W { static int f() { return sizeof(T); } };
 int main() { int *p = new int(W<long>::f() + W<char>::f()); std::printf("%d\n", *p); }
 EOF
 $CXX --ld-path=$mold -o $t/exe3 $t/c.o -mmacosx-version-min=14.0
-$t/exe3 | grep -q '^9$'
+$RUN $t/exe3 | grep -q '^9$'
 [ "$(slots $t/exe3 __got)" = '__ZN1WIcE1fEv __ZN1WIlE1fEv __Znwm _printf ' ]
 
 # With lazy binding only the lazily bound stubs have a lazy pointer and
 # a stub helper entry; a weak-lookup stub jumps through its GOT slot.
 $CXX --ld-path=$mold -o $t/exe5 $t/c.o -mmacosx-version-min=$classic
-$t/exe5 | grep -q '^9$'
+$RUN $t/exe5 | grep -q '^9$'
 [ "$(slots $t/exe5 __stubs)" = '__ZN1WIcE1fEv __ZN1WIlE1fEv __Znwm _printf ' ]
 [ "$(slots $t/exe5 __got)" = '__ZN1WIcE1fEv __ZN1WIlE1fEv __Znwm dyld_stub_binder ' ]
 [ "$(slots $t/exe5 __la_symbol_ptr)" = '_printf ' ]
@@ -95,7 +95,7 @@ _getl:
 EOF
 $CC --ld-path=$mold -o $t/exe4 $t/main.o $t/d.o $t/liba.dylib $t/libb.dylib \
   -Wl,-rpath,$t -mmacosx-version-min=$classic
-$t/exe4 | grep -q x
+$RUN $t/exe4 | grep -q x
 nm $t/exe4 > $t/nm4
 laa=$(awk '$3 == "_laa" { print $1 }' $t/nm4)
 ldz=$(awk '$3 == "_ldz" { print $1 }' $t/nm4)

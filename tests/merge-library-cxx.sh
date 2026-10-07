@@ -39,6 +39,6 @@ EOF
 
 $CXX -shared -o $t/libfoo.dylib $t/a.o -Wl,-make_mergeable -Wl,-install_name,@rpath/libfoo.dylib
 $CXX --ld-path=$mold -o $t/exe $t/main.o -L$t -Wl,-merge-lfoo
-$t/exe | grep -q '^34 139 3$'
+$RUN $t/exe | grep -q '^34 139 3$'
 otool -L $t/exe > $t/libs
 not grep -q libfoo $t/libs

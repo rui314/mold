@@ -49,9 +49,9 @@ cp $t/b.o $t/bss.o
 set_flags $t/bss.o __DATA __thread_bss 1
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/data.o
-$t/exe | grep -q '^5 0$'
+$RUN $t/exe | grep -q '^5 0$'
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/bss.o
-$t/exe | grep -q '^5 0$'
+$RUN $t/exe | grep -q '^5 0$'
 
 not $CC --ld-path=$mold -o $t/exe2 $t/data.o $t/a.o 2> $t/log
 grep -q 'Missing TLV section flags in __DATA,__thread_data' $t/log
@@ -123,7 +123,7 @@ grep -q 'segment __BBB address is out of order' $t/log
 
 $CC --ld-path=$mold -o $t/exe3 $t/a.o $t/d.o \
   -Wl,-rename_section,__DATA,__thread_data,__DATA,__bar
-$t/exe3 | grep -q '^5 0$'
+$RUN $t/exe3 | grep -q '^5 0$'
 
 # ld-prime writes an image dyld refuses for data after the template,
 # and crashes with no template left.

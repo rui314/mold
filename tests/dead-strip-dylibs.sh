@@ -13,4 +13,4 @@ $CC --ld-path=$mold -o $t/exe2 $t/a.o -framework CoreFoundation \
   -Wl,-dead_strip_dylibs
 otool -L $t/exe2 > $t/libs
 not grep -q CoreFoundation $t/libs
-$t/exe2 | grep hi
+$RUN $t/exe2 | grep hi

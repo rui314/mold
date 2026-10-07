@@ -25,7 +25,7 @@ int main(int argc, char **argv) {
 }
 EOF
 $CC --ld-path=$mold -o $t/main $t/main.o
-$t/main $t/a.dylib | grep '^42$'
+$RUN $t/main $t/a.dylib | grep '^42$'
 
 # arm64 has no non-PIE executable to place.
 [ $ARCH = x86_64 ] || exit 0
@@ -39,7 +39,7 @@ int main() {
 EOF
 $CXX --ld-path=$mold -o $t/exe $t/b.o -Wl,-no_pie -Wl,-image_base,0x180000000 \
   -mmacosx-version-min=12.0
-$t/exe | grep '^caught 42$'
+$RUN $t/exe | grep '^caught 42$'
 
 # A base inside __PAGEZERO is reported once the image is laid out.
 not $CXX --ld-path=$mold -o $t/exe2 $t/b.o -Wl,-no_pie -Wl,-image_base,0x1000 \

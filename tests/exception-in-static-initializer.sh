@@ -22,5 +22,5 @@ int main() {}
 EOF
 
 $CXX --ld-path=$mold -o $t/exe $t/a.o
-( set +e; $t/exe; true ) >& $t/log
+( set +e; $RUN $t/exe; true ) >& $t/log
 grep -q 'terminating .* uncaught exception of type Error: ERROR STRING' $t/log

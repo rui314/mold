@@ -61,9 +61,9 @@ EOF
 $CC --ld-path=$mold -shared -o $t/libfoo.dylib $t/a.o -framework Foundation \
   -Wl,-make_mergeable -Wl,-install_name,@rpath/libfoo.dylib
 $CC --ld-path=$mold -o $t/exe $t/main.o -L$t -Wl,-merge-lfoo -Wl,-no_merged_libraries_hook
-$t/exe | grep -q '^Alice greets Bob (30) / ALICE GREETS WORLD (30) / 6 1$'
+$RUN $t/exe | grep -q '^Alice greets Bob (30) / ALICE GREETS WORLD (30) / 6 1$'
 $CC -o $t/exe2 $t/main.o -L$t -Wl,-merge-lfoo -Wl,-no_merged_libraries_hook
-$t/exe2 | grep -q '^Alice greets Bob (30) / ALICE GREETS WORLD (30) / 6 1$'
+$RUN $t/exe2 | grep -q '^Alice greets Bob (30) / ALICE GREETS WORLD (30) / 6 1$'
 otool -L $t/exe2 > $t/libs
 not grep -q libfoo $t/libs
 grep -q Foundation $t/libs
@@ -86,7 +86,7 @@ int main() { printf("%s %d\n", objc_entry(), [[Eager new] fromMain]); }
 EOF
 $CC --ld-path=$mold -o $t/exe3 $t/main2.o -L$t -Wl,-merge-lfoo \
   -Wl,-no_merged_libraries_hook -framework Foundation
-$t/exe3 | grep -q '^Alice greets Bob (30) / ALICE GREETS WORLD (30) / 6 1 42$'
+$RUN $t/exe3 | grep -q '^Alice greets Bob (30) / ALICE GREETS WORLD (30) / 6 1 42$'
 $CC -o $t/exe4 $t/main2.o -L$t -Wl,-merge-lfoo -Wl,-no_merged_libraries_hook \
   -framework Foundation
-$t/exe4 | grep -q '^Alice greets Bob (30) / ALICE GREETS WORLD (30) / 6 1 42$'
+$RUN $t/exe4 | grep -q '^Alice greets Bob (30) / ALICE GREETS WORLD (30) / 6 1 42$'

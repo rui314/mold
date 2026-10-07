@@ -21,7 +21,7 @@ $t/c.o 26.5
 /tmp/lto.o 27.0
 EOF
 diff $t/files <(sort $t/expected)
-$t/exe
+$RUN $t/exe
 
 # A -r link of bitcode alone checks the bitcode too.
 $CC --ld-path=$mold -flto -mmacosx-version-min=26.0 -r -o $t/r.o $t/a.o $t/c.o 2> $t/log2

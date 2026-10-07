@@ -47,7 +47,7 @@ int main() {
 EOF
 $CC -o $t/a.o -c $t/a.c
 $CC --ld-path=$mold -o $t/exe $t/a.o
-$t/exe
+$RUN $t/exe
 
 dof_dump $t/exe > $t/dof
 sed -n 's/^probe \([a-z]*\)(\(.*\)) in main: 1 sites, 0 tests$/\1, \2/p' $t/dof |

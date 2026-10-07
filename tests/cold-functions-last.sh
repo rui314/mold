@@ -18,7 +18,7 @@ EOF2
 nm -m $t/a.o | grep 'cold func'
 
 $CXX --ld-path=$mold -o $t/exe $t/a.o $t/b.o
-$t/exe
+$RUN $t/exe
 nm -n $t/exe | grep -E ' [Tt] ' | awk '{print $3}' > $t/order
 # The cold S::g comes after b.o's functions.
 [ "$(tail -1 $t/order)" = __ZN1S1gEv ]

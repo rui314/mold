@@ -50,10 +50,10 @@ says $t/nosuch.bin 'No such file or directory'
 # aliases: a warning says so, and the link goes on.
 $CC --ld-path=$mold -o $t/exe2 $t/a.o -Wl,-order_file,$t/nosuch.txt 2> $t/log
 says $t/nosuch.txt 'No such file or directory'
-$t/exe2
+$RUN $t/exe2
 $CC --ld-path=$mold -o $t/exe3 $t/a.o -Wl,-alias_list,$t/nosuch.txt 2> $t/log
 says $t/nosuch.txt 'No such file or directory'
-$t/exe3
+$RUN $t/exe3
 
 # The first library or framework not found, in command-line order
 # (-force_load's among them), stops the link: one is reported. (ld-prime

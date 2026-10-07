@@ -60,10 +60,10 @@ otool -l $t/libfoo.dylib | grep -q LC_ATOM_INFO
 mkdir -p $t/x $t/y
 $CC --ld-path=$mold -o $t/x/exe $t/main.o -L$t -Wl,-merge-lfoo
 $CC --ld-path=$mold -o $t/y/exe $t/main.o $t/a.o $t/b.o
-$t/x/exe > $t/out
+$RUN $t/x/exe > $t/out
 grep -q 'hello from a two 33' $t/out
 grep -q '^16909092$' $t/out
-$t/y/exe > $t/out1
+$RUN $t/y/exe > $t/out1
 cmp $t/out $t/out1
 same_sections_and_symbols $t/x/exe $t/y/exe
 
@@ -73,6 +73,6 @@ not grep -q libfoo $t/libs
 # -dead_strip takes what the merged code doesn't use away as ever.
 $CC --ld-path=$mold -o $t/x/exe2 $t/main.o -L$t -Wl,-merge-lfoo -Wl,-dead_strip
 $CC --ld-path=$mold -o $t/y/exe2 $t/main.o $t/a.o $t/b.o -Wl,-dead_strip
-$t/x/exe2 > $t/out2
+$RUN $t/x/exe2 > $t/out2
 cmp $t/out $t/out2
 same_sections_and_symbols $t/x/exe2 $t/y/exe2

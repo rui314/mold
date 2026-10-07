@@ -49,7 +49,7 @@ objdump --unwind-info $t/exe1 > $t/log1
 not grep -q "encoding\[0\]: $dwarf\$" $t/log1
 
 $CC --ld-path=$mold -o $t/exe2 $t/a.o -Wl,-no_dwarf_unwind
-$t/exe2
+$RUN $t/exe2
 otool -l $t/exe2 > $t/lc2
 not grep -q 'sectname __eh_frame' $t/lc2
 grep -q 'sectname __unwind_info' $t/lc2

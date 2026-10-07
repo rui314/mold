@@ -52,7 +52,7 @@ int main() {
 EOF2
 
 $CC --ld-path=$mold -o $t/exe $t/a.o -framework Foundation -mmacosx-version-min=15.0
-$t/exe | grep '^1 2 4 3 5 6 7$'
+$RUN $t/exe | grep '^1 2 4 3 5 6 7$'
 otool -l $t/exe > $t/lc
 otool -ov $t/exe > $t/ov
 # ld-prime converts on arm64 only: an x86-64 image keeps the classic
@@ -63,7 +63,7 @@ if [ $ARCH = x86_64 ]; then
   not grep -q 'entsize 12 (relative)' $t/ov
   $CC --ld-path=$mold -o $t/exe_rel $t/a.o -framework Foundation -mmacosx-version-min=15.0 \
     -Wl,-objc_relative_method_lists
-  $t/exe_rel | grep '^1 2 4 3 5 6 7$'
+  $RUN $t/exe_rel | grep '^1 2 4 3 5 6 7$'
   otool -l $t/exe_rel > $t/lc
   otool -ov $t/exe_rel > $t/ov
   mv $t/exe_rel $t/exe
@@ -93,13 +93,13 @@ not grep -q '__objc_methlist' $t/fixups
 # only x86-64 can be built for 10.15).
 if [ $ARCH = x86_64 ]; then
   $CC --ld-path=$mold -o $t/exe15 $t/a.o -framework Foundation -mmacosx-version-min=10.15
-  $t/exe15 | grep '^1 2 4 3 5 6 7$'
+  $RUN $t/exe15 | grep '^1 2 4 3 5 6 7$'
   otool -l $t/exe15 > $t/lc15
   not grep -q '__objc_methlist' $t/lc15
   otool -ov $t/exe15 | grep 'entsize 24'
 fi
 
 $CC --ld-path=$mold -o $t/exe_no $t/a.o -framework Foundation -Wl,-no_objc_relative_method_lists
-$t/exe_no | grep '^1 2 4 3 5 6 7$'
+$RUN $t/exe_no | grep '^1 2 4 3 5 6 7$'
 otool -l $t/exe_no > $t/lcno
 not grep -q '__objc_methlist' $t/lcno

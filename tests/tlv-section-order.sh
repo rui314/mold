@@ -36,7 +36,7 @@ sections() {
 }
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o
-$t/exe | grep '^42 5 0$'
+$RUN $t/exe | grep '^42 5 0$'
 sections $t/exe | grep -q '__thread_vars __mytdata __thread_data __thread_bss $'
 otool -l $t/exe | grep -A5 'sectname __thread_data' | grep -q 'align 2^5'
 otool -l $t/exe | grep -A5 'sectname __thread_bss' | grep -q 'align 2^5'

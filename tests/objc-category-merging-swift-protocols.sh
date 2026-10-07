@@ -27,7 +27,7 @@ nm $t/a.o > $t/nm-in
 [ "$(grep -c ' __PROTOCOLS__TtC4main3Foo' $t/nm-in)" = 2 ]
 
 swiftc -use-ld=$mold -o $t/exe $t/a.o
-$t/exe | grep -q '^true true 3$'
+$RUN $t/exe | grep -q '^true true 3$'
 nm $t/exe > $t/nm
 grep -q '__OBJC_CLASS_PROTOCOLS_\$__TtC4main3Foo(main)$' $t/nm
 not grep -q ' __PROTOCOLS__TtC4main3Foo' $t/nm

@@ -34,7 +34,7 @@ size() {
 }
 
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/a.o $t/c.o
-$t/exe
+$RUN $t/exe
 nm -m $t/exe > $t/nm
 grep -q ',__objc_superrefs) non-external _sup_a$' $t/nm
 grep -q ',__objc_protorefs) non-external _pro_a$' $t/nm
@@ -45,7 +45,7 @@ nm -m $t/r.o > $t/nm-r
 grep -q '(__DATA,__objc_superrefs) non-external \[no dead strip\] _sup_a$' $t/nm-r
 grep -q '(__DATA,__objc_superrefs) non-external \[no dead strip\] l_sup_b$' $t/nm-r
 $CC --ld-path=$mold -o $t/exe-r $t/main.o $t/r.o $t/c.o
-$t/exe-r
+$RUN $t/exe-r
 nm -m $t/exe-r | grep -q ',__objc_superrefs) non-external _sup_a$'
 [ "$(size $t/exe-r __objc_superrefs)" = 0x0000000000000018 ]
 
@@ -65,7 +65,7 @@ l_sup_b$n: .quad _cls1
 EOF
 done
 $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/b1.o $t/b2.o $t/c.o
-$t/exe2
+$RUN $t/exe2
 [ "$(size $t/exe2 __objc_superrefs)" = 0x0000000000000010 ]
 nm -m $t/exe2 > $t/nm2
 grep -q ',__objc_superrefs) non-external _sup_a1$' $t/nm2
@@ -73,4 +73,4 @@ grep -q ',__objc_superrefs) non-external _sup_a2$' $t/nm2
 $mold -r -arch $ARCH -o $t/r2.o $t/b1.o $t/b2.o
 otool -l $t/r2.o | grep -A8 'sectname __objc_superrefs' | grep -q 'flags 0x10000000'
 $CC --ld-path=$mold -o $t/exe2-r $t/main.o $t/r2.o $t/c.o
-$t/exe2-r
+$RUN $t/exe2-r

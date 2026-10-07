@@ -59,7 +59,7 @@ objs __FOO,__text 0x8400000 0x4000
 $CC --ld-path=$mold -o $t/exe3 $t/main.o $t/pad.o $t/far.o -Wl,-segprot,__FOO,rx,rx
 nm -m $t/exe3 | grep -q '(__FOO,__text) non-external _far\.island$'
 status=0
-$t/exe3 || status=$?
+$RUN $t/exe3 || status=$?
 [ $status = 42 ]
 rm -f $t/exe3
 
@@ -79,6 +79,6 @@ EOF
 $CC --ld-path=$mold -o $t/exe4 $t/main.o $t/pad.o $t/far.o -Wl,-segprot,__FOO,rx,rx
 nm -m $t/exe4 | grep -q '(__TEXT,__text) non-external _far\.island$'
 status=0
-$t/exe4 || status=$?
+$RUN $t/exe4 || status=$?
 [ $status = 42 ]
 rm -f $t/pad.o $t/exe4

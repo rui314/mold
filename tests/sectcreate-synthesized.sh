@@ -13,7 +13,7 @@ EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-no_fixup_chains \
   -Wl,-sectcreate,__DATA,__blob,$t/blob
-$t/exe | grep '^x$'
+$RUN $t/exe | grep '^x$'
 otool -s __DATA __blob $t/exe | grep -E '6c6c6568 6f 0a|68 65 6c 6c 6f 0a'
 nm -m $t/exe | grep -F '(__DATA,__data) non-external __dyld_private'
 
@@ -35,7 +35,7 @@ EOF
 
 $CC --ld-path=$mold -o $t/exe2 $t/b.o -framework Foundation \
   -Wl,-add_empty_section,__TEXT,__empty -Wl,-sectcreate,__TEXT,__blob,$t/blob
-$t/exe2 | grep '^bar$'
+$RUN $t/exe2 | grep '^bar$'
 otool -l $t/exe2 > $t/lc2
 grep -A3 'sectname __empty' $t/lc2 | grep -E 'size 0x0+$'
 otool -s __TEXT __blob $t/exe2 | grep -E '6c6c6568 6f 0a|68 65 6c 6c 6f 0a'

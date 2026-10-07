@@ -46,7 +46,7 @@ int main() {
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/a.o $t/b.o
-$t/exe | grep -q '^1 1 0 abc:0 0123456789abcdefghij:0 xy:0 zzz:3 $'
+$RUN $t/exe | grep -q '^1 1 0 abc:0 0123456789abcdefghij:0 xy:0 zzz:3 $'
 otool -l $t/exe | awk '$1 == "sectname" && $2 == "__objc_classname" { f = 1 }
   f && $1 == "size" { print $2; f = 0 }' > $t/size
 grep -q '^0x0000000000000047$' $t/size

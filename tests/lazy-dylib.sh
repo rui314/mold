@@ -93,7 +93,7 @@ addrs '_qux$lazyGOT' > $t/qux-slots
 grep -qx $qux_chain $t/qux-slots
 
 # The dylibs load as the program first uses them.
-$t/exe > $t/out
+$RUN $t/exe > $t/out
 printf 'start\nfoo loaded\n5 3 5\nqux loaded\n4\n' | cmp - $t/out
 
 # Only calls and GOT loads can be lazy; a pointer in data is refused.
@@ -130,7 +130,7 @@ int mid(void);
 int main() { printf("start\n"); printf("%d\n", mid()); }
 EOF
 $CC --ld-path=$mold -o $t/exe3 $t/d.o -L$t -lmid -Wl,-rpath,$t -mmacosx-version-min=27.0
-$t/exe3 > $t/out3
+$RUN $t/exe3 > $t/out3
 printf 'start\nfoo loaded\n4\n' | cmp - $t/out3
 
 # A lazy dylib the program does not use has no record and no load
@@ -142,4 +142,4 @@ $CC --ld-path=$mold -o $t/exe4 $t/e.o -L$t -Wl,-lazy-lfoo -mmacosx-version-min=2
 otool -l $t/exe4 > $t/lc4
 not grep -q LC_LAZY_LOAD_DYLIB_INFO $t/lc4
 not grep -q libfoo $t/lc4
-$t/exe4
+$RUN $t/exe4

@@ -32,4 +32,4 @@ extern "C" void use(char *p, int n) { p[n] = 1; if (n == 2) throw 42; }
 EOF
 
 $CXX --ld-path=$mold -o $t/exe $t/a.o $t/b.o
-$t/exe | grep -q '^caught 42$'
+$RUN $t/exe | grep -q '^caught 42$'

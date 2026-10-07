@@ -41,4 +41,4 @@ int main() {
 EOF2
 
 $CC --ld-path=$mold -o $t/exe $t/c.o $t/a.o $t/b.o
-$t/exe | grep '^42$'
+$RUN $t/exe | grep '^42$'

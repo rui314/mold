@@ -40,7 +40,7 @@ grep -qx '__TEXT,__unwind_info' $t/sects
 grep -qx '__SC2,__sc' $t/sects
 not grep -q '__TEXT,__stubs\|__FOO' $t/sects
 # (__TEXT_EXEC is executable, as in ld64.)
-$t/exe | grep -q hello
+$RUN $t/exe | grep -q hello
 
 $CC --ld-path=$mold -o $t/exe2 $t/a.o -Wl,-rename_section,__TEXT,__init_offsets,__INIT,__io
 grep -qx '__INIT,__io' <(sects $t/exe2)

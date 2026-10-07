@@ -27,7 +27,7 @@ EOF
 $CC --ld-path=$mold -flto -dynamiclib -o $t/libsoft.dylib $t/a.o $t/libms.a \
   -Wl,-lto_softload_runtime_symbols
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/libsoft.dylib
-$t/exe | grep -q '^42$'
+$RUN $t/exe | grep -q '^42$'
 
 # Not by default, but in a -static or -preload image.
 $CC --ld-path=$mold -flto -dynamiclib -o $t/libsoft2.dylib $t/a.o $t/libms.a

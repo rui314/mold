@@ -39,7 +39,7 @@ done
 # Referenced TLS remains initialized and isolated between threads. Unused TLS
 # descriptors must not keep themselves or their backing storage alive.
 $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-dead_strip
-$t/exe
+$RUN $t/exe
 nm $t/exe > $t/syms
 not grep -q ' _dead_' $t/syms
 for sym in live_data live_bss retained_data; do

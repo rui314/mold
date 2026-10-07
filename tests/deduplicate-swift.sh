@@ -54,7 +54,7 @@ int main() {
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o -Wl,-deduplicate
-$t/exe | grep '^11001$'
+$RUN $t/exe | grep '^11001$'
 
 $CC --ld-path=$mold -o $t/exe2 $t/a.o $t/b.o -Wl,-no_deduplicate
-$t/exe2 | grep '^00000$'
+$RUN $t/exe2 | grep '^00000$'

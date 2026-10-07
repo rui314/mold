@@ -29,7 +29,7 @@ size() {
 }
 
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/a1.o $t/a2.o -framework CoreFoundation
-$t/exe | grep -q '^1 1 11$'
+$RUN $t/exe | grep -q '^1 1 11$'
 [ "$(size $t/exe __ustring)" = 0x0000000000000030 ]
 [ "$(size $t/exe __cfstring)" = 0x0000000000000020 ]
 
@@ -38,7 +38,7 @@ $t/exe | grep -q '^1 1 11$'
 $mold -r -arch $ARCH -o $t/r.o $t/a1.o $t/a2.o
 [ "$(size $t/r.o __ustring)" = 0x0000000000000060 ]
 $CC --ld-path=$mold -o $t/exe3 $t/main.o $t/r.o -framework CoreFoundation
-$t/exe3 | grep -q '^1 1 11$'
+$RUN $t/exe3 | grep -q '^1 1 11$'
 [ "$(size $t/exe3 __ustring)" = 0x0000000000000030 ]
 [ "$(size $t/exe3 __cfstring)" = 0x0000000000000020 ]
 
@@ -63,5 +63,5 @@ extern const void *p1[2], *p2[2];
 int main() { printf("%d %d\n", p1[0] == p2[0], p1[1] == p2[1]); }
 EOF
 $CC --ld-path=$mold -o $t/exe2 $t/main2.o $t/b1.o $t/b2.o
-$t/exe2 | grep -q '^1 1$'
+$RUN $t/exe2 | grep -q '^1 1$'
 [ "$(size $t/exe2 __ustring)" = 0x0000000000000012 ]

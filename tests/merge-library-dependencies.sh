@@ -28,7 +28,7 @@ int main() { return a() == 8 ? 0 : 1; }
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/main.o -L$t -Wl,-merge-lfoo -Wl,-rpath,@loader_path/sub
-$t/exe
+$RUN $t/exe
 otool -L $t/exe > $t/libs
 grep -A2 libSystem $t/libs | grep -q '@rpath/libw.dylib (compatibility version 3.0.0, current version 3.2.1)'
 grep -A2 libSystem $t/libs | grep -q 'libz'

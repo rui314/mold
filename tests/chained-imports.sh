@@ -30,14 +30,14 @@ int main() {
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/a.o -mmacosx-version-min=13.0
-$t/exe
+$RUN $t/exe
 dyld_info -fixup_chain_header $t/exe | sed -n '/targets:/,$p' | \
   awk '$1 == "symbol" { print $2 }' | sort | tr '\n' ' ' > $t/targets
 [ "$(cat $t/targets)" = '_abort _free _free _puts _strlen ' ]
 
 echo 'int main() { return 0; }' | $CC -o $t/empty.o -c -xc -
 $CC --ld-path=$mold -o $t/exe3 $t/empty.o -mmacosx-version-min=13.0
-$t/exe3
+$RUN $t/exe3
 symoff=$(dyld_info -fixup_chain_header $t/exe3 | awk '$1 == "symbols_offset" { print $2 }')
 size=$(otool -l $t/exe3 | grep -A3 LC_DYLD_CHAINED_FIXUPS | awk '$1 == "datasize" { print $2 }')
 [ $((size - symoff)) = 8 ]

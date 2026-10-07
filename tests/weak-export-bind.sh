@@ -40,6 +40,6 @@ extern "C" int f(int);
 int main() { int v = f(7); printf("%d %d\n", v, news); }
 EOF2
 $CXX --ld-path=$mold -o $t/exe $t/main.o $t/lib.dylib -Wl,-rpath,$t
-$t/exe | grep '^7 1$'
+$RUN $t/exe | grep '^7 1$'
 $CXX --ld-path=$mold -o $t/exec $t/main.o $t/libc.dylib -Wl,-rpath,$t
-$t/exec | grep '^7 1$'
+$RUN $t/exec | grep '^7 1$'

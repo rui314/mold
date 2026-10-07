@@ -48,7 +48,7 @@ int main() { printf("%d %d\n", far(), mid()); }
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/pad.o $t/far.o $t/pad2.o $t/mid.o
-$t/exe | grep '^42 42$'
+$RUN $t/exe | grep '^42 42$'
 
 # ld-prime names each branch island, a local symbol in the section of
 # the branch, after its target: "<target>.island" for the target's

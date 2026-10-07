@@ -58,7 +58,7 @@ if [ $ARCH = x86_64 ]; then
   $CC --ld-path=$mold -o $t/exe4 $t/b.o -mmacosx-version-min=10.11 -Wl,-adhoc_codesign
   [ "$(hash_types $t/exe4)" = "$sha1" ]
   codesign -v $t/exe4
-  $t/exe4
+  $RUN $t/exe4
 
   echo 'int main() { return 0; }' | $CC -o $t/c.o -c -xc - -mmacosx-version-min=10.12
   $CC --ld-path=$mold -o $t/exe5 $t/c.o -mmacosx-version-min=10.12 -Wl,-adhoc_codesign

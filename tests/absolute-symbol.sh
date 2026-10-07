@@ -23,7 +23,7 @@ int main() {
 EOF
 for fixups in -fixup_chains -no_fixup_chains; do
   $CC --ld-path=$mold $t/main.o $t/absolute.o -Wl,$fixups -o $t/exe
-  $t/exe | grep '^42 43 43 43 1$'
+  $RUN $t/exe | grep '^42 43 43 43 1$'
 done
 
 # The private-external absolute symbol stays in the symbol table as a
@@ -43,7 +43,7 @@ _data_local: .quad 0
 .subsections_via_symbols
 EOF2
 $CC --ld-path=$mold $t/main.o $t/absolute.o $t/local.o -o $t/exe2
-$t/exe2 | grep '^42 43 43 43 1$'
+$RUN $t/exe2 | grep '^42 43 43 43 1$'
 nm -m $t/exe2 | grep -q '(absolute) non-external _local_answer$'
 [ "$(nm -p $t/exe2 | awk '$2 ~ /^[a-z]$/ {print $3}' | sort | tr '\n' ' ')" = \
   '_data_local _hidden_answer _local_answer _private_answer ' ]
@@ -60,5 +60,5 @@ grep -q '(absolute) non-external [^(]*_local_answer$' $t/syms4
 grep -q '(absolute) non-external [^(]*lprivate$' $t/syms4
 grep -q '(absolute) non-external (was a private external) [^(]*_hidden_answer$' $t/syms4
 $CC --ld-path=$mold $t/main.o $t/absolute.o $t/r.o -o $t/exe4
-$t/exe4 | grep '^42 43 43 43 1$'
+$RUN $t/exe4 | grep '^42 43 43 43 1$'
 nm -m $t/exe4 | grep -q '(absolute) non-external _local_answer$'

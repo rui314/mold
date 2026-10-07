@@ -16,11 +16,11 @@ int main() {
 }
 EOF
 $CC --ld-path=$mold $t/main.o $t/functions.o -o $t/exe
-$t/exe | grep '^42 43 42 43$'
+$RUN $t/exe | grep '^42 43 42 43$'
 
 # The input reader must also assemble byte fragments before decoding.
 $CC --ld-path=$mold -dynamiclib $t/functions.o -o $t/libunicode.dylib
 strip $t/libunicode.dylib
 codesign -f -s - $t/libunicode.dylib
 $CC --ld-path=$mold $t/main.o $t/libunicode.dylib -o $t/client
-$t/client | grep '^42 43 42 43$'
+$RUN $t/client | grep '^42 43 42 43$'

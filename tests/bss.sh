@@ -12,4 +12,4 @@ int main() {
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o
-$t/exe | grep '0 0'
+$RUN $t/exe | grep '0 0'

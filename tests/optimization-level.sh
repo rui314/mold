@@ -13,7 +13,7 @@ int main(int argc, char **) { return f<1>(argc) + f<2>(argc) != argc * 6 + 14; }
 EOF
 
 $CXX --ld-path=$mold -o $t/exe $t/a.o
-$t/exe
+$RUN $t/exe
 cp $t/exe $t/exe.none
 for opt in -O0 -O1 -O2 -O3 -Os -Oz -O -O4 -Ofast -Og -Ofoo; do
   $CXX --ld-path=$mold -o $t/exe $t/a.o -Wl,$opt

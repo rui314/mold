@@ -32,7 +32,7 @@ seg=$'__S\xc3(X'
 
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/a.o -Wl,-map,$t/map \
   -Wl,-trace_symbol_layout > $t/trace
-$t/exe
+$RUN $t/exe
 otool -l $t/exe > $t/lc
 grep -aqx "  sectname $sect" $t/lc
 grep -aqx "   segname $seg" $t/lc

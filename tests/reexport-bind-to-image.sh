@@ -31,13 +31,13 @@ grep __got $t/fixups1 | grep -v libSystem > $t/got1
 [ "$(awk '{print $NF}' $t/got1 | sort | tr '\n' ' ')" = "<this-image>/_bar <this-image>/_foo libbaz/_baz " ]
 otool -L $t/exe > $t/libs1
 grep -A1 'libfoo.dylib .*reexport)' $t/libs1 | grep -q 'libbar.dylib .*reexport)'
-[ "$($t/exe)" = 3 ]
+[ "$($RUN $t/exe)" = 3 ]
 
 $CC --ld-path=$mold -o $t/exe $t/main.o -L$t/lib -Wl,-no_merge-lfoo \
   -Wl,-no_merge-lbar -lbaz -Wl,-rpath,@loader_path/lib
 dyld_info -fixups $t/exe > $t/fixups2
 grep -q 'bind *<this-image>/_foo' $t/fixups2
-[ "$($t/exe)" = 3 ]
+[ "$($RUN $t/exe)" = 3 ]
 
 # Not with one such library alone.
 $CC --ld-path=$mold -o $t/exe $t/main.o -L$t/lib -Wl,-reexport-lfoo \

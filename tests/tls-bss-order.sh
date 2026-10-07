@@ -30,7 +30,7 @@ order() {
 }
 
 $CC --ld-path=$mold -o $t/exe1 $t/b.o $t/a.o
-$t/exe1 > $t/out1
+$RUN $t/exe1 > $t/out1
 diff - $t/out1 <<EOF
 0 0 0 0 0
 1 2 3 4 5
@@ -43,7 +43,7 @@ order $t/exe2 | grep -q '^_y _d _w _c _s $'
 printf '_s$tlv$init\n_y$tlv$init\n' > $t/order
 $CC --ld-path=$mold -o $t/exe3 $t/b.o $t/a.o -Wl,-order_file,$t/order
 order $t/exe3 | grep -q '^_s _y _w _c _d $'
-$t/exe3 | grep '^1 2 3 4 5$'
+$RUN $t/exe3 | grep '^1 2 3 4 5$'
 
 $CC --ld-path=$mold -o $t/c.o -r $t/b.o $t/a.o
 order $t/c.o | grep -q '^_w _c _s _y _d $'

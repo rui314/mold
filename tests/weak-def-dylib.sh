@@ -22,8 +22,8 @@ int main() {
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/b.dylib $t/c.o
-$t/exe | grep '^3$'
+$RUN $t/exe | grep '^3$'
 
 $CC -c -o $t/d.o -xc /dev/null
 $CC --ld-path=$mold -shared -o $t/b.dylib $t/d.o
-$t/exe | grep '^42$'
+$RUN $t/exe | grep '^42$'

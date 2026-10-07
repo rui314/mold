@@ -38,7 +38,7 @@ $CC --ld-path=$mold -o $t/exe0 $t/a.o
 sects $t/exe0 > $t/sects0
 grep -qx '__DATA_CONST,__const' $t/sects0
 grep -qx '__AAA,__a' $t/sects0
-$t/exe0 | grep -q hello
+$RUN $t/exe0 | grep -q hello
 
 # -rename_section matches the __DATA_CONST name, not the input's.
 $CC --ld-path=$mold -o $t/exe1 $t/a.o -Wl,-rename_section,__DATA,__const,__FOO,__bar
@@ -50,7 +50,7 @@ $CC --ld-path=$mold -o $t/exe2 $t/a.o -Wl,-rename_section,__DATA_CONST,__const,_
 sects $t/exe2 > $t/sects2
 grep -qx '__FOO,__bar' $t/sects2
 not grep -q '__DATA_CONST,__const' $t/sects2
-$t/exe2 | grep -q hello
+$RUN $t/exe2 | grep -q hello
 
 # -rename_segment applies after a -rename_section.
 $CC --ld-path=$mold -o $t/exe3 $t/a.o -Wl,-rename_section,__AAA,__a,__BBB,__b \
@@ -58,7 +58,7 @@ $CC --ld-path=$mold -o $t/exe3 $t/a.o -Wl,-rename_section,__AAA,__a,__BBB,__b \
 sects $t/exe3 > $t/sects3
 grep -qx '__CCC,__b' $t/sects3
 not grep -q '__AAA\|__BBB' $t/sects3
-$t/exe3 | grep -q hello
+$RUN $t/exe3 | grep -q hello
 
 # A literal pool merges into __TEXT,__const unless it is renamed.
 $CC --ld-path=$mold -o $t/exe4 $t/a.o $t/b.o

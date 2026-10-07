@@ -40,7 +40,7 @@ for ldflag in --ld-path=$mold ""; do
   otool -L $t/exe1 > $t/libs1
   not grep -q libbaz.dylib $t/libs1
   not grep -q libbar.dylib $t/libs1
-  $t/exe1
+  $RUN $t/exe1
   $CC $ldflag -o $t/exe2 $t/main.o -L$t/m2 -L$t/lib -Wl,-merge-lbaz \
     -mmacosx-version-min=27.0
   nm -m $t/exe2 > $t/syms2

@@ -13,7 +13,7 @@ echo 'int data = 1;' | $CC -o $t/b.o -c -xc -
 mkdir -p $t/out
 $CC --ld-path=$mold -o $t/out/abcdefg $t/a.o -Wl,-adhoc_codesign
 $CC --ld-path=$mold -o $t/out/libdata.dylib -shared $t/b.o -Wl,-adhoc_codesign
-$t/out/abcdefg
+$RUN $t/out/abcdefg
 
 field() { codesign -d -vvvvv $1 2>&1 | sed -n "s/^$2//p"; }
 cd_size() { codesign -d -vvvvv $1 2>&1 | sed -n 's/^CodeDirectory .* size=\([0-9]*\) .*/\1/p'; }

@@ -27,13 +27,13 @@ grep -q '^__DATA_CONST,__auth_ptr ' $t/sects
 grep -q '^__DATA_CONST,__objc_dateobj ' $t/sects
 grep -q '^__DATA_CONST,__const_cfobj2 ' $t/sects
 grep -q '^__DATA,__objc_boolobj ' $t/sects
-$t/exe
+$RUN $t/exe
 
 $CC --ld-path=$mold -o $t/exe2 $t/a.o -Wl,-no_data_const
 sects $t/exe2 > $t/sects2
 not grep -q __DATA_CONST $t/sects2
 grep -q '^__DATA,__auth_ptr ' $t/sects2
-$t/exe2
+$RUN $t/exe2
 
 cat <<EOF | $CC -o $t/b.o -c -xobjective-c -
 __attribute__((objc_class_stub)) __attribute__((objc_subclassing_restricted))

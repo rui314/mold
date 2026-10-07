@@ -68,7 +68,7 @@ int main() {
 }
 EOF2
 $CC --ld-path=$mold -o $t/exe $t/a.o -framework Foundation -mmacosx-version-min=15.0
-$t/exe > $t/out
+$RUN $t/exe > $t/out
 grep -q '^load$' $t/out
 # m resolves to the category's override; 11 methods, 3 protocols.
 grep -q '^11 12 13 21 20 1 2 3 7 11 3$' $t/out
@@ -112,7 +112,7 @@ grep -q ' s __OBJC_CLASS_PROTOCOLS_\$_Foo(A|B)$' $t/nm
 # Classic method lists (below macOS 11 on x86-64) merge too.
 if [ $ARCH = x86_64 ]; then
   $CC --ld-path=$mold -o $t/exe15 $t/a.o -framework Foundation -mmacosx-version-min=10.15
-  $t/exe15 > $t/out15
+  $RUN $t/exe15 > $t/out15
   grep -q '^11 12 13 21 20 1 2 3 7 11 3$' $t/out15
   otool -s __DATA_CONST __objc_catlist $t/exe15 | tail -n +3 > $t/catlist15
   [ "$(wc -l < $t/catlist15 | tr -d ' ')" = 1 ]
@@ -121,7 +121,7 @@ fi
 # -no_objc_category_merging keeps the categories (the runtime attaches
 # them, so the program behaves the same).
 $CC --ld-path=$mold -o $t/exe_no $t/a.o -framework Foundation -Wl,-no_objc_category_merging
-$t/exe_no > $t/out_no
+$RUN $t/exe_no > $t/out_no
 grep -q '^11 12 13 21 20 1 2 3 7 11 3$' $t/out_no
 otool -s __DATA_CONST __objc_catlist $t/exe_no | tail -n +3 > $t/catlist_no
 [ "$(wc -l < $t/catlist_no | tr -d ' ')" = 2 ]
@@ -152,7 +152,7 @@ cat <<EOF | $CC -o $t/l.o -c -xobjective-c -
 int main() {}
 EOF
 $CC --ld-path=$mold -o $t/exe_load $t/l.o -framework Foundation
-$t/exe_load | tr '\n' ' ' > $t/out_load
+$RUN $t/exe_load | tr '\n' ' ' > $t/out_load
 [ "$(cat $t/out_load)" = 'L C3 C2 ' ]
 otool -s __DATA_CONST __objc_catlist $t/exe_load | tail -n +3 > $t/catlist_load
 [ "$(wc -l < $t/catlist_load | tr -d ' ')" = 1 ]

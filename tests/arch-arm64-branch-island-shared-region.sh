@@ -39,13 +39,13 @@ EOF
 pad 100
 $CC --ld-path=$mold -dynamiclib -o $t/lib100.dylib $t/a.o $t/pad100.o \
   -install_name /usr/lib/libmoldtest.dylib
-$t/main $t/lib100.dylib | grep -q '^42$'
+$RUN $t/main $t/lib100.dylib | grep -q '^42$'
 nm $t/lib100.dylib > $t/syms100
 not grep -q island $t/syms100
 
 pad 140
 $CC --ld-path=$mold -dynamiclib -o $t/lib140.dylib $t/a.o $t/pad140.o \
   -install_name /usr/lib/libmoldtest.dylib
-$t/main $t/lib140.dylib | grep -q '^42$'
+$RUN $t/main $t/lib140.dylib | grep -q '^42$'
 nm $t/lib140.dylib > $t/syms140
 grep -q ' _puts\.island$' $t/syms140

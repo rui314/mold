@@ -24,7 +24,7 @@ nm -m $t/r.o > $t/nm
 grep -q 'weak external automatically hidden __ZNK3BoxIiE3getEv' $t/nm
 # One __LD,__compact_unwind record per surviving function.
 $CC --ld-path=$mold -o $t/exe $t/r.o
-$t/exe
+$RUN $t/exe
 
 # Two copies of a weak definition may differ (Swift's __swift5_typeref
 # strings come with or without a pad byte from one object to the next);
@@ -126,7 +126,7 @@ not grep -q _callee $t/relocs3
 $CC --ld-path=$mold -o $t/exe3 $t/main.o $t/callee.o $t/small.o $t/big.o
 $CC --ld-path=$mold -o $t/exe4 $t/main.o $t/callee.o $t/small.o
 [ "$(sizes $t/exe3)" = "$(sizes $t/exe4)" ]
-$t/exe3
+$RUN $t/exe3
 
 # Each copy of a weak function brings its own LC_DATA_IN_CODE entries,
 # and only the kept copy's are written; a dropped copy's must not land

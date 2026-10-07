@@ -14,4 +14,4 @@ grep -q CoreFoundation $t/libs
 # Only the named framework is needed; the libobjc its stub re-exports
 # is an ordinary implicit dylib and, unused, is stripped.
 not grep -q libobjc $t/libs
-$t/exe | grep hi
+$RUN $t/exe | grep hi

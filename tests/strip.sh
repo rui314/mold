@@ -10,4 +10,4 @@ EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o
 strip $t/exe
-$t/exe | grep 'Hello world'
+$RUN $t/exe | grep 'Hello world'

@@ -46,11 +46,11 @@ int main() {
 }
 EOF
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/r.o -framework Foundation
-$t/exe | grep '^1 1 42$'
+$RUN $t/exe | grep '^1 1 42$'
 
 # The prelinked object goes through a dylib too.
 $CC --ld-path=$mold -dynamiclib -o $t/libfoo.dylib $t/r.o -framework Foundation \
   -install_name @rpath/libfoo.dylib
 $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/libfoo.dylib -framework Foundation \
   -Wl,-rpath,$t
-$t/exe2 | grep '^1 1 42$'
+$RUN $t/exe2 | grep '^1 1 42$'

@@ -16,7 +16,7 @@ int main() { return hidden_common + visible_common; }
 EOF2
 
 $CC --ld-path=$mold -o $t/exe $t/a.o
-$t/exe
+$RUN $t/exe
 
 nm -ap $t/exe > $t/nm
 grep -q ' s _hidden_common$' $t/nm

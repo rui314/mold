@@ -33,7 +33,7 @@ rm -f $t/exe $t/map
 $CC --ld-path=$mold -o $t/exe -Wl,-filelist,$t/link/filelist $t/link/libb.a \
   -Wl,-sectcreate,__TEXT,__hello,$t/link/sect.txt -Wl,-exported_symbols_list,$t/link/exports \
   -Wl,-dependency_info,$t/deps -Wl,-map,$t/map
-$t/exe
+$RUN $t/exe
 entries $t/deps > $t/deps.txt
 
 # The version is the linker's -v banner, and the entries are sorted.

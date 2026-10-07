@@ -25,8 +25,8 @@ not grep -q NOFIXPREBINDING $t/flags
 $CC --ld-path=$mold -o $t/exe $t/b.o -Wl,-no_dynamic_access
 otool -hv $t/exe | grep -q NOFIXPREBINDING
 if native_arch; then
-  $t/exe $t/libfoo.dylib | grep -q '^refused$'
-  $t/exe $t/libbar.dylib | grep -q '^loaded$'
+  $RUN $t/exe $t/libfoo.dylib | grep -q '^refused$'
+  $RUN $t/exe $t/libbar.dylib | grep -q '^loaded$'
 fi
 
 # Elsewhere the option is ignored with a warning.

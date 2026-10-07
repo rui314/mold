@@ -20,4 +20,4 @@ int main(int argc, char **argv) {
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o
-$t/exe | grep sname=main
+$RUN $t/exe | grep sname=main

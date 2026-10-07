@@ -83,4 +83,4 @@ int main() {
 }
 EOF2
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/r2.o -framework Foundation
-$t/exe | grep '^cfstr count 1 4$'
+$RUN $t/exe | grep '^cfstr count 1 4$'

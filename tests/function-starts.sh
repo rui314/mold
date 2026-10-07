@@ -23,7 +23,7 @@ S s;
 int main() { return 0; }
 EOF
 $CXX --ld-path=$mold -o $t/exe $t/a.o
-$t/exe | grep -q hi
+$RUN $t/exe | grep -q hi
 starts $t/exe > $t/starts
 grep -qx $(addr $t/exe ___cxx_global_var_init) $t/starts
 grep -qx $(addr $t/exe _main) $t/starts

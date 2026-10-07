@@ -19,4 +19,4 @@ int main() {
 EOF2
 
 $CC --ld-path=$mold -o $t/exe $t/b.o $t/libfoo.dylib
-$t/exe | grep '3 9'
+$RUN $t/exe | grep '3 9'

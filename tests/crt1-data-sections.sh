@@ -20,7 +20,7 @@ int main() { printf("%d\n", x); }
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o -mmacosx-version-min=11.0
-$t/exe | grep '^5$'
+$RUN $t/exe | grep '^5$'
 otool -l $t/exe | awk '/sectname/ { s = $2 } /segname/ { if (s && $2 == "__DATA") print s; s = "" }' \
   | sort > $t/sects
 cat > $t/expected <<EOF

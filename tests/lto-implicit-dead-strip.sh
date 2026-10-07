@@ -27,7 +27,7 @@ int exported_native(int x) { return x; }
 EOF
 
 $CC --ld-path=$mold -flto -o $t/exe $t/a.o $t/b.o -Wl,-map,$t/map
-$t/exe
+$RUN $t/exe
 nm -m $t/exe > $t/nm
 not grep -q -e _dead_native -e _helper -e _nowhere -e _exported_native -e _getpid $t/nm
 dyld_info -fixups $t/exe > $t/fixups
@@ -35,7 +35,7 @@ not grep -q _getpid $t/fixups
 not grep -q 'Dead Stripped' $t/map
 
 $CC --ld-path=$mold -flto -o $t/exe2 $t/a.o $t/b.o -Wl,-dead_strip -Wl,-map,$t/map2
-$t/exe2
+$RUN $t/exe2
 nm -m $t/exe2 > $t/nm2
 not grep -q -e _dead_native -e _getpid $t/nm2
 grep -q 'Dead Stripped' $t/map2

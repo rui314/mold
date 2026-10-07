@@ -63,16 +63,16 @@ foo_class_load() {
 }
 
 $CC --ld-path=$mold -o $t/exe1 $t/a.o $t/b1.o -framework Foundation -mmacosx-version-min=15.0
-$t/exe1 | grep -q '^Foo 1$'
+$RUN $t/exe1 | grep -q '^Foo 1$'
 [ "$(got_rebases $t/exe1)" = 0 ]
 [ "$(foo_class_load $t/exe1)" = add ]
 
 $CC --ld-path=$mold -o $t/exe2 $t/a.o $t/b2.o -framework Foundation -mmacosx-version-min=15.0
-$t/exe2 | grep -q '^Foo 1$'
+$RUN $t/exe2 | grep -q '^Foo 1$'
 [ "$(got_rebases $t/exe2)" = 1 ]
 [ "$(foo_class_load $t/exe2)" = ldr ]
 
 $CC --ld-path=$mold -o $t/exe3 $t/a.o $t/b3.o -framework Foundation -mmacosx-version-min=15.0
-$t/exe3 | grep -q '^Foo 1$'
+$RUN $t/exe3 | grep -q '^Foo 1$'
 [ "$(got_rebases $t/exe3)" = 1 ]
 [ "$(foo_class_load $t/exe3)" = add ]

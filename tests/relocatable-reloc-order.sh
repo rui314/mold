@@ -81,6 +81,6 @@ int main() {
 }
 EOF
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/r.o
-$t/exe | grep -q '^1 1 1 1 3$'
+$RUN $t/exe | grep -q '^1 1 1 1 3$'
 $CC -o $t/exe2 $t/main.o $t/r.o
-$t/exe2 | grep -q '^1 1 1 1 3$'
+$RUN $t/exe2 | grep -q '^1 1 1 1 3$'

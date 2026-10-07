@@ -36,4 +36,4 @@ diff $t/syms-a $t/syms-r
 
 echo 'int main() { return 0; }' | $CC -o $t/main.o -c -xc -
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/r.o
-$t/exe
+$RUN $t/exe

@@ -13,4 +13,4 @@ EOF2
 
 printf '%s\n%s\n' $t/a.o $t/b.o > $t/list
 $CC --ld-path=$mold -o $t/exe -Wl,-filelist,$t/list
-$t/exe | grep '^3$'
+$RUN $t/exe | grep '^3$'

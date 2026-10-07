@@ -40,7 +40,7 @@ printf 'sixteen bytes!!\n' > $t/blob
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o $t/c.o -framework Foundation \
   -Wl,-sectcreate,__TEXT,__blob,$t/blob -Wl,-map,$t/map
-$t/exe | grep -q hi
+$RUN $t/exe | grep -q hi
 
 # The map's row for section $1,$2 that the linker made whole.
 whole() {
@@ -71,6 +71,6 @@ cat <<EOF | $CC -o $t/d.o -c -xc - -mmacosx-version-min=11.0
 int main() { puts("hi"); }
 EOF
 $CC --ld-path=$mold -o $t/exe2 $t/d.o -mmacosx-version-min=11.0 -Wl,-map,$t/map
-$t/exe2 | grep -q hi
+$RUN $t/exe2 | grep -q hi
 whole __TEXT __stub_helper
 whole __DATA __la_symbol_ptr

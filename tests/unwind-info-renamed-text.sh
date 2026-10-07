@@ -14,7 +14,7 @@ EOF
 
 $CXX --ld-path=$mold -o $t/exe $t/a.o -Wl,-rename_section,__TEXT,__text,__TEXT_EXEC,__text
 otool -l $t/exe | grep -q 'sectname __unwind_info'
-$t/exe | grep -q '^caught 1$'
+$RUN $t/exe | grep -q '^caught 1$'
 
 $CXX --ld-path=$mold -o $t/exe2 $t/a.o -Wl,-rename_segment,__TEXT,__FOO
 otool -l $t/exe2 | grep -A1 'sectname __unwind_info' | grep -q 'segname __TEXT'

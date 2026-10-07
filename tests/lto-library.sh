@@ -15,7 +15,7 @@ link() { $mold -arch $ARCH -platform_version macos 13.0 13.0 -syslibroot $sdk -l
 if $mold -v 2> /dev/null | grep -q mold-macho; then
   cp $lto_library $t/libfoo.dylib
   link -lto_library $t/nosuch.dylib -lto_library $t/libfoo.dylib $t/a.o -o $t/exe
-  $t/exe | grep -q Hello
+  $RUN $t/exe | grep -q Hello
 
   # A library that can't be loaded fails a link with bitcode.
   not link -lto_library $t/libfoo.dylib -lto_library $t/nosuch.dylib $t/a.o -o $t/exe \

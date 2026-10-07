@@ -53,7 +53,7 @@ _abs = $abs
 EOF
     $CC --ld-path=$mold -o $t/abs $t/abs.o
     rc=0
-    $t/abs || rc=$?
+    $RUN $t/abs || rc=$?
     [ $rc = $((abs & 0xff)) ]
   done
 

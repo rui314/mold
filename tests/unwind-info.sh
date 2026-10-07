@@ -9,7 +9,7 @@ echo 'int f(void) { return 1; }' | $CC -o $t/a.o -c -xc -
 printf '.text\n.globl _g\n_g:\n ret\n.subsections_via_symbols\n' | $CC -o $t/b.o -c -xassembler -
 echo 'int f(void); int main() { return f() - 1; }' | $CC -o $t/c.o -c -xc -
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o $t/c.o
-$t/exe
+$RUN $t/exe
 unwind_lookup $t/exe _f _g _main > $t/enc
 [ "$(sed -n 2p $t/enc)" = 0x0 ]
 not grep -q '^0x0$' <(sed -n '1p;3p' $t/enc)
@@ -23,7 +23,7 @@ __attribute__((aligned(64))) int main() { return f() - 3; }
 EOF
 echo 'int h(void) { return 2; }' | $CC -o $t/e.o -c -xc -
 $CC --ld-path=$mold -o $t/exe2 $t/d.o $t/e.o
-$t/exe2
+$RUN $t/exe2
 unwind_lookup $t/exe2 _f _main _h > $t/enc2
 [ "$(sed -n 1p $t/enc2)" = "$(sed -n 2p $t/enc2)" ]
 not grep -q '^0x0$\|none' $t/enc2
@@ -35,10 +35,10 @@ not grep -q '^0x0$\|none' $t/enc2
 if [ $ARCH = arm64 ]; then
   printf '.data\n.quad 1\n' | $CC -o $t/f.o -c -xassembler -
   $CC --ld-path=$mold -o $t/exe4 $t/c.o $t/a.o $t/f.o
-  $t/exe4
+  $RUN $t/exe4
   [ "$(unwind_lookup $t/exe4 _f)" = "$(unwind_lookup $t/exe _f)" ]
   $CC --ld-path=$mold -o $t/exe5 $t/f.o $t/c.o $t/a.o
-  $t/exe5
+  $RUN $t/exe5
   [ "$(unwind_lookup $t/exe5 _main)" = "$(unwind_lookup $t/exe _main)" ]
 fi
 
@@ -79,7 +79,7 @@ print('int main() { return f1(-1); }')
 EOF2
 $CC -O1 -momit-leaf-frame-pointer -o $t/many.o -c $t/many.c
 $CC --ld-path=$mold -o $t/exe3 $t/many.o
-$t/exe3
+$RUN $t/exe3
 unwind_lookup $t/exe3 $(for i in $(seq 0 2499); do echo _f$i; done) > $t/enc3
 # The leaf functions share a mode (x86-64 describes each by an FDE of
 # its own), the others an encoding.

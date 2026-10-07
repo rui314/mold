@@ -64,7 +64,7 @@ l_ext:
 EOF
 
 $CXX --ld-path=$mold -o $t/exe $t/a.o $t/b.o $t/c.o -framework Foundation
-$t/exe
+$RUN $t/exe
 nm -m $t/exe > $t/nm
 grep -q GCC_except_table $t/nm
 grep -q '_OBJC_IVAR_$_Foo.x' $t/nm

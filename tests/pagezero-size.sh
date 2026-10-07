@@ -14,5 +14,5 @@ $CC --ld-path=$mold -o $t/exe $t/a.o
 otool -l $t/exe | grep -A5 'segname __PAGEZERO' | grep 'vmsize 0x0000000100000000'
 
 $CC --ld-path=$mold -o $t/exe2 $t/a.o -Wl,-pagezero_size,0x10000
-$t/exe2 | grep 'Hello world'
+$RUN $t/exe2 | grep 'Hello world'
 otool -l $t/exe2 | grep -A5 'segname __PAGEZERO' | grep 'vmsize 0x0000000000010000'

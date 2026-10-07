@@ -79,7 +79,7 @@ int main() {
 }
 EOF
 $CC --ld-path=$mold -o $t/exe $t/main.o $t/c.o
-$t/exe
+$RUN $t/exe
 
 # So does one before its section's start.
 cat <<EOF | $CC -o $t/f.o -c -xassembler -
@@ -102,7 +102,7 @@ extern char d[], *q;
 int main() { return q != d - 8; }
 EOF
 $CC --ld-path=$mold -o $t/exe3 $t/main3.o $t/h.o
-$t/exe3
+$RUN $t/exe3
 
 # x86-64 assemblers write such references themselves; a pc-relative
 # field keeps its distance from the instruction's end, which may lie
@@ -132,4 +132,4 @@ char *get(void);
 int main() { return !(get() == zz - 4 && *(int *)(zz - 4) == 1); }
 EOF
 $CC --ld-path=$mold -o $t/exe2 $t/main2.o $t/e.o
-$t/exe2
+$RUN $t/exe2

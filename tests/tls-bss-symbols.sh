@@ -27,7 +27,7 @@ int main() { return 0; }
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o $t/main.o
-$t/exe
+$RUN $t/exe
 nm -m $t/exe > $t/syms
 [ "$(grep -c '(__DATA,__thread_bss) non-external _tbss_global$' $t/syms)" = 2 ]
 grep -q '(__DATA,__thread_bss) non-external _tbss_pext$' $t/syms

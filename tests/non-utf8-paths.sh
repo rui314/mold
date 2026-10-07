@@ -56,6 +56,6 @@ mkdir -p "$t/$dir"
 ar crs "$t/$dir/lib$lib.a" "$t/$input"
 $link -o $t/exe $t/main.o -L"$t/$dir" -l"$lib" -all_load \
   -sectcreate __DATA __blob "$t/$input"
-$t/exe
+$RUN $t/exe
 nm -ap $t/exe | grep -aF "lib$lib.a($input)"
 otool -l $t/exe | grep 'sectname __blob'

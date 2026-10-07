@@ -34,7 +34,7 @@ cat <<EOF | $CC -o $t/f.o -c -xassembler -
 .zerofill __DATA,__zz,_zz,8,3
 EOF
 $CXX --ld-path=$mold -o $t/exe $t/f.o $t/a.o $t/b.o $t/c.o
-$t/exe | grep -Eq '^-?[0-9]+$'
+$RUN $t/exe | grep -Eq '^-?[0-9]+$'
 sections $t/exe > $t/order
 grep -Eq '__text .*__stubs .*__cstring .*__gcc_except_tab' $t/order
 grep -Eq '__data (__bss|__common|__zz) (__bss|__common|__zz) (__bss|__common|__zz) ' $t/order

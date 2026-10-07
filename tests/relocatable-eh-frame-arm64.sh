@@ -34,6 +34,6 @@ not grep -q 'SUB ' $t/relocs
 not grep -q '__ZN1S1gEv' $t/relocs
 
 $CXX --ld-path=$mold -o $t/exe $t/r.o
-$t/exe | grep '^42$'
+$RUN $t/exe | grep '^42$'
 $CXX -o $t/exe2 $t/r.o
-$t/exe2 | grep '^42$'
+$RUN $t/exe2 | grep '^42$'

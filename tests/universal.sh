@@ -18,7 +18,7 @@ int main() {
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o
-$t/exe | grep 'Hello world'
+$RUN $t/exe | grep 'Hello world'
 
 # ld-prime names an object of a fat file in a diagnostic by the fat
 # file's real path, and a member of a fat archive by the archive's,

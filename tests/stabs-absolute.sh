@@ -25,7 +25,7 @@ _main:
 .subsections_via_symbols
 EOF
 $CC --ld-path=$mold -o $t/exe $t/a.o
-$t/exe
+$RUN $t/exe
 
 nm -ap $t/exe > $t/stabs
 grep -q ' FUN _main$' $t/stabs

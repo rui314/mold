@@ -29,7 +29,7 @@ int main() {
 EOF
 
 $CC --ld-path=$mold -mmacosx-version-min=13.0 -o $t/exe $t/a.o -framework Foundation
-$t/exe | grep -q '^1234 1$'
+$RUN $t/exe | grep -q '^1234 1$'
 
 nm -n $t/exe | grep -o 'objc_msgSend\$.*' | tr '\n' ' ' > $t/stubs
 [ "$(cat $t/stubs)" = 'objc_msgSend$alpha objc_msgSend$bravo objc_msgSend$kilo objc_msgSend$zulu ' ]

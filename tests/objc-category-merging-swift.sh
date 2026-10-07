@@ -69,7 +69,7 @@ int main() {
 EOF2
 
 swiftc -o $t/exe $t/main.o $t/cat.o $t/foo.o -use-ld=$mold -framework Foundation
-$t/exe | grep '^1 41 1$'
+$RUN $t/exe | grep '^1 41 1$'
 # The category was merged into the class.
 nm $t/exe > $t/nm
 not grep -q 'OBJC_\$_CATEGORY_Foo_\$_Cat$' $t/nm

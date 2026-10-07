@@ -20,7 +20,7 @@ int main() {
 EOF
 
 $CC --ld-path=$mold -o $t/exe1 $t/c.o $t/b.dylib -Wl,-fixup_chains
-$t/exe1 | grep '^1 1$'
+$RUN $t/exe1 | grep '^1 1$'
 
 $CC --ld-path=$mold -o $t/exe2 $t/c.o $t/b.dylib -Wl,-no_fixup_chains
-$t/exe2 | grep '^1 1$'
+$RUN $t/exe2 | grep '^1 1$'

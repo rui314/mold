@@ -20,7 +20,7 @@ dyld_info -exports $t/exe > $t/exports
 grep -q '\[re-export\] _zlibVersion (from libz)' $t/exports
 otool -L $t/exe | grep -q libz
 nm -m $t/exe | grep -q '(indirect) external _zlibVersion (for _zlibVersion)'
-$t/exe | grep -q hi
+$RUN $t/exe | grep -q hi
 
 $CC --ld-path=$mold -o $t/b.dylib -shared $t/a.o -Wl,-exported_symbol,_foo \
   -Wl,-exported_symbol,_printf

@@ -20,7 +20,7 @@ EOF
 $CXX --ld-path=$mold -dynamiclib -o $t/liba.dylib $t/a.o \
   -install_name @rpath/liba.dylib
 $CXX --ld-path=$mold -o $t/exe $t/b.o $t/liba.dylib -Wl,-rpath,$t
-$t/exe | grep -q '^5$'
+$RUN $t/exe | grep -q '^5$'
 for f in $t/exe $t/liba.dylib; do
   dyld_info -fixups $f > $t/fixups
   grep -q '__got .* bind .*weak-def-coalesce>/_wtl' $t/fixups
@@ -30,4 +30,4 @@ $CXX --ld-path=$mold -dynamiclib -o $t/liba.dylib $t/a.o \
   -install_name @rpath/liba.dylib -Wl,-no_fixup_chains
 $CXX --ld-path=$mold -o $t/exe2 $t/b.o $t/liba.dylib -Wl,-rpath,$t \
   -Wl,-no_fixup_chains
-$t/exe2 | grep -q '^5$'
+$RUN $t/exe2 | grep -q '^5$'

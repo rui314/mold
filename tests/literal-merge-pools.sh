@@ -69,7 +69,7 @@ sect() {
 }
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o $t/c.o
-$t/exe | grep -q '^1 2$'
+$RUN $t/exe | grep -q '^1 2$'
 [ "$(sect $t/exe __DATA __lit)" = 0x0000000000000010 ]
 [ "$(sect $t/exe __DATA __lit2)" = 0x0000000000000020 ]
 [ "$(sect $t/exe __TEXT __literal4)" = '' ]
@@ -83,7 +83,7 @@ $t/exe | grep -q '^1 2$'
 $mold -r -arch $ARCH -o $t/r.o $t/a.o $t/b.o
 [ "$(sect $t/r.o __TEXT __literal8)" = 0x0000000000000020 ]
 $CC --ld-path=$mold -o $t/exe2 $t/r.o $t/c.o
-$t/exe2 | grep -q '^1 2$'
+$RUN $t/exe2 | grep -q '^1 2$'
 [ "$(sect $t/exe2 __DATA __lit)" = 0x0000000000000010 ]
 [ "$(sect $t/exe2 __DATA __lit2)" = 0x0000000000000020 ]
 

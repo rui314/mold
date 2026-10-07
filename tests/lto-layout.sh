@@ -16,7 +16,7 @@ __attribute__((noinline)) static int st(void) { return v; }
 __attribute__((noinline)) int b2(void) { return st(); }' | $CC -O2 -flto=thin -c -xc - -o $t/b2.o
 
 $CC --ld-path=$mold -o $t/exe $t/m.o $t/b1.o $t/n1.o $t/b2.o $t/n2.o
-$t/exe
+$RUN $t/exe
 nm -m $t/exe | awk '$2 == "(__TEXT,__text)" && $NF ~ /^_(main|[bn][12]|st)$/ {print $NF}' \
   | sort > $t/syms
 printf '_b1\n_b2\n_main\n_n1\n_n2\n_st\n_st\n' | diff - $t/syms
@@ -36,4 +36,4 @@ EOF
 $CXX --ld-path=$mold -o $t/c $t/c.o
 otool -l $t/c | grep '^  sectname' > $t/sects
 grep -q __gcc_except_tab $t/sects
-$t/c
+$RUN $t/c

@@ -16,7 +16,7 @@ int main() { printf("main\n"); }
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o
-$t/exe > $t/out
+$RUN $t/exe > $t/out
 printf 'f\nmain\n' | cmp - $t/out
 
 not $CC --ld-path=$mold -o $t/exe2 $t/a.o -Wl,-no_inits 2> $t/log

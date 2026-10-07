@@ -33,6 +33,6 @@ $CC --ld-path=$mold -o $t/exe $t/a.o 2> $t/log
 not grep -q warning $t/log
 nm $t/exe | grep -q ' _far\.island$'
 status=0
-$t/exe || status=$?
+$RUN $t/exe || status=$?
 [ $status = 42 ]
 rm -f $t/a.o $t/exe

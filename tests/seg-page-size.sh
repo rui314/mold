@@ -21,7 +21,7 @@ read data_addr data_size data_off data_filesize <<< "$(seg $t/lc1 __DATA)"
 [ $data_off = $((0x200000)) ]
 [ $text_filesize = $((text_size)) ]
 [ $((text_size)) -lt $((0x200000)) ]
-$t/exe1
+$RUN $t/exe1
 
 # The boundary counts from the segment's start: the next one goes at
 # its start plus its size rounded up to the boundary.
@@ -31,7 +31,7 @@ read data_addr data_size data_off data_filesize <<< "$(seg $t/lc2 __DATA)"
 read le_addr le_size le_off le_filesize <<< "$(seg $t/lc2 __LINKEDIT)"
 [ $((le_addr)) = $((data_addr + 0x100000)) ]
 [ $le_off = $((data_off + 0x100000)) ]
-$t/exe2
+$RUN $t/exe2
 
 # __LINKEDIT, which no segment follows, takes the boundary as its size.
 # The first size given for a segment wins.
@@ -39,7 +39,7 @@ $CC --ld-path=$mold -o $t/exe3 $t/a.o -Wl,-seg_page_size,__LINKEDIT,0x100000 \
   -Wl,-seg_page_size,__LINKEDIT,0x200000
 otool -l $t/exe3 > $t/lc3
 [ "$(seg $t/lc3 __LINKEDIT | awk '{ print $2 }')" = 0x0000000000100000 ]
-$t/exe3
+$RUN $t/exe3
 
 # A size that is no power of two rounds down to one; one below the
 # page size is an error.

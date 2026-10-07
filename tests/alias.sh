@@ -13,7 +13,7 @@ EOF
 
 # _official_name resolves to the same code as _real_impl.
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o -Wl,-alias,_real_impl,_official_name
-$t/exe | grep hello
+$RUN $t/exe | grep hello
 nm $t/exe > $t/nm
 [ "$(grep ' _real_impl$' $t/nm | awk '{print $1}')" = \
   "$(grep ' _official_name$' $t/nm | awk '{print $1}')" ]
@@ -24,7 +24,7 @@ cat <<EOF > $t/aliases
 _real_impl _official_name
 EOF
 $CC --ld-path=$mold -o $t/exe2 $t/a.o $t/b.o -Wl,-alias_list,$t/aliases
-$t/exe2 | grep hello
+$RUN $t/exe2 | grep hello
 
 # An alias of nothing is an undefined symbol, wanted by the command
 # line. (ld-prime says by the alias in its command-line-aliases-file.)

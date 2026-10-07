@@ -32,7 +32,7 @@ int main() {
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o -mmacosx-version-min=11.0
-$t/exe
+$RUN $t/exe
 otool -l $t/exe > $t/lc
 grep -q LC_DYLD_INFO_ONLY $t/lc
 s=0x$(nm $t/exe | awk '$3 == "_s" { print $1 }')
@@ -55,5 +55,5 @@ int main() { return s.a[0] != &x || s.b[1] != &x || s.c[1] != &x; }
 EOF
 
 $CC --ld-path=$mold -o $t/exe2 $t/b.o -mmacosx-version-min=11.0
-$t/exe2
+$RUN $t/exe2
 [ "$(dyld_info -fixups $t/exe2 | grep -c ' rebase ')" = 6 ]

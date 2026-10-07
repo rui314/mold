@@ -21,7 +21,7 @@ rm -f $t/libfoo.a
 ar rcs $t/libfoo.a $t/a.o $t/b.o
 
 $CC --ld-path=$mold -o $t/exe $t/c.o $t/libfoo.a
-$t/exe | grep '^3$'
+$RUN $t/exe | grep '^3$'
 
 # An unneeded member should not be linked in
 nm $t/exe > $t/syms

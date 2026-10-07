@@ -57,6 +57,6 @@ grep -q '^dont-dead-strip$' $t/flags
 
 $CC --ld-path=$mold -o $t/exe $t/main.o -L$t -Wl,-merge-lfoo -Wl,-no_merged_libraries_hook \
   -Wl,-dead_strip
-$t/exe | grep -q '^3$'
+$RUN $t/exe | grep -q '^3$'
 $CC -o $t/exe2 $t/main.o -L$t -Wl,-merge-lfoo -Wl,-no_merged_libraries_hook -Wl,-dead_strip
-$t/exe2 | grep -q '^3$'
+$RUN $t/exe2 | grep -q '^3$'

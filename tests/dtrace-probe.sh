@@ -32,7 +32,7 @@ int main(int argc, char **argv) {
 EOF
 $CC -o $t/a.o -c $t/a.c
 $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-map,$t/map
-$t/exe | grep -q 'Hello world'
+$RUN $t/exe | grep -q 'Hello world'
 
 dof_dump $t/exe > $t/dof
 sort -o $t/dof $t/dof

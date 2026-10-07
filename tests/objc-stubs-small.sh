@@ -36,7 +36,7 @@ got() {
 for v in 11.0 13.0; do
   $CC --ld-path=$mold -o $t/exe $t/a.o -framework Foundation -mmacosx-version-min=$v \
     -Wl,-objc_stubs_small
-  $t/exe | grep -q '^1 2 1$'
+  $RUN $t/exe | grep -q '^1 2 1$'
   if [ $ARCH = arm64 ]; then
     [ "$(sect $t/exe __objc_stubs)" = '0x0000000000000018 2^2 ' ]
     [ "$(got $t/exe | grep -o '_objc_msgSend ' | tr -d '\n')" = '_objc_msgSend ' ]
@@ -50,7 +50,7 @@ for v in 11.0 13.0; do
 
   $CC --ld-path=$mold -o $t/exe2 $t/a.o -framework Foundation -mmacosx-version-min=$v \
     -Wl,-objc_stubs_small -Wl,-objc_stubs_fast
-  $t/exe2 | grep -q '^1 2 1$'
+  $RUN $t/exe2 | grep -q '^1 2 1$'
   if [ $ARCH = arm64 ]; then
     [ "$(sect $t/exe2 __objc_stubs)" = '0x0000000000000040 2^5 ' ]
     [ "$(got $t/exe2 | grep -o '_objc_msgSend ' | tr -d '\n')" = '_objc_msgSend ' ]

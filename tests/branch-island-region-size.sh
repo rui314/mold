@@ -10,7 +10,7 @@ EOF
 
 for size in 0x100 0X100 1000; do
   $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-branch_island_region_size,"$size"
-  $t/exe
+  $RUN $t/exe
 done
 
 for size in zz 0x 0x0x10; do

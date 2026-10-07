@@ -25,7 +25,7 @@ $CC --ld-path=$mold -o $t/exe $t/main.o -L$t -Wl,-merge-lfoo
 $CC -o $t/exe2 $t/main.o -L$t -Wl,-merge-lfoo
 
 for exe in $t/exe $t/exe2; do
-  $exe
+  $RUN $exe
   nm -ap $exe > $t/syms
   grep -q " OSO .*/$t/a.o$" $t/syms
   grep -q " OSO .*/$t/b.o$" $t/syms

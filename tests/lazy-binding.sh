@@ -15,7 +15,7 @@ int main(int argc, char **argv) { printf("%d\n", getpid() > 0 ? 4 : 0); return 0
 EOF2
 if [ $ARCH = arm64 ]; then classic=11.0; else classic=12.0; fi
 $CC --ld-path=$mold -o $t/exe $t/a.o -mmacosx-version-min=$classic
-$t/exe | grep '^4$'
+$RUN $t/exe | grep '^4$'
 otool -l $t/exe > $t/lc
 grep -q 'LC_DYLD_INFO_ONLY' $t/lc
 grep -q 'sectname __stub_helper' $t/lc
@@ -38,7 +38,7 @@ grep -q '(__DATA,__data) non-external __dyld_private' $t/nm
 otool -I $t/exe > $t/isyms
 grep -q 'Indirect symbols for (__DATA,__la_symbol_ptr) 2 entries' $t/isyms
 $CC --ld-path=$mold -o $t/exe_ndc $t/a.o -mmacosx-version-min=$classic -Wl,-no_data_const
-$t/exe_ndc | grep '^4$'
+$RUN $t/exe_ndc | grep '^4$'
 r1() { otool -l $t/$1 | awk -v s=$2 '$1 == "sectname" { n = $2 } $1 == "reserved1" && n == s { print $2 }'; }
 [ "$(r1 exe __got)" -lt "$(r1 exe __la_symbol_ptr)" ]
 otool -Iv $t/exe_ndc > $t/isyms_ndc
@@ -63,13 +63,13 @@ else
 fi
 
 $CC --ld-path=$mold -o $t/exe_bal $t/a.o -mmacosx-version-min=$classic -Wl,-bind_at_load
-$t/exe_bal | grep '^4$'
+$RUN $t/exe_bal | grep '^4$'
 otool -l $t/exe_bal > $t/lc_bal
 not grep -q '__la_symbol_ptr' $t/lc_bal
 dyld_info -fixups $t/exe_bal | grep '__got .* bind .*_printf'
 
 $CC --ld-path=$mold -o $t/exe_ch $t/a.o -mmacosx-version-min=13.0
-$t/exe_ch | grep '^4$'
+$RUN $t/exe_ch | grep '^4$'
 otool -l $t/exe_ch > $t/lc_ch
 not grep -q '__la_symbol_ptr' $t/lc_ch
 
@@ -82,7 +82,7 @@ if [ $ARCH = x86_64 ]; then
 int main() { int *p = new int(4); std::printf("%d\n", *p); delete p; }
 EOF
   $CXX --ld-path=$mold -o $t/exe_mix $t/c.o -mmacosx-version-min=$classic
-  $t/exe_mix | grep '^4$'
+  $RUN $t/exe_mix | grep '^4$'
   otool -l $t/exe_mix > $t/lc_mix
   grep -q '__stub_helper' $t/lc_mix
 fi

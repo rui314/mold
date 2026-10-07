@@ -25,7 +25,7 @@ int main() {
 EOF2
 
 $CC --ld-path=$mold -o $t/exe $t/a.o
-$t/exe | grep '5 7 hello'
+$RUN $t/exe | grep '5 7 hello'
 # Local thread-locals need no __thread_ptrs indirection at all.
 objdump -h $t/exe > $t/sections
 ! grep -q __thread_ptrs $t/sections || false

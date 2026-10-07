@@ -29,7 +29,7 @@ grep -q '(__DATA,__objc_protolist) non-external (was a private external) .*__OBJ
 grep -q '(__DATA,__objc_protorefs) non-external (was a private external) .*__OBJC_PROTOCOL_REFERENCE_\$_P$' $t/nm-r
 
 $CC --ld-path=$mold -o $t/exe $t/r.o -framework Foundation
-$t/exe | grep -q '^P 7$'
+$RUN $t/exe | grep -q '^P 7$'
 nm $t/exe > $t/nm
 grep -q ' __OBJC_LABEL_PROTOCOL_\$_P$' $t/nm
 grep -q ' __OBJC_PROTOCOL_REFERENCE_\$_P$' $t/nm

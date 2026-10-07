@@ -38,12 +38,12 @@ got() {
 if [ $ARCH = arm64 ]; then classic=11.0; else classic=12.0; fi
 for v in $classic 15.0; do
   $CC --ld-path=$mold -o $t/exe $t/a.o -framework Foundation -mmacosx-version-min=$v
-  $t/exe | grep -q '^1 1$'
+  $RUN $t/exe | grep -q '^1 1$'
   [ "$(got $t/exe | grep -o '_objc_msgSend ' | tr -d '\n')" = '_objc_msgSend ' ]
   dyld_info -fixups $t/exe > $t/fixups
   [ "$(grep -c '__got .*bind .*/_objc_msgSend' $t/fixups)" = 1 ]
 
   $CC --ld-path=$mold -o $t/exe2 $t/b.o -framework Foundation -mmacosx-version-min=$v
-  $t/exe2 | grep -q '^1$'
+  $RUN $t/exe2 | grep -q '^1$'
   [ "$(got $t/exe2 | grep -o '_objc_msgSend ' | tr -d '\n')" = '_objc_msgSend ' ]
 done

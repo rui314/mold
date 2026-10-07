@@ -53,7 +53,7 @@ EOF
 python3 $t/insn.py $t/a.o $t/add.o 6 0x3ff 0x91000000
 $CC --ld-path=$mold -o $t/exe $t/add.o
 code=0
-$t/exe || code=$?
+$RUN $t/exe || code=$?
 [ $code = 42 ]
 otool -l $t/exe > $t/lc
 not grep -q 'sectname __got' $t/lc
@@ -96,7 +96,7 @@ EOF
 python3 $t/insn.py $t/d.o $t/ldrw.o 9 0xbfffffff 0
 $CC --ld-path=$mold -o $t/exe4 $t/ldrw.o
 code=0
-$t/exe4 || code=$?
+$RUN $t/exe4 || code=$?
 [ $code = 7 ]
 python3 $t/insn.py $t/d.o $t/ldrb.o 9 0x3fffff 0x39400000
 not $CC --ld-path=$mold -o $t/exe5 $t/ldrb.o 2> $t/log

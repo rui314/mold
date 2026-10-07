@@ -7,7 +7,7 @@ void unused() { missing(); }
 int main() { return 0; }
 EOF
 $CC --ld-path=$mold $t/a.o -Wl,-dead_strip -o $t/exe
-$t/exe
+$RUN $t/exe
 for flags in '' -dead_strip,-u,_unused -dead_strip,-u,_missing; do
   opts=
   if [ -n "$flags" ]; then opts=-Wl,$flags; fi
@@ -26,7 +26,7 @@ sed 's/___gxx_personality_v0/_missing_personality/g' $t/unwind.s > $t/missing.s
 $CC -c $t/missing.s -o $t/unwind.o
 echo 'int main() { return 0; }' | $CC -c -xc - -o $t/main.o
 $CC --ld-path=$mold $t/main.o $t/unwind.o -Wl,-dead_strip -o $t/unwind
-$t/unwind
+$RUN $t/unwind
 
 # Initializers remain roots even when they cannot become local offsets.
 cat <<EOF | $CC -c -xassembler - -o $t/init.o
