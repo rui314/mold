@@ -21,7 +21,7 @@ grep -q 'FUN _compute' $t/stabs
 # lldb should be able to set a source-level breakpoint and hit it.
 # Only a native binary is debugged: see native_arch in common.inc.
 if native_arch; then
-  lldb -b -o 'b compute' -o run -o 'p x' $t/exe > $t/lldb.log 2>&1 || true
+  $LLDB -b -o 'b compute' -o run -o 'p x' $t/exe > $t/lldb.log 2>&1 || true
   grep -q 'stop reason = breakpoint' $t/lldb.log
   grep -q '(int) 6' $t/lldb.log
 fi

@@ -14,6 +14,7 @@ if [ -z "$TRIPLE" ]; then
   CXX="c++ -arch $ARCH"
   SWIFTC=swiftc
   RUN=
+  LLDB=lldb
 else
   # A simulator triple such as arm64-apple-ios26.5-simulator: programs
   # are built for the triple's OS version with the simulator's SDK and
@@ -60,6 +61,21 @@ int main(int argc, char **argv) {
     "$simctl" spawn "${SIMULATOR:-booted}" "$sim_exec" "$PWD" "$@"
   }
   RUN=run_on_simulator
+
+  # lldb starts a simulator's program on a device of its own choosing,
+  # booting it unless it is the one the runner booted: a second whole OS
+  # starting, which outlasts a test's timeout on the CI runners. So lldb
+  # connects to the runner's device before it loads the program (-O), as
+  # a target made first keeps a platform of its own. ($PLATFORM is lldb's
+  # name for the simulator's platform too.)
+  lldb_on_simulator() {
+    if [ -n "$SIMULATOR" ]; then
+      lldb -O "platform select $PLATFORM" -O "platform connect $SIMULATOR" "$@"
+    else
+      lldb "$@"
+    fi
+  }
+  LLDB=lldb_on_simulator
 fi
 
 # ${CC/$ARCH/<arch>} compiles for another architecture of the platform.
