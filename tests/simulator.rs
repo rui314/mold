@@ -206,19 +206,20 @@ impl Device {
         let found = devices["devices"][&runtime.identifier].as_array().and_then(|devices| {
             devices.iter().find(|device| device["name"] == *name && device["isAvailable"] == true)
         });
-        let (udid, state) = match found {
-            Some(device) => (
-                device["udid"].as_str().unwrap_or_default().to_owned(),
-                device["state"].as_str().unwrap_or_default().to_owned(),
-            ),
+        let udid = match found {
+            Some(device) => device["udid"].as_str().unwrap_or_default().to_owned(),
             None => {
                 let udid = simctl(&["create", &name, &runtime.device_type, &runtime.identifier])?;
-                (String::from_utf8_lossy(&udid).trim().to_owned(), "Shutdown".to_owned())
+                String::from_utf8_lossy(&udid).trim().to_owned()
             }
         };
-        if state == "Shutdown" {
-            simctl(&["boot", &udid])?;
-        }
+        // simctl boot returns as the device starts booting, and a new
+        // device's first boot, which migrates its data and starts its
+        // system apps, keeps every core busy for a minute (the CI runners'
+        // fresh devices longer), stalling the first tests past their
+        // timeout. bootstatus -b boots a device that is shut down and
+        // returns once it has finished booting.
+        simctl(&["bootstatus", &udid, "-b"])?;
         Ok(Self { udid, _slot: slot })
     }
 }
