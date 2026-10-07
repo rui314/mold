@@ -101,8 +101,11 @@ fn search_dirs(args: &Args, dirs: &[PathBuf], standard: &[&str]) -> Vec<PathBuf>
 /// driver always passes: `-L.` would otherwise search the SDK's root,
 /// not the working directory. What is no directory is left out with a
 /// warning, as is a directory the command line `given` that is not
-/// there; a default directory that is not there goes without a word.
+/// there; a default directory that is not there goes without a word,
+/// and so does /usr/local/lib, spelled just so, which clang gives every
+/// link.
 fn push_search_dir(syslibroot: &[PathBuf], dirs: &mut Vec<PathBuf>, dir: &Path, given: bool) {
+    let quiet = !given || dir.as_os_str() == "/usr/local/lib";
     let mut dir = dir.to_path_buf();
     if dir.is_absolute() {
         if memchr::memmem::find(path_bytes(&dir), b"/..").is_some()
@@ -129,7 +132,7 @@ fn push_search_dir(syslibroot: &[PathBuf], dirs: &mut Vec<PathBuf>, dir: &Path, 
     match std::fs::metadata(&dir) {
         Ok(md) if md.is_dir() => dirs.push(dir),
         Ok(_) => crate::warn!("search path '{}' is not a directory", dir.raw()),
-        Err(_) if given => crate::warn!("search path '{}' not found", dir.raw()),
+        Err(_) if !quiet => crate::warn!("search path '{}' not found", dir.raw()),
         Err(_) => {}
     }
 }

@@ -36,3 +36,13 @@ printf 'Library search paths:\n\t%s\n\t%s\nFramework search paths:\n' $t/lib $ro
 
 link -L$t/nonexist -L$t/file -w > $t/log2
 not grep -q warning: $t/log2
+
+# clang gives every link -L/usr/local/lib, and ld-prime says nothing
+# when that is not there, as -L or -F, spelled just so; sandbox-exec
+# hides it.
+hide='(version 1)(allow default)(deny file-read* (subpath "/usr/local/lib"))'
+sandbox-exec -p "$hide" $mold -arch $ARCH -platform_version macos 13.0 13.0 -o $t/exe \
+  $t/a.o $sdk/usr/lib/libSystem.tbd -syslibroot $root -L/usr/local/lib -F/usr/local/lib \
+  -L/usr/local/lib/ 2> $t/log3
+not grep -q "'/usr/local/lib'" $t/log3
+grep -q "warning: search path '/usr/local/lib/' not found" $t/log3
