@@ -808,6 +808,14 @@ impl Args {
         self.output_type == MH_DYLINKER
     }
 
+    /// The platform ld-prime judges the image's options and inputs for:
+    /// firmware, which no OS loads, for a -preload image, which no OS
+    /// loads either, and for a -r output for no platform; otherwise
+    /// the one the link is for.
+    pub fn effective_platform(&self) -> u32 {
+        if self.preload || self.platform == 0 { PLATFORM_FIRMWARE } else { self.platform }
+    }
+
     /// Whether the image starts at an entry point (-e): a main
     /// executable, or dyld.
     pub fn has_entry_point(&self) -> bool {
@@ -3687,7 +3695,7 @@ fn check_options(target: &TargetTraits, args: &mut Args, st: &ParseState) {
             "-headerpad {size:#x} is too small, at least 32 bytes are required to reserve space for code signature"
         );
     }
-    warn_platform_options(target, args, st.read_only_relocs.is_some());
+    warn_platform_options(target, args, st);
     check_dynamic_lookup(args);
     // Only a dylib has exports of others' symbols to publish.
     if st.reexports_listed && args.output_type != MH_DYLIB {
@@ -3811,13 +3819,32 @@ fn check_section_order(args: &Args) {
     }
 }
 
-/// ld-prime deprecates -flat_namespace on every platform but macOS, and
-/// takes -read_only_relocs only where it may allow text relocations.
-fn warn_platform_options(target: &TargetTraits, args: &Args, read_only_relocs: bool) {
-    if args.flat_namespace && args.platform == PLATFORM_FIRMWARE {
-        crate::warn!("-flat_namespace is deprecated on firmware");
+/// The options ld-prime deprecates, naming the platform (see
+/// Args::effective_platform): -flat_namespace, a namespace dyld keeps
+/// for old macOS plug-ins, everywhere but macOS; -undefined
+/// dynamic_lookup, which leaves dyld to search every loaded image, in
+/// an image dyld loads but on macOS (and firmware); and -bind_at_load
+/// in an image with chained fixups, which dyld binds at load anyway.
+/// It takes -read_only_relocs only where it may allow text relocations.
+fn warn_platform_options(target: &TargetTraits, args: &Args, st: &ParseState) {
+    let platform = args.effective_platform();
+    let name = platform_name(platform);
+    if args.flat_namespace && platform != PLATFORM_MACOS {
+        crate::warn!("-flat_namespace is deprecated on {name}");
     }
-    if read_only_relocs && !read_only_relocs_apply(target, args) {
+    // A -r output has chained fixups only when -fixup_chains says so.
+    let fixup_chains = args.fixup_chains && (!args.relocatable || st.fixup_chains == Some(true));
+    if args.bind_at_load && fixup_chains {
+        crate::warn!("-bind_at_load is deprecated on {name}");
+    }
+    if args.undefined_dynamic_lookup
+        && !matches!(platform, PLATFORM_MACOS | PLATFORM_FIRMWARE)
+        && !args.relocatable
+        && !args.without_dyld()
+    {
+        crate::warn!("-undefined dynamic_lookup is deprecated on {name}");
+    }
+    if st.read_only_relocs.is_some() && !read_only_relocs_apply(target, args) {
         crate::warn!("-read_only_relocs relocs cannot be used in this configuration");
     }
 }
