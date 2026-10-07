@@ -25,7 +25,13 @@ $CC --ld-path=$mold -o $t/libfoo.dylib -shared $t/a.o \
   -Wl,-install_name,/usr/lib/libfoo.dylib -Wl,-rpath,/x -Wl,-flat_namespace \
   -Wl,-no_shared_cache_eligible 2> $t/log
 [ "$(split_size $t/libfoo.dylib)" = 0 ]
-not grep -q warning $t/log
+if on_simulator; then
+  # (ld-prime deprecates -flat_namespace but on macOS.)
+  [ "$(grep -c warning $t/log)" = 1 ]
+  grep -q -- "-flat_namespace is deprecated on $PLATFORM_NAME" $t/log
+else
+  not grep -q warning $t/log
+fi
 
 # Nor does -add_split_seg_info give any.
 $CC --ld-path=$mold -o $t/libbar.dylib -shared $t/a.o \
