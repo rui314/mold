@@ -1503,8 +1503,14 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             a.relax = value;
         } else if let Some(value) = cursor.read_switch("gdb-index", "no-gdb-index") {
             a.gdb_index = value;
-        } else if cursor.read_flag("r") || cursor.read_flag("i") || cursor.read_flag("relocatable")
+        } else if cursor.read_flag("r")
+            || cursor.read_flag("i")
+            || cursor.read_flag("relocatable")
+            || cursor.read_flag("U")
+            || cursor.read_flag("--U")
+            || cursor.read_flag("Ur")
         {
+            // -U and -Ur are -r: GNU ld makes a relocatable output.
             a.relocatable = true;
             a.emit_relocs = true;
         } else if cursor.read_flag("relocatable-merge-sections") {
@@ -1968,7 +1974,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             || read_arg!("--max-cache-size", true)
             // GNU ld's short options mold had no spelling for, and the
             // long names some of them stand for. -g, -d (mold defines
-            // common symbols anyway), -A and -G (mold has -m), -Ur and
+            // common symbols anyway), -A and -G (mold has -m) and
             // -Qy (vendor-specific), -Y, -c (an MRI script) and -dT (a
             // default linker script) are accepted and ignored. GNU ld
             // reads "-architecture" as "-a rchitecture" and "-mri-script"
@@ -1979,7 +1985,6 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             || read_arg!("--architecture", true)
             || read_arg!("G", true)
             || read_arg!("gpsize", true)
-            || cursor.read_flag("Ur")
             || cursor.read_flag("Qy")
             || read_arg!("Y", true)
             || read_arg!("c", true)
@@ -2518,7 +2523,6 @@ mod tests {
             "-G",
             "8",
             "--gpsize=16",
-            "-Ur",
             "-Qy",
             "-a",
             "shared",
@@ -2713,6 +2717,16 @@ mod tests {
         assert!(!is_short_bundle(OsStr::new("-s")));
         assert!(!is_short_bundle(OsStr::new("--sS")));
         assert!(!is_short_bundle(OsStr::new("a.o")));
+    }
+
+    #[test]
+    fn gnu_ld_u_is_relocatable() {
+        // -U and -Ur are -r: GNU ld makes a relocatable output.
+        for arg in ["-U", "-Ur", "--U", "--Ur"] {
+            let parsed = parse(&[arg, "a.o"]);
+            assert!(parsed.args.relocatable, "{arg}");
+            assert_eq!(parsed.jobs.len(), 1, "{arg}");
+        }
     }
 
     #[test]

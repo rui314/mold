@@ -44,6 +44,16 @@ $CC -B. -o $t/exe4 -Wl,-i $t/a.o
 readelf -h $t/exe4 > $t/log4
 grep 'Type:.*REL ' $t/log4
 
+# -U and -Ur are -r as well: GNU ld makes a relocatable output.
+$CC -B. -o $t/exe -Wl,-U $t/a.o
+readelf -h $t/exe > $t/log
+grep 'Type:.*REL ' $t/log
+$CC -B. -o $t/exe -Wl,-Ur $t/a.o
+readelf -h $t/exe > $t/log
+grep 'Type:.*REL ' $t/log
+not ./mold -Ufoo $t/a.o |& grep 'unknown command line option: -Ufoo'
+not ./mold -U r $t/a.o |& grep 'cannot open r'
+
 # -n does not page-align data, so the result is not run; -t traces inputs.
 $CC -B. -o $t/exe5 -Wl,-n $t/a.o
 $CC -B. -o $t/exe6 -Wl,-t $t/a.o > $t/log6
@@ -71,7 +81,6 @@ not ./mold -a=shared $t/a.o |& grep "unrecognized -a option .=shared"
 not ./mold -assert bogus $t/a.o |& grep "unrecognized -assert option .bogus"
 
 # Vendor-specific spellings mold has no use for.
-$CC -B. -o $t/exe15 -Wl,-Ur $t/a.o
 $CC -B. -o $t/exe16 -Wl,-Qy $t/a.o
 $CC -B. -o $t/exe17 -Wl,-A -Wl,x86-64 $t/a.o
 $CC -B. -o $t/exe18 -Wl,-G -Wl,8 $t/a.o
