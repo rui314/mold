@@ -90,6 +90,26 @@ for key in keys:
 EOF
 }
 
+# Marks the object $1 as built for firmware 1.0, as Xcode 27's clang
+# makes one for -target <arch>-apple-firmware: platform 13, no SDK. An
+# older clang knows no firmware and makes an ELF object for it, so
+# tests build a macOS object and mark it.
+mark_firmware() {
+  python3 - "$1" <<'EOF'
+import struct, sys
+d = bytearray(open(sys.argv[1], 'rb').read())
+off, found = 32, False
+for _ in range(struct.unpack_from('<I', d, 16)[0]):
+    cmd, size = struct.unpack_from('<II', d, off)
+    if cmd == 0x32:  # LC_BUILD_VERSION
+        struct.pack_into('<III', d, off + 8, 13, 0x10000, 0)
+        found = True
+    off += size
+open(sys.argv[1], 'wb').write(d)
+sys.exit(not found)
+EOF
+}
+
 skip() {
   echo skipped
   trap - EXIT

@@ -66,11 +66,11 @@ otool -l $t/r.o > $t/lc5
 not grep -q 'cmd LC_BUILD_VERSION' $t/lc5
 
 # Firmware objects make a firmware image, which needs no libSystem.
-cat <<EOF | $CC -target $ARCH-apple-firmware1.0 -o $t/fw.o -c -xassembler - \
-  -Wno-incompatible-sysroot
+cat <<EOF | $CC -o $t/fw.o -c -xassembler -
 .globl _start
 _start: ret
 EOF
+mark_firmware $t/fw.o
 $mold -arch $ARCH -e _start $t/fw.o -o $t/fw
 otool -l $t/fw > $t/lc6
 not grep -q 'cmd LC_BUILD_VERSION' $t/lc6

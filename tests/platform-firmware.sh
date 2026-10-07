@@ -55,8 +55,8 @@ echo 'int foo() { return 0; }' | $CC -target $ARCH-apple-ios15.0 -c -xc - -o $t/
 $mold -arch $ARCH $fw -e _start $t/a.o $t/ios.o -o $t/exe7 2> $t/log7
 not grep -q warning $t/log7
 
-echo 'int bar() { return 0; }' | $CC -target $ARCH-apple-firmware -c -xc - -o $t/fw.o \
-  -Wno-incompatible-sysroot
+echo 'int bar() { return 0; }' | $CC -c -xc - -o $t/fw.o
+mark_firmware $t/fw.o
 $mold -arch $ARCH $fw -e _start $t/a.o $t/fw.o -o $t/exe8 2> $t/log8
 not grep -q warning $t/log8
 $mold -arch $ARCH -platform_version firmware 0.5 0.5 -e _start $t/a.o $t/fw.o -o $t/exe8 2> $t/log8
