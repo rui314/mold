@@ -15,21 +15,15 @@ use crate::target::Target;
 impl<E: Target> Builder<'_, E> {
     /// The entries of the metadata the link made: the selector
     /// references (see add_selref_entries), and, after the imports, the
-    /// class references the GOT took over, the method lists in the
-    /// relative form and category merging's records, which go by no
-    /// name (fixups refer to entries by index). Returns the selector
-    /// reference slots, in the order of the __objc_selrefs tail.
+    /// method lists in the relative form and category merging's
+    /// records, which go by no name (fixups refer to entries by index).
+    /// A class reference the GOT took over has none: what refers to it
+    /// refers to the class's GOT entry (see class_ref_fixup). Returns
+    /// the selector reference slots, in the order of the
+    /// __objc_selrefs tail.
     pub(super) fn add_objc_entries(&mut self) -> Vec<To> {
         let ctx = self.ctx;
         let slots = self.add_selref_entries();
-        for &(stand_in, id) in &ctx.got.stand_ins {
-            let isec = &ctx.isecs[stand_in];
-            let mut entry = coalesced(ctype::CLASS_REF, 8, 3);
-            entry.content = self.isec_content(isec, ctx.hdr_of(isec));
-            let (to, addend) = self.sym_target(id);
-            entry.fixups.push(OutFixup::new(0, to, fk::PTR64, addend));
-            self.add_linker_isec_entry(stand_in, entry, None);
-        }
         for list in &ctx.objc_methlist.lists {
             let isec = &ctx.isecs[list.isec];
             let mut entry = OutEntry::new(scope::LOCAL, kind::ANON, ctype::METHOD_LIST);

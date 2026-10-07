@@ -217,6 +217,9 @@ struct Builder<'a, E: Target> {
     /// The aliases standing for the functions identical code folding
     /// folded, each with its subsection (see add_folded_function).
     folded: Vec<(u32, u32)>,
+    /// The class of each stand-in for a class reference slot the GOT
+    /// took over (see objc::add_classref_stand_ins).
+    stand_ins: HashMap<u32, SymbolId>,
     sections: Vec<CustomSection>,
     debug: Vec<DebugRecord>,
 }
@@ -232,6 +235,7 @@ impl<'a, E: Target> Builder<'a, E> {
             isec_split: HashMap::new(),
             sym_entry: HashMap::new(),
             folded: Vec::new(),
+            stand_ins: ctx.got.stand_ins.iter().copied().collect(),
             sections: Vec::new(),
             debug: Vec::new(),
         }
@@ -598,6 +602,90 @@ impl<'a, E: Target> Builder<'a, E> {
         Some((to, off - k * size as i64))
     }
 
+    /// The stand-in for a class reference slot the GOT took over (see
+    /// objc::add_classref_stand_ins) that a relocation refers to, and
+    /// the offset there.
+    fn class_ref(&self, obj: usize, r: &Reloc) -> Option<(u32, i64)> {
+        if self.stand_ins.is_empty() {
+            return None;
+        }
+        let ctx = self.ctx;
+        let (slot, off) = match r.target() {
+            RelocTarget::Sym(idx) => {
+                let sym = &ctx.symbols[ctx.objs[obj].symbols[idx as usize]];
+                (sym.input_section()?, sym.value as i64 + r.addend)
+            }
+            RelocTarget::Section(slot) => (slot, r.addend),
+        };
+        let stand_in = ctx.resolve_isec(slot as usize) as u32;
+        self.stand_ins.contains_key(&stand_in).then_some((stand_in, off))
+    }
+
+    /// The fixup of `rels[i]`, a reference to a class reference slot the
+    /// GOT took over, as ld-prime records it: a GOT reference to the
+    /// class, with no entry for the slot. An adrp and the add after it
+    /// (see objc::pair_classref_uses) take the address of the class's
+    /// entry together, in one fixup (the add's own would be a load of
+    /// the class relaxed); a load reads the class from it. ld-prime
+    /// refuses a reference into the slot or by any other relocation,
+    /// and so does this.
+    fn class_ref_fixup(
+        &self,
+        id: usize,
+        rels: &[Reloc],
+        i: usize,
+        (stand_in, off): (u32, i64),
+    ) -> Option<OutFixup> {
+        let ctx = self.ctx;
+        let isec = &ctx.isecs[id];
+        let obj = isec.file as usize;
+        let r = &rels[i];
+        let arm64 = E::CPUTYPE == CPU_TYPE_ARM64;
+        let code = ctx.hdr_of(isec).flags & S_ATTR_SOME_INSTRUCTIONS != 0;
+        let insn = |r: &Reloc| {
+            u32::from_le_bytes(isec.data()[r.offset as usize..][..4].try_into().unwrap())
+        };
+        // The other references to the slot in the subsection, after or
+        // before this one.
+        let same = |r: &&Reloc| self.class_ref(obj, r).is_some_and(|(s, _)| s == stand_in);
+        let next = rels[i + 1..].iter().find(same);
+        let prev = rels[..i].iter().rev().find(same);
+        let (kind, scale, second) = match r.r_type {
+            _ if off != 0 || r.is_subtracted => (0, 0, 0),
+            0 if r.size == 8 && !r.is_pcrel => (fk::PTR64_TO_GOT, 0, 0),
+            ARM64_RELOC_PAGE21 if arm64 => match next {
+                Some(n) if n.r_type == ARM64_RELOC_PAGEOFF12 && is_add_x(insn(n)) => {
+                    match n.offset.checked_sub(r.offset).and_then(|d| u8::try_from(d / 4).ok()) {
+                        Some(second) => (fk::ARM64_ADRP_ADD_GOT, 1, second),
+                        None => (0, 0, 0),
+                    }
+                }
+                _ => (fk::ARM64_ADRP_GOT, 0, 0),
+            },
+            ARM64_RELOC_PAGEOFF12 if arm64 && is_ldr_x(insn(r)) => (fk::ARM64_LD12_GOT, 8, 0),
+            ARM64_RELOC_PAGEOFF12 if arm64 && is_add_x(insn(r)) => {
+                if prev.is_some_and(|p| p.r_type == ARM64_RELOC_PAGE21) {
+                    return None;
+                }
+                (0, 0, 0)
+            }
+            X86_64_RELOC_SIGNED if !arm64 && code => (fk::X86_64_RIP_GOT, 0, 0),
+            _ => (0, 0, 0),
+        };
+        if kind == 0 {
+            fatal!(
+                "{}: -make_mergeable: unsupported reference to a class reference at 0x{:x}",
+                ctx.objs[obj].mf.name.raw(),
+                r.offset
+            );
+        }
+        let (to, addend) = self.sym_target(self.stand_ins[&stand_in]);
+        let mut fixup = OutFixup::new(r.offset, to, kind, addend);
+        fixup.scale = scale;
+        fixup.second = second;
+        Some(fixup)
+    }
+
     /// The entry a relocation refers to, and the offset there.
     fn reloc_target(&self, obj: usize, rel: &Reloc) -> (To, i64) {
         match rel.target() {
@@ -656,6 +744,11 @@ impl<'a, E: Target> Builder<'a, E> {
         let mut i = 0;
         while i < rels.len() {
             let r = &rels[i];
+            if let Some(class_ref) = self.class_ref(obj, r) {
+                out.extend(self.class_ref_fixup(id, rels, i, class_ref));
+                i += 1;
+                continue;
+            }
             let (target, off) = self.reloc_target(obj, r);
             let addend = r.addend + off;
             // UNSIGNED, which both targets number 0: a pointer, or a
@@ -1251,4 +1344,10 @@ fn imm12_scale(insn: u32) -> u8 {
 /// A 64-bit load of an unsigned 12-bit offset: what loads a GOT slot.
 fn is_ldr_x(insn: u32) -> bool {
     insn & 0xffc0_0000 == 0xf940_0000
+}
+
+/// A 64-bit add of an unsigned 12-bit immediate: what takes a slot's
+/// address.
+fn is_add_x(insn: u32) -> bool {
+    insn & 0xffc0_0000 == 0x9100_0000
 }

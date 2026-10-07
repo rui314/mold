@@ -128,7 +128,19 @@ struct Synth<'a, E: Target> {
     sym_of: Vec<Option<usize>>,
     symbols: Vec<Symbol>,
     undefined: hashbrown::HashMap<Vec<u8>, usize>,
+    /// The class reference slots made for the GOT references ld-prime
+    /// records of them (see add_class_refs).
+    class_refs: Vec<ClassRef>,
     _target: std::marker::PhantomData<E>,
+}
+
+/// A class reference slot of the object being made: the entry of its
+/// class, its section and offset, and its label.
+struct ClassRef {
+    class: u32,
+    sect: usize,
+    offset: u64,
+    label: usize,
 }
 
 /// Makes the object file a mergeable dylib's record stands for.
@@ -141,11 +153,13 @@ pub fn synthesize_object<E: Target>(rec: &MergeableRecord, path: &Path) -> Vec<u
         sym_of: vec![None; rec.entries.len()],
         symbols: Vec::new(),
         undefined: hashbrown::HashMap::new(),
+        class_refs: Vec::new(),
         _target: std::marker::PhantomData,
     };
     for i in 0..rec.entries.len() {
         s.place(i, path);
     }
+    s.add_class_refs();
     s.add_image_info();
     s.assign_addresses();
     for i in 0..rec.entries.len() {
@@ -154,6 +168,7 @@ pub fn synthesize_object<E: Target>(rec: &MergeableRecord, path: &Path) -> Vec<u
     for i in 0..rec.entries.len() {
         s.name_alias(i);
     }
+    s.name_class_refs();
     for i in 0..rec.entries.len() {
         s.apply_fixups(i, path);
     }
@@ -163,6 +178,10 @@ pub fn synthesize_object<E: Target>(rec: &MergeableRecord, path: &Path) -> Vec<u
 impl<E: Target> Synth<'_, E> {
     fn is_arm64() -> bool {
         E::CPUTYPE == CPU_TYPE_ARM64
+    }
+
+    fn unsigned() -> u8 {
+        if Self::is_arm64() { ARM64_RELOC_UNSIGNED } else { X86_64_RELOC_UNSIGNED }
     }
 
     /// Lays an entry out in its section, if it has a place in one.
@@ -222,6 +241,59 @@ impl<E: Target> Synth<'_, E> {
             self.sections.push(Section::new(segname, sectname, flags, p2align));
             self.sections.len() - 1
         })
+    }
+
+    /// Makes the class reference slots the objects had where ld-prime
+    /// records the address of a class's GOT entry - taken by an adrp
+    /// and add (ARM64_ADRP_ADD_GOT) or held by a pointer (PTR64_TO_GOT),
+    /// which it records only of a slot whose address the code took
+    /// and a link for macOS 15 or later makes the GOT entry (see
+    /// objc::fold_objc_classrefs). No relocation of an object says as
+    /// much: an add with a GOT relocation is a load relaxed, of the
+    /// class itself, and neither linker takes a 64-bit pointer to a GOT
+    /// entry. One slot per class.
+    fn add_class_refs(&mut self) {
+        let rec = self.rec;
+        let (seg, sect, flags) = standard_section(ctype::CLASS_REF).unwrap();
+        let key = (bytes_to_name(seg), bytes_to_name(sect), flags);
+        for (i, entry) in rec.entries.iter().enumerate() {
+            if self.place[i].is_none() {
+                continue;
+            }
+            for f in &rec.fixups[entry.fixups.clone()] {
+                if !matches!(f.kind, fk::ARM64_ADRP_ADD_GOT | fk::PTR64_TO_GOT)
+                    || self.class_refs.iter().any(|c| c.class == f.target)
+                {
+                    continue;
+                }
+                let sect = self.section_for(key, 3);
+                let offset = self.sections[sect].append(None, 8, 3, 0);
+                self.class_refs.push(ClassRef { class: f.target, sect, offset, label: 0 });
+            }
+        }
+    }
+
+    /// Gives the class reference slots (see add_class_refs) their
+    /// labels, and points each at its class.
+    fn name_class_refs(&mut self) {
+        for n in 0..self.class_refs.len() {
+            let ClassRef { class, sect, offset, .. } = self.class_refs[n];
+            let label = self.add_symbol(Symbol {
+                name: format!("LMC{n}").into_bytes(),
+                place: SymPlace::Defined { sect, offset },
+                n_type: 0,
+                n_desc: 0,
+            });
+            self.class_refs[n].label = label;
+            let class = self.target_sym(class).expect("a fixup's target has a symbol");
+            let reloc = Self::reloc(offset as u32, class, Self::unsigned(), 3, false);
+            self.sections[sect].relocs.push(reloc);
+        }
+    }
+
+    /// The label of a class's reference slot (see add_class_refs).
+    fn class_ref(&self, class: u32) -> Option<usize> {
+        Some(self.class_refs.iter().find(|c| c.class == class)?.label)
     }
 
     /// Adds the __objc_imageinfo record the objects had, from what the
@@ -500,11 +572,18 @@ impl<E: Target> Synth<'_, E> {
         sym: usize,
         out: &mut Vec<MachRel>,
     ) -> bool {
-        let unsigned = if Self::is_arm64() { ARM64_RELOC_UNSIGNED } else { X86_64_RELOC_UNSIGNED };
+        let unsigned = Self::unsigned();
         match f.kind {
             fk::PTR64 | fk::TLV_OFFSET | fk::IMAGE_OFFSET32 => {
                 self.put(sect, off, 8, f.addend as u64);
                 out.push(Self::reloc(off, sym, unsigned, 3, false));
+            }
+            // A pointer to a class's GOT entry: to its class reference
+            // slot again (see add_class_refs).
+            fk::PTR64_TO_GOT if f.addend == 0 => {
+                let Some(slot) = self.class_ref(f.target) else { return false };
+                self.put(sect, off, 8, 0);
+                out.push(Self::reloc(off, slot, unsigned, 3, false));
             }
             fk::PTR32 => {
                 self.put(sect, off, 4, f.addend as u64);
@@ -582,15 +661,20 @@ impl<E: Target> Synth<'_, E> {
                 self.clear_imm12(sect, off);
                 out.push(Self::reloc(off, sym, ARM64_RELOC_GOT_LOAD_PAGEOFF12, 2, false));
             }
-            ARM64_ADRP_LDR_GOT | ARM64_ADRP_LDR_GOT_NO_OPT | ARM64_ADRP_ADD_GOT => {
+            ARM64_ADRP_LDR_GOT | ARM64_ADRP_LDR_GOT_NO_OPT => {
                 self.clear_adrp(sect, off);
                 out.push(Self::reloc(off, sym, ARM64_RELOC_GOT_LOAD_PAGE21, 2, true));
-                if f.kind == ARM64_ADRP_ADD_GOT {
-                    self.clear_imm12(sect, second);
-                } else {
-                    self.restore_ldr(sect, second);
-                }
+                self.restore_ldr(sect, second);
                 out.push(Self::reloc(second, sym, ARM64_RELOC_GOT_LOAD_PAGEOFF12, 2, false));
+            }
+            // The address of the class's GOT entry: of its class
+            // reference slot again.
+            ARM64_ADRP_ADD_GOT if f.addend == 0 => {
+                let Some(slot) = self.class_ref(f.target) else { return false };
+                self.clear_adrp(sect, off);
+                out.push(Self::reloc(off, slot, ARM64_RELOC_PAGE21, 2, true));
+                self.clear_imm12(sect, second);
+                out.push(Self::reloc(second, slot, ARM64_RELOC_PAGEOFF12, 2, false));
             }
             ARM64_ADRP_TLV => {
                 self.clear_adrp(sect, off);
@@ -604,10 +688,6 @@ impl<E: Target> Synth<'_, E> {
                 let swift = (f.kind == SWIFT_REL32_TO_GOT) as i64;
                 self.put(sect, off, 4, (f.addend + swift) as u64);
                 out.push(Self::reloc(off, sym, ARM64_RELOC_POINTER_TO_GOT, 2, true));
-            }
-            PTR64_TO_GOT => {
-                self.put(sect, off, 8, f.addend as u64);
-                out.push(Self::reloc(off, sym, ARM64_RELOC_POINTER_TO_GOT, 3, false));
             }
             _ => return self.generic_fixup(sect, off, entry, f, sym, out),
         }
