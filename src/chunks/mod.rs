@@ -922,6 +922,12 @@ pub fn mach_header_size<E: Target>(ctx: &Context<E>) -> u64 {
 /// much, and post-link scripts written against Xcode spend the room
 /// (Sequel Ace's renames three dylibs to @loader_path paths with
 /// install_name_tool, 48 bytes, without -headerpad_max_install_names).
+///
+/// A simulator's image gets 16 bytes more, as ld-prime leaves it
+/// whatever -headerpad says. What for is unknown: codesign,
+/// install_name_tool and vtool ask no more room of a simulator's image
+/// than of a Mac's, but a post-link step written against Xcode's
+/// output may count on it.
 fn header_pad<E: Target>(ctx: &Context<E>) -> u64 {
     // A -preload image's header has pages of its own, ahead of the
     // segments; dyld's __text starts on the next 4 KiB boundary (see
@@ -937,7 +943,8 @@ fn header_pad<E: Target>(ctx: &Context<E>) -> u64 {
         pad = pad.max((loads + id) as u64 * 1024);
     }
 
-    pad + 32 + 8 * ctx.dylibs.len() as u64
+    let simulator = if is_simulator(ctx.args.platform) { 16 } else { 0 };
+    pad + 32 + 8 * ctx.dylibs.len() as u64 + simulator
 }
 
 /// Writes the mach header and the load commands.
