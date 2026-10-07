@@ -1034,14 +1034,17 @@ fn check_object_version<E: Target>(ctx: &Context<E>, i: usize) {
     let (platform, minos) = (ctx.args.platform, ctx.args.platform_minos);
     // An object may declare more than one platform; use the deployment
     // target for the platform being linked. ld-prime takes one with no
-    // version command (an old one, or one assembled for no OS) for
-    // macOS, with a warning in a macOS link. The object the linker
-    // synthesizes has none either.
+    // version command (an old one, or one assembled for no OS) for the
+    // link's platform, with a warning but where it links firmware
+    // (see Args::effective_platform), which takes code built for any
+    // platform. The object the linker synthesizes has none either.
     let Some(first) = obj.platform_versions.first() else {
-        if platform == crate::macho::PLATFORM_MACOS && !ctx.is_internal(i) {
+        let assumed = ctx.args.effective_platform();
+        if assumed != PLATFORM_FIRMWARE && !ctx.is_internal(i) {
             crate::warn!(
-                "no platform load command found in '{}', assuming: macOS",
-                obj.mf.name.raw()
+                "no platform load command found in '{}', assuming: {}",
+                obj.mf.name.raw(),
+                platform_name(assumed)
             );
         }
         return;
