@@ -33,7 +33,9 @@ grep -q $'\t0x00000004\t\[  2\] _bar$' $t/map
 not grep -q __mh_execute_header $t/map
 unwind=$(grep $'\t__LD\t__compact_unwind$' $t/map | cut -f1,2)
 grep -qx "$unwind"$'\t\\[  0\\] __LD,__compact_unwind' $t/map
-if [ $ARCH = x86_64 ]; then
+# (clang gives an x86_64 simulator's object an FDE only for a function
+# compact unwind can't describe.)
+if [ $ARCH = x86_64 ] && ! on_simulator; then
   eh=$(grep $'\t__TEXT\t__eh_frame$' $t/map | cut -f1,2)
   grep -qx "$eh"$'\t\\[  0\\] __TEXT,__eh_frame' $t/map
 fi

@@ -82,14 +82,17 @@ $CC --ld-path=$mold -o $t/exe3 $t/many.o
 $RUN $t/exe3
 unwind_lookup $t/exe3 $(for i in $(seq 0 2499); do echo _f$i; done) > $t/enc3
 # The leaf functions share a mode (x86-64 describes each by an FDE of
-# its own), the others an encoding.
-python3 - $t/enc3 <<'EOF2'
+# its own), the others an encoding. (clang gives an x86_64 simulator's
+# object an FDE only for a function compact unwind can't describe.)
+if [ $ARCH = arm64 ] || ! on_simulator; then
+  python3 - $t/enc3 <<'EOF2'
 import sys
 enc = [int(l, 16) for l in open(sys.argv[1])]
 modes = [e & 0x0f000000 for e in enc]
 assert 0 not in enc
 assert len(set(enc[0::2])) == 1 and len(set(modes[1::2])) == 1 and modes[0] != modes[1]
 EOF2
+fi
 objdump --unwind-info $t/exe3 > $t/unwind3
 [ "$(grep -c 'Second level index\[' $t/unwind3)" -gt 1 ]
 

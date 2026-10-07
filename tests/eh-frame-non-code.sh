@@ -97,7 +97,9 @@ if $mold -v 2> /dev/null | grep -q mold-macho; then
 fi
 
 # A section with no code, the functions of which have compact unwind:
-# the same warning, once.
+# the same warning, once. (clang gives an x86_64 simulator's functions
+# outside code none.)
+on_simulator && [ $ARCH = x86_64 ] && exit 0
 cat <<EOF | $CC -o $t/compact.o -c -xassembler -
 .section __DATA,__bar
 .globl _g

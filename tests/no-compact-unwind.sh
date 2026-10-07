@@ -29,12 +29,16 @@ int main(int argc, char **) {
 EOF
 
 $CXX --ld-path=$mold -o $t/exe2 $t/b.o -Wl,-no_compact_unwind
-$RUN $t/exe2
 otool -l $t/exe2 > $t/exe2.lc
 not grep -q __unwind_info $t/exe2.lc
-dwarfdump --eh-frame $t/b.o | grep -c ' FDE ' > $t/b.fdes
-dwarfdump --eh-frame $t/exe2 | grep -c ' FDE ' > $t/exe2.fdes
-diff $t/b.fdes $t/exe2.fdes
+# (clang gives an x86_64 simulator's object an FDE only for a function
+# compact unwind can't describe, -femit-dwarf-unwind=always or not.)
+if [ $ARCH = arm64 ] || ! on_simulator; then
+  $RUN $t/exe2
+  dwarfdump --eh-frame $t/b.o | grep -c ' FDE ' > $t/b.fdes
+  dwarfdump --eh-frame $t/exe2 | grep -c ' FDE ' > $t/exe2.fdes
+  diff $t/b.fdes $t/exe2.fdes
+fi
 
 $mold -arch $ARCH -r -no_compact_unwind -o $t/c.o $t/b.o
 objdump --unwind-info $t/c.o | grep -q 'compact encoding'

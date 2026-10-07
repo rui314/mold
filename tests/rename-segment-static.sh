@@ -32,7 +32,9 @@ $mold -arch $ARCH -static -e _main -o $t/exe3 $t/a.o -rename_segment __TEXT __FO
 [ "$(segs $t/exe3)" = '__PAGEZERO __FOO __DATA __LINKEDIT ' ]
 otool -l $t/exe3 | grep -A4 'segname __FOO' | grep -q 'fileoff 0'
 
-if [ $ARCH = x86_64 ]; then
+# (clang gives an x86_64 simulator's object an FDE only for a function
+# compact unwind can't describe.)
+if [ $ARCH = x86_64 ] && ! on_simulator; then
   $mold -arch $ARCH -static -e _main -o $t/exe4 $t/a.o -rename_section __TEXT __eh_frame __FOO __eh
   grep -qx '__FOO,__eh' <(sects $t/exe4)
   not grep -q '__eh_frame' <(sects $t/exe4)

@@ -42,8 +42,12 @@ cells() {
     xxd -s $((off + 0x$addr)) -l 4 -p $1
   done | sort
 }
-[ -n "$(cells $t/r.o __TEXT __eh_frame)" ]
-[ "$(cells $t/r.o __TEXT __eh_frame)" = "$(cells $t/a.o __TEXT __eh_frame)" ]
+# (clang gives an x86_64 simulator's object an FDE only for a function
+# compact unwind can't describe.)
+if [ $ARCH = arm64 ] || ! on_simulator; then
+  [ -n "$(cells $t/r.o __TEXT __eh_frame)" ]
+  [ "$(cells $t/r.o __TEXT __eh_frame)" = "$(cells $t/a.o __TEXT __eh_frame)" ]
+fi
 [ "$(cells $t/r.o __TEXT __gcc_except_tab)" = "$(cells $t/a.o __TEXT __gcc_except_tab)" ]
 [ "$(cells $t/r.o __DATA __gotrefs)" = "$(cells $t/b.o __DATA __gotrefs)" ]
 

@@ -20,7 +20,7 @@ grep -q -- '-stack_size 0x0 has no effect' $t/log3
 not $CC --ld-path=$mold -o $t/exe4 $t/a.o -Wl,-stack_size,0x800 2> $t/log4
 grep -q -- '-stack_size (0x00000800) must be multiples of page size (0x0000[14]000)' $t/log4
 not $CC --ld-path=$mold -o $t/exe5 $t/a.o -Wl,-stack_size,0x10000004000 2> $t/log5
-grep -Eq -- '-stack_size must be <= (512MB on arm64 platforms|1TB on x86_64 macOS)' $t/log5
+grep -Eq -- '-stack_size must be <= (512MB on (arm64|x86_64) platforms|1TB on x86_64 macOS)' $t/log5
 not $CC --ld-path=$mold -shared -o $t/lib.dylib $t/a.o -Wl,-stack_size,0x800 2> $t/log6
 grep -q -- '-stack_size option can only be used when linking a main executable' $t/log6
 not $CC --ld-path=$mold -o $t/exe6 $t/a.o -Wl,-stack_size,4k 2> $t/log6
@@ -41,12 +41,12 @@ otool -l $t/exe7 > $t/lc7
 segs() { awk '$1 == "segname" && !seen[$2]++ { printf "%s ", $2 }' $1; }
 [ "$(segs $t/lc7)" = '__PAGEZERO __TEXT __UNIXSTACK __LINKEDIT ' ]
 grep -A8 'segname __UNIXSTACK' $t/lc7 | awk '{ printf "%s %s ", $1, $2 }' > $t/stack7
+# (The stack tops out at 0x120000000 but on x86_64 macOS.)
+if [ $ARCH = x86_64 ] && ! on_simulator; then top=0x7fff5c000000; else top=0x120000000; fi
 if [ $ARCH = arm64 ]; then
-  top=0x120000000
-  grep -q ' sp  0x0000000120000000 ' $t/lc7
+  grep -q " sp  $(printf '0x%016x' $top) " $t/lc7
 else
-  top=0x7fff5c000000
-  grep -q ' rsp 0x00007fff5c000000 ' $t/lc7
+  grep -q " rsp $(printf '0x%016x' $top) " $t/lc7
 fi
 [ "$(cat $t/stack7)" = "$(printf 'segname __UNIXSTACK vmaddr 0x%016x vmsize 0x%016x fileoff 0 filesize 0 maxprot 0x00000003 initprot 0x00000003 nsects 0 flags 0x0 ' $((top - 0x8000)) 0x8000)" ]
 # __LINKEDIT follows __TEXT, far below the stack.

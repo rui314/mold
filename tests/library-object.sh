@@ -26,7 +26,7 @@ nm $t/exe2 | grep -q ' T _foo$'
 not link -o $t/exe3 -L$t/d -lfoo.o 2> $t/log3
 grep -q "library 'foo.o' not found" $t/log3
 
-if [ $ARCH = x86_64 ]; then
+if [ $ARCH = x86_64 ] && ! on_simulator; then
   echo 'int main() { return 0; }' | $CC -o $t/old.o -c -xc - -mmacosx-version-min=10.7
   $CC --ld-path=$mold -o $t/exe4 $t/old.o -mmacosx-version-min=10.7 2> /dev/null
   nm $t/exe4 | grep -q ' T start$'
