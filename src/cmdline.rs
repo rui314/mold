@@ -3022,9 +3022,27 @@ fn resolve_segaddrs(segaddrs: Vec<(Vec<u8>, u64)>) -> Vec<(Vec<u8>, u64)> {
 /// visionOS 27 on. Elsewhere the library links as usual. (ld-prime
 /// also takes iOS 20-25 and visionOS 4-25, versions that never shipped,
 /// for releases after 2026's.)
+///
+/// Firmware has no dyld to load a library lazily, and ld-prime counts
+/// a -preload image and a -r output for no platform as firmware's (see
+/// Args::effective_platform): it says of each such library that it
+/// links as -l or -framework would.
 fn resolve_lazy_load(args: &mut Args) {
     args.lazy_load =
         dyld_supports(args, LibraryKind::Lazy, &VERSION_2026_FALL, "lazy-load") == Some(true);
+    if args.effective_platform() == PLATFORM_FIRMWARE {
+        for input in &args.inputs {
+            match input {
+                InputArg::Library(LibraryKind::Lazy, LibraryName::Framework(_)) => crate::warn!(
+                    "-lazy_framework cannot be used on firmware, changing to regular -framework"
+                ),
+                InputArg::Library(LibraryKind::Lazy, _) => crate::warn!(
+                    "-lazy_library cannot be used on firmware, changing to regular link"
+                ),
+                _ => {}
+            }
+        }
+    }
 }
 
 /// A dylib -delay-l and the like name keeps its initializers until the
