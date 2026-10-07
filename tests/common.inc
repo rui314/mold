@@ -90,6 +90,14 @@ for key in keys:
 EOF
 }
 
+# Looks in a dump of dyld_info -shared_region ($3) for an entry that
+# matches the extended regex $1 and is of the kind $2. Xcode 26's
+# dyld_info prints no kinds, only where each entry refers from and to,
+# so there the kind goes unchecked.
+split_has() {
+  awk -v re="$1" -v k="$2" '$0 ~ re && (NF == 6 || $NF == k) { n++ } END { exit !n }' "$3"
+}
+
 # Marks the object $1 as built for firmware 1.0, as Xcode 27's clang
 # makes one for -target <arch>-apple-firmware: platform 13, no SDK. An
 # older clang knows no firmware and makes an ELF object for it, so

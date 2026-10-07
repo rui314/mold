@@ -120,5 +120,5 @@ $t/exe3 | grep -q 'caught 42'
 # (-add_split_seg_info), a 4-byte field is a 32-bit delta.
 $CXX --ld-path=$mold -shared -o $t/c.dylib $t/a.o $t/b.o -Wl,-add_split_seg_info
 dyld_info -shared_region $t/c.dylib > $t/split
-grep -Eq '__eh_frame +0x[0-9a-f]+ +__TEXT +__text +0x[0-9a-f]+ +3$' $t/split
-grep -Eq '__eh_frame +0x[0-9a-f]+ +__TEXT +__gcc_except_tab +0x[0-9a-f]+ +3$' $t/split
+split_has '__eh_frame +0x[0-9a-f]+ +__TEXT +__text ' 3 $t/split
+split_has '__eh_frame +0x[0-9a-f]+ +__TEXT +__gcc_except_tab ' 3 $t/split

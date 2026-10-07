@@ -40,12 +40,14 @@ off() { otool -l $t/c.dylib | grep -A2 "cmd $1\$" | awk '$1 == "dataoff" { print
 # (4) in data, wherever it points; an adrp (5), the ldr or add under it
 # (6) or a branch (7) on arm64, or a 32-bit displacement (3) on x86-64,
 # when they cross sections; an image offset (12). Nothing records a
-# pointer dyld binds to another image.
+# pointer dyld binds to another image. Xcode 26's dyld_info prints no
+# kinds (see split_has).
 dyld_info -shared_region $t/c.dylib > $t/split
 a() { printf '0x%08x' 0x$(nm $t/c.dylib | awk -v s=$1 '$3 == s { print $1 }'); }
 entry() {
   awk -v f=$1 -v fa=$2 -v t=$3 -v ta=$4 -v k=$5 '
-    $2 == f && (fa == "-" || $3 == fa) && $5 == t && (ta == "-" || $6 == ta) && $7 == k { n++ }
+    $2 == f && (fa == "-" || $3 == fa) && $5 == t && (ta == "-" || $6 == ta) &&
+      (NF == 6 || $7 == k) { n++ }
     END { exit !n }' $t/split
 }
 if [ $ARCH = arm64 ]; then page=5; pageoff=6; branch=7; else page=3; pageoff=3; branch=3; fi
