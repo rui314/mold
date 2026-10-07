@@ -1,12 +1,12 @@
 $ErrorActionPreference = 'Stop'
 Set-Location "$PSScriptRoot/../.."
 
-cargo build --release --locked --package mold-cli
+cargo build --release --locked --package mold
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $metadata = cargo metadata --locked --no-deps --format-version 1 | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-$version = ($metadata.packages | Where-Object name -eq 'mold-cli').version
+$version = ($metadata.packages | Where-Object name -eq 'mold').version
 
 $stage = 'mold-install'
 New-Item -ItemType Directory -Force "$stage/bin", "$stage/share/man/man1", "$stage/share/doc/mold", dist | Out-Null
