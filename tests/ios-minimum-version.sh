@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The test picks the platforms it links for itself.
+on_simulator && skip
+
 # iOS 4.3 is the oldest iOS, and the oldest iOS simulator, a link may
 # target, however the options or the first object name the version;
 # a -r output can't be for an older one either, but a -preload image,

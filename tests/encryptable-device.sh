@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The test picks the platforms it links for itself.
+on_simulator && skip
+
 # The App Store encrypts the code of an app for an iOS, tvOS or visionOS
 # device, so every executable, dylib and bundle linked for a device is
 # encryptable unless -no_encryption or $LD_NO_ENCRYPT (set to anything)

@@ -1,12 +1,14 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The test picks the platforms it links for itself.
+on_simulator && skip
+
 # A macOS dylib marked MH_SIM_SUPPORT (-simulator_support) may be loaded
 # by a simulator's processes, which run on the Mac: it counts as built
 # for macOS and every simulator, so a simulator's image links against
 # it, whatever its macOS version, while a device's still may not.
 sdk=$(xcrun --sdk iphonesimulator --show-sdk-path 2> /dev/null) || skip
-mac=$(xcrun --sdk macosx --show-sdk-path)
 
 cat <<EOF | $CC -mmacos-version-min=14.0 -o $t/lib.o -c -xc -
 int foo(void) { return 3; }
@@ -17,7 +19,7 @@ int main(void) { return foo(); }
 EOF
 
 for flag in -simulator_support ''; do
-  $mold -arch $ARCH -platform_version macos 16.0 26.0 -syslibroot $mac -dylib \
+  $mold -arch $ARCH -platform_version macos 16.0 26.0 -syslibroot $SDK -dylib \
     -install_name /usr/local/lib/libfoo.dylib -o $t/lib$flag.dylib $t/lib.o -lSystem $flag
 done
 

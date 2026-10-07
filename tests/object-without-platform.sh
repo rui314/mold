@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The test picks the platforms it links for itself.
+on_simulator && skip
+
 # An object with no platform load command (an old one, or one assembled
 # for no OS) is taken for the link's platform, whichever that is, with
 # a warning that names it - but in firmware, which takes code built for

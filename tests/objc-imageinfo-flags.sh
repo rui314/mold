@@ -32,8 +32,13 @@ for pair in 0x60:00000040 0xff:00000050 0x0702ff:00070250 0x62:00000040 0x050007
 done
 
 # A simulator's objects all have the simulator bit.
-if sdk=$(xcrun --sdk iphonesimulator --show-sdk-path 2> /dev/null); then
-  cat <<EOF | cc -target $ARCH-apple-ios17.0-simulator -isysroot $sdk -o $t/sim.o -c -xobjective-c -
+if on_simulator; then
+  simcc=$CC
+elif sdk=$(xcrun --sdk iphonesimulator --show-sdk-path 2> /dev/null); then
+  simcc="cc -target $ARCH-apple-ios17.0-simulator -isysroot $sdk"
+fi
+if [ -n "$simcc" ]; then
+  cat <<EOF | $simcc -o $t/sim.o -c -xobjective-c -
 #import <Foundation/Foundation.h>
 @interface Foo : NSObject
 @end
@@ -42,7 +47,6 @@ if sdk=$(xcrun --sdk iphonesimulator --show-sdk-path 2> /dev/null); then
 int main(void) { return 0; }
 EOF
   flags_are $t/sim.o 00000060
-  $mold -arch $ARCH -platform_version ios-simulator 17.0 27.0 -syslibroot $sdk -o $t/sim \
-    $t/sim.o -lSystem -lobjc -framework Foundation
+  $simcc --ld-path=$mold -o $t/sim $t/sim.o -framework Foundation
   flags_are $t/sim 00000040
 fi

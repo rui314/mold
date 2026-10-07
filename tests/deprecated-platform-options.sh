@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The test picks the platforms it links for itself.
+on_simulator && skip
+
 # ld-prime deprecates, naming the platform, -flat_namespace everywhere
 # but macOS; -undefined dynamic_lookup (or suppress) in an image dyld
 # loads but on macOS and firmware; and -bind_at_load in an image with
@@ -11,10 +14,9 @@ cat <<EOF > $t/a.c
 int main(void) { return 0; }
 EOF
 
-mac=$(xcrun --sdk macosx --show-sdk-path)
 $CC -mmacos-version-min=11.0 -o $t/mac.o -c $t/a.c
 link() { $mold -arch $ARCH -o $t/out "$@" 2> $t/log; }
-mac() { link -syslibroot $mac -platform_version macos "$@"; }
+mac() { link -syslibroot $SDK -platform_version macos "$@"; }
 
 mac 15.0 15.0 -dylib $t/mac.o -lSystem -flat_namespace -undefined dynamic_lookup
 not grep -q deprecated $t/log

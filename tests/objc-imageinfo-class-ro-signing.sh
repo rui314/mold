@@ -42,7 +42,7 @@ for name in A B; do
     echo "@implementation $name"
     echo '@end'
     [ $name = B ] || echo 'int main(void) { return 0; }'
-  } | $CC -mmacos-version-min=14.0 -Wno-objc-root-class -o $t/$name.o -c -xobjective-c -
+  } | $CC -Wno-objc-root-class -o $t/$name.o -c -xobjective-c -
 done
 for flags in 0x40 0x50; do
   cp $t/A.o $t/A$flags.o
@@ -55,7 +55,7 @@ for flags in 0x40 0x50; do
     echo ".long $flags"
   } | $CC -o $t/N$flags.o -c -xassembler -
 done
-link() { $CC --ld-path=$mold -mmacos-version-min=14.0 -o $t/exe "$@" -lobjc 2> $t/log; }
+link() { $CC --ld-path=$mold -o $t/exe "$@" -lobjc 2> $t/log; }
 
 link $t/A0x50.o $t/B0x50.o
 not grep -q class_ro_t $t/log
@@ -88,5 +88,5 @@ grep -q "'.*B0x40.o' was not built with class_ro_t pointer signing enabled" $t/l
 LD_OBJC_CLASS_RO_SIGNING_MISMATCH=warning link $t/A0x50.o $t/B0x40.o \
   -Wl,-objc_class_ro_signing_mismatch,error
 not env LD_OBJC_CLASS_RO_SIGNING_MISMATCH=error \
-  $CC --ld-path=$mold -mmacos-version-min=14.0 -o $t/exe $t/A0x50.o $t/B0x40.o -lobjc \
+  $CC --ld-path=$mold -o $t/exe $t/A0x50.o $t/B0x40.o -lobjc \
   -Wl,-objc_class_ro_signing_mismatch,warning 2> /dev/null
