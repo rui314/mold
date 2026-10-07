@@ -25,7 +25,7 @@ _y: .quad 2
 _far: ret
 .subsections_via_symbols
 EOF
-  not $mold -arch $ARCH -platform_version macos 14.0 14.0 -static -e start \
+  not $mold -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 14.0 14.0} -static -e start \
     -segaddr __DATA 0x200000000 -segaddr __FAR 0x300000000 $t/$1.o -o $t/$1 2> $t/$1.log
 }
 hex='0x[0-9A-F]{9}'
@@ -81,7 +81,7 @@ start:
 .globl _x
 _x: .long 1
 EOF
-  not $mold -arch $ARCH -platform_version macos 14.0 14.0 -static -e start \
+  not $mold -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 14.0 14.0} -static -e start \
     -segaddr __TEXT 0x300000000 -segaddr __DATA 0x200000000 $t/back.o -o $t/back 2> $t/back.log
   grep -Eq "displacement=-[0-9]+, max is \+/-2GB\), from 0x300000[0-9A-F]{3} to 0x200000000 \('_x'\)" $t/back.log
 fi
@@ -93,7 +93,7 @@ cat <<EOF | $CC -o $t/ext.o -c -xassembler -
 .globl _ext
 _ext: .quad 1
 EOF
-$mold -arch $ARCH -platform_version macos 14.0 14.0 -syslibroot "$SDK" -dylib \
+$mold -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 14.0 14.0} -syslibroot "$SDK" -dylib \
   -o $t/libext.dylib $t/ext.o -lSystem
 if [ $ARCH = arm64 ]; then
   load='  adrp x0, _ext@GOTPAGE
@@ -108,7 +108,7 @@ _f:
 $load
   ret
 EOF
-not $mold -arch $ARCH -platform_version macos 14.0 14.0 -syslibroot "$SDK" -dylib \
+not $mold -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 14.0 14.0} -syslibroot "$SDK" -dylib \
   -o $t/got.dylib $t/got.o $t/libext.dylib -lSystem \
   -segaddr __DATA_CONST 0x200000000 -segaddr __DATA 0x210000000 2> $t/got.log
 grep -Eq "$t/got.o: _f\+0x[03]: .* to 0x200000000 \('_ext'\)" $t/got.log
@@ -122,13 +122,13 @@ cat <<EOF | $CC -o $t/ext2.o -c -xassembler -
 _extf: ret
 _extg: ret
 EOF
-$mold -arch $ARCH -platform_version macos 14.0 14.0 -syslibroot "$SDK" -dylib \
+$mold -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 14.0 14.0} -syslibroot "$SDK" -dylib \
   -o $t/libext2.dylib $t/ext2.o -lSystem
 cat <<EOF | $CC -o $t/call.o -c -xc -
 void extf(void), extg(void);
 void f(void) { extf(); extg(); }
 EOF
-not $mold -arch $ARCH -platform_version macos 14.0 14.0 -syslibroot "$SDK" -dylib \
+not $mold -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 14.0 14.0} -syslibroot "$SDK" -dylib \
   -o $t/call.dylib $t/call.o $t/libext2.dylib -lSystem -segaddr __DATA_CONST 0x200000000 \
   2> $t/call.log
 grep -q "stub for _extf: .* to its pointer at 0x200000000$" $t/call.log
@@ -169,7 +169,7 @@ _x: .quad 1
 _far: ret
 .subsections_via_symbols
 EOF
-not $mold -arch $ARCH -platform_version macos 14.0 14.0 -static -e start \
+not $mold -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 14.0 14.0} -static -e start \
   -segaddr __A 0x100000000 -segaddr __TEXT 0x200000000 -segaddr __DATA 0x400000000 \
   -segaddr __FAR 0x600000000 $t/first1.o $t/first2.o -o $t/first 2> $t/first.log
 [ "$(grep -c 'out of range' $t/first.log)" = 4 ]
@@ -205,11 +205,11 @@ _late2:
   $call _wk
 .subsections_via_symbols
 EOF
-not $mold -arch $ARCH -platform_version macos 14.0 14.0 -syslibroot "$SDK" \
+not $mold -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 14.0 14.0} -syslibroot "$SDK" \
   -o $t/late $t/late.o $t/libext2.dylib -lSystem -segaddr __LATE $late $islands 2> $t/late.log
 grep -Eq "$t/late.o: _late\+0x[01]: .* \('_extf'\)" $t/late.log
 
-not $mold -arch $ARCH -platform_version macos 14.0 14.0 -syslibroot "$SDK" -dylib \
+not $mold -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 14.0 14.0} -syslibroot "$SDK" -dylib \
   -o $t/late.dylib $t/late.o $t/libext2.dylib -lSystem -segaddr __LATE $late $islands \
   2> $t/late.log
 grep -Eq "$t/late.o: _late2\+0x[01]: .* \('_wk'\)" $t/late.log

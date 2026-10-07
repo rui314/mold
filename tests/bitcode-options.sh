@@ -7,7 +7,7 @@ source "$(dirname "$0")"/common.inc
 # argument.
 echo 'int main() { return 0; }' | $CC -o $t/a.o -c -xc - -mmacosx-version-min=14.0
 link() {
-  $mold -arch $ARCH -platform_version macos 14.0 14.0 -syslibroot "$SDK" -lSystem $t/a.o \
+  $mold -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 14.0 14.0} -syslibroot "$SDK" -lSystem $t/a.o \
     -o $t/exe "$@"
 }
 

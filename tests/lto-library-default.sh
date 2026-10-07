@@ -19,5 +19,5 @@ if $mold -v 2>&1 | grep -q mold-macho; then
   ln -s $lto_library $t/tc/lib/libLTO.dylib
   ld=$t/tc/bin/ld
 fi
-$ld -arch $ARCH -platform_version macos 13.0 13.0 -syslibroot $SDK -lSystem $t/a.o -o $t/exe
+$ld -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 13.0 13.0} -syslibroot $SDK -lSystem $t/a.o -o $t/exe
 $RUN $t/exe | grep -q Hello

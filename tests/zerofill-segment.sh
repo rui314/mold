@@ -21,14 +21,14 @@ seg() {
 }
 
 for kind in '' -dylib -bundle; do
-  $mold -arch $ARCH $kind $t/a.o -platform_version macos 13.0 13.0 -syslibroot $SDK \
+  $mold -arch $ARCH $kind $t/a.o -platform_version ${PLATFORM_VERSION:-macos 13.0 13.0} -syslibroot $SDK \
     -lSystem -o $t/out
   [ "$(seg $t/out __FOO | cut -d' ' -f2)" = 0 ]
   [ "$(seg $t/out __DATA | cut -d' ' -f2)" = 0 ]
   [ "$(seg $t/out __QUX | cut -d' ' -f1)" != 0 ]
 done
 
-$mold -arch $ARCH -static -e _main $t/a.o -platform_version macos 13.0 13.0 -o $t/static
+$mold -arch $ARCH -static -e _main $t/a.o -platform_version ${PLATFORM_VERSION:-macos 13.0 13.0} -o $t/static
 [ "$(seg $t/static __FOO | cut -d' ' -f2)" = 0 ]
-$mold -arch $ARCH -preload -e _main $t/a.o -platform_version macos 13.0 13.0 -o $t/preload
+$mold -arch $ARCH -preload -e _main $t/a.o -platform_version ${PLATFORM_VERSION:-macos 13.0 13.0} -o $t/preload
 [ "$(seg $t/preload __DATA | cut -d' ' -f2)" = 0 ]

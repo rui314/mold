@@ -15,7 +15,7 @@ ar rcs $t/liba.a $t/a.o
 $CC -shared -o $t/libfoo.dylib -xc /dev/null
 
 link() {
-  $mold -platform_version macos 13.0 13.0 -o $t/exe "$@" $SDK/usr/lib/libSystem.tbd
+  $mold -platform_version ${PLATFORM_VERSION:-macos 13.0 13.0} -o $t/exe "$@" $SDK/usr/lib/libSystem.tbd
 }
 
 for input in $t/liba.a $t/libfoo.dylib $t/fat.o; do

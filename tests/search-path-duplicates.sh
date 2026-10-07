@@ -9,7 +9,7 @@ mkdir -p $t/a $t/b $root/usr/lib
 
 echo 'int main() { return 0; }' | $CC -o $t/a.o -c -xc -
 
-$mold -arch $ARCH -platform_version macos 13.0 13.0 -o $t/exe $t/a.o \
+$mold -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 13.0 13.0} -o $t/exe $t/a.o \
   $SDK/usr/lib/libSystem.tbd -syslibroot $root -v -L$t/a -L$t/b -L $t/a \
   -L./$t/a -L/usr/lib -L/usr/lib -L/usr/lib/ -F$t/b -F$t/a -F$t/b \
   -L$t/none -L$t/none -F$t/none 2> $t/log > /dev/null

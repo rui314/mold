@@ -24,7 +24,7 @@ exports:
     symbols:         [ _foo ]
 ...
 EOF
-link() { $mold -arch $ARCH -platform_version macos 14.0 14.0 -syslibroot "$SDK" "$@"; }
+link() { $mold -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 14.0 14.0} -syslibroot "$SDK" "$@"; }
 msg='dynamic executables or dylibs must link with libSystem.dylib'
 
 not link -o $t/exe $t/a.o 2> $t/log1

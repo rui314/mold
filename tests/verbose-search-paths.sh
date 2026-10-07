@@ -12,7 +12,7 @@ mkdir -p $t/lib $t/fw $root/opt/x $root/usr/lib/swift $root/System/Library/Frame
 echo 'int main() { return 0; }' | $CC -o $t/a.o -c -xc -
 
 link() {
-  $mold -arch $ARCH -platform_version macos 13.0 13.0 -o $t/exe $t/a.o \
+  $mold -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 13.0 13.0} -o $t/exe $t/a.o \
     $SDK/usr/lib/libSystem.tbd -syslibroot $root -v "$@"
 }
 

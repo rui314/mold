@@ -34,7 +34,7 @@ $CC --ld-path=$mold -flto -dynamiclib -o $t/libsoft2.dylib $t/a.o $t/libms.a
 nm $t/libsoft2.dylib > $t/nm2
 not grep -q _from_softloaded $t/nm2
 
-$mold -arch $ARCH -platform_version macos 13.0 13.0 -static -e _f -o $t/static \
+$mold -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 13.0 13.0} -static -e _f -o $t/static \
   -lto_library $lto_library $t/a.o $t/libms.a -map $t/map
 grep -q 'libms.a(ms.o)$' $t/map
 

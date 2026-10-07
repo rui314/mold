@@ -14,7 +14,7 @@ int wrapped() { return helper() + 1; }
 EOF2
 
 # Merge the two objects into one relocatable object with our linker...
-$mold -r -arch $ARCH -platform_version macos 15.0 15.0 -o $t/merged.o $t/a.o $t/b.o
+$mold -r -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 15.0 15.0} -o $t/merged.o $t/a.o $t/b.o
 otool -h $t/merged.o | grep '	1	' || otool -hv $t/merged.o | grep OBJECT
 
 cat <<EOF2 | $CC -o $t/main.o -c -xc -
@@ -45,7 +45,7 @@ int main() {
 }
 EOF2
 
-$mold -r -arch $ARCH -platform_version macos 15.0 15.0 -o $t/exc.o $t/e1.o $t/e2.o
+$mold -r -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 15.0 15.0} -o $t/exc.o $t/e1.o $t/e2.o
 otool -l $t/exc.o | awk '$1 == "sectname" {print $2}' | grep -x __gcc_except_tab
 $CXX --ld-path=$mold -o $t/exc1 $t/exc.o
 $RUN $t/exc1 | grep 'caught 42'

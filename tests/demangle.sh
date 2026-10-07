@@ -13,11 +13,11 @@ for opt in '' -demangle; do
   else
     name=__Z3fooi
   fi
-  not $mold -arch $ARCH -platform_version macos 13 13 -syslibroot "$SDK" \
+  not $mold -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 13 13} -syslibroot "$SDK" \
     -lSystem $t/a.o $opt -o $t/exe 2> $t/log
   grep -Fq "$name" $t/log
 
-  not $mold -arch $ARCH -platform_version macos 13 13 -syslibroot "$SDK" \
+  not $mold -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 13 13} -syslibroot "$SDK" \
     -lSystem $t/a.o $t/b.o $t/c.o $opt -o $t/exe 2> $t/log
   grep -Fq "$name" $t/log
 done

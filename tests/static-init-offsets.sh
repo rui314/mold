@@ -19,13 +19,13 @@ EOF
 
 sects() { otool -l $1 | awk '$1 == "sectname" { s = $2 } $1 == "segname" && s != "" { printf "%s,%s ", $2, s; s = "" }'; }
 
-$mold -arch $ARCH -static -e __start -platform_version macos 26.0 26.0 $t/a.o -o $t/exe1
+$mold -arch $ARCH -static -e __start -platform_version ${PLATFORM_VERSION:-macos 26.0 26.0} $t/a.o -o $t/exe1
 sects $t/exe1 | grep -q '__DATA,__mod_init_func'
 
 $mold -arch $ARCH -static -e __start -fixup_chains $t/a.o -o $t/exe2
 sects $t/exe2 | grep -q '__DATA,__mod_init_func'
 
-$mold -arch $ARCH -static -e __start -platform_version macos 26.0 26.0 $t/a.o -o $t/exe3 \
+$mold -arch $ARCH -static -e __start -platform_version ${PLATFORM_VERSION:-macos 26.0 26.0} $t/a.o -o $t/exe3 \
   -rename_section __DATA __mod_init_func __DATA_CONST __mod_init_func
 sects $t/exe3 | grep -q '__DATA_CONST,__mod_init_func'
 

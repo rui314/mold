@@ -16,7 +16,7 @@ _main:
   .asciz "a"
 EOF
 
-link() { $mold -arch $ARCH -platform_version macos 13.0 13.0 -syslibroot "$SDK" -lSystem "$@"; }
+link() { $mold -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 13.0 13.0} -syslibroot "$SDK" -lSystem "$@"; }
 
 # Each table's offset, by its load command field.
 offsets() {

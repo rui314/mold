@@ -18,7 +18,7 @@ $CC -g -c $t/b.c -o $t/b.o
 # offsets carry no relocations); the merged object gets debug-note
 # stabs naming the input objects, and a final link carries those notes
 # through, so the executable's N_OSO entries name a.o and b.o.
-$mold -r -arch $ARCH -platform_version macos 15.0 15.0 -o $t/merged.o $t/a.o $t/b.o
+$mold -r -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 15.0 15.0} -o $t/merged.o $t/a.o $t/b.o
 otool -l $t/merged.o > $t/lc
 not grep -q '__debug_info' $t/lc
 nm -pa $t/merged.o > $t/stabs

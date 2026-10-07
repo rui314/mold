@@ -33,7 +33,7 @@ extern "C" void through_asm();
 int main() { try { through_asm(); } catch (int e) { printf("caught %d\n", e + 2); } }
 EOF
 
-$mold -r -arch $ARCH -platform_version macos 15.0 15.0 -o $t/merged.o $t/a.o $t/b.o
+$mold -r -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 15.0 15.0} -o $t/merged.o $t/a.o $t/b.o
 
 # The merged object carries __eh_frame with the personality's GOT
 # relocation, the shape compilers emit.

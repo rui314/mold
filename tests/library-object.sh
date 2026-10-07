@@ -12,7 +12,7 @@ echo 'int foo(void) { return 0; }' | $CC -o $t/c/foo.o -c -xc -
 ar rcs $t/d/libfoo.o.a $t/c/foo.o
 
 link() {
-  $mold -arch $ARCH -platform_version macos 13.0 13.0 $t/main.o \
+  $mold -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 13.0 13.0} $t/main.o \
     $SDK/usr/lib/libSystem.tbd "$@"
 }
 

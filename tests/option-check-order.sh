@@ -7,7 +7,7 @@ source "$(dirname "$0")"/common.inc
 echo 'int main() { return 0; }' | $CC -o $t/a.o -c -xc -
 echo _main > $t/list
 link() {
-  $mold -arch $ARCH -platform_version macos 26.0 26.0 -syslibroot "$SDK" -lSystem $t/a.o \
+  $mold -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 26.0 26.0} -syslibroot "$SDK" -lSystem $t/a.o \
     -o $t/exe "$@" 2> $t/log
 }
 warnings() { grep -o 'warning: .*' $t/log | sed 's/^warning: //' | sort > $t/got; }

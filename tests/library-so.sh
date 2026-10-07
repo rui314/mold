@@ -22,7 +22,7 @@ ar rcs $t/c/libz.a $t/foo.o
 dylib /d/libz.so
 
 link() {
-  $mold -arch $ARCH -platform_version macos 13.0 13.0 $t/main.o \
+  $mold -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 13.0 13.0} $t/main.o \
     $SDK/usr/lib/libSystem.tbd "$@" 2> /dev/null
 }
 

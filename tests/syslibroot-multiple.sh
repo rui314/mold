@@ -19,7 +19,7 @@ echo 'int main() { return 0; }' | $CC -o $t/a.o -c -xc -
 
 tab=$(printf '\t')
 paths() {
-  $mold -arch $ARCH -platform_version macos 13.0 13.0 -o $t/exe $t/a.o \
+  $mold -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 13.0 13.0} -o $t/exe $t/a.o \
     $SDK/usr/lib/libSystem.tbd -v "$@" 2> $t/log > /dev/null
   grep -E "^(Library search paths:|Framework search paths:|$tab)" $t/log
 }
@@ -63,7 +63,7 @@ exports:
     symbols:         [ _qux ]
 ...
 EOF
-$mold -arch $ARCH -platform_version macos 13.0 13.0 -o $t/exe2 $t/a.o \
+$mold -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 13.0 13.0} -o $t/exe2 $t/a.o \
   $SDK/usr/lib/libSystem.tbd -syslibroot / -syslibroot $r1 \
   -weak_library /opt/lib/libqux.dylib 2> /dev/null
 otool -L $t/exe2 | grep -q /opt/lib/libqux.dylib

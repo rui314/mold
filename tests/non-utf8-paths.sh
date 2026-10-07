@@ -15,7 +15,7 @@ response=$'args é.rsp'
 output=$'result ü'
 install=$'@rpath/lib\xfe.dylib'
 rpath=$'/opt/lib\xff'
-link="$mold -arch $ARCH -platform_version macos 13.0 13.0 -syslibroot $SDK -lSystem"
+link="$mold -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 13.0 13.0} -syslibroot $SDK -lSystem"
 
 echo 'int foo() { return 42; }' | $CC -g -c -o "$t/$input" -xc -
 echo 'int foo(); int main() { return foo() - 42; }' | $CC -c -o $t/main.o -xc -

@@ -60,6 +60,6 @@ otool -L $t/exe3 | awk 'NR > 1 { print $1 }' | tr '\n' ' ' > $t/order3
 
 # Firmware - and a -preload image, macOS 27's too - has no dyld to load
 # one lazily: each links as usual, with the warning.
-$mold -arch $ARCH -preload -e _main -platform_version macos 27.0 27.0 -o $t/exe7 $t/a.o \
+$mold -arch $ARCH -preload -e _main -platform_version ${PLATFORM_VERSION:-macos 27.0 27.0} -o $t/exe7 $t/a.o \
   -L$t -F$t/fw -lazy-lbaz -lazy_library $t/libbar.dylib -lazy_framework Foo 2> $t/log7
 [ "$(grep -c 'lazy-load will be ignored' $t/log7)" = 3 ]

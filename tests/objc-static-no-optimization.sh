@@ -32,7 +32,7 @@ _objc_msgSend: ret
 EOF
 
 for opt in -static -preload; do
-  $mold -arch $ARCH -platform_version macos 15.0 15.0 $opt -e _start \
+  $mold -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 15.0 15.0} $opt -e _start \
     -objc_relative_method_lists -o $t/exe $t/a.o $t/rt.o
   otool -l $t/exe > $t/load
   not grep -F __objc_methlist $t/load

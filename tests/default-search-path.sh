@@ -29,7 +29,7 @@ int main() { return foo() + bar() + baz() + qux() + fw(); }
 EOF
 
 link() {
-  $mold -arch $ARCH -platform_version macos 13.0 13.0 -syslibroot $root \
+  $mold -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 13.0 13.0} -syslibroot $root \
     $t/a.o $SDK/usr/lib/libSystem.tbd -lfoo -lbar -lbaz -lqux -framework Fw "$@"
 }
 

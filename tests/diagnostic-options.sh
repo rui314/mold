@@ -9,7 +9,7 @@ source "$(dirname "$0")"/common.inc
 # its name, and -max_code_deduplicate_passes a decimal number.
 echo 'int main() { return 0; }' | $CC -o $t/a.o -c -xc -
 link() {
-  $mold -arch $ARCH -platform_version macos 26.0 26.0 -syslibroot "$SDK" -lSystem $t/a.o \
+  $mold -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 26.0 26.0} -syslibroot "$SDK" -lSystem $t/a.o \
     -o $t/exe "$@"
 }
 

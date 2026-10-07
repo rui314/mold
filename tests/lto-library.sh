@@ -6,7 +6,7 @@ cat <<EOF | $CC -flto -c -xc - -o $t/a.o
 #include <stdio.h>
 int main() { printf("Hello\n"); }
 EOF
-link() { $mold -arch $ARCH -platform_version macos 13.0 13.0 -syslibroot $SDK -lSystem "$@"; }
+link() { $mold -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 13.0 13.0} -syslibroot $SDK -lSystem "$@"; }
 
 # -lto_library names the libLTO that compiles the bitcode; the last one
 # counts. (ld-prime takes only a file named libLTO.dylib, and ignores
