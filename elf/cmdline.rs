@@ -1048,6 +1048,19 @@ impl<'a> ArgCursor<'a> {
         true
     }
 
+    /// Like `read_optional_arg`, but returns the value attached by an
+    /// equal sign: `None` if the word is not the option, `Some(None)` if
+    /// it is the option without a value, `Some(Some(value))` with one.
+    fn read_optional_arg_value(&mut self, name: &str) -> Option<Option<&'a OsStr>> {
+        if self.read_flag(name) {
+            return Some(None);
+        }
+        let rest = match_option(self.current(), name)?;
+        let value = rest.as_encoded_bytes().strip_prefix(b"=")?;
+        self.index += 1;
+        Some(Some(os_str(value)))
+    }
+
     fn read_lto_option(&mut self) -> Option<Vec<u8>> {
         // Flags precede argument forms, so that a bare --thinlto-index-only
         // does not take the next argument as its value.
@@ -1249,7 +1262,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                     if bytes.starts_with(b"-l") && bytes.len() > 2 {
                         let mut value = b"--library=".to_vec();
                         value.extend_from_slice(&bytes[2..]);
-                        Cow::Owned(OsString::from(util::os_str(&value)))
+                        Cow::Owned(OsString::from(os_str(&value)))
                     } else {
                         Cow::Borrowed(OsStr::new("--shared"))
                     }
@@ -1397,12 +1410,49 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             a.lto_pass2 = true;
         } else if read_arg!(":ignore-ir-file", true) {
             a.ignore_ir_file.insert(raw_arg.to_os_string());
-        } else if cursor.read_optional_arg("demangle") {
-            // GNU ld's --demangle[=STYLE]: mold demangles in every style it
-            // knows, so the style is not read.
-            mold_common::error::set_demangle(true);
+        } else if let Some(style) = cursor.read_optional_arg_value("demangle") {
+            // GNU ld's --demangle[=STYLE] takes auto, none, gnu-v3, java
+            // and gnat. mold demangles in every style it knows, so only
+            // "none" matters: it turns demangling off.
+            let demangle = match style {
+                None => true,
+                Some(v) => match v.to_str() {
+                    Some("auto" | "gnu-v3" | "java" | "gnat") => true,
+                    Some("none") => false,
+                    _ => fatal!("unknown demangling style `{}'", v.to_string_lossy()),
+                },
+            };
+            mold_common::error::set_demangle(demangle);
         } else if cursor.read_flag("no-demangle") {
             mold_common::error::set_demangle(false);
+        } else if let Some(value) = cursor.read_optional_arg_value("verbose") {
+            // GNU ld reads the number and mold ignores it, but the value
+            // is read as GNU ld reads it: in C syntax, or empty (strtoul
+            // then reads no digits and reports no error).
+            if let Some(v) = value {
+                let ok = v.to_str().is_some_and(|s| s.is_empty() || parse_c_number(s).is_some());
+                if !ok {
+                    fatal!("invalid number `{}'", v.to_string_lossy());
+                }
+            }
+        } else if let Some(value) = cursor.read_optional_arg_value("sort-common") {
+            // GNU ld sorts common symbols by size, in the order given;
+            // mold ignores the order, but reads the value as GNU ld does.
+            if let Some(v) = value
+                && !matches!(v.to_str(), Some("ascending" | "descending"))
+            {
+                fatal!("invalid common section sorting option: {}", v.to_string_lossy());
+            }
+        } else if let Some(value) = cursor.read_arg("orphan-handling") {
+            // GNU ld reads the mode (place, warn, error or discard, in any
+            // letter case) and mold ignores it, but the value is read as
+            // GNU ld reads it.
+            let known = ["place", "warn", "error", "discard"]
+                .iter()
+                .any(|mode| value.to_str().is_some_and(|v| v.eq_ignore_ascii_case(mode)));
+            if !known {
+                fatal!("invalid argument to option \"--orphan-handling\"");
+            }
         } else if let Some(value) = cursor.read_switch("detach", "no-detach") {
             a.detach = value;
         } else if cursor.read_flag("default-symver") {
@@ -1919,7 +1969,6 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             || cursor.read_flag("O0")
             || cursor.read_flag("O1")
             || cursor.read_flag("O2")
-            || cursor.read_optional_arg("verbose")
             || cursor.read_flag("start-group")
             || cursor.read_flag("end-group")
             || cursor.read_flag("(")
@@ -1929,19 +1978,17 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             || cursor.read_flag("no-call-graph-profile-sort")
             || cursor.read_flag("no-copy-dt-needed-entries")
             || read_arg!("sort-section", true)
-            || cursor.read_optional_arg("sort-common")
             || cursor.read_flag("dc")
             || cursor.read_flag("dp")
             || cursor.read_flag("fix-cortex-a53-835769")
             || cursor.read_optional_arg("fix-cortex-a53-843419")
             // The options whose value GNU ld makes optional, and the ones
             // it has that mold ignores: --split-by-file[=SIZE] and
-            // --split-by-reloc[=COUNT] split the output, --orphan-handling=MODE
-            // places orphan sections and --no-stats silences --stats.
+            // --split-by-reloc[=COUNT] split the output, and --no-stats
+            // silences --stats.
             || cursor.read_optional_arg("split-by-file")
             || cursor.read_optional_arg("split-by-reloc")
-            || read_arg!("orphan-handling", true)
-            || cursor.read_flag("no-stats")
+            || cursor.read_optional_arg("no-stats")
             || cursor.read_flag("nodefaultlibs")
             || cursor.read_flag("warn-constructors")
             || cursor.read_flag("warn-execstack")
@@ -2601,7 +2648,7 @@ mod tests {
             "--sort-common",
             "--sort-common=descending",
             "--demangle",
-            "--demangle=gnu",
+            "--demangle=gnu-v3",
             "--fix-cortex-a53-843419",
             "--fix-cortex-a53-843419=adr",
             "--split-by-file",
@@ -2612,6 +2659,7 @@ mod tests {
             "--orphan-handling",
             "warn",
             "--no-stats",
+            "--no-stats=1",
             "a.o",
         ]);
         assert_eq!(parsed.jobs.len(), 1);
@@ -2743,6 +2791,23 @@ mod tests {
             assert!(parsed.args.relocatable, "{arg}");
             assert_eq!(parsed.jobs.len(), 1, "{arg}");
         }
+    }
+
+    #[test]
+    fn read_optional_arg_value_reads_the_attached_value() {
+        let args: Vec<_> = ["mold", "--demangle", "--demangle=gnu-v3", "--demanglex"]
+            .into_iter()
+            .map(|s| Cow::Borrowed(OsStr::new(s)))
+            .collect();
+        let mut cursor = ArgCursor { args: &args, index: 1, attached_shorts: true };
+        assert!(matches!(cursor.read_optional_arg_value("demangle"), Some(None)));
+        assert_eq!(cursor.index, 2);
+        assert!(
+            matches!(cursor.read_optional_arg_value("demangle"), Some(Some(v)) if v.to_str() == Some("gnu-v3"))
+        );
+        assert_eq!(cursor.index, 3);
+        assert!(cursor.read_optional_arg_value("demangle").is_none());
+        assert_eq!(cursor.index, 3);
     }
 
     #[test]

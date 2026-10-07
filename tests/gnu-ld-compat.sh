@@ -116,13 +116,25 @@ $CC -B. -o $t/exe26 -Wl,--verbose=3 $t/a.o
 $CC -B. -o $t/exe27 -Wl,--sort-common $t/a.o
 $CC -B. -o $t/exe28 -Wl,--sort-common=descending $t/a.o
 $CC -B. -o $t/exe29 -Wl,--demangle $t/a.o
-$CC -B. -o $t/exe30 -Wl,--demangle=gnu $t/a.o
+$CC -B. -o $t/exe30 -Wl,--demangle=gnu-v3 $t/a.o
+$CC -B. -o $t/exe -Wl,--demangle=none $t/a.o
 $CC -B. -o $t/exe31 -Wl,--fix-cortex-a53-843419=adr $t/a.o
 $CC -B. -o $t/exe32 -Wl,--split-by-file=4096 $t/a.o
 $CC -B. -o $t/exe33 -Wl,--split-by-reloc=10 $t/a.o
 $CC -B. -o $t/exe34 -Wl,--orphan-handling=place $t/a.o
+$CC -B. -o $t/exe -Wl,--orphan-handling=warn $t/a.o
 $CC -B. -o $t/exe35 -Wl,--orphan-handling -Wl,place $t/a.o
 $CC -B. -o $t/exe36 -Wl,--no-stats $t/a.o
+$CC -B. -o $t/exe -Wl,--no-stats=1 $t/a.o
+$CC -B. -o $t/exe -Wl,--sort-common=ascending $t/a.o
+
+# GNU ld reads the values of the options whose value it makes optional,
+# and rejects the ones it does not know.
+not ./mold --demangle=gnu $t/a.o |& grep "unknown demangling style .gnu"
+not ./mold --sort-common=bogus $t/a.o |& grep 'invalid common section sorting option: bogus'
+not ./mold --orphan-handling=bogus $t/a.o |& grep 'invalid argument to option "--orphan-handling"'
+not ./mold --orphan-handling=script $t/a.o |& grep 'invalid argument to option "--orphan-handling"'
+not ./mold --verbose=bogus $t/a.o |& grep 'invalid number .bogus'
 
 # A name that merely starts like an option is still unknown.
 not ./mold --sort-commonplace |& grep 'unknown command line option: --sort-commonplace'
