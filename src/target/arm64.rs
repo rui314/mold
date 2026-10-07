@@ -4,7 +4,6 @@ use std::path::Path;
 
 use rayon::prelude::*;
 
-use crate::branch_shims;
 use crate::chunks::delay_init::{DelayCode, DelayTarget, DelayUse};
 use crate::chunks::lazy_helpers::{LazyTarget, LazyUse};
 use crate::context::Context;
@@ -62,16 +61,6 @@ fn check_adrp(ctx: &Context<Arm64>, isec: usize, r: &Reloc, p: u64, t: u64) {
     let name = crate::error::raw(&name);
     let msg = format_args!("ADRP out of range, from 0x{p:08X} to 0x{t:08X} ('{name}')");
     ctx.fixup_error(isec, r.offset, msg);
-}
-
-/// Whether a GOT or TLV load, relocation `r` of subsection `isec` of
-/// symbol `id`, relaxes to computing the address of the symbol (of a
-/// thread-local's __thread_vars descriptor), as ld-prime relaxes one
-/// unless dyld fills the slot or, for a GOT load, the symbol is 4 GiB
-/// away (see branch_shims).
-fn relaxes_load(ctx: &Context<Arm64>, isec: usize, r: &Reloc, id: crate::symbol::SymbolId) -> bool {
-    let tlv = matches!(r.r_type, ARM64_RELOC_TLVP_LOAD_PAGE21 | ARM64_RELOC_TLVP_LOAD_PAGEOFF12);
-    ctx.can_relax_got(id) && (tlv || !branch_shims::is_far(ctx, isec, id))
 }
 
 /// Whether an instruction is "ldr Xt|Wt, [Xn, #imm]".
@@ -1313,16 +1302,10 @@ impl Target for Arm64 {
                         i += 1;
                         continue;
                     }
-                    // A branch from 4 GiB away goes through its target's
-                    // shim (see branch_shims).
                     let sym = ctx.reloc_target_sym(obj, r);
-                    let shim = sym.filter(|&id| {
-                        a == 0 && ctx.has_branch_shim(id) && branch_shims::is_far(ctx, isec_id, id)
-                    });
-                    let s = match (shim, sym) {
-                        (Some(id), _) => ctx.sym_stub_addr(id),
-                        (None, Some(id)) => ctx.branch_target_addr(id),
-                        (None, None) => s,
+                    let s = match sym {
+                        Some(id) => ctx.branch_target_addr(id),
+                        None => s,
                     };
                     let t = s.wrapping_add_signed(a);
                     let mut val = t.wrapping_sub(p) as i64;
@@ -1335,7 +1318,7 @@ impl Target for Arm64 {
                         // entry jumps to its symbol, so a branch with an
                         // addend can't take one (ld-prime's branches to
                         // its island plus the addend, past the island).
-                        let thunk = sym.filter(|_| a == 0 && shim.is_none()).and_then(|sym| {
+                        let thunk = sym.filter(|_| a == 0).and_then(|sym| {
                             crate::thunks::reachable_thunk_addr::<Self>(ctx, sym, p)
                         });
                         match thunk {
@@ -1383,7 +1366,8 @@ impl Target for Arm64 {
                     write32(loc, op | bits(helper.wrapping_sub(p), 27, 2) as u32);
                 }
                 // A GOT load of a local symbol relaxes to computing the
-                // address directly (see relaxes_load): the adrp retargets
+                // address directly, as ld-prime relaxes one unless dyld
+                // fills the slot (can_relax_got): the adrp retargets
                 // from the slot's page to the symbol's, and the ldr
                 // becomes "add Xn, Xm, #pageoff". So does a TLV load of a
                 // thread-local nothing binds at run time, to its
@@ -1391,8 +1375,7 @@ impl Target for Arm64 {
                 // address from __got.
                 ARM64_RELOC_GOT_LOAD_PAGE21 | ARM64_RELOC_TLVP_LOAD_PAGE21 => {
                     let id = ctx.reloc_target_sym(obj, r).unwrap();
-                    let t =
-                        if relaxes_load(ctx, isec_id, r, id) { s } else { ctx.sym_got_addr(id) };
+                    let t = if ctx.can_relax_got(id) { s } else { ctx.sym_got_addr(id) };
                     check_adrp(ctx, isec_id, r, p, t.wrapping_add_signed(a));
                     write_adrp(loc, t.wrapping_add_signed(a), p);
                 }
@@ -1401,7 +1384,7 @@ impl Target for Arm64 {
                 // any other instruction.
                 ARM64_RELOC_GOT_LOAD_PAGEOFF12 | ARM64_RELOC_TLVP_LOAD_PAGEOFF12 => {
                     let id = ctx.reloc_target_sym(obj, r).unwrap();
-                    if !relaxes_load(ctx, isec_id, r, id) {
+                    if !ctx.can_relax_got(id) {
                         let g = ctx.sym_got_addr(id);
                         if let Err(size) = write_add_ldst(loc, g.wrapping_add_signed(a)) {
                             report_ldst_alignment(ctx, isec_id, r, size);

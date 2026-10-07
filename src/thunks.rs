@@ -359,7 +359,7 @@ fn scan_batch<E: Target>(
                     continue;
                 };
                 let p = isec.offset as u64 + rel.offset as u64;
-                if needs_thunk(ctx, reach, id, p, sym) && ctx.symbols[sym].mark() {
+                if needs_thunk(ctx, reach, p, sym) && ctx.symbols[sym].mark() {
                     syms.push(sym);
                 }
             }
@@ -375,25 +375,14 @@ fn scan_batch<E: Target>(
     syms
 }
 
-/// Whether a branch at offset `p` of the section being laid out, in
-/// subsection `isec`, may not reach `sym`, where it goes: its
-/// subsection, its stub (an import, a weak definition that may be
-/// interposed, or a shim for a branch from 4 GiB away; see
-/// branch_shims) or its _objc_msgSend stub.
-fn needs_thunk<E: Target>(
-    ctx: &Context<E>,
-    reach: &Reach,
-    isec: InputSectionId,
-    p: u64,
-    id: SymbolId,
-) -> bool {
+/// Whether a branch at offset `p` of the section being laid out may not
+/// reach `sym`, where it goes: its subsection, its stub (an import or a
+/// weak definition that may be interposed) or its _objc_msgSend stub.
+fn needs_thunk<E: Target>(ctx: &Context<E>, reach: &Reach, p: u64, id: SymbolId) -> bool {
     let sym = &ctx.symbols[id];
     let aux = ctx.sym_aux(id);
     let side = match sym.file() {
         _ if aux.stub_idx != NO_IDX && ctx.is_interposable(id) => reach.stubs,
-        _ if ctx.has_branch_shim(id) && crate::branch_shims::is_far(ctx, isec as usize, id) => {
-            reach.stubs
-        }
         Some(FileId::Dylib(_)) if aux.stub_idx != NO_IDX => reach.stubs,
         Some(FileId::Obj(_)) => match sym.input_section() {
             Some(target) => {

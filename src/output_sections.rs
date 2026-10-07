@@ -716,7 +716,6 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     compute_section_sizes(ctx);
 
     // The sections the linker synthesizes.
-    crate::branch_shims::add_far_ref_slots(ctx);
     add_stub_and_got_chunks(ctx);
     if !ctx.init_offsets.init_funcs.is_empty() {
         ctx.init_offsets.hdr.size = ctx.init_offsets.init_funcs.len() as u64 * 4;

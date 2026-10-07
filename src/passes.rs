@@ -3413,11 +3413,10 @@ pub(crate) fn add_got<E: Target>(ctx: &mut Context<E>, id: SymbolId) {
 
 /// Settles which stubs jump through a lazy pointer (and so have a stub
 /// helper entry), once the stubs are made. Stubs and GOT slots stay in
-/// the order relocations first reached them. Runs again when branch
-/// shims add stubs.
+/// the order relocations first reached them.
 pub fn finish_stubs<E: Target>(ctx: &mut Context<E>) {
     let stubs = &ctx.stubs.symbols;
-    let lazy = |id| !ctx.binds_weak_lookup(id) && !ctx.has_branch_shim(id);
+    let lazy = |id| !ctx.binds_weak_lookup(id);
     let lazy_stubs: Vec<u32> = match ctx.args.lazy_binding {
         true => (0..stubs.len() as u32).filter(|&i| lazy(stubs[i as usize])).collect(),
         false => Vec::new(),

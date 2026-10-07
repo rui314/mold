@@ -679,10 +679,9 @@ impl<E: Target> Context<E> {
     /// The address of the pointer slot stub `i` (for symbol `id`)
     /// jumps through: its lazy pointer, or its GOT slot. A weak
     /// definition of this image always goes through its GOT slot (the
-    /// lazy binder cannot do weak lookup), as in ld64, and so does a
-    /// branch shim.
+    /// lazy binder cannot do weak lookup), as in ld64.
     pub fn stub_ptr_addr(&self, i: usize, id: SymbolId) -> u64 {
-        if self.args.lazy_binding && !self.binds_weak_lookup(id) && !self.has_branch_shim(id) {
+        if self.args.lazy_binding && !self.binds_weak_lookup(id) {
             let slot = self.stubs.lazy.binary_search(&(i as u32)).unwrap();
             self.lazy_ptrs.hdr.addr + slot as u64 * 8
         } else {
@@ -892,16 +891,6 @@ impl<E: Target> Context<E> {
             && !sym.is_private_extern()
             && (sym.name().starts_with(b"_OBJC_CLASS_$_")
                 || sym.name().starts_with(b"_OBJC_METACLASS_$_"))
-    }
-
-    /// True if `id` has a branch shim (see branch_shims): a stub of a
-    /// symbol defined here, which jumps through a GOT slot filled in
-    /// here, for the branches from 4 GiB away.
-    pub fn has_branch_shim(&self, id: SymbolId) -> bool {
-        let aux = self.sym_aux(id);
-        aux.stub_idx != crate::symbol::NO_IDX
-            && aux.got_idx != crate::symbol::NO_IDX
-            && !self.binds_at_runtime(id)
     }
 
     /// The address a branch to `id` targets: the symbol's stub when it

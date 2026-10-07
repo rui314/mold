@@ -1,7 +1,6 @@
 //! A high-performance Mach-O linker.
 
 pub(crate) mod archive_file;
-pub(crate) mod branch_shims;
 pub(crate) mod bundle_hook;
 pub(crate) mod chunks;
 pub(crate) mod cmdline;
