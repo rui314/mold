@@ -1227,24 +1227,38 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
     // becomes "--library=foo", so that no long option starting with "l" is
     // ever read with one dash, and a "-G" that names no size becomes
     // "--shared".
-    let mut rewritten: Vec<Cow<'_, OsStr>> = Vec::with_capacity(raw_cmdline.len());
-    for (i, arg) in raw_cmdline.iter().enumerate() {
+    let needs_rewrite = |i: usize, arg: &Cow<'_, OsStr>| {
         let bytes = arg.as_encoded_bytes();
-        if bytes.starts_with(b"-l") && bytes.len() > 2 {
-            let mut value = b"--library=".to_vec();
-            value.extend_from_slice(&bytes[2..]);
-            rewritten.push(Cow::Owned(OsString::from(util::os_str(&value))));
-        } else if bytes == b"-G"
-            && !raw_cmdline.get(i + 1).is_some_and(|next| {
-                next.as_encoded_bytes().first().is_some_and(|b| b.is_ascii_digit())
-            })
-        {
-            rewritten.push(Cow::Borrowed(OsStr::new("--shared")));
+        (bytes.starts_with(b"-l") && bytes.len() > 2)
+            || (bytes == b"-G"
+                && !raw_cmdline.get(i + 1).is_some_and(|next| {
+                    next.as_encoded_bytes().first().is_some_and(|b| b.is_ascii_digit())
+                }))
+    };
+    let rewritten: Vec<Cow<'_, OsStr>>;
+    let raw_cmdline: &[Cow<'_, OsStr>] =
+        if raw_cmdline.iter().enumerate().any(|(i, arg)| needs_rewrite(i, arg)) {
+            rewritten = raw_cmdline
+                .iter()
+                .enumerate()
+                .map(|(i, arg)| {
+                    if !needs_rewrite(i, arg) {
+                        return arg.clone();
+                    }
+                    let bytes = arg.as_encoded_bytes();
+                    if bytes.starts_with(b"-l") && bytes.len() > 2 {
+                        let mut value = b"--library=".to_vec();
+                        value.extend_from_slice(&bytes[2..]);
+                        Cow::Owned(OsString::from(util::os_str(&value)))
+                    } else {
+                        Cow::Borrowed(OsStr::new("--shared"))
+                    }
+                })
+                .collect();
+            &rewritten
         } else {
-            rewritten.push(arg.clone());
-        }
-    }
-    let raw_cmdline: &[Cow<'_, OsStr>] = &rewritten;
+            raw_cmdline
+        };
 
     let mut cursor = ArgCursor { args: raw_cmdline, index: 1, attached_shorts: false };
     // The token being read a second time with attached short values allowed.
