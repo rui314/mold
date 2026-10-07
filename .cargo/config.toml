@@ -14,3 +14,8 @@ rustflags = ["-Ccode-model=medium"]
 # instantiating the linker has its own copies of.
 [target.'cfg(all())']
 rustflags = ["-Cllvm-args=-addrsig"]
+
+# Rust links musl statically by default, but a static executable can't
+# dlopen() the LTO plugin.
+[target.'cfg(target_env = "musl")']
+rustflags = ["-Ctarget-feature=-crt-static"]

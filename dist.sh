@@ -48,7 +48,7 @@ if [ ! -d .git ]; then
 fi
 
 usage() {
-  echo "Usage: $0 [ x86_64 | aarch64 | arm | riscv64 | ppc64le | s390x | loongarch64 ]"
+  echo "Usage: $0 [ x86_64 | aarch64 | arm | riscv64 | ppc64le | s390x | loongarch64 | x86_64-musl | aarch64-musl ]"
   exit 1
 }
 
@@ -121,6 +121,18 @@ loongarch64)
   rust_target=loongarch64-unknown-linux-gnu
   rust_sha256=d5a925962854730ae7641420d8337af93988ea4ff47b503a856ec53776c87841
   ;;
+x86_64-musl)
+  # Alpine 3.20 released in May 2024, with musl 1.2.5.
+  base_image=mirror.gcr.io/library/alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+  rust_target=x86_64-unknown-linux-musl
+  rust_sha256=40dbea28193cf2b488cf3e4a89274ccfb60efa50883f19917a382f84fd05bdc4
+  ;;
+aarch64-musl)
+  # Alpine 3.20 released in May 2024, with musl 1.2.5.
+  base_image=mirror.gcr.io/library/alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+  rust_target=aarch64-unknown-linux-musl
+  rust_sha256=c5f45b5c6eb7f8fdb277c54c08402b7c931516740fbd4eccc26ba148f7cd5d57
+  ;;
 *)
   usage
   ;;
@@ -130,15 +142,23 @@ esac
 # toolchain. The downloaded archive is checked before it is unpacked.
 image=mold-rust-builder-$arch
 archive=rust-$rust_version-$rust_target.tar.gz
+os=linux
+if [[ $arch = *-musl ]]; then
+  arch=${arch%-musl}
+  os=linux-musl
+fi
 
+# Alpine has no package snapshots, so its packages are not pinned.
 podman build --arch "$arch" -t "$image" - <<EOF
 FROM $base_image
 ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
-RUN $apt_setup && \
+RUN if [ -f /etc/alpine-release ]; then \
+  apk add --no-cache bash build-base coreutils git gzip linux-headers tar wget; else \
+  $apt_setup && \
   echo 'Acquire::Retries "10"; Acquire::http::timeout "10"; Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/80-retries && \
   apt-get update && \
   apt-get install -y --no-install-recommends build-essential ca-certificates git wget && \
-  rm -rf /var/lib/apt/lists
+  rm -rf /var/lib/apt/lists; fi
 RUN mkdir /tmp/rust && \
   cd /tmp/rust && \
   wget --progress=dot:mega https://static.rust-lang.org/dist/$archive && \
@@ -150,7 +170,7 @@ RUN mkdir /tmp/rust && \
 EOF
 
 version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml)
-dest=mold-$version-$arch-linux
+dest=mold-$version-$arch-$os
 
 # We use the timestamp of the last Git commit as the file timestamp
 # for build artifacts.
