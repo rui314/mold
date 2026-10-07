@@ -19,7 +19,7 @@ open class Base: NSObject {
   public override init() {}
 }
 EOF
-swiftc -use-ld=$mold -enable-library-evolution -emit-module -emit-library -module-name Base \
+$SWIFTC -use-ld=$mold -enable-library-evolution -emit-module -emit-library -module-name Base \
   -emit-module-path $t/Base.swiftmodule -o $t/libBase.dylib $t/base.swift
 
 cat <<EOF > $t/a.swift
@@ -34,10 +34,10 @@ let s = Sub()
 print(s.responds(to: NSSelectorFromString("catIM")),
       Sub.responds(to: NSSelectorFromString("catCM")))
 EOF
-swiftc -I $t -module-name main -emit-object -o $t/a.o $t/a.swift
+$SWIFTC -I $t -module-name main -emit-object -o $t/a.o $t/a.swift
 otool -l $t/a.o | grep -q 'sectname __objc_catlist2'
 
-swiftc -use-ld=$mold -o $t/exe $t/a.o -L$t -lBase -Xlinker -rpath -Xlinker $PWD/$t
+$SWIFTC -use-ld=$mold -o $t/exe $t/a.o -L$t -lBase -Xlinker -rpath -Xlinker $PWD/$t
 $RUN $t/exe | grep -q '^true true$'
 otool -ov $t/exe > $t/objc
 grep -A1 'instanceMethods.*__CATEGORY_INSTANCE_METHODS__TtC4main3Sub' $t/objc | grep -q 'entsize 12 (relative)'
@@ -54,5 +54,5 @@ grep -q ' s _objc_categories_stubs$' $t/nm
 $mold -r -arch $ARCH -o $t/r.o $t/a.o
 otool -l $t/r.o | grep 'sectname __objc_' > $t/sects-r
 [ "$(grep -A1 __objc_catlist2 $t/sects-r | tail -1 | awk '{print $2}')" = __objc_imageinfo ]
-swiftc -use-ld=$mold -o $t/exe-r $t/r.o -L$t -lBase -Xlinker -rpath -Xlinker $PWD/$t
+$SWIFTC -use-ld=$mold -o $t/exe-r $t/r.o -L$t -lBase -Xlinker -rpath -Xlinker $PWD/$t
 $RUN $t/exe-r | grep -q '^true true$'

@@ -22,11 +22,11 @@ extension Foo: P2 {
 let f = Foo()
 print(f.conforms(to: P1.self), f.conforms(to: P2.self), f.p1() + f.p2())
 EOF
-swiftc -module-name main -emit-object -o $t/a.o $t/a.swift
+$SWIFTC -module-name main -emit-object -o $t/a.o $t/a.swift
 nm $t/a.o > $t/nm-in
 [ "$(grep -c ' __PROTOCOLS__TtC4main3Foo' $t/nm-in)" = 2 ]
 
-swiftc -use-ld=$mold -o $t/exe $t/a.o
+$SWIFTC -use-ld=$mold -o $t/exe $t/a.o
 $RUN $t/exe | grep -q '^true true 3$'
 nm $t/exe > $t/nm
 grep -q '__OBJC_CLASS_PROTOCOLS_\$__TtC4main3Foo(main)$' $t/nm

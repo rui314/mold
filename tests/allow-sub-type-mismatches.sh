@@ -10,13 +10,13 @@ echo 'int main() { return 0; }' | $CC -o $t/a.o -c -xc -
 link() { $CC --ld-path=$mold -o $t/exe $t/a.o "$@"; }
 
 if [ $ARCH = arm64 ]; then
-  echo 'int foo() { return 1; }' | cc -arch arm64e -o $t/b.o -c -xc -
+  echo 'int foo() { return 1; }' | ${CC/$ARCH/arm64e} -o $t/b.o -c -xc -
   link $t/b.o -Wl,-allow_sub_type_mismatches 2> $t/log
   grep -q "ignoring file '$t/b.o': found architecture 'arm64e', required architecture 'arm64'" $t/log
   exit
 fi
 
-echo 'int foo() { return 1; }' | cc -arch x86_64h -o $t/b.o -c -xc -
+echo 'int foo() { return 1; }' | ${CC/$ARCH/x86_64h} -o $t/b.o -c -xc -
 rm -f $t/libb.a
 ar rcs $t/libb.a $t/b.o
 msg="linking x86_64h file '$t/b.o' into x86_64 link"

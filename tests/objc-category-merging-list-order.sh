@@ -52,7 +52,7 @@ extension NSString { @objc public func swA() -> Int { return 1 } }
 extension NSData { @objc public func swD() -> Int { return 3 } }
 extension NSString { @objc public func swB() -> Int { return 2 } }
 EOF2
-swiftc -parse-as-library -module-name E -emit-object -o $t/ext.o $t/ext.swift
+$SWIFTC -parse-as-library -module-name E -emit-object -o $t/ext.o $t/ext.swift
 $CC --ld-path=$mold -shared -o $t/d.dylib $t/ext.o -framework Foundation \
   -L$SDK/usr/lib/swift
 nm -m $t/d.dylib > $t/syms

@@ -13,7 +13,7 @@ x86_64) other=x86_64h ;;
 esac
 
 echo 'int foo(void) { return 1; }' > $t/foo.c
-cc -arch $other -shared $t/foo.c -o $t/thin.dylib -Wl,-install_name,/usr/lib/libfoo.dylib
+${CC/$ARCH/$other} -shared $t/foo.c -o $t/thin.dylib -Wl,-install_name,/usr/lib/libfoo.dylib
 lipo -create $t/thin.dylib -output $t/libfoo.dylib
 
 echo 'int foo(void); int main() { return foo(); }' | $CC -o $t/a.o -c -xc -

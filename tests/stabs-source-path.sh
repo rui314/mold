@@ -20,10 +20,10 @@ $CC -g -c $dir/sub/f2.c -o $t/f2.o
 echo 'int af(void) { return 5; }' > $t/a.c
 echo 'int of(void) { return 6; }' > $t/o.c
 for arch in arm64 x86_64; do
-  cc -arch $arch -g -c $t/a.c -o $t/a-$arch.o
+  ${CC/$ARCH/$arch} -g -c $t/a.c -o $t/a-$arch.o
   rm -f $t/liba-$arch.a
   ar rcs $t/liba-$arch.a $t/a-$arch.o
-  cc -arch $arch -g -c $t/o.c -o $t/o-$arch.o
+  ${CC/$ARCH/$arch} -g -c $t/o.c -o $t/o-$arch.o
 done
 lipo -create $t/liba-arm64.a $t/liba-x86_64.a -output $t/libfat.a
 lipo -create $t/o-arm64.o $t/o-x86_64.o -output $t/fat.o

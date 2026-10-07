@@ -8,7 +8,7 @@ source "$(dirname "$0")"/common.inc
 # error.
 [ $ARCH = arm64 ] && other=x86_64 || other=arm64
 echo 'int foo(void) { return 1; }' > $t/foo.c
-clang -target $other-apple-macos14.0 -flto -c $t/foo.c -o $t/other.o
+${CC/$ARCH/$other} -flto -c $t/foo.c -o $t/other.o
 clang -target armv7-apple-ios9.0 -flto -c $t/foo.c -o $t/armv7.o 2> /dev/null
 rm -f $t/libother.a
 ar rcs $t/libother.a $t/other.o 2> /dev/null
@@ -30,7 +30,7 @@ echo 'int bar(void) { return 2; }' | $CC -flto -c -xc - -o $t/same.o
 $CC --ld-path=$mold -flto -o $t/exe3 $t/a.o $t/same.o -Wl,-allow_sub_type_mismatches 2> $t/log3
 not grep -q warning $t/log3
 if [ $ARCH = arm64 ]; then
-  clang -target arm64e-apple-macos14.0 -flto -c $t/foo.c -o $t/e.o
+  ${CC/$ARCH/arm64e} -flto -c $t/foo.c -o $t/e.o
   $CC --ld-path=$mold -flto -o $t/exe4 $t/a.o $t/e.o -Wl,-allow_sub_type_mismatches 2> $t/log4
   grep -qF "warning: ignoring file '$t/e.o': found architecture 'arm64e', required architecture 'arm64'" $t/log4
 fi
@@ -39,7 +39,7 @@ fi
 # for it as it is loaded. (ld-prime warns again as it checks it, and
 # twice for the object LTO made of it, x86_64h too.)
 if [ $ARCH = x86_64 ]; then
-  clang -target x86_64h-apple-macos14.0 -flto -c $t/foo.c -o $t/h.o
+  ${CC/$ARCH/x86_64h} -flto -c $t/foo.c -o $t/h.o
   $CC --ld-path=$mold -flto -o $t/exe5 $t/a.o $t/h.o -Wl,-allow_sub_type_mismatches 2> $t/log5
   [ "$(grep -c "warning: linking x86_64h file '$t/h.o' into x86_64 link" $t/log5)" = 1 ]
 fi

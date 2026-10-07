@@ -9,10 +9,10 @@ source "$(dirname "$0")"/common.inc
 [ $ARCH = arm64 ] && other=x86_64 || other=arm64
 
 echo 'int main() { return 0; }' | $CC -o $t/a.o -c -xc -
-echo 'int foo() { return 1; }' | cc -arch $other -o $t/b.o -c -xc -
+echo 'int foo() { return 1; }' | ${CC/$ARCH/$other} -o $t/b.o -c -xc -
 rm -f $t/libb.a
 ar rcs $t/libb.a $t/b.o
-cc -arch $other -o $t/libc.dylib -shared $t/b.o
+${CC/$ARCH/$other} -o $t/libc.dylib -shared $t/b.o
 lipo -create $t/b.o -output $t/fat.o
 cat > $t/libd.tbd <<EOF
 --- !tapi-tbd

@@ -21,7 +21,7 @@ import Foundation
   @objc public func base() -> Int { return 1 }
 }
 EOF2
-swiftc -parse-as-library -module-name M -emit-object -o $t/foo.o $t/foo.swift
+$SWIFTC -parse-as-library -module-name M -emit-object -o $t/foo.o $t/foo.swift
 # The class_ro_t carries RO_HAS_SWIFT_INITIALIZER (1 << 6).
 python3 - $t/foo.o <<'EOF2'
 import subprocess, sys, re
@@ -68,7 +68,7 @@ int main() {
 }
 EOF2
 
-swiftc -o $t/exe $t/main.o $t/cat.o $t/foo.o -use-ld=$mold -framework Foundation
+$SWIFTC -o $t/exe $t/main.o $t/cat.o $t/foo.o -use-ld=$mold -framework Foundation
 $RUN $t/exe | grep '^1 41 1$'
 # The category was merged into the class.
 nm $t/exe > $t/nm

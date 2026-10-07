@@ -8,8 +8,8 @@ source "$(dirname "$0")"/common.inc
 # link. The link goes on without it.
 [ $ARCH = arm64 ] && other=x86_64 || other=arm64
 echo 'int foo() { return 1; }' > $t/foo.c
-cc -arch $other -c $t/foo.c -o $t/other.o
-cc -arch $other -shared $t/foo.c -o $t/libother.dylib
+${CC/$ARCH/$other} -c $t/foo.c -o $t/other.o
+${CC/$ARCH/$other} -shared $t/foo.c -o $t/libother.dylib
 rm -f $t/libother.a
 ar rcs $t/libother.a $t/other.o
 lipo -create $t/libother.dylib -output $t/libfat.dylib
@@ -28,7 +28,7 @@ not grep -q libother $t/libs
 # So is a universal file a dylib re-exports, found by its leaf in the
 # library path.
 mkdir -p $t/fatdir
-cc -arch $other -shared $t/foo.c -o $t/fatdir/libfat.dylib \
+${CC/$ARCH/$other} -shared $t/foo.c -o $t/fatdir/libfat.dylib \
   -Wl,-install_name,/nonexistent/libfat.dylib
 lipo -create $t/fatdir/libfat.dylib -output $t/fatdir/libfat.dylib
 $CC -shared $t/foo.c -o $t/libstandin.dylib -Wl,-install_name,/nonexistent/libfat.dylib
@@ -43,10 +43,10 @@ not $CC --ld-path=$mold -o $t/exe2 $t/b.o $t/libother.dylib 2> $t/log2
 grep -q '_foo' $t/log2
 
 if [ $ARCH = arm64 ]; then
-  cc -arch arm64e -c $t/foo.c -o $t/e.o
+  ${CC/$ARCH/arm64e} -c $t/foo.c -o $t/e.o
   $CC --ld-path=$mold -o $t/exe3 $t/a.o $t/e.o 2> $t/log3
   grep -qF "warning: ignoring file '$t/e.o': found architecture 'arm64e', required architecture 'arm64'" $t/log3
-  cc -arch arm64e -shared $t/foo.c -o $t/libe.dylib
+  ${CC/$ARCH/arm64e} -shared $t/foo.c -o $t/libe.dylib
   $CC --ld-path=$mold -o $t/exe4 $t/b.o $t/libe.dylib 2> $t/log4
   not grep -q 'ignoring file' $t/log4
 fi

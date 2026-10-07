@@ -36,7 +36,7 @@ public func fooSwiftBundle() -> UnsafeMutablePointer<CChar> {
   strdup(Bundle(for: FooSwift.self).bundlePath)
 }
 EOF
-  swiftc -target $ARCH-apple-macos14.0 -parse-as-library -module-name Foo -c \
+  $SWIFTC -target ${TRIPLE:-$ARCH-apple-macos14.0} -parse-as-library -module-name Foo -c \
     -o $t/fooswift.o $t/foo.swift
   objs="$objs $t/fooswift.o"
   classes="$classes _TtC3Foo8FooSwift _TtC3Foo11FooInternal"

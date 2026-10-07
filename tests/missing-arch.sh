@@ -8,7 +8,7 @@ source "$(dirname "$0")"/common.inc
 [ $ARCH = arm64 ] && other=x86_64 || other=arm64
 echo 'int main() { return 0; }' > $t/a.c
 $CC -c $t/a.c -o $t/a.o
-cc -arch $other -c $t/a.c -o $t/other.o
+${CC/$ARCH/$other} -c $t/a.c -o $t/other.o
 lipo -create $t/a.o -output $t/fat.o
 rm -f $t/liba.a
 ar rcs $t/liba.a $t/a.o

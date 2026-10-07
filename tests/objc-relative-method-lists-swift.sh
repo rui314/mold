@@ -17,8 +17,8 @@ class Foo: NSObject {
 }
 print(Foo.cm1() + Foo().im(), Foo.perform(NSSelectorFromString("cm2")) != nil)
 EOF
-swiftc -module-name main -emit-object -o $t/a.o $t/a.swift
-swiftc -use-ld=$mold -o $t/exe $t/a.o
+$SWIFTC -module-name main -emit-object -o $t/a.o $t/a.swift
+$SWIFTC -use-ld=$mold -o $t/exe $t/a.o
 $RUN $t/exe | grep -q '^4 true$'
 otool -ov $t/exe > $t/objc
 [ "$(grep -A1 'baseMethods.*__CLASS_METHODS__TtC4main3Foo' $t/objc | grep -c 'entsize 12 (relative)')" = 1 ]

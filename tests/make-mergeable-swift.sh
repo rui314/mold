@@ -36,7 +36,7 @@ public func swiftEntry() -> Int32 {
   return Int32(s)
 }
 EOF
-swiftc -target $ARCH-apple-macos14.0 -parse-as-library -module-name Shapes -O -c \
+$SWIFTC -target ${TRIPLE:-$ARCH-apple-macos14.0} -parse-as-library -module-name Shapes -O -c \
   -o $t/a.o $t/a.swift
 
 cat <<EOF | $CC -o $t/main.o -c -xc -

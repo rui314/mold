@@ -12,5 +12,5 @@ let arr = [1, 2, 3].map { \$0 * 2 }
 print("swift \(p.x + p.y) \(arr.reduce(0, +))")
 EOF2
 
-swiftc -o $t/exe $t/main.swift -use-ld=$mold
+$SWIFTC -o $t/exe $t/main.swift -use-ld=$mold
 $RUN $t/exe | grep 'swift 7 12'
