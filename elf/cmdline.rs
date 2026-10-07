@@ -2067,8 +2067,22 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                     let raw_arg: &OsStr = value_os;
                     a.ignore_ir_file.insert(raw_arg.to_os_string());
                 }
-                Item::Demangle(_) => {
-                    mold_common::error::set_demangle(true);
+                Item::Demangle(value_os) => {
+                    // GNU ld's --demangle[=STYLE] takes auto, none, gnu-v3,
+                    // java and gnat. mold demangles in every style it knows,
+                    // so only "none" matters: it turns demangling off.
+                    let demangle = if value_os.as_encoded_bytes() == b"\0" {
+                        true
+                    } else {
+                        match value_os.to_str() {
+                            Some("none") => false,
+                            Some("auto" | "gnu-v3" | "java" | "gnat") => true,
+                            _ => {
+                                fatal!("unknown demangling style `{}'", value_os.to_string_lossy())
+                            }
+                        }
+                    };
+                    mold_common::error::set_demangle(demangle);
                 }
                 Item::NoDemangle => {
                     mold_common::error::set_demangle(false);
@@ -2796,6 +2810,44 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                     }
                     fatal!("unknown command line option: -b {arg}");
                 }
+                Item::IgnoredVerbose(value_os) => {
+                    // GNU ld reads the number and mold ignores it, but the
+                    // value is read as GNU ld reads it: in C syntax, or
+                    // empty (strtoul then reads no digits and reports no
+                    // error).
+                    if value_os.as_encoded_bytes() != b"\0" {
+                        let ok = value_os
+                            .to_str()
+                            .is_some_and(|s| s.is_empty() || parse_c_number(s).is_some());
+                        if !ok {
+                            fatal!("invalid number `{}'", value_os.to_string_lossy());
+                        }
+                    }
+                }
+                Item::IgnoredSortCommon(value_os) => {
+                    // GNU ld sorts common symbols by size, in the order
+                    // given; mold ignores the order, but reads the value as
+                    // GNU ld does.
+                    if value_os.as_encoded_bytes() != b"\0"
+                        && !matches!(value_os.to_str(), Some("ascending" | "descending"))
+                    {
+                        fatal!(
+                            "invalid common section sorting option: {}",
+                            value_os.to_string_lossy()
+                        );
+                    }
+                }
+                Item::IgnoredOrphanHandling(value_os) => {
+                    // GNU ld reads the mode (place, warn, error or discard,
+                    // in any letter case) and mold ignores it, but the value
+                    // is read as GNU ld reads it.
+                    let known = ["place", "warn", "error", "discard"].iter().any(|mode| {
+                        value_os.to_str().is_some_and(|v| v.eq_ignore_ascii_case(mode))
+                    });
+                    if !known {
+                        fatal!("invalid argument to option \"--orphan-handling\"");
+                    }
+                }
                 Item::IgnoredFuseLd(_) => {}
                 Item::AllowShlibUndefined => {
                     allow_shlib_undefined = Some(true);
@@ -2811,11 +2863,9 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                 | Item::IgnoredO0
                 | Item::IgnoredO1
                 | Item::IgnoredO2
-                | Item::IgnoredVerbose(_)
                 | Item::IgnoredSplitByFile(_)
                 | Item::IgnoredSplitByReloc(_)
-                | Item::IgnoredOrphanHandling(_)
-                | Item::IgnoredNoStats
+                | Item::IgnoredNoStats(_)
                 | Item::IgnoredStartGroup
                 | Item::IgnoredEndGroup
                 | Item::IgnoredOpenParen
@@ -2829,8 +2879,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                 Item::IgnoredSortSection(_) => {
                     // Ignored for compatibility.
                 }
-                Item::IgnoredSortCommon(_)
-                | Item::IgnoredDc
+                Item::IgnoredDc
                 | Item::IgnoredDp
                 | Item::IgnoredFixCortexA53835769
                 | Item::IgnoredFixCortexA53843419(_)

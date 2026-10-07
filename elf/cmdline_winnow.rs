@@ -705,9 +705,9 @@ pub(crate) enum Item {
     /// `-orphan-handling` with a place; mold places no orphans
     #[arg(long = "orphan-handling")]
     IgnoredOrphanHandling(OsString),
-    /// `-no-stats`
-    #[arg(long = "no-stats")]
-    IgnoredNoStats,
+    /// `-no-stats`, optionally with a value
+    #[arg(long = "no-stats", require_equals, default_missing = "\0")]
+    IgnoredNoStats(OsString),
     /// `-nodefaultlibs`
     #[arg(long = "nodefaultlibs")]
     IgnoredNodefaultlibs,
@@ -1509,7 +1509,7 @@ mod tests {
             "--sort-common",
             "--sort-common=descending",
             "--demangle",
-            "--demangle=gnu",
+            "--demangle=gnu-v3",
             "--fix-cortex-a53-843419",
             "--fix-cortex-a53-843419=adr",
             "--split-by-file",
@@ -1520,6 +1520,7 @@ mod tests {
             "--orphan-handling",
             "warn",
             "--no-stats",
+            "--no-stats=1",
             "a.o",
         ]);
         assert!(matches!(&items[0], Item::IgnoredVerbose(v) if v.as_encoded_bytes() == b"\0"));
@@ -1527,7 +1528,7 @@ mod tests {
         assert!(matches!(&items[2], Item::IgnoredSortCommon(v) if v.as_encoded_bytes() == b"\0"));
         assert!(matches!(&items[3], Item::IgnoredSortCommon(v) if v.as_os_str() == "descending"));
         assert!(matches!(&items[4], Item::Demangle(v) if v.as_encoded_bytes() == b"\0"));
-        assert!(matches!(&items[5], Item::Demangle(v) if v.as_os_str() == "gnu"));
+        assert!(matches!(&items[5], Item::Demangle(v) if v.as_os_str() == "gnu-v3"));
         assert!(
             matches!(&items[6], Item::IgnoredFixCortexA53843419(v) if v.as_encoded_bytes() == b"\0")
         );
@@ -1540,8 +1541,9 @@ mod tests {
         assert!(matches!(&items[11], Item::IgnoredSplitByReloc(v) if v.as_os_str() == "10"));
         assert!(matches!(&items[12], Item::IgnoredOrphanHandling(v) if v.as_os_str() == "place"));
         assert!(matches!(&items[13], Item::IgnoredOrphanHandling(v) if v.as_os_str() == "warn"));
-        assert!(matches!(&items[14], Item::IgnoredNoStats));
-        assert!(matches!(&items[15], Item::Input(v) if v.as_os_str() == "a.o"));
+        assert!(matches!(&items[14], Item::IgnoredNoStats(v) if v.as_encoded_bytes() == b"\0"));
+        assert!(matches!(&items[15], Item::IgnoredNoStats(v) if v.as_os_str() == "1"));
+        assert!(matches!(&items[16], Item::Input(v) if v.as_os_str() == "a.o"));
 
         // The value is attached by an equal sign only; a separate word is
         // an input file, as in GNU ld.
