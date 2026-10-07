@@ -28,16 +28,22 @@ impl Default for CodeSignatureSection {
 }
 
 /// Whether the signature has a SHA-1 code directory too, for a loader
-/// that reads no other: macOS before 10.12 checks SHA-1 page hashes
-/// only. ld-prime adds one, ahead of the SHA-256 directory, for an image
-/// targeting such a release (an arm64 one too, though no such release
-/// runs it), for an x86-64 one for firmware, whose loader it can't tell,
-/// and for a -static image, which no dyld loads, on either architecture.
+/// that reads no other: macOS before 10.11.4 and iOS and tvOS before 11
+/// check SHA-1 page hashes only. ld-prime adds one, ahead of the
+/// SHA-256 directory, for an image targeting such a release (an arm64
+/// macOS one too, though no such release runs it), for an x86-64 one for
+/// firmware, whose loader it can't tell, and for a -static image, which
+/// no dyld loads, on either architecture. A simulator's image never has
+/// one: the Mac's own kernel checks its pages.
 fn has_sha1_directory<E: Target>(ctx: &Context<E>) -> bool {
-    let macos = ctx.args.platform == PLATFORM_MACOS;
+    let minos = ctx.args.platform_minos;
     ctx.args.static_link
-        || (macos && ctx.args.platform_minos < encode_version(10, 12, 0))
-        || (E::CPUTYPE == CPU_TYPE_X86_64 && !macos)
+        || match ctx.args.platform {
+            PLATFORM_MACOS => minos < encode_version(10, 11, 4),
+            PLATFORM_IOS | PLATFORM_TVOS => minos < encode_version(11, 0, 0),
+            PLATFORM_FIRMWARE | 0 => E::CPUTYPE == CPU_TYPE_X86_64,
+            _ => false,
+        }
 }
 
 /// The length of a code directory: its fixed part, the NUL-terminated
