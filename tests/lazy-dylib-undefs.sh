@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# Lazy dylibs came with iOS 27 (and macOS 27).
+simulator_older_than 27 && skip
+
 # The helpers through which an image calls a lazy dylib's symbols
 # (from macOS 27) have __dyld_lazy_load load the dylib: a link that
 # uses such a symbol needs a loaded dylib (libSystem) that exports it,

@@ -100,6 +100,14 @@ on_simulator() {
   [ -n "$TRIPLE" ]
 }
 
+# Whether a simulator configuration's OS is older than iOS (or tvOS) $1,
+# as the x86_64 simulator's iOS 17 runtime is older than the releases
+# some features came with (iOS 18 with macOS 15, 27 with macOS 27).
+simulator_older_than() {
+  on_simulator &&
+    [ "$(printf '%s\n' "$OS_VERSION" "$1" | sort -t. -n -k1,1 -k2,2 | head -1)" != "$1" ]
+}
+
 test_cflags() {
   echo 'int main() {}' | $CC "$@" -o /dev/null -xc - >& /dev/null
 }

@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# Lazy dylibs came with iOS 27 (and macOS 27).
+simulator_older_than 27 && skip
+
 # A mergeable dylib may name a lazy-load or delay-init dylib it uses
 # nothing of: it links as any other, the delay-init dylib's load command
 # kept, so that an image that merges it, linked by either linker, loads

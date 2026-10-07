@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# Delay-init came with iOS 18 (and macOS 15).
+simulator_older_than 18 && skip
+
 # A dylib -delay-l, -delay_library or -delay_framework names loads and
 # binds at launch as any other, but its initializers run only when the
 # image dlopen()s it, at its first use of one of the dylib's symbols.

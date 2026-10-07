@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# Class references move to __DATA_CONST from iOS 17.4 (and macOS 14.4).
+simulator_older_than 17.4 && skip
+
 # The Objective-C runtime finds the selector and class references by
 # name, and their literal-pointer type and no-dead-strip attribute
 # direct the linker alone: a final image makes them plain data, in

@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# Class references fold into the GOT from iOS 18 (and macOS 15).
+simulator_older_than 18 && skip
+
 # From macOS 15 on, a class reference slot whose address code takes
 # stays, as its class's GOT entry (see objc-classrefs-got-pairs.sh). A
 # mergeable dylib records what refers to the slot as ld-prime does: as

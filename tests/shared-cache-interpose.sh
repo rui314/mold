@@ -23,7 +23,9 @@ msg() {
 
 not $CC --ld-path=$mold -o $t/a.dylib -shared $t/a.o -mmacosx-version-min=15.0 \
   -Wl,-install_name,/usr/lib/libfoo.dylib 2> $t/log
-grep -qF "$(msg __DATA_CONST)" $t/log
+# (Before iOS 18 too, an old simulator's, the tuples stay in __DATA.)
+if simulator_older_than 18; then seg=__DATA; else seg=__DATA_CONST; fi
+grep -qF "$(msg $seg)" $t/log
 
 # (A simulator's objects are built for its version, whatever macOS's.)
 if ! on_simulator; then
