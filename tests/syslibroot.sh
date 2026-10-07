@@ -22,10 +22,10 @@ mkdir -p $t/root/opt/lib
 cat > $t/root/opt/lib/libqux.tbd <<EOT
 --- !tapi-tbd
 tbd-version:     4
-targets:         [ x86_64-macos, arm64-macos ]
+targets:         [ x86_64-$PLATFORM, arm64-$PLATFORM ]
 install-name:    '/opt/lib/libqux.dylib'
 exports:
-  - targets:         [ x86_64-macos, arm64-macos ]
+  - targets:         [ x86_64-$PLATFORM, arm64-$PLATFORM ]
     symbols:         [ _qux ]
 ...
 EOT

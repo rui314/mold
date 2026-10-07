@@ -9,24 +9,24 @@ esac
 cat > $t/v4.tbd <<EOF
 --- !tapi-tbd
 tbd-version: 4
-targets: [ arm64-macos, x86_64-macos, $ARCH-ios ]
+targets: [ arm64-$PLATFORM, x86_64-$PLATFORM, $ARCH-ios ]
 install-name: /usr/lib/libtarget.dylib
 exports:
-  - targets: [ $ARCH-macos ]
+  - targets: [ $ARCH-$PLATFORM ]
     symbols: [ _right ]
   - symbols: [ _wrong_arch ]
-    targets: [ $other-macos ]
+    targets: [ $other-$PLATFORM ]
   - targets: [ $ARCH-ios ]
     symbols: [ _wrong_platform ]
 ...
 EOF
 cat > $t/v5.tbd <<EOF
 {"tapi_tbd_version":5,"main_library":{
- "target_info":[{"target":"arm64-macos"},{"target":"x86_64-macos"},{"target":"$ARCH-ios"}],
+ "target_info":[{"target":"arm64-$PLATFORM"},{"target":"x86_64-$PLATFORM"},{"target":"$ARCH-ios"}],
  "install_names":[{"name":"/usr/lib/libtarget.dylib"}],
  "exported_symbols":[
-  {"targets":["$ARCH-macos"],"text":{"global":["_right"]}},
-  {"targets":["$other-macos"],"text":{"global":["_wrong_arch"]}},
+  {"targets":["$ARCH-$PLATFORM"],"text":{"global":["_right"]}},
+  {"targets":["$other-$PLATFORM"],"text":{"global":["_wrong_arch"]}},
   {"targets":["$ARCH-ios"],"text":{"global":["_wrong_platform"]}}
  ]}}
 EOF

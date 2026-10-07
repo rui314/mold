@@ -126,10 +126,10 @@ done
 cat > $t/lib/libf.tbd <<EOF
 --- !tapi-tbd
 tbd-version:     4
-targets:         [ x86_64-macos, arm64-macos ]
+targets:         [ x86_64-$PLATFORM, arm64-$PLATFORM ]
 install-name:    '@rpath/libf.dylib'
 exports:
-  - targets:         [ x86_64-macos, arm64-macos ]
+  - targets:         [ x86_64-$PLATFORM, arm64-$PLATFORM ]
     symbols:         [ _foo ]
     objc-classes:    [ Qux ]
 ...
@@ -138,10 +138,10 @@ needs_hook -L$t/lib -Wl,-no_merge-lf
 cat > $t/lib/libg.tbd <<EOF
 --- !tapi-tbd
 tbd-version:     4
-targets:         [ x86_64-macos, arm64-macos ]
+targets:         [ x86_64-$PLATFORM, arm64-$PLATFORM ]
 install-name:    '@rpath/libg.dylib'
 exports:
-  - targets:         [ x86_64-macos, arm64-macos ]
+  - targets:         [ x86_64-$PLATFORM, arm64-$PLATFORM ]
     symbols:         [ _foo, '\$ld\$hide\$os11.0\$_OBJC_CLASS_\$_Qux',
                        '\$ld\$hide\$os11.0\$_OBJC_METACLASS_\$_Qux' ]
     objc-classes:    [ Qux ]

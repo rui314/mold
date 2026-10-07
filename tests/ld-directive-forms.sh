@@ -24,12 +24,12 @@ link() {
   cat > $t/$name.tbd <<EOF
 --- !tapi-tbd
 tbd-version:     4
-targets:         [ $ARCH-macos ]
+targets:         [ $ARCH-$PLATFORM ]
 install-name:    /usr/lib/lib$name.dylib
 current-version: 5
 compatibility-version: 4
 exports:
-  - targets:         [ $ARCH-macos ]
+  - targets:         [ $ARCH-$PLATFORM ]
     symbols:         [ $syms ]
 ...
 EOF

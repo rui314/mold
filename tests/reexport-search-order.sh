@@ -15,15 +15,15 @@ doc() { # install-name reexports... -- exports...
   shift
   echo "--- !tapi-tbd"
   echo "tbd-version:     4"
-  echo "targets:         [ $ARCH-macos ]"
+  echo "targets:         [ $ARCH-$PLATFORM ]"
   echo "install-name:    '$name'"
   if [ ${#re[@]} -gt 0 ]; then
     echo "reexported-libraries:"
-    echo "  - targets:         [ $ARCH-macos ]"
+    echo "  - targets:         [ $ARCH-$PLATFORM ]"
     echo "    libraries:       [ $(IFS=,; echo "${re[*]}") ]"
   fi
   echo "exports:"
-  echo "  - targets:         [ $ARCH-macos ]"
+  echo "  - targets:         [ $ARCH-$PLATFORM ]"
   echo "    symbols:         [ $(IFS=,; echo "$*") ]"
 }
 

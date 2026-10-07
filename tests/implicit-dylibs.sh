@@ -69,20 +69,20 @@ for name in Bar.framework/Versions/A/XBar Foo.framework/Libraries/Bar; do
   cat > $t/lib/libfoo.tbd <<EOF2
 --- !tapi-tbd
 tbd-version:     4
-targets:         [ $ARCH-macos ]
+targets:         [ $ARCH-$PLATFORM ]
 install-name:    '/usr/lib/libfoo.dylib'
 reexported-libraries:
-  - targets:         [ $ARCH-macos ]
+  - targets:         [ $ARCH-$PLATFORM ]
     libraries:       [ '/System/Library/Frameworks/$name' ]
 exports:
-  - targets:         [ $ARCH-macos ]
+  - targets:         [ $ARCH-$PLATFORM ]
     symbols:         [ _foo ]
 --- !tapi-tbd
 tbd-version:     4
-targets:         [ $ARCH-macos ]
+targets:         [ $ARCH-$PLATFORM ]
 install-name:    '/System/Library/Frameworks/$name'
 exports:
-  - targets:         [ $ARCH-macos ]
+  - targets:         [ $ARCH-$PLATFORM ]
     symbols:         [ _bar ]
 ...
 EOF2

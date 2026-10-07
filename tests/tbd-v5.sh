@@ -9,14 +9,14 @@ source "$(dirname "$0")"/common.inc
 # Objective-C classes and thread-locals listed by kind; reexported
 # libraries may be inlined in a "libraries" array.
 mkdir -p $t/libs/Some.framework/
-cat > $t/libs/Some.framework/Some.tbd <<'EOF'
+cat > $t/libs/Some.framework/Some.tbd <<EOF
 {
   "main_library": {
     "install_names": [{"name": "@rpath/Some.framework/Versions/A/Some"}],
     "current_versions": [{"version": "2.1"}],
     "compatibility_versions": [{"version": "1.5"}],
-    "target_info": [{"target": "arm64-macos", "min_deployment": "13"},
-                    {"target": "x86_64-macos", "min_deployment": "13"}],
+    "target_info": [{"target": "arm64-$PLATFORM", "min_deployment": "13"},
+                    {"target": "x86_64-$PLATFORM", "min_deployment": "13"}],
     "flags": [{"attributes": ["not_app_extension_safe"]}],
     "exported_symbols": [
       {"data": {"global": ["_some_data"], "weak": ["_some_weak"],
@@ -28,8 +28,8 @@ cat > $t/libs/Some.framework/Some.tbd <<'EOF'
   },
   "libraries": [
     {"install_names": [{"name": "@rpath/Inner.framework/Versions/A/Inner"}],
-     "target_info": [{"target": "arm64-macos", "min_deployment": "13"},
-                     {"target": "x86_64-macos", "min_deployment": "13"}],
+     "target_info": [{"target": "arm64-$PLATFORM", "min_deployment": "13"},
+                     {"target": "x86_64-$PLATFORM", "min_deployment": "13"}],
      "exported_symbols": [{"text": {"global": ["_inner_func"]}}]}
   ],
   "tapi_tbd_version": 5
@@ -76,10 +76,10 @@ cat > $t/first.tbd <<EOF
   "tapi_tbd_version": 5,
   "unknown": 1,
   "main_library": {
-    "target_info": [{"target": "$ARCH-macos"}, {"target": "arm64e-macos"}],
-    "install_names": [{"targets": ["arm64e-macos"], "name": "/usr/lib/libfirst.dylib"},
+    "target_info": [{"target": "$ARCH-$PLATFORM"}, {"target": "arm64e-$PLATFORM"}],
+    "install_names": [{"targets": ["arm64e-$PLATFORM"], "name": "/usr/lib/libfirst.dylib"},
                       {"name": "/usr/lib/libsecond.dylib"}],
-    "current_versions": [{"targets": ["arm64e-macos"], "version": "2"}, {"version": "3"}],
+    "current_versions": [{"targets": ["arm64e-$PLATFORM"], "version": "2"}, {"version": "3"}],
     "exported_symbols": [{"text": {"global": ["_foo"]}}]
   }
 }

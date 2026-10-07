@@ -56,10 +56,10 @@ printf 'Library search paths:\n\t%s\nFramework search paths:\n' $abs/a | diff - 
 cat > $r1/opt/lib/libqux.tbd <<EOF
 --- !tapi-tbd
 tbd-version:     4
-targets:         [ x86_64-macos, arm64-macos ]
+targets:         [ x86_64-$PLATFORM, arm64-$PLATFORM ]
 install-name:    '/opt/lib/libqux.dylib'
 exports:
-  - targets:         [ x86_64-macos, arm64-macos ]
+  - targets:         [ x86_64-$PLATFORM, arm64-$PLATFORM ]
     symbols:         [ _qux ]
 ...
 EOF

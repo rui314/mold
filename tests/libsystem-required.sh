@@ -17,10 +17,10 @@ EOF
 cat > $t/libfoo.tbd <<EOF
 --- !tapi-tbd
 tbd-version:     4
-targets:         [ $ARCH-macos ]
+targets:         [ $ARCH-$PLATFORM ]
 install-name:    '/usr/local/lib/libfoo.dylib'
 exports:
-  - targets:         [ $ARCH-macos ]
+  - targets:         [ $ARCH-$PLATFORM ]
     symbols:         [ _foo ]
 ...
 EOF

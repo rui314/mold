@@ -13,11 +13,11 @@ tbd() {
   cat <<EOF
 --- !tapi-tbd
 tbd-version:     4
-targets:         [ x86_64-macos, arm64-macos ]
+targets:         [ x86_64-$PLATFORM, arm64-$PLATFORM ]
 install-name:    '$inst'
 current-version: 1
 exports:
-  - targets:         [ x86_64-macos, arm64-macos ]
+  - targets:         [ x86_64-$PLATFORM, arm64-$PLATFORM ]
     symbols:         [ ${syms%, } ]
 ...
 EOF

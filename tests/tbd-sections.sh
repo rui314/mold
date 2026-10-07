@@ -27,10 +27,10 @@ grep -q _foo $t/log
 cat > $t/libundef4.tbd <<EOF
 --- !tapi-tbd
 tbd-version:     4
-targets:         [ $ARCH-macos ]
+targets:         [ $ARCH-$PLATFORM ]
 install-name:    '/usr/lib/libundef4.dylib'
 undefineds:
-  - targets:         [ $ARCH-macos ]
+  - targets:         [ $ARCH-$PLATFORM ]
     symbols:         [ _foo ]
 ...
 EOF
@@ -40,7 +40,7 @@ grep -q _foo $t/log
 cat > $t/libblock.tbd <<EOF
 --- !tapi-tbd
 tbd-version:     4
-targets:         [ $ARCH-macos ]
+targets:         [ $ARCH-$PLATFORM ]
 install-name:    '/usr/lib/libblock.dylib'
 exports:
   - targets:

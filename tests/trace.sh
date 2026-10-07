@@ -26,20 +26,20 @@ EOF
 cat > $t/libA.tbd <<EOF
 --- !tapi-tbd
 tbd-version:     4
-targets:         [ arm64-macos, x86_64-macos ]
+targets:         [ arm64-$PLATFORM, x86_64-$PLATFORM ]
 install-name:    '/usr/local/lib/libA.dylib'
 reexported-libraries:
-  - targets:     [ arm64-macos, x86_64-macos ]
+  - targets:     [ arm64-$PLATFORM, x86_64-$PLATFORM ]
     libraries:   [ '/usr/local/lib/libB.dylib' ]
 exports:
-  - targets:     [ arm64-macos, x86_64-macos ]
+  - targets:     [ arm64-$PLATFORM, x86_64-$PLATFORM ]
     symbols:     [ _a ]
 --- !tapi-tbd
 tbd-version:     4
-targets:         [ arm64-macos, x86_64-macos ]
+targets:         [ arm64-$PLATFORM, x86_64-$PLATFORM ]
 install-name:    '/usr/local/lib/libB.dylib'
 exports:
-  - targets:     [ arm64-macos, x86_64-macos ]
+  - targets:     [ arm64-$PLATFORM, x86_64-$PLATFORM ]
     symbols:     [ _b ]
 ...
 EOF

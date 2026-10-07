@@ -7,34 +7,34 @@ source "$(dirname "$0")"/common.inc
 cat > $t/libw.tbd <<EOF
 --- !tapi-tbd
 tbd-version:     4
-targets:         [ $ARCH-macos ]
+targets:         [ $ARCH-$PLATFORM ]
 install-name:    '/usr/lib/libw.dylib'
 exports:
-  - targets:         [ $ARCH-macos ]
+  - targets:         [ $ARCH-$PLATFORM ]
     symbols:         [ _w ]
 --- !tapi-tbd
 tbd-version:     4
-targets:         [ $ARCH-macos ]
+targets:         [ $ARCH-$PLATFORM ]
 install-name:    '$t/sub/libu.dylib'
 exports:
-  - targets:         [ $ARCH-macos ]
+  - targets:         [ $ARCH-$PLATFORM ]
     symbols:         [ _sym ]
 --- !tapi-tbd
 tbd-version:     4
-targets:         [ $ARCH-macos ]
+targets:         [ $ARCH-$PLATFORM ]
 install-name:    '/usr/lib/libv.dylib'
 exports:
-  - targets:         [ $ARCH-macos ]
+  - targets:         [ $ARCH-$PLATFORM ]
     symbols:         [ _sym2 ]
 ...
 EOF
 
 cat > $t/libj.tbd <<EOF
 {"tapi_tbd_version":5,"main_library":{
-  "target_info":[{"target":"$ARCH-macos"}],
+  "target_info":[{"target":"$ARCH-$PLATFORM"}],
   "install_names":[{"name":"/usr/lib/libj.dylib"}],
   "exported_symbols":[{"data":{"global":["_j"]}}]},
- "libraries":[{"target_info":[{"target":"$ARCH-macos"}],
+ "libraries":[{"target_info":[{"target":"$ARCH-$PLATFORM"}],
   "install_names":[{"name":"$t/sub/libjp.dylib"}],
   "exported_symbols":[{"data":{"global":["_sym"]}}]}]}
 EOF
@@ -54,20 +54,20 @@ grep -q _sym $t/log3
 cat > $t/libw2.tbd <<EOF
 --- !tapi-tbd
 tbd-version:     4
-targets:         [ $ARCH-macos ]
+targets:         [ $ARCH-$PLATFORM ]
 install-name:    '/usr/lib/libw2.dylib'
 reexported-libraries:
-  - targets:         [ $ARCH-macos ]
+  - targets:         [ $ARCH-$PLATFORM ]
     libraries:       [ '$t/sub/libu.dylib' ]
 exports:
-  - targets:         [ $ARCH-macos ]
+  - targets:         [ $ARCH-$PLATFORM ]
     symbols:         [ _w ]
 --- !tapi-tbd
 tbd-version:     4
-targets:         [ $ARCH-macos ]
+targets:         [ $ARCH-$PLATFORM ]
 install-name:    '$t/sub/libu.dylib'
 exports:
-  - targets:         [ $ARCH-macos ]
+  - targets:         [ $ARCH-$PLATFORM ]
     symbols:         [ _sym ]
 ...
 EOF

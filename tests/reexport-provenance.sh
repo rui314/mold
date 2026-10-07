@@ -11,23 +11,23 @@ mkdir -p $t/sub
 cat > $t/libA.tbd <<EOF
 --- !tapi-tbd
 tbd-version:     4
-targets:         [ $ARCH-macos ]
+targets:         [ $ARCH-$PLATFORM ]
 install-name:    '$t/libA.dylib'
 reexported-libraries:
-  - targets:         [ $ARCH-macos ]
+  - targets:         [ $ARCH-$PLATFORM ]
     libraries:       [ '$t/sub/libB.dylib' ]
 exports:
-  - targets:         [ $ARCH-macos ]
+  - targets:         [ $ARCH-$PLATFORM ]
     symbols:         [ _a_only ]
 ...
 EOF
 cat > $t/sub/libB.tbd <<EOF
 --- !tapi-tbd
 tbd-version:     4
-targets:         [ $ARCH-macos ]
+targets:         [ $ARCH-$PLATFORM ]
 install-name:    '$t/sub/libB.dylib'
 exports:
-  - targets:         [ $ARCH-macos ]
+  - targets:         [ $ARCH-$PLATFORM ]
     symbols:         [ _sym ]
 ...
 EOF

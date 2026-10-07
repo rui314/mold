@@ -71,27 +71,27 @@ EOF
 cat > $t/v4.tbd <<EOF
 --- !tapi-tbd
 tbd-version:     4
-targets:         [ $ARCH-macos ]
+targets:         [ $ARCH-$PLATFORM ]
 install-name:    '$dir/libfoo.dylib'
 current-version: 2.1
 compatibility-version: 1.5
 allowable-clients:
-  - targets:         [ $ARCH-macos ]
+  - targets:         [ $ARCH-$PLATFORM ]
     clients:         [ Friend ]
 reexported-libraries:
-  - targets:         [ $ARCH-macos ]
+  - targets:         [ $ARCH-$PLATFORM ]
     libraries:       [ '$dir/libqux.dylib' ]
 exports:
-  - targets:         [ $ARCH-macos ]
+  - targets:         [ $ARCH-$PLATFORM ]
     symbols:         [ _foo, _bar ]
     weak-symbols:    [ _baz ]
     thread-local-symbols: [ _tls ]
 --- !tapi-tbd
 tbd-version:     4
-targets:         [ $ARCH-macos ]
+targets:         [ $ARCH-$PLATFORM ]
 install-name:    '$dir/libqux.dylib'
 exports:
-  - targets:         [ $ARCH-macos ]
+  - targets:         [ $ARCH-$PLATFORM ]
     symbols:         [ _qux ]
 ...
 EOF

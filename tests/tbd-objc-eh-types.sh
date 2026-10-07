@@ -26,10 +26,10 @@ EOF
 cat > $t/libv4.tbd <<EOF
 --- !tapi-tbd
 tbd-version:     4
-targets:         [ x86_64-macos, arm64-macos ]
+targets:         [ x86_64-$PLATFORM, arm64-$PLATFORM ]
 install-name:    '/usr/lib/libv4.dylib'
 exports:
-  - targets:         [ x86_64-macos, arm64-macos ]
+  - targets:         [ x86_64-$PLATFORM, arm64-$PLATFORM ]
     objc-eh-types:   [ Fake ]
 ...
 EOF

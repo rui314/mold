@@ -38,10 +38,10 @@ grep -q "library 'foo' not found" $t/log5
 cat > $t/lib/libfoo.tbd <<EOF
 --- !tapi-tbd
 tbd-version:     4
-targets:         [ x86_64-macos, arm64-macos ]
+targets:         [ x86_64-$PLATFORM, arm64-$PLATFORM ]
 install-name:    '@rpath/libfoo.dylib'
 exports:
-  - targets:         [ x86_64-macos, arm64-macos ]
+  - targets:         [ x86_64-$PLATFORM, arm64-$PLATFORM ]
     symbols:         [ _foo ]
 ...
 EOF

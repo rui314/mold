@@ -11,11 +11,11 @@ lib() { # name version symbol
   cat <<EOF
 --- !tapi-tbd
 tbd-version:     4
-targets:         [ $ARCH-macos ]
+targets:         [ $ARCH-$PLATFORM ]
 install-name:    '/usr/lib/lib$1.dylib'
 current-version: $2
 exports:
-  - targets:         [ $ARCH-macos ]
+  - targets:         [ $ARCH-$PLATFORM ]
     symbols:         [ $3, '\$ld\$previous\$/usr/lib/libold.dylib\$\$1\$10.0\$14.0\$$3\$' ]
 ...
 EOF

@@ -12,10 +12,10 @@ cp $t/Fake.sdk/usr/lib/libq.dylib $t/plain/libq.dylib
 cat > $t/Fake.sdk/usr/lib/libq.tbd <<EOF
 --- !tapi-tbd
 tbd-version: 4
-targets: [ $ARCH-macos ]
+targets: [ $ARCH-$PLATFORM ]
 install-name: /usr/lib/libq_tbd.dylib
 exports:
-  - targets: [ $ARCH-macos ]
+  - targets: [ $ARCH-$PLATFORM ]
     symbols: [ _foo ]
 ...
 EOF

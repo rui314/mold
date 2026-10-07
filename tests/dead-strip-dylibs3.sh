@@ -4,7 +4,7 @@ source "$(dirname "$0")"/common.inc
 cat > $t/libfoo.tbd <<EOF
 --- !tapi-tbd
 tbd-version:     4
-targets:         [ x86_64-macos, arm64-macos ]
+targets:         [ x86_64-$PLATFORM, arm64-$PLATFORM ]
 uuids:
   - target:          x86_64-macos
     value:           00000000-0000-0000-0000-000000000000
@@ -14,14 +14,14 @@ install-name:    '/usr/lib/libfoo.dylib'
 current-version: 0000
 compatibility-version: 150
 reexported-libraries:
-  - targets:         [ x86_64-macos, arm64-macos ]
+  - targets:         [ x86_64-$PLATFORM, arm64-$PLATFORM ]
     libraries:       [ '/usr/lib/libbar.dylib' ]
 exports:
-  - targets:         [ x86_64-macos, arm64-macos ]
+  - targets:         [ x86_64-$PLATFORM, arm64-$PLATFORM ]
     symbols:         [ _foo ]
 --- !tapi-tbd
 tbd-version:     4
-targets:         [ x86_64-macos, arm64-macos ]
+targets:         [ x86_64-$PLATFORM, arm64-$PLATFORM ]
 uuids:
   - target:          x86_64-macos
     value:           00000000-0000-0000-0000-000000000000
@@ -31,7 +31,7 @@ install-name:    '/usr/lib/libbar.dylib'
 current-version: 0000
 compatibility-version: 150
 exports:
-  - targets:         [ x86_64-macos, arm64-macos ]
+  - targets:         [ x86_64-$PLATFORM, arm64-$PLATFORM ]
     symbols:         [ _bar ]
 ...
 EOF

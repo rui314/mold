@@ -11,10 +11,10 @@ dir=$(cd $t && pwd -P)
 cat > $t/libother.tbd <<EOF
 --- !tapi-tbd
 tbd-version:     4
-targets:         [ $other-macos ]
+targets:         [ $other-$PLATFORM ]
 install-name:    '$dir/libother.dylib'
 exports:
-  - targets:         [ $other-macos ]
+  - targets:         [ $other-$PLATFORM ]
     symbols:         [ _foo ]
 ...
 EOF
@@ -27,13 +27,13 @@ EOF
 cat > $t/libtop.tbd <<EOF
 --- !tapi-tbd
 tbd-version:     4
-targets:         [ arm64-macos, x86_64-macos ]
+targets:         [ arm64-$PLATFORM, x86_64-$PLATFORM ]
 install-name:    '$dir/libtop.dylib'
 reexported-libraries:
-  - targets:         [ arm64-macos, x86_64-macos ]
+  - targets:         [ arm64-$PLATFORM, x86_64-$PLATFORM ]
     libraries:       [ '$dir/libother.dylib' ]
 exports:
-  - targets:         [ arm64-macos, x86_64-macos ]
+  - targets:         [ arm64-$PLATFORM, x86_64-$PLATFORM ]
     symbols:         [ _top ]
 ...
 EOF

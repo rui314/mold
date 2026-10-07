@@ -13,19 +13,19 @@ stub() { # file install-name symbol [reexport]
   cat > $1 <<EOF
 --- !tapi-tbd
 tbd-version:     4
-targets:         [ $ARCH-macos ]
+targets:         [ $ARCH-$PLATFORM ]
 install-name:    '$2'
 EOF
   if [ -n "$4" ]; then
     cat >> $1 <<EOF
 reexported-libraries:
-  - targets:         [ $ARCH-macos ]
+  - targets:         [ $ARCH-$PLATFORM ]
     libraries:       [ '$4' ]
 EOF
   fi
   cat >> $1 <<EOF
 exports:
-  - targets:         [ $ARCH-macos ]
+  - targets:         [ $ARCH-$PLATFORM ]
     symbols:         [ $3 ]
 ...
 EOF

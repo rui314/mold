@@ -21,13 +21,13 @@ $CC -o $t/libouter.dylib -dynamiclib $t/outer.o -Wl,-reexport_library,$t/libinne
 cat <<EOF > $t/libzip.tbd
 --- !tapi-tbd
 tbd-version:     4
-targets:         [ $ARCH-macos, $ARCH-maccatalyst ]
+targets:         [ $ARCH-$PLATFORM, $ARCH-maccatalyst ]
 install-name:    '$dir/libzip.dylib'
 reexported-libraries:
-  - targets:         [ $ARCH-macos, $ARCH-maccatalyst ]
+  - targets:         [ $ARCH-$PLATFORM, $ARCH-maccatalyst ]
     libraries:       [ '$dir/libnone.dylib' ]
 exports:
-  - targets:         [ $ARCH-macos, $ARCH-maccatalyst ]
+  - targets:         [ $ARCH-$PLATFORM, $ARCH-maccatalyst ]
     symbols:         [ _zip ]
 ...
 EOF

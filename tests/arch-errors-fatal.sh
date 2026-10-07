@@ -17,10 +17,10 @@ lipo -create $t/b.o -output $t/fat.o
 cat > $t/libd.tbd <<EOF
 --- !tapi-tbd
 tbd-version:     4
-targets:         [ $other-macos ]
+targets:         [ $other-$PLATFORM ]
 install-name:    '/usr/lib/libd.dylib'
 exports:
-  - targets:         [ $other-macos ]
+  - targets:         [ $other-$PLATFORM ]
     symbols:         [ _foo ]
 ...
 EOF
