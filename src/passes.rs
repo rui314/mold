@@ -2274,15 +2274,14 @@ fn weak_def_losers<E: Target>(ctx: &Context<E>, obj_idx: usize) -> Vec<(usize, u
     out
 }
 
-/// Reports the symbols live objects define strongly more than once, as
-/// ld-prime does once resolution settles (and, in a final link, no
-/// symbol is undefined): each with the files that define it, then their
-/// number. Resolution keeps the first strong definition it meets; a weak
-/// or common one yields quietly. Under -dead_strip only a symbol whose
-/// kept definition is live is reported, and -allow_dead_duplicates lets
-/// one stay whose other definitions are all dead; ld-prime counts the
-/// symbols it doesn't report in the number all the same. It lists them
-/// in no stable order; mold sorts them by name.
+/// Reports the symbols live objects define strongly more than once,
+/// once resolution settles (and, in a final link, no symbol is
+/// undefined), sorted by name: mold's check_duplicate_symbols.
+/// Resolution keeps the first strong definition it meets; a weak or
+/// common one yields quietly. As in ld-prime, under -dead_strip only a
+/// symbol whose kept definition is live is an error, and
+/// -allow_dead_duplicates lets one stay whose other definitions are all
+/// dead.
 pub fn check_duplicate_symbols<E: Target>(ctx: &Context<E>) {
     report_duplicates(ctx, duplicate_symbols(ctx, false));
 }
@@ -2297,11 +2296,13 @@ pub fn check_bitcode_duplicates<E: Target>(ctx: &Context<E>) {
     }
 }
 
-/// A symbol defined strongly more than once: the files that do, and
-/// whether any of those definitions is live and the one that won is.
+/// A symbol defined strongly more than once: the file whose definition
+/// won, the files whose definitions lost to it, and whether any of the
+/// latter is live and the winner is.
 struct Duplicate {
     sym: SymbolId,
-    files: Vec<usize>,
+    winner: usize,
+    losers: Vec<usize>,
     any_live: bool,
     winner_live: bool,
 }
@@ -2341,15 +2342,17 @@ fn duplicate_symbols<E: Target>(ctx: &Context<E>, among_bitcode: bool) -> Vec<Du
         let id = group[0].0;
         let sym = &ctx.symbols[id];
         let Some(FileId::Obj(winner)) = sym.file() else { continue };
-        let mut files: Vec<usize> = group.iter().map(|&(_, obj, _)| obj).collect();
-        files.push(winner as usize);
-        if among_bitcode && files.iter().filter(|&&obj| is_bitcode(obj)).count() < 2 {
+        let winner = winner as usize;
+        let mut losers: Vec<usize> = group.iter().map(|&(_, obj, _)| obj).collect();
+        let bitcode = losers.iter().chain([&winner]).filter(|&&obj| is_bitcode(obj)).count();
+        if among_bitcode && bitcode < 2 {
             continue;
         }
-        files.sort_by_key(|&obj| ctx.objs[obj].priority);
+        losers.sort_by_key(|&obj| ctx.objs[obj].priority);
         dups.push(Duplicate {
             sym: id,
-            files,
+            winner,
+            losers,
             any_live: group.iter().any(|&(_, _, live)| live),
             winner_live: sym.input_section().is_none_or(|isec| ctx.isecs[isec as usize].is_alive()),
         });
@@ -2357,27 +2360,25 @@ fn duplicate_symbols<E: Target>(ctx: &Context<E>, among_bitcode: bool) -> Vec<Du
     dups
 }
 
-/// Reports duplicate symbols, failing the link if one is.
+/// Reports duplicate symbols as mold does, an error for each definition
+/// that lost: "duplicate symbol: <its file>: <the winner's file>:
+/// <name>". A symbol whose kept definition -dead_strip left dead is no
+/// error, nor, with -allow_dead_duplicates, one whose losing
+/// definitions are all dead.
 fn report_duplicates<E: Target>(ctx: &Context<E>, dups: Vec<Duplicate>) {
-    let mut count = 0;
-    let mut reported = false;
+    let name = |obj: usize| -> error::RawBuf { ctx.objs[obj].mf.name.as_path().into() };
     for dup in dups {
-        if ctx.args.allow_dead_duplicates && !dup.any_live {
+        if !dup.winner_live || (ctx.args.allow_dead_duplicates && !dup.any_live) {
             continue;
         }
-        count += 1;
-        if !dup.winner_live {
-            continue;
+        for &loser in &dup.losers {
+            error!(
+                "duplicate symbol: {}: {}: {}",
+                name(loser),
+                name(dup.winner),
+                ctx.symbols[dup.sym]
+            );
         }
-        reported = true;
-        let sym = &ctx.symbols[dup.sym];
-        crate::error::notice(format_args!("duplicate symbol '{sym}' in:"));
-        for obj in dup.files {
-            crate::error::notice(format_args!("    {}", ctx.objs[obj].mf.name.raw()));
-        }
-    }
-    if reported {
-        error!("{count} duplicate symbols");
     }
 }
 

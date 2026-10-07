@@ -35,4 +35,4 @@ $RUN $t/exe2 || [ $? = 3 ]
 not $CC --ld-path=$mold -o $t/exe3 $t/main.o 2> $t/log3
 grep -q $'_f\xffo' $t/log3
 not $CC --ld-path=$mold -o $t/exe4 $t/main.o $t/a.o $t/a.o 2> $t/log4
-grep -q $'duplicate symbol \'_f\xffo\' in:' $t/log4
+grep -q $'duplicate symbol.*_f\xffo' $t/log4

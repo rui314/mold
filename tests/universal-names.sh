@@ -18,10 +18,10 @@ grep -q "\] $t/libfat.a(f.o)\$" $t/map
 
 echo 'int dup(void) { return 2; } int main() { return 0; }' | $CC -o $t/d.o -c -xc -
 not $CC --ld-path=$mold -o $t/exe2 $t/d.o -Wl,-force_load,$t/libfat.a 2> $t/log
-grep -q "^    $t/libfat.a(for architecture $ARCH)(f.o)\$" $t/log
+grep -qF "$t/libfat.a(for architecture $ARCH)(f.o): " $t/log
 
 not $CC --ld-path=$mold -o $t/exe3 $t/d.o $t/fat.o 2> $t/log2
-grep -q "^    $t/fat.o(for architecture $ARCH)\$" $t/log2
+grep -qF "$t/fat.o(for architecture $ARCH): " $t/log2
 
 # So does the undefined-symbol report. (ld-prime names the file by its
 # leaf name, an archive member's with its place in the archive, a fat

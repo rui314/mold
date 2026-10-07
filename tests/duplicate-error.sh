@@ -10,16 +10,15 @@ void hello() {}
 int main() {}
 EOF
 
+# mold reports each definition that lost to the first one, naming its
+# file, the winner's and the symbol. (ld-prime lists every defining
+# file under "duplicate symbol '_hello' in:", then counts the symbols.)
 ! $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o 2> $t/log || false
-# (ld-prime lists the files in no stable order.)
-grep -v '^+' $t/log | sed -E 's|^(ld: \|mold: error: )||; s|[^ ]*/||' > $t/msgs
-cat > $t/expected <<EOF
-duplicate symbol '_hello' in:
-    a.o
-    b.o
-1 duplicate symbols
-EOF
-grep -v 'linker command failed' $t/msgs | sort | diff - <(sort $t/expected)
+grep -q 'duplicate symbol' $t/log
+grep -q _hello $t/log
+if $mold -v 2>&1 | grep -q mold-macho; then
+  grep -q "^mold: error: duplicate symbol: $t/b.o: $t/a.o: _hello\$" $t/log
+fi
 
 # A relocatable link must fail before publishing an erroneous object.
 # Exercise both the default parent/child protocol and the debugger mode.
@@ -30,7 +29,7 @@ for no_fork in no yes; do
   else
     ! $mold -r -arch $ARCH -o $t/merged.o $t/a.o $t/b.o 2> $t/log || false
   fi
-  grep -q "duplicate symbol '_hello' in:" $t/log
+  grep -q 'duplicate symbol.*_hello' $t/log
   test ! -e $t/merged.o
 done
 
