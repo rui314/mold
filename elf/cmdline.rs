@@ -1025,22 +1025,6 @@ impl<'a> ArgCursor<'a> {
         Some(value)
     }
 
-    fn read_exact_arg(&mut self, name: &str) -> Option<&'a OsStr> {
-        let rest = match_option(self.current(), name)?;
-        // A single-letter option is matched by prefix, so `-a` would also
-        // match `-auxiliary`. Require the whole word to be the option and
-        // take the next word as the value, as GNU ld does for the options
-        // that take one.
-        if !rest.is_empty() {
-            return None;
-        }
-        let value = self.args.get(self.index + 1).unwrap_or_else(|| {
-            fatal!("option {}: argument missing", self.current().to_string_lossy())
-        });
-        self.index += 2;
-        Some(value.as_ref())
-    }
-
     fn read_flag(&mut self, name: &str) -> bool {
         if match_option(self.current(), name) != Some(OsStr::new("")) {
             return false;
@@ -1292,9 +1276,6 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
     }
     macro_rules! read_eq {
         ($($args:tt)*) => { read_value!(read_eq, $($args)*) };
-    }
-    macro_rules! read_exact_arg {
-        ($($args:tt)*) => { read_value!(read_exact_arg, $($args)*) };
     }
     macro_rules! read_z_arg {
         ($name:expr) => {{
@@ -1899,6 +1880,19 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             allow_shlib_undefined = Some(true);
         } else if cursor.read_flag("no-allow-shlib-undefined") {
             allow_shlib_undefined = Some(false);
+        } else if read_arg!("a") {
+            // GNU ld accepts only the HP/UX keywords below, and rejects any
+            // other value, including one attached with '=' ("-a=shared"
+            // would abbreviate several long options, so getopt reports it
+            // as an unrecognized option).
+            if !matches!(arg, "archive" | "shared" | "default") {
+                fatal!("unrecognized -a option `{arg}'");
+            }
+        } else if read_arg!("assert") {
+            // Likewise, GNU ld knows only these SunOS keywords.
+            if !matches!(arg, "definitions" | "nodefinitions" | "nosymbolic" | "pure-text") {
+                fatal!("unrecognized -assert option `{arg}'");
+            }
         } else if read_arg!("O", true)
             || cursor.read_flag("EB")
             || cursor.read_flag("EL")
@@ -1961,22 +1955,21 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             // GNU ld's short options mold had no spelling for, and the
             // long names some of them stand for. -g, -d (mold defines
             // common symbols anyway), -A and -G (mold has -m), -Ur and
-            // -Qy (vendor-specific), -a and -assert (HP/UX and SunOS
-            // compatibility), -Y, -c (an MRI script) and -dT (a default
-            // linker script) are accepted and ignored.
+            // -Qy (vendor-specific), -Y, -c (an MRI script) and -dT (a
+            // default linker script) are accepted and ignored. GNU ld
+            // reads "-architecture" as "-a rchitecture" and "-mri-script"
+            // as "-m ri-script", so those long names need two dashes.
             || cursor.read_flag("g")
             || cursor.read_flag("d")
             || read_arg!("A", true)
-            || read_arg!("architecture", true)
+            || read_arg!("--architecture", true)
             || read_arg!("G", true)
             || read_arg!("gpsize", true)
             || cursor.read_flag("Ur")
             || cursor.read_flag("Qy")
-            || read_exact_arg!("a")
-            || read_arg!("assert", true)
             || read_arg!("Y", true)
-            || read_exact_arg!("c")
-            || read_arg!("mri-script", true)
+            || read_arg!("c", true)
+            || read_arg!("--mri-script", true)
             || read_arg!("dT", true)
             || read_arg!("default-script", true)
             // GNU ld's informational options, which print something, and
@@ -2515,12 +2508,15 @@ mod tests {
             "-Qy",
             "-a",
             "shared",
+            "-ashared",
             "-assert",
             "definitions",
+            "-assert=pure-text",
             "-Y",
             "/tmp",
             "-c",
             "script.mri",
+            "-cscript.mri",
             "--mri-script=script.mri",
             "-dT",
             "script.ld",
@@ -2530,27 +2526,15 @@ mod tests {
         ]);
         assert_eq!(parsed.jobs.len(), 1);
 
-        // -a and -c take a separate argument, so they must not be confused
-        // with the longer options that start with the same letter.
+        // -a and -c take their value attached as well as in a separate
+        // word, so they must not be confused with the longer options that
+        // start with the same letter.
         let parsed = parse(&["-auxiliary", "liba.so", "-shared", "a.o"]);
         assert_eq!(parsed.args.auxiliary, [b"liba.so".to_vec()]);
         let parsed = parse(&["--as-needed", "a.o"]);
         assert!(parsed.jobs[0].rctx.as_needed);
         let parsed = parse(&["--compress-debug-sections=zlib", "a.o"]);
         assert!(matches!(parsed.args.compress_debug_sections, DebugCompression::Zlib(_)));
-
-        let args: Vec<_> =
-            ["mold", "-a", "KEYWORD"].into_iter().map(|s| Cow::Borrowed(OsStr::new(s))).collect();
-        let mut cursor = ArgCursor { args: &args, index: 1, attached_shorts: false };
-        assert_eq!(cursor.read_exact_arg("a"), Some(OsStr::new("KEYWORD")));
-        assert_eq!(cursor.index, 3);
-
-        // A name that merely starts like the option is not the option.
-        let args: Vec<_> =
-            ["mold", "-auxiliaries"].into_iter().map(|s| Cow::Borrowed(OsStr::new(s))).collect();
-        let mut cursor = ArgCursor { args: &args, index: 1, attached_shorts: true };
-        assert_eq!(cursor.read_exact_arg("a"), None);
-        assert_eq!(cursor.index, 1);
     }
 
     #[test]

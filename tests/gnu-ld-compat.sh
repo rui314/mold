@@ -54,14 +54,21 @@ grep $t/a.o $t/log6
 $CC -B. -o $t/exe7 -Wl,-g $t/a.o
 $CC -B. -o $t/exe8 -Wl,-d $t/a.o
 
-# -a and -c take a separate argument, so they must not be confused with
-# the longer options that start with the same letter.
-$CC -B. -o $t/exe9 -Wl,-a -Wl,KEYWORD $t/a.o
+# -a and -c take their value attached as well as in a separate word, so
+# they must not be confused with the longer options that start with the
+# same letter.
+$CC -B. -o $t/exe9 -Wl,-a -Wl,shared -Wl,-ashared $t/a.o
 $CC -B. -o $t/exe10 -Wl,-auxiliary -Wl,$t/a.o -Wl,-shared
 $CC -B. -o $t/exe11 -Wl,--as-needed $t/a.o
 $CC -B. -o $t/exe12 -Wl,--compress-debug-sections=zlib $t/a.o
-$CC -B. -o $t/exe13 -Wl,-assert -Wl,KEYWORD $t/a.o
+$CC -B. -o $t/exe13 -Wl,-assert -Wl,pure-text $t/a.o
 $CC -B. -o $t/exe14 -Wl,-Y -Wl,$t $t/a.o
+
+# GNU ld rejects an -a or -assert keyword it does not know, and the '='
+# forms, which would abbreviate several long options.
+not ./mold -a bogus $t/a.o |& grep "unrecognized -a option .bogus"
+not ./mold -a=shared $t/a.o |& grep "unrecognized -a option .=shared"
+not ./mold -assert bogus $t/a.o |& grep "unrecognized -assert option .bogus"
 
 # Vendor-specific spellings mold has no use for.
 $CC -B. -o $t/exe15 -Wl,-Ur $t/a.o
@@ -77,8 +84,9 @@ $CC -B. -o $t/exe22 -Wl,--gpsize -Wl,8 $t/a.o
 $CC -B. -o $t/exe23 -Wl,--mri-script -Wl,$t/nosuchscript $t/a.o
 $CC -B. -o $t/exe24 -Wl,--default-script -Wl,$t/nosuchscript $t/a.o
 
-# A name that merely starts like an option is still unknown.
-not ./mold -auxiliaries |& grep 'unknown command line option: -auxiliaries'
+# A name that merely starts like -a is read as -a with the rest of the
+# name as its keyword, which GNU ld rejects.
+not ./mold -auxiliaries |& grep "unrecognized -a option .uxiliaries"
 
 # GNU ld rewrites every "-lfoo" to "--library=foo" before parsing, so no
 # long option starting with "l" is ever read with one dash, and a "-G"
@@ -86,6 +94,11 @@ not ./mold -auxiliaries |& grep 'unknown command line option: -auxiliaries'
 not ./mold -library-path $t/a.o |& grep 'library not found: ibrary-path'
 not ./mold -lto-pseudo-probe-for-profiling $t/a.o |& grep 'library not found: to-pseudo-probe-for-profiling'
 not ./mold -G foo $t/a.o |& grep 'cannot open foo'
+
+# GNU ld reads "-architecture" as "-a rchitecture" and "-mri-script" as
+# "-m ri-script", so those long names need two dashes.
+not ./mold -architecture x86-64 $t/a.o |& grep "unrecognized -a option .rchitecture"
+not ./mold -mri-script foo $t/a.o |& grep 'unknown -m argument: ri-script'
 
 # Options whose value GNU ld makes optional: accepted bare, and with the
 # value attached by an equal sign.
