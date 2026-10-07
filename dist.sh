@@ -143,27 +143,22 @@ esac
 image=mold-rust-builder-$arch
 archive=rust-$rust_version-$rust_target.tar.gz
 os=linux
-build_env=()
-install_packages="$apt_setup && \
-  echo 'Acquire::Retries \"10\"; Acquire::http::timeout \"10\"; Acquire::Check-Valid-Until \"false\";' > /etc/apt/apt.conf.d/80-retries && \
-  apt-get update && \
-  apt-get install -y --no-install-recommends build-essential ca-certificates git wget && \
-  rm -rf /var/lib/apt/lists"
-
-# Rust links musl statically by default, but a static executable can't
-# dlopen() the LTO plugin, so we link musl dynamically. Alpine has no
-# package snapshots, so its packages are not pinned.
 if [[ $arch = *-musl ]]; then
   arch=${arch%-musl}
   os=linux-musl
-  build_env=(--env "CARGO_TARGET_$(echo "$rust_target" | tr a-z- A-Z_)_RUSTFLAGS=-Ctarget-feature=-crt-static")
-  install_packages="apk add --no-cache bash build-base coreutils git gzip linux-headers tar wget"
 fi
 
+# Alpine has no package snapshots, so its packages are not pinned.
 podman build --arch "$arch" -t "$image" - <<EOF
 FROM $base_image
 ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
-RUN $install_packages
+RUN if [ -f /etc/alpine-release ]; then \
+  apk add --no-cache bash build-base coreutils git gzip linux-headers tar wget; else \
+  $apt_setup && \
+  echo 'Acquire::Retries "10"; Acquire::http::timeout "10"; Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/80-retries && \
+  apt-get update && \
+  apt-get install -y --no-install-recommends build-essential ca-certificates git wget && \
+  rm -rf /var/lib/apt/lists; fi
 RUN mkdir /tmp/rust && \
   cd /tmp/rust && \
   wget --progress=dot:mega https://static.rust-lang.org/dist/$archive && \
@@ -206,7 +201,7 @@ podman run --arch "$arch" -it --rm --userns=host --pids-limit=-1 \
 # Fixed source, vendor and target paths keep embedded build paths stable.
 podman run --arch "$arch" -it --rm --userns=host --pids-limit=-1 --network=none \
   --pull=never --env SOURCE_DATE_EPOCH="$timestamp" --env DEST="$dest" \
-  "${build_env[@]}" -v "$(pwd):/mold:ro" -v "$(pwd)/dist:/dist" \
+  -v "$(pwd):/mold:ro" -v "$(pwd)/dist:/dist" \
   -v "$(pwd)/target/dist-vendor-$arch:/vendor:ro" "$image" \
   $setarch bash -c '
 set -e
