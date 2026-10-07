@@ -4,11 +4,6 @@ on:
   push:
     tags: ['v[0-9]*']
 
-permissions:
-  contents: write
-  packages: write
-  id-token: write
-
 env:
   TAG: ${{ github.ref_name }}
 
@@ -28,19 +23,14 @@ jobs:
         - { target: aarch64-musl, os: ubuntu-24.04-arm }
 
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
 
     steps:
     - uses: actions/checkout@v7
 
     - name: Install Podman
       run: sudo apt-get update && sudo apt-get install -y podman qemu-user-static
-
-    - name: Login to GitHub Container Registry
-      uses: redhat-actions/podman-login@v2
-      with:
-        registry: ghcr.io
-        username: ${{ github.repository_owner }}
-        password: ${{ secrets.GITHUB_TOKEN }}
 
     - run: ./dist.sh ${{ matrix.target }}
 
@@ -51,6 +41,8 @@ jobs:
 
   build-windows:
     runs-on: windows-latest
+    permissions:
+      contents: read
     steps:
     - uses: actions/checkout@v7
 
@@ -68,6 +60,8 @@ jobs:
   publish:
     needs: [build-linux, build-windows]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
     - uses: actions/checkout@v7
 

@@ -13,7 +13,7 @@ jobs:
       CARGO_INCREMENTAL: 0
       CARGO_PROFILE_DEV_DEBUG: 0
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - uses: dtolnay/rust-toolchain@stable
     - name: install test dependencies
       run: |
@@ -66,7 +66,7 @@ jobs:
       RUSTFLAGS: -Zsanitizer=${{ matrix.sanitizer }}
       RUSTDOCFLAGS: -Zsanitizer=${{ matrix.sanitizer }}
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - uses: dtolnay/rust-toolchain@nightly
       with:
         components: rust-src
@@ -90,7 +90,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - uses: dtolnay/rust-toolchain@nightly
       with:
         components: rust-src
@@ -110,12 +110,12 @@ jobs:
         distro:
         - alpine
         - archlinux
-        - debian:12
+        - debian:13
         - fedora
         - gentoo/stage3
         - opensuse/tumbleweed
         - ubuntu:22.04
-        - ubuntu:25.04
+        - ubuntu:26.04
     runs-on: ubuntu-latest
     timeout-minutes: 60
     # Tumbleweed does not declare PATH in its container configuration.
@@ -124,7 +124,7 @@ jobs:
       env:
         PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - run: ./install-test-deps.sh
     - uses: dtolnay/rust-toolchain@stable
     - run: cargo build --locked -p mold --no-default-features --features x86_64
@@ -144,7 +144,7 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - uses: dtolnay/rust-toolchain@stable
     - run: cargo build --locked -p mold --no-default-features --features x86_64
 
@@ -152,7 +152,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - uses: dtolnay/rust-toolchain@stable
     - run: cargo build --locked -p mold --no-default-features --features x86_64
 
@@ -162,7 +162,7 @@ jobs:
     env:
       CARGO_NET_GIT_FETCH_WITH_CLI: true
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - uses: msys2/setup-msys2@v2
       with:
         msystem: UCRT64
@@ -181,7 +181,7 @@ jobs:
       CARGO_PROFILE_DEV_DEBUG: 0
       CARGO_PROFILE_TEST_DEBUG: 0
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - uses: vmactions/freebsd-vm@v1
       with:
         usesh: true
