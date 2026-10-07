@@ -1475,7 +1475,6 @@ pub fn do_lto<E: Target>(ctx: &mut Context<E>) {
 
     // Redo name resolution.
     resolve_symbols(ctx);
-    keep_bitcode_imports(ctx);
 }
 
 /// Compiles the ThinLTO modules to an object each. libLTO tells the
@@ -1589,18 +1588,8 @@ fn retire_bitcode_placeholders<E: Target>(ctx: &mut Context<E>) {
                 .filter(|&&id| ctx.symbols[id].file() == Some(FileId::Obj(obj_idx as u32)))
                 .map(|&id| ctx.symbols[id].name())
                 .collect();
-            let imports = obj
-                .nlists
-                .iter()
-                .zip(&obj.symbols)
-                .filter(|(nlist, _)| nlist.n_type() == N_UNDF)
-                .filter_map(|(_, &id)| match ctx.symbols[id].file() {
-                    Some(FileId::Dylib(dylib)) => Some((id, dylib)),
-                    _ => None,
-                })
-                .collect();
             let defined = module.defined;
-            let input = crate::lto::LtoInput { obj: obj_idx, defined, won, imports };
+            let input = crate::lto::LtoInput { obj: obj_idx, defined, won };
             ctx.lto_inputs.push(input);
         }
         let ids = ctx.objs[obj_idx].symbols.clone();
@@ -1617,29 +1606,6 @@ fn retire_bitcode_placeholders<E: Target>(ctx: &mut Context<E>) {
         obj.is_alive = false;
         obj.nlists = std::borrow::Cow::Borrowed(&[]);
         obj.symbols.clear();
-    }
-}
-
-/// Keeps the imports bitcode referred to that the code LTO compiled
-/// doesn't: ld-prime resolved them before LTO, and keeps their dylibs
-/// - unless -dead_strip drops what no live code refers to.
-pub fn keep_bitcode_imports<E: Target>(ctx: &mut Context<E>) {
-    if ctx.args.dead_strip {
-        return;
-    }
-    for input in &ctx.lto_inputs {
-        for &(id, dylib) in &input.imports {
-            let sym = &mut ctx.symbols[id];
-            if sym.file().is_some() {
-                continue;
-            }
-            sym.set_file(FileId::Dylib(dylib));
-            sym.set_is_imported(true);
-            sym.set_is_extern(true);
-            if ctx.dylibs[dylib as usize].is_weak {
-                sym.set_is_weak_ref(true);
-            }
-        }
     }
 }
 

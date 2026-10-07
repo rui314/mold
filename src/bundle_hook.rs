@@ -125,7 +125,6 @@ pub fn create_class_table<E: Target>(ctx: &mut Context<E>) {
         // Resolving the symbols again unbinds what only the hook named.
         ctx.objs[obj].is_alive = false;
         crate::passes::resolve_symbols(ctx);
-        crate::passes::keep_bitcode_imports(ctx);
         return;
     }
     let table = add_table(ctx, &libraries);
