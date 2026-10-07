@@ -3,7 +3,7 @@
 //! ld64 deduplicates identical functions (ld-prime at -O1 and up or
 //! with -deduplicate, this linker unless -no_deduplicate); mold's ICF
 //! does the same for ELF. Two subsections can share one copy when their
-//! bytes, relocations and exception handling are all identical, *and*
+//! bytes, relocations and unwind information are all identical, *and*
 //! folding cannot be observed. ld-prime folds the functions of
 //! __TEXT,__text that no one can compare the addresses of: those the
 //! compiler marked .weak_def_can_be_hidden (C++ inline functions with
@@ -26,9 +26,10 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 use rayon::prelude::*;
 
+use crate::chunks::eh_frame::lsda_pos;
 use crate::chunks::unwind_info::{function_lsda, function_personality};
 use crate::context::Context;
-use crate::input_files::{FileId, ObjectFile, subsec_name_rank};
+use crate::input_files::{Fde, FileId, ObjectFile, subsec_name_rank};
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
 use crate::symbol::SymbolId;
@@ -438,26 +439,62 @@ fn compute_digest<E: Target>(ctx: &Context<E>, cand_index: &[usize], id: usize) 
             }
         }
     }
-    // A function's exception handling - its personality routine and its
-    // LSDA - is part of its identity: ld64 compares them as references
-    // of the function. The rest of its unwind information describes the
-    // code itself, so ld-prime folds functions whose encodings differ,
-    // or of which only one has any, and the survivor keeps its own.
+    // A function's unwind information is part of its identity, as mold
+    // hashes a section's CIEs and FDEs: two functions fold only if they
+    // are unwound alike, by records at the same offsets with the same
+    // length, compact encoding, personality, LSDA and DWARF CFI, so that
+    // the survivor's describes every caller's frames. (ld-prime compares
+    // only the personality and the LSDA, and folds a function that has
+    // unwind information into one that has none.) A record with an FDE
+    // is in DWARF mode whether its object said so or the linker made it.
     let recs = isec.unwind_offset as usize..(isec.unwind_offset + isec.nunwind) as usize;
+    h.update(&isec.nunwind.to_ne_bytes());
     for rec in &ctx.unwind_records[recs] {
-        let personality = function_personality(ctx, rec);
-        let lsda = function_lsda(ctx, rec);
-        if personality.is_none() && lsda.is_none() {
-            continue;
-        }
+        let encoding = if rec.fde().is_some() { E::UNWIND_MODE_DWARF } else { rec.encoding };
         h.update(&rec.input_offset.to_ne_bytes());
+        h.update(&rec.code_len.to_ne_bytes());
+        h.update(&encoding.to_ne_bytes());
+        let personality = function_personality(ctx, rec);
         h.update(&personality.map_or(u64::MAX, |p| p as u64).to_ne_bytes());
-        if let Some((lsda, off)) = lsda {
-            h.update(&ctx.resolve_isec(lsda).to_ne_bytes());
-            h.update(&off.to_ne_bytes());
+        let (lsda, off) = function_lsda(ctx, rec)
+            .map_or((usize::MAX, 0), |(lsda, off)| (ctx.resolve_isec(lsda), off));
+        h.update(&lsda.to_ne_bytes());
+        h.update(&off.to_ne_bytes());
+        if let Some(fde) = rec.fde() {
+            hash_dwarf_cfi(ctx, &mut h, &ctx.fdes[fde]);
         }
     }
     finish_digest(h)
+}
+
+/// Hashes the CIE and the FDE that unwind a function in DWARF mode, with
+/// the fields that depend on where the records or their targets are -
+/// the CIE pointer, the function's address and the personality and LSDA
+/// pointers, which compute_digest hashes as targets - zeroed. Like mold,
+/// it leaves out the length and the trailing DW_CFA_nops, which pad a
+/// record to the section's alignment without meaning anything.
+fn hash_dwarf_cfi<E: Target>(ctx: &Context<E>, h: &mut SipHash13_128, fde: &Fde) {
+    let hash_record = |h: &mut SipHash13_128, body: &[u8]| {
+        let len = body.iter().rposition(|&b| b != 0).map_or(0, |i| i + 1);
+        h.update(&len.to_ne_bytes());
+        h.update(&body[..len]);
+    };
+    let cie = &ctx.cies[fde.cie as usize];
+    let mut buf = cie.data.to_vec();
+    if cie.personality.is_some() {
+        let pos = cie.personality_offset as usize;
+        buf[pos..pos + 4].fill(0);
+    }
+    hash_record(h, &buf[4..]);
+
+    let pc_size = cie.pc_size();
+    let mut buf = fde.data.to_vec();
+    buf[4..8 + pc_size].fill(0);
+    if fde.lsda.is_some() {
+        let pos = lsda_pos(fde.data, pc_size);
+        buf[pos..pos + cie.lsda_size()].fill(0);
+    }
+    hash_record(h, &buf[4..]);
 }
 
 /// Calls `f` with the candidate index of each candidate that candidate
