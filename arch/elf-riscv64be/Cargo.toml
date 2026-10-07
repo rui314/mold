@@ -1,0 +1,14 @@
+[package]
+name = "mold-elf-riscv64be"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "An internal crate of the mold linker, which instantiates its ELF linker for riscv64be"
+license.workspace = true
+repository.workspace = true
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+mold-elf.workspace = true

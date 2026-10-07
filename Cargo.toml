@@ -18,27 +18,27 @@ repository = "https://github.com/rui314/mold"
 # these versions equal to the workspace version above.
 [workspace.dependencies]
 libc = "0.2"
-libmold = { path = "elf", version = "=3.0.0" }
-mold-arch-x86_64 = { path = "arch/x86_64", version = "=3.0.0" }
-mold-arch-i386 = { path = "arch/i386", version = "=3.0.0" }
-mold-arch-arm32 = { path = "arch/arm32", version = "=3.0.0" }
-mold-arch-arm32be = { path = "arch/arm32be", version = "=3.0.0" }
-mold-arch-arm64 = { path = "arch/arm64", version = "=3.0.0" }
-mold-arch-arm64be = { path = "arch/arm64be", version = "=3.0.0" }
-mold-arch-riscv64 = { path = "arch/riscv64", version = "=3.0.0" }
-mold-arch-riscv64be = { path = "arch/riscv64be", version = "=3.0.0" }
-mold-arch-riscv32 = { path = "arch/riscv32", version = "=3.0.0" }
-mold-arch-riscv32be = { path = "arch/riscv32be", version = "=3.0.0" }
-mold-arch-ppc64v2 = { path = "arch/ppc64v2", version = "=3.0.0" }
-mold-arch-ppc32 = { path = "arch/ppc32", version = "=3.0.0" }
-mold-arch-ppc64v1 = { path = "arch/ppc64v1", version = "=3.0.0" }
-mold-arch-s390x = { path = "arch/s390x", version = "=3.0.0" }
-mold-arch-sparc64 = { path = "arch/sparc64", version = "=3.0.0" }
-mold-arch-m68k = { path = "arch/m68k", version = "=3.0.0" }
-mold-arch-sh4 = { path = "arch/sh4", version = "=3.0.0" }
-mold-arch-sh4be = { path = "arch/sh4be", version = "=3.0.0" }
-mold-arch-loongarch64 = { path = "arch/loongarch64", version = "=3.0.0" }
-mold-arch-loongarch32 = { path = "arch/loongarch32", version = "=3.0.0" }
+mold-elf = { path = "elf", version = "=3.0.0" }
+mold-elf-x86_64 = { path = "arch/elf-x86_64", version = "=3.0.0" }
+mold-elf-i386 = { path = "arch/elf-i386", version = "=3.0.0" }
+mold-elf-arm32 = { path = "arch/elf-arm32", version = "=3.0.0" }
+mold-elf-arm32be = { path = "arch/elf-arm32be", version = "=3.0.0" }
+mold-elf-arm64 = { path = "arch/elf-arm64", version = "=3.0.0" }
+mold-elf-arm64be = { path = "arch/elf-arm64be", version = "=3.0.0" }
+mold-elf-riscv64 = { path = "arch/elf-riscv64", version = "=3.0.0" }
+mold-elf-riscv64be = { path = "arch/elf-riscv64be", version = "=3.0.0" }
+mold-elf-riscv32 = { path = "arch/elf-riscv32", version = "=3.0.0" }
+mold-elf-riscv32be = { path = "arch/elf-riscv32be", version = "=3.0.0" }
+mold-elf-ppc64v2 = { path = "arch/elf-ppc64v2", version = "=3.0.0" }
+mold-elf-ppc32 = { path = "arch/elf-ppc32", version = "=3.0.0" }
+mold-elf-ppc64v1 = { path = "arch/elf-ppc64v1", version = "=3.0.0" }
+mold-elf-s390x = { path = "arch/elf-s390x", version = "=3.0.0" }
+mold-elf-sparc64 = { path = "arch/elf-sparc64", version = "=3.0.0" }
+mold-elf-m68k = { path = "arch/elf-m68k", version = "=3.0.0" }
+mold-elf-sh4 = { path = "arch/elf-sh4", version = "=3.0.0" }
+mold-elf-sh4be = { path = "arch/elf-sh4be", version = "=3.0.0" }
+mold-elf-loongarch64 = { path = "arch/elf-loongarch64", version = "=3.0.0" }
+mold-elf-loongarch32 = { path = "arch/elf-loongarch32", version = "=3.0.0" }
 
 [profile.release]
 panic = "abort"

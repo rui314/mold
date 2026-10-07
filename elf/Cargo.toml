@@ -1,9 +1,9 @@
 [package]
-name = "libmold"
+name = "mold-elf"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "The internal library of the mold linker, whose API is not stable"
+description = "An internal crate of the mold linker, which implements its ELF linker"
 license.workspace = true
 repository.workspace = true
 

@@ -186,31 +186,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
 
 [[package]]
-name = "libmold"
-version = "3.0.0"
-dependencies = [
- "blake3",
- "bstr",
- "cc",
- "cpp_demangle",
- "crc32fast",
- "flate2",
- "getrandom",
- "hashbrown",
- "libc",
- "libz-rs-sys",
- "memchr",
- "memmap2",
- "portable-atomic",
- "rayon",
- "rustc-demangle",
- "uuid",
- "xxhash-rust",
- "zlib-rs",
- "zstd",
-]
-
-[[package]]
 name = "libz-rs-sys"
 version = "0.6.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -238,169 +213,194 @@ dependencies = [
 name = "mold"
 version = "3.0.0"
 dependencies = [
- "libmold",
- "mold-arch-arm32",
- "mold-arch-arm32be",
- "mold-arch-arm64",
- "mold-arch-arm64be",
- "mold-arch-i386",
- "mold-arch-loongarch32",
- "mold-arch-loongarch64",
- "mold-arch-m68k",
- "mold-arch-ppc32",
- "mold-arch-ppc64v1",
- "mold-arch-ppc64v2",
- "mold-arch-riscv32",
- "mold-arch-riscv32be",
- "mold-arch-riscv64",
- "mold-arch-riscv64be",
- "mold-arch-s390x",
- "mold-arch-sh4",
- "mold-arch-sh4be",
- "mold-arch-sparc64",
- "mold-arch-x86_64",
+ "mold-elf",
+ "mold-elf-arm32",
+ "mold-elf-arm32be",
+ "mold-elf-arm64",
+ "mold-elf-arm64be",
+ "mold-elf-i386",
+ "mold-elf-loongarch32",
+ "mold-elf-loongarch64",
+ "mold-elf-m68k",
+ "mold-elf-ppc32",
+ "mold-elf-ppc64v1",
+ "mold-elf-ppc64v2",
+ "mold-elf-riscv32",
+ "mold-elf-riscv32be",
+ "mold-elf-riscv64",
+ "mold-elf-riscv64be",
+ "mold-elf-s390x",
+ "mold-elf-sh4",
+ "mold-elf-sh4be",
+ "mold-elf-sparc64",
+ "mold-elf-x86_64",
  "mold-mimalloc",
  "mold-tests",
 ]
 
 [[package]]
-name = "mold-arch-arm32"
+name = "mold-elf"
 version = "3.0.0"
 dependencies = [
- "libmold",
+ "blake3",
+ "bstr",
+ "cc",
+ "cpp_demangle",
+ "crc32fast",
+ "flate2",
+ "getrandom",
+ "hashbrown",
+ "libc",
+ "libz-rs-sys",
+ "memchr",
+ "memmap2",
+ "portable-atomic",
+ "rayon",
+ "rustc-demangle",
+ "uuid",
+ "xxhash-rust",
+ "zlib-rs",
+ "zstd",
 ]
 
 [[package]]
-name = "mold-arch-arm32be"
+name = "mold-elf-arm32"
 version = "3.0.0"
 dependencies = [
- "libmold",
+ "mold-elf",
 ]
 
 [[package]]
-name = "mold-arch-arm64"
+name = "mold-elf-arm32be"
 version = "3.0.0"
 dependencies = [
- "libmold",
+ "mold-elf",
 ]
 
 [[package]]
-name = "mold-arch-arm64be"
+name = "mold-elf-arm64"
 version = "3.0.0"
 dependencies = [
- "libmold",
+ "mold-elf",
 ]
 
 [[package]]
-name = "mold-arch-i386"
+name = "mold-elf-arm64be"
 version = "3.0.0"
 dependencies = [
- "libmold",
+ "mold-elf",
 ]
 
 [[package]]
-name = "mold-arch-loongarch32"
+name = "mold-elf-i386"
 version = "3.0.0"
 dependencies = [
- "libmold",
+ "mold-elf",
 ]
 
 [[package]]
-name = "mold-arch-loongarch64"
+name = "mold-elf-loongarch32"
 version = "3.0.0"
 dependencies = [
- "libmold",
+ "mold-elf",
 ]
 
 [[package]]
-name = "mold-arch-m68k"
+name = "mold-elf-loongarch64"
 version = "3.0.0"
 dependencies = [
- "libmold",
+ "mold-elf",
 ]
 
 [[package]]
-name = "mold-arch-ppc32"
+name = "mold-elf-m68k"
 version = "3.0.0"
 dependencies = [
- "libmold",
+ "mold-elf",
 ]
 
 [[package]]
-name = "mold-arch-ppc64v1"
+name = "mold-elf-ppc32"
 version = "3.0.0"
 dependencies = [
- "libmold",
+ "mold-elf",
 ]
 
 [[package]]
-name = "mold-arch-ppc64v2"
+name = "mold-elf-ppc64v1"
 version = "3.0.0"
 dependencies = [
- "libmold",
+ "mold-elf",
 ]
 
 [[package]]
-name = "mold-arch-riscv32"
+name = "mold-elf-ppc64v2"
 version = "3.0.0"
 dependencies = [
- "libmold",
+ "mold-elf",
 ]
 
 [[package]]
-name = "mold-arch-riscv32be"
+name = "mold-elf-riscv32"
 version = "3.0.0"
 dependencies = [
- "libmold",
+ "mold-elf",
 ]
 
 [[package]]
-name = "mold-arch-riscv64"
+name = "mold-elf-riscv32be"
 version = "3.0.0"
 dependencies = [
- "libmold",
+ "mold-elf",
 ]
 
 [[package]]
-name = "mold-arch-riscv64be"
+name = "mold-elf-riscv64"
 version = "3.0.0"
 dependencies = [
- "libmold",
+ "mold-elf",
 ]
 
 [[package]]
-name = "mold-arch-s390x"
+name = "mold-elf-riscv64be"
 version = "3.0.0"
 dependencies = [
- "libmold",
+ "mold-elf",
 ]
 
 [[package]]
-name = "mold-arch-sh4"
+name = "mold-elf-s390x"
 version = "3.0.0"
 dependencies = [
- "libmold",
+ "mold-elf",
 ]
 
 [[package]]
-name = "mold-arch-sh4be"
+name = "mold-elf-sh4"
 version = "3.0.0"
 dependencies = [
- "libmold",
+ "mold-elf",
 ]
 
 [[package]]
-name = "mold-arch-sparc64"
+name = "mold-elf-sh4be"
 version = "3.0.0"
 dependencies = [
- "libmold",
+ "mold-elf",
 ]
 
 [[package]]
-name = "mold-arch-x86_64"
+name = "mold-elf-sparc64"
 version = "3.0.0"
 dependencies = [
- "libmold",
+ "mold-elf",
+]
+
+[[package]]
+name = "mold-elf-x86_64"
+version = "3.0.0"
+dependencies = [
+ "mold-elf",
 ]
 
 [[package]]

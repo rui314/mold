@@ -3,60 +3,62 @@
 //! that the compiler can build them in parallel, and a feature per target
 //! decides which of them are built in.
 
+use mold_elf::driver::{Cmdline, LinkResult};
+
 // A Rust executable can define only one global allocator, so select mimalloc
 // here rather than in the linker library.
 #[cfg(not(feature = "system-allocator"))]
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-type LinkFn = fn(libmold::driver::Cmdline) -> libmold::driver::LinkResult;
+type LinkFn = fn(Cmdline) -> LinkResult;
 
 // Each target has its own monomorphized link function. Start with the first
 // enabled target and switch to the matching function if the inputs differ.
 const TARGETS: &[(&str, LinkFn)] = &[
     #[cfg(feature = "x86_64")]
-    ("x86_64", mold_arch_x86_64::link),
+    ("x86_64", mold_elf_x86_64::link),
     #[cfg(feature = "i386")]
-    ("i386", mold_arch_i386::link),
+    ("i386", mold_elf_i386::link),
     #[cfg(feature = "arm32")]
-    ("arm32", mold_arch_arm32::link),
+    ("arm32", mold_elf_arm32::link),
     #[cfg(feature = "arm32be")]
-    ("arm32be", mold_arch_arm32be::link),
+    ("arm32be", mold_elf_arm32be::link),
     #[cfg(feature = "arm64")]
-    ("arm64", mold_arch_arm64::link),
+    ("arm64", mold_elf_arm64::link),
     #[cfg(feature = "arm64be")]
-    ("arm64be", mold_arch_arm64be::link),
+    ("arm64be", mold_elf_arm64be::link),
     #[cfg(feature = "riscv64")]
-    ("riscv64", mold_arch_riscv64::link),
+    ("riscv64", mold_elf_riscv64::link),
     #[cfg(feature = "riscv64be")]
-    ("riscv64be", mold_arch_riscv64be::link),
+    ("riscv64be", mold_elf_riscv64be::link),
     #[cfg(feature = "riscv32")]
-    ("riscv32", mold_arch_riscv32::link),
+    ("riscv32", mold_elf_riscv32::link),
     #[cfg(feature = "riscv32be")]
-    ("riscv32be", mold_arch_riscv32be::link),
+    ("riscv32be", mold_elf_riscv32be::link),
     #[cfg(feature = "ppc64v2")]
-    ("ppc64v2", mold_arch_ppc64v2::link),
+    ("ppc64v2", mold_elf_ppc64v2::link),
     #[cfg(feature = "ppc32")]
-    ("ppc32", mold_arch_ppc32::link),
+    ("ppc32", mold_elf_ppc32::link),
     #[cfg(feature = "ppc64v1")]
-    ("ppc64v1", mold_arch_ppc64v1::link),
+    ("ppc64v1", mold_elf_ppc64v1::link),
     #[cfg(feature = "s390x")]
-    ("s390x", mold_arch_s390x::link),
+    ("s390x", mold_elf_s390x::link),
     #[cfg(feature = "sparc64")]
-    ("sparc64", mold_arch_sparc64::link),
+    ("sparc64", mold_elf_sparc64::link),
     #[cfg(feature = "m68k")]
-    ("m68k", mold_arch_m68k::link),
+    ("m68k", mold_elf_m68k::link),
     #[cfg(feature = "sh4")]
-    ("sh4", mold_arch_sh4::link),
+    ("sh4", mold_elf_sh4::link),
     #[cfg(feature = "sh4be")]
-    ("sh4be", mold_arch_sh4be::link),
+    ("sh4be", mold_elf_sh4be::link),
     #[cfg(feature = "loongarch64")]
-    ("loongarch64", mold_arch_loongarch64::link),
+    ("loongarch64", mold_elf_loongarch64::link),
     #[cfg(feature = "loongarch32")]
-    ("loongarch32", mold_arch_loongarch32::link),
+    ("loongarch32", mold_elf_loongarch32::link),
 ];
 
-fn link_for_target(target: &str, cmdline: libmold::driver::Cmdline) -> libmold::driver::LinkResult {
+fn link_for_target(target: &str, cmdline: Cmdline) -> LinkResult {
     for &(name, link) in TARGETS {
         if name == target {
             return link(cmdline);
@@ -74,6 +76,6 @@ fn main() {
         std::process::exit(1);
     };
     let args = std::env::args_os().collect();
-    let status = libmold::driver::main(args, initial_target, link_for_target);
+    let status = mold_elf::driver::main(args, initial_target, link_for_target);
     std::process::exit(status);
 }

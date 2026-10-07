@@ -17,10 +17,10 @@ export MSAN_OPTIONS=halt_on_error=1
 export CARGO_PROFILE_DEV_OPT_LEVEL=1
 
 # Use instrumentable implementations instead of BLAKE3/Zstd assembly, and
-# select libmold as well as mold so Cargo enables its dependency features.
+# select mold-elf as well as mold so Cargo enables its dependency features.
 args=(
   --locked -Zbuild-std --target x86_64-unknown-linux-gnu
-  --package libmold --package mold --no-default-features
+  --package mold-elf --package mold --no-default-features
   --features mold/system-allocator,mold/x86_64,blake3/pure,zstd/no_asm
   --test integration
 )
