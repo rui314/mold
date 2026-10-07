@@ -2679,7 +2679,25 @@ fn resolve_target(target: &TargetTraits, args: &mut Args) -> bool {
     if args.platform == 0 {
         infer_platform(args);
     }
+    check_deployment_target(args);
     true
+}
+
+/// Refuses an iOS deployment target older than 4.3, the first iOS to
+/// slide a main executable, whatever the link's options or objects
+/// name it by: ld-prime makes every image position-independent, and
+/// links for no older one, nor for its simulator (counted in iOS
+/// versions). Only a -preload image, which no iOS loads, may be.
+fn check_deployment_target(args: &Args) {
+    if matches!(args.platform, PLATFORM_IOS | PLATFORM_IOSSIMULATOR)
+        && args.platform_minos < encode_version(4, 3, 0)
+        && !args.preload
+    {
+        fatal!(
+            "building for iOS with {} minimum deployment target is no longer supported",
+            format_version(args.platform_minos)
+        );
+    }
 }
 
 /// Without -arch, ld-prime links for the target of the first object
