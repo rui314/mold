@@ -84,15 +84,13 @@ fn import_table(fixups: &[Fixup]) -> (Vec<(SymbolId, u64)>, ImportOrdinals) {
 /// The pointer format of the chains. A rebase target is a VM address
 /// under DYLD_CHAINED_PTR_64 and an offset from the image's load
 /// address under DYLD_CHAINED_PTR_64_OFFSET, which dyld reads from
-/// macOS 12 on. ld-prime writes the latter for a macOS 12 (or firmware)
-/// target on every architecture and output kind, and for a -static
-/// image, which no dyld reads, whatever its target; the former only
-/// when -fixup_chains forces chains on an older one.
+/// macOS 12 and iOS 15 on. ld-prime writes the latter for such a (or a
+/// firmware) target on every architecture and output kind, and for a
+/// -static image, which no dyld reads, whatever its target; the former
+/// where chains came earlier (iOS 13.4, see macho::is_new_os) or when
+/// -fixup_chains forces them on an older OS.
 pub(crate) fn pointer_format<E: Target>(ctx: &Context<E>) -> u16 {
-    let macos12 = crate::macho::encode_version(12, 0, 0);
-    if ctx.args.static_link
-        || crate::macho::targets_macos(ctx.args.platform, ctx.args.platform_minos, macos12)
-    {
+    if ctx.args.static_link || ctx.args.targets(&crate::macho::VERSION_2021_FALL) {
         DYLD_CHAINED_PTR_64_OFFSET
     } else {
         DYLD_CHAINED_PTR_64

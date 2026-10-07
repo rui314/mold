@@ -636,12 +636,11 @@ pub fn fold_objc_classrefs<E: Target>(ctx: &mut Context<E>) {
 }
 
 /// Whether the link folds class references into __got (see
-/// fold_objc_classrefs): one for macOS 15 or later, of an image dyld
-/// loads (ld-prime optimizes the Objective-C of no other).
+/// fold_objc_classrefs): one for macOS 15, iOS 18, visionOS 2 or later,
+/// of an image dyld loads (ld-prime optimizes the Objective-C of no
+/// other).
 fn folds_objc_classrefs<E: Target>(ctx: &Context<E>) -> bool {
-    !ctx.args.without_dyld()
-        && ctx.args.platform == PLATFORM_MACOS
-        && ctx.args.platform_minos >= encode_version(15, 0, 0)
+    !ctx.args.without_dyld() && ctx.args.targets(&VERSION_2024_FALL)
 }
 
 /// The symbol, by its index in the object, that subsection `i` is a

@@ -65,24 +65,22 @@ const DATA_CONST_SECTIONS: &[&[u8]] = &[
 
 /// Class, protocol and superclass references are written by the
 /// Objective-C runtime on older systems, so they stay in __DATA unless
-/// the deployment target is macOS 14.4 or later, where ld-prime moves
-/// them to __DATA_CONST (dyld fixes them up there; from macOS 15 on
-/// most class references fold into __got, see
-/// objc::fold_objc_classrefs).
+/// the deployment target is macOS 14.4, iOS 17.4, visionOS 1.1 or
+/// later, where ld-prime moves them to __DATA_CONST (dyld fixes them up
+/// there; from the next releases on most class references fold into
+/// __got, see objc::fold_objc_classrefs).
 fn objc_refs_are_const<E: Target>(ctx: &Context<E>) -> bool {
-    ctx.args.platform == crate::macho::PLATFORM_MACOS
-        && ctx.args.platform_minos >= crate::macho::encode_version(14, 4, 0)
+    ctx.args.targets(&crate::macho::VERSION_2024_SPRING)
 }
 
 /// dyld reads an image's interposing tuples (__DATA,__interpose) but
-/// never writes them, so from macOS 15 on ld-prime makes them read-only
-/// after fixups in any image dyld loads: they go to __DATA_CONST, even
-/// with -no_data_const. (A -r output, no image, keeps a -sectcreate
-/// __DATA,__interpose in __DATA.)
+/// never writes them, so from macOS 15, iOS 18 and visionOS 2 on
+/// ld-prime makes them read-only after fixups in any image dyld loads:
+/// they go to __DATA_CONST, even with -no_data_const. (A -r output, no
+/// image, keeps a -sectcreate __DATA,__interpose in __DATA.)
 fn interpose_is_const<E: Target>(ctx: &Context<E>) -> bool {
     !ctx.args.relocatable
-        && ctx.args.platform == crate::macho::PLATFORM_MACOS
-        && ctx.args.platform_minos >= crate::macho::encode_version(15, 0, 0)
+        && ctx.args.targets(&crate::macho::VERSION_2024_FALL)
         && !ctx.args.without_dyld()
 }
 

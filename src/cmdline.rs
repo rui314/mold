@@ -840,12 +840,23 @@ impl Args {
 
     /// Whether the FDEs of the functions that have compact unwind
     /// records reach the output too: in an image without __unwind_info
-    /// for the records, and, as ld-prime keeps them, in one for a macOS
-    /// before 10.9, whose unwinders ld64 still gave the FDEs (its
-    /// -keep_dwarf_unwind default).
+    /// for the records, and, as ld-prime keeps them, in one for an OS
+    /// older than macOS 10.9 or iOS 7, whose unwinders ld64 still gave
+    /// the FDEs (its -keep_dwarf_unwind default).
     pub fn keeps_all_fdes(&self) -> bool {
-        !self.unwind_info()
-            || (self.platform == PLATFORM_MACOS && self.platform_minos < encode_version(10, 9, 0))
+        !self.unwind_info() || self.predates(&VERSION_2013_FALL)
+    }
+
+    /// Whether the deployment target is at or past the OS releases of
+    /// `set` (see VersionSet), so the image may use what they brought.
+    pub fn targets(&self, set: &VersionSet) -> bool {
+        set.reached_by(self.platform, self.platform_minos)
+    }
+
+    /// Whether the deployment target is known to be older than the OS
+    /// releases of `set`: a -r or -preload output for no platform is not.
+    pub fn predates(&self, set: &VersionSet) -> bool {
+        self.platform != 0 && !self.targets(set)
     }
 
     /// The output's install name: -install_name, else -final_output,
@@ -2823,12 +2834,8 @@ fn resolve_defaults(target: &TargetTraits, args: &mut Args, st: &ParseState) {
         None if st.source_version != Some(false) => env_source_version(),
         None => 0,
     };
-    args.source_version = st
-        .source_version
-        .unwrap_or(
-            args.platform != PLATFORM_MACOS || args.platform_minos >= encode_version(10, 8, 0),
-        )
-        .then_some(number);
+    args.source_version =
+        st.source_version.unwrap_or(!args.predates(&VERSION_2012_FALL)).then_some(number);
 
     // ld-prime signs the arm64 images a Mac runs - macOS's and the
     // simulators' - by default: Apple silicon runs no unsigned arm64
@@ -2843,18 +2850,18 @@ fn resolve_defaults(target: &TargetTraits, args: &mut Args, st: &ParseState) {
             && (args.platform == PLATFORM_MACOS || is_simulator(args.platform)),
     );
 
-    // ld-prime converts Objective-C method lists from macOS 11 on, in
-    // every arm64 image, and on x86-64 in dylibs and bundles only: an
-    // x86-64 executable keeps the compiler's absolute lists at any
-    // deployment target. It optimizes the Objective-C of no image dyld
-    // doesn't load (a -static or -preload one, a kext): it converts no
-    // method list there, whatever the option says, and merges no
-    // category (nor folds a class reference, see fold_objc_classrefs).
+    // ld-prime converts Objective-C method lists from macOS 11 and iOS
+    // 14 on, and in firmware, in every arm64 image, and on x86-64 in
+    // dylibs and bundles only: an x86-64 executable keeps the
+    // compiler's absolute lists at any deployment target. It optimizes
+    // the Objective-C of no image dyld doesn't load (a -static or
+    // -preload one, a kext): it converts no method list there, whatever
+    // the option says, and merges no category (nor folds a class
+    // reference, see fold_objc_classrefs).
     args.objc_relative_method_lists = !args.without_dyld()
         && st.objc_relative_method_lists.unwrap_or(
             (target.name == "arm64" || args.output_type != MH_EXECUTE)
-                && args.platform == PLATFORM_MACOS
-                && args.platform_minos >= encode_version(11, 0, 0),
+                && args.targets(&VERSION_2020_FALL),
         );
     args.objc_category_merging &= !args.without_dyld();
 
@@ -2885,12 +2892,12 @@ fn resolve_defaults(target: &TargetTraits, args: &mut Args, st: &ParseState) {
     // An image no dyld loads, and dyld, which the kernel loads, start
     // from LC_UNIXTHREAD at "start", crt1.o's entry point, as every
     // executable did before LC_MAIN had dyld call _main (from macOS
-    // 10.8 on): ld-prime starts an x86-64 one for an older macOS so.
+    // 10.8 and iOS 6 on): ld-prime starts an x86-64 one for an older
+    // macOS or simulator so (an arm64 one gets LC_MAIN at any version).
     let old_x86_64_executable = target.name == "x86_64"
         && args.output_type == MH_EXECUTE
         && !args.relocatable
-        && args.platform == PLATFORM_MACOS
-        && args.platform_minos < encode_version(10, 8, 0);
+        && args.predates(&VERSION_2012_FALL);
     args.unixthread = args.static_link || args.is_dylinker() || old_x86_64_executable;
     if args.unixthread && !st.explicit_entry {
         args.entry = b"start".to_vec();
@@ -2989,36 +2996,37 @@ fn resolve_segaddrs(segaddrs: Vec<(Vec<u8>, u64)>) -> Vec<(Vec<u8>, u64)> {
 }
 
 /// Decides whether the dylibs -lazy-l and the like name load lazily:
-/// dyld loads one when __dyld_lazy_load says so, from macOS 27 on.
-/// Elsewhere the library links as usual.
+/// dyld loads one when __dyld_lazy_load says so, from macOS, iOS and
+/// visionOS 27 on. Elsewhere the library links as usual. (ld-prime
+/// also takes iOS 20-25 and visionOS 4-25, versions that never shipped,
+/// for releases after 2026's.)
 fn resolve_lazy_load(args: &mut Args) {
-    args.lazy_load = dyld_supports(args, LibraryKind::Lazy, 27, "lazy-load") == Some(true);
+    args.lazy_load =
+        dyld_supports(args, LibraryKind::Lazy, &VERSION_2026_FALL, "lazy-load") == Some(true);
 }
 
 /// A dylib -delay-l and the like name keeps its initializers until the
-/// image dlopen()s it, which dyld supports from macOS 15 on; ld-prime
-/// delays the dylib all the same elsewhere. It wants _dlopen as one of
-/// the command line's initial undefines in any link that names one, -r
-/// included.
+/// image dlopen()s it, which dyld supports from macOS 15, iOS 18 and
+/// visionOS 2 on; ld-prime delays the dylib all the same elsewhere. It
+/// wants _dlopen as one of the command line's initial undefines in any
+/// link that names one, -r included.
 fn resolve_delay_init(args: &mut Args) {
-    if dyld_supports(args, LibraryKind::Delay, 15, "delay-init").is_some() {
+    if dyld_supports(args, LibraryKind::Delay, &VERSION_2024_FALL, "delay-init").is_some() {
         args.forced_undefined.push(b"_dlopen".to_vec());
     }
 }
 
 /// Whether dyld does what the library options of `kind` ask for, which
-/// it does from macOS `major` on: None if no such option names a
-/// library. For an older macOS or another platform (firmware, a
-/// -preload image included, has no dyld), ld-prime warns that it will
-/// ignore the `feature` of each library they name.
-fn dyld_supports(args: &Args, kind: LibraryKind, major: u32, feature: &str) -> Option<bool> {
+/// it does from the OS releases of `set` on: None if no such option
+/// names a library. For an older OS or firmware (a -preload image
+/// included, which has no dyld), ld-prime warns that it will ignore the
+/// `feature` of each library they name.
+fn dyld_supports(args: &Args, kind: LibraryKind, set: &VersionSet, feature: &str) -> Option<bool> {
     let libs = libraries_of_kind(&args.inputs, kind);
     if libs.is_empty() {
         return None;
     }
-    let supported = args.platform == PLATFORM_MACOS
-        && args.platform_minos >= encode_version(major, 0, 0)
-        && !args.preload;
+    let supported = args.targets(set) && !args.preload;
     for lib in libs.iter().filter(|_| !supported) {
         crate::warn!(
             "{feature} will be ignored for '{}' because deployment target version is too low",
@@ -3469,10 +3477,11 @@ fn resolve_stack(target: &TargetTraits, args: &mut Args, size: Option<u64>, addr
 /// nor -no_data_const says. An image no dyld loads has one only if
 /// bound for the shared region: nothing else would make it read-only.
 /// A non-PIE executable, which keeps its classic layout, has none; an
-/// image bound for the shared region and firmware have one. On macOS,
-/// ld64 gives one from its version2019Fall (10.15) on, but not for
-/// 10.15.4 up to 10.16, and not with -no_pie, even where the option is
-/// otherwise ignored (an arm64 executable, a dylib or a bundle).
+/// image bound for the shared region and firmware have one. Elsewhere
+/// ld64 gives one from its version2019Fall (macOS 10.15, iOS 13) on,
+/// but not for macOS 10.15.4 up to 10.16, and not with -no_pie, even
+/// where the option is otherwise ignored (an arm64 executable, a dylib
+/// or a bundle).
 fn default_data_const(args: &Args, pie: Option<bool>) -> bool {
     if args.without_dyld() {
         return args.shared_region;
@@ -3483,10 +3492,9 @@ fn default_data_const(args: &Args, pie: Option<bool>) -> bool {
     if args.shared_region || args.platform == PLATFORM_FIRMWARE {
         return true;
     }
-    let minos = args.platform_minos;
-    pie != Some(false)
-        && minos >= encode_version(10, 15, 0)
-        && !(encode_version(10, 15, 4)..encode_version(10, 16, 0)).contains(&minos)
+    let macos_hole = args.platform == PLATFORM_MACOS
+        && (encode_version(10, 15, 4)..encode_version(10, 16, 0)).contains(&args.platform_minos);
+    pie != Some(false) && args.targets(&VERSION_2019_FALL) && !macos_hole
 }
 
 /// A kext (ld64's kKextBundle, MH_KEXT_BUNDLE) is linked into the
