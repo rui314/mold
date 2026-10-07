@@ -26,6 +26,6 @@ int main() {
   printf("%g\n", addf(1.0, 2.0, 3.0, 4.0));
 }
 EOF
-$CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-delay_library,$t/libfl.dylib -Wl,-rpath,$t
+$CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-delay_library,$t/libfl.dylib -Wl,-rpath,$PWD/$t
 $RUN $t/exe > $t/out
 printf '10\n10\n' | cmp - $t/out

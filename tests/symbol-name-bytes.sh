@@ -26,7 +26,7 @@ grep -q $'] _f\xffo$' $t/map
 $CC --ld-path=$mold -shared -o $t/libfoo.dylib $t/a.o -Wl,-install_name,@rpath/libfoo.dylib
 nm -g $t/libfoo.dylib > $t/nm2
 grep -q $' T _f\xffo$' $t/nm2
-$CC --ld-path=$mold -o $t/exe2 $t/main.o -L$t -lfoo -Wl,-rpath,$t
+$CC --ld-path=$mold -o $t/exe2 $t/main.o -L$t -lfoo -Wl,-rpath,$PWD/$t
 nm -m $t/exe2 > $t/nm3
 grep -q $'(undefined) external _f\xffo (from libfoo)' $t/nm3
 $RUN $t/exe2 || [ $? = 3 ]

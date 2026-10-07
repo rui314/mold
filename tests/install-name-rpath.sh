@@ -13,7 +13,7 @@ cat <<EOF | $CC -o $t/b.o -c -xc -
 void bar() {}
 EOF
 
-$CC --ld-path=$mold -shared -o $t/libbar.dylib $t/b.o -Wl,-reexport_library,$t/x/y/z/libfoo.dylib -Wl,-rpath,$t/x
+$CC --ld-path=$mold -shared -o $t/libbar.dylib $t/b.o -Wl,-reexport_library,$t/x/y/z/libfoo.dylib -Wl,-rpath,$PWD/$t/x
 
 objdump --macho --dylibs-used $t/libbar.dylib | grep 'libfoo.*reexport'
 

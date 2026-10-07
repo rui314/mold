@@ -39,13 +39,13 @@ slots() {
 if [ $ARCH = arm64 ]; then classic=11.0; else classic=12.0; fi
 
 $CC --ld-path=$mold -o $t/exe1 $t/main.o $t/liba.dylib $t/libb.dylib \
-  -Wl,-rpath,$t -mmacosx-version-min=14.0
+  -Wl,-rpath,$PWD/$t -mmacosx-version-min=14.0
 $RUN $t/exe1 | grep -q x
 [ "$(slots $t/exe1 __stubs)" = '_Zup _afun _bfun _puts _zfun ' ]
 [ "$(slots $t/exe1 __got)" = '_Zup _aa _afun _bb _bfun _printf _puts _zfun _zz ' ]
 
 $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/liba.dylib $t/libb.dylib \
-  -Wl,-rpath,$t -mmacosx-version-min=$classic
+  -Wl,-rpath,$PWD/$t -mmacosx-version-min=$classic
 $RUN $t/exe2 | grep -q x
 [ "$(slots $t/exe2 __stubs)" = '_Zup _afun _bfun _puts _zfun ' ]
 [ "$(slots $t/exe2 __got)" = '_aa _bb _printf _zz dyld_stub_binder ' ]
@@ -94,7 +94,7 @@ _getl:
   ret
 EOF
 $CC --ld-path=$mold -o $t/exe4 $t/main.o $t/d.o $t/liba.dylib $t/libb.dylib \
-  -Wl,-rpath,$t -mmacosx-version-min=$classic
+  -Wl,-rpath,$PWD/$t -mmacosx-version-min=$classic
 $RUN $t/exe4 | grep -q x
 nm $t/exe4 > $t/nm4
 laa=$(awk '$3 == "_laa" { print $1 }' $t/nm4)

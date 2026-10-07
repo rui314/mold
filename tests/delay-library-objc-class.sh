@@ -36,11 +36,11 @@ int main() {
 EOF
 done
 
-$CC --ld-path=$mold -o $t/exe $t/main15.0.o -Wl,-delay_library,$t/libk.dylib -Wl,-rpath,$t \
+$CC --ld-path=$mold -o $t/exe $t/main15.0.o -Wl,-delay_library,$t/libk.dylib -Wl,-rpath,$PWD/$t \
   -framework Foundation -mmacosx-version-min=15.0
 $RUN $t/exe > $t/out
 printf 'start\nk loaded\n42\n' | cmp - $t/out
 
 not $CC --ld-path=$mold -o $t/exe2 $t/main14.0.o -Wl,-delay_library,$t/libk.dylib \
-  -Wl,-rpath,$t -framework Foundation -mmacosx-version-min=14.0 2> $t/log
+  -Wl,-rpath,$PWD/$t -framework Foundation -mmacosx-version-min=14.0 2> $t/log
 grep -q "K.* cannot be delayed" $t/log

@@ -32,7 +32,7 @@ EOF
 echo 'int main() { return 0; }' | $CC -o $t/c.o -c -xc -
 
 $CC --ld-path=$mold -o $t/exe1 $t/a.o -Wl,-assert_weak_library,$t/libfoo.dylib \
-  -Wl,-rpath,$t
+  -Wl,-rpath,$PWD/$t
 otool -L $t/exe1 | grep -q 'libfoo.dylib (.*, weak)'
 $RUN $t/exe1 | grep -q '^3$'
 

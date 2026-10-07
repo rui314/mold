@@ -36,7 +36,7 @@ int bar(void);
 int main() { printf("%d\n", bar()); }
 EOF
 $CC --ld-path=$mold -o $t/exe $t/main.o -F$t/Library/Frameworks -framework Foo \
-  -Wl,-rpath,$t/Library/Frameworks -Wl,-rpath,$t/Library/PrivateFrameworks
+  -Wl,-rpath,$PWD/$t/Library/Frameworks -Wl,-rpath,$PWD/$t/Library/PrivateFrameworks
 $RUN $t/exe | grep '^7$'
 
 # A re-export naming a library already in the link by install name
@@ -57,6 +57,6 @@ cat <<EOF | $CC -o $t/main2.o -c -xc -
 int qux(void);
 int main() { printf("%d\n", qux()); }
 EOF
-$CC --ld-path=$mold -o $t/exe2 $t/main2.o $t/libqux.dylib $t/libwrap.dylib -Wl,-rpath,$t 2> $t/log2
+$CC --ld-path=$mold -o $t/exe2 $t/main2.o $t/libqux.dylib $t/libwrap.dylib -Wl,-rpath,$PWD/$t 2> $t/log2
 not grep -q 'missing indirect library' $t/log2
 $RUN $t/exe2 | grep '^9$'

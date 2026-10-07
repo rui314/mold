@@ -19,7 +19,7 @@ EOF
 
 $CXX --ld-path=$mold -dynamiclib -o $t/liba.dylib $t/a.o \
   -install_name @rpath/liba.dylib
-$CXX --ld-path=$mold -o $t/exe $t/b.o $t/liba.dylib -Wl,-rpath,$t
+$CXX --ld-path=$mold -o $t/exe $t/b.o $t/liba.dylib -Wl,-rpath,$PWD/$t
 $RUN $t/exe | grep -q '^5$'
 for f in $t/exe $t/liba.dylib; do
   dyld_info -fixups $f > $t/fixups
@@ -28,6 +28,6 @@ done
 
 $CXX --ld-path=$mold -dynamiclib -o $t/liba.dylib $t/a.o \
   -install_name @rpath/liba.dylib -Wl,-no_fixup_chains
-$CXX --ld-path=$mold -o $t/exe2 $t/b.o $t/liba.dylib -Wl,-rpath,$t \
+$CXX --ld-path=$mold -o $t/exe2 $t/b.o $t/liba.dylib -Wl,-rpath,$PWD/$t \
   -Wl,-no_fixup_chains
 $RUN $t/exe2 | grep -q '^5$'

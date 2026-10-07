@@ -40,7 +40,7 @@ int main() {
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o -L$t -Wl,-lazy-lfoo,-lazy_library,$t/libqux.dylib \
-  -Wl,-rpath,$t -mmacosx-version-min=27.0
+  -Wl,-rpath,$PWD/$t -mmacosx-version-min=27.0
 otool -l $t/exe > $t/lc
 [ "$(grep -c 'cmd LC_LAZY_LOAD_DYLIB_INFO' $t/lc)" = 2 ]
 not grep -q libfoo $t/lc
@@ -128,7 +128,7 @@ cat <<EOF | $CC -o $t/d.o -c -xc -
 int mid(void);
 int main() { printf("start\n"); printf("%d\n", mid()); }
 EOF
-$CC --ld-path=$mold -o $t/exe3 $t/d.o -L$t -lmid -Wl,-rpath,$t -mmacosx-version-min=27.0
+$CC --ld-path=$mold -o $t/exe3 $t/d.o -L$t -lmid -Wl,-rpath,$PWD/$t -mmacosx-version-min=27.0
 $RUN $t/exe3 > $t/out3
 printf 'start\nfoo loaded\n4\n' | cmp - $t/out3
 

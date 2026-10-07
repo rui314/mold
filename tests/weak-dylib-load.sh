@@ -36,20 +36,20 @@ flags() { otool -h $1 | tail -1 | awk '{print $NF}'; }
 # from inside the image or not), on top of NO_REEXPORTED_DYLIBS.
 [ "$(flags $t/libwl.dylib)" = 0x00118085 ]
 
-$CC --ld-path=$mold -o $t/e1 $t/w1.o $t/libwl.dylib -Wl,-rpath,$t
+$CC --ld-path=$mold -o $t/e1 $t/w1.o $t/libwl.dylib -Wl,-rpath,$PWD/$t
 [ "$(load $t/e1)" = weak ]
 dyld_info -fixups $t/e1 | grep 'libwl/_wf' | grep 'weak-import'
 [ "$(flags $t/e1)" = 0x00200085 ]
 $RUN $t/e1 | grep '^1$'
 
-$CC --ld-path=$mold -o $t/e2 $t/w1.o $t/w2.o $t/libwl.dylib -Wl,-rpath,$t
+$CC --ld-path=$mold -o $t/e2 $t/w1.o $t/w2.o $t/libwl.dylib -Wl,-rpath,$PWD/$t
 [ "$(load $t/e2)" = strong ]
 dyld_info -fixups $t/e2 > $t/fixups2
 grep -q 'libwl/_wf' $t/fixups2
 not grep -q 'weak-import' $t/fixups2
 $RUN $t/e2 | grep '^1$'
 
-$CC --ld-path=$mold -o $t/e3 $t/w3.o $t/libwl.dylib -Wl,-rpath,$t
+$CC --ld-path=$mold -o $t/e3 $t/w3.o $t/libwl.dylib -Wl,-rpath,$PWD/$t
 [ "$(load $t/e3)" = strong ]
 [ "$(flags $t/e3)" = 0x00210085 ]
 $RUN $t/e3 | grep '^3$'

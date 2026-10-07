@@ -24,7 +24,7 @@ cat <<EOF2 | $CC -o $t/main.o -c -xc -
 int a_next(void); int b_next(void);
 int main() { printf("%d %d %d\n", a_next(), b_next(), a_next()); }
 EOF2
-$CC --ld-path=$mold -o $t/exe $t/main.o $t/liba.dylib $t/libb.dylib -Wl,-rpath,$t
+$CC --ld-path=$mold -o $t/exe $t/main.o $t/liba.dylib $t/libb.dylib -Wl,-rpath,$PWD/$t
 # One counter across both dylibs.
 $RUN $t/exe | grep '^1 2 3$'
 
@@ -52,5 +52,5 @@ $CXX --ld-path=$mold -dynamiclib -o $t/lib${lib}c.dylib $t/$lib.o -install_name 
 done
 otool -l $t/libac.dylib | grep 'LC_DYLD_INFO'
 otool -l $t/libac.dylib | grep -A11 'LC_DYLD_INFO' | grep 'weak_bind_size' | grep -v ' 0$'
-$CC --ld-path=$mold -o $t/exec $t/main.o $t/libac.dylib $t/libbc.dylib -Wl,-rpath,$t
+$CC --ld-path=$mold -o $t/exec $t/main.o $t/libac.dylib $t/libbc.dylib -Wl,-rpath,$PWD/$t
 $RUN $t/exec | grep '^1 2 3$'

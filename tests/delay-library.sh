@@ -41,7 +41,7 @@ int main() {
 EOF
 
 $CC --ld-path=$mold -o $t/exe $t/a.o -L$t -Wl,-delay-lfoo,-delay_library,$t/libqux.dylib \
-  -Wl,-rpath,$t
+  -Wl,-rpath,$PWD/$t
 otool -l $t/exe > $t/lc
 [ "$(grep -c 'options delay-init' $t/lc)" = 2 ]
 grep -A3 'name @rpath/libfoo.dylib (offset 28)' $t/lc | grep -q 'options delay-init'
@@ -94,7 +94,7 @@ not grep -q libfoo $t/libs4
 
 # dyld before macOS 15 runs the initializers at launch: ld-prime warns,
 # but delays the dylib all the same.
-$CC --ld-path=$mold -o $t/exe5 $t/a.o -L$t -Wl,-delay-lfoo,-lqux -Wl,-rpath,$t \
+$CC --ld-path=$mold -o $t/exe5 $t/a.o -L$t -Wl,-delay-lfoo,-lqux -Wl,-rpath,$PWD/$t \
   -mmacosx-version-min=14.0 2> $t/log5
 grep -q "delay-init will be ignored for 'foo' because deployment target version is too low" $t/log5
 otool -l $t/exe5 | grep -q 'options delay-init'
