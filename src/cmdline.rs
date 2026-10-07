@@ -2914,6 +2914,16 @@ fn resolve_defaults(target: &TargetTraits, args: &mut Args, st: &ParseState) {
     if args.unixthread && !st.explicit_entry {
         args.entry = b"start".to_vec();
     }
+    // Build scripts written for such images still pass -e start. dyld
+    // calls LC_MAIN's entry point as main, which crt1.o's start, the
+    // code that once set up the process, is not, so ld-prime keeps
+    // _main.
+    if !args.unixthread && args.has_entry_point() && args.entry == b"start" {
+        crate::warn!(
+            "Ignoring '-e start' because entry point 'start' is not used for the targeted OS version"
+        );
+        args.entry = b"_main".to_vec();
+    }
 }
 
 /// The source version the build system gives in
