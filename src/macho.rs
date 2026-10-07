@@ -430,13 +430,22 @@ impl MachRel {
 }
 
 /// Whether ld-prime defaults to chained fixups for an output and its
-/// macOS deployment target: from macOS 12, except for an x86-64
-/// executable, from 13. Its diagnostics call these the "new OS
-/// versions".
+/// deployment target, which its diagnostics call the "new OS versions".
+/// That is no version set but each OS's own: macOS 12 (13 for an x86-64
+/// executable), iOS 13.4, whose dyld was the first to read the chains,
+/// tvOS 14, the simulators 15 on either architecture, and every
+/// visionOS; firmware too, whatever its version.
 pub fn is_new_os(arch: &str, output_type: u32, platform: u32, minos: u32) -> bool {
-    let min = if arch == "x86_64" && output_type == MH_EXECUTE { 13 } else { 12 };
-    platform == PLATFORM_FIRMWARE
-        || (platform == PLATFORM_MACOS && minos >= encode_version(min, 0, 0))
+    let first = match platform {
+        PLATFORM_MACOS if arch == "x86_64" && output_type == MH_EXECUTE => encode_version(13, 0, 0),
+        PLATFORM_MACOS => encode_version(12, 0, 0),
+        PLATFORM_IOS => encode_version(13, 4, 0),
+        PLATFORM_TVOS => encode_version(14, 0, 0),
+        PLATFORM_IOSSIMULATOR | PLATFORM_TVOSSIMULATOR => encode_version(15, 0, 0),
+        PLATFORM_VISIONOS | PLATFORM_VISIONOSSIMULATOR | PLATFORM_FIRMWARE => 0,
+        _ => return false,
+    };
+    minos >= first
 }
 
 /// A season's releases of Apple's OSes, which ld64 names its version
