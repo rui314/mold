@@ -168,6 +168,15 @@ test -z "$(readelf -SW $t/exe | grep '\.symtab')"
 $CC -B. -o $t/exe -Wl,-sx $t/a.o 2> $t/log
 grep 'grouped short command line options are deprecated: -sx' $t/log
 
+# -sr is -s -r, so it makes a relocatable output; but GNU ld reads -r and
+# -i as a word of their own, so -rs and -is are unknown.
+$CC -B. -o $t/exe -Wl,-sr $t/a.o 2> $t/log
+grep 'grouped short command line options are deprecated: -sr' $t/log
+readelf -h $t/exe > $t/log2
+grep 'Type:.*REL ' $t/log2
+not ./mold -rs $t/a.o |& grep 'unrecognised option: -rs'
+not ./mold -is $t/a.o |& grep 'unrecognised option: -is'
+
 # A letter that takes a value ends the bundle, and GNU ld rejects the
 # word, so it stays unknown.
 not ./mold -sO2 $t/a.o |& grep 'unknown command line option: -sO2'

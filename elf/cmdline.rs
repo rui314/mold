@@ -1148,7 +1148,7 @@ pub struct ParsedArgs {
 /// bundled in one word (`-sS`), as GNU ld accepts with a deprecation
 /// warning. A letter that takes a value ends the bundle, and GNU ld
 /// rejects the word, so such words are left alone to fail as unknown.
-const SHORT_FLAG_LETTERS: &[u8] = b"EMNSVXdginqstvwx";
+const SHORT_FLAG_LETTERS: &[u8] = b"EMNSVXdginqrstvwx";
 
 /// Whether `word` is a bundle of short flags (`-sS`): a single dash and
 /// two or more letters, each naming a short option that takes no value.
@@ -2115,7 +2115,15 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                 "grouped short command line options are deprecated: {}",
                 cursor.current().to_string_lossy()
             );
-            for &letter in &cursor.current().as_encoded_bytes()[1..] {
+            // GNU ld reads -r and -i as a word of their own: in a group,
+            // with letters after them, it rejects the word.
+            let letters = &cursor.current().as_encoded_bytes()[1..];
+            if let Some((_, init)) = letters.split_last()
+                && (init.contains(&b'r') || init.contains(&b'i'))
+            {
+                fatal!("unrecognised option: {}", cursor.current().to_string_lossy());
+            }
+            for &letter in letters {
                 match letter {
                     b'E' => a.export_dynamic = true,
                     b'M' => {
@@ -2132,7 +2140,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                     }
                     b'X' => a.discard_locals = true,
                     b'd' | b'g' => {}
-                    b'i' => {
+                    b'i' | b'r' => {
                         a.relocatable = true;
                         a.emit_relocs = true;
                     }
@@ -2701,6 +2709,13 @@ mod tests {
         assert!(parsed.args.discard_locals);
         assert_eq!(parsed.jobs.len(), 1);
 
+        // -sr is -s -r, so it makes a relocatable output (-s strips only
+        // debug info there).
+        let parsed = parse(&["-sr", "a.o"]);
+        assert!(parsed.args.strip_debug);
+        assert!(parsed.args.relocatable);
+        assert_eq!(parsed.jobs.len(), 1);
+
         // A word that names a long option is not a bundle: -init is
         // --init, not -i -n -i -t.
         let parsed = parse(&["-init", "foo", "a.o"]);
@@ -2713,6 +2728,7 @@ mod tests {
         // A letter that takes a value ends the bundle, and GNU ld rejects
         // the word, so it is not split.
         assert!(is_short_bundle(OsStr::new("-sS")));
+        assert!(is_short_bundle(OsStr::new("-sr")));
         assert!(!is_short_bundle(OsStr::new("-sO2")));
         assert!(!is_short_bundle(OsStr::new("-s")));
         assert!(!is_short_bundle(OsStr::new("--sS")));
