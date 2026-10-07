@@ -43,6 +43,13 @@ mold-elf-loongarch32 = { path = "arch/elf-loongarch32", version = "=3.0.0" }
 
 [profile.release]
 panic = "abort"
+# Optimize for size instead of speed
+# opt-level = "z"
+# Remove dead code and duplications between crates at link time.
+lto = true
+# Strip symbol table and debug info from the release binary.
+strip = true
 # Copying generic and inline functions once per crate instead of once per
 # codegen unit makes the executable about a quarter smaller.
 codegen-units = 1
+
