@@ -3190,6 +3190,15 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                         "grouped short command line options are deprecated: {}",
                         value_os.to_string_lossy()
                     );
+                    // GNU ld reads -r and -i as a word of their own: in a
+                    // group, with letters after them, it rejects the word.
+                    let letters =
+                        value_os.as_encoded_bytes().strip_prefix(b"-").unwrap_or_default();
+                    if let Some((_, init)) = letters.split_last()
+                        && (init.contains(&b'r') || init.contains(&b'i'))
+                    {
+                        fatal!("unrecognised option: {}", value_os.to_string_lossy());
+                    }
                 }
                 Item::Unknown(value_os) => {
                     if let Some(level) = value_os.as_encoded_bytes().strip_prefix(b"--lto-O") {
