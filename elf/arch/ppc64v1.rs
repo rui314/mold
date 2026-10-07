@@ -48,6 +48,9 @@
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 
+use mold_common::endian::{read_ub16, read_ub32, write_ub16, write_ub32, write_ub64};
+use mold_common::util::{bits, is_int};
+use mold_common::{error, fatal};
 use rayon::prelude::*;
 
 use crate::arch::{Family, Target, ThunkLayout};
@@ -61,9 +64,6 @@ use crate::symbol::{
     AddrFlags, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_PPC_OPD, NEEDS_TLSGD, Symbol,
 };
 use crate::thunks::Thunk;
-use crate::util::endian::{read_ub16, read_ub32, write_ub16, write_ub32, write_ub64};
-use crate::util::{bits, is_int};
-use crate::{error, fatal};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Ppc64V1;

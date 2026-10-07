@@ -1,9 +1,10 @@
 //! Input file classification.
 
+use mold_common::archive_file;
+use mold_common::mapped_file::MappedFile;
+
 use crate::arch::{self, Target};
-use crate::archive_file;
 use crate::elf::*;
-use crate::mapped_file::MappedFile;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FileType {
@@ -86,7 +87,7 @@ fn is_gcc_lto_obj<E: Target>(data: &[u8], has_gcc_plugin: bool) -> bool {
         // objects otherwise. A GCC FAT LTO object can be identified by the
         // presence of a `.gnu.lto_.symtab` section.
         if let Some(offset) = shstrtab_offset {
-            let name = crate::util::cstr_at(data, offset + shdr.sh_name.get() as usize);
+            let name = mold_common::util::cstr_at(data, offset + shdr.sh_name.get() as usize);
             if name.starts_with(b".gnu.lto_.symtab.") {
                 return true;
             }
@@ -115,7 +116,7 @@ fn is_gcc_lto_obj<E: Target>(data: &[u8], has_gcc_plugin: bool) -> bool {
             let Some(strtab) = shdrs.get(shdr.sh_link.get() as usize) else {
                 return false;
             };
-            let name = crate::util::cstr_at(
+            let name = mold_common::util::cstr_at(
                 data,
                 strtab.sh_offset.get() as usize + sym.st_name() as usize,
             );

@@ -67,6 +67,8 @@
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 
+use mold_common::perf::Counter;
+use mold_common::siphash::SipHash13_128;
 use portable_atomic::AtomicU64;
 use rayon::prelude::*;
 
@@ -77,8 +79,6 @@ use crate::elf::*;
 use crate::input_files::{ObjId, ObjectFile};
 use crate::input_sections::{InputSection, SectionRef};
 use crate::symbol::{OriginValue, Symbol, SymbolId, is_c_identifier};
-use crate::util::perf::Counter;
-use crate::util::siphash::SipHash13_128;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct Digest {
@@ -595,7 +595,7 @@ pub fn icf_sections<E: Target>(ctx: &mut Context<E>) {
         return;
     }
     let mut key = [0u8; 16];
-    crate::util::random_bytes(&mut key);
+    mold_common::util::random_bytes(&mut key);
 
     uniquify_cies(ctx);
     // Prepare for the propagation rounds.

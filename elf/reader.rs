@@ -10,19 +10,19 @@
 
 use std::path::Path;
 
+use mold_common::archive_file;
+use mold_common::mapped_file::{MappedFile, must_open_file, open_file};
+use mold_common::perf::Counter;
+use mold_common::worker_local::WorkerLocal;
+use mold_common::{fatal, out, warn};
 use rayon::prelude::*;
 
 use crate::arch::Target;
-use crate::archive_file;
 use crate::cmdline::{ReaderContext, ReaderJob};
 use crate::context::Context;
 use crate::filetype::{self, FileType};
 use crate::input_files::{ObjectFile, SharedFile};
 use crate::linker_script::Script;
-use crate::mapped_file::{MappedFile, must_open_file, open_file};
-use crate::util::perf::Counter;
-use crate::util::worker_local::WorkerLocal;
-use crate::{fatal, out, warn};
 
 /// A file that has been read, with its command line position.
 pub enum Loaded<E: Target> {
@@ -256,7 +256,7 @@ pub fn find_library<E: Target>(
     name: &std::ffi::OsStr,
 ) -> &'static MappedFile {
     if let Some(exact) = name.as_encoded_bytes().strip_prefix(b":") {
-        let exact = std::path::Path::new(crate::util::os_str(exact));
+        let exact = std::path::Path::new(mold_common::util::os_str(exact));
         let exact = exact.strip_prefix("/").unwrap_or(exact);
         for dir in &ctx.args.library_paths {
             if let Some(mf) = open_library(ctx, rctx, &dir.join(exact)) {
@@ -338,7 +338,7 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
             // Open the input named by this command line argument.
             let mf = if job.is_lib {
                 let mf = find_library(ctx_ref, &rctx, job.name.as_os_str());
-                crate::util::leak(MappedFile {
+                mold_common::util::leak(MappedFile {
                     name: mf.name.clone(),
                     data: mf.data,
                     given_fullpath: false,

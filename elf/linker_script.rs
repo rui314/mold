@@ -8,14 +8,15 @@
 
 use std::path::{Path, PathBuf};
 
+use mold_common::mapped_file::{MappedFile, apply_chroot, must_open_file};
+use mold_common::util;
+use mold_common::{fatal, warn};
+
 use crate::arch::Target;
 use crate::cmdline::{DefsymValue, ReaderContext};
 use crate::context::Context;
 use crate::elf::*;
-use crate::mapped_file::{MappedFile, apply_chroot, must_open_file};
 use crate::reader;
-use crate::util;
-use crate::{fatal, warn};
 
 /// A version script pattern.
 #[derive(Clone, Debug)]

@@ -1,5 +1,6 @@
 //! `.rel.dyn` and `.rela.dyn`, dynamic relocations.
 
+use mold_common::util::encode_sleb;
 use rayon::prelude::*;
 
 use crate::arch::Target;
@@ -7,7 +8,6 @@ use crate::chunks::relrdyn::encode_relr;
 use crate::chunks::{self, ChunkHeader};
 use crate::context::Context;
 use crate::elf::*;
-use crate::util::encode_sleb;
 
 // .rel.dyn contains relocation information for other sections.
 #[derive(Debug)]

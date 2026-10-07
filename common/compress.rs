@@ -20,7 +20,7 @@ use flate2::FlushDecompress;
 use rayon::prelude::*;
 use zlib_rs::adler32::{adler32, adler32_combine};
 
-use crate::util::worker_local::WorkerLocal;
+use crate::worker_local::WorkerLocal;
 
 const SHARD_SIZE: usize = 1024 * 1024;
 

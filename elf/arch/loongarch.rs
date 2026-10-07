@@ -24,6 +24,10 @@
 // Binary literals are grouped by instruction field.
 #![allow(clippy::unusual_byte_groupings)]
 
+use mold_common::endian::{read_ul16, read_ul32, read_ul64, write_ul16, write_ul32, write_ul64};
+use mold_common::util::{align_to, bits, is_int, overwrite_uleb, read_uleb, sign_extend};
+use mold_common::{error, fatal};
+
 use crate::arch::{Class, ElfClass, Family, Target};
 use crate::chunks::eh_frame;
 use crate::context::Context;
@@ -35,9 +39,6 @@ use crate::input_sections::{
 };
 use crate::shrink_sections::compute_distance;
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSDESC, NEEDS_TLSGD, Symbol};
-use crate::util::endian::{read_ul16, read_ul32, read_ul64, write_ul16, write_ul32, write_ul64};
-use crate::util::{align_to, bits, is_int, overwrite_uleb, read_uleb, sign_extend};
-use crate::{error, fatal};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct LoongArchTarget<const IS_64: bool>;

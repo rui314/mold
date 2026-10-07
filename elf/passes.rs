@@ -1,6 +1,5 @@
 //! The passes of a link, in roughly the order the driver runs them.
 
-use crate::util::worker_local::WorkerLocal;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
@@ -8,6 +7,16 @@ use std::sync::atomic::Ordering;
 use std::sync::{Mutex, RwLock};
 
 use bstr::BStr;
+use mold_common::compress::Compressor;
+use mold_common::error::strerror;
+use mold_common::glob::GlobBuilder;
+use mold_common::output_file::OutputFile;
+use mold_common::parallel::stable_partition;
+use mold_common::perf::Counter;
+use mold_common::tar::TarWriter;
+use mold_common::util::{align_to, leak_bytes};
+use mold_common::worker_local::WorkerLocal;
+use mold_common::{error, fatal, out, warn};
 use rayon::prelude::*;
 
 use crate::arch::{Family, Target};
@@ -27,23 +36,16 @@ use crate::cmdline::{
 };
 use crate::context::Context;
 use crate::elf::*;
-use crate::error::strerror;
 use crate::input_files::{
     FileId, FileList, ObjId, ObjectFile, ObjectOrigin, SymbolEditor, SymbolResolver,
     resolved_symbol_rank, symbol_resolution_rank,
 };
 use crate::input_sections::{InputSection, InputSectionId, SectionRef};
 use crate::linker_script::VersionPattern;
-use crate::output_file::OutputFile;
 use crate::symbol::{
     Bins, NEEDS_CANONICAL, NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_PPC_OPD, NEEDS_TLSDESC,
     NEEDS_TLSGD, Symbol, SymbolId, is_c_identifier,
 };
-use crate::util::compress::Compressor;
-use crate::util::glob::GlobBuilder;
-use crate::util::perf::Counter;
-use crate::util::{align_to, leak_bytes};
-use crate::{error, fatal, out, warn};
 
 pub fn apply_exclude_libs<E: Target>(ctx: &mut Context<E>) {
     let _t = ctx.timer("apply_exclude_libs");
@@ -1642,16 +1644,16 @@ fn create_response_file<E: Target>(ctx: &Context<E>) -> Vec<u8> {
 
 pub fn write_repro_file<E: Target>(ctx: &Context<E>) {
     let _t = ctx.timer("write_repro_file");
-    let output = crate::mapped_file::apply_chroot(&ctx.args.chroot, &ctx.args.output);
+    let output = mold_common::mapped_file::apply_chroot(&ctx.args.chroot, &ctx.args.output);
     let mut name = output.as_os_str().to_os_string();
     name.push(".repro.tar");
     let path = std::path::PathBuf::from(name);
     let mut basedir = ctx.args.output.file_name().unwrap_or_default().to_os_string();
     basedir.push(".repro");
-    let mut tar = crate::util::tar::TarWriter::open(&path, &basedir)
+    let mut tar = TarWriter::open(&path, &basedir)
         .unwrap_or_else(|e| fatal!("cannot open {}: {}", path.display(), strerror(&e)));
 
-    let write = |tar: &mut crate::util::tar::TarWriter, name: &std::path::Path, data: &[u8]| {
+    let write = |tar: &mut TarWriter, name: &std::path::Path, data: &[u8]| {
         tar.append(name, data)
             .unwrap_or_else(|e| fatal!("{}: write failed: {}", path.display(), strerror(&e)));
     };
@@ -1666,7 +1668,7 @@ pub fn write_repro_file<E: Target>(ctx: &Context<E>) {
     // read from disk, as relocation records are rewritten in place only after
     // symbol resolution.
     let mut seen = HashSet::new();
-    for mf in crate::mapped_file::file_pool() {
+    for mf in mold_common::mapped_file::file_pool() {
         if mf.parent.is_none() && seen.insert(mf.name.as_path()) {
             // Preserve the symlink name used in response.txt.
             let abs = std::path::absolute(&mf.name).unwrap_or_else(|e| {
@@ -1720,7 +1722,7 @@ pub fn check_duplicate_symbols<E: Target>(ctx: &Context<E>) {
             error!("duplicate symbol: {file}: {}: {sym}", ctx.file_display(owner));
         }
     });
-    crate::error::checkpoint();
+    mold_common::error::checkpoint();
 }
 
 // A default-versioned symbol `foo@@VER` can also be referred to as
@@ -1759,11 +1761,11 @@ pub fn check_symbol_version_conflicts<E: Target>(ctx: &Context<E>) {
             error!(
                 "duplicate symbol: {file}: {}: {}",
                 ctx.file_display(sym2.file().unwrap()),
-                crate::util::display(file.base.symbol_name_in(sym.sym_idx() as usize))
+                mold_common::util::display(file.base.symbol_name_in(sym.sym_idx() as usize))
             );
         }
     });
-    crate::error::checkpoint();
+    mold_common::error::checkpoint();
 }
 
 // GCC and Clang set the SHT_NOBITS flag for an output section only if the
@@ -2119,9 +2121,7 @@ pub fn sort_debug_info_sections<E: Target>(ctx: &mut Context<E>) {
         let objs = &ctx.objs;
         let osec = &mut ctx.output_sections[id.index()];
         // Preserve the relative order within the two DWARF classes.
-        crate::util::parallel::stable_partition(&mut osec.members, |&m| {
-            objs[m.file().index()].is_dwarf32
-        });
+        stable_partition(&mut osec.members, |&m| objs[m.file().index()].is_dwarf32);
         chunks::compute_section_size(ctx, ChunkId::Output(id));
     }
 
@@ -2467,7 +2467,7 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
         ctx_ref.objs.par_iter().for_each(|file| file.scan_relocations(ctx_ref));
     }
     // Exit if there was a relocation that refers to an undefined symbol.
-    crate::error::checkpoint();
+    mold_common::error::checkpoint();
 
     // Word-size absolute relocations (e.g. R_X86_64_64) are handled
     // separately because they can be promoted to dynamic relocations.
@@ -2501,7 +2501,7 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
         osec.dynrel_offsets = offsets;
     }
     // Exit if the absolute-relocation pass reported an error.
-    crate::error::checkpoint();
+    mold_common::error::checkpoint();
 
     // Group dynamic symbols by their owning file.
     let groups: Vec<Vec<SymbolId>> = {
@@ -2559,10 +2559,10 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
     // Assign table entries in command-line order.
     for (i, &id) in syms.iter().enumerate() {
         if let Some(&next) = syms.get(i + 64) {
-            crate::util::prefetch(std::ptr::from_ref(&ctx.symbols[next]).cast());
+            mold_common::prefetch(std::ptr::from_ref(&ctx.symbols[next]).cast());
         }
         if let Some(aux) = syms.get(i + 16).and_then(|&id| ctx.symbols[id].aux(&ctx.symbols)) {
-            crate::util::prefetch(std::ptr::from_ref(aux).cast());
+            mold_common::prefetch(std::ptr::from_ref(aux).cast());
         }
         let flags = ctx.symbols[id].flags();
         let (is_imported, is_exported, ty) = {
@@ -2648,7 +2648,7 @@ pub fn report_undef_errors<E: Target>(ctx: &Context<E>) {
             warn!("{msg}");
         }
     }
-    crate::error::checkpoint();
+    mold_common::error::checkpoint();
 }
 
 pub fn create_reloc_sections<E: Target>(ctx: &mut Context<E>) {
@@ -2677,8 +2677,7 @@ pub fn sort_dynsyms<E: Target>(ctx: &mut Context<E>) {
     let mut syms: Vec<SymbolId> = ctx.dynsym.symbols[1..].iter().flatten().copied().collect();
 
     // In any symtab, local symbols must precede global symbols.
-    let num_locals =
-        crate::util::parallel::stable_partition(&mut syms, |&id| ctx.symbols[id].is_local(ctx));
+    let num_locals = stable_partition(&mut syms, |&id| ctx.symbols[id].is_local(ctx));
     let mut first_exported = syms.len();
     let mut dynstr_entries = vec![dynsym::DynstrEntry::default(); syms.len() + 1];
 
@@ -2686,9 +2685,7 @@ pub fn sort_dynsyms<E: Target>(ctx: &mut Context<E>) {
     // comparison. The names are reused by both dynamic-table output passes.
     if let Some(gnu_hash) = &mut ctx.gnu_hash {
         first_exported = num_locals
-            + crate::util::parallel::stable_partition(&mut syms[num_locals..], |&id| {
-                !ctx.symbols[id].is_exported()
-            });
+            + stable_partition(&mut syms[num_locals..], |&id| !ctx.symbols[id].is_exported());
         let exported = &mut syms[first_exported..];
         let num_exported = exported.len() as u32;
         let num_buckets = num_exported / GnuHashSection::<E>::LOAD_FACTOR + 1;
@@ -2822,10 +2819,10 @@ pub fn apply_version_script<E: Target>(ctx: &mut Context<E>) {
         }
         if v.is_cpp {
             if !cpp_matcher.add(v.pattern, priority) {
-                fatal!("invalid version pattern: {}", crate::util::display(v.pattern));
+                fatal!("invalid version pattern: {}", mold_common::util::display(v.pattern));
             }
         } else if has_wildcard(v.pattern) && !matcher.add(v.pattern, priority) {
-            fatal!("invalid version pattern: {}", crate::util::display(v.pattern));
+            fatal!("invalid version pattern: {}", mold_common::util::display(v.pattern));
         }
     }
 
@@ -2842,7 +2839,7 @@ pub fn apply_version_script<E: Target>(ctx: &mut Context<E>) {
             // Match non-mangled symbols against the C++ pattern as well.
             // Weird, but required to match other linkers' behavior.
             if !cpp_matcher.is_empty() {
-                let demangled = crate::util::demangle::demangle_cpp(sym.name());
+                let demangled = mold_common::demangle::demangle_cpp(sym.name());
                 let name: &[u8] = demangled.as_deref().map_or(sym.name(), str::as_bytes);
                 m = m.max(cpp_matcher.find(name));
             }
@@ -2867,7 +2864,7 @@ pub fn apply_version_script<E: Target>(ctx: &mut Context<E>) {
                 warn!(
                     "{}: cannot assign version `{}` to symbol `{sym}`: symbol not found",
                     v.source.display(),
-                    crate::util::display(v.ver_str)
+                    mold_common::util::display(v.ver_str)
                 );
             }
             if matches!(sym.file(), Some(FileId::Obj(_))) {
@@ -2937,7 +2934,7 @@ pub fn parse_symbol_version<E: Target>(ctx: &mut Context<E>) {
                 "{}: symbol {} has undefined version {}",
                 file,
                 ctx.symbols[id],
-                crate::util::display(ver)
+                mold_common::util::display(ver)
             );
             continue;
         };
@@ -3095,7 +3092,7 @@ pub fn compute_import_export<E: Target>(ctx: &mut Context<E>) {
                 fatal!(
                     "{}: invalid dynamic list entry: {}",
                     p.source.display(),
-                    crate::util::display(p.pattern)
+                    mold_common::util::display(p.pattern)
                 );
             }
             continue;
@@ -3105,7 +3102,7 @@ pub fn compute_import_export<E: Target>(ctx: &mut Context<E>) {
                 fatal!(
                     "{}: invalid dynamic list entry: {}",
                     p.source.display(),
-                    crate::util::display(p.pattern)
+                    mold_common::util::display(p.pattern)
                 );
             }
             continue;
@@ -3123,7 +3120,7 @@ pub fn compute_import_export<E: Target>(ctx: &mut Context<E>) {
             }
             let matched = matcher.find(sym.name()) != -1
                 || (!cpp_matcher.is_empty() && {
-                    let demangled = crate::util::demangle::demangle_cpp(sym.name());
+                    let demangled = mold_common::demangle::demangle_cpp(sym.name());
                     let name: &[u8] = demangled.as_deref().map_or(sym.name(), str::as_bytes);
                     cpp_matcher.find(name) != -1
                 });
@@ -3174,7 +3171,7 @@ pub fn compute_address_significance<E: Target>(ctx: &mut Context<E>) {
         // If .llvm_addrsig is available, use it.
         if let Some(mut p) = file.llvm_addrsig {
             while !p.is_empty() {
-                let idx = crate::util::read_uleb(&mut p) as usize;
+                let idx = mold_common::util::read_uleb(&mut p) as usize;
                 let sym = &ctx_ref.symbols[file.base.symbols[idx]];
                 if let Some(r) = sym.input_section() {
                     ctx_ref.input_section(r).set_address_taken();
@@ -3784,7 +3781,7 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) -> u64 {
                 continue;
             }
         }
-        crate::error::checkpoint();
+        mold_common::error::checkpoint();
 
         // Assigning new offsets may change the contents and the length
         // of the program header, so repeat it until it converges.
@@ -4207,7 +4204,7 @@ pub fn write_separate_debug_file<E: Target>(ctx: &mut Context<E>) {
     // We want to write to the debug info file in background so that the
     // user doesn't have to wait for it to complete.
     if ctx.args.detach {
-        crate::subprocess::notify_parent();
+        mold_common::subprocess::notify_parent();
     }
 
     // .gnu_debuglink belongs only in the main file. A NOBITS placeholder
@@ -4326,9 +4323,9 @@ pub fn write_separate_debug_file<E: Target>(ctx: &mut Context<E>) {
 pub fn write_dependency_file<E: Target>(ctx: &Context<E>) {
     let mut deps = Vec::new();
     let mut seen = HashSet::new();
-    for mf in crate::mapped_file::file_pool() {
+    for mf in mold_common::mapped_file::file_pool() {
         if mf.is_dependency() && mf.parent.is_none() {
-            let path = crate::util::clean_path(&mf.name);
+            let path = mold_common::util::clean_path(&mf.name);
             if seen.insert(path.clone()) {
                 deps.push(path);
             }
@@ -4417,7 +4414,7 @@ pub fn show_stats<E: Target>(ctx: &Context<E>) {
     stats.extend([
         (
             "total_input_bytes",
-            crate::mapped_file::file_pool().iter().map(|mf| mf.size() as i64).sum(),
+            mold_common::mapped_file::file_pool().iter().map(|mf| mf.size() as i64).sum(),
         ),
         ("input_sections", ctx.objs.iter().map(|file| file.sections.len() as i64).sum()),
         ("output_chunks", ctx.chunks.len() as i64),

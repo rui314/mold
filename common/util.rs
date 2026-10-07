@@ -1,51 +1,34 @@
 //! Small helpers shared across the linker.
 
-// Utility functions
-
-pub(crate) mod compress;
-pub(crate) mod concurrent_map;
-pub(crate) mod demangle;
-pub mod endian;
-pub(crate) mod glob;
-pub(crate) mod hyperloglog;
-pub(crate) mod parallel;
-pub(crate) mod perf;
-mod prefetch;
-pub(crate) mod siphash;
-pub(crate) mod tar;
-pub(crate) mod worker_local;
-
-pub(crate) use prefetch::prefetch;
-
 /// An `UnsafeCell` that may be shared between threads, as std's unstable
 /// type of the same name. A parallel pass views a slice as cells so that
 /// each task can write the elements it owns through a shared reference,
 /// with the slice's bounds checks still applied to every access.
 #[repr(transparent)]
-pub(crate) struct SyncUnsafeCell<T>(std::cell::UnsafeCell<T>);
+pub struct SyncUnsafeCell<T>(std::cell::UnsafeCell<T>);
 
 // SAFETY: the unsafe methods below require callers to keep concurrent
 // accesses to one cell disjoint, which is what `Sync` promises.
 unsafe impl<T: Send + Sync> Sync for SyncUnsafeCell<T> {}
 
 impl<T> SyncUnsafeCell<T> {
-    pub(crate) fn new(value: T) -> Self {
+    pub fn new(value: T) -> Self {
         Self(std::cell::UnsafeCell::new(value))
     }
 
     /// Views an exclusively borrowed slice as shared cells.
-    pub(crate) fn from_mut(slice: &mut [T]) -> &[Self] {
+    pub fn from_mut(slice: &mut [T]) -> &[Self] {
         // SAFETY: a cell has the same layout as its content, and the
         // exclusive borrow of the slice is given up for the shared view.
         unsafe { &*(std::ptr::from_mut(slice) as *const [Self]) }
     }
 
     /// A raw pointer to the content.
-    pub(crate) fn get(&self) -> *mut T {
+    pub fn get(&self) -> *mut T {
         self.0.get()
     }
 
-    pub(crate) fn get_mut(&mut self) -> &mut T {
+    pub fn get_mut(&mut self) -> &mut T {
         self.0.get_mut()
     }
 
@@ -67,7 +50,7 @@ impl<T> SyncUnsafeCell<T> {
     /// No cell in `cells` may be accessed otherwise while the returned slice
     /// is alive.
     #[allow(clippy::mut_from_ref)]
-    pub(crate) unsafe fn as_mut_slice(cells: &[Self]) -> &mut [T] {
+    pub unsafe fn as_mut_slice(cells: &[Self]) -> &mut [T] {
         let ptr = std::cell::UnsafeCell::raw_get(cells.as_ptr().cast());
         // SAFETY: a cell has the same layout as its content; the caller
         // guarantees exclusive access.
@@ -85,7 +68,7 @@ impl<T> std::fmt::Debug for SyncUnsafeCell<T> {
 /// all requested bits are already set. Callers needing the previous value
 /// must use `fetch_or` directly.
 #[inline]
-pub(crate) fn atomic_or(atomic: &std::sync::atomic::AtomicU8, bits: u8) {
+pub fn atomic_or(atomic: &std::sync::atomic::AtomicU8, bits: u8) {
     use std::sync::atomic::Ordering::Relaxed;
     if atomic.load(Relaxed) & bits != bits {
         atomic.fetch_or(bits, Relaxed);
@@ -120,7 +103,7 @@ pub(crate) unsafe fn madvise_hugepage(_data: *mut u8, _size: usize) {}
 ///
 /// `data..data + size` must describe a live allocation.
 #[cfg(any(target_os = "android", target_os = "linux"))]
-pub(crate) unsafe fn madvise_hugepage_interior(data: *const u8, size: usize) {
+pub unsafe fn madvise_hugepage_interior(data: *const u8, size: usize) {
     let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
     if size == 0 || page_size <= 0 {
         return;
@@ -149,12 +132,12 @@ pub(crate) unsafe fn madvise_hugepage_interior(data: *const u8, size: usize) {
 ///
 /// Kept identical to the supported-target signature.
 #[cfg(not(any(target_os = "android", target_os = "linux")))]
-pub(crate) unsafe fn madvise_hugepage_interior(_data: *const u8, _size: usize) {}
+pub unsafe fn madvise_hugepage_interior(_data: *const u8, _size: usize) {}
 
 /// Rounds `value` up to a multiple of `align`, which must be zero or a power
 /// of two. Zero means "no alignment".
 #[inline]
-pub(crate) fn align_to(value: u64, align: u64) -> u64 {
+pub fn align_to(value: u64, align: u64) -> u64 {
     if align == 0 {
         return value;
     }
@@ -163,35 +146,35 @@ pub(crate) fn align_to(value: u64, align: u64) -> u64 {
 }
 
 /// Rounds `value` down to a multiple of `align`, which must be a power of two.
-pub(crate) fn align_down(value: u64, align: u64) -> u64 {
+pub fn align_down(value: u64, align: u64) -> u64 {
     debug_assert!(align.is_power_of_two());
     value & !(align - 1)
 }
 
 /// Returns bit `pos` of `value`.
-pub(crate) fn bit(value: u64, pos: u32) -> u64 {
+pub fn bit(value: u64, pos: u32) -> u64 {
     (value >> pos) & 1
 }
 
 // Returns [hi:lo] bits of val.
 #[inline]
-pub(crate) fn bits(value: u64, hi: u32, lo: u32) -> u64 {
+pub fn bits(value: u64, hi: u32, lo: u32) -> u64 {
     (value >> lo) & ((1u64 << (hi - lo + 1)) - 1)
 }
 
 // Cast val to a signed N bit integer.
 // For example, sign_extend(x, 32) == (i32)x for any integer x.
-pub(crate) fn sign_extend(value: u64, n: u32) -> i64 {
+pub fn sign_extend(value: u64, n: u32) -> i64 {
     ((value << (64 - n)) as i64) >> (64 - n)
 }
 
 /// Whether `value` is representable as a signed `n`-bit integer.
-pub(crate) fn is_int(value: i64, n: u32) -> bool {
+pub fn is_int(value: i64, n: u32) -> bool {
     sign_extend(value as u64, n) == value
 }
 
 /// Writes a NUL-terminated string and returns the number of bytes written.
-pub(crate) fn write_cstr(buf: &mut [u8], s: &[u8]) -> usize {
+pub fn write_cstr(buf: &mut [u8], s: &[u8]) -> usize {
     buf[..s.len()].copy_from_slice(s);
     buf[s.len()] = 0;
     s.len() + 1
@@ -201,14 +184,14 @@ pub(crate) fn write_cstr(buf: &mut [u8], s: &[u8]) -> usize {
 /// The result excludes the terminator. A missing terminator yields the rest
 /// of the table.
 #[inline]
-pub(crate) fn cstr_at(table: &[u8], offset: usize) -> &[u8] {
+pub fn cstr_at(table: &[u8], offset: usize) -> &[u8] {
     let rest = table.get(offset..).unwrap_or(&[]);
     let end = memchr::memchr(0, rest).unwrap_or(rest.len());
     &rest[..end]
 }
 
 /// Appends `value` in unsigned LEB128 encoding.
-pub(crate) fn encode_uleb(out: &mut Vec<u8>, mut value: u64) {
+pub fn encode_uleb(out: &mut Vec<u8>, mut value: u64) {
     loop {
         let byte = (value & 0x7f) as u8;
         value >>= 7;
@@ -221,7 +204,7 @@ pub(crate) fn encode_uleb(out: &mut Vec<u8>, mut value: u64) {
 }
 
 /// Appends `value` in signed LEB128 encoding.
-pub(crate) fn encode_sleb(out: &mut Vec<u8>, mut value: i64) {
+pub fn encode_sleb(out: &mut Vec<u8>, mut value: i64) {
     loop {
         let byte = (value & 0x7f) as u8;
         value >>= 7;
@@ -235,7 +218,7 @@ pub(crate) fn encode_sleb(out: &mut Vec<u8>, mut value: i64) {
 }
 
 /// Overwrites an existing unsigned LEB128 value in place, keeping its length.
-pub(crate) fn overwrite_uleb(buf: &mut [u8], mut value: u64) {
+pub fn overwrite_uleb(buf: &mut [u8], mut value: u64) {
     let mut i = 0;
     while buf[i] & 0x80 != 0 {
         buf[i] = 0x80 | (value & 0x7f) as u8;
@@ -247,7 +230,7 @@ pub(crate) fn overwrite_uleb(buf: &mut [u8], mut value: u64) {
 
 /// Reads an unsigned LEB128 value, advancing `bytes` past it.
 #[inline]
-pub(crate) fn read_uleb(bytes: &mut &[u8]) -> u64 {
+pub fn read_uleb(bytes: &mut &[u8]) -> u64 {
     let mut value = 0;
     let mut shift = 0;
     loop {
@@ -265,7 +248,7 @@ pub(crate) fn read_uleb(bytes: &mut &[u8]) -> u64 {
 
 /// Reads a signed LEB128 value, advancing `bytes` past it.
 #[inline]
-pub(crate) fn read_sleb(bytes: &mut &[u8]) -> i64 {
+pub fn read_sleb(bytes: &mut &[u8]) -> i64 {
     let mut value = 0u64;
     let mut shift = 0;
     loop {
@@ -282,7 +265,7 @@ pub(crate) fn read_sleb(bytes: &mut &[u8]) -> i64 {
 }
 
 /// Fills `buf` with random bytes from the operating system.
-pub(crate) fn random_bytes(buf: &mut [u8]) {
+pub fn random_bytes(buf: &mut [u8]) {
     getrandom::fill(buf).unwrap_or_else(|err| crate::fatal!("cannot get random bytes: {err}"));
 }
 
@@ -291,30 +274,30 @@ pub(crate) fn random_bytes(buf: &mut [u8]) {
 /// Input files, symbol names and a few other objects must outlive every
 /// data structure of a link, and the process exits as soon as the link is
 /// done, so never freeing them is both simplest and cheapest.
-pub(crate) fn leak<T>(value: T) -> &'static T {
+pub fn leak<T>(value: T) -> &'static T {
     Box::leak(Box::new(value))
 }
 
 /// Leaks a byte string for the rest of the process's lifetime.
-pub(crate) fn leak_bytes(bytes: Vec<u8>) -> &'static [u8] {
+pub fn leak_bytes(bytes: Vec<u8>) -> &'static [u8] {
     Vec::leak(bytes)
 }
 
 /// Normalizes a path lexically, resolving `.` and `..` components without
 /// consulting the file system.
-pub(crate) fn path_clean(path: &str) -> String {
+pub fn path_clean(path: &str) -> String {
     clean_path(std::path::Path::new(path)).to_string_lossy().into_owned()
 }
 
 /// Converts bytes from a response file or linker script to an OS string.
 /// Unix paths can contain arbitrary non-NUL bytes.
-pub(crate) fn os_str(bytes: &[u8]) -> &std::ffi::OsStr {
+pub fn os_str(bytes: &[u8]) -> &std::ffi::OsStr {
     use bstr::ByteSlice;
     bytes.to_os_str().unwrap_or_else(|_| crate::fatal!("invalid OS string: {}", display(bytes)))
 }
 
 /// Normalizes an OS path without resolving symlinks.
-pub(crate) fn clean_path(path: &std::path::Path) -> std::path::PathBuf {
+pub fn clean_path(path: &std::path::Path) -> std::path::PathBuf {
     use std::path::{Component, PathBuf};
     let mut out = PathBuf::new();
     for component in path.components() {
@@ -334,7 +317,7 @@ pub(crate) fn clean_path(path: &std::path::Path) -> std::path::PathBuf {
 }
 
 /// Formats a byte string for diagnostics, replacing invalid UTF-8.
-pub(crate) fn display(bytes: &[u8]) -> std::borrow::Cow<'_, str> {
+pub fn display(bytes: &[u8]) -> std::borrow::Cow<'_, str> {
     String::from_utf8_lossy(bytes)
 }
 

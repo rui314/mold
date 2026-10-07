@@ -44,6 +44,9 @@
 //! output; see [`swap_code_bytes`]. Linker-synthesized code is written
 //! in little-endian form to begin with.
 
+use mold_common::endian::write_ul32;
+use mold_common::util::{align_to, bit, bits, is_int, sign_extend};
+use mold_common::{error, fatal};
 use rayon::prelude::*;
 
 use crate::arch::{Family, Target, ThunkLayout};
@@ -55,9 +58,6 @@ use crate::input_sections::NonAllocReloc;
 use crate::input_sections::{InputSection, check_tlsle, scan_absrel, scan_pcrel, scan_tlsdesc};
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
 use crate::thunks::Thunk;
-use crate::util::endian::write_ul32;
-use crate::util::{align_to, bit, bits, is_int, sign_extend};
-use crate::{error, fatal};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Arm32Target<const LE: bool>;

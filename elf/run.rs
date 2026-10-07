@@ -1,6 +1,6 @@
 //! The `-run` subcommand.
 
-use crate::fatal;
+use mold_common::fatal;
 
 /// `mold -run COMMAND ARGS...` runs a command with mold interposed as the
 /// linker. The preload library `mold-wrapper.so`, which is embedded in the
@@ -16,7 +16,7 @@ use crate::fatal;
 pub fn process_run_subcommand(argv: &[std::ffi::OsString]) -> ! {
     use std::os::unix::process::CommandExt;
 
-    use crate::error::strerror;
+    use mold_common::error::strerror;
 
     static WRAPPER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/mold-wrapper.so"));
 
@@ -57,7 +57,7 @@ fn create_sealed_memfd(contents: &[u8]) -> i32 {
     use std::io::Write;
     use std::os::unix::io::FromRawFd;
 
-    use crate::error::strerror;
+    use mold_common::error::strerror;
 
     let flags = libc::MFD_CLOEXEC | libc::MFD_ALLOW_SEALING;
     // SAFETY: the name is a NUL-terminated string.

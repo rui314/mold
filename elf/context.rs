@@ -9,6 +9,10 @@ use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
+use mold_common::mapped_file::MappedFile;
+use mold_common::perf::Timers;
+use mold_common::worker_local::WorkerLocal;
+
 use crate::arch::Target;
 use crate::chunks::build_id::BuildIdSection;
 use crate::chunks::comdat_group::ComdatGroupSection;
@@ -40,10 +44,7 @@ use crate::input_sections::{
     FragmentRef, InputSection, InputSectionId, SectionFragment, SectionRef,
 };
 use crate::linker_script::{DynamicPattern, VersionPattern};
-use crate::mapped_file::MappedFile;
 use crate::symbol::{Bins, Symbol, SymbolChunkId, SymbolId, SymbolSlot, SymbolTable};
-use crate::util::perf::Timers;
-use crate::util::worker_local::WorkerLocal;
 
 // Keep immutable and mutable chunk lookup in the same static match.
 macro_rules! chunk_header {
@@ -272,9 +273,9 @@ impl<E: Target> Context<E> {
     pub fn new(mut args: Args, cmdline_args: impl Into<Arc<[Cow<'static, OsStr>]>>) -> Self {
         let mut symbols = SymbolTable::new();
         let syms = SyntheticSymbols {
-            entry: symbols.intern(crate::util::leak_bytes(std::mem::take(&mut args.entry))),
-            init: symbols.intern(crate::util::leak_bytes(std::mem::take(&mut args.init))),
-            fini: symbols.intern(crate::util::leak_bytes(std::mem::take(&mut args.fini))),
+            entry: symbols.intern(mold_common::util::leak_bytes(std::mem::take(&mut args.entry))),
+            init: symbols.intern(mold_common::util::leak_bytes(std::mem::take(&mut args.init))),
+            fini: symbols.intern(mold_common::util::leak_bytes(std::mem::take(&mut args.fini))),
             ..SyntheticSymbols::default()
         };
         let timers = if args.perf { Timers::new() } else { Timers::disabled() };
@@ -470,7 +471,7 @@ impl<E: Target> Context<E> {
     }
 
     /// Starts a `--perf` timer for a pass.
-    pub fn timer(&self, name: &str) -> crate::util::perf::Timer {
+    pub fn timer(&self, name: &str) -> mold_common::perf::Timer {
         self.timers.start(name)
     }
 }

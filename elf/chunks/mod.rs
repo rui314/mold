@@ -50,13 +50,13 @@ pub mod versym;
 use std::num::NonZeroU32;
 
 use bstr::BStr;
+use mold_common::{error, warn};
 
 use crate::arch::Target;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{FileId, SymtabBlock};
 use crate::tls;
-use crate::{error, warn};
 
 pub use merged::MergedSectionId;
 

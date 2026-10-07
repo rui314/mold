@@ -2,6 +2,7 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use mold_common::error;
 use rayon::prelude::*;
 
 use crate::arch::Target;
@@ -9,7 +10,6 @@ use crate::chunks::ChunkHeader;
 use crate::chunks::symtab::to_output_esym;
 use crate::context::Context;
 use crate::elf::*;
-use crate::error;
 use crate::symbol::{SymbolId, SymbolTable};
 
 // .dynsym contains symbols for dynamic linking. This is similar to

@@ -35,6 +35,10 @@
 //!
 //! https://github.com/IBM/s390x-abi/releases/download/v1.6.1/lzsabi_s390x.pdf
 
+use mold_common::endian::{read_ub16, read_ub32, write_ub16, write_ub32, write_ub64};
+use mold_common::util::{bits, is_int};
+use mold_common::{error, fatal};
+
 use crate::arch::{Family, Target};
 use crate::chunks::eh_frame;
 use crate::context::Context;
@@ -42,9 +46,6 @@ use crate::elf::*;
 use crate::input_sections::NonAllocReloc;
 use crate::input_sections::{InputSection, check_tlsle, scan_absrel, scan_pcrel};
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
-use crate::util::endian::{read_ub16, read_ub32, write_ub16, write_ub32, write_ub64};
-use crate::util::{bits, is_int};
-use crate::{error, fatal};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct S390x;

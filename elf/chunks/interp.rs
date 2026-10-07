@@ -1,10 +1,11 @@
 //! `.interp`, the dynamic linker's pathname.
 
+use mold_common::util::write_cstr;
+
 use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
-use crate::util::write_cstr;
 
 // .interp contains the pathname of a dynamic linker. Dynamically-linked
 // executables have the section. If it exists, the kernel runs the program at

@@ -18,7 +18,7 @@ impl<const C_ROUNDS: usize, const D_ROUNDS: usize, const OUTLEN: usize>
     SipHashTmpl<C_ROUNDS, D_ROUNDS, OUTLEN>
 {
     #[inline]
-    pub(crate) fn new(key: &[u8; 16]) -> Self {
+    pub fn new(key: &[u8; 16]) -> Self {
         const { assert!(OUTLEN == 64 || OUTLEN == 128) };
 
         let k0 = u64::from_le_bytes(key[..8].try_into().unwrap());
@@ -42,7 +42,7 @@ impl<const C_ROUNDS: usize, const D_ROUNDS: usize, const OUTLEN: usize>
     // ICF repeatedly hashes fixed-size digests. Inlining lets the optimizer
     // remove the buffering paths for these word-aligned updates.
     #[inline(always)]
-    pub(crate) fn update(&mut self, mut msg: &[u8]) {
+    pub fn update(&mut self, mut msg: &[u8]) {
         self.sum = self.sum.wrapping_add(msg.len() as u8);
 
         if self.buflen != 0 {
@@ -72,7 +72,7 @@ impl<const C_ROUNDS: usize, const D_ROUNDS: usize, const OUTLEN: usize>
     /// Hashes a word in little-endian byte order. The common aligned case
     /// bypasses the byte buffer, including in loops of fixed-size updates.
     #[inline(always)]
-    pub(crate) fn update_u64(&mut self, word: u64) {
+    pub fn update_u64(&mut self, word: u64) {
         if self.buflen != 0 {
             self.update(&word.to_le_bytes());
             return;
@@ -82,7 +82,7 @@ impl<const C_ROUNDS: usize, const D_ROUNDS: usize, const OUTLEN: usize>
     }
 
     #[inline]
-    pub(crate) fn finish(mut self, out: &mut [u8]) {
+    pub fn finish(mut self, out: &mut [u8]) {
         assert_eq!(out.len() * 8, OUTLEN);
 
         self.buf[self.buflen as usize..].fill(0);

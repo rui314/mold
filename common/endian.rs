@@ -2,7 +2,7 @@
 //!
 //! These functions read and write integers of a known byte order, for code
 //! that patches section contents of a known target. Target-generic code
-//! uses the methods on [`crate::arch::Target`], which pick the byte order
+//! uses the methods on the linker's target type, which pick the byte order
 //! from the target.
 
 macro_rules! endian_io {

@@ -21,6 +21,8 @@
 //! removed. Sections only shrink in the second pass, so no existing
 //! reference to a thunk goes out of range because of it.
 
+use mold_common::error;
+use mold_common::util::align_to;
 use rayon::prelude::*;
 
 use crate::arch::{Family, Target};
@@ -28,10 +30,8 @@ use crate::chunks::output_section::OutputSection;
 use crate::chunks::{ChunkId, OutputSectionId};
 use crate::context::Context;
 use crate::elf::*;
-use crate::error;
 use crate::input_sections::InputSection;
 use crate::symbol::{AddrFlags, Symbol, SymbolId};
-use crate::util::align_to;
 
 /// A block of branch stubs placed between input sections.
 #[derive(Debug)]

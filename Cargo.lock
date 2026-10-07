@@ -239,17 +239,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "mold-elf"
+name = "mold-common"
 version = "3.0.0"
 dependencies = [
- "blake3",
  "bstr",
- "cc",
  "cpp_demangle",
- "crc32fast",
  "flate2",
  "getrandom",
- "hashbrown",
  "libc",
  "libz-rs-sys",
  "memchr",
@@ -257,10 +253,27 @@ dependencies = [
  "portable-atomic",
  "rayon",
  "rustc-demangle",
- "uuid",
  "xxhash-rust",
  "zlib-rs",
  "zstd",
+]
+
+[[package]]
+name = "mold-elf"
+version = "3.0.0"
+dependencies = [
+ "blake3",
+ "bstr",
+ "cc",
+ "crc32fast",
+ "hashbrown",
+ "libc",
+ "memchr",
+ "mold-common",
+ "portable-atomic",
+ "rayon",
+ "uuid",
+ "xxhash-rust",
 ]
 
 [[package]]

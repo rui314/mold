@@ -3,6 +3,8 @@
 use std::sync::atomic::Ordering;
 
 use bstr::BStr;
+use mold_common::util::align_to;
+use mold_common::{error, warn};
 use rayon::prelude::*;
 
 use crate::arch::{Family, Target};
@@ -13,8 +15,6 @@ use crate::input_files::SymtabBlock;
 use crate::input_sections::{InputSection, InputSectionId, r_delta};
 use crate::symbol::{AddrFlags, NEEDS_CANONICAL, SymbolId};
 use crate::thunks::Thunk;
-use crate::util::align_to;
-use crate::{error, warn};
 
 /// How a word-size absolute relocation is resolved.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -376,7 +376,7 @@ pub fn write_dynrels<E: Target>(ctx: &Context<E>, id: OutputSectionId, out: &mut
     let count = offsets.last().copied().unwrap_or(0) as usize;
     debug_assert_eq!(count as u64, osec.hdr.num_dynrels - osec.hdr.num_relrs);
     debug_assert_eq!(out.len(), count);
-    let slices = crate::output_file::split_at_offsets(out, &offsets[..nshards]);
+    let slices = mold_common::output_file::split_at_offsets(out, &offsets[..nshards]);
 
     osec.abs_rels.par_chunks(DYNREL_SHARD_SIZE).zip(slices.into_par_iter()).for_each(
         |(rels, slots)| {

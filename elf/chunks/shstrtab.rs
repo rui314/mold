@@ -3,12 +3,12 @@
 use std::collections::HashMap;
 
 use bstr::BStr;
+use mold_common::util::write_cstr;
 
 use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
-use crate::util::write_cstr;
 
 // .shstrtab contains section names, such as ".text" or ".data". Just like
 // .strtab, .shstrtab is not needed at runtime. One can remove .shstrtab

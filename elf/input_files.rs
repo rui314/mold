@@ -13,6 +13,12 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{OnceLock, RwLock};
 
+use mold_common::mapped_file::MappedFile;
+use mold_common::perf::Counter;
+use mold_common::util::{
+    self, SyncUnsafeCell, align_to, bits, cstr_at, leak_bytes, path_clean, read_uleb,
+};
+use mold_common::{error, fatal, out, warn};
 use rayon::prelude::*;
 
 use crate::arch::{Family, Target};
@@ -24,16 +30,10 @@ use crate::input_sections::{
     CieRecord, FdeRecord, FragmentRef, InputSection, InputSectionId, MergeInfo, SFrameFde,
     SectionList,
 };
-use crate::mapped_file::MappedFile;
 use crate::symbol::{
     Bins, NEEDS_PLT, Origin, OriginValue, ParallelSymbolAllocator, Symbol, SymbolId, SymbolSlot,
     SymbolTable, hash_key,
 };
-use crate::util::perf::Counter;
-use crate::util::{
-    self, SyncUnsafeCell, align_to, bits, cstr_at, leak_bytes, path_clean, read_uleb,
-};
-use crate::{error, fatal, out, warn};
 use bstr::BStr;
 
 // Store short name lengths exactly. A long name stores a logarithmic lower
@@ -857,7 +857,7 @@ pub fn display_file<'a>(filename: &'a str, archive_name: &'a Path) -> impl fmt::
         if archive_name.as_os_str().is_empty() {
             write!(f, "{}", path_clean(filename))
         } else {
-            write!(f, "{}({})", crate::util::clean_path(archive_name).display(), filename)
+            write!(f, "{}({})", mold_common::util::clean_path(archive_name).display(), filename)
         }
     })
 }

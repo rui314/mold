@@ -151,9 +151,10 @@
 //! relative to the copy is decided by each psABI. The dynamic thread
 //! pointer (DTP) is the base `__tls_get_addr` returns for offset 0.
 
+use mold_common::util::{align_down, align_to};
+
 use crate::arch::{Family, Target};
 use crate::elf::{ElfPhdr, PT_TLS, PhdrRecord};
-use crate::util::{align_down, align_to};
 
 /// Returns the TP address which can be used for efficient TLV accesses in
 /// the main executable. TP at runtime refers to a per-process TLS block

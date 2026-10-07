@@ -357,7 +357,7 @@ impl OutputFile {
         }
     }
 
-    pub(crate) fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         match &self.storage {
             Storage::File { len, .. } => *len,
             Storage::Memory(vec) => vec.len(),

@@ -7,6 +7,10 @@
 
 use hashbrown::HashMap;
 
+use mold_common::output_file::split_at_offsets;
+use mold_common::siphash::SipHash13_128;
+use mold_common::util::is_int;
+use mold_common::{error, fatal};
 use rayon::prelude::*;
 
 use crate::arch::Target;
@@ -16,11 +20,7 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::ObjectFile;
 use crate::input_sections::CieRecord;
-use crate::output_file::split_at_offsets;
 use crate::symbol::Symbol;
-use crate::util::is_int;
-use crate::util::siphash::SipHash13_128;
-use crate::{error, fatal};
 
 /// Groups of identical CIEs, which are merged in the output.
 pub struct CieClasses {
@@ -46,7 +46,7 @@ impl CieClasses {
 /// collide, as ICF does.
 pub fn classify_cies<E: Target>(ctx: &Context<E>) -> CieClasses {
     let mut key = [0u8; 16];
-    crate::util::random_bytes(&mut key);
+    mold_common::util::random_bytes(&mut key);
     let hashes: Vec<u128> = ctx
         .objs
         .par_iter()

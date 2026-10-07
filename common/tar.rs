@@ -6,7 +6,7 @@ use std::io::{self, Seek, SeekFrom, Write};
 use std::ffi::{OsStr, OsString};
 use std::path::Path;
 
-use super::{align_to, clean_path};
+use crate::util::{align_to, clean_path};
 
 const BLOCK_SIZE: u64 = 512;
 

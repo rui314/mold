@@ -12,13 +12,13 @@
 //! sorts the records, appends a sentinel and merges adjacent functions
 //! with identical unwind information.
 
+use mold_common::util::sign_extend;
 use rayon::prelude::*;
 
 use crate::arch::Target;
 use crate::chunks::{ChunkHeader, ChunkId, OutputSectionId, output_section};
 use crate::context::Context;
 use crate::elf::*;
-use crate::util::sign_extend;
 
 const CANTUNWIND: u32 = 1;
 const ENTRY_SIZE: usize = 8;

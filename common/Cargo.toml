@@ -1,9 +1,9 @@
 [package]
-name = "mold-elf"
+name = "mold-common"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "An internal crate of the mold linker, which implements its ELF linker"
+description = "An internal crate of the mold linker, which holds the code its linkers share"
 license.workspace = true
 repository.workspace = true
 
@@ -11,18 +11,18 @@ repository.workspace = true
 path = "lib.rs"
 
 [dependencies]
-blake3 = "1.8.7"
 bstr = "1"
-crc32fast = "1"
-hashbrown = "0.17.1"
+cpp_demangle = "0.5.1"
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
+getrandom = "0.4.3"
 libc.workspace = true
+libz-rs-sys = "0.6.8"
 memchr = "2.8.3"
-mold-common.workspace = true
+memmap2 = "0.9"
 # std has no 64-bit atomics on hosts such as 32-bit PowerPC.
 portable-atomic = "1"
 rayon = "1"
-uuid = { version = "1.27", default-features = false, features = ["v4"] }
+rustc-demangle = "0.1"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
-
-[build-dependencies]
-cc = "1"
+zlib-rs = { version = "0.6.8", default-features = false }
+zstd = "0.13"

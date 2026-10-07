@@ -4,6 +4,12 @@ use std::fmt::{self, Write};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use bstr::BStr;
+use mold_common::compress::{zlib_decompress, zstd_decompress};
+use mold_common::concurrent_map::EntryId;
+use mold_common::hyperloglog::HyperLogLog;
+use mold_common::perf::Counter;
+use mold_common::util::{self, cstr_at, leak_bytes};
+use mold_common::{error, fatal};
 use portable_atomic::AtomicU64;
 
 use crate::arch::{Family, Target};
@@ -14,12 +20,6 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::{ObjId, ObjectFile};
 use crate::symbol::{NEEDS_CANONICAL, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSDESC, Symbol, SymbolId};
-use crate::util::compress::{zlib_decompress, zstd_decompress};
-use crate::util::concurrent_map::EntryId;
-use crate::util::hyperloglog::HyperLogLog;
-use crate::util::perf::Counter;
-use crate::util::{self, cstr_at, leak_bytes};
-use crate::{error, fatal};
 
 /// Identifies an input section by its file and section index.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -932,7 +932,7 @@ impl<E: Target> InputSection<E> {
             match kind {
                 UnresolvedKind::Error if !sym.is_imported() => {
                     self.record_undefined_reference(ctx, file, rel, sym_id);
-                    return !crate::error::noinhibit_exec();
+                    return !mold_common::error::noinhibit_exec();
                 }
                 UnresolvedKind::Warn => self.record_undefined_reference(ctx, file, rel, sym_id),
                 _ => {}
@@ -960,7 +960,7 @@ impl<E: Target> InputSection<E> {
 
         // The symbol has no definition to refer to, so we can't create an
         // output file even with --noinhibit-exec.
-        if crate::error::noinhibit_exec() {
+        if mold_common::error::noinhibit_exec() {
             fatal!("{msg}");
         }
         error!("{msg}");
@@ -1850,7 +1850,7 @@ mod tests {
 
     #[test]
     fn fragment_hint_handles_sequential_repeated_and_backward_offsets() {
-        let map = crate::util::concurrent_map::ConcurrentMap::with_capacity(12);
+        let map = mold_common::concurrent_map::ConcurrentMap::with_capacity(12);
         let fragments = (0..12)
             .map(|i| map.insert_with(&b"abcdefghijkl"[i..i + 1], i as u64, || ()).0)
             .collect();

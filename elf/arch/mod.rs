@@ -37,12 +37,13 @@ pub use x86_64::X86_64;
 
 use std::fmt;
 
+use mold_common::endian::*;
+
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::{InputSection, InputSectionExtra, RelocDelta};
 use crate::symbol::Symbol;
 use crate::thunks::Thunk;
-use crate::util::endian::*;
 
 /// Coarse target families, for the few places where generic code needs
 /// target-specific behavior that doesn't warrant a trait hook.

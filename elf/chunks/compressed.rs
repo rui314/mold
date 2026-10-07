@@ -1,10 +1,11 @@
 //! Compressed output sections.
 
+use mold_common::compress::{CompressedData, Compressor};
+
 use crate::arch::Target;
 use crate::chunks::{self, ChunkHeader, ChunkId};
 use crate::context::Context;
 use crate::elf::*;
-use crate::util::compress::{CompressedData, Compressor};
 
 // Debug sections can be compressed with zlib or zstd to reduce the
 // overall size of an ELF file. CompressedSection represents a compressed

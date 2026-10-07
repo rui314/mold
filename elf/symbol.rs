@@ -16,17 +16,17 @@ use std::sync::atomic::{AtomicU8, AtomicU16, AtomicU32, AtomicUsize, Ordering};
 
 use bstr::BStr;
 use hashbrown::{Equivalent, HashMap};
+use mold_common::demangle::{demangle_cpp, demangle_rust};
+use mold_common::error::demangle_enabled;
+use mold_common::hyperloglog::HyperLogLog;
+use mold_common::util::SyncUnsafeCell;
 use rayon::prelude::*;
 
 use crate::arch::Target;
 use crate::context::Context;
 use crate::elf::*;
-use crate::error::demangle_enabled;
 use crate::input_files::FileId;
 use crate::input_sections::{FragmentRef, InputSection, InputSectionId};
-use crate::util::SyncUnsafeCell;
-use crate::util::demangle::{demangle_cpp, demangle_rust};
-use crate::util::hyperloglog::HyperLogLog;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct SymbolId(pub u32);
@@ -550,7 +550,7 @@ impl Symbol {
     #[inline]
     pub fn set_skip_dso(&self, on: bool) {
         if on {
-            crate::util::atomic_or(&self.mu, SYMBOL_SKIP_DSO);
+            mold_common::util::atomic_or(&self.mu, SYMBOL_SKIP_DSO);
         } else {
             self.mu.fetch_and(!SYMBOL_SKIP_DSO, Ordering::Relaxed);
         }
@@ -671,7 +671,7 @@ impl Symbol {
     #[inline]
     pub fn add_flags(&self, flags: u8) {
         debug_assert_eq!(flags & WRITE_TO_SYMTAB, 0);
-        crate::util::atomic_or(&self.flags, flags);
+        mold_common::util::atomic_or(&self.flags, flags);
     }
 
     // The following setters are for passes that update symbols in parallel
@@ -710,7 +710,7 @@ impl Symbol {
 
     #[inline]
     pub fn set_write_to_symtab(&self) {
-        crate::util::atomic_or(&self.flags, WRITE_TO_SYMTAB);
+        mold_common::util::atomic_or(&self.flags, WRITE_TO_SYMTAB);
     }
 
     #[inline]
@@ -1115,7 +1115,7 @@ impl Symbol {
             if name == b"$d" || name.starts_with(b"$d.") {
                 return eh_frame.sh_addr.get();
             }
-            crate::fatal!(
+            mold_common::fatal!(
                 "symbol referring to .eh_frame is not supported: {} {}",
                 self,
                 ctx.file_display(self.file().unwrap())
@@ -1202,7 +1202,7 @@ impl Symbol {
                 return addr;
             }
         }
-        crate::fatal!("range extension thunk out of range: {}", self);
+        mold_common::fatal!("range extension thunk out of range: {}", self);
     }
 
     /// The symbol's index in the output symbol table.
@@ -1446,7 +1446,7 @@ fn madvise_hugepage<T>(values: &Vec<T>) {
     };
     // SAFETY: the vector's allocation covers its capacity; the helper leaves
     // its possibly shared boundary pages untouched.
-    unsafe { crate::util::madvise_hugepage_interior(values.as_ptr().cast(), byte_len) };
+    unsafe { mold_common::util::madvise_hugepage_interior(values.as_ptr().cast(), byte_len) };
 }
 
 /// The vector of all symbols, and the index of global ones by name.
@@ -1506,7 +1506,7 @@ impl SymbolTable {
         if let Some(id) = self.lookup(key) {
             return id;
         }
-        self.intern(crate::util::leak_bytes(key.to_vec()))
+        self.intern(mold_common::util::leak_bytes(key.to_vec()))
     }
 
     /// Interns `key` for a symbol named `name`, a prefix of the key.

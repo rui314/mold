@@ -58,6 +58,10 @@
 
 use std::sync::atomic::Ordering;
 
+use mold_common::endian::{read_ub32, write_ub16, write_ub32, write_ub64};
+use mold_common::util::bits;
+use mold_common::{error, fatal};
+
 use crate::arch::{Family, Target};
 use crate::chunks::eh_frame;
 use crate::chunks::plt::SPARC_NUM_SMALL_PLT;
@@ -66,9 +70,6 @@ use crate::elf::*;
 use crate::input_sections::NonAllocReloc;
 use crate::input_sections::{InputSection, check_tlsle, scan_absrel, scan_pcrel};
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
-use crate::util::bits;
-use crate::util::endian::{read_ub32, write_ub16, write_ub32, write_ub64};
-use crate::{error, fatal};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Sparc64;

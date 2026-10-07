@@ -2,13 +2,13 @@
 
 use std::collections::HashMap;
 
+use mold_common::util::write_cstr;
 use rayon::prelude::*;
 
 use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
-use crate::util::write_cstr;
 
 // .dynstr contains strings that the runtime uses.
 #[derive(Debug)]

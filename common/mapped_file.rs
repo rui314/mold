@@ -107,7 +107,7 @@ pub struct MappedFile {
     /// The contents, in an allocation that is deliberately leaked with the
     /// input file. The bytes are cells because the linker modifies private
     /// relocation records in place, as C++ mold does.
-    pub(crate) data: &'static [SyncUnsafeCell<u8>],
+    pub data: &'static [SyncUnsafeCell<u8>],
 
     /// False if the file was found by searching library paths (`-l`),
     /// which affects how a shared library's soname defaults.
@@ -243,7 +243,7 @@ impl MappedFile {
     /// alive, and no shared reference to an overlapping range may be used
     /// during that time.
     #[allow(clippy::mut_from_ref)]
-    pub(crate) unsafe fn data_mut(&self, range: Range<usize>) -> &mut [u8] {
+    pub unsafe fn data_mut(&self, range: Range<usize>) -> &mut [u8] {
         // SAFETY: guaranteed by the caller.
         unsafe { SyncUnsafeCell::as_mut_slice(&self.data[range]) }
     }

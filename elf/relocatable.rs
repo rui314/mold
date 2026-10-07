@@ -32,6 +32,8 @@
 
 use std::collections::HashMap;
 
+use mold_common::util::align_to;
+
 use crate::arch::Target;
 use crate::chunks::comdat_group::ComdatGroupSection;
 use crate::chunks::note_property::NotePropertySection;
@@ -43,7 +45,6 @@ use crate::elf::*;
 use crate::input_files::FileId;
 use crate::input_sections::InputSectionId;
 use crate::passes;
-use crate::util::align_to;
 
 /// An output section's sh_link can refer to only one section, so
 /// SHF_LINK_ORDER sections of the same name share an output section only
@@ -228,7 +229,7 @@ pub fn combine_objects<E: Target>(ctx: &mut Context<E>) {
     let mut output = crate::driver::open_output_file(&ctx.args, filesize, 0o666, false);
     crate::driver::copy_chunks(ctx, output.buf());
     output.close();
-    crate::error::checkpoint();
+    mold_common::error::checkpoint();
 
     if let Some(output) = &ctx.args.map {
         crate::mapfile::print_map(ctx, output);
@@ -240,6 +241,6 @@ pub fn combine_objects<E: Target>(ctx: &mut Context<E>) {
         ctx.timers.print();
     }
     if ctx.args.quick_exit {
-        crate::error::exit_after_cleanup(0);
+        mold_common::error::exit_after_cleanup(0);
     }
 }

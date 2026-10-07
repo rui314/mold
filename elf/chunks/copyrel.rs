@@ -1,13 +1,14 @@
 //! `.copyrel` and `.copyrel.rel.ro`, storage for copy relocations.
 
+use mold_common::error;
+use mold_common::util::align_to;
+
 use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
-use crate::error;
 use crate::input_files::FileId;
 use crate::symbol::SymbolId;
-use crate::util::align_to;
 
 // .copyrel and .copyrel.rel.ro represent memory regions to which the
 // runtime copies symbols from other ELF files for copy relocations.

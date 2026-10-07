@@ -5,6 +5,9 @@ use std::ffi::{OsStr, OsString};
 use std::ops::Range;
 use std::sync::Arc;
 
+use mold_common::output_file::{OutputFile, split_ranges};
+use mold_common::parallel::Background;
+use mold_common::{error, fatal};
 use rayon::prelude::*;
 
 use crate::arch::{Family, Target};
@@ -12,9 +15,7 @@ use crate::chunks::{self, ChunkId};
 use crate::cmdline::{self, Args, TargetTraits};
 use crate::context::Context;
 use crate::elf::*;
-use crate::output_file::{OutputFile, split_ranges};
-use crate::util::parallel::Background;
-use crate::{error, fatal, passes};
+use crate::passes;
 
 /// The fully expanded command line, shared with the parts of the linker
 /// that report it.
@@ -98,15 +99,15 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     }
 
     let t_all = ctx.timer("all");
-    crate::subprocess::install_signal_handler();
+    mold_common::subprocess::install_signal_handler();
     error::install_panic_hook();
 
     // Fork a subprocess unless --no-fork is given.
     if ctx.args.fork {
-        crate::subprocess::fork_child();
+        mold_common::subprocess::fork_child();
     }
 
-    crate::jobs::acquire_global_lock();
+    mold_common::jobs::acquire_global_lock();
 
     let threads = thread_count(&ctx.args);
     rayon::ThreadPoolBuilder::new()
@@ -135,10 +136,10 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     // Version scripts and dynamic lists given on the command line.
     for path in std::mem::take(&mut ctx.args.version_scripts) {
         let chroot = &ctx.args.chroot;
-        let mf = crate::mapped_file::open_file(chroot, &path).or_else(|| {
+        let mf = mold_common::mapped_file::open_file(chroot, &path).or_else(|| {
             ctx.args.library_paths.iter().find_map(|dir| {
                 let name = path.strip_prefix("/").unwrap_or(&path);
-                crate::mapped_file::open_file(chroot, dir.join(name))
+                mold_common::mapped_file::open_file(chroot, dir.join(name))
             })
         });
         let Some(mf) = mf else {
@@ -155,7 +156,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
             }
             cmdline::DynamicListSource::Pattern(pattern) => {
                 ctx.dynamic_list_patterns.push(crate::linker_script::DynamicPattern {
-                    pattern: crate::util::leak_bytes(pattern),
+                    pattern: mold_common::util::leak_bytes(pattern),
                     source: std::path::Path::new("<command line>"),
                     is_cpp: false,
                 });
@@ -602,13 +603,13 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
 
     let _ = std::io::Write::flush(&mut std::io::stdout());
     let _ = std::io::Write::flush(&mut std::io::stderr());
-    crate::subprocess::notify_parent();
-    crate::jobs::release_global_lock();
+    mold_common::subprocess::notify_parent();
+    mold_common::jobs::release_global_lock();
 
     // Dropping page table entries here in parallel makes process exit
     // faster, as the kernel otherwise reclaims them in a single thread
     // on exit. File contents stay in the page cache.
-    crate::mapped_file::drop_mappings();
+    mold_common::mapped_file::drop_mappings();
 
     if ctx.args.quick_exit {
         error::exit_after_cleanup(0);
@@ -624,7 +625,7 @@ pub(crate) fn open_output_file(
     perm: u32,
     overwrite_in_place: bool,
 ) -> OutputFile {
-    let path = crate::mapped_file::apply_chroot(&args.chroot, &args.output);
+    let path = mold_common::mapped_file::apply_chroot(&args.chroot, &args.output);
     let mut output = OutputFile::open(&path, size, perm, overwrite_in_place, args.mmap_output_file);
     if let Some(filler) = args.filler {
         output.buf().fill(filler);
@@ -728,7 +729,7 @@ fn run_tasks<E: Target>(
     ctx: &Context<E>,
     buf: &mut [u8],
     tasks: &[Task],
-    timer: &crate::util::perf::Timer,
+    timer: &mold_common::perf::Timer,
 ) {
     let ranges: Vec<_> = tasks
         .iter()

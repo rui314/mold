@@ -42,6 +42,10 @@
 
 use std::sync::atomic::Ordering;
 
+use mold_common::endian::{read_ub32, write_ub16, write_ub32};
+use mold_common::util::{bits, is_int};
+use mold_common::{error, fatal};
+
 use crate::arch::{Family, Target, ThunkLayout};
 use crate::chunks::eh_frame;
 use crate::context::Context;
@@ -50,9 +54,6 @@ use crate::input_sections::NonAllocReloc;
 use crate::input_sections::{InputSection, check_tlsle, scan_absrel, scan_pcrel};
 use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
 use crate::thunks::Thunk;
-use crate::util::endian::{read_ub32, write_ub16, write_ub32};
-use crate::util::{bits, is_int};
-use crate::{error, fatal};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Ppc32;

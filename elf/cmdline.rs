@@ -7,15 +7,15 @@ use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 
 use bstr::{ByteSlice, ByteVec};
+use mold_common::error::strerror;
+use mold_common::glob::{Glob, GlobBuilder};
+use mold_common::mapped_file::MappedFile;
+use mold_common::perf::Counter;
+use mold_common::util::{self, align_down};
+use mold_common::{fatal, out, warn};
 
 use crate::arch::{Family, emulation_to_target};
 use crate::elf::*;
-use crate::error::strerror;
-use crate::mapped_file::MappedFile;
-use crate::util::glob::{Glob, GlobBuilder};
-use crate::util::perf::Counter;
-use crate::util::{self, align_down};
-use crate::{fatal, out, warn};
 
 const HELP: &str = "
 Options:
@@ -927,7 +927,7 @@ fn parse_package_metadata(arg: &[u8]) -> Vec<u8> {
 }
 
 fn read_retain_symbols_file(chroot: &Path, path: &Path) -> Vec<&'static [u8]> {
-    let mf = crate::mapped_file::must_open_file(chroot, path);
+    let mf = mold_common::mapped_file::must_open_file(chroot, path);
     mf.data()
         .split(|&b| b == b'\n')
         .map(|line| line.trim_with(|c| c == ' ' || c == '\t'))
@@ -1206,11 +1206,11 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
     let mut rctx_stack: Vec<ReaderContext> = Vec::new();
     let mut visited_libs: HashSet<&OsStr> = HashSet::new();
 
-    crate::error::set_color(std::io::stderr().is_terminal());
-    crate::error::set_fatal_warnings(false);
-    crate::error::set_suppress_warnings(false);
-    crate::error::set_noinhibit_exec(false);
-    crate::error::set_demangle(true);
+    mold_common::error::set_color(std::io::stderr().is_terminal());
+    mold_common::error::set_fatal_warnings(false);
+    mold_common::error::set_suppress_warnings(false);
+    mold_common::error::set_noinhibit_exec(false);
+    mold_common::error::set_demangle(true);
     a.page_size = target.page_size;
 
     let mut version_shown = false;
@@ -1382,15 +1382,15 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
         } else if read_arg!(":ignore-ir-file", true) {
             a.ignore_ir_file.insert(raw_arg.to_os_string());
         } else if cursor.read_flag("demangle") {
-            crate::error::set_demangle(true);
+            mold_common::error::set_demangle(true);
         } else if cursor.read_flag("no-demangle") {
-            crate::error::set_demangle(false);
+            mold_common::error::set_demangle(false);
         } else if let Some(value) = cursor.read_switch("detach", "no-detach") {
             a.detach = value;
         } else if cursor.read_flag("default-symver") {
             a.default_symver = true;
         } else if cursor.read_flag("noinhibit-exec") {
-            crate::error::set_noinhibit_exec(true);
+            mold_common::error::set_noinhibit_exec(true);
         } else if cursor.read_flag("shuffle-sections") {
             // Resolve the seed after parsing all options.
             a.shuffle_sections = ShuffleSections::Shuffle(0);
@@ -1524,13 +1524,13 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
         } else if cursor.read_flag("color-diagnostics")
             || cursor.read_flag("color-diagnostics=auto")
         {
-            crate::error::set_color(std::io::stderr().is_terminal());
+            mold_common::error::set_color(std::io::stderr().is_terminal());
         } else if cursor.read_flag("color-diagnostics=always") {
-            crate::error::set_color(true);
+            mold_common::error::set_color(true);
         } else if cursor.read_flag("color-diagnostics=never")
             || cursor.read_flag("no-color-diagnostics")
         {
-            crate::error::set_color(false);
+            mold_common::error::set_color(false);
         } else if let Some(value) = cursor.read_switch("warn-common", "no-warn-common") {
             a.warn_common = value;
         } else if cursor.read_flag("warn-once") {
@@ -1720,11 +1720,11 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
         } else if let Some(value) = cursor.read_switch("nmagic", "no-nmagic") {
             a.nmagic = value;
         } else if cursor.read_flag("fatal-warnings") {
-            crate::error::set_fatal_warnings(true);
+            mold_common::error::set_fatal_warnings(true);
         } else if cursor.read_flag("no-fatal-warnings") {
-            crate::error::set_fatal_warnings(false);
+            mold_common::error::set_fatal_warnings(false);
         } else if cursor.read_flag("w") || cursor.read_flag("no-warnings") {
-            crate::error::set_suppress_warnings(true);
+            mold_common::error::set_suppress_warnings(true);
         } else if let Some(value) = cursor.read_switch("fork", "no-fork") {
             a.fork = value;
         } else if let Some(value) = cursor.read_switch("--mmap-output-file", "no-mmap-output-file")
@@ -1895,14 +1895,14 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             a.version_scripts.push(PathBuf::from(raw_arg));
         } else if read_arg!("dynamic-list", true) {
             a.bsymbolic = BsymbolicKind::All;
-            let mf = crate::mapped_file::must_open_file(&a.chroot, raw_arg);
+            let mf = mold_common::mapped_file::must_open_file(&a.chroot, raw_arg);
             a.dynamic_list.push(DynamicListSource::File(mf));
         } else if cursor.read_flag("dynamic-list-data") {
             a.dynamic_list_data = true;
         } else if read_arg!("--export-dynamic-symbol", true) {
             a.dynamic_list.push(DynamicListSource::Pattern(raw_arg.as_encoded_bytes().to_vec()));
         } else if read_arg!("--export-dynamic-symbol-list", true) {
-            let mf = crate::mapped_file::must_open_file(&a.chroot, raw_arg);
+            let mf = mold_common::mapped_file::must_open_file(&a.chroot, raw_arg);
             a.dynamic_list.push(DynamicListSource::File(mf));
         } else if read_arg!("entry", true) || read_arg!("e", true) {
             a.entry = raw_arg.as_encoded_bytes().to_vec();

@@ -111,7 +111,7 @@ impl EntryId {
     }
 
     #[inline]
-    pub(crate) fn from_raw(raw: u32) -> Self {
+    pub fn from_raw(raw: u32) -> Self {
         Self(raw)
     }
 }
@@ -294,7 +294,7 @@ impl<T> ConcurrentMap<T> {
             let idx = hash as usize & (self.nbuckets - 1);
             // SAFETY: the masked index is within the allocated table.
             let ptr = unsafe { self.entries.add(idx) };
-            crate::util::prefetch(ptr.cast());
+            crate::prefetch(ptr.cast());
         }
     }
 
@@ -365,8 +365,8 @@ impl<T> FrozenMap<T> {
     }
 
     #[inline]
-    pub(crate) fn prefetch(&self, id: EntryId) {
-        crate::util::prefetch(std::ptr::from_ref(self.0.entry(id.0 as usize)).cast());
+    pub fn prefetch(&self, id: EntryId) {
+        crate::prefetch(std::ptr::from_ref(self.0.entry(id.0 as usize)).cast());
     }
 
     pub fn key(&self, id: EntryId) -> &'static [u8] {
@@ -423,14 +423,14 @@ impl<T> FrozenMap<T> {
     }
 
     /// Returns all map entries in deterministic order.
-    pub(crate) fn sorted_entries_all(&self) -> Vec<EntryId>
+    pub fn sorted_entries_all(&self) -> Vec<EntryId>
     where
         T: Send + Sync,
     {
         (0..NUM_SHARDS).into_par_iter().flat_map_iter(|shard| self.sorted_entries(shard)).collect()
     }
 
-    pub(crate) fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.0.len()
     }
 }

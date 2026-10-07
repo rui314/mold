@@ -1,11 +1,12 @@
 //! `.gnu_debuglink`, the pathname and checksum of separate debug information.
 
+use mold_common::util::align_to;
+use mold_common::util::write_cstr;
+
 use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
-use crate::util::align_to;
-use crate::util::write_cstr;
 
 // .gnu_debuglink section contains a pathname and its CRC32 checksum for a
 // separate debug info file. gdb can read the section to read debug info

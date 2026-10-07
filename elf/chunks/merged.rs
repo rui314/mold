@@ -12,6 +12,12 @@ use std::sync::RwLock;
 use std::sync::atomic::Ordering;
 
 use bstr::BStr;
+use mold_common::concurrent_map::{ConcurrentMap, EntryId, FrozenMap, NUM_SHARDS};
+use mold_common::hyperloglog::HyperLogLog;
+use mold_common::out;
+use mold_common::output_file::split_at_offsets;
+use mold_common::perf::Timers;
+use mold_common::util::align_to;
 use rayon::prelude::*;
 
 use crate::arch::Target;
@@ -21,12 +27,6 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::display_file;
 use crate::input_sections::{MergeInfo, SectionFragment, SectionRef};
-use crate::out;
-use crate::output_file::split_at_offsets;
-use crate::util::align_to;
-use crate::util::concurrent_map::{ConcurrentMap, EntryId, FrozenMap, NUM_SHARDS};
-use crate::util::hyperloglog::HyperLogLog;
-use crate::util::perf::Timers;
 
 /// Index of a merged section in `Context::merged_sections`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -218,7 +218,7 @@ impl<E: Target> MergedSection<E> {
         // Only a new section needs to retain its generated name permanently.
         let name = BStr::new(match name {
             Cow::Borrowed(name) => name,
-            Cow::Owned(name) => crate::util::leak_bytes(name),
+            Cow::Owned(name) => mold_common::util::leak_bytes(name),
         });
         sections.push(Self::new(name, flags, sh_type, entsize));
         remember(MergedSectionId(sections.len() as u32 - 1), name)
@@ -418,7 +418,7 @@ fn add_comment_strings<E: Target>(
 ) {
     let add = |mut bytes: Vec<u8>| {
         bytes.push(0);
-        let data = crate::util::leak_bytes(bytes);
+        let data = mold_common::util::leak_bytes(bytes);
         msec.insert(data, xxhash_rust::xxh3::xxh3_64(data), 0, gc_sections);
     };
     // Add an identification string to .comment.

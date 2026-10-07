@@ -68,24 +68,23 @@
 // DWARF constants keep the spelling of the specification.
 #![allow(non_upper_case_globals)]
 
+use mold_common::concurrent_map::{ConcurrentMap, EntryId, FrozenMap};
+use mold_common::fatal;
+use mold_common::hyperloglog::HyperLogLog;
+use mold_common::output_file::{OutputFile, split_at_offsets};
+use mold_common::perf::Timer;
+use mold_common::util::SyncUnsafeCell;
+use mold_common::util::{leak_bytes, read_sleb, read_uleb};
 use rayon::prelude::*;
 
 use crate::arch::Target;
 use crate::chunks::ChunkId;
 use crate::context::Context;
 use crate::elf::*;
-use crate::fatal;
 use crate::input_files::{ObjectFile, display_file};
-use crate::output_file::{OutputFile, split_at_offsets};
 use std::borrow::Cow;
 use std::path::Path;
 use std::sync::atomic::{AtomicU32, Ordering};
-
-use crate::util::SyncUnsafeCell;
-use crate::util::concurrent_map::{ConcurrentMap, EntryId, FrozenMap};
-use crate::util::hyperloglog::HyperLogLog;
-use crate::util::perf::Timer;
-use crate::util::{leak_bytes, read_sleb, read_uleb};
 
 /// A public name and its GNU kind before the name is interned in the name map.
 #[derive(Clone, Copy)]

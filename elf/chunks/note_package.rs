@@ -1,11 +1,12 @@
 //! `.note.package`, package metadata.
 
+use mold_common::util::align_to;
+use mold_common::util::write_cstr;
+
 use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
-use crate::util::align_to;
-use crate::util::write_cstr;
 
 // .note.package is an optional hint section that can contain an arbitrary
 // string. Package managers, such as dpkg or rpm, use the section to
