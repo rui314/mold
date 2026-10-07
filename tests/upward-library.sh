@@ -42,21 +42,24 @@ grep -q 'options weak upward' $t/log5
 
 # ld-prime loads a dylib lazily, at its first use, only from macOS 27;
 # before, -lazy-l, -lazy_library and -lazy_framework link as usual.
-$CC --ld-path=$mold -o $t/exe2 $t/a.o -L$t -F$t/fw -Wl,-lazy-lfoo,-lazy-lfoo \
-  -Wl,-lazy_library,$t/libbar.dylib -Wl,-lazy_framework,Foo -mmacosx-version-min=14.0 \
-  -Wl,-no_warn_duplicate_libraries 2> $t/log6
-[ "$(grep -c "lazy-load will be ignored for 'foo' because deployment target version is too low" $t/log6)" = 1 ]
-grep -q "lazy-load will be ignored for '$t/libbar.dylib' because" $t/log6
-grep -q "lazy-load will be ignored for 'Foo' because" $t/log6
-otool -L $t/exe2 | grep -q /u/libfoo.dylib
+# (A simulator's objects are built for its version, whatever macOS's.)
+if ! on_simulator; then
+  $CC --ld-path=$mold -o $t/exe2 $t/a.o -L$t -F$t/fw -Wl,-lazy-lfoo,-lazy-lfoo \
+    -Wl,-lazy_library,$t/libbar.dylib -Wl,-lazy_framework,Foo -mmacosx-version-min=14.0 \
+    -Wl,-no_warn_duplicate_libraries 2> $t/log6
+  [ "$(grep -c "lazy-load will be ignored for 'foo' because deployment target version is too low" $t/log6)" = 1 ]
+  grep -q "lazy-load will be ignored for '$t/libbar.dylib' because" $t/log6
+  grep -q "lazy-load will be ignored for 'Foo' because" $t/log6
+  otool -L $t/exe2 | grep -q /u/libfoo.dylib
 
-# Their load commands keep their place in the command line's order (the
-# compiler driver names libSystem last). (ld-prime puts them after those
-# of the other libraries the command line names.)
-$CC --ld-path=$mold -o $t/exe3 $t/a.o -L$t -F$t/fw -Wl,-lazy-lfoo \
-  -Wl,-lazy_library,$t/libbar.dylib -Wl,-framework,Foo -mmacosx-version-min=14.0 2> /dev/null
-otool -L $t/exe3 | awk 'NR > 1 { print $1 }' | tr '\n' ' ' > $t/order3
-[ "$(cat $t/order3)" = '/u/libfoo.dylib /u/libbar.dylib /u/Foo /usr/lib/libSystem.B.dylib ' ]
+  # Their load commands keep their place in the command line's order
+  # (the compiler driver names libSystem last). (ld-prime puts them
+  # after those of the other libraries the command line names.)
+  $CC --ld-path=$mold -o $t/exe3 $t/a.o -L$t -F$t/fw -Wl,-lazy-lfoo \
+    -Wl,-lazy_library,$t/libbar.dylib -Wl,-framework,Foo -mmacosx-version-min=14.0 2> /dev/null
+  otool -L $t/exe3 | awk 'NR > 1 { print $1 }' | tr '\n' ' ' > $t/order3
+  [ "$(cat $t/order3)" = '/u/libfoo.dylib /u/libbar.dylib /u/Foo /usr/lib/libSystem.B.dylib ' ]
+fi
 
 # Firmware - and a -preload image, macOS 27's too - has no dyld to load
 # one lazily: each links as usual, with the warning.

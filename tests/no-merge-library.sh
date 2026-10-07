@@ -147,8 +147,11 @@ exports:
     objc-classes:    [ Qux ]
 ...
 EOF
-needs_hook -L$t/lib -Wl,-no_merge-lg -mmacos-version-min=12.0
-no_hook -L$t/lib -Wl,-no_merge-lg -mmacos-version-min=11.0
+# (The compiler builds for a simulator's version, whatever macOS's.)
+if ! on_simulator; then
+  needs_hook -L$t/lib -Wl,-no_merge-lg -mmacos-version-min=12.0
+  no_hook -L$t/lib -Wl,-no_merge-lg -mmacos-version-min=11.0
+fi
 
 # The hook binds to each class a re-exported library exports, once.
 needs_hook -L$t/lib -Wl,-no_merge-lfoo -Wl,-no_merge-lc

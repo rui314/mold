@@ -68,7 +68,10 @@ for opt in -lazy-lbar -lazy_library,$t/lib/libbar.dylib -lazy_framework,Bar; do
   grep -q -- '-lazy-l/-lazy_library/-lazy_framework cannot be used with -make_mergeable' $t/log
 done
 
-# Before macOS 27, a lazy-load dylib links as any other.
-$CC --ld-path=$mold -shared -o $t/foo.dylib $t/foo.o -L$t/lib -Wl,-make_mergeable \
-  -Wl,-lazy-lbar -mmacosx-version-min=26.0 2> $t/log
-grep -q "lazy-load will be ignored for 'bar'" $t/log
+# Before macOS 27, a lazy-load dylib links as any other. (A simulator's
+# objects are built for its version, whatever macOS's.)
+if ! on_simulator; then
+  $CC --ld-path=$mold -shared -o $t/foo.dylib $t/foo.o -L$t/lib -Wl,-make_mergeable \
+    -Wl,-lazy-lbar -mmacosx-version-min=26.0 2> $t/log
+  grep -q "lazy-load will be ignored for 'bar'" $t/log
+fi

@@ -73,14 +73,17 @@ not $CC --ld-path=$mold -o $t/exe2 $t/b.o -L$t -Wl,-delay-lfoo 2> $t/log
 grep -q "use of '_fdata' in '_p' cannot be delayed" $t/log
 
 # So is a class reference of Objective-C code below macOS 15, a pointer
-# to the class (see delay-library-objc-class.sh).
-cat <<EOF | $CC -o $t/f.o -c -xobjective-c - -mmacosx-version-min=14.0
+# to the class (see delay-library-objc-class.sh). (A simulator's
+# objects are built for its version, whatever macOS's.)
+if ! on_simulator; then
+  cat <<EOF | $CC -o $t/f.o -c -xobjective-c - -mmacosx-version-min=14.0
 #import <Foundation/Foundation.h>
 int main() { return [NSString string] != nil ? 0 : 1; }
 EOF
-not $CC --ld-path=$mold -o $t/exe10 $t/f.o -framework Foundation \
-  -Wl,-delay_framework,Foundation -mmacosx-version-min=14.0 2> $t/log
-grep -q "NSString.* cannot be delayed" $t/log
+  not $CC --ld-path=$mold -o $t/exe10 $t/f.o -framework Foundation \
+    -Wl,-delay_framework,Foundation -mmacosx-version-min=14.0 2> $t/log
+  grep -q "NSString.* cannot be delayed" $t/log
+fi
 
 # A delayed dylib the program doesn't use keeps its load command, and
 # _dlopen is still imported; -dead_strip_dylibs drops the dylib.
@@ -94,10 +97,12 @@ not grep -q libfoo $t/libs4
 
 # dyld before macOS 15 runs the initializers at launch: ld-prime warns,
 # but delays the dylib all the same.
-$CC --ld-path=$mold -o $t/exe5 $t/a.o -L$t -Wl,-delay-lfoo,-lqux -Wl,-rpath,$PWD/$t \
-  -mmacosx-version-min=14.0 2> $t/log5
-grep -q "delay-init will be ignored for 'foo' because deployment target version is too low" $t/log5
-otool -l $t/exe5 | grep -q 'options delay-init'
+if ! on_simulator; then
+  $CC --ld-path=$mold -o $t/exe5 $t/a.o -L$t -Wl,-delay-lfoo,-lqux -Wl,-rpath,$PWD/$t \
+    -mmacosx-version-min=14.0 2> $t/log5
+  grep -q "delay-init will be ignored for 'foo' because deployment target version is too low" $t/log5
+  otool -l $t/exe5 | grep -q 'options delay-init'
+fi
 
 # Nor does ld-prime care for a dylib with weak definitions to export.
 cat <<EOF | $CC -o $t/wd.o -c -xc -

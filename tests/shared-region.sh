@@ -55,11 +55,14 @@ otool -l $t/d.dylib > $t/lc_d
 grep -q 'cmd LC_SEGMENT_SPLIT_INFO$' $t/lc_d
 
 # With lazy binding the lazy pointers join __DATA_CONST too, and the
-# indirect symbol table names their slots.
-link e.dylib -Wl,-add_split_seg_info -mmacosx-version-min=11.0
-sects e.dylib | grep -q '__DATA_CONST,__la_symbol_ptr '
-otool -Iv $t/e.dylib > $t/isyms_e
-grep -A4 '(__DATA_CONST,__la_symbol_ptr)' $t/isyms_e | grep _puts
+# indirect symbol table names their slots. (A simulator's objects are
+# built for its version, which binds no stub lazily.)
+if ! on_simulator; then
+  link e.dylib -Wl,-add_split_seg_info -mmacosx-version-min=11.0
+  sects e.dylib | grep -q '__DATA_CONST,__la_symbol_ptr '
+  otool -Iv $t/e.dylib > $t/isyms_e
+  grep -A4 '(__DATA_CONST,__la_symbol_ptr)' $t/isyms_e | grep _puts
+fi
 
 # The cache builder binds every symbol, so none may be looked up
 # dynamically; an OS image should need no run paths, nor be found by

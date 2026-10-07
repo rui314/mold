@@ -90,8 +90,10 @@ _r2: .quad _bar
 EOF
 echo 'int bar = 3; extern char r1[]; int main() { return !r1[0]; }' |
   $CC -o $t/e.o -c -xc - -mmacosx-version-min=11.0
-$CC --ld-path=$mold -o $t/exe4 $t/c.o $t/e.o -mmacosx-version-min=11.0 2> $t/log4
-not grep -q aligned $t/log4
+if ! on_simulator; then
+  $CC --ld-path=$mold -o $t/exe4 $t/c.o $t/e.o -mmacosx-version-min=11.0 2> $t/log4
+  not grep -q aligned $t/log4
+fi
 
 # A CFString constant is aligned to a pointer whatever its section
 # says; ld-prime warns of a section that says otherwise, in every
@@ -136,9 +138,11 @@ not $CC --ld-path=$mold -o $t/exe9 $t/a.o $t/b.o -Wl,-no_fixup_chains \
 grep -q "pointer not aligned.*'_r1' " $t/log9
 not grep -q 'warning: pointer not aligned' $t/log9
 [ "$(grep -c 'pointer not aligned' $t/log9)" = 1 ]
-$CC --ld-path=$mold -o $t/exe10 $t/c.o $t/e.o -mmacosx-version-min=11.0 \
-  -Wl,-unaligned_pointers,warn 2> $t/log10
-grep -q "pointer not aligned.*'_r1' " $t/log10
+if ! on_simulator; then
+  $CC --ld-path=$mold -o $t/exe10 $t/c.o $t/e.o -mmacosx-version-min=11.0 \
+    -Wl,-unaligned_pointers,warn 2> $t/log10
+  grep -q "pointer not aligned.*'_r1' " $t/log10
+fi
 if [ $ARCH = arm64 ]; then
   not $CC --ld-path=$mold -o $t/exe11 $t/a.o $t/b.o -Wl,-unaligned_pointers,warning 2> $t/log11
   grep -q 'warning: unaligned pointer errors are fatal when using chained fixups' $t/log11

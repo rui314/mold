@@ -27,6 +27,7 @@ $CC --ld-path=$mold -bundle -o $t/b.bundle $t/b.o -Wl,-rpath,@loader_path -mmaco
 [ "$(seq $t/b.bundle)" = "LC_SEGMENT_64 LC_DYLD_CHAINED_FIXUPS LC_DYLD_EXPORTS_TRIE LC_SYMTAB LC_DYSYMTAB LC_UUID LC_BUILD_VERSION LC_SOURCE_VERSION LC_LOAD_DYLIB LC_RPATH LC_FUNCTION_STARTS LC_DATA_IN_CODE $sig" ]
 
 # Classic dyld info in place of the chained fixups.
-$CC --ld-path=$mold -o $t/exe11 $t/a.o -mmacosx-version-min=11.0
+if on_simulator; then classic=-Wl,-no_fixup_chains; else classic=-mmacosx-version-min=11.0; fi
+$CC --ld-path=$mold -o $t/exe11 $t/a.o $classic
 [ "$(seq $t/exe11)" = "LC_SEGMENT_64 LC_DYLD_INFO_ONLY LC_SYMTAB LC_DYSYMTAB LC_LOAD_DYLINKER LC_UUID LC_BUILD_VERSION LC_SOURCE_VERSION LC_MAIN LC_LOAD_DYLIB LC_FUNCTION_STARTS LC_DATA_IN_CODE $sig" ]
 $RUN $t/exe | grep hi

@@ -57,7 +57,8 @@ $CC --ld-path=$mold -o $t/exe1 $t/a.o $t/libouter.dylib -L$t -Wl,-trace_implicit
 [ "$(grep -cx "auto-linking framework hint 'Foundation' from file '$t/a.o'" $t/log1)" = 1 ]
 [ "$(grep -cx "auto-linking library hint 'nosuch' from file '$t/a.o'" $t/log1)" = 1 ]
 [ "$(grep -c "^indirect library '$dir/libinner.dylib' from file '$t/libouter.dylib'$" $t/log1)" = 1 ]
-[ "$(grep -c "^indirect library '/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation' from file '.*/Foundation.tbd'$" $t/log1)" = 1 ]
+# (A simulator's frameworks are shallow bundles, with no Versions.)
+[ "$(grep -Ec "^indirect library '/System/Library/Frameworks/CoreFoundation.framework/(Versions/A/)?CoreFoundation' from file '.*/Foundation.tbd'$" $t/log1)" = 1 ]
 [ "$(grep -c "^indirect library '/usr/lib/libobjc.A.dylib' from file " $t/log1)" = 1 ]
 [ "$(sort $t/log1 | uniq -d)" = "" ]
 

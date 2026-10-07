@@ -49,7 +49,12 @@ grep -q '/main.o$' $t/log
 grep -q 'lib.a(a.o)$' $t/log
 grep -q 'lib.a(b.o)$' $t/log
 grep -q '/usr/lib/libSystem.tbd$' $t/log
-grep -q '/usr/lib/system/libsystem_c.tbd$' $t/log
+if on_simulator; then
+  # A simulator's libSystem stub inlines the libraries it re-exports.
+  grep -q '^/usr/lib/system/libsystem_c.dylib$' $t/log
+else
+  grep -q '/usr/lib/system/libsystem_c.tbd$' $t/log
+fi
 grep -q '/libA.tbd$' $t/log
 grep -q '^/usr/local/lib/libB.dylib$' $t/log
 [ "$(grep -c 'lib.a(a.o)$' $t/log)" = 1 ]

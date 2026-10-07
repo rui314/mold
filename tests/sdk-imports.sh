@@ -11,12 +11,12 @@ EOF
 
 $CC --ld-path=$mold $t/a.o $t/libfoo.dylib -o $t/exe \
   -Wl,-dead_strip,-sdk_imports,$t/imports.json
-python3 - $t/imports.json $t/exe $ARCH $PWD/$t/libfoo.dylib <<'EOF'
+python3 - $t/imports.json $t/exe $ARCH $PWD/$t/libfoo.dylib $PLATFORM_NAME <<'EOF'
 import json, sys
 d = json.load(open(sys.argv[1]))
 assert d['version'] == 1 and d['apiListVersion'] == 0
 assert d['output'] == sys.argv[2] and d['arch'] == sys.argv[3]
-assert d['platform'] == 'macOS' and d['linker']
+assert d['platform'] == sys.argv[5] and d['linker']
 assert d['deploymentVersion'] and d['sdkVersion']
 assert d['inputs'][0]['path'] == d['output']
 imports = {x['installName']: set(x['symbols']) for x in d['inputs'][0]['sdkImports']}

@@ -44,18 +44,22 @@ $RUN $t/exe1 | grep -q x
 [ "$(slots $t/exe1 __stubs)" = '_Zup _afun _bfun _puts _zfun ' ]
 [ "$(slots $t/exe1 __got)" = '_Zup _aa _afun _bb _bfun _printf _puts _zfun _zz ' ]
 
-$CC --ld-path=$mold -o $t/exe2 $t/main.o $t/liba.dylib $t/libb.dylib \
-  -Wl,-rpath,$PWD/$t -mmacosx-version-min=$classic
-$RUN $t/exe2 | grep -q x
-[ "$(slots $t/exe2 __stubs)" = '_Zup _afun _bfun _puts _zfun ' ]
-[ "$(slots $t/exe2 __got)" = '_aa _bb _printf _zz dyld_stub_binder ' ]
-[ "$(slots $t/exe2 __la_symbol_ptr)" = '_Zup _afun _bfun _puts _zfun ' ]
+# (A simulator's objects are built for its version, which binds no stub
+# lazily.)
+if ! on_simulator; then
+  $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/liba.dylib $t/libb.dylib \
+    -Wl,-rpath,$PWD/$t -mmacosx-version-min=$classic
+  $RUN $t/exe2 | grep -q x
+  [ "$(slots $t/exe2 __stubs)" = '_Zup _afun _bfun _puts _zfun ' ]
+  [ "$(slots $t/exe2 __got)" = '_aa _bb _printf _zz dyld_stub_binder ' ]
+  [ "$(slots $t/exe2 __la_symbol_ptr)" = '_Zup _afun _bfun _puts _zfun ' ]
 
-# Stub i jumps through lazy pointer i, which names the same symbol.
-otool -Iv $t/exe2 | awk '/Indirect symbols for/ { s = $0; next }
-  s ~ /__stubs/ && $1 ~ /^0x/ { print $3 > "'$t/stubs'" }
-  s ~ /__la_symbol_ptr/ && $1 ~ /^0x/ { print $3 > "'$t/lazy'" }'
-diff $t/stubs $t/lazy
+  # Stub i jumps through lazy pointer i, which names the same symbol.
+  otool -Iv $t/exe2 | awk '/Indirect symbols for/ { s = $0; next }
+    s ~ /__stubs/ && $1 ~ /^0x/ { print $3 > "'$t/stubs'" }
+    s ~ /__la_symbol_ptr/ && $1 ~ /^0x/ { print $3 > "'$t/lazy'" }'
+  diff $t/stubs $t/lazy
+fi
 
 # Weak-lookup binds (C++ template instances coalesced across images,
 # libc++'s operator new) take GOT slots too.
@@ -68,6 +72,7 @@ EOF
 $CXX --ld-path=$mold -o $t/exe3 $t/c.o -mmacosx-version-min=14.0
 $RUN $t/exe3 | grep -q '^9$'
 [ "$(slots $t/exe3 __got)" = '__ZN1WIcE1fEv __ZN1WIlE1fEv __Znwm _printf ' ]
+on_simulator && exit 0
 
 # With lazy binding only the lazily bound stubs have a lazy pointer and
 # a stub helper entry; a weak-lookup stub jumps through its GOT slot.

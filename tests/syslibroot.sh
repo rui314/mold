@@ -30,7 +30,11 @@ exports:
 ...
 EOT
 echo 'void qux(void); void f(void) { qux(); }' | $CC -o $t/q.o -c -xc -
-for opt in -weak_library -needed_library -reexport_library -upward_library -lazy_library; do
+# (A simulator's version loads a -lazy_library dylib lazily, through no
+# load command of its own.)
+opts='-weak_library -needed_library -reexport_library -upward_library'
+on_simulator || opts="$opts -lazy_library"
+for opt in $opts; do
   $CC --ld-path=$mold -shared -o $t/q.dylib $t/q.o -Wl,-syslibroot,$t/root \
     -Wl,$opt,/opt/lib/libqux.dylib -Wl,-undefined,dynamic_lookup 2> /dev/null
   otool -L $t/q.dylib | grep -q /opt/lib/libqux.dylib
@@ -69,7 +73,7 @@ echo 'void qux(void) {}' | $CC -shared -o $t/lib1/libqux.dylib -xc - \
   -Wl,-install_name,@rpath/libqux1.dylib
 cp $t/root/opt/lib/libqux.tbd $t/lib1/libqux.tbd
 cp $t/root/opt/lib/libqux.tbd $t/lib2/libqux.tbd
-for opt in -weak_library -needed_library -reexport_library -upward_library -lazy_library; do
+for opt in $opts; do
   $CC --ld-path=$mold -shared -o $t/q.dylib $t/q.o -Wl,$opt,$t/lib1/libqux.dylib 2> /dev/null
   otool -L $t/q.dylib | grep -q @rpath/libqux1.dylib
   not $CC --ld-path=$mold -shared -o $t/q.dylib $t/q.o -Wl,$opt,$t/lib2/libqux.dylib 2> $t/log

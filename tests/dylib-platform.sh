@@ -13,6 +13,6 @@ for cmd in -set-build-version -set-version-min; do
   xcrun vtool $cmd ios 12.0 12.0 -replace \
     -output $t/libios.dylib $t/libfoo.dylib
   not $CC --ld-path=$mold $t/main.o $t/libios.dylib -o $t/exe 2> $t/log
-  grep -q 'macOS.*iOS' $t/log
+  grep -q "$PLATFORM_NAME.*iOS" $t/log
   grep -q libios.dylib $t/log
 done

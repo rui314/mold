@@ -33,7 +33,9 @@ grep -q $'libm.a(m\xff.o)$' $t/log
 $CC --ld-path=$mold -shared -o $t/libfoo.dylib $t/mZ.o -mmacos-version-min=15.0 \
   -Wl,-install_name,$'/tmp/libf\xffo.dylib'
 $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/libfoo.dylib -mmacos-version-min=14.0 2> $t/log2
-grep -q $'with dylib \'/tmp/libf\xffo.dylib\' which was built for newer version 15.0' $t/log2
+# (The compiler builds for a simulator's version, whatever macOS's.)
+on_simulator ||
+  grep -q $'with dylib \'/tmp/libf\xffo.dylib\' which was built for newer version 15.0' $t/log2
 
 # An object's auto-link options.
 cat <<'EOF' | sed $'s/@/\xff/g' | $CC -o $t/opts.o -c -xassembler -

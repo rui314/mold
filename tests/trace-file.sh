@@ -43,15 +43,15 @@ jq -e --arg uuid $uuid --arg arch $ARCH --arg t $t '
 
 # (The compiler driver adds libclang_rt's archive, of which it loads
 # nothing here.)
-jq -e --arg uuid $uuid --arg arch $ARCH --arg dir $dir '
+jq -e --arg uuid $uuid --arg arch $ARCH --arg dir $dir --arg platform $PLATFORM_NAME '
   .version == "2" and ."minor-version" == 1 and .name == "exe" and .uuid == $uuid
-  and .arch == $arch and .platforms[0].name == "macOS"
+  and .arch == $arch and .platforms[0].name == $platform
   and (.platforms[0]."min-version".major | test("^[0-9]+$"))
   and .exports == [] and (."linked-dylibs" | length) == 2
   and ."linked-dylibs"[0] == {path: "\($dir)/libw.dylib", "install-name": "@rpath/libw.dylib",
                               arch: $arch, attributes: ["weak"], "imported-symbols": ["_w1"]}
   and .archives == ["\($dir)/libl.a"]
-  and (."unused-archives"[-3] | endswith("/libclang_rt.osx.a"))
+  and (."unused-archives"[-3] | test("/libclang_rt[.](osx|[a-z]+sim)[.]a$"))
   and ."unused-archives"[-2:] == ["\($dir)/libl.a", "\($dir)/libz.a"]
   and ."linked-archives" == [{arch: $arch, path: "\($dir)/libl.a", "imported-symbols": ["_l1"]}]
 ' $t/trace-syms > /dev/null

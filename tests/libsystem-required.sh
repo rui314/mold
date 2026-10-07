@@ -61,9 +61,11 @@ cat <<EOF2 | $CC -o $t/m.o -c -xc - -mmacosx-version-min=11.0
 void foo(void);
 int main() { foo(); return 0; }
 EOF2
-not $mold -arch $ARCH -platform_version macos 11.0 11.0 -syslibroot "$SDK" -o $t/exe4 $t/m.o \
-  -undefined dynamic_lookup 2> $t/log8
-grep -q "$msg" $t/log8
+if ! on_simulator; then
+  not $mold -arch $ARCH -platform_version macos 11.0 11.0 -syslibroot "$SDK" -o $t/exe4 $t/m.o \
+    -undefined dynamic_lookup 2> $t/log8
+  grep -q "$msg" $t/log8
+fi
 
 # With a dylib that doesn't export dyld_stub_binder, an image that may
 # look symbols up dynamically binds it so too, with a flat lookup.

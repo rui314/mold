@@ -8,8 +8,10 @@ source "$(dirname "$0")"/common.inc
 cat <<EOF | $CC -o $t/a.o -c -xc -
 int foo(void) { return 42; }
 EOF
-$CC --ld-path=$mold -o $t/a.dylib -shared $t/a.o -Wl,-image_base,0x180000000 \
-  -mmacosx-version-min=11.0
+# (-image_base takes no effect with chained fixups, which a simulator's
+# version defaults to: -no_fixup_chains turns them off there.)
+if on_simulator; then classic=-Wl,-no_fixup_chains; else classic=-mmacosx-version-min=11.0; fi
+$CC --ld-path=$mold -o $t/a.dylib -shared $t/a.o -Wl,-image_base,0x180000000 $classic
 dyld_info -exports $t/a.dylib > $t/exports
 grep -Eq '^ *0x0000[0-9A-F]{4} +_foo$' $t/exports
 dyld_info -function_starts $t/a.dylib > $t/starts

@@ -25,9 +25,12 @@ not $CC --ld-path=$mold -o $t/a.dylib -shared $t/a.o -mmacosx-version-min=15.0 \
   -Wl,-install_name,/usr/lib/libfoo.dylib 2> $t/log
 grep -qF "$(msg __DATA_CONST)" $t/log
 
-not $CC --ld-path=$mold -o $t/b.dylib -shared $t/a.o -mmacosx-version-min=14.0 \
-  -Wl,-install_name,/System/Library/Frameworks/Foo.framework/Foo 2> $t/log2
-grep -qF "$(msg __DATA)" $t/log2
+# (A simulator's objects are built for its version, whatever macOS's.)
+if ! on_simulator; then
+  not $CC --ld-path=$mold -o $t/b.dylib -shared $t/a.o -mmacosx-version-min=14.0 \
+    -Wl,-install_name,/System/Library/Frameworks/Foo.framework/Foo 2> $t/log2
+  grep -qF "$(msg __DATA)" $t/log2
+fi
 
 not $CC --ld-path=$mold -o $t/c.dylib -shared $t/b.o -Wl,-install_name,/usr/lib/libfoo.dylib \
   -Wl,-add_empty_section,__DATA,__interpose 2> $t/log3

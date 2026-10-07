@@ -65,7 +65,10 @@ fi
 grep -Eq $'\t\\[  2\\] _dw$' $t/map
 grep -Eq $'\t\\[  3\\] -\\[Foo bar\\]$' $t/map
 
-# With lazy binding, the stub helper and the lazy pointers too.
+# With lazy binding, the stub helper and the lazy pointers too. (A
+# simulator's objects are built for its version, which binds no stub
+# lazily.)
+on_simulator && exit 0
 cat <<EOF | $CC -o $t/d.o -c -xc - -mmacosx-version-min=11.0
 #include <stdio.h>
 int main() { puts("hi"); }

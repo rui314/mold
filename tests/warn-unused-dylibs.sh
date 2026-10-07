@@ -18,9 +18,10 @@ grep -qF "$msg" $t/log
 link -Wl,-install_name,/System/Library/PrivateFrameworks/B.framework/B -lz -lc++ \
   -framework Foundation -framework CoreFoundation
 grep -qF "$msg" $t/log
-grep -q 'linking with (/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation)' $t/log
+# (A simulator's frameworks are shallow bundles, with no Versions.)
+grep -Eq 'linking with \(/System/Library/Frameworks/CoreFoundation.framework/(Versions/A/)?CoreFoundation\)' $t/log
 not grep -q 'libc++.1.dylib' $t/log
-not grep -q 'Foundation.framework/Versions/C/Foundation' $t/log
+not grep -Eq '/Foundation.framework/(Versions/C/)?Foundation\)' $t/log
 
 link -Wl,-install_name,/usr/lib/libb.dylib -Wl,-needed-lz
 not grep -q 'not using any symbols' $t/log
@@ -32,8 +33,13 @@ link -Wl,-install_name,/usr/lib/libb.dylib -lz -Wl,-not_for_dyld_shared_cache
 not grep -q 'not using any symbols' $t/log
 link -Wl,-install_name,/usr/lib/libb.dylib -lz -Wl,-debug_variant
 not grep -q 'not using any symbols' $t/log
+# (Only macOS's shared cache holds /Library/Apple.)
 link -Wl,-install_name,/Library/Apple/usr/lib/libb.dylib -lz
-grep -qF "$msg" $t/log
+if on_simulator; then
+  not grep -q 'not using any symbols' $t/log
+else
+  grep -qF "$msg" $t/log
+fi
 
 echo 'int main() { return 0; }' | $CC -o $t/m.o -c -xc -
 $CC --ld-path=$mold -o $t/exe $t/m.o -lz 2> $t/log

@@ -31,6 +31,7 @@ warnings
   echo '-headerpad 0x10 is too small, at least 32 bytes are required to reserve space for code signature'
   echo '-read_only_relocs relocs cannot be used in this configuration'
   echo '-U option is redundant when using -undefined dynamic_lookup'
+  on_simulator && echo "-undefined dynamic_lookup is deprecated on $PLATFORM_NAME"
   echo '-force_symbols_[not_]weak_list is deprecated'
   echo '-mark_dead_strippable_dylib is obsolete'
 } | sort | diff - $t/got

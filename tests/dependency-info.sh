@@ -54,7 +54,8 @@ not grep -q exports $t/deps.txt
 # The libraries loaded as another's re-exports are listed too, once
 # each (ld-prime lists them twice).
 grep -q '^10 .*/usr/lib/libSystem.tbd$' $t/deps.txt
-[ "$(grep -c '^10 .*/usr/lib/system/libsystem_c.tbd$' $t/deps.txt)" = 1 ]
+# (A simulator's libSystem stub inlines the libraries it re-exports.)
+on_simulator || [ "$(grep -c '^10 .*/usr/lib/system/libsystem_c.tbd$' $t/deps.txt)" = 1 ]
 
 # The outputs are the image and the map.
 grep -qx "40 $cwd/$t/exe" $t/deps.txt

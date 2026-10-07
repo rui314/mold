@@ -11,7 +11,8 @@ EOF
 # notes, with modification time 0. It is no input to depend on.
 $CC --ld-path=$mold -flto -mmacosx-version-min=26.0 -o $t/exe $t/a.o \
   -Wl,-map,$t/map -Wl,-dependency_info,$t/dep 2> $t/log
-grep -q ': warning: object file (/tmp/lto.o) was built for newer' $t/log
+# (The compiler builds for a simulator's version, whatever macOS's.)
+on_simulator || grep -q ': warning: object file (/tmp/lto.o) was built for newer' $t/log
 grep -q '^\[ *[0-9]*\] /tmp/lto.o$' $t/map
 nm -ap $t/exe > $t/nm
 grep -q '^0000000000000000 - .. 0001   OSO /tmp/lto.o$' $t/nm

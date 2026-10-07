@@ -71,7 +71,11 @@ grep -q i386 $t/log
 # A library option with the name joined to it takes the name as the
 # next argument as well, as -l does.
 echo 'void foo(void) {}' | $CC -shared -o $t/libfoo.dylib -xc - -Wl,-install_name,@rpath/libfoo.dylib
-for opt in -weak-l -needed-l -reexport-l -hidden-l -upward-l -lazy-l; do
+# (A simulator's version loads a -lazy-l dylib lazily, through no load
+# command of its own.)
+opts='-weak-l -needed-l -reexport-l -hidden-l -upward-l'
+on_simulator || opts="$opts -lazy-l"
+for opt in $opts; do
   $CC --ld-path=$mold -shared -o $t/b.dylib $t/a.o -L$t -Wl,$opt,foo 2> /dev/null
   otool -L $t/b.dylib | grep -q @rpath/libfoo.dylib
 done
