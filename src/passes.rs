@@ -248,10 +248,15 @@ impl<'a> SymbolSlots<'a> {
 }
 
 /// Resets the resolution of every symbol a file claimed, and of every
-/// common one, for a resolution round to start over.
+/// common one, for a resolution round to start over. Which imports are
+/// weak is decided afresh too: the final round counts only the live
+/// files' references, as ld-prime ignores those of an archive member it
+/// doesn't load (a strong one there would make a weak import strong).
 fn clear_symbols<E: Target>(ctx: &mut Context<E>) {
     let _t = ctx.timer("clear_symbols");
     ctx.symbols.syms.par_iter_mut().for_each(|sym| {
+        sym.set_is_weak_ref(false);
+        sym.set_is_strong_ref(false);
         if matches!(sym.file(), Some(FileId::Obj(_)) | Some(FileId::Dylib(_))) || sym.is_common() {
             sym.clear_file();
             sym.set_input_section(None);
