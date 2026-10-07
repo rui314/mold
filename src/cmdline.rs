@@ -477,11 +477,11 @@ pub struct Args {
     /// framework variants -l and -framework look for before the plain
     /// one, in order.
     pub image_suffixes: Vec<OsString>,
-    /// -encryptable (the last of it and -no_encryption): the image's
-    /// code may be encrypted after the link, as the App Store does iOS
-    /// apps': __TEXT's sections but __oslogstring start on a page of
-    /// their own, which LC_ENCRYPTION_INFO_64 names (see
-    /// resolve_encryptable).
+    /// -encryptable (the last of it and -no_encryption, by default a
+    /// device's image): the image's code may be encrypted after the
+    /// link, as the App Store does iOS apps': __TEXT's sections but
+    /// __oslogstring start on a page of their own, which
+    /// LC_ENCRYPTION_INFO_64 names (see resolve_encryptable).
     pub encryptable: bool,
     /// -w: suppress warnings.
     pub suppress_warnings: bool,
@@ -1402,6 +1402,8 @@ struct ParseState<'a> {
     source_version: Option<bool>,
     source_version_number: Option<u64>,
     adhoc_codesign: Option<bool>,
+    /// -encryptable or -no_encryption, the last one given.
+    encryptable: Option<bool>,
     data_const: Option<bool>,
     objc_relative_method_lists: Option<bool>,
     objc_stubs_small: Option<bool>,
@@ -2255,8 +2257,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     addr.unwrap_or_else(|| fatal!("-stack_addr must specify an integer address")),
                 );
             }
-            b"-encryptable" => args.encryptable = true,
-            b"-no_encryption" => args.encryptable = false,
+            b"-encryptable" => st.encryptable = Some(true),
+            b"-no_encryption" => st.encryptable = Some(false),
 
             // How dyld or another loader fixes the image up and starts it, and
             // what the image tells dyld about itself.
@@ -2931,6 +2933,7 @@ fn resolve_options(target: &TargetTraits, args: &mut Args, st: &mut ParseState) 
     resolve_shared_region(target, args);
     args.objc_stubs_small &= target.name == "arm64";
 
+    args.encryptable = st.encryptable.unwrap_or_else(|| encryptable_by_default(args, st.kind));
     args.segment_align = resolve_segment_align(target, args, st.segalign);
     resolve_encryptable(args);
     args.segprots = resolve_segprots(target, std::mem::take(&mut st.segprots));
@@ -3277,11 +3280,21 @@ fn resolve_segment_align(target: &TargetTraits, args: &Args, segalign: Option<u6
     }
 }
 
-/// Whether the image is encryptable: an image dyld or the kernel loads
-/// (ld-prime gives a -r or -preload output no LC_ENCRYPTION_INFO_64,
-/// and crashes on a kext), as -encryptable says; macOS images are not
-/// by default. (ld64 made iOS apps encryptable unless $LD_NO_ENCRYPT,
-/// which ld-prime reads but which -encryptable overrides.)
+/// Whether an image is encryptable unless -encryptable or -no_encryption
+/// says: an executable, dylib or bundle for an iOS, tvOS or visionOS
+/// device, which the App Store encrypts (a -static, -preload or -dylinker
+/// image, a simulator's or a Mac's is not), unless $LD_NO_ENCRYPT, set
+/// to anything, says the image goes elsewhere.
+fn encryptable_by_default(args: &Args, kind: OutputKind) -> bool {
+    matches!(args.platform, PLATFORM_IOS | PLATFORM_TVOS | PLATFORM_VISIONOS)
+        && matches!(kind, OutputKind::DynamicExecutable | OutputKind::Dylib | OutputKind::Bundle)
+        && std::env::var_os("LD_NO_ENCRYPT").is_none()
+}
+
+/// Whether the image is encryptable, as -encryptable or the default
+/// says: not a -r output or a -preload image, which ld-prime gives no
+/// LC_ENCRYPTION_INFO_64, nor a kext, on which it crashes. (A -static
+/// or -dylinker image is when asked to be.)
 fn resolve_encryptable(args: &mut Args) {
     args.encryptable &= !args.relocatable && !args.preload && !args.is_kext();
     // An encryptable image's __oslogstring, which goes unencrypted,
