@@ -1003,11 +1003,11 @@ impl<'a> ArgCursor<'a> {
             });
             (value.as_ref(), 2)
         } else if name.len() == 1 {
-            // GNU ld reads "-lfoo" as "--library=foo" before anything else, so
-            // "-l" keeps its attached value where it spells a long option;
-            // every other single-letter option waits for the token to name no
-            // long one.
-            if !self.attached_shorts && name != "l" {
+            // A single-letter option takes no attached value on the first
+            // pass, so that a long option spelled with one dash wins
+            // ("-emain" is "-e main"). The one exception, "-lfoo", is
+            // "--library=foo": parse_args rewrites it before parsing.
+            if !self.attached_shorts {
                 return None;
             }
             (rest, 1)
@@ -1238,6 +1238,29 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
     // - Static PIE binaries crash on startup in some RISC-V environments if
     // we write addends to relocated places.
     a.apply_dynamic_relocs = !matches!(target.family, Family::Sparc64 | Family::RiscV);
+
+    // GNU ld rewrites the command line before parsing it: every "-lfoo"
+    // becomes "--library=foo", so that no long option starting with "l" is
+    // ever read with one dash, and a "-G" that names no size becomes
+    // "--shared".
+    let mut rewritten: Vec<Cow<'_, OsStr>> = Vec::with_capacity(raw_cmdline.len());
+    for (i, arg) in raw_cmdline.iter().enumerate() {
+        let bytes = arg.as_encoded_bytes();
+        if bytes.starts_with(b"-l") && bytes.len() > 2 {
+            let mut value = b"--library=".to_vec();
+            value.extend_from_slice(&bytes[2..]);
+            rewritten.push(Cow::Owned(OsString::from(util::os_str(&value))));
+        } else if bytes == b"-G"
+            && !raw_cmdline.get(i + 1).is_some_and(|next| {
+                next.as_encoded_bytes().first().is_some_and(|b| b.is_ascii_digit())
+            })
+        {
+            rewritten.push(Cow::Borrowed(OsStr::new("--shared")));
+        } else {
+            rewritten.push(arg.clone());
+        }
+    }
+    let raw_cmdline: &[Cow<'_, OsStr>] = &rewritten;
 
     let mut cursor = ArgCursor { args: raw_cmdline, index: 1, attached_shorts: false };
     // The token being read a second time with attached short values allowed.
@@ -2528,6 +2551,34 @@ mod tests {
         let mut cursor = ArgCursor { args: &args, index: 1, attached_shorts: true };
         assert_eq!(cursor.read_exact_arg("a"), None);
         assert_eq!(cursor.index, 1);
+    }
+
+    #[test]
+    fn gnu_ld_rewrites_l_and_g_before_parsing() {
+        // Every "-lfoo" is a library, never a long option starting with
+        // "l", as in GNU ld.
+        let parsed = parse(&["-library-path", "/tmp", "a.o"]);
+        assert!(parsed.jobs[0].is_lib);
+        assert_eq!(parsed.jobs[0].name, Path::new("ibrary-path"));
+        assert_eq!(parsed.jobs.len(), 3);
+        assert_eq!(parsed.jobs[1].name, Path::new("/tmp"));
+
+        let parsed = parse(&["-library-path=/tmp", "a.o"]);
+        assert!(parsed.jobs[0].is_lib);
+        assert_eq!(parsed.jobs[0].name, Path::new("ibrary-path=/tmp"));
+
+        // A "-G" that names no size is "--shared", and its would-be
+        // argument stays a positional input.
+        let parsed = parse(&["-G", "foo", "a.o"]);
+        assert!(parsed.args.shared);
+        assert_eq!(parsed.jobs.len(), 2);
+        assert!(!parsed.jobs[0].is_lib);
+        assert_eq!(parsed.jobs[0].name, Path::new("foo"));
+
+        // A "-G" followed by a number keeps its meaning.
+        let parsed = parse(&["-G", "8", "a.o"]);
+        assert!(!parsed.args.shared);
+        assert_eq!(parsed.jobs.len(), 1);
     }
 
     #[test]

@@ -80,6 +80,13 @@ $CC -B. -o $t/exe24 -Wl,--default-script -Wl,$t/nosuchscript $t/a.o
 # A name that merely starts like an option is still unknown.
 not ./mold -auxiliaries |& grep 'unknown command line option: -auxiliaries'
 
+# GNU ld rewrites every "-lfoo" to "--library=foo" before parsing, so no
+# long option starting with "l" is ever read with one dash, and a "-G"
+# that names no size becomes "--shared".
+not ./mold -library-path $t/a.o |& grep 'library not found: ibrary-path'
+not ./mold -lto-pseudo-probe-for-profiling $t/a.o |& grep 'library not found: to-pseudo-probe-for-profiling'
+not ./mold -G foo $t/a.o |& grep 'cannot open foo'
+
 # Options whose value GNU ld makes optional: accepted bare, and with the
 # value attached by an equal sign.
 $CC -B. -o $t/exe25 -Wl,--verbose $t/a.o
