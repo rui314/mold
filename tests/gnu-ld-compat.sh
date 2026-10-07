@@ -89,6 +89,10 @@ $CC -B. -o $t/exe24 -Wl,--default-script -Wl,$t/nosuchscript $t/a.o
 not ./mold -auxiliaries |& grep 'unknown command line option: -auxiliaries'
 not ./mold -a KEYWORD |& grep 'unknown command line option: -a'
 
+# GNU ld reads a "-G" that names no size as "--shared", so foo stays a
+# positional input.
+not ./mold -G foo $t/a.o |& grep 'cannot open foo'
+
 # Options whose value GNU ld makes optional: accepted bare, and with the
 # value attached by an equal sign.
 $CC -B. -o $t/exe25 -Wl,--verbose $t/a.o

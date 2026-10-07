@@ -1213,7 +1213,20 @@ pub(crate) fn parse(raw_cmdline: &[Cow<'_, OsStr>]) -> Vec<Item> {
     let words: Vec<&winnow_args::BStr> = raw_cmdline
         .iter()
         .skip(1)
-        .map(|word| winnow_args::BStr::new(word.as_encoded_bytes()))
+        .enumerate()
+        .map(|(i, word)| {
+            // GNU ld reads a "-G" that names no size as "--shared" (its
+            // "-lfoo" rewrite is the lexer's `prefix` rule, not a rewrite).
+            if word.as_encoded_bytes() == b"-G"
+                && !raw_cmdline.get(i + 2).is_some_and(|next| {
+                    next.as_encoded_bytes().first().is_some_and(|b| b.is_ascii_digit())
+                })
+            {
+                winnow_args::BStr::new(b"--shared")
+            } else {
+                winnow_args::BStr::new(word.as_encoded_bytes())
+            }
+        })
         .collect();
     match Cli::parse_words(&words) {
         Ok(cli) => cli.opts,
@@ -1449,6 +1462,13 @@ mod tests {
         assert!(matches!(&items[0], Item::Unknown(v) if v.as_os_str() == "-auxiliaries"));
         let items = parse_items(&["-c", "script.mri"]);
         assert!(matches!(&items[0], Item::Unknown(v) if v.as_os_str() == "-c"));
+
+        // A "-G" that names no size is rewritten to "--shared" before
+        // parsing, and its would-be argument stays a positional input.
+        let items = parse_items(&["-G", "foo", "a.o"]);
+        assert!(matches!(&items[0], Item::Shared));
+        assert!(matches!(&items[1], Item::Input(v) if v.as_os_str() == "foo"));
+        assert!(matches!(&items[2], Item::Input(_)));
     }
 
     #[test]
