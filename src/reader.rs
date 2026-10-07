@@ -1252,10 +1252,13 @@ fn add_merged_dependencies<E: Target>(ctx: &mut Context<E>) {
 /// it is *live* - whether its content reaches the output - is decided
 /// by symbol resolution and the liveness walk. -all_load and -force_load
 /// make every member live up front; -ObjC does so for members with
-/// Objective-C metadata, which register classes by their mere presence.
-/// ld64 exempts clang's runtime library (libclang_rt.*.a, which the
-/// compiler driver adds to every link) from -all_load: its members are
-/// wanted only when referenced.
+/// Objective-C metadata, which register classes by their mere presence,
+/// but only in the archives the command line names: ld-prime loads an
+/// archive that only an auto-link option or -possible-l names (a Swift
+/// object's `-framework X` for a static framework) for the symbols its
+/// members resolve, as without -ObjC. ld64 exempts clang's runtime
+/// library (libclang_rt.*.a, which the compiler driver adds to every
+/// link) from -all_load: its members are wanted only when referenced.
 fn collect_archive_members<E: Target>(
     ctx: &mut Context<E>,
     mf: &'static MappedFile,
@@ -1271,7 +1274,7 @@ fn collect_archive_members<E: Target>(
         input_files::trace_file(ctx, path_bytes(&member.name));
         let alive = rc.force_load
             || all_load
-            || (ctx.args.load_objc && input_files::has_objc_sections(member));
+            || (ctx.args.load_objc && !rc.autolinked && input_files::has_objc_sections(member));
         match get_file_type(member) {
             FileType::LlvmBitcode => {
                 input_files::parse_bitcode(ctx, member, alive);
