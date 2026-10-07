@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# -platform_version's macOS and firmware are the point of the test.
+on_simulator && skip
+
 cat <<EOF | $CC -o $t/a.o -c -xc -
 int main() {}
 EOF

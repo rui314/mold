@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The macOS versions are the point of the test.
+on_simulator && skip
+
 # Without -platform_version, a link is for the deployment target of the
 # first object file on the command line that records one: its platform,
 # minimum OS and SDK, whatever the later objects say. Everything that

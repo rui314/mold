@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The $ld$ directives name macOS and its versions.
+on_simulator && skip
+
 cat > $t/libfoo.tbd <<'EOF'
 --- !tapi-tbd
 tbd-version:     4

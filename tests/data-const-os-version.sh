@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The macOS versions are the point of the test.
+on_simulator && skip
+
 # dyld makes __DATA_CONST read-only once it has applied an image's
 # fixups. ld-prime gives an executable, a dylib or a bundle that
 # segment by default only from macOS 10.15 (ld64's version2019Fall),

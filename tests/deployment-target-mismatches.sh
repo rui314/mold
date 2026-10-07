@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The macOS versions are the point of the test.
+on_simulator && skip
+
 # An object built for a newer OS version than the link's draws a
 # warning, which -deployment_target_mismatches error makes the error
 # that stops the link, and suppress silences.

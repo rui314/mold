@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# Links for macOS are the point of the test.
+on_simulator && skip
+
 
 link="$mold -arch $ARCH -dylib -platform_version macos 13.0 13.0 -syslibroot $SDK -lSystem"
 

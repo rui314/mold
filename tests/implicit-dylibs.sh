@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# AppKit is macOS's.
+on_simulator && skip
+
 # A symbol found through a dylib's re-exports binds to the dylib that
 # defines it when that dylib lives in a public location (a top-level
 # /System/Library/Frameworks framework, /usr/lib/lib*.dylib), which

@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
+# The macOS versions are the point of the test.
+on_simulator && skip
+
 cat <<EOF | $CC -flto -mmacosx-version-min=27.0 -c -xc - -o $t/a.o
 int helper(void);
 int helper2(void);

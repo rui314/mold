@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The macOS versions are the point of the test.
+on_simulator && skip
+
 # An executable is position independent (MH_PIE) unless -no_pie says
 # otherwise. arm64 macOS runs PIE executables only, so ld-prime ignores
 # -no_pie there with a warning, and it deprecates -no_pie from the OS

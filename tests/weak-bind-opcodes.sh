@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The macOS versions are the point of the test.
+on_simulator && skip
+
 # The classic weak-bind stream lists, by symbol, every pointer to a weak
 # definition dyld may coalesce with another image's: each piece of
 # state is set only when it changes, as in the bind stream.

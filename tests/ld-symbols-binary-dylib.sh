@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The $ld$ directives name macOS and its versions.
+on_simulator && skip
+
 # A dylib binary may carry the linker directives a stub lists among its
 # exports ($ld$add, $ld$hide, $ld$install_name, $ld$previous), as
 # absolute symbols it exports. ld-prime obeys them for the link's

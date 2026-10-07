@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The macOS versions are the point of the test.
+on_simulator && skip
+
 # -w suppresses warnings. An object built for a newer macOS than the
 # link targets draws one from both mold and ld-prime.
 cat <<EOF | $CC -o $t/a.o -c -xc - -mmacosx-version-min=15.0

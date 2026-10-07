@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The macOS versions are the point of the test.
+on_simulator && skip
+
 # Classic dyld info lists the pointers dyld slides with a small opcode
 # program: a run of adjacent pointers is one DO_REBASE_*_TIMES, and the
 # steps between them ADD_ADDR_*; the program ends with DONE. dyld

@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# A macOS app bundle and its Objective-C runtime are the point of the test.
+on_simulator && skip
+
 # Xcode keeps a mergeable framework's bundle, with its resources, in
 # the app where an image merges the framework (-merge_framework) or
 # re-exports it from elsewhere (-no_merge_framework), and the linker

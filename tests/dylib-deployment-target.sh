@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The macOS versions are the point of the test.
+on_simulator && skip
+
 echo 'int foo() { return 0; }' | $CC -mmacosx-version-min=13.0 \
   --ld-path=$mold -dynamiclib -xc - -o $t/libfoo.dylib
 cp $t/libfoo.dylib $t/original.dylib

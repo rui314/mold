@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The macOS versions are the point of the test.
+on_simulator && skip
+
 # An Objective-C class of a delay-init dylib can be used from macOS 15
 # on: the class references fold into __got there, and code loads a class
 # from its GOT entry, which the delay-init machinery routes through a

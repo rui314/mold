@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The macOS versions are the point of the test.
+on_simulator && skip
+
 # LC_SOURCE_VERSION came with macOS 10.8: an image for an older macOS,
 # on any architecture and of any kind, has none, unless
 # -add_source_version asks; -no_source_version leaves it out of any.

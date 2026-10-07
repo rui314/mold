@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The macOS versions are the point of the test.
+on_simulator && skip
+
 # From a deployment target of macOS 15 on, __objc_classrefs folds into
 # __got: a class reference is an 8-byte slot holding the class's
 # address, which is what a GOT entry for the class symbol is, so

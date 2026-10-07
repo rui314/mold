@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# TBD versions 1 to 3 have no platform for an arm64 simulator.
+on_simulator && skip
+
 # A .tbd stub stands for a dylib at link time, and the program then runs
 # against the dylib itself. TAPI has written five versions of the
 # format: in YAML, versions 1 (untagged), 2 and 3 give architectures

@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# TBD versions 1 to 3 have no platform for an arm64 simulator.
+on_simulator && skip
+
 # A .tbd lists what the library exports in its "exports" sections; the
 # symbols its "undefineds" sections list are what it imports, which no
 # client can link against. A sequence may be written as a block, one

@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The macOS versions are the point of the test.
+on_simulator && skip
+
 # Output sections go where ld64 puts them, with ld64's flags. Data
 # that needs no writes after dyld's fixups moves from
 # __DATA to __DATA_CONST (__const, __cfstring, the ObjC class/category/

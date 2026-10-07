@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The macOS versions are the point of the test.
+on_simulator && skip
+
 # __objc_classrefs is taken one 8-byte class pointer at a time,
 # whatever the labels, keeping one per class. From macOS 15 on the
 # references to those slots become GOT references, and what folds is

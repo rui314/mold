@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The macOS versions are the point of the test.
+on_simulator && skip
+
 # An image for a macOS before 10.9 keeps the FDE of a function that has
 # a compact unwind record (the record still wins in __unwind_info), as
 # ld64 did for the unwinders of those releases. -keep_dwarf_unwind and

@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The macOS versions are the point of the test.
+on_simulator && skip
+
 # A merged mergeable dylib built for a newer macOS than the link gets
 # the warning of a dylib, not an object's, whatever
 # -deployment_target_mismatches says. (ld-prime warns again as it

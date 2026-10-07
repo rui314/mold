@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The macOS versions are the point of the test.
+on_simulator && skip
+
 # LC_DYLD_INFO came with macOS 10.6. ld-prime links an x86-64 image for
 # an older macOS without it: dyld binds the GOT slots and lazy pointers
 # by the indirect symbol table, binds pointers in data by external

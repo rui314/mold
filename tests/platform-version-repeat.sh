@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# -platform_version's macOS and firmware are the point of the test.
+on_simulator && skip
+
 # The last option naming the deployment target wins. ld-prime warns, as
 # it reads the option, about another minimum version for the platform,
 # and about firmware replacing macOS; macOS replacing firmware is an

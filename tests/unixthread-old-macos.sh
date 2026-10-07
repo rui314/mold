@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The macOS versions are the point of the test.
+on_simulator && skip
+
 # Before macOS 10.8, dyld called no main: an x86-64 executable for an
 # older macOS starts from LC_UNIXTHREAD at crt1.o's "start", which clang
 # links for it (-lcrt1.10.6.o), as a static executable does. A stack it

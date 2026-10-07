@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The $ld$ directives name macOS and its versions.
+on_simulator && skip
+
 # Exports of two libraries move to one older library by per-symbol
 # $ld$previous directives that give no version, so each binds to it at
 # its own library's version. ld-prime gives the older library one load

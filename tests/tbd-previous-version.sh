@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The $ld$ directives name macOS and its versions.
+on_simulator && skip
+
 # An $ld$previous directive for the whole library gives it the older
 # library's install name and, if it says, version. A library of the
 # link whose install name that is by its own right decides the load

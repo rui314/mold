@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The macOS versions are the point of the test.
+on_simulator && skip
+
 # Below macOS 14.4 the Objective-C references stay in __DATA, where the
 # runtime may still write them.
 cat <<EOF | $CC -o $t/a.o -c -xobjective-c -fno-objc-arc -fno-objc-msgsend-selector-stubs -

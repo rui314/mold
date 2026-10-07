@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# -platform_version's macOS and firmware are the point of the test.
+on_simulator && skip
+
 # -platform_version firmware (PLATFORM_FIRMWARE, 13) builds for no OS.
 # An image of it is still one dyld loads unless -static or -preload says
 # otherwise, but ld-prime takes firmware as newer than any OS release

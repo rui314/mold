@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The stubs' macOS, firmware and Mac Catalyst platforms are the point of the test.
+on_simulator && skip
+
 # A .tbd file lists the targets (architecture-platform pairs) its
 # library is for. The link reads the one for its own platform. A
 # firmware link takes a library of any other platform, with a warning

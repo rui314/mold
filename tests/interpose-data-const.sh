@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The macOS versions are the point of the test.
+on_simulator && skip
+
 # dyld reads an image's interposing tuples but never writes them, so
 # from macOS 15 on ld-prime puts __DATA,__interpose in __DATA_CONST,
 # even with -no_data_const; before, it stays in __DATA.

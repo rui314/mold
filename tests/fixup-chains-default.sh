@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The macOS versions are the point of the test.
+on_simulator && skip
+
 # ld-prime's defaults for the fixup format (measured): chained fixups
 # from macOS 12, except for an x86_64 executable, from macOS 13;
 # classic dyld info below that; -undefined dynamic_lookup (and

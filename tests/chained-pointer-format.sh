@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The macOS versions are the point of the test.
+on_simulator && skip
+
 # A chained rebase holds its target as a VM address under
 # DYLD_CHAINED_PTR_64 (2) and as an offset from the image's own address
 # under DYLD_CHAINED_PTR_64_OFFSET (6), which dyld reads from macOS 12

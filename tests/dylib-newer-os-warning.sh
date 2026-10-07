@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The macOS versions are the point of the test.
+on_simulator && skip
+
 # A dylib the link names that was built for a newer OS than the output
 # targets draws a warning naming its install name, as an object does.
 # A library found in the SDK - by a search under

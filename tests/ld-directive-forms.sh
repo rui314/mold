@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The $ld$ directives name macOS and its versions.
+on_simulator && skip
+
 # A "$ld$..." directive that doesn't parse is passed over without a
 # word: one with a version that isn't X[.Y[.Z]] in 16.8.8 bits (1.2.3.1,
 # 70000, 14.0x, 10.), say. An $ld$previous symbol needs no final '$',

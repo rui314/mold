@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The macOS versions are the point of the test.
+on_simulator && skip
+
 # An input built for a newer OS than the output targets draws a
 # warning. A -r link without -platform_version takes the first object's
 # deployment target for its output, and ld-prime warns about the later

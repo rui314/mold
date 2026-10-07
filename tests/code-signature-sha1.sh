@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The macOS versions are the point of the test.
+on_simulator && skip
+
 # macOS before 10.11.4 checks only SHA-1 page hashes. ld-prime signs an
 # image for such a release (of either architecture, though no such
 # release runs arm64 code), or an x86-64 one for firmware, with a SHA-1

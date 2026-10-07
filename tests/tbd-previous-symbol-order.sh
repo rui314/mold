@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The $ld$ directives name macOS and its versions.
+on_simulator && skip
+
 # The libraries exports moved to ($ld$previous) get load commands of
 # their own, and the moved exports bind to them. libzzz, all of whose
 # exports moved, has no load command. The command-line libraries keep

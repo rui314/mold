@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The macOS versions are the point of the test.
+on_simulator && skip
+
 # A section$start$ or section$end$ symbol naming a pointer section only
 # the linker makes finds it where ld-prime puts its own: __auth_got,
 # __weak_got and __weak_auth_got in __DATA_CONST, and in the shared

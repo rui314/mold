@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The macOS versions are the point of the test.
+on_simulator && skip
+
 cat <<EOF | $CC -o $t/a.o -c -xc -
 #include <stdio.h>
 int main() {

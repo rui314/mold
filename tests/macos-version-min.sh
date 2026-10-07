@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The macOS versions are the point of the test.
+on_simulator && skip
+
 # LC_BUILD_VERSION came with macOS 10.14. For an x86_64 target older
 # than that, ld-prime writes the legacy LC_VERSION_MIN_MACOSX {version,
 # sdk} in its place, in a final image and in -r output alike; arm64 gets

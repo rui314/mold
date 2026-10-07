@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# TBD versions 1 to 3 have no platform for an arm64 simulator.
+on_simulator && skip
+
 # A stub lists an Objective-C class by name for its class and metaclass
 # objects (objc-classes) and for its exception type (objc-eh-types).
 # tapi has a class listed for its exception type alone export all three

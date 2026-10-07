@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The macOS versions are the point of the test.
+on_simulator && skip
+
 # With classic dyld info (below the chained-fixups deployment targets),
 # ld64 calls imported functions through lazy pointers bound on first
 # use: __stubs jumps through __DATA,__la_symbol_ptr, whose slots start

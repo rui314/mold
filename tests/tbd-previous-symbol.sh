@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# The $ld$ directives name macOS and its versions.
+on_simulator && skip
+
 # An $ld$previous directive that names a symbol moves only that export
 # to the older library, for targets in its range: the export binds to
 # a library of that install name, at the directive's version or else

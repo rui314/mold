@@ -1,6 +1,9 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
+# -platform_version's macOS and firmware are the point of the test.
+on_simulator && skip
+
 # -platform_version takes a platform by name, in any case, or by its
 # number, and a version made of decimal numbers that must fit
 # LC_BUILD_VERSION's 16.8.8 bits.
