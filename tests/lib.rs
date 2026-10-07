@@ -2,10 +2,15 @@
 //!
 //! The tests themselves deliberately remain shell scripts so that this port
 //! exercises exactly the same inputs and toolchains as the system linker.
-//! The runner owns test discovery, architecture selection, scheduling,
-//! timeouts and reporting. Tests run natively on the host, and on an
-//! arm64 host also for x86_64 under Rosetta.
+//! The runner owns test discovery, target selection, scheduling, timeouts
+//! and reporting. Tests run natively on the host, on an arm64 host also
+//! for x86_64 under Rosetta, and for a simulator triple on a simulator
+//! device, which runs the programs as QEMU runs a cross target's in mold's
+//! ELF suite.
 
+mod simulator;
+
+use simulator::{Device, Runtime, Simulator};
 use std::collections::BTreeMap;
 use std::env;
 use std::ffi::OsStr;
@@ -15,18 +20,67 @@ use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// The simulator configurations `--all` runs besides the host's, each
+/// when a runtime runs programs of its architecture (and an x86_64 one
+/// on Rosetta).
+const SIMULATORS: &[&str] =
+    &["arm64-apple-ios-simulator", "arm64-apple-tvos-simulator", "arm64-apple-xros-simulator"];
+
+/// A configuration the scripts run in. A host configuration builds and
+/// runs macOS programs; a simulator configuration builds for the target
+/// triple (whose OS version is that of the newest runtime, unless the
+/// triple names one) and runs the programs on a device of the runtime.
+struct Target {
+    arch: String,
+    triple: Option<String>,
+    runtime: Option<Runtime>,
+    /// The UDID of the booted device that runs the programs.
+    device: Option<String>,
+    label: String,
+}
+
+impl Target {
+    fn host(arch: &str) -> Self {
+        Self {
+            arch: arch.to_owned(),
+            triple: None,
+            runtime: None,
+            device: None,
+            label: arch.to_owned(),
+        }
+    }
+
+    fn simulator(simulator: &Simulator, runtime: Runtime) -> Self {
+        let triple =
+            format!("{}-apple-{}{}-simulator", simulator.arch, simulator.os, runtime.version);
+        Self {
+            arch: simulator.arch.clone(),
+            triple: Some(triple),
+            runtime: Some(runtime),
+            device: None,
+            label: simulator.label(),
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Mode {
     /// The host architecture only.
     Native,
     /// The host architecture, plus x86_64 under Rosetta when available.
+    /// This is the default until mold links for the simulators as
+    /// ld-prime does; then --all is.
+    Host,
+    /// The host's configurations plus SIMULATORS.
     All,
+    /// One simulator configuration.
+    Triple(String),
 }
 
 struct Options {
@@ -37,9 +91,8 @@ struct Options {
     list: bool,
 }
 
-#[derive(Clone)]
 struct TestJob {
-    arch: &'static str,
+    target: Arc<Target>,
     script: PathBuf,
     name: String,
     log: PathBuf,
@@ -65,7 +118,7 @@ impl Outcome {
 }
 
 struct TestResult {
-    arch: &'static str,
+    target: Arc<Target>,
     name: String,
     log: PathBuf,
     outcome: Outcome,
@@ -97,7 +150,7 @@ impl Counts {
 fn usage() -> ! {
     eprintln!(
         "Usage: cargo test [pattern] [-- [--test-threads N] \
-         [--native | --all] [--timeout SECONDS] [--list]]"
+         [--native | --host | --all | --triple TRIPLE] [--timeout SECONDS] [--list]]"
     );
     std::process::exit(2);
 }
@@ -108,7 +161,8 @@ fn parse_usize(value: Option<String>) -> usize {
 
 fn parse_options() -> Options {
     let mut jobs = thread::available_parallelism().map_or(1, usize::from);
-    let mut mode = Mode::All;
+    let mut mode = Mode::Host;
+    let mut mode_was_set = false;
     let mut patterns = Vec::new();
     let mut timeout = DEFAULT_TIMEOUT;
     let mut list = false;
@@ -117,8 +171,22 @@ fn parse_options() -> Options {
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "-j" | "--jobs" | "--test-threads" => jobs = parse_usize(args.next()),
-            "--native" => mode = Mode::Native,
-            "--all" => mode = Mode::All,
+            "--native" => {
+                mode = Mode::Native;
+                mode_was_set = true;
+            }
+            "--host" => {
+                mode = Mode::Host;
+                mode_was_set = true;
+            }
+            "--all" => {
+                mode = Mode::All;
+                mode_was_set = true;
+            }
+            "--triple" => {
+                mode = Mode::Triple(args.next().unwrap_or_else(|| usage()));
+                mode_was_set = true;
+            }
             "--timeout" => timeout = Duration::from_secs(parse_usize(args.next()) as u64),
             "--list" => list = true,
             "--nocapture" | "--show-output" => {}
@@ -132,6 +200,12 @@ fn parse_options() -> Options {
             _ if arg.starts_with('-') => usage(),
             _ => patterns.push(arg),
         }
+    }
+
+    // As in mold's ELF suite, TRIPLE in the environment selects the
+    // configuration too.
+    if !mode_was_set && let Some(triple) = env::var_os("TRIPLE").filter(|s| !s.is_empty()) {
+        mode = Mode::Triple(triple.to_string_lossy().into_owned());
     }
 
     Options { jobs, mode, patterns, timeout, list }
@@ -151,13 +225,59 @@ fn rosetta_available() -> bool {
         .is_ok_and(|status| status.success())
 }
 
-fn selected_archs(options: &Options) -> Vec<&'static str> {
+/// Returns the configurations to run and the simulator triples that
+/// `--all` skips for want of a runtime.
+fn selected_targets(options: &Options) -> (Vec<Target>, Vec<&'static str>) {
     let native = native_arch();
-    let mut archs = vec![native];
-    if options.mode == Mode::All && native == "arm64" && rosetta_available() {
-        archs.push("x86_64");
+    let mut targets = vec![Target::host(native)];
+    let mut unavailable = Vec::new();
+    match &options.mode {
+        Mode::Native => {}
+        Mode::Host | Mode::All => {
+            let rosetta = native == "arm64" && rosetta_available();
+            if rosetta {
+                targets.push(Target::host("x86_64"));
+            }
+            if options.mode == Mode::Host {
+                return (targets, unavailable);
+            }
+            for &triple in SIMULATORS {
+                let simulator = Simulator::parse(triple).unwrap();
+                match simulator::find_runtime(&simulator) {
+                    Some(runtime) if simulator.arch == native || rosetta => {
+                        targets.push(Target::simulator(&simulator, runtime))
+                    }
+                    _ => unavailable.push(triple),
+                }
+            }
+        }
+        Mode::Triple(triple) => {
+            let Some(simulator) = Simulator::parse(triple) else {
+                eprintln!("mold-macho-tests: {triple}: not a simulator triple");
+                usage();
+            };
+            let Some(runtime) = simulator::find_runtime(&simulator) else {
+                eprintln!("mold-macho-tests: no simulator runtime for {triple}");
+                std::process::exit(1);
+            };
+            targets = vec![Target::simulator(&simulator, runtime)];
+        }
     }
-    archs
+    (targets, unavailable)
+}
+
+/// Boots a device for each simulator configuration. Dropping a device
+/// shuts it down.
+fn boot_devices(targets: &mut [Target]) -> Result<Vec<Device>, String> {
+    let mut devices = Vec::new();
+    for target in targets {
+        if let Some(runtime) = &target.runtime {
+            let device = Device::boot(runtime)?;
+            target.device = Some(device.udid.clone());
+            devices.push(device);
+        }
+    }
+    Ok(devices)
 }
 
 fn matches_patterns(name: &str, patterns: &[String]) -> bool {
@@ -208,7 +328,7 @@ fn prepare_work_dir(mold: &Path) -> io::Result<PathBuf> {
 fn make_jobs(
     cases_dirs: &[PathBuf],
     work_dir: &Path,
-    archs: &[&'static str],
+    targets: Vec<Target>,
     patterns: &[String],
     clean: bool,
 ) -> io::Result<Vec<TestJob>> {
@@ -219,15 +339,16 @@ fn make_jobs(
     scripts.sort_by(|a, b| a.0.cmp(&b.0));
     let mut jobs = Vec::new();
 
-    for &arch in archs {
-        let result_dir = work_dir.join("out/test/results").join(arch);
+    for target in targets {
+        let target = Arc::new(target);
+        let result_dir = work_dir.join("out/test/results").join(&target.label);
         if clean {
             clear_results(&result_dir)?;
         }
         for (name, script) in &scripts {
             if matches_patterns(name, patterns) {
                 jobs.push(TestJob {
-                    arch,
+                    target: Arc::clone(&target),
                     script: script.clone(),
                     name: name.clone(),
                     log: result_dir.join(format!("{name}.log")),
@@ -262,10 +383,17 @@ fn run_process(
     command
         .current_dir(root)
         .env("mold", linker)
-        .env("ARCH", job.arch)
+        .env("ARCH", &job.target.arch)
         .stdin(Stdio::null())
         .stdout(Stdio::from(log))
         .stderr(Stdio::from(stderr));
+    for (name, value) in [("TRIPLE", &job.target.triple), ("SIMULATOR", &job.target.device)] {
+        if let Some(value) = value {
+            command.env(name, value);
+        } else {
+            command.env_remove(name);
+        }
+    }
 
     // A timeout must also kill compiler children. The test runs in
     // its own process group, which is a background group of the
@@ -310,7 +438,7 @@ fn run_job(root: &Path, job: &TestJob, linker: &Path, timeout: Duration) -> Test
     // Keep failed test directories for diagnosis, but do not retain the
     // successful tests' potentially large temporary files.
     if matches!(outcome, Outcome::Pass | Outcome::Skip) {
-        let dir = root.join("out/test").join(job.arch).join(&job.name);
+        let dir = root.join("out/test").join(&job.target.label).join(&job.name);
         match fs::remove_dir_all(&dir) {
             Ok(()) => {}
             Err(err) if err.kind() == io::ErrorKind::NotFound => {}
@@ -324,7 +452,12 @@ fn run_job(root: &Path, job: &TestJob, linker: &Path, timeout: Duration) -> Test
     if let Err(err) = fs::write(&job.status_file, format!("{}\n", outcome.status())) {
         eprintln!("{}: cannot write {}: {err}", job.name, job.status_file.display());
     }
-    TestResult { arch: job.arch, name: job.name.clone(), log: job.log.clone(), outcome }
+    TestResult {
+        target: Arc::clone(&job.target),
+        name: job.name.clone(),
+        log: job.log.clone(),
+        outcome,
+    }
 }
 
 fn run_jobs(root: &Path, jobs: Vec<TestJob>, linker: &Path, options: &Options) -> Vec<TestResult> {
@@ -359,7 +492,7 @@ fn run_jobs(root: &Path, jobs: Vec<TestJob>, linker: &Path, options: &Options) -
             if matches!(result.outcome, Outcome::Fail | Outcome::Timeout) {
                 eprintln!(
                     "FAIL {}:{}{} ({})",
-                    result.arch,
+                    result.target.label,
                     result.name,
                     if result.outcome == Outcome::Timeout { " [timeout]" } else { "" },
                     result.log.display()
@@ -374,29 +507,32 @@ fn run_jobs(root: &Path, jobs: Vec<TestJob>, linker: &Path, options: &Options) -
     })
 }
 
-fn print_inventory(jobs: &[TestJob]) {
+fn print_inventory(jobs: &[TestJob], unavailable: &[&str]) {
     let mut counts = BTreeMap::new();
     for job in jobs {
-        *counts.entry(job.arch).or_insert(0usize) += 1;
+        *counts.entry(job.target.label.as_str()).or_insert(0usize) += 1;
     }
-    for (arch, count) in counts {
-        println!("{arch}: tests={count}");
+    for (target, count) in counts {
+        println!("{target}: tests={count}");
     }
     println!("total: tests={}", jobs.len());
+    if !unavailable.is_empty() {
+        println!("unavailable: {}", unavailable.join(", "));
+    }
 }
 
 fn print_summary(results: &[TestResult]) -> bool {
-    let mut by_arch: BTreeMap<&str, Counts> = BTreeMap::new();
+    let mut by_target: BTreeMap<&str, Counts> = BTreeMap::new();
     for result in results {
-        by_arch.entry(result.arch).or_default().add(result.outcome);
+        by_target.entry(&result.target.label).or_default().add(result.outcome);
     }
 
     let mut total = Counts::default();
-    for (arch, counts) in &by_arch {
-        println!("{arch}: pass={} skip={} fail={}", counts.pass, counts.skip, counts.fail);
+    for (target, counts) in &by_target {
+        println!("{target}: pass={} skip={} fail={}", counts.pass, counts.skip, counts.fail);
         total.merge(counts);
     }
-    if by_arch.len() > 1 {
+    if by_target.len() > 1 {
         println!("total: pass={} skip={} fail={}", total.pass, total.skip, total.fail);
     } else {
         println!("pass={} skip={} fail={}", total.pass, total.skip, total.fail);
@@ -414,19 +550,38 @@ pub fn run(cases_dirs: &[PathBuf], mold: &Path) -> ExitCode {
         std::process::exit(1);
     });
     let linker = mold.canonicalize().expect("linker not found");
-    let archs = selected_archs(&options);
-    let jobs = make_jobs(cases_dirs, &work_dir, &archs, &options.patterns, !options.list)
-        .unwrap_or_else(|err| {
-            eprintln!("mold-macho-tests: {err}");
-            std::process::exit(1);
-        });
-
+    let (mut targets, unavailable) = selected_targets(&options);
     if options.list {
-        print_inventory(&jobs);
+        let jobs = make_jobs(cases_dirs, &work_dir, targets, &options.patterns, false)
+            .unwrap_or_else(|err| {
+                eprintln!("mold-macho-tests: {err}");
+                std::process::exit(1);
+            });
+        print_inventory(&jobs, &unavailable);
         return ExitCode::SUCCESS;
     }
+    if !unavailable.is_empty() {
+        eprintln!("skipping simulators without a runtime: {}", unavailable.join(", "));
+    }
 
+    // Errors return rather than exit from here on, so that the devices
+    // are shut down.
+    let devices = match boot_devices(&mut targets) {
+        Ok(devices) => devices,
+        Err(err) => {
+            eprintln!("mold-macho-tests: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let jobs = match make_jobs(cases_dirs, &work_dir, targets, &options.patterns, true) {
+        Ok(jobs) => jobs,
+        Err(err) => {
+            eprintln!("mold-macho-tests: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
     let results = run_jobs(&work_dir, jobs, &linker, &options);
+    drop(devices);
     if print_summary(&results) { ExitCode::SUCCESS } else { ExitCode::FAILURE }
 }
 

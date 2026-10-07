@@ -61,12 +61,16 @@ behavior involved in that change.
 Tests are shell scripts under `tests/`, one feature per script,
 driving the real toolchain through `cc --ld-path=...`; a harness runs
 each for arm64 and (under Rosetta) x86-64, writing logs and outputs
-under `target/<profile>/mold-test/out/test`. The harness is the
-`integration` test of the `cli` crate; name that target to pass it
-options, which the unit tests would otherwise reject:
+under `target/<profile>/mold-test/out/test`. `--all` runs them for the
+iOS, tvOS and visionOS simulators too (those with a runtime installed),
+and `--triple` (or `TRIPLE`) for one simulator: the programs are built
+with its SDK and run on a simulator device the harness boots. The
+harness is the `integration` test of the `cli` crate; name that target
+to pass it options, which the unit tests would otherwise reject:
 
     cargo test
     cargo test --test integration -- dead-strip --native --timeout 120
+    cargo test --test integration -- --triple arm64-apple-ios-simulator
     cargo test --test integration -- --list
 
 ## License

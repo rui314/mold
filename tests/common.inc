@@ -3,9 +3,71 @@
 # Make sure all commands print out messages in English
 export LC_ALL=C
 
-ARCH="${ARCH:-$(uname -m)}"
-CC="cc -arch $ARCH"
-CXX="c++ -arch $ARCH"
+if [ -z "$TRIPLE" ]; then
+  ARCH="${ARCH:-$(uname -m)}"
+  TESTDIR=out/test/$ARCH
+  PLATFORM=macos
+  PLATFORM_NAME=macOS
+  PLATFORM_VERSION=
+  SDK=$(xcrun --show-sdk-path)
+  CC="cc -arch $ARCH"
+  CXX="c++ -arch $ARCH"
+  SWIFTC=swiftc
+  RUN=
+else
+  # A simulator triple such as arm64-apple-ios26.5-simulator: programs
+  # are built for the triple's OS version with the simulator's SDK and
+  # run on the device the runner booted (on a booted one when a script
+  # runs by hand), as mold's ELF suite runs a cross target's under QEMU.
+  ARCH=${TRIPLE%%-*}
+  target_os=$(echo "$TRIPLE" | cut -d- -f3)
+  OS_VERSION=${target_os##*[a-z]}
+  target_os=${target_os%"$OS_VERSION"}
+  PLATFORM=$target_os-simulator
+  PLATFORM_VERSION="$PLATFORM $OS_VERSION $OS_VERSION"
+  case $target_os in
+  ios) sdk_name=iphonesimulator PLATFORM_NAME=iOS-simulator ;;
+  tvos) sdk_name=appletvsimulator PLATFORM_NAME=tvOS-simulator ;;
+  xros) sdk_name=xrsimulator PLATFORM_NAME=visionOS-simulator ;;
+  esac
+  SDK=$(xcrun --sdk $sdk_name --show-sdk-path)
+  TESTDIR=out/test/$ARCH-$PLATFORM
+  CC="cc -target $TRIPLE -isysroot $SDK"
+  CXX="c++ -target $TRIPLE -isysroot $SDK"
+  SWIFTC="swiftc -target $TRIPLE -sdk $SDK"
+
+  # simctl starts a program in the device's own directory, where the
+  # relative paths a test gives (and the install names they become)
+  # lead nowhere. As QEMU runs a program in the current directory, a
+  # little program of the simulator's changes to the script's directory
+  # and executes the program there. (tvOS's headers declare execv
+  # unavailable, but the simulator runs it.)
+  simctl=$(xcrun -f simctl)
+  sim_exec=$PWD/$TESTDIR/exec-$OS_VERSION
+  if [ ! -x "$sim_exec" ]; then
+    mkdir -p $TESTDIR
+    echo 'int chdir(const char *);
+int execv(const char *, char *const *);
+void perror(const char *);
+int main(int argc, char **argv) {
+  if (chdir(argv[1]) == 0)
+    execv(argv[2], argv + 2);
+  perror(argv[2]);
+  return 127;
+}' | $CC -o "$sim_exec.$$" -xc - && mv "$sim_exec.$$" "$sim_exec"
+  fi
+  run_on_simulator() {
+    "$simctl" spawn "${SIMULATOR:-booted}" "$sim_exec" "$PWD" "$@"
+  }
+  RUN=run_on_simulator
+fi
+
+# ${CC/$ARCH/<arch>} compiles for another architecture of the platform.
+# $PLATFORM names the platform as -platform_version and .tbd targets do,
+# $PLATFORM_NAME as ld-prime's messages do.
+# A simulator's $PLATFORM_VERSION holds all of -platform_version's
+# arguments, which take the place of the macOS version a script names:
+# -platform_version ${PLATFORM_VERSION:-macos 14.0 14.0}.
 
 # The runner sets $mold to the linker under test; default to the debug
 # build for running a script by hand.
@@ -29,6 +91,13 @@ not() {
 # binaries of the host's own architecture.
 native_arch() {
   [ "$ARCH" = "$(uname -m)" ]
+}
+
+# A simulator runs a program as a host process, but with the simulator's
+# dyld and libraries, and with only the variables simctl's environment
+# names SIMCTL_CHILD_<name>.
+on_simulator() {
+  [ -n "$TRIPLE" ]
 }
 
 test_cflags() {
@@ -146,7 +215,7 @@ trap on_exit EXIT
 # Print out the startup message
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
-t=out/test/$ARCH/$testname
+t=$TESTDIR/$testname
 mkdir -p $t
 set -o pipefail
 set -x
