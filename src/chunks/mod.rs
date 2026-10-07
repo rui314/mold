@@ -537,18 +537,26 @@ pub fn has_version_cmd(args: &crate::cmdline::Args) -> bool {
 }
 
 /// The load command naming the deployment target, for a final image
-/// and for -r alike: LC_BUILD_VERSION, or for an x86-64 macOS older than
-/// 10.14, which brought LC_BUILD_VERSION, the legacy
-/// LC_VERSION_MIN_MACOSX {version, sdk} its loaders read (arm64 macOS
-/// gets LC_BUILD_VERSION at any version).
+/// and for -r alike: LC_BUILD_VERSION, or for an OS older than macOS
+/// 10.14 and iOS 12, which brought it (ld64's version2018Fall), the
+/// legacy LC_VERSION_MIN_MACOSX, _IPHONEOS or _TVOS {version, sdk}
+/// their loaders read. Those name no simulator: an x86-64 image's is the
+/// simulator's, so an arm64 simulator's image gets LC_BUILD_VERSION at
+/// any version, as an arm64 macOS one does; so does a visionOS image,
+/// that OS being newer.
 pub fn create_version_cmd<E: Target>(platform: u32, minos: u32, sdk: u32) -> Vec<u8> {
-    if E::CPUTYPE != CPU_TYPE_ARM64
-        && platform == PLATFORM_MACOS
-        && minos != 0
-        && minos < encode_version(10, 14, 0)
-    {
+    let legacy = match platform {
+        PLATFORM_MACOS if minos != 0 => Some(LC_VERSION_MIN_MACOSX),
+        PLATFORM_IOS | PLATFORM_IOSSIMULATOR => Some(LC_VERSION_MIN_IPHONEOS),
+        PLATFORM_TVOS | PLATFORM_TVOSSIMULATOR => Some(LC_VERSION_MIN_TVOS),
+        _ => None,
+    };
+    let arm64_on_mac =
+        E::CPUTYPE == CPU_TYPE_ARM64 && (platform == PLATFORM_MACOS || is_simulator(platform));
+    let old = !arm64_on_mac && !VERSION_2018_FALL.reached_by(platform, minos);
+    if let Some(cmd) = legacy.filter(|_| old) {
         return to_vec(&VersionMinCommand {
-            cmd: LC_VERSION_MIN_MACOSX,
+            cmd,
             cmdsize: size_of::<VersionMinCommand>() as u32,
             version: minos,
             sdk,
