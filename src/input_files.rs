@@ -3269,16 +3269,28 @@ pub fn is_allowed_client<E: Target>(ctx: &Context<E>, dylib: &DylibIdentity) -> 
 /// into its parent's, too - was built for the link's platform, and
 /// returns the minimum OS version it names for that platform (0 for
 /// none).
+///
+/// A macOS dylib marked MH_SIM_SUPPORT (-simulator_support) counts as
+/// built for every simulator too, whose processes run on the Mac and may
+/// load it, at no particular version.
 fn check_dylib_platform<E: Target>(ctx: &Context<E>, mf: &MappedFile) -> u32 {
-    let cputype = MachHeader::read_from(mf.data()).cputype;
+    let hdr = MachHeader::read_from(mf.data());
     let versions: Vec<PlatformVersion> = load_commands(mf.data())
         .filter(|&(cmd, _)| is_platform_cmd(cmd))
-        .map(|(cmd, bytes)| PlatformVersion::read(cmd, bytes, cputype))
+        .map(|(cmd, bytes)| PlatformVersion::read(cmd, bytes, hdr.cputype))
         .collect();
     if let Some(version) = versions.iter().find(|v| v.platform == ctx.args.platform) {
         return version.minos;
     }
-    let platforms: Vec<u32> = versions.iter().map(|v| v.platform).collect();
+    let mut platforms: Vec<u32> = versions.iter().map(|v| v.platform).collect();
+    if hdr.flags & MH_SIM_SUPPORT != 0 && platforms.contains(&PLATFORM_MACOS) {
+        platforms.extend([
+            PLATFORM_IOSSIMULATOR,
+            PLATFORM_WATCHOSSIMULATOR,
+            PLATFORM_TVOSSIMULATOR,
+            PLATFORM_VISIONOSSIMULATOR,
+        ]);
+    }
     check_dylib_platforms(ctx, mf, &platforms);
     0
 }
