@@ -192,7 +192,10 @@ fn collect_root_set<E: Target>(
         }
     }
 
-    // Sections defining a no-dead-strip or an exported symbol.
+    // Sections defining a no-dead-strip or an exported symbol - in the
+    // link: an archive member left unloaded keeps its local symbols
+    // (`__attribute__((used))` ones are no-dead-strip), but none of its
+    // sections.
     let syms: Vec<(usize, Root)> = ctx
         .symbols
         .syms
@@ -201,7 +204,8 @@ fn collect_root_set<E: Target>(
         .filter(|&(id, sym)| is_root(id as SymbolId, sym))
         .filter_map(|(_, sym)| {
             let root = if sym.no_dead_strip() { Root::Kept } else { Root::Export };
-            Some((sym.input_section()? as usize, root))
+            let isec = sym.input_section()? as usize;
+            ctx.isecs[isec].is_alive().then_some((isec, root))
         })
         .collect();
     for (id, root) in syms {
