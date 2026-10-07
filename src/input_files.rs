@@ -189,8 +189,8 @@ pub struct ObjectFile {
     /// The subsection each nlist is defined in, or NONE (see
     /// symbol_subsec).
     pub sym_subsecs: Vec<crate::input_sections::InputSectionId>,
-    /// The flags word of the object's __objc_imageinfo, if it has one.
-    pub objc_image_info: Option<u32>,
+    /// The object's __objc_imageinfo, if it has one.
+    pub objc_image_info: Option<ObjcImageInfo>,
     /// True if the object carries DWARF debug info, so the output gets
     /// debug stabs pointing back at it.
     pub has_debug_info: bool,
@@ -747,6 +747,18 @@ fn check_sections(hdrs: &[MachSection], nindirect: u32, file: &Path) {
     }
 }
 
+/// An object's Objective-C image info record (see is_objc_image_info).
+#[derive(Clone, Copy, Debug)]
+pub struct ObjcImageInfo {
+    /// The record's flags word.
+    pub flags: u32,
+    /// Whether the object has a __DATA,__objc_classlist section, empty
+    /// or not, which ld-prime takes for one that defines classes: the
+    /// flag of signed class_ro_t pointers speaks for theirs (see
+    /// passes::merge_objc_info).
+    pub classes: bool,
+}
+
 /// Whether a section is an object's Objective-C image info, the record
 /// whose flags the link merges into the image's own (see
 /// output_sections::merge_objc_image_info): ld-prime knows it in
@@ -803,7 +815,7 @@ pub struct StagedObject {
     pub unwind: Vec<UnwindRecord>,
     pub cies: Vec<Cie>,
     pub fdes: Vec<Fde>,
-    pub objc_image_info: Option<u32>,
+    pub objc_image_info: Option<ObjcImageInfo>,
     pub has_debug_info: bool,
     /// LC_DATA_IN_CODE entries: (file offset in the object, length,
     /// kind).
@@ -1088,7 +1100,13 @@ pub fn stage_object<E: Target>(
     let objc_image_info =
         sect_hdrs.iter().find(|s| is_objc_image_info(s) && s.size >= 8).map(|s| {
             let off = s.offset as usize + 4;
-            u32::from_le_bytes(data[off..off + 4].try_into().unwrap())
+            let classes = sect_hdrs
+                .iter()
+                .any(|s| s.segname() == b"__DATA" && s.sectname() == b"__objc_classlist");
+            ObjcImageInfo {
+                flags: u32::from_le_bytes(data[off..off + 4].try_into().unwrap()),
+                classes,
+            }
         });
     let has_debug_info =
         sect_hdrs.iter().any(|s| s.segname() == b"__DWARF" && s.sectname() == b"__debug_info");

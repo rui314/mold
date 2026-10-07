@@ -2,9 +2,9 @@
 source "$(dirname "$0")"/common.inc
 
 # -objc_class_ro_signing_mismatch (and $LD_OBJC_CLASS_RO_SIGNING_MISMATCH)
-# say whether objects may disagree on signing class_ro_t pointers, which
-# only arm64e does: they are read, as warning (or warn) or error, and
-# change nothing here.
+# say whether objects may disagree on signing class_ro_t pointers (see
+# objc-imageinfo-class-ro-signing.sh): they are read as warning (or
+# warn) or error.
 cat <<EOF | $CC -o $t/a.o -c -xc -
 int main() { return 0; }
 EOF

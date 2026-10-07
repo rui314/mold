@@ -14,7 +14,7 @@ use crate::error::RawPath;
 use crate::error::raw;
 use crate::fatal;
 use crate::input_files;
-use crate::input_files::FileId;
+use crate::input_files::{FileId, ObjcImageInfo};
 use crate::input_sections::{InputSection, NO_REPLACEMENT, RelocTarget};
 use crate::macho::*;
 use crate::mapped_file::MappedFile;
@@ -974,7 +974,7 @@ fn load_owner<E: Target>(ctx: &mut Context<E>, sym_id: SymbolId, queue: &mut Vec
 #[derive(Default)]
 pub struct CheckedInputs {
     objs: Vec<bool>,
-    objc: Option<u32>,
+    objc: Option<ObjcImageInfo>,
 }
 
 /// Warns if a dylib with install name `install_name` was built for an
@@ -1010,8 +1010,8 @@ pub fn check_input_versions<E: Target>(ctx: &Context<E>, checked: &mut CheckedIn
         if ctx.args.platform != 0 {
             check_object_version(ctx, i);
         }
-        if let Some(flags) = obj.objc_image_info {
-            checked.objc = Some(check_objc_flags(ctx, checked.objc, flags, obj.mf));
+        if let Some(info) = obj.objc_image_info {
+            checked.objc = Some(check_objc_flags(ctx, checked.objc, info, obj.mf));
         }
     }
 }
@@ -1092,22 +1092,30 @@ fn check_object_version<E: Target>(ctx: &Context<E>, i: usize) {
 /// properties: every object's record has it, or the image's has not.
 const OBJC_HAS_CATEGORY_CLASS_PROPERTIES: u32 = 0x40;
 
-/// Merges the Objective-C image info `flags` of an object into those
-/// of the objects checked before it, `merged`, with ld-prime's
+/// __objc_imageinfo's flag of an image whose class_ro_t pointers are
+/// signed (arm64e's), which speaks for an object's classes (see
+/// merge_objc_info).
+const OBJC_SIGNED_CLASS_RO: u32 = 0x10;
+
+/// Merges the Objective-C image info of an object, `info`, into that of
+/// the objects checked before it, `merged`, with ld-prime's
 /// diagnostics. The first Swift ABI version stays: another one
 /// fails the link (or with $LD_WARN_ON_SWIFT_ABI_VERSION_MISMATCHES
-/// draws a warning). And an object that has category class properties
+/// draws a warning). An object that has category class properties
 /// where those before don't, or lacks them where those before have
 /// them, draws a warning - each one that differs from the merged flags,
-/// which lose the bit at the first.
+/// which lose the bit at the first. So does one that differs from the
+/// objects with classes before it in signing class_ro_t pointers, if
+/// it has classes or signs (an error with -objc_class_ro_signing_mismatch
+/// error).
 fn check_objc_flags<E: Target>(
     ctx: &Context<E>,
-    merged: Option<u32>,
-    flags: u32,
+    merged: Option<ObjcImageInfo>,
+    info: ObjcImageInfo,
     mf: &MappedFile,
-) -> u32 {
-    let Some(merged) = merged else { return flags };
-    let (first, abi) = ((merged >> 8) & 0xff, (flags >> 8) & 0xff);
+) -> ObjcImageInfo {
+    let Some(merged) = merged else { return info };
+    let (first, abi) = ((merged.flags >> 8) & 0xff, (info.flags >> 8) & 0xff);
     if first != 0 && abi != 0 && abi != first {
         let (first, file) = (swift_abi_name(first), mf.name.raw());
         if ctx.args.warn_swift_abi_mismatches {
@@ -1124,29 +1132,72 @@ fn check_objc_flags<E: Target>(
             );
         }
     }
-    let cat = flags & OBJC_HAS_CATEGORY_CLASS_PROPERTIES;
-    if cat != merged & OBJC_HAS_CATEGORY_CLASS_PROPERTIES {
+    let cat = info.flags & OBJC_HAS_CATEGORY_CLASS_PROPERTIES;
+    if cat != merged.flags & OBJC_HAS_CATEGORY_CLASS_PROPERTIES {
         crate::warn!(
             "mixed ObjC ABI, {} compiled {} category class properties",
             mf.name.raw(),
             if cat != 0 { "with" } else { "without" }
         );
     }
-    merge_objc_flags(merged, flags)
+    let signed = info.flags & OBJC_SIGNED_CLASS_RO != 0;
+    if merged.classes
+        && (info.classes || signed)
+        && signed != (merged.flags & OBJC_SIGNED_CLASS_RO != 0)
+    {
+        let msg = format!(
+            "'{}' {} built with class_ro_t pointer signing enabled, but previous .o file {}",
+            mf.name.raw(),
+            if signed { "was" } else { "was not" },
+            if signed { "was not" } else { "was" }
+        );
+        match ctx.args.objc_class_ro_signing_mismatch {
+            Treatment::Error => fatal!("{msg}"),
+            _ => crate::warn!("{msg}"),
+        }
+    }
+    merge_objc_info(merged, info)
 }
 
-/// The Objective-C image info flags of objects whose flags so far are
-/// `merged`, and of an object with `flags`, as ld-prime merges them:
-/// the first Swift ABI version given stays, the Swift language version
-/// is the oldest given, and the image's categories may have class
-/// properties if every object's may.
-pub(crate) fn merge_objc_flags(merged: u32, flags: u32) -> u32 {
-    let abi = if merged & 0xff00 != 0 { merged & 0xff00 } else { flags & 0xff00 };
-    let lang = match (merged >> 16, flags >> 16) {
+/// The Objective-C image info of objects whose info so far is `merged`,
+/// and of an object with `info`, as ld-prime merges them: the first
+/// Swift ABI version given stays, the Swift language version is the
+/// oldest given, and the image's categories may have class properties
+/// if every object's may (see objc_image_flags). Its class_ro_t
+/// pointers are signed if those of every object with classes are; an
+/// object without classes has none to sign, and its flag counts only
+/// until one with classes comes, and only if it is set.
+pub(crate) fn merge_objc_info(merged: ObjcImageInfo, info: ObjcImageInfo) -> ObjcImageInfo {
+    let (a, b) = (merged.flags, info.flags);
+    let abi = if a & 0xff00 != 0 { a & 0xff00 } else { b & 0xff00 };
+    let lang = match (a >> 16, b >> 16) {
         (0, lang) | (lang, 0) => lang,
         (a, b) => a.min(b),
     };
-    (lang << 16) | abi | (merged & flags & OBJC_HAS_CATEGORY_CLASS_PROPERTIES)
+    let signed = match (merged.classes, info.classes) {
+        (false, false) => a | b,
+        (false, true) => b,
+        (true, false) => a,
+        (true, true) => a & b,
+    };
+    ObjcImageInfo {
+        flags: (lang << 16)
+            | abi
+            | (a & b & OBJC_HAS_CATEGORY_CLASS_PROPERTIES)
+            | (signed & OBJC_SIGNED_CLASS_RO),
+        classes: merged.classes || info.classes,
+    }
+}
+
+/// The Objective-C image info flags of an object as the image keeps
+/// them, alone or to merge with others' (see merge_objc_info): the
+/// Swift versions, category class properties and signed class_ro_t
+/// pointers, which describe the code. ld-prime drops the rest: the
+/// simulator bit (0x20) clang sets in a simulator's objects, the bits
+/// of the garbage collector the runtime no longer has, and those of
+/// dyld's optimizations (0x08 and 0x80), which dyld sets itself.
+pub(crate) fn objc_image_flags(flags: u32) -> u32 {
+    flags & (0xffff_ff00 | OBJC_HAS_CATEGORY_CLASS_PROPERTIES | OBJC_SIGNED_CLASS_RO)
 }
 
 /// A Swift ABI version, the byte of __objc_imageinfo's flags that holds

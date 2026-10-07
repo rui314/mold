@@ -17,8 +17,8 @@ use crate::error;
 use crate::error::RawPath;
 use crate::error::raw;
 use crate::fatal;
-use crate::input_files::FileId;
 use crate::input_files::is_class_or_protocol_ref_name;
+use crate::input_files::{FileId, ObjcImageInfo};
 use crate::input_sections::{InputSection, InputSectionId};
 use crate::macho::*;
 use crate::objc::DataBlob;
@@ -1471,18 +1471,23 @@ fn add_sectcreate_sections<E: Target>(ctx: &mut Context<E>) {
     }
 }
 
-/// Merges the objects' __objc_imageinfo records into the image's (see
-/// passes::merge_objc_flags), in the order ld-prime checks the objects
-/// in (see passes::check_objc_flags, which gave the diagnostics). An
-/// image no dyld loads (-static, -preload, a kext), whose Objective-C
-/// no runtime sets up, gets none from ld-prime.
+/// Merges the objects' __objc_imageinfo records into the image's, cut
+/// to the flags an image keeps, a lone record's too (see
+/// passes::objc_image_flags and merge_objc_info), in the order
+/// ld-prime checks the objects in (see passes::check_objc_flags, which
+/// gave the diagnostics). An image no dyld loads (-static, -preload, a
+/// kext), whose Objective-C no runtime sets up, gets none from
+/// ld-prime.
 fn merge_objc_image_info<E: Target>(ctx: &mut Context<E>) {
     let mut objs: Vec<&crate::input_files::ObjectFile> =
         ctx.objs.iter().filter(|o| o.is_alive && o.objc_image_info.is_some()).collect();
     objs.sort_by_key(|o| o.priority);
-    let flags =
-        objs.iter().filter_map(|o| o.objc_image_info).reduce(crate::passes::merge_objc_flags);
-    let Some(flags) = flags else { return };
+    let info = objs
+        .iter()
+        .filter_map(|o| o.objc_image_info)
+        .map(|info| ObjcImageInfo { flags: crate::passes::objc_image_flags(info.flags), ..info })
+        .reduce(crate::passes::merge_objc_info);
+    let Some(ObjcImageInfo { flags, .. }) = info else { return };
     if ctx.args.without_dyld() {
         return;
     }

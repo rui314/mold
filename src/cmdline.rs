@@ -460,6 +460,11 @@ pub struct Args {
     /// -deployment_target_mismatches: what to make of an object built
     /// for a newer OS version than the link's (a warning unless given).
     pub deployment_target_mismatches: Treatment,
+    /// -objc_class_ro_signing_mismatch, or its environment variable,
+    /// which wins: what to make of an object that signs its class_ro_t
+    /// pointers where those before don't, or the other way around (a
+    /// warning unless given).
+    pub objc_class_ro_signing_mismatch: Treatment,
     /// What to make of a pointer dyld fixes up that is not 8-aligned:
     /// -unaligned_pointers, resolved for the image at the end of
     /// parsing (see resolve_unaligned_pointers).
@@ -2404,10 +2409,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     fatal!("-objc_abi_version '{}' not supported (expected 2)", raw(version));
                 }
             }
-            // Whether objects may disagree on signing class_ro_t
-            // pointers, which only arm64e signs: nothing to check here.
             b"-objc_class_ro_signing_mismatch" => {
-                parse_treatment(name, cur.next_arg(name), false);
+                args.objc_class_ro_signing_mismatch =
+                    parse_treatment(name, cur.next_arg(name), false);
             }
 
             // Link-time optimization.
@@ -2615,13 +2619,13 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
 /// the options are read.
 fn finish_options(args: &mut Args) {
     // -objc_class_ro_signing_mismatch's environment variable is read as
-    // the option would be.
+    // the option would be, and overrides it.
     let env = "LD_OBJC_CLASS_RO_SIGNING_MISMATCH";
     if let Some(val) = std::env::var_os(env) {
         if val.is_empty() {
             fatal!("{env} missing <option>");
         }
-        parse_treatment(env, &val, false);
+        args.objc_class_ro_signing_mismatch = parse_treatment(env, &val, false);
     }
     trace_env(args);
 }
