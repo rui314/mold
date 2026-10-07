@@ -772,9 +772,6 @@ pub(crate) enum Item {
     /// `-G`, `--gpsize`
     #[arg(short = 'G', long = "gpsize")]
     IgnoredGpsize(OsString),
-    /// `-Ur`
-    #[arg(long = "Ur")]
-    IgnoredUr,
     /// `-Qy`
     #[arg(long = "Qy")]
     IgnoredQy,
@@ -1218,15 +1215,20 @@ pub(crate) fn parse(raw_cmdline: &[Cow<'_, OsStr>]) -> Vec<Item> {
         .enumerate()
         .map(|(i, word)| {
             // GNU ld reads a "-G" that names no size as "--shared" (its
-            // "-lfoo" rewrite is the lexer's `prefix` rule, not a rewrite).
-            if word.as_encoded_bytes() == b"-G"
+            // "-lfoo" rewrite is the lexer's `prefix` rule, not a rewrite),
+            // and "-U" and "-Ur" (its abbreviation and the whole word) as
+            // "-r": relocatable output.
+            let bytes = word.as_encoded_bytes();
+            if bytes == b"-U" || bytes == b"-Ur" || bytes == b"--U" || bytes == b"--Ur" {
+                winnow_args::BStr::new(b"-r")
+            } else if bytes == b"-G"
                 && !raw_cmdline.get(i + 2).is_some_and(|next| {
                     next.as_encoded_bytes().first().is_some_and(|b| b.is_ascii_digit())
                 })
             {
                 winnow_args::BStr::new(b"--shared")
             } else {
-                winnow_args::BStr::new(word.as_encoded_bytes())
+                winnow_args::BStr::new(bytes)
             }
         })
         .collect();
@@ -1391,6 +1393,16 @@ mod tests {
     }
 
     #[test]
+    fn gnu_ld_u_is_relocatable() {
+        // -U and -Ur are -r: GNU ld makes a relocatable output.
+        let items = parse_items(&["-U", "-Ur", "--U", "--Ur", "a.o"]);
+        for item in &items[..4] {
+            assert!(matches!(item, Item::RelocatableShort));
+        }
+        assert!(matches!(&items[4], Item::Input(_)));
+    }
+
+    #[test]
     fn gnu_ld_short_aliases_are_accepted() {
         // -i is -r, -n is --nmagic, -t is --trace.
         let items = parse_items(&["-i", "-n", "-t", "a.o"]);
@@ -1409,7 +1421,6 @@ mod tests {
             "-G",
             "8",
             "--gpsize=16",
-            "-Ur",
             "-Qy",
             "-a",
             "shared",
@@ -1435,23 +1446,22 @@ mod tests {
         assert!(matches!(&items[3], Item::IgnoredArchitecture(v) if v.as_os_str() == "riscv64"));
         assert!(matches!(&items[4], Item::IgnoredGpsize(v) if v.as_os_str() == "8"));
         assert!(matches!(&items[5], Item::IgnoredGpsize(v) if v.as_os_str() == "16"));
-        assert!(matches!(&items[6], Item::IgnoredUr));
-        assert!(matches!(&items[7], Item::IgnoredQy));
+        assert!(matches!(&items[6], Item::IgnoredQy));
+        assert!(matches!(&items[7], Item::IgnoredA(v) if v.as_os_str() == "shared"));
         assert!(matches!(&items[8], Item::IgnoredA(v) if v.as_os_str() == "shared"));
-        assert!(matches!(&items[9], Item::IgnoredA(v) if v.as_os_str() == "shared"));
-        assert!(matches!(&items[10], Item::IgnoredAssert(v) if v.as_os_str() == "definitions"));
-        assert!(matches!(&items[11], Item::IgnoredAssert(v) if v.as_os_str() == "pure-text"));
-        assert!(matches!(&items[12], Item::IgnoredY(v) if v.as_os_str() == "/tmp"));
+        assert!(matches!(&items[9], Item::IgnoredAssert(v) if v.as_os_str() == "definitions"));
+        assert!(matches!(&items[10], Item::IgnoredAssert(v) if v.as_os_str() == "pure-text"));
+        assert!(matches!(&items[11], Item::IgnoredY(v) if v.as_os_str() == "/tmp"));
+        assert!(matches!(&items[12], Item::IgnoredMriScript(v) if v.as_os_str() == "script.mri"));
         assert!(matches!(&items[13], Item::IgnoredMriScript(v) if v.as_os_str() == "script.mri"));
         assert!(matches!(&items[14], Item::IgnoredMriScript(v) if v.as_os_str() == "script.mri"));
-        assert!(matches!(&items[15], Item::IgnoredMriScript(v) if v.as_os_str() == "script.mri"));
+        assert!(
+            matches!(&items[15], Item::IgnoredDefaultScript(v) if v.as_os_str() == "script.ld")
+        );
         assert!(
             matches!(&items[16], Item::IgnoredDefaultScript(v) if v.as_os_str() == "script.ld")
         );
-        assert!(
-            matches!(&items[17], Item::IgnoredDefaultScript(v) if v.as_os_str() == "script.ld")
-        );
-        assert!(matches!(&items[18], Item::Input(_)));
+        assert!(matches!(&items[17], Item::Input(_)));
 
         // -a and -c take their value attached as well as in a separate
         // word; a longer option that starts with the same letter keeps its

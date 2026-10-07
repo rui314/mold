@@ -2881,7 +2881,6 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                 | Item::IgnoredD
                 | Item::IgnoredArchitecture(_)
                 | Item::IgnoredGpsize(_)
-                | Item::IgnoredUr
                 | Item::IgnoredQy
                 | Item::IgnoredY(_)
                 | Item::IgnoredMriScript(_)
