@@ -4,7 +4,10 @@ source "$(dirname "$0")"/common.inc
 # Classic dyld info binds imports with a small opcode program, sorted by
 # library ordinal (flat lookups, -2, first), symbol, addend and address
 # so that each library and symbol is set once. dyld binds each pointer
-# to its symbol plus addend.
+# to its symbol plus addend. objdump decodes the binds: Xcode 26's
+# dyld_info -fixups (dyld-1267) misreads a symbol bound with two
+# addends, in ld-prime's output too, giving later binds the next one's
+# target or none, and crashes on some.
 cat <<EOF | $CC -o $t/lib.o -c -xc -
 char zvar[16];
 EOF
@@ -24,18 +27,17 @@ $CC --ld-path=$mold -o $t/exe $t/a.o $t/libz.dylib -mmacosx-version-min=11.0 \
   -Wl,-undefined,dynamic_lookup
 p1=0x$(nm $t/exe | awk '$3 == "_p1" { print $1 }')
 rep=0x$(nm $t/exe | awk '$3 == "_rep" { print $1 }')
-dyld_info -fixups $t/exe | awk '$4 == "bind" { $1 = $2 = $4 = ""; print }' | sed -E 's/^ *//; s/  +/ /' |
-  sort > $t/binds
+objdump --macho --bind $t/exe | awk '$4 == "pointer" { print $3, $6 "/" $7, $5 }' | sort > $t/binds
 {
-  b() { printf '0x%X %s\n' $(($1 + $2)) "$3"; }
-  b $p1 0 '<flat-namespace>/_dynsym_b'
-  b $p1 8 'libz/_zvar + 0x8'
-  b $p1 16 libSystem/_free
-  b $p1 24 libz/_zvar
-  b $p1 32 '<flat-namespace>/_dynsym_a'
-  b $p1 40 'libz/_zvar + 0x8'
-  b $p1 48 libSystem/_abort
-  for off in 0 8 16 32 48 64; do b $rep $off libSystem/_free; done
+  b() { printf '0x%x %s %d\n' $(($1 + $2)) $3 $4; }
+  b $p1 0 flat-namespace/_dynsym_b 0
+  b $p1 8 libz/_zvar 8
+  b $p1 16 libSystem/_free 0
+  b $p1 24 libz/_zvar 0
+  b $p1 32 flat-namespace/_dynsym_a 0
+  b $p1 40 libz/_zvar 8
+  b $p1 48 libSystem/_abort 0
+  for off in 0 8 16 32 48 64; do b $rep $off libSystem/_free 0; done
 } | sort > $t/expected
 diff $t/expected $t/binds
 
