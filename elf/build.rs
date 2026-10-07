@@ -65,9 +65,11 @@ fn git_hash(source_dir: &Path) -> Option<String> {
 }
 
 fn main() {
-    let source_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+    // This crate is in elf/ of the source tree.
+    let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+    let source_dir = manifest_dir.parent().unwrap();
     let version = std::env::var("CARGO_PKG_VERSION").unwrap();
-    let version = match git_hash(&source_dir) {
+    let version = match git_hash(source_dir) {
         Some(hash) => format!("mold {version} ({hash}; compatible with GNU ld)"),
         None => format!("mold {version} (compatible with GNU ld)"),
     };

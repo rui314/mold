@@ -1,22 +1,10 @@
-[package]
-name = "libmold"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
-description = "The internal library of the mold linker, whose API is not stable"
-license.workspace = true
-repository.workspace = true
-# tests/lib.rs belongs to the mold-tests workspace crate.
-autotests = false
-include = ["/src", "/c", "/build.rs", "/LICENSE", "/README.md"]
-
-# The linker is generic over the target. Instantiating it for all twenty
-# targets in one crate keeps the compiler on a single core for minutes, so
-# each target is instantiated in a crate of its own under arch/, and the
-# executable in cli/ dispatches to them.
+# The ELF linker in elf/ is generic over the target. Instantiating it for
+# all twenty targets in one crate keeps the compiler on a single core for
+# minutes, so each target is instantiated in a crate of its own under
+# arch/, and the executable in cli/ dispatches to them.
 [workspace]
-members = ["cli", "arch/*", "tests"]
-default-members = [".", "cli", "arch/*", "tests"]
+resolver = "3"
+members = ["cli", "elf", "arch/*", "tests"]
 
 [workspace.package]
 version = "3.0.0"
@@ -30,7 +18,7 @@ repository = "https://github.com/rui314/mold"
 # these versions equal to the workspace version above.
 [workspace.dependencies]
 libc = "0.2"
-libmold = { path = ".", version = "=3.0.0" }
+libmold = { path = "elf", version = "=3.0.0" }
 mold-arch-x86_64 = { path = "arch/x86_64", version = "=3.0.0" }
 mold-arch-i386 = { path = "arch/i386", version = "=3.0.0" }
 mold-arch-arm32 = { path = "arch/arm32", version = "=3.0.0" }
@@ -51,30 +39,6 @@ mold-arch-sh4 = { path = "arch/sh4", version = "=3.0.0" }
 mold-arch-sh4be = { path = "arch/sh4be", version = "=3.0.0" }
 mold-arch-loongarch64 = { path = "arch/loongarch64", version = "=3.0.0" }
 mold-arch-loongarch32 = { path = "arch/loongarch32", version = "=3.0.0" }
-
-[dependencies]
-blake3 = "1.8.7"
-bstr = "1"
-cpp_demangle = "0.5.1"
-crc32fast = "1"
-flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
-getrandom = "0.4.3"
-hashbrown = "0.17.1"
-libc.workspace = true
-libz-rs-sys = "0.6.8"
-memchr = "2.8.3"
-memmap2 = "0.9"
-# std has no 64-bit atomics on hosts such as 32-bit PowerPC.
-portable-atomic = "1"
-rayon = "1"
-rustc-demangle = "0.1"
-uuid = { version = "1.27", default-features = false, features = ["v4"] }
-xxhash-rust = { version = "0.8", features = ["xxh3"] }
-zlib-rs = { version = "0.6.8", default-features = false }
-zstd = "0.13"
-
-[build-dependencies]
-cc = "1"
 
 [profile.release]
 panic = "abort"
