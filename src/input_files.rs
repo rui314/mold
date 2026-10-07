@@ -1065,9 +1065,7 @@ impl KeptFdes {
 }
 
 /// Parses one object file without touching any linker state.
-/// `relocatable` is set for a -r link, which keeps the flags of a
-/// .weak_def_can_be_hidden symbol that names a whole section (see
-/// unweaken_whole_section_names).
+/// `relocatable` is set for a -r link.
 pub fn stage_object<E: Target>(
     mf: &'static MappedFile,
     alive: bool,
@@ -1138,9 +1136,6 @@ pub fn stage_object<E: Target>(
     };
 
     let bare = bare_sections(sect_hdrs, &obj.nlists, strtab, obj.subsections_via_symbols);
-    if !obj.subsections_via_symbols {
-        obj.unweaken_whole_section_names(strtab, relocatable);
-    }
     obj.demote_unnamed_subsec_names();
     obj.demote_thread_local_zerofill_names();
     let sect_isecs = obj.initialize_sections(&bare, relocatable);
@@ -1153,57 +1148,6 @@ pub fn stage_object<E: Target>(
 }
 
 impl StagedObject {
-    /// Without subsections a section is one subsection, and ld64 takes
-    /// its attributes from one symbol at the section's start (the arm64
-    /// assembler's ltmpN labels don't count): a non-weak one if there is
-    /// any, local or global, else the last weak one in symbol table
-    /// order. A whole section cannot be swapped for another copy, so a
-    /// weak symbol that names it is no longer weak; the other symbols
-    /// are labels into the section and keep their flags. A
-    /// .weak_def_can_be_hidden name becomes a hidden non-weak
-    /// definition, except in a -r output, which keeps it as is.
-    /// REFERENCED_DYNAMICALLY, which ld-prime ignores on a weak
-    /// definition, stays ignored.
-    fn unweaken_whole_section_names(&mut self, strtab: &'static [u8], relocatable: bool) {
-        let sect_hdrs = self.sect_hdrs;
-        let mut named_by_strong = vec![false; sect_hdrs.len()];
-        let mut last_weak: Vec<Option<usize>> = vec![None; sect_hdrs.len()];
-        for (i, nlist) in self.nlists.iter().enumerate() {
-            if nlist.is_stab() || nlist.n_type() != N_SECT || nlist.n_sect == 0 {
-                continue;
-            }
-            let sect = nlist.n_sect as usize - 1;
-            if sect_hdrs.get(sect).is_none_or(|h| h.addr != nlist.n_value)
-                || symbol_name(strtab, nlist).starts_with(b"ltmp")
-            {
-                continue;
-            }
-            if nlist.is_extern() && nlist.n_desc & N_WEAK_DEF != 0 {
-                last_weak[sect] = Some(i);
-            } else {
-                named_by_strong[sect] = true;
-            }
-        }
-        let names: Vec<usize> = last_weak
-            .iter()
-            .zip(&named_by_strong)
-            .filter_map(|(&weak, &strong)| if strong { None } else { weak })
-            .collect();
-        if names.is_empty() {
-            return;
-        }
-        let nlists = self.nlists.to_mut();
-        for i in names {
-            let nlist = &mut nlists[i];
-            if nlist.n_desc & N_WEAK_REF == 0 {
-                nlist.n_desc &= !(N_WEAK_DEF | REFERENCED_DYNAMICALLY);
-            } else if !relocatable {
-                nlist.n_desc &= !(N_WEAK_DEF | N_WEAK_REF | REFERENCED_DYNAMICALLY);
-                nlist.n_type |= N_PEXT;
-            }
-        }
-    }
-
     /// Demotes the external symbols of the sections whose subsections
     /// ld-prime makes by content and names none of (see
     /// has_unnamed_subsecs and is_unnamed_objc_list) to locals that were

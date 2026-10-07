@@ -2,9 +2,14 @@
 source "$(dirname "$0")"/common.inc
 
 # Without .subsections_via_symbols a section is a single subsection,
-# named by one symbol at the section's start (not the arm64 assembler's
-# ltmpN): a non-weak one if there is any, else the last weak one. Only
-# a weak symbol that names the subsection stops being weak.
+# and a weak definition in it stays weak, as mold keeps STB_WEAK: a
+# strong definition overrides it, two copies coalesce, and an image
+# exports it weak. ld-prime differs for the symbol that names the
+# subsection, one at the section's start (not the arm64 assembler's
+# ltmpN), which it makes non-weak, or hidden and non-weak if it is
+# .weak_def_can_be_hidden, but in a -r output: two such copies collide,
+# and so does one with a strong definition. A weak symbol after a
+# local label or a strong one is weak in both.
 
 cat <<EOF | $CC -o $t/main.o -c -xc -
 #include <stdio.h>
@@ -13,82 +18,81 @@ int main() { printf("%ld\n", w); }
 EOF
 
 # _w alone at the start names the subsection.
-cat <<EOF | $CC -o $t/a.o -c -xassembler -
+for n in 1 2; do
+  cat <<EOF | $CC -o $t/a$n.o -c -xassembler -
 .data
 .globl _w
 .weak_definition _w
 .p2align 3
-_w: .quad 1
+_w: .quad $n
 EOF
+done
 
-# A local label at the start names the subsection.
+# A local label at the start names it.
 cat <<EOF | $CC -o $t/b.o -c -xassembler -
 .data
 .p2align 3
 local_start:
 .globl _w
 .weak_definition _w
-_w: .quad 2
-EOF
-
-# So does a strong global.
-cat <<EOF | $CC -o $t/c.o -c -xassembler -
-.data
-.p2align 3
-.globl _a
-_a:
-.globl _w
-.weak_definition _w
 _w: .quad 3
 EOF
 
-# Nothing named at the start (x86-64 emits no ltmpN): no name at all.
-cat <<EOF | $CC -o $t/d.o -c -xassembler -
+# A strong definition, with subsections.
+cat <<EOF | $CC -o $t/s.o -c -xassembler -
 .data
-.p2align 3
-.quad 0
 .globl _w
+.p2align 3
+_w: .quad 9
+.subsections_via_symbols
+EOF
+
+$CC --ld-path=$mold -o $t/exe-b $t/main.o $t/b.o
+nm -m $t/exe-b > $t/syms-b
+grep -q ') weak external _w$' $t/syms-b
+$CC --ld-path=$mold -o $t/exe-bs $t/main.o $t/b.o $t/s.o
+$RUN $t/exe-bs | grep -q '^9$'
+
+# The losing copy's section holds another symbol, _pad, whose bytes
+# stay.
+cat <<EOF | $CC -o $t/c.o -c -xassembler -
+.data
+.globl _w, _pad
 .weak_definition _w
+.p2align 3
 _w: .quad 4
+_pad: .quad 5
+EOF
+cat <<EOF | $CC -o $t/pad.o -c -xc -
+#include <stdio.h>
+extern long w, pad;
+int main() { printf("%ld %ld\n", w, pad); }
 EOF
 
-# All weak: the last one, _w, names the subsection.
-cat <<EOF | $CC -o $t/e.o -c -xassembler -
-.data
-.p2align 3
-.globl _u
-.weak_definition _u
-_u:
-.globl _v
-.weak_definition _v
-_v:
-.globl _w
-.weak_definition _w
-_w: .quad 5
-EOF
+if $mold -v 2>&1 | grep -q mold-macho; then
+  $CC --ld-path=$mold -o $t/exe-a $t/main.o $t/a1.o
+  nm -m $t/exe-a > $t/syms-a
+  grep -q ') weak external _w$' $t/syms-a
 
-$CC --ld-path=$mold -o $t/exe-a $t/main.o $t/a.o
-nm -m $t/exe-a > $t/syms-a
-grep -q ') external _w$' $t/syms-a
+  $CC --ld-path=$mold -o $t/exe-aa $t/main.o $t/a1.o $t/a2.o
+  $RUN $t/exe-aa | grep -q '^1$'
+  $CC --ld-path=$mold -o $t/exe-as $t/main.o $t/a1.o $t/s.o
+  $RUN $t/exe-as | grep -q '^9$'
+  $CC --ld-path=$mold -o $t/exe-sa $t/main.o $t/s.o $t/a1.o
+  $RUN $t/exe-sa | grep -q '^9$'
 
-# In b, c and d, _w is a weak label into the subsection: alone it
-# stays weak, and a's plain _w overrides it.
-for o in b c d; do
-  $CC --ld-path=$mold -o $t/exe-$o $t/main.o $t/$o.o
-  nm -m $t/exe-$o > $t/syms-$o
-  grep -q ') weak external _w$' $t/syms-$o
-  $CC --ld-path=$mold -o $t/exe-$o-a $t/main.o $t/$o.o $t/a.o
-  $RUN $t/exe-$o-a | grep -q '^1$'
-done
+  $CC --ld-path=$mold -o $t/exe-ca $t/pad.o $t/a1.o $t/c.o
+  $RUN $t/exe-ca | grep -q '^1 5$'
 
-$CC --ld-path=$mold -o $t/exe-e $t/main.o $t/e.o
-nm -m $t/exe-e > $t/syms-e
-grep -q ') weak external _u$' $t/syms-e
-grep -q ') weak external _v$' $t/syms-e
-grep -q ') external _w$' $t/syms-e
+  # A dylib exports it weak, for dyld to coalesce.
+  $CC --ld-path=$mold -shared -o $t/liba.dylib $t/a1.o
+  nm -m $t/liba.dylib > $t/syms-dylib
+  grep -q ') weak external _w$' $t/syms-dylib
+fi
 
-# A .weak_def_can_be_hidden name becomes a hidden plain definition, so
-# two copies collide; a -r output keeps it as is.
+# A .weak_def_can_be_hidden one is hidden in an image (ld-prime makes
+# it non-weak there, so two copies collide), and a -r output keeps it
+# as is.
 for n in 1 2; do
   cat <<EOF | $CC -o $t/h$n.o -c -xassembler -
 .data
@@ -101,12 +105,11 @@ done
 $CC --ld-path=$mold -o $t/exe-h $t/main.o $t/h1.o
 nm -m $t/exe-h > $t/syms-h
 grep -q 'non-external (was a private external) _w$' $t/syms-h
-not $CC --ld-path=$mold -o $t/exe-hh $t/main.o $t/h1.o $t/h2.o 2> /dev/null
+if $mold -v 2>&1 | grep -q mold-macho; then
+  $CC --ld-path=$mold -o $t/exe-hh $t/main.o $t/h1.o $t/h2.o
+  $RUN $t/exe-hh | grep -q '^1$'
+fi
 
 $mold -arch $ARCH -r $t/h1.o -o $t/h1r.o
 nm -m $t/h1r.o > $t/syms-h1r
 grep -q 'weak external automatically hidden' $t/syms-h1r
-$mold -arch $ARCH -r $t/e.o -o $t/er.o
-nm -m $t/er.o > $t/syms-er
-grep -q ') weak external .*_v$' $t/syms-er
-grep -Eq '\) external( \[no dead strip\])? _w$' $t/syms-er

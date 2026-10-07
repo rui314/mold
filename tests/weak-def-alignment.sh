@@ -55,15 +55,15 @@ _pad2: .quad 2
 EOF2
 $CC --ld-path=$mold -o $t/exe3 $t/main.o $t/a8.o $t/c.o
 $RUN $t/exe3 | grep '^copy-C-whole-section 1 2 0$'
-# That whole section is not weak in ld64's eyes: the symbol at its
-# start loses its weak flag, so the image exports a plain _w and
-# claims neither WEAK_DEFINES nor BINDS_TO_WEAK.
-dyld_info -exports $t/exe3 > $t/exports3
-grep ' _w$' $t/exports3
-nm -m $t/exe3 > $t/nm3
-grep '(__TEXT,__const) external _w$' $t/nm3
-otool -h $t/exe3 > $t/hdr3
-grep ' 0x00200085$' $t/hdr3
+# _w stays weak there, as mold keeps STB_WEAK, so the image exports it
+# weak (ld-prime makes the symbol that names a whole section non-weak;
+# see whole-section-weak.sh).
+if $mold -v 2>&1 | grep -q mold-macho; then
+  dyld_info -exports $t/exe3 > $t/exports3
+  grep ' _w \[weak-def\]$' $t/exports3
+  nm -m $t/exe3 > $t/nm3
+  grep '(__TEXT,__const) weak external _w$' $t/nm3
+fi
 
 # A subsection keeps its address modulo its section's alignment, and
 # that is the alignment the copies compare by: a copy at 8 mod 16 of a
