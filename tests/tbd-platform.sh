@@ -48,8 +48,7 @@ $mold -arch $ARCH $fw -e _start $t/a.o $t/fw.tbd -o $t/exe4 2> $t/log4
 not grep -q warning $t/log4
 otool -L $t/exe4 | grep -q /usr/lib/libfw.dylib
 
-sdk=$(xcrun --show-sdk-path)
-mac="-platform_version macos 26.0 26.0 -syslibroot $sdk -lSystem"
+mac="-platform_version macos 26.0 26.0 -syslibroot $SDK -lSystem"
 $mold -arch $ARCH $mac -e _start $t/a.o $t/zip.tbd -o $t/exe5 2> $t/log5
 not grep -q 'building for' $t/log5
 not $mold -arch $ARCH $mac -e _start $t/a.o $t/ios.tbd -o $t/exe6 2> $t/log6

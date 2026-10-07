@@ -6,7 +6,6 @@ source "$(dirname "$0")"/common.inc
 # stderr, a tab before each: the -L and -F directories, then the
 # default ones, as they are looked up under the syslibroot. -v with
 # nothing to link prints the banner alone.
-sdk=$(xcrun --show-sdk-path)
 root=$t/root
 mkdir -p $t/lib $t/fw $root/opt/x $root/usr/lib/swift $root/System/Library/Frameworks
 
@@ -14,7 +13,7 @@ echo 'int main() { return 0; }' | $CC -o $t/a.o -c -xc -
 
 link() {
   $mold -arch $ARCH -platform_version macos 13.0 13.0 -o $t/exe $t/a.o \
-    $sdk/usr/lib/libSystem.tbd -syslibroot $root -v "$@"
+    $SDK/usr/lib/libSystem.tbd -syslibroot $root -v "$@"
 }
 
 tab=$(printf '\t')

@@ -5,11 +5,10 @@ source "$(dirname "$0")"/common.inc
 # a compact unwind record (the record still wins in __unwind_info), as
 # ld64 did for the unwinders of those releases. -keep_dwarf_unwind and
 # -no_keep_dwarf_unwind are obsolete: ld-prime goes by the target.
-sdk=$(xcrun --show-sdk-path)
 echo 'int main() { return 0; }' | $CC -o $t/a.o -c -xc - -femit-dwarf-unwind=always
 
 link() {
-  $mold -arch $ARCH -syslibroot $sdk -o $t/$1 $t/a.o -lSystem -e _main \
+  $mold -arch $ARCH -syslibroot $SDK -o $t/$1 $t/a.o -lSystem -e _main \
     -platform_version macos "${@:2}" 2>> $t/log
 }
 sects() { otool -l $t/$1 | awk '/sectname/ { print $2 }' > $t/$1.sects; }

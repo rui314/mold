@@ -5,8 +5,7 @@ source "$(dirname "$0")"/common.inc
 # 32-bit macOS on request. ld-prime knows the modern one alone: it takes
 # -objc_abi_version 2, spelled just so, and refuses anything else.
 echo 'int main() { return 0; }' | $CC -o $t/a.o -c -xc -
-sdk=$(xcrun --show-sdk-path)
-link() { $mold -arch $ARCH -syslibroot "$sdk" -lSystem $t/a.o -o $t/exe "$@"; }
+link() { $mold -arch $ARCH -syslibroot "$SDK" -lSystem $t/a.o -o $t/exe "$@"; }
 
 link
 cp $t/exe $t/exe0

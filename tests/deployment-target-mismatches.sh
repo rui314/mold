@@ -10,7 +10,7 @@ EOF
 cp $t/a.o $t/b.o
 
 link() {
-  $mold -arch $ARCH -syslibroot "$(xcrun --show-sdk-path)" -lSystem \
+  $mold -arch $ARCH -syslibroot "$SDK" -lSystem \
     -platform_version macos 12.0 12.0 -o $t/exe $t/a.o "$@"
 }
 

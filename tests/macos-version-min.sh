@@ -50,8 +50,7 @@ else
 fi
 
 # -macosx_version_min is the option's old spelling.
-sdk=$(xcrun --show-sdk-path)
-link() { $mold -arch $ARCH -syslibroot "$sdk" -lSystem $t/a.o "$@"; }
+link() { $mold -arch $ARCH -syslibroot "$SDK" -lSystem $t/a.o "$@"; }
 link -macosx_version_min 14.1 -o $t/exe3
 otool -l $t/exe3 | grep -A4 LC_BUILD_VERSION | grep -q 'minos 14.1'
 not link -macosx_version_min 1x -o $t/exe3 2> $t/log5

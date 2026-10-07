@@ -4,14 +4,13 @@ source "$(dirname "$0")"/common.inc
 # A -L or -F directory given again, spelled the same, is taken (and
 # warned of) the first time only; spelled otherwise, or met again among
 # the default directories, it is searched once more.
-sdk=$(xcrun --show-sdk-path)
 root=$t/root
 mkdir -p $t/a $t/b $root/usr/lib
 
 echo 'int main() { return 0; }' | $CC -o $t/a.o -c -xc -
 
 $mold -arch $ARCH -platform_version macos 13.0 13.0 -o $t/exe $t/a.o \
-  $sdk/usr/lib/libSystem.tbd -syslibroot $root -v -L$t/a -L$t/b -L $t/a \
+  $SDK/usr/lib/libSystem.tbd -syslibroot $root -v -L$t/a -L$t/b -L $t/a \
   -L./$t/a -L/usr/lib -L/usr/lib -L/usr/lib/ -F$t/b -F$t/a -F$t/b \
   -L$t/none -L$t/none -F$t/none 2> $t/log > /dev/null
 

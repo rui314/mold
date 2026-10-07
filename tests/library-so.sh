@@ -5,7 +5,6 @@ source "$(dirname "$0")"/common.inc
 # lib<name>.dylib and before lib<name>.a in each directory. Under
 # -search_dylibs_first one anywhere beats an archive anywhere, and the
 # options that take a dylib only (-upward-l, -reexport-l) find one.
-sdk=$(xcrun --show-sdk-path)
 mkdir -p $t/a $t/b $t/c $t/d
 
 echo 'int foo(void) { return 0; }' > $t/foo.c
@@ -24,7 +23,7 @@ dylib /d/libz.so
 
 link() {
   $mold -arch $ARCH -platform_version macos 13.0 13.0 $t/main.o \
-    $sdk/usr/lib/libSystem.tbd "$@" 2> /dev/null
+    $SDK/usr/lib/libSystem.tbd "$@" 2> /dev/null
 }
 
 link -o $t/exe1 -L$t/a -lx

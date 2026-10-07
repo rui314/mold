@@ -10,11 +10,10 @@ source "$(dirname "$0")"/common.inc
 # dyld_stub_binding_helper the pointer's address; there is no
 # dyld_stub_binder, nor __dyld_private. An arm64 image has LC_DYLD_INFO
 # whatever the target.
-sdk=$(xcrun --show-sdk-path)
 
 if [ $ARCH = arm64 ]; then
   echo 'int main() { return 0; }' | $CC -o $t/a.o -c -xc -
-  $mold -arch arm64 -syslibroot $sdk -o $t/exe $t/a.o -lSystem \
+  $mold -arch arm64 -syslibroot $SDK -o $t/exe $t/a.o -lSystem \
     -platform_version macos 10.5 27.0 2> /dev/null
   otool -l $t/exe | grep -q 'cmd LC_DYLD_INFO_ONLY'
   exit
@@ -111,6 +110,6 @@ _h:
   ret
 EOF
 $CC -c $t/d.s -o $t/d.o -mmacosx-version-min=10.5
-not $mold -arch x86_64 -dylib -syslibroot $sdk -o $t/libd.dylib $t/d.o -lSystem \
+not $mold -arch x86_64 -dylib -syslibroot $SDK -o $t/libd.dylib $t/d.o -lSystem \
   -platform_version macos 10.5 27.0 2> $t/log5
 grep -q "target 'dyld_stub_binding_helper' does not have address" $t/log5

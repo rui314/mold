@@ -1,9 +1,8 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-sdk=$(xcrun --show-sdk-path)
 
-link="$mold -arch $ARCH -dylib -platform_version macos 13.0 13.0 -syslibroot $sdk -lSystem"
+link="$mold -arch $ARCH -dylib -platform_version macos 13.0 13.0 -syslibroot $SDK -lSystem"
 
 echo 'int native(void) { return 0; }' | \
   $CC -target $ARCH-apple-macos13.0 -isysroot / -c -xc - -o $t/native.o

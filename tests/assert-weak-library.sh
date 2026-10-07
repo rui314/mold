@@ -71,8 +71,7 @@ grep -q "ignoring duplicate libraries: '.*foo'" $t/log7
 
 # A lazy dylib's (macOS 27) strong imports are refused too. (ld-prime
 # words it otherwise, and names no files.)
-sdk=$(xcrun --show-sdk-path)
-if grep -q __dyld_lazy_load "$sdk/usr/lib/system/libdyld.tbd"; then
+if grep -q __dyld_lazy_load "$SDK/usr/lib/system/libdyld.tbd"; then
   echo 'int foo(void); int main() { return foo(); }' | $CC -o $t/f.o -c -xc -
   not $CC --ld-path=$mold -o $t/exe8 $t/f.o -L$t -Wl,-lazy-lfoo,-assert-weak-lfoo \
     -mmacosx-version-min=27.0 2> $t/log8

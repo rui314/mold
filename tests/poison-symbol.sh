@@ -45,7 +45,7 @@ not grep -q _foo $t/log
 
 # A dead reference is fine, as is a symbol nothing refers to.
 $mold -o $t/exe $t/b.o $t/c.o $t/liba.dylib -poison_symbol _baz -lSystem \
-  -syslibroot "$(xcrun --show-sdk-path)" -dead_strip
+  -syslibroot "$SDK" -dead_strip
 
 not $mold -o $t/exe $t/b.o -poison_symbol 2> $t/log
 grep -q -- '-poison_symbol.*missing' $t/log

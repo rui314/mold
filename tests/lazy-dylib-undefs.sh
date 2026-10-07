@@ -20,7 +20,7 @@ echo 'int foo(void); int main(void) { return foo(); }' | \
   $CC -o $t/s.o -c -xc - -mmacosx-version-min=27.0
 
 link() {
-  $mold -arch $ARCH -platform_version macos 27.0 27.0 -syslibroot "$(xcrun --show-sdk-path)" "$@"
+  $mold -arch $ARCH -platform_version macos 27.0 27.0 -syslibroot "$SDK" "$@"
 }
 
 link -kext -o $t/k.kext $t/k.o -lazy_library $t/libfoo.dylib 2> /dev/null

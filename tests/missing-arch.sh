@@ -5,7 +5,6 @@ source "$(dirname "$0")"/common.inc
 # target. Archives, dylibs, stubs and universal files don't count; with
 # nothing else, there is no target. A file that can't be opened stops
 # the search, in words that name no input.
-sdk=$(xcrun --show-sdk-path)
 [ $ARCH = arm64 ] && other=x86_64 || other=arm64
 echo 'int main() { return 0; }' > $t/a.c
 $CC -c $t/a.c -o $t/a.o
@@ -16,7 +15,7 @@ ar rcs $t/liba.a $t/a.o
 $CC -shared -o $t/libfoo.dylib -xc /dev/null
 
 link() {
-  $mold -platform_version macos 13.0 13.0 -o $t/exe "$@" $sdk/usr/lib/libSystem.tbd
+  $mold -platform_version macos 13.0 13.0 -o $t/exe "$@" $SDK/usr/lib/libSystem.tbd
 }
 
 for input in $t/liba.a $t/libfoo.dylib $t/fat.o; do

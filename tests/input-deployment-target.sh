@@ -1,9 +1,8 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-sdk=$(xcrun --show-sdk-path)
 
-link="$mold -arch $ARCH -dylib -platform_version macos 13.0 13.0 -syslibroot $sdk -lSystem"
+link="$mold -arch $ARCH -dylib -platform_version macos 13.0 13.0 -syslibroot $SDK -lSystem"
 
 # Exercise both load command encodings explicitly. A newer SDK alone
 # must not cause a deployment-target warning: every fixture records

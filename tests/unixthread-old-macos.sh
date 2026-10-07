@@ -6,7 +6,6 @@ source "$(dirname "$0")"/common.inc
 # links for it (-lcrt1.10.6.o), as a static executable does. A stack it
 # asks for is a segment of its own, and it may say where. An arm64
 # executable starts from LC_MAIN whatever the target.
-sdk=$(xcrun --show-sdk-path)
 cat > $t/a.c <<EOF
 #include <stdio.h>
 int main() { printf("Hello world\n"); return 0; }
@@ -35,7 +34,7 @@ if [ $ARCH = x86_64 ]; then
   not grep -q 'cmd LC_UNIXTHREAD' $t/lc3
 else
   $CC -c $t/a.c -o $t/a.o
-  $mold -arch $ARCH -syslibroot $sdk -o $t/exe4 $t/a.o -lSystem \
+  $mold -arch $ARCH -syslibroot $SDK -o $t/exe4 $t/a.o -lSystem \
     -platform_version macos 10.7 27.0 2> /dev/null
   otool -l $t/exe4 > $t/lc4
   grep -q 'cmd LC_MAIN' $t/lc4

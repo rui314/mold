@@ -6,7 +6,6 @@ source "$(dirname "$0")"/common.inc
 # A library found in the SDK - by a search under
 # the -syslibroot, or by a path looked up under it - draws none, nor
 # does one a dylib re-exports.
-sdk=$(xcrun --show-sdk-path)
 root=$t/root
 mkdir -p $t/lib $root/usr/lib $root/opt/x
 
@@ -22,7 +21,7 @@ echo 'int x;' | $CC -o $t/new.o -c -xc - -mmacosx-version-min=15.0
 
 link() {
   $mold -arch $ARCH -platform_version macos 13.0 13.0 -o $t/exe $t/main.o \
-    $sdk/usr/lib/libSystem.tbd "$@"
+    $SDK/usr/lib/libSystem.tbd "$@"
 }
 
 link $t/lib/libfoo.dylib $t/new.o 2> $t/log

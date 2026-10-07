@@ -46,7 +46,7 @@ diff - $t/files <<EOF
 [  3] $t/b.o
 [  4] $t/libmid.a(mid.o)
 [  5] $t/libaaa.tbd
-[  6] $(xcrun --show-sdk-path)/usr/lib/libSystem.tbd
+[  6] $SDK/usr/lib/libSystem.tbd
 [  7] $t/libzzz.tbd
 EOF
 

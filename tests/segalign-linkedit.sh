@@ -16,8 +16,7 @@ _main:
   .asciz "a"
 EOF
 
-sdk=$(xcrun --show-sdk-path)
-link() { $mold -arch $ARCH -platform_version macos 13.0 13.0 -syslibroot "$sdk" -lSystem "$@"; }
+link() { $mold -arch $ARCH -platform_version macos 13.0 13.0 -syslibroot "$SDK" -lSystem "$@"; }
 
 # Each table's offset, by its load command field.
 offsets() {

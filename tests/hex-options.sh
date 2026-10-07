@@ -7,8 +7,7 @@ cat <<EOF | $CC -o $t/a.o -c -xc -
 int main() {}
 EOF
 
-sdk=$(xcrun --show-sdk-path)
-link() { $mold -arch $ARCH -syslibroot "$sdk" -lSystem $t/a.o -o $t/exe "$@"; }
+link() { $mold -arch $ARCH -syslibroot "$SDK" -lSystem $t/a.o -o $t/exe "$@"; }
 
 for opt in -image_base -seg1addr -pagezero_size -headerpad; do
   not link $opt 0x0x10 2> $t/log

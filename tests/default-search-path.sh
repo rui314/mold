@@ -6,7 +6,6 @@ source "$(dirname "$0")"/common.inc
 # the frameworks' is /Library/Frameworks, then /System/Library/Frameworks.
 # Under a single -syslibroot each is looked up in the SDK only. -Z drops
 # them all.
-sdk=$(xcrun --show-sdk-path)
 root=$t/root
 mkdir -p $root/usr/lib/swift $root/usr/local/lib \
   $root/Library/Frameworks/Fw.framework $root/System/Library/Frameworks/Fw.framework
@@ -31,7 +30,7 @@ EOF
 
 link() {
   $mold -arch $ARCH -platform_version macos 13.0 13.0 -syslibroot $root \
-    $t/a.o $sdk/usr/lib/libSystem.tbd -lfoo -lbar -lbaz -lqux -framework Fw "$@"
+    $t/a.o $SDK/usr/lib/libSystem.tbd -lfoo -lbar -lbaz -lqux -framework Fw "$@"
 }
 
 link -o $t/exe

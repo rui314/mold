@@ -5,7 +5,6 @@ source "$(dirname "$0")"/common.inc
 # search path as it is, with no lib prefix and no other extension,
 # whatever the option; it goes where the option is among the inputs.
 # clang names crt1.o -lcrt1.10.6.o for an x86-64 macOS before 10.8.
-sdk=$(xcrun --show-sdk-path)
 mkdir -p $t/c $t/d
 
 echo 'int foo(void); int main() { return foo(); }' | $CC -o $t/main.o -c -xc -
@@ -14,7 +13,7 @@ ar rcs $t/d/libfoo.o.a $t/c/foo.o
 
 link() {
   $mold -arch $ARCH -platform_version macos 13.0 13.0 $t/main.o \
-    $sdk/usr/lib/libSystem.tbd "$@"
+    $SDK/usr/lib/libSystem.tbd "$@"
 }
 
 link -o $t/exe -L$t/d -L$t/c -lfoo.o -map $t/map 2> /dev/null

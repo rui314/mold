@@ -7,8 +7,7 @@ source "$(dirname "$0")"/common.inc
 # through a helper per symbol ($lazyLoadStub) and GOT loads through
 # load helpers, which have __dyld_lazy_load load the dylib and bind
 # its __lazy_load_got slots, then go on through the slots.
-sdk=$(xcrun --show-sdk-path)
-grep -q __dyld_lazy_load "$sdk/usr/lib/system/libdyld.tbd" || skip
+grep -q __dyld_lazy_load "$SDK/usr/lib/system/libdyld.tbd" || skip
 
 cat <<EOF | $CC -o $t/foo.o -c -xc -
 #include <stdio.h>

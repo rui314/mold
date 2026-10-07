@@ -11,8 +11,7 @@ _main:
   ret
 EOF
 
-sdk=$(xcrun --show-sdk-path)
-link() { $mold -arch $ARCH -syslibroot "$sdk" -lSystem $t/a.o "$@"; }
+link() { $mold -arch $ARCH -syslibroot "$SDK" -lSystem $t/a.o "$@"; }
 bv() { otool -l $1 | grep -A4 'cmd LC_BUILD_VERSION' | awk '$1 == "platform" || $1 == "minos" { printf "%s %s ", $1, $2 }'; }
 
 link -platform_version MacOS 14.0 14.0 -o $t/exe1

@@ -9,8 +9,7 @@ cat <<EOF | $CC -o $t/a.o -c -xc -
 #include <stdio.h>
 int main() { printf("Hello\n"); }
 EOF
-sdk=$(xcrun --show-sdk-path)
-link() { $mold -arch $ARCH -syslibroot "$sdk" -lSystem $t/a.o -o $t/exe "$@"; }
+link() { $mold -arch $ARCH -syslibroot "$SDK" -lSystem $t/a.o -o $t/exe "$@"; }
 
 link -flat_namespace
 cp $t/exe $t/flat

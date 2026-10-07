@@ -6,9 +6,8 @@ source "$(dirname "$0")"/common.inc
 # changes and an error for one it refuses.
 echo 'int main() { return 0; }' | $CC -o $t/a.o -c -xc -
 echo _main > $t/list
-sdk=$(xcrun --show-sdk-path)
 link() {
-  $mold -arch $ARCH -platform_version macos 26.0 26.0 -syslibroot "$sdk" -lSystem $t/a.o \
+  $mold -arch $ARCH -platform_version macos 26.0 26.0 -syslibroot "$SDK" -lSystem $t/a.o \
     -o $t/exe "$@" 2> $t/log
 }
 warnings() { grep -o 'warning: .*' $t/log | sed 's/^warning: //' | sort > $t/got; }

@@ -12,8 +12,7 @@ _main:
   ret
 EOF
 
-sdk=$(xcrun --show-sdk-path)
-link() { $mold -arch $ARCH -syslibroot "$sdk" $t/a.o -e _main "$@"; }
+link() { $mold -arch $ARCH -syslibroot "$SDK" $t/a.o -e _main "$@"; }
 
 link -lSystem -platform_version macos 14.0 15.0 -macos_version_min 13.0.1 \
   -platform_version macos 13.0.1 15.0 -o $t/exe1 2> $t/log1

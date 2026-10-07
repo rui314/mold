@@ -8,7 +8,6 @@ source "$(dirname "$0")"/common.inc
 # the roots still hold the files -weak_library and the like name. An
 # absolute directory that climbs with /.. is resolved first, and one
 # that starts with // replaces the root.
-sdk=$(xcrun --show-sdk-path)
 abs=$(cd $t && pwd -P)
 r1=$t/r1
 r2=$t/r2
@@ -21,7 +20,7 @@ echo 'int main() { return 0; }' | $CC -o $t/a.o -c -xc -
 tab=$(printf '\t')
 paths() {
   $mold -arch $ARCH -platform_version macos 13.0 13.0 -o $t/exe $t/a.o \
-    $sdk/usr/lib/libSystem.tbd -v "$@" 2> $t/log > /dev/null
+    $SDK/usr/lib/libSystem.tbd -v "$@" 2> $t/log > /dev/null
   grep -E "^(Library search paths:|Framework search paths:|$tab)" $t/log
 }
 host() {
@@ -65,6 +64,6 @@ exports:
 ...
 EOF
 $mold -arch $ARCH -platform_version macos 13.0 13.0 -o $t/exe2 $t/a.o \
-  $sdk/usr/lib/libSystem.tbd -syslibroot / -syslibroot $r1 \
+  $SDK/usr/lib/libSystem.tbd -syslibroot / -syslibroot $r1 \
   -weak_library /opt/lib/libqux.dylib 2> /dev/null
 otool -L $t/exe2 | grep -q /opt/lib/libqux.dylib

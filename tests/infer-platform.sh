@@ -6,7 +6,6 @@ source "$(dirname "$0")"/common.inc
 # minimum OS and SDK, whatever the later objects say. Everything that
 # depends on the deployment target follows from it (here, chained
 # fixups from macOS 12).
-sdk=$(xcrun --show-sdk-path)
 for v in '11, 0' '13, 1' '14, 2'; do
   n=${v/, /}
   cat <<EOF | $CC -o $t/v$n.o -c -xassembler -
@@ -20,7 +19,7 @@ _f$n: ret
 EOF
 done
 
-$mold -arch $ARCH -dylib $t/v131.o $t/v110.o $t/v142.o -syslibroot $sdk -lSystem \
+$mold -arch $ARCH -dylib $t/v131.o $t/v110.o $t/v142.o -syslibroot $SDK -lSystem \
   -o $t/a.dylib 2> $t/log
 grep -q "(.*v142.o) was built for newer 'macOS' version (14.2) than being linked (13.1)" $t/log
 otool -l $t/a.dylib > $t/lc
@@ -29,7 +28,7 @@ grep -q 'minos 13.1' $t/bv
 grep -q 'sdk 15.0' $t/bv
 grep -q LC_DYLD_CHAINED_FIXUPS $t/lc
 
-$mold -arch $ARCH -dylib $t/v110.o $t/v131.o -syslibroot $sdk -lSystem -o $t/b.dylib 2> /dev/null
+$mold -arch $ARCH -dylib $t/v110.o $t/v131.o -syslibroot $SDK -lSystem -o $t/b.dylib 2> /dev/null
 otool -l $t/b.dylib > $t/lc2
 grep -A4 'cmd LC_BUILD_VERSION' $t/lc2 | grep -q 'minos 11.0'
 not grep -q LC_DYLD_CHAINED_FIXUPS $t/lc2
@@ -44,17 +43,17 @@ _none: ret
 EOF
 rm -f $t/lib.a
 ar rcs $t/lib.a $t/v110.o
-$mold -arch $ARCH -dylib $t/none.o $t/lib.a $t/v131.o -u _f110 -syslibroot $sdk -lSystem \
+$mold -arch $ARCH -dylib $t/none.o $t/lib.a $t/v131.o -u _f110 -syslibroot $SDK -lSystem \
   -o $t/c.dylib 2> $t/log3
 grep -q "no platform load command found in '.*none.o', assuming: macOS" $t/log3
 otool -l $t/c.dylib | grep -A4 'cmd LC_BUILD_VERSION' | grep -q 'minos 13.1'
 
-not $mold -arch $ARCH -dylib $t/lib.a $t/none.o -u _f110 -syslibroot $sdk -lSystem \
+not $mold -arch $ARCH -dylib $t/lib.a $t/none.o -u _f110 -syslibroot $SDK -lSystem \
   -o $t/d.dylib 2> $t/log4
 grep -q 'Missing -platform_version option' $t/log4
 
 lipo -create $t/v131.o -output $t/fat.o
-not $mold -arch $ARCH -dylib $t/fat.o -syslibroot $sdk -lSystem -o $t/d.dylib 2> $t/log4
+not $mold -arch $ARCH -dylib $t/fat.o -syslibroot $SDK -lSystem -o $t/d.dylib 2> $t/log4
 grep -q 'Missing -platform_version option' $t/log4
 
 # (With no inputs at all, that is what ld-prime reports first.)
@@ -81,7 +80,7 @@ not grep -q 'cmd LC_LOAD_DYLIB' $t/lc6
 if [ $ARCH = x86_64 ]; then
   echo '.macosx_version_min 10, 13 sdk_version 15, 0' | \
     $CC -o $t/old.o -c -xassembler -
-  $mold -arch $ARCH -dylib $t/old.o -syslibroot $sdk -lSystem -o $t/e.dylib
+  $mold -arch $ARCH -dylib $t/old.o -syslibroot $SDK -lSystem -o $t/e.dylib
   otool -l $t/e.dylib > $t/lc7
   grep -A3 'cmd LC_VERSION_MIN_MACOSX' $t/lc7 | grep -q 'version 10.13'
   not grep -q 'cmd LC_BUILD_VERSION' $t/lc7
@@ -91,12 +90,12 @@ fi
 # triple names the OS version, and no SDK.
 lto_library=$(dirname "$(xcrun -f clang)")/../lib/libLTO.dylib
 echo 'int lto(void) { return 1; }' | $CC -flto -mmacosx-version-min=12.3 -o $t/lto.o -c -xc -
-$mold -arch $ARCH -dylib -lto_library $lto_library $t/lto.o -syslibroot $sdk -lSystem \
+$mold -arch $ARCH -dylib -lto_library $lto_library $t/lto.o -syslibroot $SDK -lSystem \
   -o $t/f.dylib
 otool -l $t/f.dylib | grep -A4 'cmd LC_BUILD_VERSION' > $t/bv8
 grep -q 'minos 12.3' $t/bv8
 grep -q 'sdk n/a' $t/bv8
 
-$mold -arch $ARCH -dylib -lto_library $lto_library $t/lto.o $t/v131.o -syslibroot $sdk \
+$mold -arch $ARCH -dylib -lto_library $lto_library $t/lto.o $t/v131.o -syslibroot $SDK \
   -lSystem -o $t/g.dylib 2> /dev/null
 otool -l $t/g.dylib | grep -A4 'cmd LC_BUILD_VERSION' | grep -q 'minos 13.1'

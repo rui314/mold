@@ -23,7 +23,7 @@ int main() { printf("%s\n", ver()); }
 EOF
 
 # A dylib named on the -r command line is ignored, with a warning.
-$mold -r -arch $ARCH -syslibroot "$(xcrun --show-sdk-path)" -o $t/r.o \
+$mold -r -arch $ARCH -syslibroot "$SDK" -o $t/r.o \
   $t/a.o $t/b.o $t/c.o -lSystem > $t/log 2>&1
 grep -q 'ignoring unexpected dylib' $t/log
 

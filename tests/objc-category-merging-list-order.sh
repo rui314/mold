@@ -54,7 +54,7 @@ extension NSString { @objc public func swB() -> Int { return 2 } }
 EOF2
 swiftc -parse-as-library -module-name E -emit-object -o $t/ext.o $t/ext.swift
 $CC --ld-path=$mold -shared -o $t/d.dylib $t/ext.o -framework Foundation \
-  -L$(xcrun --show-sdk-path)/usr/lib/swift
+  -L$SDK/usr/lib/swift
 nm -m $t/d.dylib > $t/syms
 grep -q '(__DATA_CONST,__objc_catlist) non-external _objc_categories$' $t/syms
 otool -ov $t/d.dylib | sed -n '/__objc_catlist/,/Contents of/p' > $t/log2

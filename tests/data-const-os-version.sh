@@ -14,9 +14,8 @@ int *const p = &x;
 int main() { return *p - 42; }
 EOF
 
-sdk=$(xcrun --show-sdk-path)
 segs() {
-  $mold -arch $ARCH $t/a.o -platform_version macos "$@" -syslibroot $sdk -lSystem -o $t/out \
+  $mold -arch $ARCH $t/a.o -platform_version macos "$@" -syslibroot $SDK -lSystem -o $t/out \
     2> /dev/null
   otool -l $t/out | awk '$1 == "segname" && !seen[$2]++ { printf "%s ", $2 }'
 }

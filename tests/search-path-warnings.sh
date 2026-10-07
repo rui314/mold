@@ -6,7 +6,6 @@ source "$(dirname "$0")"/common.inc
 # command line gave it) or not, and so is a directory the command line
 # gave that is not there; a default directory that is not there goes
 # without a word. -w hides the warnings.
-sdk=$(xcrun --show-sdk-path)
 abs=$(cd $t && pwd -P)
 root=$t/root
 mkdir -p $t/lib $root/usr/lib $root$abs
@@ -16,7 +15,7 @@ echo 'int main() { return 0; }' | $CC -o $t/a.o -c -xc -
 
 link() {
   $mold -arch $ARCH -platform_version macos 13.0 13.0 -o $t/exe $t/a.o \
-    $sdk/usr/lib/libSystem.tbd -syslibroot $root "$@" 2>&1 > /dev/null |
+    $SDK/usr/lib/libSystem.tbd -syslibroot $root "$@" 2>&1 > /dev/null |
     sed '/built for newer/d'
 }
 
@@ -42,7 +41,7 @@ not grep -q warning: $t/log2
 # hides it.
 hide='(version 1)(allow default)(deny file-read* (subpath "/usr/local/lib"))'
 sandbox-exec -p "$hide" $mold -arch $ARCH -platform_version macos 13.0 13.0 -o $t/exe \
-  $t/a.o $sdk/usr/lib/libSystem.tbd -syslibroot $root -L/usr/local/lib -F/usr/local/lib \
+  $t/a.o $SDK/usr/lib/libSystem.tbd -syslibroot $root -L/usr/local/lib -F/usr/local/lib \
   -L/usr/local/lib/ 2> $t/log3
 not grep -q "'/usr/local/lib'" $t/log3
 grep -q "warning: search path '/usr/local/lib/' not found" $t/log3

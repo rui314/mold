@@ -70,7 +70,7 @@ else
 fi
 
 for opt in -split_seg_info -no_split_seg_info -no_add_split_seg_info; do
-  not $mold -arch $ARCH -dylib -lSystem -syslibroot "$(xcrun --show-sdk-path)" \
+  not $mold -arch $ARCH -dylib -lSystem -syslibroot "$SDK" \
     $opt $t/a.o -o $t/d.dylib 2> $t/log
   grep -q "unknown .*option.*$opt" $t/log
 done

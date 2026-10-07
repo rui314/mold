@@ -44,7 +44,7 @@ int swift_entry(void);
 int main() { return swift_entry() == 7 ? 0 : 1; }
 EOF
 
-swiftlib=$(xcrun --show-sdk-path)/usr/lib/swift
+swiftlib=$SDK/usr/lib/swift
 $CC -mmacosx-version-min=14.0 -shared -o $t/libfoo.dylib $t/a.o -L$swiftlib \
   -Wl,-make_mergeable -Wl,-install_name,@rpath/libfoo.dylib
 $CC -mmacosx-version-min=14.0 --ld-path=$mold -o $t/exe $t/main.o -L$t -Wl,-merge-lfoo \

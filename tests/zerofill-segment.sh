@@ -15,14 +15,13 @@ _main: ret
 .section __QUX,__qux
 EOF
 
-sdk=$(xcrun --show-sdk-path)
 seg() {
   otool -l $1 | awk -v s=$2 '$1 == "segname" { found = $2 == s }
     found && $1 == "fileoff" { off = $2 } found && $1 == "filesize" { print off, $2; exit }'
 }
 
 for kind in '' -dylib -bundle; do
-  $mold -arch $ARCH $kind $t/a.o -platform_version macos 13.0 13.0 -syslibroot $sdk \
+  $mold -arch $ARCH $kind $t/a.o -platform_version macos 13.0 13.0 -syslibroot $SDK \
     -lSystem -o $t/out
   [ "$(seg $t/out __FOO | cut -d' ' -f2)" = 0 ]
   [ "$(seg $t/out __DATA | cut -d' ' -f2)" = 0 ]

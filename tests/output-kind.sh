@@ -14,8 +14,7 @@ start:
   ret
 EOF
 
-sdk=$(xcrun --show-sdk-path)
-link() { $mold -arch $ARCH -platform_version macos 14.0 14.0 -syslibroot "$sdk" $t/a.o "$@"; }
+link() { $mold -arch $ARCH -platform_version macos 14.0 14.0 -syslibroot "$SDK" $t/a.o "$@"; }
 kind() { otool -hv $1 | tail -1 | awk '{ print $5 }'; }
 entry() { otool -l $1 | grep -Eo 'LC_(MAIN|UNIXTHREAD)$'; }
 

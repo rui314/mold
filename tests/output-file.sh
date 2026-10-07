@@ -9,7 +9,7 @@ source "$(dirname "$0")"/common.inc
 cat <<EOF | $CC -o $t/a.o -c -xc -
 int main(void) { return 0; }
 EOF
-link() { $mold -arch $ARCH -platform_version macos 13.0 13.0 -syslibroot "$(xcrun --show-sdk-path)" -lSystem $t/a.o "$@"; }
+link() { $mold -arch $ARCH -platform_version macos 13.0 13.0 -syslibroot "$SDK" -lSystem $t/a.o "$@"; }
 
 link -o /dev/null
 $mold -r -arch $ARCH $t/a.o -o /dev/null

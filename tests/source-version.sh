@@ -5,11 +5,10 @@ source "$(dirname "$0")"/common.inc
 # on any architecture and of any kind, has none, unless
 # -add_source_version asks; -no_source_version leaves it out of any.
 # The last of the two wins.
-sdk=$(xcrun --show-sdk-path)
 echo 'int main() { return 0; }' | $CC -o $t/a.o -c -xc -
 
 link() {
-  $mold -arch $ARCH -syslibroot $sdk -o $t/$1 $t/a.o -lSystem -e _main \
+  $mold -arch $ARCH -syslibroot $SDK -o $t/$1 $t/a.o -lSystem -e _main \
     -platform_version macos "${@:2}" 2> /dev/null
 }
 has_cmd() {
@@ -49,10 +48,10 @@ RC_ProjectSourceVersion=7.8.9 link exe8 13.0 27.0
 otool -l $t/exe8 | grep -A2 'cmd LC_SOURCE_VERSION' | grep 'version 7.8.9$'
 RC_ProjectSourceVersion=7.8.9 link exe9 13.0 27.0 -source_version 1
 otool -l $t/exe9 | grep -A2 'cmd LC_SOURCE_VERSION' | grep 'version 1.0$'
-RC_ProjectSourceVersion=abc $mold -arch $ARCH -syslibroot $sdk -o $t/exe10 $t/a.o \
+RC_ProjectSourceVersion=abc $mold -arch $ARCH -syslibroot $SDK -o $t/exe10 $t/a.o \
   -lSystem -platform_version macos 13.0 27.0 2> $t/log10
 grep -q 'warning: \$RC_ProjectSourceVersion: malformed 64-bit a.b.c.d.e version number: abc' $t/log10
 otool -l $t/exe10 | grep -A2 'cmd LC_SOURCE_VERSION' | grep 'version 0.0$'
-RC_ProjectSourceVersion=abc $mold -arch $ARCH -syslibroot $sdk -o $t/exe11 $t/a.o \
+RC_ProjectSourceVersion=abc $mold -arch $ARCH -syslibroot $SDK -o $t/exe11 $t/a.o \
   -lSystem -platform_version macos 13.0 27.0 -no_source_version 2> $t/log11
 not grep -q RC_ProjectSourceVersion $t/log11

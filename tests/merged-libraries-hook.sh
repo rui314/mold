@@ -25,7 +25,7 @@ __attribute__((visibility("hidden")))
 EOF
 objs=$t/foo.o
 classes="FooObjC FooHidden"
-swiftlib=$(xcrun --show-sdk-path)/usr/lib/swift
+swiftlib=$SDK/usr/lib/swift
 if command -v swiftc >/dev/null; then
   cat > $t/foo.swift <<EOF
 import Foundation
