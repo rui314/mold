@@ -39,11 +39,12 @@ pub fn create_internal_file<E: Target>(ctx: &mut Context<E>) {
 
 /// Resolves all symbols, following mold's model: every input including
 /// each archive member has been parsed already, and resolution ranks
-/// competing definitions (strong > weak > lazy archive member or
-/// dylib > common), breaking ties by input order. A liveness walk then
-/// marks the archive members whose definitions are actually referenced
-/// (see resolve_and_mark_live), and the live objects' auto-link options
-/// load the libraries they name; objects among those, or a library that
+/// competing definitions (strong > weak > a lazy archive member's or a
+/// dylib's strong > their weak > common), breaking ties by input order
+/// (see definition_rank). A liveness walk then marks the archive
+/// members whose definitions are actually referenced (see
+/// resolve_and_mark_live), and the live objects' auto-link options load
+/// the libraries they name; objects among those, or a library that
 /// changes what an earlier one stands for, have resolution and the walk
 /// start over. A final round restricted to live files settles the
 /// owners, as in mold's resolve_symbols.
@@ -113,7 +114,7 @@ fn member_overrides<E: Target>(ctx: &Context<E>, tentative: &Tentative) -> bool 
             }
         }
     });
-    best.iter().any(|rank| rank.load(Ordering::Relaxed) >> 40 == 2)
+    best.iter().any(|rank| matches!(rank.load(Ordering::Relaxed) >> 40, 2 | 3))
 }
 
 /// The symbols the command line names, which count as referenced: the
@@ -390,12 +391,23 @@ fn collect_references<E: Target>(ctx: &Context<E>, only_alive: bool) -> Referenc
 }
 
 /// The rank of a definition: (class << 40) | (weak term << 32) |
-/// priority, lower is better. A live weak definition's rank carries
-/// the order in which ld-prime, like ld64, prefers the copies of one
-/// (see weak_definition_rank); the first copy wins only among equals.
-/// A lazy archive member from an archive that an auto-link option named,
-/// one of `autolink_priority` or later, comes after the libraries the
-/// command line's dylibs re-export (see dylib_ranks).
+/// priority, lower is better. The classes are mold's
+/// (symbol_rank_from_fields):
+///
+///   0. a live file's strong definition
+///   1. a live file's weak definition
+///   2. a lazy archive member's or a dylib's strong definition
+///   3. a lazy archive member's or a dylib's weak definition
+///   4. a live file's tentative definition (a common symbol)
+///
+/// so a strong definition in an archive or a dylib beats a weak one
+/// whatever their order, which only breaks ties. A live weak
+/// definition's rank carries the order in which ld-prime, like ld64,
+/// prefers the copies of one (see weak_definition_rank); the first copy
+/// wins only among equals. A lazy archive member from an archive that
+/// an auto-link option named, one of `autolink_priority` or later,
+/// comes after the libraries the command line's dylibs re-export (see
+/// dylib_ranks).
 ///
 /// A lazy member's tentative definition ranks as its definitions do: a
 /// reference loads the member for it like for any other. But when a
@@ -425,8 +437,9 @@ fn definition_rank(
         N_SECT | N_ABS if obj.is_alive && !is_weak => 0,
         N_SECT | N_ABS if obj.is_alive => 1,
         N_SECT if tentative && is_code() => return None,
-        N_SECT | N_ABS => 2,
-        N_UNDF if nlist.is_common() && obj.is_alive => 3,
+        N_SECT | N_ABS if !is_weak => 2,
+        N_SECT | N_ABS => 3,
+        N_UNDF if nlist.is_common() && obj.is_alive => 4,
         N_UNDF if nlist.is_common() && !tentative => 2,
         _ => return None,
     };
@@ -437,7 +450,8 @@ fn definition_rank(
     {
         weak_term = weak_definition_rank(&isecs[isec], nlist, obj.hidden);
     }
-    let phase = if class == 2 && obj.priority >= autolink_priority { 2 } else { 0 };
+    let lazy = class == 2 || class == 3;
+    let phase = if lazy && obj.priority >= autolink_priority { 2 } else { 0 };
     Some((class << 40) | ((weak_term | phase) << 32) | obj.priority as u64)
 }
 
@@ -609,7 +623,7 @@ fn live_common_symbols<E: Target>(ctx: &Context<E>) -> Vec<(SymbolId, u64, u8, b
 }
 
 /// Common symbols merge as ld-prime merges them, from every common
-/// claim once the class-3 winners are known: the largest tentative
+/// claim once the class-4 winners are known: the largest tentative
 /// definition wins whole - its size, its alignment, whatever the
 /// others', and whether it is a private external - and of those of one
 /// size the first claimed (the winner's to start with).
@@ -620,7 +634,7 @@ fn merge_common_symbols<E: Target>(
 ) {
     use std::sync::atomic::Ordering;
     for &(sym_id, size, p2align, pext) in commons {
-        if best[sym_id as usize].load(Ordering::Relaxed) >> 40 != 3 {
+        if best[sym_id as usize].load(Ordering::Relaxed) >> 40 != 4 {
             continue;
         }
         let sym = &mut ctx.symbols[sym_id];
@@ -633,10 +647,12 @@ fn merge_common_symbols<E: Target>(
 }
 
 /// Dylib exports claim the referenced symbols that no object defines,
-/// or that only a lazy archive member does; an earlier dylib beats a
-/// later archive member and vice versa (see dylib_ranks). Of the dylibs
-/// `ranking` ranks that export a symbol, the first in search order
-/// claims it.
+/// or that only a lazy archive member does; as among archive members,
+/// a strong definition beats a weak one, and of two equally strong an
+/// earlier dylib beats a later archive member and vice versa (see
+/// dylib_ranks). Of the dylibs `ranking` ranks that export a symbol,
+/// the first in search order that exports it strong claims it, or if
+/// none does, the first.
 fn claim_dylib_exports<E: Target>(
     ctx: &mut Context<E>,
     ranking: &DylibRanking,
@@ -649,14 +665,14 @@ fn claim_dylib_exports<E: Target>(
     let dylibs = &ctx.dylibs;
     let DylibRanking { ranks, providers } = ranking;
     let order = dylib_search_order(ranks, 0);
-    let first = first_exporters(dylibs, ctx.symbols.syms.len(), &order);
+    let first = first_exporters(dylibs, &ctx.symbols.syms, &order);
     // A live tentative definition (a common symbol) beats a dylib's
     // but under -commons use_dylibs, even where it is an archive
     // member's that would override it.
     let use_dylibs = ctx.args.commons == crate::cmdline::CommonsMode::UseDylibs;
     ctx.symbols.syms.par_iter_mut().enumerate().for_each(|(i, sym)| {
-        let pos = first[i].load(Ordering::Relaxed);
-        if pos == u32::MAX || !used[i].load(Ordering::Relaxed) {
+        let key = first[i].load(Ordering::Relaxed);
+        if key == u32::MAX || !used[i].load(Ordering::Relaxed) {
             return;
         }
         let won = best[i].load(Ordering::Relaxed);
@@ -669,8 +685,10 @@ fn claim_dylib_exports<E: Target>(
         if crate::dtrace::is_dtrace_symbol(sym.name()) {
             return;
         }
-        let dylib_idx = order[pos as usize];
-        if ranks[dylib_idx] >= won {
+        let dylib_idx = order[(key & !WEAK_EXPORT) as usize];
+        // A weak export ranks as a lazy member's weak definition does.
+        let weak = if key & WEAK_EXPORT != 0 { 1 << 40 } else { 0 };
+        if ranks[dylib_idx] + weak >= won {
             return;
         }
         if sym.is_common() {
@@ -722,24 +740,33 @@ fn collect_dylib_symbols<E: Target>(ctx: &mut Context<E>) {
 }
 
 /// For each symbol, the place in `order` of the first of those dylibs
-/// that exports it, u32::MAX if none does: each dylib races the place
-/// into the symbols it exports with an atomic minimum, as each of
-/// mold's shared libraries resolves its own symbols by rank.
+/// that exports it, u32::MAX if none does, a weak export's with
+/// WEAK_EXPORT set: a dylib's weak definitions come after every strong
+/// one, as in mold's ranks. Each dylib races the place into the symbols
+/// it exports with an atomic minimum, as each of mold's shared
+/// libraries resolves its own symbols by rank.
 fn first_exporters(
     dylibs: &[input_files::DylibFile],
-    num_syms: usize,
+    syms: &[Symbol],
     order: &[usize],
 ) -> Vec<std::sync::atomic::AtomicU32> {
     use std::sync::atomic::{AtomicU32, Ordering};
     let first: Vec<AtomicU32> =
-        (0..num_syms).into_par_iter().map(|_| AtomicU32::new(u32::MAX)).collect();
+        (0..syms.len()).into_par_iter().map(|_| AtomicU32::new(u32::MAX)).collect();
     order.par_iter().enumerate().for_each(|(pos, &dylib_idx)| {
-        for &id in &dylibs[dylib_idx].symbols {
-            first[id as usize].fetch_min(pos as u32, Ordering::Relaxed);
+        let dylib = &dylibs[dylib_idx];
+        for &id in &dylib.symbols {
+            let weak = !dylib.weak_exports.is_empty()
+                && dylib.weak_exports.contains(syms[id as usize].name());
+            let key = if weak { pos as u32 | WEAK_EXPORT } else { pos as u32 };
+            first[id as usize].fetch_min(key, Ordering::Relaxed);
         }
     });
     first
 }
+
+/// Marks a weak export in first_exporters' places.
+const WEAK_EXPORT: u32 = 1 << 31;
 
 /// How resolution ranks the dylibs of the link: the rank each claims
 /// symbols with (see dylib_ranks), and those it takes the symbols of
@@ -823,30 +850,31 @@ fn claim_new_dylibs<E: Target>(ctx: &mut Context<E>, first: usize) {
     let dylibs = &ctx.dylibs;
     let providers = merged_providers(dylibs);
     let order = dylib_search_order(&dylib_ranks(dylibs), first);
-    let exporters = first_exporters(dylibs, ctx.symbols.syms.len(), &order);
+    let exporters = first_exporters(dylibs, &ctx.symbols.syms, &order);
     ctx.symbols.syms.par_iter_mut().enumerate().for_each(|(i, sym)| {
-        let pos = exporters[i].load(Ordering::Relaxed);
-        if pos == u32::MAX || !sym.is_used() || sym.is_defined() {
+        let key = exporters[i].load(Ordering::Relaxed);
+        if key == u32::MAX || !sym.is_used() || sym.is_defined() {
             return;
         }
-        import_from_dylib(sym, dylibs, &providers, order[pos as usize]);
+        import_from_dylib(sym, dylibs, &providers, order[(key & !WEAK_EXPORT) as usize]);
     });
 }
 
-/// The rank with which each dylib's exports claim a symbol, comparable
-/// with a lazy archive member's (see definition_rank), lower first; a
-/// dylib that stands for a library exports moved to has none. ld-prime
-/// looks a symbol up in the libraries the command line names, in their
-/// order among the other inputs, and only then, after every archive,
-/// in the public libraries they re-export: nearest first, a private
-/// library in between counting as a step, and among the equally near
-/// by the install name of the library that re-exports them, then by
-/// their own (a breadth-first walk of each level sorted by name). Then
-/// come the libraries auto-link options name, and the ones they
-/// re-export likewise. So a symbol of both Foundation and CFNetwork
-/// that `-framework Carbon -framework Foundation` finds binds to
-/// Foundation, though Carbon re-exports CoreServices, which re-exports
-/// CFNetwork.
+/// The rank with which each dylib's strong exports claim a symbol,
+/// comparable with a lazy archive member's (see definition_rank), lower
+/// first; its weak exports rank one class lower, as a member's weak
+/// definitions do. A dylib that stands for a library exports moved to
+/// has none. ld-prime looks a symbol up in the libraries the command
+/// line names, in their order among the other inputs, and only then,
+/// after every archive, in the public libraries they re-export: nearest
+/// first, a private library in between counting as a step, and among
+/// the equally near by the install name of the library that re-exports
+/// them, then by their own (a breadth-first walk of each level sorted
+/// by name). Then come the libraries auto-link options name, and the
+/// ones they re-export likewise. So a symbol of both Foundation and
+/// CFNetwork that `-framework Carbon -framework Foundation` finds binds
+/// to Foundation, though Carbon re-exports CoreServices, which
+/// re-exports CFNetwork.
 pub fn dylib_ranks(dylibs: &[input_files::DylibFile]) -> Vec<u64> {
     let phase = |phase: u64| (2 << 40) | (phase << 32);
     let mut ranks = vec![u64::MAX; dylibs.len()];
