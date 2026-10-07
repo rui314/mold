@@ -2,7 +2,9 @@
 #
 # This script creates a mold binary distribution. The output is written to
 # the `dist` directory as `mold-$version-$arch-linux.tar.gz` (e.g.
-# `mold-2.42.0-x86_64-linux.tar.gz`).
+# `mold-2.42.0-x86_64-linux.tar.gz`). The builds for musl-based systems,
+# `x86_64-musl` and `aarch64-musl`, are written as
+# `mold-$version-$arch-linux-musl.tar.gz` instead.
 #
 # This script aims to produce reproducible outputs. The container images,
 # Rust toolchain, Cargo dependencies and file timestamps are pinned so that
@@ -16,15 +18,19 @@
 # packages. Distro package repositories must be pinned as well as the base
 # image before a build is fully reproducible. The loongarch64 build still
 # uses the live Debian sid repository, so it does not yet have that property.
+# Neither do the musl builds, which are built on Alpine Linux. Alpine keeps
+# only the latest version of each package, so its packages can't be pinned.
 #
 # The mold executable created by this script is dynamically linked to the
 # system C runtime and other standard system libraries. We can't statically
-# link glibc because doing so would disable dlopen(), which is required to
-# load the LTO linker plugin.
+# link glibc or musl because doing so would disable dlopen(), which is
+# required to load the LTO linker plugin.
 #
 # We use a reasonably old Debian version for the build environment because
 # a binary dynamically linked against a newer version of glibc won't work
-# on a system with an older version of glibc.
+# on a system with an older version of glibc. Likewise, a binary built on a
+# newer Alpine may use functions that an older musl or libgcc doesn't have,
+# so the musl builds use the oldest Alpine release that is still supported.
 #
 # The Rust toolchain is downloaded from the official Rust distribution
 # site. Its version and SHA-256 hash are recorded below, so the toolchain
@@ -122,14 +128,14 @@ loongarch64)
   rust_sha256=d5a925962854730ae7641420d8337af93988ea4ff47b503a856ec53776c87841
   ;;
 x86_64-musl)
-  # Alpine 3.20 released in May 2024, with musl 1.2.5.
-  base_image=mirror.gcr.io/library/alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+  # Alpine 3.21 released in December 2024.
+  base_image=mirror.gcr.io/library/alpine:3.21.8@sha256:ce64758a109eb420d874a118f87920e625e12d3634e03b4a5573fd9f6e5d3507
   rust_target=x86_64-unknown-linux-musl
   rust_sha256=40dbea28193cf2b488cf3e4a89274ccfb60efa50883f19917a382f84fd05bdc4
   ;;
 aarch64-musl)
-  # Alpine 3.20 released in May 2024, with musl 1.2.5.
-  base_image=mirror.gcr.io/library/alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+  # Alpine 3.21 released in December 2024.
+  base_image=mirror.gcr.io/library/alpine:3.21.8@sha256:ce64758a109eb420d874a118f87920e625e12d3634e03b4a5573fd9f6e5d3507
   rust_target=aarch64-unknown-linux-musl
   rust_sha256=c5f45b5c6eb7f8fdb277c54c08402b7c931516740fbd4eccc26ba148f7cd5d57
   ;;
@@ -148,17 +154,18 @@ if [[ $arch = *-musl ]]; then
   os=linux-musl
 fi
 
-# Alpine has no package snapshots, so its packages are not pinned.
 podman build --arch "$arch" -t "$image" - <<EOF
 FROM $base_image
 ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
 RUN if [ -f /etc/alpine-release ]; then \
-  apk add --no-cache bash build-base coreutils git gzip linux-headers tar wget; else \
-  $apt_setup && \
-  echo 'Acquire::Retries "10"; Acquire::http::timeout "10"; Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/80-retries && \
-  apt-get update && \
-  apt-get install -y --no-install-recommends build-essential ca-certificates git wget && \
-  rm -rf /var/lib/apt/lists; fi
+    apk add --no-cache bash build-base coreutils git gzip linux-headers tar wget; \
+  else \
+    $apt_setup && \
+    echo 'Acquire::Retries "10"; Acquire::http::timeout "10"; Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/80-retries && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends build-essential ca-certificates git wget && \
+    rm -rf /var/lib/apt/lists; \
+  fi
 RUN mkdir /tmp/rust && \
   cd /tmp/rust && \
   wget --progress=dot:mega https://static.rust-lang.org/dist/$archive && \
