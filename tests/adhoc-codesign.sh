@@ -30,3 +30,28 @@ else
   not grep -q LC_CODE_SIGNATURE $t/log3
 fi
 $t/exe3 | grep -F 'Hello world'
+
+# So is a simulator's arm64 image, which Apple silicon runs too, but
+# not a device's: packaging the app signs it with the developer's
+# identity.
+if sdk=$(xcrun --sdk iphonesimulator --show-sdk-path 2> /dev/null); then
+  echo 'int main() { return 0; }' | \
+    cc -target $ARCH-apple-ios17.0-simulator -isysroot $sdk -o $t/sim.o -c -xc -
+  $mold -arch $ARCH -platform_version ios-simulator 17.0 27.0 -syslibroot $sdk -lSystem \
+    $t/sim.o -o $t/sim
+  otool -l $t/sim > $t/log4
+  if [ $ARCH = arm64 ]; then
+    grep -q LC_CODE_SIGNATURE $t/log4
+    codesign -v $t/sim
+  else
+    not grep -q LC_CODE_SIGNATURE $t/log4
+  fi
+fi
+if [ $ARCH = arm64 ] && sdk=$(xcrun --sdk iphoneos --show-sdk-path 2> /dev/null); then
+  echo 'int main() { return 0; }' | \
+    cc -target arm64-apple-ios17.0 -isysroot $sdk -o $t/dev.o -c -xc -
+  $mold -arch $ARCH -platform_version ios 17.0 27.0 -syslibroot $sdk -lSystem $t/dev.o \
+    -o $t/dev
+  otool -l $t/dev > $t/log5
+  not grep -q LC_CODE_SIGNATURE $t/log5
+fi

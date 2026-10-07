@@ -2810,12 +2810,17 @@ fn resolve_defaults(target: &TargetTraits, args: &mut Args, st: &ParseState) {
         )
         .then_some(number);
 
-    // ld-prime signs arm64 macOS images by default and leaves x86_64
-    // ones unsigned (Intel Macs and Rosetta run unsigned code), and a
-    // -static image or a kext (signed if at all by whoever packages it)
-    // and firmware unsigned too.
+    // ld-prime signs the arm64 images a Mac runs - macOS's and the
+    // simulators' - by default: Apple silicon runs no unsigned arm64
+    // code. It leaves x86_64 ones unsigned (Intel Macs and Rosetta run
+    // unsigned code), and a device's image (signed with the developer's
+    // identity when the app is packaged), a -static image or a kext
+    // (signed if at all by whoever packages it) and firmware unsigned
+    // too.
     args.adhoc_codesign = st.adhoc_codesign.unwrap_or(
-        target.name == "arm64" && !args.without_dyld() && args.platform == PLATFORM_MACOS,
+        target.name == "arm64"
+            && !args.without_dyld()
+            && (args.platform == PLATFORM_MACOS || is_simulator(args.platform)),
     );
 
     // ld-prime converts Objective-C method lists from macOS 11 on, in

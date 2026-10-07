@@ -497,6 +497,18 @@ pub fn is_supported_platform(platform: u32) -> bool {
     )
 }
 
+/// Whether a platform is a simulator's: a mobile OS's processes running
+/// on a Mac, on the Mac's own CPU, against the simulator SDK's libraries.
+pub fn is_simulator(platform: u32) -> bool {
+    matches!(
+        platform,
+        PLATFORM_IOSSIMULATOR
+            | PLATFORM_TVOSSIMULATOR
+            | PLATFORM_WATCHOSSIMULATOR
+            | PLATFORM_VISIONOSSIMULATOR
+    )
+}
+
 /// The platforms a .tbd file has targets for, for a diagnostic.
 pub fn platforms_name(platforms: &[u32]) -> String {
     platforms.iter().map(|&p| platform_name(p)).collect::<Vec<_>>().join(" ")
