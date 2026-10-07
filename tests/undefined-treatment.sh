@@ -53,6 +53,6 @@ not grep -q warning $t/log7
 $CC --ld-path=$mold -o $t/exe7 $t/a.o -Wl,-undefined,suppress -Wl,-U,_missing -Wl,-w \
   2> $t/log9
 not grep -q -- '-U option is redundant' $t/log9
-if $mold -v 2> /dev/null | grep -q mold-macho; then
+if $mold -v 2>&1 | grep -q mold-macho; then
   not grep -q warning $t/log9
 fi

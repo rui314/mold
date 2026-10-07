@@ -45,7 +45,7 @@ grep -q __LINKEDIT $t/log7
 $CC --ld-path=$mold -o $t/exe $t/b.o \
   -Wl,-w,-segprot,__FOO,rz,r,-no_dead_strip_inits_and_terms,-segprot,__LINKEDIT,r,r >& $t/log8
 not grep -q warning $t/log8
-if $mold -v 2> /dev/null | grep -q mold-macho; then
+if $mold -v 2>&1 | grep -q mold-macho; then
   $CC --ld-path=$mold -o $t/exe $t/b.o -Wl,-alias_list,$t/nosuch,-w >& $t/log9
   not grep -q warning $t/log9
 fi

@@ -91,7 +91,7 @@ if [ $ARCH = arm64 ]; then
   $mold -r -arch arm64 -o $t/r.o $t/e.o
   nm $t/r.o > $t/syms
   not grep -q ltmp1 $t/syms
-  if $mold -v 2> /dev/null | grep -q mold-macho; then
+  if $mold -v 2>&1 | grep -q mold-macho; then
     otool -l $t/r.o | grep -q 'sectname __literal8'
   fi
 fi

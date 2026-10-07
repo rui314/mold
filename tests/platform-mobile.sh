@@ -70,7 +70,7 @@ fi
 
 # mold doesn't link for watchOS (whose devices run arm64_32 code) or
 # Mac Catalyst.
-if $mold -v 2> /dev/null | grep -q mold-macho; then
+if $mold -v 2>&1 | grep -q mold-macho; then
   for name in watchos watchos-simulator mac-catalyst 4 6; do
     not $mold -arch $ARCH -platform_version $name 10.0 11.0 -o $t/exe3 2> $t/log3
     grep -q "platform: $name$" $t/log3

@@ -80,7 +80,7 @@ carried() {
 obj bar '.section __DATA,__bar'
 carried bar __DATA,__bar
 
-if $mold -v 2> /dev/null | grep -q mold-macho; then
+if $mold -v 2>&1 | grep -q mold-macho; then
   obj data .data
   carried data __DATA,__data
   obj const '.section __TEXT,__const'
@@ -88,8 +88,9 @@ if $mold -v 2> /dev/null | grep -q mold-macho; then
   obj cstring '.section __TEXT,__cstring,cstring_literals'
   carried cstring __TEXT,__cstring
 
-  # A section with instructions is code, whatever its name.
-  obj pure '.section __DATA,__data,regular,pure_instructions'
+  # A section with instructions is code, whatever its name. (The
+  # assembler drops the attribute from __DATA,__data, a name it knows.)
+  obj pure '.section __DATA,__xcode,regular,pure_instructions'
   $CC --ld-path=$mold -o $t/pure $t/pure.o 2> $t/pure.log
   not grep -q 'unwind information' $t/pure.log
   f=$(nm $t/pure | awk '$3 == "_f" { print $1 }' | sed 's/^0*//')

@@ -11,7 +11,7 @@ link() { $mold -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 13.0 13.0
 # -lto_library names the libLTO that compiles the bitcode; the last one
 # counts. (ld-prime takes only a file named libLTO.dylib, and ignores
 # one that doesn't exist with a warning.)
-if $mold -v 2> /dev/null | grep -q mold-macho; then
+if $mold -v 2>&1 | grep -q mold-macho; then
   cp $lto_library $t/libfoo.dylib
   link -lto_library $t/nosuch.dylib -lto_library $t/libfoo.dylib $t/a.o -o $t/exe
   $RUN $t/exe | grep -q Hello

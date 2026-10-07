@@ -41,7 +41,7 @@ grep -q ' _foo_bar$' <(nm -gU $t/exe)
 # which no argument may hold, are errors. (ld-prime refuses a file named
 # twice, and goes on in each of the other cases, warning of a file it
 # can't open.)
-if $mold -v 2> /dev/null | grep -q mold-macho; then
+if $mold -v 2>&1 | grep -q mold-macho; then
   link -Wl,@$t/rsp2,@$t/rsp3
   not link -Wl,@$t/none 2> $t/log
   grep -qF "$t/none" $t/log

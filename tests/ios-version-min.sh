@@ -29,7 +29,7 @@ not link -ios_version_min 2> $t/log3
 
 for opt in -maccatalyst_version_min -iosmac_version_min -uikitformac_version_min; do
   not link $opt 16.0 2> $t/log4
-  if $mold -v 2> /dev/null | grep -q mold-macho; then
+  if $mold -v 2>&1 | grep -q mold-macho; then
     grep -q -- "$opt: unsupported platform" $t/log4
   fi
 done

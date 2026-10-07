@@ -31,7 +31,7 @@ $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o $t/main.o
 $RUN $t/exe > $t/out
 grep -qx 'abc 1 0' $t/out
 
-if $mold -v 2> /dev/null | grep -q mold-macho; then
+if $mold -v 2>&1 | grep -q mold-macho; then
   # "xy\0", "abc" and "abc\0".
   $mold -arch $ARCH -r -o $t/r.o $t/a.o $t/b.o
   size=$(otool -l $t/r.o | awk '$1 == "sectname" { n = $2 } n == "__cstring" && $1 == "size" { print $2 }')

@@ -28,7 +28,7 @@ otool -l $t/exe1 | grep -A4 LC_BUILD_VERSION | grep -q 'minos 13.0.1'
 link -lSystem -w -platform_version macos 14.0 15.0 -macos_version_min 13.0 -o $t/exe2 \
   2> $t/log2
 not grep -q 'passed two' $t/log2
-if $mold -v 2> /dev/null | grep -q mold-macho; then
+if $mold -v 2>&1 | grep -q mold-macho; then
   link -lSystem -platform_version macos 14.0 15.0 -macos_version_min 13.0 -w -o $t/exe2 \
     2> $t/log2
   not grep -q 'passed two' $t/log2

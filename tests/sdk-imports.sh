@@ -60,7 +60,7 @@ jq -e '.apiListVersion == 4' $t/imports5.json > /dev/null
 
 # A list must be JSON, with a version and APIs. (ld-prime reads it with
 # NSJSONSerialization, which allows a comma before a closing bracket.)
-if $mold -v 2> /dev/null | grep -q mold-macho; then
+if $mold -v 2>&1 | grep -q mold-macho; then
   echo '{"version": 1, "apis": ["_puts",],}' > $t/apis6.json
   not $mold -arch $ARCH -o $t/exe4 $t/a.o -sdk_imports_api_list $t/apis6.json 2> $t/log
   grep -q "invalid list at $t/apis6.json" $t/log

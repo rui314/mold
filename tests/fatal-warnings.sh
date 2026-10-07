@@ -12,7 +12,7 @@ rm -f $t/exe
 not $CC --ld-path=$mold $t/a.o -lSystem \
   -Wl,-warn_duplicate_libraries,-fatal_warnings -o $t/exe 2> $t/log
 grep -q 'ignoring duplicate libraries' $t/log
-mold_only() { $mold -v 2> /dev/null | grep -q mold-macho; }
+mold_only() { $mold -v 2>&1 | grep -q mold-macho; }
 if mold_only; then
   grep -q 'error: ignoring duplicate libraries' $t/log
   [ ! -e $t/exe ]

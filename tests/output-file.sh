@@ -51,7 +51,7 @@ grep -q 'Invalid argument' $t/log
 
 # A read-only file, or a symbolic link, is replaced. (ld-prime refuses
 # the one, and fails to create a file where the other dangles.)
-if $mold -v 2> /dev/null | grep -q mold-macho; then
+if $mold -v 2>&1 | grep -q mold-macho; then
   rm -f $t/ro
   touch $t/ro
   chmod 444 $t/ro
