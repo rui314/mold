@@ -860,6 +860,14 @@ impl Args {
         self.static_link || self.is_kext()
     }
 
+    /// Whether dyld loads the image wherever it likes: a PIE executable, a
+    /// dylib or a bundle, but not a -static image or a non-PIE executable.
+    /// (Nor is this rebase_info::is_never_slid's opposite: whatever loads
+    /// a -static image may slide it.)
+    pub fn dyld_slides(&self) -> bool {
+        !self.static_link && (self.output_type != MH_EXECUTE || self.pie)
+    }
+
     /// Whether the image gets __unwind_info, the table the unwinder
     /// looks a function up in: not a -r output, which carries the
     /// objects' __compact_unwind records instead, nor an image no dyld
@@ -902,6 +910,26 @@ impl Args {
     /// The address -segaddr pins a segment to.
     pub fn segaddr(&self, segname: &[u8]) -> Option<u64> {
         self.segaddrs.iter().find(|(name, _)| name == segname).map(|&(_, addr)| addr)
+    }
+
+    /// The boundary the segment after a segment starts on, in memory and in
+    /// the file: its -seg_page_size, else the page.
+    pub fn seg_page_size(&self, segname: &[u8]) -> u64 {
+        let sizes = &self.seg_page_sizes;
+        sizes.iter().find(|(name, _)| name == segname).map_or(self.segment_align, |&(_, size)| size)
+    }
+
+    /// Whether -segment_order lists a segment after one that -segaddr pins
+    /// (ld64's segmentOrderAfterFixedAddressSegment).
+    pub fn follows_pinned_segment(&self, segname: &[u8]) -> bool {
+        let mut pinned = false;
+        for name in &self.segment_order {
+            if name == segname {
+                return pinned;
+            }
+            pinned |= self.segaddr(name).is_some();
+        }
+        false
     }
 }
 

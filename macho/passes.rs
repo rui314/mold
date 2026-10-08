@@ -4811,19 +4811,12 @@ fn in_place_segment<E: Target>(ctx: &Context<E>) -> Option<&'static [u8]> {
     (!ctx.args.preload).then(|| header_segment(ctx))
 }
 
-/// The boundary the segment after a segment starts on, in memory and in
-/// the file: its -seg_page_size, else the page.
-fn seg_page_size<E: Target>(ctx: &Context<E>, segname: &[u8]) -> u64 {
-    let sizes = &ctx.args.seg_page_sizes;
-    sizes.iter().find(|(name, _)| name == segname).map_or(ctx.args.segment_align, |&(_, size)| size)
-}
-
 /// The room a segment takes from the segments after it: its size up to
 /// its -seg_page_size, which ld-prime leaves out of the size itself
 /// (the XNU x86-64 kernel starts the segment after __TEXT on a 2 MiB
 /// boundary that way).
 fn segment_span<E: Target>(ctx: &Context<E>, seg: &OutputSegment) -> u64 {
-    align_to(seg.cmd.vmsize, seg_page_size(ctx, seg.name))
+    align_to(seg.cmd.vmsize, ctx.args.seg_page_size(seg.name))
 }
 
 /// The alignment of a segment's address: a page, or its first section's
@@ -4916,7 +4909,7 @@ fn layout_segment<E: Target>(
     // next one starts on the segment's -seg_page_size boundary (which
     // ld-prime counts in __LINKEDIT's size, there being no next one).
     let page = ctx.args.segment_align;
-    let seg_page = seg_page_size(ctx, ctx.segments[seg_idx].name);
+    let seg_page = ctx.args.seg_page_size(ctx.segments[seg_idx].name);
     let seg = &mut ctx.segments[seg_idx];
     seg.cmd.vmaddr = vmaddr;
     seg.cmd.fileoff = fileoff;
@@ -4944,8 +4937,8 @@ fn layout_segment<E: Target>(
 ///   a pinned one, if it is in their way. A pinned __LINKEDIT, not
 ///   sized yet, counts from the start, as an empty segment.
 /// - Where a pinned __TEXT is no base the others float from (see
-///   is_pin_no_base), every pinned segment counts as placed from the
-///   start, and a segment may follow one below the base.
+///   below), every pinned segment counts as placed from the start, and
+///   a segment may follow one below the base.
 fn place_segments<E: Target>(ctx: &mut Context<E>) {
     let base = ctx.image_base();
     let header_seg = in_place_segment(ctx);
@@ -4963,7 +4956,7 @@ fn place_segments<E: Target>(ctx: &mut Context<E>) {
         .collect();
     for i in 1..segs.len() {
         if addrs[i].is_none()
-            && follows_pinned_segment(ctx, segs[i].name)
+            && ctx.args.follows_pinned_segment(segs[i].name)
             && let Some(prev) = addrs[i - 1]
         {
             let end = prev + segment_span(ctx, &segs[i - 1]);
@@ -4973,7 +4966,14 @@ fn place_segments<E: Target>(ctx: &mut Context<E>) {
 
     let fixed: Vec<usize> =
         (0..segs.len()).filter(|&i| !in_place[i] && addrs[i].is_some()).collect();
-    let detached = header_seg.is_some_and(|seg| is_pin_no_base(ctx, seg));
+    // ld-prime takes the -segaddr of the mach header's segment for no
+    // base address the other segments float from: in an image dyld
+    // slides, unless it is a dylib's or a bundle's preferred address,
+    // which ld-prime honors without chained fixups (see
+    // cmdline::resolve_image_base; a PIE's it ignores).
+    let detached = header_seg.is_some_and(|seg| ctx.args.segaddr(seg).is_some())
+        && ctx.args.dyld_slides()
+        && (ctx.args.output_type == MH_EXECUTE || ctx.args.fixup_chains);
     let first_pin = if detached { Some(0) } else { fixed.first().copied() };
     let floor = if detached { 0 } else { base };
     let header = segs.iter().position(|seg| Some(seg.name) == header_seg);
@@ -5000,19 +5000,6 @@ fn place_segments<E: Target>(ctx: &mut Context<E>) {
             move_segment(ctx, i, addr.unwrap());
         }
     }
-}
-
-/// Whether -segment_order lists a segment after one that -segaddr pins
-/// (ld64's segmentOrderAfterFixedAddressSegment).
-fn follows_pinned_segment<E: Target>(ctx: &Context<E>, segname: &[u8]) -> bool {
-    let mut pinned = false;
-    for name in &ctx.args.segment_order {
-        if name == segname {
-            return pinned;
-        }
-        pinned |= ctx.args.segaddr(name).is_some();
-    }
-    false
 }
 
 /// Where `size` bytes go at the lowest address where they run into none
@@ -5089,7 +5076,7 @@ fn check_segment_overlaps<E: Target>(ctx: &Context<E>) {
 /// one before, as a rename or a symbol move to another segment leaves
 /// them (dyld copies the template as one block).
 fn check_segments<E: Target>(ctx: &Context<E>) {
-    let slides = dyld_slides(ctx);
+    let slides = ctx.args.dyld_slides();
     let (linkedit, segs) = ctx.segments.split_last().unwrap();
     // The last section of the template seen, with its place in the walk.
     let mut template: Option<(usize, &ChunkHeader)> = None;
@@ -5164,7 +5151,7 @@ fn place_linkedit<E: Target>(ctx: &mut Context<E>) {
     let others = &ctx.segments[..linkedit];
     let addr = if let Some(addr) = ctx.args.segaddr(b"__LINKEDIT") {
         addr
-    } else if dyld_slides(ctx) || ctx.args.segaddrs.is_empty() {
+    } else if ctx.args.dyld_slides() || ctx.args.segaddrs.is_empty() {
         others.iter().map(|seg| seg.cmd.vmaddr + segment_span(ctx, seg)).max().unwrap_or(0)
     } else {
         let used: Vec<Range<u64>> = others
@@ -5176,23 +5163,6 @@ fn place_linkedit<E: Target>(ctx: &mut Context<E>) {
         lowest_free_span(base, base, size, ctx.args.segment_align, &used).start
     };
     move_segment(ctx, linkedit, addr);
-}
-
-/// Whether dyld loads the image wherever it likes: a PIE executable, a
-/// dylib or a bundle, but not a -static image or a non-PIE executable.
-fn dyld_slides<E: Target>(ctx: &Context<E>) -> bool {
-    !ctx.args.static_link && (ctx.args.output_type != MH_EXECUTE || ctx.args.pie)
-}
-
-/// Whether ld-prime takes the -segaddr of the mach header's segment,
-/// `segname`, for no base address the other segments float from: in an
-/// image dyld slides, unless it is a dylib's or a bundle's preferred
-/// address, which ld-prime honors without chained fixups (see
-/// cmdline::resolve_image_base; a PIE's it ignores).
-fn is_pin_no_base<E: Target>(ctx: &Context<E>, segname: &[u8]) -> bool {
-    ctx.args.segaddr(segname).is_some()
-        && dyld_slides(ctx)
-        && (ctx.args.output_type == MH_EXECUTE || ctx.args.fixup_chains)
 }
 
 /// Builds the __LINKEDIT tables, once every other address is final
