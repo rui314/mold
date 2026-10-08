@@ -44,7 +44,7 @@ mold-elf-loongarch64 = { workspace = true, optional = true }
 mold-elf-loongarch32 = { workspace = true, optional = true }
 
 [dev-dependencies]
-mold-tests = { path = "../tests" }
+mold-elf-tests = { path = "../tests/elf" }
 
 # One feature per target. All are built by default; a build for one
 # target alone (`--no-default-features --features x86_64`) is much faster.

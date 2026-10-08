@@ -233,9 +233,9 @@ dependencies = [
  "mold-elf-sh4",
  "mold-elf-sh4be",
  "mold-elf-sparc64",
+ "mold-elf-tests",
  "mold-elf-x86_64",
  "mold-mimalloc",
- "mold-tests",
 ]
 
 [[package]]
@@ -410,6 +410,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "mold-elf-tests"
+version = "3.0.0"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "mold-elf-x86_64"
 version = "3.0.0"
 dependencies = [
@@ -432,13 +439,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "66a79c372cdbf45bf4548fd4aa40a0b2805ef2ee8e25e5185e11bf2b5c5de366"
 dependencies = [
  "cc",
-]
-
-[[package]]
-name = "mold-tests"
-version = "3.0.0"
-dependencies = [
- "libc",
 ]
 
 [[package]]

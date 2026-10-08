@@ -630,7 +630,7 @@ pub fn run(cases_dirs: &[PathBuf], mold: &Path) -> ExitCode {
     let work_dir = match prepare_work_dir(mold) {
         Ok(dir) => dir,
         Err(err) => {
-            eprintln!("mold-tests: {err}");
+            eprintln!("mold-elf-tests: {err}");
             return ExitCode::FAILURE;
         }
     };
@@ -638,7 +638,7 @@ pub fn run(cases_dirs: &[PathBuf], mold: &Path) -> ExitCode {
     let jobs = match make_jobs(cases_dirs, &work_dir, targets, &options.patterns, !options.list) {
         Ok(jobs) => jobs,
         Err(err) => {
-            eprintln!("mold-tests: {err}");
+            eprintln!("mold-elf-tests: {err}");
             return ExitCode::FAILURE;
         }
     };
