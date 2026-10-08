@@ -116,3 +116,15 @@ $CC -c $t/d.s -o $t/d.o -mmacosx-version-min=10.5
 not $mold -arch x86_64 -dylib -syslibroot $SDK -o $t/libd.dylib $t/d.o -lSystem \
   -platform_version macos 10.5 27.0 2> $t/log5
 grep -q "target 'dyld_stub_binding_helper' does not have address" $t/log5
+
+# The shared cache's builder reads a dylib's fixups from its opcodes or
+# chains, never from legacy LINKEDIT, so ld-prime refuses one bound for
+# the cache, by -add_split_seg_info or its install name.
+not $CC --ld-path=$mold -shared -o $t/libe.dylib $t/b.o -mmacosx-version-min=10.5 \
+  -Wl,-add_split_seg_info 2> $t/log6
+grep -q 'Shared cache eligible dylibs must use bind opcodes or chained fixups' $t/log6
+not $CC --ld-path=$mold -shared -o $t/libe.dylib $t/b.o -mmacosx-version-min=10.5 \
+  -Wl,-install_name,/usr/lib/libe.dylib 2> $t/log7
+grep -q 'Shared cache eligible dylibs must use bind opcodes or chained fixups' $t/log7
+$CC --ld-path=$mold -shared -o $t/libe.dylib $t/b.o -mmacosx-version-min=10.5 \
+  -Wl,-add_split_seg_info,-fixup_chains 2> /dev/null

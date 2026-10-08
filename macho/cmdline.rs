@@ -3781,6 +3781,16 @@ fn check_dylib_use(args: &Args) {
              (or linker flag '-not_for_dyld_shared_cache')"
         );
     }
+    // Nor fix itself up through legacy LINKEDIT (see
+    // resolve_legacy_linkedit): the cache builder reads only the opcodes
+    // and the chains.
+    if args.shared_region && args.legacy_linkedit {
+        fatal!(
+            "Shared cache eligible dylibs must use bind opcodes or chained fixups.  Remove flags \
+             with non-standard fixups or opt out of the shared cache using the build setting \
+             'LD_SHARED_CACHE_ELIGIBLE=NO' (or linker flag '-not_for_dyld_shared_cache')"
+        );
+    }
     if args.make_mergeable && args.flat_namespace {
         fatal!("-flat_namespace cannot be used with -make_mergeable");
     }
