@@ -41,6 +41,30 @@ impl Default for StubHelperSection {
     }
 }
 
+/// With lazy binding, the stub helper enters dyld through
+/// dyld_stub_binder (libSystem's): the symbol is bound from whichever
+/// loaded dylib exports it - or, where the image may look it up
+/// dynamically (-undefined dynamic_lookup, -U), from whatever image dyld
+/// finds it in - given a GOT slot, and __dyld_private (the word
+/// dyld_stub_binder is handed, ld64 puts it in __DATA,__data) is
+/// synthesized. Once, on the first stub.
+pub fn ensure_stub_binder<E: Target>(ctx: &mut Context<E>) {
+    // Legacy LINKEDIT's helper enters dyld through crt1.o's
+    // dyld_stub_binding_helper instead (see passes::resolve_stub_binder).
+    if ctx.stub_helper.dyld_stub_binder.is_some() || ctx.args.legacy_linkedit {
+        return;
+    }
+    let Some(id) = crate::passes::bind_linker_import(ctx, b"dyld_stub_binder") else {
+        crate::fatal!("lazy binding needs dyld_stub_binder, which no loaded dylib exports");
+    };
+    ctx.symbols[id].set_is_used(true);
+    crate::chunks::got::add_got_symbol(ctx, id);
+    ctx.stub_helper.dyld_stub_binder = Some(id);
+    let isec = crate::passes::add_data_word(ctx, 8);
+    ctx.stub_helper.dyld_private_isec = isec;
+    ctx.extra_local_syms.push((b"__dyld_private", isec));
+}
+
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     E::write_stub_helper(ctx, ctx.stub_helper.hdr.addr, buf);
 }

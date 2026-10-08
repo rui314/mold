@@ -8,17 +8,16 @@ use crate::chunks::delay_init::{DelayCode, DelayTarget, DelayUse};
 use crate::chunks::lazy_helpers::{LazyTarget, LazyUse};
 use crate::context::Context;
 use crate::dtrace::SiteKind;
-use crate::fatal;
 use crate::input_files::{ObjectFile, isec_relocs_of};
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
-use crate::passes::{check_tlv, scan_branch, scan_got_load};
-use crate::symbol::NEEDS_GOT;
+use crate::symbol::{NEEDS_GOT, NEEDS_STUB};
 use crate::target::{
     SplitRef, Target, has_reloc_form, load_helper, read32, reloc_form, section_target, write32,
     write64,
 };
 use crate::util::{bits, sign_extend};
+use crate::{error, fatal};
 
 #[derive(Clone, Copy, Default)]
 pub struct Arm64;
@@ -1253,17 +1252,46 @@ impl Target for Arm64 {
             if ctx.is_lazy_import(id) {
                 continue;
             }
-            let is_tlv =
+            let sym = &ctx.symbols[id];
+
+            // Thread-locals live behind __thread_vars descriptors, so the
+            // reference kind must agree with the symbol: a TLV load of
+            // ordinary data would treat the variable's bytes as a
+            // descriptor, and an ordinary load of a TLV would read the
+            // descriptor as data. ld64 rejects both directions.
+            let is_tlv_reloc =
                 matches!(rel.ty, ARM64_RELOC_TLVP_LOAD_PAGE21 | ARM64_RELOC_TLVP_LOAD_PAGEOFF12);
-            check_tlv(ctx, id, is_tlv);
+            if is_tlv_reloc != ctx.is_tlv(id) {
+                error!("illegal thread local variable reference to regular symbol `{sym}`");
+            }
 
             match rel.ty {
-                ARM64_RELOC_BRANCH26 => scan_branch(ctx, id),
+                // A call to a symbol dyld binds - an import or an
+                // interposable export - or resolves by weak lookup goes
+                // through its stub; a delay-init dylib's, through its
+                // stub of delay_init::create_delay_init instead.
+                ARM64_RELOC_BRANCH26 => {
+                    if !ctx.is_delay_import(id)
+                        && (ctx.binds_as_import(id) || ctx.binds_weak_lookup(id))
+                    {
+                        sym.add_flags(NEEDS_STUB);
+                    }
+                }
+                // A GOT load of a symbol dyld doesn't fill relaxes and
+                // needs no slot. So does a TLV load, to the descriptor's
+                // address; one dyld must fill - an imported thread-local,
+                // or a weak one coalesced across images (C++'s inline
+                // thread_local) - goes through an ordinary __got entry,
+                // as in ld-prime (no __thread_ptrs section).
                 ARM64_RELOC_GOT_LOAD_PAGE21
                 | ARM64_RELOC_GOT_LOAD_PAGEOFF12
                 | ARM64_RELOC_TLVP_LOAD_PAGE21
-                | ARM64_RELOC_TLVP_LOAD_PAGEOFF12 => scan_got_load(ctx, id),
-                ARM64_RELOC_POINTER_TO_GOT => ctx.symbols[id].add_flags(NEEDS_GOT),
+                | ARM64_RELOC_TLVP_LOAD_PAGEOFF12 => {
+                    if !ctx.can_relax_got(id) {
+                        sym.add_flags(NEEDS_GOT);
+                    }
+                }
+                ARM64_RELOC_POINTER_TO_GOT => sym.add_flags(NEEDS_GOT),
                 _ => {}
             }
         }

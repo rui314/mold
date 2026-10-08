@@ -668,6 +668,24 @@ impl<E: Target> Context<E> {
         }
     }
 
+    /// True if the symbol resolves to a TLV descriptor: a definition in a
+    /// S_THREAD_LOCAL_VARIABLES section, or a dylib export listed as
+    /// thread-local - sold's Symbol::is_tlv. Symbols left to runtime
+    /// lookup pass as either.
+    pub fn is_tlv(&self, id: SymbolId) -> bool {
+        let sym = &self.symbols[id];
+        match sym.file() {
+            Some(FileId::Obj(_)) => sym.input_section().is_some_and(|isec| {
+                self.hdr_of(&self.isecs[isec as usize]).section_type()
+                    == crate::macho::S_THREAD_LOCAL_VARIABLES
+            }),
+            Some(FileId::Dylib(d)) => {
+                d != u32::MAX && self.dylibs[d as usize].tlv_exports.contains(sym.name())
+            }
+            _ => false,
+        }
+    }
+
     /// The size of __stub_helper's header, the code its entries jump to
     /// that enters dyld_stub_binder. Legacy LINKEDIT's entries go to
     /// crt1.o's dyld_stub_binding_helper instead, and its helper has no

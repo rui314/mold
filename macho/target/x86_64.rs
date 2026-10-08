@@ -6,15 +6,14 @@ use crate::chunks::delay_init::{DelayCode, DelayTarget, DelayUse};
 use crate::chunks::lazy_helpers::{LazyTarget, LazyUse};
 use crate::context::Context;
 use crate::dtrace::SiteKind;
-use crate::fatal;
 use crate::input_files::isec_relocs_of;
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
-use crate::passes::{check_tlv, scan_branch, scan_got_load};
-use crate::symbol::{NEEDS_GOT, SymbolId};
+use crate::symbol::{NEEDS_GOT, NEEDS_STUB, SymbolId};
 use crate::target::{
     SplitRef, Target, has_reloc_form, load_helper, reloc_form, section_target, write32, write64,
 };
+use crate::{error, fatal};
 
 #[derive(Clone, Copy, Default)]
 pub struct X86_64;
@@ -574,7 +573,13 @@ impl Target for X86_64 {
             if ctx.is_lazy_import(id) {
                 continue;
             }
-            check_tlv(ctx, id, rel.ty == X86_64_RELOC_TLV);
+            let sym = &ctx.symbols[id];
+
+            // A TLV load must load a thread-local, and only a TLV load
+            // may, as on arm64.
+            if (rel.ty == X86_64_RELOC_TLV) != ctx.is_tlv(id) {
+                error!("illegal thread local variable reference to regular symbol `{sym}`");
+            }
 
             match rel.ty {
                 // A one-byte branch (jmp rel8) reaches only code near it,
@@ -590,9 +595,20 @@ impl Target for X86_64 {
                     if ctx.args.is_kext()
                         && !ctx.args.kexts_use_stubs
                         && !ctx.binds_weak_lookup(id) => {}
-                X86_64_RELOC_BRANCH => scan_branch(ctx, id),
-                X86_64_RELOC_GOT_LOAD | X86_64_RELOC_TLV => scan_got_load(ctx, id),
-                X86_64_RELOC_GOT => ctx.symbols[id].add_flags(NEEDS_GOT),
+                // Otherwise, as on arm64.
+                X86_64_RELOC_BRANCH => {
+                    if !ctx.is_delay_import(id)
+                        && (ctx.binds_as_import(id) || ctx.binds_weak_lookup(id))
+                    {
+                        sym.add_flags(NEEDS_STUB);
+                    }
+                }
+                X86_64_RELOC_GOT_LOAD | X86_64_RELOC_TLV => {
+                    if !ctx.can_relax_got(id) {
+                        sym.add_flags(NEEDS_GOT);
+                    }
+                }
+                X86_64_RELOC_GOT => sym.add_flags(NEEDS_GOT),
                 _ => {}
             }
         }

@@ -180,7 +180,7 @@ fn exports<E: Target>(
             if sym.is_weak_def() {
                 flags |= EXPORT_SYMBOL_FLAGS_WEAK_DEFINITION;
             }
-            if crate::passes::is_thread_local_sym(ctx, id) {
+            if ctx.is_tlv(id) {
                 flags |= EXPORT_SYMBOL_FLAGS_KIND_THREAD_LOCAL;
             }
             let addr = if ctx.is_absolute_symbol(id) {

@@ -21,7 +21,7 @@ use crate::macho::*;
 use crate::mapped_file::MappedFile;
 use crate::objc::{DataBlob, DataField};
 use crate::output_sections::header_segment;
-use crate::symbol::{NEEDS_GOT, NEEDS_STUB, NO_IDX, Symbol, SymbolId};
+use crate::symbol::{NEEDS_GOT, NEEDS_STUB, Symbol, SymbolId};
 use crate::target::Target;
 use crate::util::{align_to, path_bytes, split_once};
 
@@ -3212,9 +3212,7 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
             })
             .collect()
     };
-    for id in objs.into_iter().flatten() {
-        create_slots(ctx, id);
-    }
+    let mut syms: Vec<SymbolId> = objs.into_iter().flatten().collect();
 
     // Then the rest: the symbols the linker made, which no object
     // lists, then the dylibs', dylib by dylib, and last those dyld looks
@@ -3222,9 +3220,10 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
     // in which a dylib lists its exports (its export trie or .tbd).
     let mut rest: Vec<SymbolId> = {
         let ctx_ref: &Context<E> = ctx;
+        let listed: hashbrown::HashSet<SymbolId> = syms.iter().copied().collect();
         (0..ctx_ref.symbols.syms.len() as SymbolId)
             .into_par_iter()
-            .filter(|&id| ctx_ref.symbols[id].flags() != 0)
+            .filter(|&id| ctx_ref.symbols[id].flags() != 0 && !listed.contains(&id))
             .collect()
     };
     let num_objs = ctx.objs.len();
@@ -3237,88 +3236,17 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
         };
         (file, sym.name())
     });
-    for id in rest {
-        create_slots(ctx, id);
-    }
-}
+    syms.extend(rest);
 
-/// Turns a symbol's NEEDS_* flags into its stub and GOT slot.
-fn create_slots<E: Target>(ctx: &mut Context<E>, id: SymbolId) {
-    let flags = ctx.symbols[id].flags();
-    if flags & NEEDS_GOT != 0 {
-        chunks::got::add_got_symbol(ctx, id);
-    }
-    if flags & NEEDS_STUB != 0 {
-        add_stub(ctx, id);
-    }
-    ctx.symbols[id].clear_flags();
-}
-
-/// Flags the symbol a branch reaches for a stub if dyld binds it: an
-/// import or an interposable export, or a symbol dyld resolves by weak
-/// lookup - one of this image's own coalescable weak definitions, or a
-/// dylib's weak export. A delay-init dylib's symbol is called through
-/// its stub of delay_init::create_delay_init instead.
-pub fn scan_branch<E: Target>(ctx: &Context<E>, id: SymbolId) {
-    if !ctx.is_delay_import(id) && (ctx.binds_as_import(id) || ctx.binds_weak_lookup(id)) {
-        ctx.symbols[id].add_flags(NEEDS_STUB);
-    }
-}
-
-/// Flags the symbol a GOT load refers to for a GOT slot. A GOT load of
-/// a local symbol needs no slot at all: it relaxes, or ld-prime refuses
-/// the instruction. A TLV load relaxes to the descriptor's address like
-/// a GOT load; one dyld must fill - an imported thread-local, or a weak
-/// one coalesced across images (C++'s inline thread_local) - goes
-/// through an ordinary __got entry, as in ld-prime (no __thread_ptrs
-/// section, chained or classic).
-pub fn scan_got_load<E: Target>(ctx: &Context<E>, id: SymbolId) {
-    if !ctx.can_relax_got(id) {
-        ctx.symbols[id].add_flags(NEEDS_GOT);
-    }
-}
-
-/// Thread-locals live behind __thread_vars descriptors, so the
-/// reference kind must agree with the symbol: a TLV load of ordinary
-/// data would treat the variable's bytes as a descriptor, and an
-/// ordinary load of a TLV would read the descriptor as data. ld64
-/// rejects both directions.
-pub fn check_tlv<E: Target>(ctx: &Context<E>, id: SymbolId, is_tlv_reloc: bool) {
-    if is_thread_local_sym(ctx, id) != is_tlv_reloc {
-        let sym = &ctx.symbols[id];
-        error!("illegal thread local variable reference to regular symbol `{sym}`");
-    }
-}
-
-/// True if the symbol resolves to a TLV descriptor: a definition in a
-/// S_THREAD_LOCAL_VARIABLES section, or a dylib export listed as
-/// thread-local. Symbols left to runtime lookup pass as either.
-pub fn is_thread_local_sym<E: Target>(ctx: &Context<E>, id: SymbolId) -> bool {
-    let sym = &ctx.symbols[id];
-    match sym.file() {
-        Some(FileId::Obj(_)) => sym.input_section().map(|i| i as usize).is_some_and(|isec| {
-            ctx.hdr_of(&ctx.isecs[isec]).flags & SECTION_TYPE == S_THREAD_LOCAL_VARIABLES
-        }),
-        Some(FileId::Dylib(idx)) => {
-            idx != u32::MAX && ctx.dylibs[idx as usize].tlv_exports.contains(sym.name())
+    for id in syms {
+        let flags = ctx.symbols[id].flags();
+        if flags & NEEDS_GOT != 0 {
+            chunks::got::add_got_symbol(ctx, id);
         }
-        _ => false,
-    }
-}
-
-/// Gives a symbol a stub, which jumps through the symbol's lazy pointer,
-/// or, without lazy binding, through its GOT slot. A symbol dyld
-/// resolves by weak lookup goes through its GOT slot either way, never a
-/// lazy pointer, as ld64 has it.
-pub(crate) fn add_stub<E: Target>(ctx: &mut Context<E>, id: SymbolId) {
-    if ctx.sym_aux(id).stub_idx != NO_IDX {
-        return;
-    }
-    chunks::stubs::add_symbol(ctx, id);
-    if ctx.args.lazy_binding && !ctx.binds_weak_lookup(id) {
-        ensure_stub_binder(ctx);
-    } else {
-        chunks::got::add_got_symbol(ctx, id);
+        if flags & NEEDS_STUB != 0 {
+            chunks::stubs::add_symbol(ctx, id);
+        }
+        ctx.symbols[id].clear_flags();
     }
 }
 
@@ -4405,30 +4333,6 @@ pub fn add_entry_stub<E: Target>(ctx: &mut Context<E>) {
     }
 }
 
-/// With lazy binding, the stub helper enters dyld through
-/// dyld_stub_binder (libSystem's): the symbol is bound from whichever
-/// loaded dylib exports it - or, where the image may look it up
-/// dynamically (-undefined dynamic_lookup, -U), from whatever image dyld
-/// finds it in - given a GOT slot, and __dyld_private (the word
-/// dyld_stub_binder is handed, ld64 puts it in __DATA,__data) is
-/// synthesized. Once, on the first stub.
-fn ensure_stub_binder<E: Target>(ctx: &mut Context<E>) {
-    // Legacy LINKEDIT's helper enters dyld through crt1.o's
-    // dyld_stub_binding_helper instead (see resolve_stub_binder).
-    if ctx.stub_helper.dyld_stub_binder.is_some() || ctx.args.legacy_linkedit {
-        return;
-    }
-    let Some(id) = bind_linker_import(ctx, b"dyld_stub_binder") else {
-        fatal!("lazy binding needs dyld_stub_binder, which no loaded dylib exports");
-    };
-    ctx.symbols[id].set_is_used(true);
-    chunks::got::add_got_symbol(ctx, id);
-    ctx.stub_helper.dyld_stub_binder = Some(id);
-    let isec = add_data_word(ctx, 8);
-    ctx.stub_helper.dyld_private_isec = isec;
-    ctx.extra_local_syms.push((b"__dyld_private", isec));
-}
-
 /// Synthesizes a zero word of `size` bytes, aligned to its size, in
 /// __DATA,__data (after the inputs'), and returns its subsection.
 pub(crate) fn add_data_word<E: Target>(ctx: &mut Context<E>, size: u32) -> u32 {
@@ -4482,7 +4386,7 @@ pub(crate) fn bind_linker_import<E: Target>(
 /// binds no dyld_stub_binder: its entries go to dyld_stub_binding_helper,
 /// which crt1.o, dylib1.o or bundle1.o defines; no dylib exports it.
 /// (Otherwise dyld_stub_binder is bound once a stub needs it; see
-/// ensure_stub_binder.)
+/// chunks::stub_helper::ensure_stub_binder.)
 pub fn resolve_stub_binder<E: Target>(ctx: &mut Context<E>) {
     if ctx.args.legacy_linkedit {
         let id = ctx.symbols.get(b"dyld_stub_binding_helper");

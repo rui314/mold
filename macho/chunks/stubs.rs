@@ -33,12 +33,22 @@ impl Default for StubsSection {
     }
 }
 
-/// Gives a symbol a __stubs entry. The caller gives the stub what it
-/// jumps through (see passes::add_stub).
+/// Gives a symbol a stub, unless it has one, and the stub what it jumps
+/// through: the symbol's lazy pointer, which the stub helper fills in,
+/// or, without lazy binding, its GOT slot. A symbol dyld resolves by
+/// weak lookup goes through its GOT slot either way, never a lazy
+/// pointer, as ld64 has it.
 pub fn add_symbol<E: Target>(ctx: &mut Context<E>, id: SymbolId) {
-    debug_assert_eq!(ctx.sym_aux(id).stub_idx, NO_IDX);
+    if ctx.sym_aux(id).stub_idx != NO_IDX {
+        return;
+    }
     ctx.sym_aux_mut(id).stub_idx = ctx.stubs.symbols.len() as u32;
     ctx.stubs.symbols.push(id);
+    if ctx.args.lazy_binding && !ctx.binds_weak_lookup(id) {
+        crate::chunks::stub_helper::ensure_stub_binder(ctx);
+    } else {
+        crate::chunks::got::add_got_symbol(ctx, id);
+    }
 }
 
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
