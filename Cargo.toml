@@ -3,7 +3,7 @@
 # cli/ dispatches to them, mirroring mold's ELF port.
 [workspace]
 resolver = "3"
-members = ["cli", "macho", "arch/*", "tests"]
+members = ["cli", "macho", "arch/*", "tests/macho"]
 
 [workspace.package]
 version = "3.0.0"
