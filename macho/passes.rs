@@ -23,12 +23,11 @@ use crate::error::RawPath;
 use crate::error::raw;
 use crate::fatal;
 use crate::input_files;
-use crate::input_files::{FileId, ObjcImageInfo, SymbolSlots};
+use crate::input_files::{DataBlob, FileId, ObjcImageInfo, SymbolSlots, add_synthetic_section};
 use crate::input_files::{is_class_or_protocol_ref_name, standard_section_flags};
 use crate::input_sections::{InputSection, InputSectionId, NO_REPLACEMENT, RelocTarget};
 use crate::macho::*;
 use crate::mapped_file::MappedFile;
-use crate::objc::DataBlob;
 use crate::symbol::{NEEDS_GOT, NEEDS_STUB, Symbol, SymbolId};
 use crate::symbol_moves::{Move, MoveOption};
 use crate::util::worker_local::WorkerLocal;
@@ -1217,14 +1216,15 @@ pub fn convert_common_symbols<E: Target>(ctx: &mut Context<E>) {
             (size.next_power_of_two().trailing_zeros() as u8).min(ctx.args.max_default_common_align)
         };
 
-        let (file, shndx) = ctx.add_synthetic_section(MachSection {
+        let hdr = MachSection {
             sectname: bytes_to_name(b"__common"),
             segname: bytes_to_name(b"__DATA"),
             size,
             p2align: p2align as u32,
             flags: S_ZEROFILL,
             ..Default::default()
-        });
+        };
+        let (file, shndx) = add_synthetic_section(ctx, hdr);
         ctx.isecs.push(InputSection::new(file, shndx, p2align, size as u32, &[]));
 
         let sym = &mut ctx.symbols[i];
@@ -3649,12 +3649,13 @@ fn add_sectcreate_isec<E: Target>(
     data: &'static [u8],
 ) -> u32 {
     let sc = &ctx.args.sectcreate[i];
-    let (file, shndx) = ctx.add_synthetic_section(MachSection {
+    let hdr = MachSection {
         sectname: bytes_to_name(&sc.sectname),
         segname: bytes_to_name(&sc.segname),
         size: data.len() as u64,
         ..Default::default()
-    });
+    };
+    let (file, shndx) = add_synthetic_section(ctx, hdr);
     let id = ctx.isecs.len() as u32;
     ctx.isecs.push(InputSection {
         output_section: ChunkId::Output(osec).pack(),

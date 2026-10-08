@@ -19,6 +19,7 @@ use crate::input_sections::{
 };
 use crate::macho::*;
 use crate::mapped_file::{MappedFile, unreadable_file};
+use crate::objc::ObjcRef;
 use crate::symbol::{Symbol, SymbolId};
 use crate::tapi;
 use crate::tapi::{LdDirectives, LdSymbols, MovedExport, interpret_ld_symbols};
@@ -295,6 +296,132 @@ impl ObjectFile {
             && (self.subsections_via_symbols || !spans_symbol()))
         .then_some(id)
     }
+}
+
+/// Adds a section the linker synthesizes to the internal object,
+/// returning the (file, shndx) pair a subsection standing for it
+/// carries.
+pub fn add_synthetic_section<E: Target>(ctx: &mut Context<E>, hdr: MachSection) -> (u32, u32) {
+    let file = ctx.internal_obj.expect("internal object not created yet");
+    let hdrs = ctx.objs[file].sect_hdrs.to_mut();
+    hdrs.push(hdr);
+    (file as u32, (hdrs.len() - 1) as u32)
+}
+
+/// Appends a live synthetic subsection of `sect`, a section of the
+/// internal object as add_synthetic_section returns it, and returns
+/// it. Its output section and offset are set by hand (IS_PLACED), not
+/// by create_output_sections; `offset` is its offset if already known.
+pub(crate) fn add_placed_isec<E: Target>(
+    ctx: &mut Context<E>,
+    sect: (u32, u32),
+    p2align: u8,
+    size: u64,
+    offset: u64,
+) -> u32 {
+    let (file, shndx) = sect;
+    ctx.isecs.push(InputSection {
+        offset: offset as u32,
+        flags: InputSection::flags_placed(),
+        ..InputSection::new(file, shndx, p2align, size as u32, &[])
+    });
+    (ctx.isecs.len() - 1) as u32
+}
+
+/// A field of a synthesized data record.
+#[derive(Clone, Debug)]
+pub enum DataField {
+    Bytes(Vec<u8>),
+    /// An 8-byte pointer, rebased at load (or null), or bound if to an
+    /// import.
+    Ptr(ObjcRef),
+}
+
+/// A synthesized data record (an Objective-C one, or the table of
+/// bundle_hook), placed in the tail of the output section `sect`
+/// (mapped to its segment like an input section of that name) as the
+/// synthetic subsection `isec`.
+#[derive(Debug)]
+pub struct DataBlob {
+    pub sect: &'static [u8],
+    pub isec: u32,
+    pub fields: Vec<DataField>,
+}
+
+impl DataBlob {
+    pub fn size(&self) -> u64 {
+        self.fields
+            .iter()
+            .map(|f| match f {
+                DataField::Bytes(b) => b.len() as u64,
+                DataField::Ptr(_) => 8,
+            })
+            .sum()
+    }
+}
+
+/// Appends a synthesized record to the tail of __DATA,`sect` (a section
+/// with the given flags) and returns its subsection.
+pub(crate) fn add_data_blob<E: Target>(
+    ctx: &mut Context<E>,
+    sect: &'static [u8],
+    flags: u32,
+    fields: Vec<DataField>,
+) -> u32 {
+    let hdr = MachSection {
+        sectname: bytes_to_name(sect),
+        segname: bytes_to_name(b"__DATA"),
+        p2align: 3,
+        flags,
+        ..Default::default()
+    };
+    let (file, shndx) = add_synthetic_section(ctx, hdr);
+    let blob = DataBlob { sect, isec: 0, fields };
+    let isec = add_placed_isec(ctx, (file, shndx), 3, blob.size(), 0);
+    ctx.data_blobs.push(DataBlob { isec, ..blob });
+    isec
+}
+
+/// Synthesizes a zero word of `size` bytes, aligned to its size, in
+/// __DATA,__data (after the inputs'), and returns its subsection.
+pub fn add_data_word<E: Target>(ctx: &mut Context<E>, size: u32) -> u32 {
+    let p2align = size.trailing_zeros() as u8;
+    let hdr = MachSection {
+        sectname: bytes_to_name(b"__data"),
+        segname: bytes_to_name(b"__DATA"),
+        p2align: p2align as u32,
+        flags: 0,
+        ..Default::default()
+    };
+    let (file, shndx) = add_synthetic_section(ctx, hdr);
+    ctx.isecs.push(InputSection {
+        flags: InputSection::flags_placed(),
+        ..InputSection::new(file, shndx, p2align, size, &[])
+    });
+    let isec = (ctx.isecs.len() - 1) as u32;
+    let fields = vec![DataField::Bytes(vec![0; size as usize])];
+    ctx.data_blobs.push(DataBlob { sect: b"__data", isec, fields });
+    isec
+}
+
+/// Synthesizes a C string in __TEXT,__cstring, after the inputs', and
+/// returns its subsection.
+pub(crate) fn add_cstring<E: Target>(ctx: &mut Context<E>, s: &[u8]) -> u32 {
+    let hdr = MachSection {
+        sectname: bytes_to_name(b"__cstring"),
+        segname: bytes_to_name(b"__TEXT"),
+        flags: S_CSTRING_LITERALS,
+        ..Default::default()
+    };
+    let (file, shndx) = add_synthetic_section(ctx, hdr);
+    let mut bytes = s.to_vec();
+    bytes.push(0);
+    let bytes: &'static [u8] = Vec::leak(bytes);
+    ctx.isecs.push(InputSection {
+        flags: InputSection::flags_alive_no_modulus(),
+        ..InputSection::new(file, shndx, 0, bytes.len() as u32, bytes)
+    });
+    (ctx.isecs.len() - 1) as u32
 }
 
 /// Whether a label is one a compiler or assembler makes for itself: an

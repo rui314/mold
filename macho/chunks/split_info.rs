@@ -23,10 +23,10 @@ use crate::arch::{SplitRef, Target};
 use crate::chunks::init_offsets::InitFunc;
 use crate::chunks::{ChunkHeader, ChunkId, delay_init, objc_stubs, stub_helper, stubs};
 use crate::context::Context;
-use crate::input_files::FileId;
+use crate::input_files::{DataField, FileId};
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho_consts::*;
-use crate::objc::{DataField, ObjcRef};
+use crate::objc::ObjcRef;
 use crate::symbol::SymbolId;
 use crate::util::encode_uleb;
 

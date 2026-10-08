@@ -10,9 +10,8 @@
 use crate::arch::{LazyRef, Target};
 use crate::chunks::delay_init::{DelayHelper, DelayStub, DelayUse, DlopenHelper};
 use crate::context::Context;
-use crate::input_files::FileId;
+use crate::input_files::{FileId, add_cstring, add_data_word};
 use crate::lazy_load::{LazyUseSite, import_uses, load_helper_name};
-use crate::macho::*;
 use crate::symbol::SymbolId;
 use crate::util::leak_bytes;
 
@@ -96,7 +95,7 @@ fn create_dlopen_helpers<E: Target>(
         let leaf = install_name.rsplit(|&c| c == b'/').next().unwrap_or(&install_name);
         let name = leak_bytes([b"_dlopenHelper$", leaf].concat());
         let flag_name = leak_bytes([b"_dlopenHelperFlag$", leaf].concat());
-        let flag = ctx.add_data_word(4);
+        let flag = add_data_word(ctx, 4);
         ctx.extra_local_syms.push((flag_name, flag));
         let string = add_cstring(ctx, &install_name);
         dlopen_of.insert(install_name.clone(), i as u32);
@@ -105,26 +104,6 @@ fn create_dlopen_helpers<E: Target>(
         ctx.delay_init.dlopens.push(helper);
     }
     dlopen_of
-}
-
-/// Synthesizes a C string in __TEXT,__cstring, after the inputs', and
-/// returns its subsection.
-fn add_cstring<E: Target>(ctx: &mut Context<E>, s: &[u8]) -> u32 {
-    let (file, shndx) = ctx.add_synthetic_section(MachSection {
-        sectname: bytes_to_name(b"__cstring"),
-        segname: bytes_to_name(b"__TEXT"),
-        flags: S_CSTRING_LITERALS,
-        ..Default::default()
-    });
-    let mut bytes = s.to_vec();
-    bytes.push(0);
-    let bytes: &'static [u8] = Vec::leak(bytes);
-    use crate::input_sections::InputSection;
-    ctx.isecs.push(InputSection {
-        flags: InputSection::flags_alive_no_modulus(),
-        ..InputSection::new(file, shndx, 0, bytes.len() as u32, bytes)
-    });
-    (ctx.isecs.len() - 1) as u32
 }
 
 /// Makes a stub for each symbol something calls, by name, which jumps

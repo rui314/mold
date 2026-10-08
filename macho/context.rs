@@ -40,9 +40,6 @@ use crate::chunks::{
 };
 use crate::cmdline::Args;
 use crate::input_files::{DylibFile, FileId, ObjectFile};
-use crate::input_sections::InputSection;
-use crate::macho::{MachSection, bytes_to_name};
-use crate::objc::{DataBlob, DataField};
 use crate::symbol::{SymbolId, SymbolTable};
 use crate::util::perf::Timers;
 
@@ -204,7 +201,7 @@ pub struct Context<E: Target> {
     /// Objective-C data records the linker synthesized (see
     /// merge_objc_categories) and the table of bundle_hook, each placed
     /// as the tail of the output section it names.
-    pub data_blobs: Vec<crate::objc::DataBlob>,
+    pub data_blobs: Vec<crate::input_files::DataBlob>,
     /// Local symbols the linker names itself, on synthesized data:
     /// ld64's __OBJC_$_INSTANCE_METHODS_Foo(A|B) on a merged method
     /// list, and the like. (name, subsection).
@@ -435,37 +432,6 @@ impl<E: Target> Context<E> {
     /// and the map lists nothing it removed.
     pub fn strips_dead_code(&self) -> bool {
         self.args.dead_strip || (!self.args.relocatable && !self.lto_inputs.is_empty())
-    }
-
-    /// Adds a section the linker synthesizes to the internal object,
-    /// returning the (file, shndx) pair a subsection standing for it
-    /// carries.
-    pub fn add_synthetic_section(&mut self, hdr: crate::macho::MachSection) -> (u32, u32) {
-        let file = self.internal_obj.expect("internal object not created yet");
-        let hdrs = self.objs[file].sect_hdrs.to_mut();
-        hdrs.push(hdr);
-        (file as u32, (hdrs.len() - 1) as u32)
-    }
-
-    /// Synthesizes a zero word of `size` bytes, aligned to its size, in
-    /// __DATA,__data (after the inputs'), and returns its subsection.
-    pub fn add_data_word(&mut self, size: u32) -> u32 {
-        let p2align = size.trailing_zeros() as u8;
-        let (file, shndx) = self.add_synthetic_section(MachSection {
-            sectname: bytes_to_name(b"__data"),
-            segname: bytes_to_name(b"__DATA"),
-            p2align: p2align as u32,
-            flags: 0,
-            ..Default::default()
-        });
-        self.isecs.push(InputSection {
-            flags: InputSection::flags_placed(),
-            ..InputSection::new(file, shndx, p2align, size, &[])
-        });
-        let isec = (self.isecs.len() - 1) as u32;
-        let fields = vec![DataField::Bytes(vec![0; size as usize])];
-        self.data_blobs.push(DataBlob { sect: b"__data", isec, fields });
-        isec
     }
 
     /// Binds a symbol the linker's own code calls (dyld_stub_binder,

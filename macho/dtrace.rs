@@ -30,6 +30,7 @@ use rayon::prelude::*;
 use crate::arch::Target;
 use crate::context::Context;
 use crate::error::raw;
+use crate::input_files::add_synthetic_section;
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
 use crate::symbol::SymbolId;
@@ -238,12 +239,13 @@ fn section_name(provider: &[u8], taken: &[Vec<u8>]) -> Vec<u8> {
 fn add_dof_section<E: Target>(ctx: &mut Context<E>, name: &[u8], dof: Dof, sites: &[&Site]) {
     let mut sectname = [0; 16];
     sectname[..name.len()].copy_from_slice(name);
-    let (file, shndx) = ctx.add_synthetic_section(MachSection {
+    let hdr = MachSection {
         sectname,
         segname: bytes_to_name(b"__TEXT"),
         flags: S_DTRACE_DOF,
         ..Default::default()
-    });
+    };
+    let (file, shndx) = add_synthetic_section(ctx, hdr);
     let id = ctx.isecs.len() as u32;
     let relocs = &mut ctx.objs[file as usize].relocs;
     let rel_offset = relocs.len() as u32;

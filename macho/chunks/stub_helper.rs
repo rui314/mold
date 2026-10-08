@@ -6,6 +6,7 @@
 use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
+use crate::input_files::add_data_word;
 use crate::macho::*;
 use crate::symbol::SymbolId;
 
@@ -74,7 +75,7 @@ pub fn ensure_stub_binder<E: Target>(ctx: &mut Context<E>) {
     ctx.symbols[id].set_used(true);
     crate::chunks::got::add_got_symbol(ctx, id);
     ctx.stub_helper.dyld_stub_binder = Some(id);
-    let isec = ctx.add_data_word(8);
+    let isec = add_data_word(ctx, 8);
     ctx.stub_helper.dyld_private_isec = isec;
     ctx.extra_local_syms.push((b"__dyld_private", isec));
 }

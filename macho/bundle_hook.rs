@@ -23,10 +23,10 @@
 use crate::arch::Target;
 use crate::cmdline::Args;
 use crate::context::Context;
-use crate::input_files::FileId;
+use crate::input_files::{DataField, FileId, add_data_blob};
 use crate::macho::*;
 use crate::mapped_file::MappedFile;
-use crate::objc::{DataField, ObjcRef};
+use crate::objc::ObjcRef;
 use crate::symbol::SymbolId;
 
 /// The hook, built by c/build-bundle-hook.sh.
@@ -143,8 +143,7 @@ pub fn create_class_table<E: Target>(ctx: &mut Context<E>) {
 /// struct entry. Returns its subsection.
 fn add_table<E: Target>(ctx: &mut Context<E>, libraries: &[(Vec<u8>, Vec<ObjcRef>)]) -> u32 {
     let names = libraries.iter().flat_map(|(name, _)| [&name[..], b"\0"].concat()).collect();
-    let names =
-        crate::objc::add_data_blob(ctx, b"__data", S_REGULAR, vec![DataField::Bytes(names)]);
+    let names = add_data_blob(ctx, b"__data", S_REGULAR, vec![DataField::Bytes(names)]);
     let count: usize = libraries.iter().map(|(_, classes)| classes.len()).sum();
     let mut fields = vec![DataField::Bytes((count as u64).to_le_bytes().to_vec())];
     let mut name_off = 0;
@@ -155,7 +154,7 @@ fn add_table<E: Target>(ctx: &mut Context<E>, libraries: &[(Vec<u8>, Vec<ObjcRef
         }
         name_off += name.len() as u64 + 1;
     }
-    crate::objc::add_data_blob(ctx, b"__data", S_REGULAR, fields)
+    add_data_blob(ctx, b"__data", S_REGULAR, fields)
 }
 
 /// The classes the hook is for, by library, as the table lists them: a

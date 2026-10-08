@@ -4,9 +4,10 @@
 use crate::arch::Target;
 use crate::chunks::{ChunkHeader, segment_and_offset};
 use crate::context::Context;
+use crate::input_files::DataField;
 use crate::input_sections::{InputSection, Reloc};
 use crate::macho::*;
-use crate::objc::{DataField, ObjcRef};
+use crate::objc::ObjcRef;
 use crate::symbol::SymbolId;
 use crate::util::encode_uleb;
 
@@ -194,7 +195,7 @@ fn rebase_ops<E: Target>(ctx: &Context<E>, locs: &[u64]) -> Vec<Op> {
 }
 
 /// The (address, target) of every pointer field of the synthesized
-/// records (see objc::DataBlob).
+/// records (see input_files::DataBlob).
 fn data_blob_fields<E: Target>(ctx: &Context<E>) -> Vec<(u64, ObjcRef)> {
     let mut out = Vec::new();
     for b in &ctx.data_blobs {
