@@ -9,9 +9,11 @@ use crate::chunks::lazy_helpers::{LazyTarget, LazyUse};
 use crate::context::Context;
 use crate::dtrace::SiteKind;
 use crate::fatal;
-use crate::input_files::ObjectFile;
-use crate::input_sections::{Reloc, RelocTarget};
+use crate::input_files::{ObjectFile, isec_relocs_of};
+use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
+use crate::passes::{check_tlv, scan_branch, scan_got_load};
+use crate::symbol::NEEDS_GOT;
 use crate::target::{
     SplitRef, Target, has_reloc_form, load_helper, read32, reloc_form, section_target, write32,
     write64,
@@ -1243,6 +1245,34 @@ impl Target for Arm64 {
             i += 1;
         }
         vec
+    }
+
+    fn scan_relocations(ctx: &Context<Self>, isec: &InputSection) {
+        let file = isec.file as usize;
+        for rel in isec_relocs_of(&ctx.objs, isec) {
+            let Some(id) = ctx.reloc_target_sym(file, rel) else { continue };
+            // A lazy dylib's symbols take no stub or GOT slot; the image
+            // reaches them through the helpers of
+            // lazy_load::create_lazy_loads.
+            if ctx.is_lazy_import(id) {
+                continue;
+            }
+            let is_tlv = matches!(
+                rel.r_type,
+                ARM64_RELOC_TLVP_LOAD_PAGE21 | ARM64_RELOC_TLVP_LOAD_PAGEOFF12
+            );
+            check_tlv(ctx, id, is_tlv);
+
+            match rel.r_type {
+                ARM64_RELOC_BRANCH26 => scan_branch(ctx, id),
+                ARM64_RELOC_GOT_LOAD_PAGE21
+                | ARM64_RELOC_GOT_LOAD_PAGEOFF12
+                | ARM64_RELOC_TLVP_LOAD_PAGE21
+                | ARM64_RELOC_TLVP_LOAD_PAGEOFF12 => scan_got_load(ctx, id),
+                ARM64_RELOC_POINTER_TO_GOT => ctx.symbols[id].add_flags(NEEDS_GOT),
+                _ => {}
+            }
+        }
     }
 
     fn apply_relocs(

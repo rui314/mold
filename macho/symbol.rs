@@ -70,12 +70,15 @@ pub struct Symbol {
     /// symbols with a stub/GOT/TLV/objc slot have an entry - mold's
     /// aux_idx - instead of 16 bytes per symbol whether needed or not.
     pub aux_idx: u32,
+    /// The NEEDS_* flags scan_relocations sets, in parallel, and then
+    /// turns into stubs and GOT slots - mold's flags.
+    flags: std::sync::atomic::AtomicU8,
     /// The boolean attributes, packed into one atomic word as mold
-    /// keeps its Symbol flags: the eight is_* bits, read with plain
+    /// keeps its Symbol bits: the eight is_* bits, read with plain
     /// loads and written through &mut without an atomic operation, plus
     /// the MARK bit that parallel passes set with a compare-and-swap
     /// (thunk creation dedups its entries that way, in the scan itself).
-    flags: std::sync::atomic::AtomicU16,
+    bits: std::sync::atomic::AtomicU16,
     pub common_p2align: u8,
 }
 
@@ -88,6 +91,10 @@ const _: () = assert!(std::mem::size_of::<Symbol>() == 40);
 /// "No index" for `isec` and `aux_idx`.
 pub const NONE: u32 = u32::MAX;
 
+/// Symbol flags set while scanning relocations.
+pub const NEEDS_GOT: u8 = 1 << 0;
+pub const NEEDS_STUB: u8 = 1 << 1;
+
 impl Symbol {
     pub(crate) fn new(name: &'static [u8]) -> Self {
         Self {
@@ -97,7 +104,8 @@ impl Symbol {
             isec: NONE,
             value: 0,
             aux_idx: NONE,
-            flags: std::sync::atomic::AtomicU16::new(0),
+            flags: std::sync::atomic::AtomicU8::new(0),
+            bits: std::sync::atomic::AtomicU16::new(0),
             common_p2align: 0,
         }
     }
@@ -169,11 +177,11 @@ macro_rules! sym_flag {
         #[doc = $doc]
         #[inline]
         pub fn $get(&self) -> bool {
-            self.flags.load(std::sync::atomic::Ordering::Relaxed) & $bit != 0
+            self.bits.load(std::sync::atomic::Ordering::Relaxed) & $bit != 0
         }
         #[inline]
         pub fn $set(&mut self, v: bool) {
-            let f = self.flags.get_mut();
+            let f = self.bits.get_mut();
             if v {
                 *f |= $bit;
             } else {
@@ -241,20 +249,41 @@ impl Symbol {
         "A tentative definition (common symbol) not yet converted; `value` holds its size."
     );
 
+    #[inline]
+    pub fn flags(&self) -> u8 {
+        self.flags.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Sets NEEDS_* flags. Many relocations refer to the same symbols,
+    /// so a flag already set is not written again, which would contend
+    /// for the cache line, as in mold.
+    #[inline]
+    pub fn add_flags(&self, flags: u8) {
+        use std::sync::atomic::Ordering::Relaxed;
+        if self.flags.load(Relaxed) & flags != flags {
+            self.flags.fetch_or(flags, Relaxed);
+        }
+    }
+
+    #[inline]
+    pub fn clear_flags(&self) {
+        self.flags.store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
     /// Atomically sets the transient mark; true if it was clear (the
     /// caller won the race to claim this symbol).
     #[inline]
     pub fn mark(&self) -> bool {
         use std::sync::atomic::Ordering::Relaxed;
-        self.flags.fetch_or(F_MARK, Relaxed) & F_MARK == 0
+        self.bits.fetch_or(F_MARK, Relaxed) & F_MARK == 0
     }
     #[inline]
     pub fn unmark(&self) {
-        self.flags.fetch_and(!F_MARK, std::sync::atomic::Ordering::Relaxed);
+        self.bits.fetch_and(!F_MARK, std::sync::atomic::Ordering::Relaxed);
     }
     #[inline]
     pub fn is_marked(&self) -> bool {
-        self.flags.load(std::sync::atomic::Ordering::Relaxed) & F_MARK != 0
+        self.bits.load(std::sync::atomic::Ordering::Relaxed) & F_MARK != 0
     }
 }
 
@@ -267,8 +296,11 @@ impl Clone for Symbol {
             isec: self.isec,
             value: self.value,
             aux_idx: self.aux_idx,
-            flags: std::sync::atomic::AtomicU16::new(
+            flags: std::sync::atomic::AtomicU8::new(
                 self.flags.load(std::sync::atomic::Ordering::Relaxed),
+            ),
+            bits: std::sync::atomic::AtomicU16::new(
+                self.bits.load(std::sync::atomic::Ordering::Relaxed),
             ),
             common_p2align: self.common_p2align,
         }

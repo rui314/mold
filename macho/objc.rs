@@ -25,7 +25,8 @@ use crate::context::Context;
 use crate::input_files::FileId;
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
-use crate::passes::{add_branch_target, add_got, redirect_symbols_to_replacements};
+use crate::passes::redirect_symbols_to_replacements;
+use crate::symbol::{NEEDS_GOT, NEEDS_STUB};
 use crate::target::RelocClass;
 use crate::target::Target;
 use crate::util::align_to;
@@ -509,12 +510,13 @@ pub fn drop_dead_objc_stubs<E: Target>(ctx: &mut Context<E>) {
 /// The synthesized objc stubs call _objc_msgSend through its GOT slot,
 /// which other GOT loads of it share. Small stubs branch to it instead,
 /// as a call in the code would: to its __stubs entry if it is imported.
+/// (passes::scan_relocations makes the slot or the stub.)
 pub fn scan_objc_stubs<E: Target>(ctx: &mut Context<E>) {
     if let Some(id) = ctx.objc_stubs.msgsend_sym {
-        if ctx.args.objc_stubs_small {
-            add_branch_target(ctx, id);
-        } else {
-            add_got(ctx, id);
+        if !ctx.args.objc_stubs_small {
+            ctx.symbols[id].add_flags(NEEDS_GOT);
+        } else if ctx.binds_as_import(id) || ctx.binds_weak_lookup(id) {
+            ctx.symbols[id].add_flags(NEEDS_STUB);
         }
     }
 
@@ -616,13 +618,11 @@ pub fn fold_objc_classrefs<E: Target>(ctx: &mut Context<E>) {
                 }
                 continue;
             }
-            // (A lazy dylib's class is loaded through its lazy-load
-            // helper: see lazy_load::create_lazy_loads.)
-            let keep = keep.contains(&slot);
-            if keep || !ctx.can_relax_got(class) && !ctx.is_lazy_import(class) {
-                add_got(ctx, class);
-            }
-            if keep {
+            // The loads rewritten above give the class a GOT entry if
+            // it needs one, as passes::scan_relocations finds; a slot
+            // that stays reads the entry, so it needs one anyway.
+            if keep.contains(&slot) {
+                ctx.symbols[class].add_flags(NEEDS_GOT);
                 kept.push((slot, class));
             } else {
                 ctx.isecs[slot as usize].set_alive(false);
@@ -771,9 +771,10 @@ fn pair_classref_uses<E: Target>(
 /// Replaces the class reference slots that stay (see
 /// fold_objc_classrefs), each with its class, by stand-ins for the
 /// classes' GOT entries: subsections of a synthetic __got section,
-/// placed at the entries, so that what refers to a slot reads its
-/// class's entry. A stand-in is not alive: the GOT chunk writes the
-/// entry, and the slot's local symbol is not emitted.
+/// placed at the entries once passes::scan_relocations has made them
+/// (see output_sections::add_stub_and_got_chunks), so that what refers
+/// to a slot reads its class's entry. A stand-in is not alive: the GOT
+/// chunk writes the entry, and the slot's local symbol is not emitted.
 fn add_classref_stand_ins<E: Target>(
     ctx: &mut Context<E>,
     kept: Vec<(u32, crate::symbol::SymbolId)>,
@@ -789,10 +790,8 @@ fn add_classref_stand_ins<E: Target>(
         ..Default::default()
     });
     for (slot, class) in kept {
-        let offset = ctx.sym_aux(class).got_idx * 8;
         ctx.isecs.push(InputSection {
             output_section: crate::chunks::ChunkId::Got.pack(),
-            offset,
             flags: InputSection::flags_dead(),
             ..InputSection::new(file, shndx, 3, 8, &[])
         });

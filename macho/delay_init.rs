@@ -43,7 +43,7 @@ pub fn create_delay_init<E: Target>(ctx: &mut Context<E>) {
 
     // The dlopen helpers call _dlopen through its stub.
     if let Some(id) = ctx.symbols.get(b"_dlopen") {
-        crate::passes::add_import_stub(ctx, id);
+        crate::passes::add_stub(ctx, id);
         ctx.delay_init.dlopen_sym = Some(id);
     }
 }

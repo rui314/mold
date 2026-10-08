@@ -16,7 +16,7 @@ use std::path::Path;
 
 use crate::context::Context;
 use crate::error::RawPath;
-use crate::input_sections::{Reloc, RelocTarget};
+use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::{MachRel, MachSection};
 
 /// How a relocation type uses its target symbol.
@@ -304,6 +304,11 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
         contents: &[u8],
         rels: &[MachRel],
     ) -> Vec<Reloc>;
+
+    /// Scans the relocations of one emitted subsection and sets the
+    /// NEEDS_* flags of the symbols that need stubs or GOT slots, which
+    /// passes::scan_relocations then creates. Runs on all cores.
+    fn scan_relocations(ctx: &Context<Self>, isec: &InputSection);
 
     /// Applies the relocations of one input section to `buf`, its bytes
     /// in the output. `isec` is the subsection's arena index and `base`

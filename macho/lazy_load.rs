@@ -13,7 +13,7 @@ use crate::chunks::lazy_load_info::{LazyDylib, record_size};
 use crate::context::Context;
 use crate::error::raw;
 use crate::input_files::FileId;
-use crate::passes::{add_data_word, add_import_stub, bind_linker_import};
+use crate::passes::{add_data_word, add_stub, bind_linker_import};
 use crate::symbol::SymbolId;
 use crate::target::{LazyRef, Target};
 use crate::util::leak_bytes;
@@ -66,7 +66,7 @@ pub fn create_lazy_loads<E: Target>(ctx: &mut Context<E>) {
         let Some(id) = id else {
             crate::fatal!("lazy-load dylibs need __dyld_lazy_load, which no loaded dylib exports");
         };
-        add_import_stub(ctx, id);
+        add_stub(ctx, id);
         ctx.lazy_helpers.dyld_lazy_load = Some(id);
     }
 }

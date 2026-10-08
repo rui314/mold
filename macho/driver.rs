@@ -215,12 +215,12 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     }
 
     // Scan relocations to find symbols that need stubs, GOT slots and
-    // the like.
-    timed!("scan_relocations", passes::scan_relocations(&mut ctx));
+    // the like. The passes before the scan flag what else needs them,
+    // and rewrite the class loads it is to see as GOT loads.
     passes::add_entry_stub(&mut ctx);
-    passes::scan_unwind_personalities(&mut ctx);
     objc::scan_objc_stubs(&mut ctx);
     objc::fold_objc_classrefs(&mut ctx);
+    timed!("scan_relocations", passes::scan_relocations(&mut ctx));
     objc::convert_objc_method_lists(&mut ctx);
     objc::merge_objc_categories(&mut ctx);
     // Synthetic stubs and unwind data can introduce library references

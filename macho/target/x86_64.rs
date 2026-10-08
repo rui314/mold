@@ -7,9 +7,11 @@ use crate::chunks::lazy_helpers::{LazyTarget, LazyUse};
 use crate::context::Context;
 use crate::dtrace::SiteKind;
 use crate::fatal;
-use crate::input_sections::{Reloc, RelocTarget};
+use crate::input_files::isec_relocs_of;
+use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
-use crate::symbol::SymbolId;
+use crate::passes::{check_tlv, scan_branch, scan_got_load};
+use crate::symbol::{NEEDS_GOT, SymbolId};
 use crate::target::{
     SplitRef, Target, has_reloc_form, load_helper, reloc_form, section_target, write32, write64,
 };
@@ -569,6 +571,40 @@ impl Target for X86_64 {
             });
         }
         vec
+    }
+
+    fn scan_relocations(ctx: &Context<Self>, isec: &InputSection) {
+        let file = isec.file as usize;
+        for rel in isec_relocs_of(&ctx.objs, isec) {
+            let Some(id) = ctx.reloc_target_sym(file, rel) else { continue };
+            // A lazy dylib's symbols take no stub or GOT slot; the image
+            // reaches them through the helpers of
+            // lazy_load::create_lazy_loads.
+            if ctx.is_lazy_import(id) {
+                continue;
+            }
+            check_tlv(ctx, id, rel.r_type == X86_64_RELOC_TLV);
+
+            match rel.r_type {
+                // A one-byte branch (jmp rel8) reaches only code near it,
+                // so it takes no stub: one to an import is a fixup error,
+                // as in ld-prime.
+                X86_64_RELOC_BRANCH if rel.size == 1 => {}
+                // A kext calls an import directly, unless
+                // -kexts_use_stubs: kmutil fills in the call by an
+                // external relocation, or the stub's GOT slot. What dyld
+                // resolves by weak lookup is called through a stub all
+                // the same.
+                X86_64_RELOC_BRANCH
+                    if ctx.args.is_kext()
+                        && !ctx.args.kexts_use_stubs
+                        && !ctx.binds_weak_lookup(id) => {}
+                X86_64_RELOC_BRANCH => scan_branch(ctx, id),
+                X86_64_RELOC_GOT_LOAD | X86_64_RELOC_TLV => scan_got_load(ctx, id),
+                X86_64_RELOC_GOT => ctx.symbols[id].add_flags(NEEDS_GOT),
+                _ => {}
+            }
+        }
     }
 
     fn apply_relocs(

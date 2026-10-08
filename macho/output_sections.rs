@@ -1976,6 +1976,12 @@ fn add_stub_and_got_chunks<E: Target>(ctx: &mut Context<E>) {
         hdr.flags = flags;
         ctx.chunks.push(ChunkId::Got);
     }
+    // The stand-ins for the __objc_classrefs slots that stay go at their
+    // classes' entries (see objc::fold_objc_classrefs).
+    for i in 0..ctx.got.stand_ins.len() {
+        let (stand_in, class) = ctx.got.stand_ins[i];
+        ctx.isecs[stand_in as usize].offset = ctx.sym_aux(class).got_idx * 8;
+    }
 }
 
 /// Adds the __LINKEDIT tables, in ld-prime's order.

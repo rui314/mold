@@ -21,7 +21,7 @@ use crate::macho::*;
 use crate::mapped_file::MappedFile;
 use crate::objc::{DataBlob, DataField};
 use crate::output_sections::header_segment;
-use crate::symbol::{NO_IDX, Symbol, SymbolId};
+use crate::symbol::{NEEDS_GOT, NEEDS_STUB, NO_IDX, Symbol, SymbolId};
 use crate::target::RelocClass;
 use crate::target::Target;
 use crate::util::{align_to, path_bytes, split_once};
@@ -3171,106 +3171,132 @@ pub fn compute_address_significance<E: Target>(ctx: &mut Context<E>) {
 }
 
 /// Decides which symbols need a stub or a GOT slot, from how relocations
-/// refer to them. Only the relocations of subsections the output keeps
-/// count: not those of a copy merged into another, such as a losing
-/// weak definition. Swift's symbolic type references are weak, and the
-/// copy in the object defining the type refers to its descriptor
-/// directly while every other object's goes through a GOT slot.
+/// refer to them, and creates them. Only the relocations of subsections
+/// the output keeps count: not those of a copy merged into another, such
+/// as a losing weak definition. Swift's symbolic type references are
+/// weak, and the copy in the object defining the type refers to its
+/// descriptor directly while every other object's goes through a GOT
+/// slot.
 pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
-    // Classification reads only; collect it on all cores. The apply
-    // loop below stays serial so GOT and stub slots keep their
-    // deterministic first-seen order.
-    let ctx_ref: &Context<E> = ctx;
-    let classes: Vec<(SymbolId, RelocClass)> = ctx_ref
-        .isecs
-        .par_iter()
-        .filter(|isec| isec.is_emitted())
-        .flat_map_iter(|isec| {
-            input_files::isec_relocs_of(&ctx_ref.objs, isec).iter().filter_map(move |rel| {
-                let id = ctx_ref.reloc_target_sym(isec.file as usize, rel)?;
-                let mut class = E::classify_reloc(rel.r_type);
-                // A one-byte branch (x86-64's jmp rel8) reaches only
-                // code near it, so it takes no stub: one to an import
-                // is a fixup error, as in ld-prime.
-                if class == RelocClass::Branch && rel.size == 1 {
-                    class = RelocClass::Plain;
-                }
-                // Plain references need no slot of any kind, and
-                // they are the overwhelming majority; dropping them
-                // here keeps the collected list (and the serial
-                // apply loop below) small. The TLV/regular mismatch
-                // check needs the TLV side only: a plain reference
-                // to a thread-local is caught because thread-locals
-                // are reached exclusively through TLV relocations,
-                // checked against the symbol below either way.
-                if class == RelocClass::Plain && !is_thread_local_sym(ctx_ref, id) {
-                    return None;
-                }
-                Some((id, class))
+    // Scan relocations to find the symbols that need stubs or GOT slots.
+    {
+        let ctx_ref: &Context<E> = ctx;
+        ctx_ref.isecs.par_iter().for_each(|isec| {
+            if isec.is_emitted() {
+                E::scan_relocations(ctx_ref, isec);
+            }
+        });
+
+        // Personality functions are referenced from __unwind_info, and
+        // from __eh_frame's CIEs, through the GOT.
+        let unwind = ctx_ref.unwind_records.par_iter().filter_map(|rec| rec.personality());
+        let cies =
+            ctx_ref.fdes.par_iter().filter_map(|fde| ctx_ref.cies[fde.cie as usize].personality);
+        unwind.chain(cies).for_each(|id| ctx_ref.symbols[id].add_flags(NEEDS_GOT));
+    }
+    // Exit if a thread-local was referred to as regular data, or the
+    // reverse.
+    crate::error::checkpoint();
+
+    // Create the stubs and GOT slots in the order of the files that own
+    // the symbols: each live object's, in its symbol table's order. A
+    // symbol can appear more than once; its flags are gone after the
+    // first.
+    let objs: Vec<Vec<SymbolId>> = {
+        let ctx_ref: &Context<E> = ctx;
+        ctx_ref
+            .objs
+            .par_iter()
+            .enumerate()
+            .filter(|(_, file)| file.is_alive)
+            .map(|(i, file)| {
+                let id = FileId::Obj(i as u32);
+                file.symbols
+                    .iter()
+                    .copied()
+                    .filter(|&s| {
+                        let sym = &ctx_ref.symbols[s];
+                        sym.file() == Some(id) && sym.flags() != 0
+                    })
+                    .collect()
             })
-        })
-        .collect();
+            .collect()
+    };
+    for id in objs.into_iter().flatten() {
+        create_slots(ctx, id);
+    }
 
-    // A lazy dylib's symbols take no stub or GOT slot; the image
-    // reaches them through the helpers of lazy_load::create_lazy_loads.
-    // Calls of a delay-init dylib's go to the stubs of
-    // delay_init::create_delay_init.
-    let has_lazy = ctx.dylibs.iter().any(|d| d.is_lazy);
-    let has_delay = ctx.dylibs.iter().any(|d| d.delay_init.is_some());
-    for (id, class) in classes {
-        if has_lazy && ctx.is_lazy_import(id) {
-            continue;
-        }
-        if has_delay && class == RelocClass::Branch && ctx.is_delay_import(id) {
-            continue;
-        }
+    // Then the rest: the symbols the linker made, which no object
+    // lists, then the dylibs', dylib by dylib, and last those dyld looks
+    // up in whatever image has them. Each file's go by name, the order
+    // in which a dylib lists its exports (its export trie or .tbd).
+    let mut rest: Vec<SymbolId> = {
+        let ctx_ref: &Context<E> = ctx;
+        (0..ctx_ref.symbols.syms.len() as SymbolId)
+            .into_par_iter()
+            .filter(|&id| ctx_ref.symbols[id].flags() != 0)
+            .collect()
+    };
+    let num_objs = ctx.objs.len();
+    rest.sort_by_key(|&id| {
         let sym = &ctx.symbols[id];
-
-        // Thread-locals live behind __thread_vars descriptors, so the
-        // reference kind must agree with the symbol: a TLV load of
-        // ordinary data would treat the variable's bytes as a
-        // descriptor, and an ordinary load of a TLV would read the
-        // descriptor as data. ld64 rejects both directions.
-        if is_thread_local_sym(ctx, id) != matches!(class, RelocClass::Tlv) {
-            fatal!("illegal thread local variable reference to regular symbol `{sym}`");
-        }
-
-        match class {
-            RelocClass::Branch => add_branch_target(ctx, id),
-            RelocClass::Got => add_got(ctx, id),
-            // A GOT load of a local symbol needs no slot at all: it
-            // relaxes, or ld-prime refuses the instruction.
-            RelocClass::GotLoad if !ctx.can_relax_got(id) => add_got(ctx, id),
-            // A TLV load relaxes to the descriptor's address like a GOT
-            // load; one dyld must fill - an imported thread-local, or a
-            // weak one coalesced across images (C++'s inline
-            // thread_local) - goes through an ordinary __got entry, as
-            // in ld-prime (no __thread_ptrs section, chained or classic).
-            RelocClass::Tlv if !ctx.can_relax_got(id) => add_got(ctx, id),
-            _ => {}
-        }
+        let file = match sym.file() {
+            Some(FileId::Obj(i)) => i as usize,
+            Some(FileId::Dylib(d)) if d != u32::MAX => num_objs + d as usize,
+            _ => usize::MAX,
+        };
+        (file, sym.name())
+    });
+    for id in rest {
+        create_slots(ctx, id);
     }
 }
 
-/// Gives a symbol a call reaches what the call goes through.
-pub(crate) fn add_branch_target<E: Target>(ctx: &mut Context<E>, id: SymbolId) {
-    // A call to a symbol dyld resolves by weak lookup - one of this
-    // image's own coalescable weak definitions, or a dylib's weak
-    // export - goes through a stub and a GOT slot, never a lazy
-    // pointer, as ld64 does.
-    if ctx.binds_weak_lookup(id) {
-        add_stub(ctx, id);
+/// Turns a symbol's NEEDS_* flags into its stub and GOT slot.
+fn create_slots<E: Target>(ctx: &mut Context<E>, id: SymbolId) {
+    let flags = ctx.symbols[id].flags();
+    if flags & NEEDS_GOT != 0 {
         add_got(ctx, id);
-        return;
     }
-    // An x86-64 kext calls an import directly, unless -kexts_use_stubs:
-    // kmutil fills in the call by an external relocation, or the stub's
-    // GOT slot.
-    if ctx.args.is_kext() && E::CPUTYPE == CPU_TYPE_X86_64 && !ctx.args.kexts_use_stubs {
-        return;
+    if flags & NEEDS_STUB != 0 {
+        add_stub(ctx, id);
     }
-    if ctx.binds_as_import(id) {
-        add_import_stub(ctx, id);
+    ctx.symbols[id].clear_flags();
+}
+
+/// Flags the symbol a branch reaches for a stub if dyld binds it: an
+/// import or an interposable export, or a symbol dyld resolves by weak
+/// lookup - one of this image's own coalescable weak definitions, or a
+/// dylib's weak export. A delay-init dylib's symbol is called through
+/// its stub of delay_init::create_delay_init instead.
+pub fn scan_branch<E: Target>(ctx: &Context<E>, id: SymbolId) {
+    if !ctx.is_delay_import(id) && (ctx.binds_as_import(id) || ctx.binds_weak_lookup(id)) {
+        ctx.symbols[id].add_flags(NEEDS_STUB);
+    }
+}
+
+/// Flags the symbol a GOT load refers to for a GOT slot. A GOT load of
+/// a local symbol needs no slot at all: it relaxes, or ld-prime refuses
+/// the instruction. A TLV load relaxes to the descriptor's address like
+/// a GOT load; one dyld must fill - an imported thread-local, or a weak
+/// one coalesced across images (C++'s inline thread_local) - goes
+/// through an ordinary __got entry, as in ld-prime (no __thread_ptrs
+/// section, chained or classic).
+pub fn scan_got_load<E: Target>(ctx: &Context<E>, id: SymbolId) {
+    if !ctx.can_relax_got(id) {
+        ctx.symbols[id].add_flags(NEEDS_GOT);
+    }
+}
+
+/// Thread-locals live behind __thread_vars descriptors, so the
+/// reference kind must agree with the symbol: a TLV load of ordinary
+/// data would treat the variable's bytes as a descriptor, and an
+/// ordinary load of a TLV would read the descriptor as data. ld64
+/// rejects both directions.
+pub fn check_tlv<E: Target>(ctx: &Context<E>, id: SymbolId, is_tlv_reloc: bool) {
+    if is_thread_local_sym(ctx, id) != is_tlv_reloc {
+        let sym = &ctx.symbols[id];
+        error!("illegal thread local variable reference to regular symbol `{sym}`");
     }
 }
 
@@ -3290,32 +3316,20 @@ pub fn is_thread_local_sym<E: Target>(ctx: &Context<E>, id: SymbolId) -> bool {
     }
 }
 
-/// Personality functions are referenced from __unwind_info, and from
-/// __eh_frame's CIEs, through the GOT.
-pub fn scan_unwind_personalities<E: Target>(ctx: &mut Context<E>) {
-    let mut personalities: Vec<_> =
-        ctx.unwind_records.iter().filter_map(|rec| rec.personality()).collect();
-    personalities.extend(ctx.fdes.iter().filter_map(|fde| ctx.cies[fde.cie as usize].personality));
-    for id in personalities {
-        add_got(ctx, id);
+/// Gives a symbol a stub, which jumps through the symbol's lazy pointer,
+/// or, without lazy binding, through its GOT slot. A symbol dyld
+/// resolves by weak lookup goes through its GOT slot either way, never a
+/// lazy pointer, as ld64 has it.
+pub(crate) fn add_stub<E: Target>(ctx: &mut Context<E>, id: SymbolId) {
+    if ctx.sym_aux(id).stub_idx != NO_IDX {
+        return;
     }
-}
-
-/// Gives an import a stub, which jumps through the import's lazy
-/// pointer, or, without lazy binding, its GOT slot.
-pub(crate) fn add_import_stub<E: Target>(ctx: &mut Context<E>, id: SymbolId) {
-    add_stub(ctx, id);
-    if ctx.args.lazy_binding {
+    ctx.sym_aux_mut(id).stub_idx = ctx.stubs.symbols.len() as u32;
+    ctx.stubs.symbols.push(id);
+    if ctx.args.lazy_binding && !ctx.binds_weak_lookup(id) {
         ensure_stub_binder(ctx);
     } else {
         add_got(ctx, id);
-    }
-}
-
-pub(crate) fn add_stub<E: Target>(ctx: &mut Context<E>, id: SymbolId) {
-    if ctx.sym_aux(id).stub_idx == NO_IDX {
-        ctx.sym_aux_mut(id).stub_idx = ctx.stubs.symbols.len() as u32;
-        ctx.stubs.symbols.push(id);
     }
 }
 
@@ -3327,8 +3341,9 @@ pub(crate) fn add_got<E: Target>(ctx: &mut Context<E>, id: SymbolId) {
 }
 
 /// Settles which stubs jump through a lazy pointer (and so have a stub
-/// helper entry), once the stubs are made. Stubs and GOT slots stay in
-/// the order relocations first reached them.
+/// helper entry), once the stubs are made: scan_relocations', in the
+/// order of the files that own the symbols, then the ones the passes
+/// after it make.
 pub fn finish_stubs<E: Target>(ctx: &mut Context<E>) {
     let stubs = &ctx.stubs.symbols;
     let lazy = |id| !ctx.binds_weak_lookup(id);
@@ -4394,9 +4409,9 @@ pub fn resolve_entry<E: Target>(ctx: &mut Context<E>) {
     }
 }
 
-/// Gives an entry point that resolved to a dylib export the stub that
-/// LC_MAIN will name; runs after scan_relocations, with the stubs of
-/// the branch targets.
+/// Flags an entry point that resolved to a dylib export for the stub
+/// that LC_MAIN will name, which scan_relocations makes with the stubs
+/// of the branch targets.
 pub fn add_entry_stub<E: Target>(ctx: &mut Context<E>) {
     if !ctx.args.has_entry_point() {
         return;
@@ -4404,7 +4419,7 @@ pub fn add_entry_stub<E: Target>(ctx: &mut Context<E>) {
     if let Some(id) = ctx.symbols.get(&ctx.args.entry)
         && ctx.symbols[id].is_imported()
     {
-        add_import_stub(ctx, id);
+        ctx.symbols[id].add_flags(NEEDS_STUB);
     }
 }
 
