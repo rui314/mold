@@ -1,0 +1,9 @@
+pre-commit:
+  commands:
+    fmt:
+      glob: "*.rs"
+      run: cargo fmt --all -- --check
+
+    clippy:
+      glob: "*.rs"
+      run: cargo clippy --workspace --all-features --all-targets -- -D warnings
