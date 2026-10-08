@@ -7,7 +7,7 @@
 //! the indirect symbol table.
 
 use crate::arch::Target;
-use crate::chunks::{ChunkHeader, rebase_info};
+use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::macho::*;
 use crate::symbol::SymbolId;
@@ -65,7 +65,7 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<(u64, SymbolId, bool)> {
             if !binds(id) || rel.is_subtracted {
                 continue;
             }
-            let pointer = rebase_info::is_pointer_reloc::<E>(rel);
+            let pointer = E::is_absrel(rel);
             let call = rel.is_func_call::<E>() && ctx.sym_aux(id).stub_idx == crate::symbol::NO_IDX;
             if pointer || call {
                 vec.push((base + rel.offset as u64, id, call));

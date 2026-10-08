@@ -345,29 +345,8 @@ pub fn covers_other_segments<E: Target>(ctx: &Context<E>) -> bool {
     code_elsewhere
         || ctx.unwind_records.par_iter().any(|rec| {
             elsewhere(rec.isec as usize)
-                || function_lsda(ctx, rec).is_some_and(|(isec, _)| elsewhere(isec))
+                || rec.function_lsda(ctx).is_some_and(|(isec, _)| elsewhere(isec))
         })
-}
-
-/// The personality routine of a record's function: the record's own,
-/// or for one in DWARF mode, its FDE's CIE's.
-pub(crate) fn function_personality<E: Target>(
-    ctx: &Context<E>,
-    rec: &UnwindRecord,
-) -> Option<SymbolId> {
-    rec.personality().or_else(|| ctx.cies[ctx.fdes[rec.fde()?].cie as usize].personality)
-}
-
-/// The LSDA of a record's function: the record's own, or for one in
-/// DWARF mode, its FDE's.
-pub(crate) fn function_lsda<E: Target>(
-    ctx: &Context<E>,
-    rec: &UnwindRecord,
-) -> Option<(usize, u32)> {
-    rec.lsda().or_else(|| {
-        let (isec, off) = ctx.fdes[rec.fde()?].lsda?;
-        Some((isec as usize, off))
-    })
 }
 
 /// Records for the code that has no unwind information: every

@@ -8,7 +8,7 @@ use crate::arch::Target;
 use crate::chunks::{ChunkHeader, ChunkId, OutputSectionId};
 use crate::context::Context;
 use crate::input_sections::InputSectionId;
-use crate::objc::{DataField, objc_ref_addr};
+use crate::objc::DataField;
 use crate::symbol::SymbolId;
 use crate::symbol_moves::MoveOption;
 
@@ -197,7 +197,7 @@ fn write_data_blobs<E: Target>(ctx: &Context<E>, id: OutputSectionId, buf: &mut 
                 }
                 DataField::Ptr(r) => {
                     // dyld fills in a pointer to an import.
-                    let addr = if r.import(ctx).is_some() { 0 } else { objc_ref_addr(ctx, *r) };
+                    let addr = if r.import(ctx).is_some() { 0 } else { r.addr(ctx) };
                     buf[at..at + 8].copy_from_slice(&addr.to_le_bytes());
                     at += 8;
                 }

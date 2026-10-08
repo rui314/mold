@@ -887,7 +887,7 @@ impl<'a, E: Target> Builder<'a, E> {
         if let Some((isec, off)) = fde.lsda
             && let Some(lsda) = self.isec_target(isec)
         {
-            let pos = crate::chunks::eh_frame::lsda_pos(fde.data, cie_rec.pc_size()) as u32;
+            let pos = fde.lsda_pos(cie_rec.pc_size()) as u32;
             let addend = off as i64 - pos as i64;
             entry.fixups.push(diff(pos, lsda, cie_rec.lsda_size(), addend));
         }

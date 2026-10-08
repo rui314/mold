@@ -82,7 +82,7 @@ pub fn relocate_fde<E: Target>(
     }
 
     if let Some((lsda_isec, lsda_off)) = fde.lsda {
-        let pos = lsda_pos(fde.data, cie.pc_size());
+        let pos = fde.lsda_pos(cie.pc_size());
         let cell_addr = fde_addr + pos as u64;
         let val = (ctx.isec_addr(lsda_isec as usize) + lsda_off as u64).wrapping_sub(cell_addr);
         match cie.lsda_size() {
@@ -90,15 +90,4 @@ pub fn relocate_fde<E: Target>(
             _ => buf[pos..pos + 8].copy_from_slice(&val.to_le_bytes()),
         }
     }
-}
-
-/// The offset of an FDE's LSDA pointer: the augmentation data, past
-/// its ULEB128 length, after the length, CIE pointer, pc_begin and
-/// pc_range (`pc_size` bytes each, see Cie::pc_size).
-pub fn lsda_pos(fde: &[u8], pc_size: usize) -> usize {
-    let mut pos = 8 + 2 * pc_size;
-    while fde[pos] & 0x80 != 0 {
-        pos += 1;
-    }
-    pos + 1
 }

@@ -6,7 +6,7 @@ use crate::chunks::{ChunkHeader, segment_and_offset};
 use crate::context::Context;
 use crate::input_sections::{InputSection, Reloc};
 use crate::macho::*;
-use crate::objc::{DataField, ObjcRef, objc_ref_addr};
+use crate::objc::{DataField, ObjcRef};
 use crate::symbol::SymbolId;
 use crate::util::encode_uleb;
 
@@ -30,14 +30,7 @@ impl Default for RebaseInfoSection {
     }
 }
 
-/// Whether a relocation has the linker write a pointer, which dyld may
-/// slide or bind: an 8-byte absolute address, not a term of a
-/// SUBTRACTOR pair's difference.
-pub(crate) fn is_pointer_reloc<E: Target>(rel: &Reloc) -> bool {
-    rel.ty == E::RELOC_UNSIGNED && rel.size == 8 && !rel.is_pcrel && !rel.is_subtracted
-}
-
-/// The pointers (see is_pointer_reloc) the relocations of a live
+/// The pointers (see Target::is_absrel) the relocations of a live
 /// subsection write, each with its address.
 pub(crate) fn pointer_relocs<'a, E: Target>(
     ctx: &'a Context<E>,
@@ -45,7 +38,7 @@ pub(crate) fn pointer_relocs<'a, E: Target>(
 ) -> impl Iterator<Item = (u64, &'a Reloc)> + 'a {
     let base = ctx.chunk_header(isec.output_section().unwrap()).addr + isec.offset as u64;
     let rels = crate::input_files::isec_relocs_of(&ctx.objs, isec).iter();
-    rels.filter(|rel| is_pointer_reloc::<E>(rel)).map(move |rel| (base + rel.offset as u64, rel))
+    rels.filter(|rel| E::is_absrel(rel)).map(move |rel| (base + rel.offset as u64, rel))
 }
 
 /// Every pointer a loader must slide when the image lands at another
@@ -220,7 +213,7 @@ fn data_blob_fields<E: Target>(ctx: &Context<E>) -> Vec<(u64, ObjcRef)> {
 /// synthesized records into the image: each is a rebase.
 pub fn data_blob_pointers<E: Target>(ctx: &Context<E>) -> Vec<(u64, u64)> {
     let fields = data_blob_fields(ctx).into_iter().filter(|(_, r)| r.import(ctx).is_none());
-    fields.map(|(at, r)| (at, objc_ref_addr(ctx, r))).filter(|&(_, target)| target != 0).collect()
+    fields.map(|(at, r)| (at, r.addr(ctx))).filter(|&(_, target)| target != 0).collect()
 }
 
 /// The (address, symbol) of every pointer field of the synthesized

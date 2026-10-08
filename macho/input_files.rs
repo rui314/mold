@@ -2137,6 +2137,21 @@ impl UnwindRecord {
     pub fn fde(&self) -> Option<usize> {
         (self.fde_idx != UNWIND_NONE).then_some(self.fde_idx as usize)
     }
+
+    /// The personality routine of the record's function: the record's
+    /// own, or for one in DWARF mode, its FDE's CIE's.
+    pub fn function_personality<E: Target>(&self, ctx: &Context<E>) -> Option<SymbolId> {
+        self.personality().or_else(|| ctx.cies[ctx.fdes[self.fde()?].cie as usize].personality)
+    }
+
+    /// The LSDA of the record's function: the record's own, or for one
+    /// in DWARF mode, its FDE's.
+    pub fn function_lsda<E: Target>(&self, ctx: &Context<E>) -> Option<(usize, u32)> {
+        self.lsda().or_else(|| {
+            let (isec, off) = ctx.fdes[self.fde()?].lsda?;
+            Some((isec as usize, off))
+        })
+    }
 }
 
 impl StagedObject {
@@ -2373,6 +2388,19 @@ pub struct Fde {
 // (whose FdeRecord derives even more and is 16 bytes).
 #[cfg(target_pointer_width = "64")]
 const _: () = assert!(std::mem::size_of::<Fde>() == 56);
+
+impl Fde {
+    /// The offset of the LSDA pointer: the augmentation data, past its
+    /// ULEB128 length, after the length, CIE pointer, pc_begin and
+    /// pc_range (`pc_size` bytes each, see Cie::pc_size).
+    pub fn lsda_pos(&self, pc_size: usize) -> usize {
+        let mut pos = 8 + 2 * pc_size;
+        while self.data[pos] & 0x80 != 0 {
+            pos += 1;
+        }
+        pos + 1
+    }
+}
 
 fn read_uleb_at(data: &[u8], pos: &mut usize) -> u64 {
     let mut val = 0;

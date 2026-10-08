@@ -4,7 +4,7 @@
 use crate::arch::Target;
 use crate::chunks::{ChunkHeader, ChunkId};
 use crate::context::Context;
-use crate::objc::{ObjcMethList, objc_ref_addr};
+use crate::objc::ObjcMethList;
 
 /// __TEXT,__objc_methlist: the Objective-C method lists rewritten in
 /// the relative (12-byte entry) form, which needs no fixups.
@@ -52,7 +52,7 @@ pub fn write_lists<E: Target>(ctx: &Context<E>, chunk: ChunkId, chunk_addr: u64,
             let at = base + 8 + 12 * i;
             let field = addr + 8 + 12 * i as u64;
             for (k, r) in [m.name, m.types, m.imp].into_iter().enumerate() {
-                let target = objc_ref_addr(ctx, r);
+                let target = r.addr(ctx);
                 let rel =
                     if target == 0 { 0 } else { target.wrapping_sub(field + 4 * k as u64) as i64 };
                 if rel != rel as i32 as i64 {

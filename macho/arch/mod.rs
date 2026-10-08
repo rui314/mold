@@ -299,6 +299,13 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
     /// passes::scan_relocations then creates. Runs on all cores.
     fn scan_relocations(ctx: &Context<Self>, isec: &InputSection);
 
+    /// Whether a relocation has the linker write a pointer, which dyld may
+    /// slide or bind: an 8-byte absolute address, not a term of a
+    /// SUBTRACTOR pair's difference.
+    fn is_absrel(rel: &Reloc) -> bool {
+        rel.ty == Self::RELOC_UNSIGNED && rel.size == 8 && !rel.is_pcrel && !rel.is_subtracted
+    }
+
     /// Applies the relocations of one input section to `buf`, its bytes
     /// in the output. `isec` is the subsection's arena index and `base`
     /// its output address.

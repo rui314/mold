@@ -77,6 +77,17 @@ impl ObjcRef {
             _ => None,
         }
     }
+
+    /// The address a reference in a synthesized record or a rewritten
+    /// method list resolves to, once the output is laid out.
+    pub fn addr<E: Target>(self, ctx: &Context<E>) -> u64 {
+        match self {
+            ObjcRef::Isec(isec, off) => ctx.isec_addr(isec as usize) + off,
+            ObjcRef::Sym(id, addend) => (ctx.sym_addr(id) as i64 + addend) as u64,
+            ObjcRef::TailSelref(n) => ctx.objc_stubs.selref_addr(ctx, n),
+            ObjcRef::Null => 0,
+        }
+    }
 }
 
 /// A synthesized data record (an Objective-C one, or the table of
@@ -99,17 +110,6 @@ impl DataBlob {
                 DataField::Ptr(_) => 8,
             })
             .sum()
-    }
-}
-
-/// The address a reference in a synthesized record or a rewritten
-/// method list resolves to, once the output is laid out.
-pub fn objc_ref_addr<E: Target>(ctx: &Context<E>, r: ObjcRef) -> u64 {
-    match r {
-        ObjcRef::Isec(isec, off) => ctx.isec_addr(isec as usize) + off,
-        ObjcRef::Sym(id, addend) => (ctx.sym_addr(id) as i64 + addend) as u64,
-        ObjcRef::TailSelref(n) => ctx.objc_stubs.selref_addr(ctx, n),
-        ObjcRef::Null => 0,
     }
 }
 

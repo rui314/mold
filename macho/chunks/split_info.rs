@@ -670,7 +670,7 @@ impl<'a, E: Target> Places<'a, E> {
             };
             push(out, at(off + 8), kind, func);
             if let Some((isec, lsda_off)) = fde.lsda {
-                let pos = crate::chunks::eh_frame::lsda_pos(fde.data, cie.pc_size()) as u64;
+                let pos = fde.lsda_pos(cie.pc_size()) as u64;
                 let kind = match cie.lsda_size() {
                     8 => DYLD_CACHE_ADJ_V2_DELTA_64,
                     _ => DYLD_CACHE_ADJ_V2_DELTA_32,

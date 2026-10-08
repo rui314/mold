@@ -28,8 +28,6 @@ use portable_atomic::AtomicU64;
 use rayon::prelude::*;
 
 use crate::arch::Target;
-use crate::chunks::eh_frame::lsda_pos;
-use crate::chunks::unwind_info::{function_lsda, function_personality};
 use crate::context::Context;
 use crate::input_files::{Fde, FileId, ObjectFile, subsec_name_rank};
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
@@ -455,9 +453,10 @@ fn compute_digest<E: Target>(ctx: &Context<E>, cand_index: &[usize], id: usize) 
         h.update(&rec.input_offset.to_ne_bytes());
         h.update(&rec.code_len.to_ne_bytes());
         h.update(&encoding.to_ne_bytes());
-        let personality = function_personality(ctx, rec);
+        let personality = rec.function_personality(ctx);
         h.update(&personality.map_or(u64::MAX, |p| p as u64).to_ne_bytes());
-        let (lsda, off) = function_lsda(ctx, rec)
+        let (lsda, off) = rec
+            .function_lsda(ctx)
             .map_or((usize::MAX, 0), |(lsda, off)| (ctx.resolve_isec(lsda), off));
         h.update(&lsda.to_ne_bytes());
         h.update(&off.to_ne_bytes());
@@ -492,7 +491,7 @@ fn hash_dwarf_cfi<E: Target>(ctx: &Context<E>, h: &mut SipHash13_128, fde: &Fde)
     let mut buf = fde.data.to_vec();
     buf[4..8 + pc_size].fill(0);
     if fde.lsda.is_some() {
-        let pos = lsda_pos(fde.data, pc_size);
+        let pos = fde.lsda_pos(pc_size);
         buf[pos..pos + cie.lsda_size()].fill(0);
     }
     hash_record(h, &buf[4..]);
