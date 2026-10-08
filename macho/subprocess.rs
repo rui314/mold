@@ -36,8 +36,16 @@ pub fn fork_child() {
             if File::from(reader).read_exact(&mut [0u8]).is_ok() {
                 libc::_exit(0);
             }
+
+            // If SIGCHLD is ignored, which is inherited across exec, a
+            // child that exits before waitpid begins is reaped
+            // automatically and waitpid fails. (macOS still gives the
+            // status to a parent already waiting, as this one mostly is.)
+            // Its exit status is lost then, so report a failure.
             let mut status = 0;
-            libc::waitpid(pid, &raw mut status, 0);
+            if libc::waitpid(pid, &raw mut status, 0) == -1 {
+                libc::_exit(1);
+            }
             if libc::WIFEXITED(status) {
                 libc::_exit(libc::WEXITSTATUS(status));
             }
