@@ -862,9 +862,9 @@ point symbol in a script.
 
   `-z bti-report` flag is used to make sure that all object files were
   compiled with BTI. If `warning` or `error` are given, `mold` prints out a
-  warning or an error message if an object file lacks
+  warning or an error message if an object file has neither
   `GNU_PROPERTY_AARCH64_FEATURE_1_BTI` bit in its `.note.gnu.property`
-  section.
+  section nor `Tag_Feature_BTI` in its build attributes.
 
 * `-z force-bti`:
   Turn on `GNU_PROPERTY_AARCH64_FEATURE_1_BTI` bit in `.note.gnu.property`
@@ -880,9 +880,9 @@ point symbol in a script.
   off.
 
 * `-z gcs-report`=[ `warning` | `error` | `none` ]:
-  Print out a warning or an error message if an object file lacks
+  Print out a warning or an error message if an object file has neither
   `GNU_PROPERTY_AARCH64_FEATURE_1_GCS` bit in its `.note.gnu.property`
-  section.
+  section nor `Tag_Feature_GCS` in its build attributes.
 
 * `-z gcs-report-dynamic`=[ `warning` | `error` | `none` ]:
   Print out a warning or an error message if a shared library lacks

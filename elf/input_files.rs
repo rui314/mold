@@ -1544,6 +1544,38 @@ impl<E: Target> ObjectFile<E> {
         }
     }
 
+    // AArch64 build attributes. GCC 16 records -mbranch-protection in them
+    // instead of in .note.gnu.property. Tag N of the aeabi_feature_and_bits
+    // subsection corresponds to bit N of GNU_PROPERTY_AARCH64_FEATURE_1_AND,
+    // so we merge them into the property.
+    //
+    // 'A' [ <subsection-length> "subsection-name" <optional> <type> [ <tag> <value> ]* ]*
+    fn read_arm64_attributes(&mut self, data: &'static [u8]) {
+        let Some(mut data) = data.strip_prefix(b"A") else {
+            return;
+        };
+        while !data.is_empty() {
+            let size = E::read_u32(data) as usize;
+            let p = &data[4..size];
+            data = &data[size..];
+
+            if let Some(p) = p.strip_prefix(b"aeabi_feature_and_bits\0") {
+                // Skip the optional and type fields, which are always 1 and
+                // 0 (ULEB128) for this subsection.
+                let mut p = &p[2..];
+                let mut features = 0;
+                while !p.is_empty() {
+                    let tag = read_uleb(&mut p);
+                    if read_uleb(&mut p) == 1 && tag < 32 {
+                        features |= 1 << tag;
+                    }
+                }
+                *self.gnu_properties.entry(GNU_PROPERTY_AARCH64_FEATURE_1_AND).or_insert(0) |=
+                    features;
+            }
+        }
+    }
+
     // <format-version>
     // [ <section-length> "vendor-name" [ <file-tag> <size> <attribute>*]+ ]*
     fn read_riscv_attributes(&mut self, data: &'static [u8]) {
@@ -1620,6 +1652,11 @@ impl<E: Target> ObjectFile<E> {
                 continue;
             }
 
+            if E::FAMILY == Family::Arm64 && sh_type == SHT_AARCH64_ATTRIBUTES {
+                let contents = self.base.section_contents_from_shdr(shdr);
+                self.read_arm64_attributes(contents);
+                continue;
+            }
             if E::IS_ARM && sh_type == SHT_ARM_ATTRIBUTES {
                 continue;
             }

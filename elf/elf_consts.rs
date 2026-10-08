@@ -41,6 +41,7 @@ pub const SHT_HIOS: u32 = 0x6fffffff;
 pub const SHT_X86_64_UNWIND: u32 = 0x70000001;
 pub const SHT_ARM_EXIDX: u32 = 0x70000001;
 pub const SHT_ARM_ATTRIBUTES: u32 = 0x70000003;
+pub const SHT_AARCH64_ATTRIBUTES: u32 = 0x70000003;
 pub const SHT_RISCV_ATTRIBUTES: u32 = 0x70000003;
 pub const SHT_LOUSER: u32 = 0x80000000;
 pub const SHT_HIUSER: u32 = 0xffffffff;
