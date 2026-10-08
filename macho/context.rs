@@ -86,11 +86,6 @@ macro_rules! chunk_header {
     };
 }
 
-/// A section$start/end or segment$start/end symbol: (symbol, is_start,
-/// segment, section), the names those the symbol gives until the
-/// layout renames them.
-pub type BoundarySym = (SymbolId, bool, &'static [u8], Option<&'static [u8]>);
-
 pub struct Context<E: Target> {
     pub args: Args,
     pub objs: Vec<ObjectFile>,
@@ -221,7 +216,7 @@ pub struct Context<E: Target> {
     pub redundant_reexports: Vec<SymbolId>,
     /// section$start/end and segment$start/end symbols to resolve
     /// after layout.
-    pub boundary_syms: Vec<BoundarySym>,
+    pub boundary_syms: Vec<crate::passes::BoundarySym>,
     /// For -why_load: the symbol that made each object live, refreshed
     /// each resolution round.
     pub why_load: std::collections::HashMap<usize, &'static [u8]>,
@@ -371,15 +366,6 @@ impl<E: Target> Context<E> {
         self.priority_counter
     }
 
-    /// The address the segments are laid out from: -image_base (or
-    /// -segaddr __TEXT) as resolve_image_base settles it, else the end
-    /// of __PAGEZERO. __TEXT, and the mach header with it, goes here
-    /// unless -segaddr pins __TEXT in a PIE executable, which then
-    /// fails to link.
-    pub fn image_base(&self) -> u64 {
-        self.args.image_base.unwrap_or(self.args.pagezero_size)
-    }
-
     /// Returns true if the output uses chained fixups rather than
     /// classic dyld rebase/bind opcodes: it is laid out for them, and
     /// no unaligned pointer turned an x86-64 image's to classic dyld
@@ -398,22 +384,6 @@ impl<E: Target> Context<E> {
     /// libraries, which ld-prime counts as linker synthesized.
     pub fn is_bundle_hook(&self, idx: usize) -> bool {
         self.bundle_hook.obj == Some(idx)
-    }
-
-    /// Whether an object is one LTO compiled.
-    pub fn is_lto_obj(&self, idx: usize) -> bool {
-        self.lto_objs.contains(&idx)
-    }
-
-    /// Whether the link strips dead code: under -dead_strip, or - as
-    /// ld-prime does unasked - in a final image of code LTO compiled,
-    /// executable or not, which it walks as dead stripping does to
-    /// find what LTO must preserve (see
-    /// dead_strip::native_refs_before_lto). That strip leaves the
-    /// imports only stripped code used in the symbol table, unbound,
-    /// and the map lists nothing it removed.
-    pub fn strips_dead_code(&self) -> bool {
-        self.args.dead_strip || (!self.args.relocatable && !self.lto_inputs.is_empty())
     }
 
     /// Binds a symbol the linker's own code calls (dyld_stub_binder,

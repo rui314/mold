@@ -22,7 +22,17 @@ use crate::input_sections::{InputSection, RelocTarget};
 use crate::macho::*;
 use crate::symbol::{Symbol, SymbolId};
 
-/// Strips dead code (see Context::strips_dead_code) and refreshes which
+/// Whether the link strips dead code: under -dead_strip, or - as
+/// ld-prime does unasked - in a final image of code LTO compiled,
+/// executable or not, which it walks as dead stripping does to find
+/// what LTO must preserve (see native_refs_before_lto). That strip
+/// leaves the imports only stripped code used in the symbol table,
+/// unbound, and the map lists nothing it removed.
+pub fn strips_dead_code<E: Target>(ctx: &Context<E>) -> bool {
+    ctx.args.dead_strip || (!ctx.args.relocatable && !ctx.lto_inputs.is_empty())
+}
+
+/// Strips dead code (see strips_dead_code) and refreshes which
 /// symbols live code uses.
 pub fn strip_dead_code<E: Target>(ctx: &mut Context<E>) {
     dead_strip(ctx);

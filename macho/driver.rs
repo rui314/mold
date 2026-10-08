@@ -209,7 +209,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     passes::print_implicit_trace(&ctx);
 
     // Garbage-collect unreachable subsections.
-    if ctx.strips_dead_code() {
+    if dead_strip::strips_dead_code(&ctx) {
         timed!("dead_strip", dead_strip::strip_dead_code(&mut ctx));
     }
     timed!("create_dof_sections", crate::dtrace::create_dof_sections(&mut ctx));

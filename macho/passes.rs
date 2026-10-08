@@ -869,7 +869,8 @@ pub fn do_lto<E: Target>(ctx: &mut Context<E>) {
         // warns of it in an x86_64 link as of an input.
         let mf = Box::leak(Box::new(mf));
         if !crate::reader::is_foreign(ctx, mf) {
-            input_files::parse_object(ctx, mf, true);
+            let i = input_files::parse_object(ctx, mf, true);
+            ctx.objs[i].lto_output = true;
         }
     }
     ctx.lto_objs = first..ctx.objs.len();
@@ -3620,7 +3621,7 @@ fn order_file_ranks<E: Target>(ctx: &Context<E>) -> Option<Vec<u64>> {
             continue;
         }
         let mut obj = obj as usize;
-        if ctx.is_lto_obj(obj)
+        if ctx.objs[obj].is_lto_obj()
             && let Some(&Some(origin)) = origins.get(sym.name())
         {
             obj = origin;
@@ -4499,7 +4500,7 @@ fn add_aliases<E: Target>(ctx: &mut Context<E>, internal: u32) {
             continue;
         };
         let referenced = ctx.symbols.lookup(new).is_some_and(|id| ctx.symbols[id].is_used());
-        if ctx.strips_dead_code()
+        if crate::dead_strip::strips_dead_code(ctx)
             && !referenced
             && !(crate::dead_strip::keeps_export(ctx, new)
                 && ctx.args.unexported_symbols.find(new) == -1)
@@ -4536,6 +4537,11 @@ fn add_aliases<E: Target>(ctx: &mut Context<E>, internal: u32) {
     }
     ctx.args.aliases = aliases;
 }
+
+/// A section$start/end or segment$start/end symbol: (symbol, is_start,
+/// segment, section), the names those the symbol gives until the
+/// layout renames them.
+pub type BoundarySym = (SymbolId, bool, &'static [u8], Option<&'static [u8]>);
 
 /// Claims ld64's layout-boundary symbols: an undefined reference to
 /// section$start$__SEG$__sect (or $end$, or segment$start$__SEG /
@@ -4607,10 +4613,19 @@ pub fn fix_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
     }
 }
 
+/// The address the segments are laid out from: -image_base (or
+/// -segaddr __TEXT) as resolve_image_base settles it, else the end
+/// of __PAGEZERO. __TEXT, and the mach header with it, goes here
+/// unless -segaddr pins __TEXT in a PIE executable, which then
+/// fails to link.
+fn image_base<E: Target>(ctx: &Context<E>) -> u64 {
+    ctx.args.image_base.unwrap_or(ctx.args.pagezero_size)
+}
+
 /// The mach header's address, the start of its segment: where -segaddr
 /// pins that segment, or else the image base.
 fn mach_header_addr<E: Target>(ctx: &Context<E>) -> u64 {
-    ctx.args.segaddr(header_segment(ctx)).unwrap_or(ctx.image_base())
+    ctx.args.segaddr(header_segment(ctx)).unwrap_or(image_base(ctx))
 }
 
 /// Lays out the output: each segment's contents in file order, and the
@@ -4749,7 +4764,7 @@ fn lay_out_segments<E: Target>(ctx: &mut Context<E>) -> u64 {
     // first pages, ahead of the segments, whose base stands for the
     // image's address.
     if ctx.args.preload {
-        ctx.mach_header.hdr.addr = ctx.image_base();
+        ctx.mach_header.hdr.addr = image_base(ctx);
         ctx.mach_header.hdr.size = mach_header_size(ctx);
         fileoff = align_to(ctx.mach_header.hdr.size, ctx.args.segment_align);
     }
@@ -4759,7 +4774,7 @@ fn lay_out_segments<E: Target>(ctx: &mut Context<E>) -> u64 {
     // they go. The file skips as many bytes as memory does, unless a
     // segment is pinned (ld-prime).
     let mirror_gaps = ctx.args.segaddrs.is_empty();
-    let mut addr = ctx.image_base();
+    let mut addr = image_base(ctx);
     for seg_idx in 0..ctx.segments.len() - 1 {
         let name = ctx.segments[seg_idx].name;
         if name == b"__PAGEZERO" {
@@ -4931,7 +4946,7 @@ fn layout_segment<E: Target>(
 ///   below), every pinned segment counts as placed from the start, and
 ///   a segment may follow one below the base.
 fn place_segments<E: Target>(ctx: &mut Context<E>) {
-    let base = ctx.image_base();
+    let base = image_base(ctx);
     let header_seg = in_place_segment(ctx);
     let segs = &ctx.segments[..ctx.segments.len() - 1];
     let range = |i: usize, addr: u64| addr..addr + segment_span(ctx, &segs[i]);
@@ -5137,7 +5152,7 @@ fn place_linkedit<E: Target>(ctx: &mut Context<E>) {
             .map(|seg| seg.cmd.vmaddr..seg.cmd.vmaddr + segment_span(ctx, seg))
             .collect();
         let size = ctx.segments[linkedit].cmd.vmsize;
-        let base = ctx.image_base();
+        let base = image_base(ctx);
         lowest_free_span(base, base, size, ctx.args.segment_align, &used).start
     };
     move_segment(ctx, linkedit, addr);

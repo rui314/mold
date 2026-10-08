@@ -206,6 +206,9 @@ pub struct ObjectFile {
     /// For a bitcode input, the lto_module handle: the object is a
     /// placeholder that only claims symbols until LTO compiles it.
     pub lto_module: Option<usize>,
+    /// Whether LTO made the object, compiling the live bitcode modules
+    /// (mold's ObjectOrigin::LtoOutput; see is_lto_obj).
+    pub lto_output: bool,
     pub mach_syms: std::borrow::Cow<'static, [MachSym]>,
     /// Index of the first external MachSym, if the table is partitioned
     /// locals-then-externals (see first_global_of).
@@ -260,12 +263,19 @@ impl ObjectFile {
             objc_image_info: None,
             has_debug_info: false,
             lto_module: None,
+            lto_output: false,
             mach_syms: std::borrow::Cow::Borrowed(&[]),
             first_global: None,
             symbols: Vec::new(),
             dice: Vec::new(),
             loh: Vec::new(),
         }
+    }
+
+    /// Whether the object is one LTO compiled.
+    #[inline]
+    pub fn is_lto_obj(&self) -> bool {
+        self.lto_output
     }
 
     /// The subsection holding a linker optimization hint's instructions,
@@ -1939,6 +1949,7 @@ impl StagedObject {
             first_global: self.first_global,
             symbols,
             lto_module: None,
+            lto_output: false,
             dice: self.dice,
             loh: self.loh,
         }

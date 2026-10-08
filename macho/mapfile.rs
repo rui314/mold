@@ -130,7 +130,7 @@ fn dependency_inputs<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
         .iter()
         .enumerate()
         .filter(|&(i, o)| {
-            o.is_reachable && !ctx.is_internal(i) && !ctx.is_bundle_hook(i) && !ctx.is_lto_obj(i)
+            o.is_reachable && !ctx.is_internal(i) && !ctx.is_bundle_hook(i) && !o.is_lto_obj()
         })
         .map(|(_, o)| o.mf.parent.map_or(o.mf.name.as_path(), |p| p.name.as_path()))
         .collect();
