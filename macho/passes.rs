@@ -1069,13 +1069,6 @@ pub fn refresh_unwind_ranges<E: Target>(ctx: &mut Context<E>) {
     }
 }
 
-/// Whether -remove_swift_reflection_metadata_sections drops an input
-/// section: Swift's field descriptors, associated type records and the
-/// names they give (but not the type references), in any segment.
-pub(crate) fn is_swift_reflection_section(hdr: &MachSection) -> bool {
-    matches!(hdr.sectname(), b"__swift5_fieldmd" | b"__swift5_assocty" | b"__swift5_reflstr")
-}
-
 /// -remove_swift_reflection_metadata_sections: drops the Swift
 /// reflection metadata from a final image and a -r output alike, as
 /// ld-prime drops its subsections as it reads them, before anything can
@@ -1086,7 +1079,7 @@ pub fn remove_swift_reflection_metadata<E: Target>(ctx: &mut Context<E>) {
         return;
     }
     let removed: Vec<usize> = (0..ctx.isecs.len())
-        .filter(|&i| is_swift_reflection_section(ctx.hdr_of(&ctx.isecs[i])))
+        .filter(|&i| input_files::is_swift_reflection_section(ctx.hdr_of(&ctx.isecs[i])))
         .collect();
     for i in removed {
         ctx.isecs[i].set_alive(false);
@@ -1105,7 +1098,7 @@ pub fn check_removed_swift_metadata_refs<E: Target>(ctx: &Context<E>) {
     }
     let removed = |isec: usize| {
         let isec = &ctx.isecs[ctx.resolve_isec(isec)];
-        !isec.is_alive() && is_swift_reflection_section(ctx.hdr_of(isec))
+        !isec.is_alive() && input_files::is_swift_reflection_section(ctx.hdr_of(isec))
     };
     for (i, isec) in ctx.isecs.iter().enumerate().filter(|(_, isec)| isec.is_emitted()) {
         for rel in ctx.isec_relocs(i) {
@@ -1374,7 +1367,7 @@ pub fn merge_literals<E: Target>(ctx: &mut Context<E>) {
                 return None;
             }
             let hdr = ctx.hdr_of(isec);
-            if !is_mergeable_literal(hdr, isec) {
+            if !input_files::is_mergeable_literal(hdr, isec) {
                 return None;
             }
             Some((xxhash_rust::xxh3::xxh3_64(isec.data()), hdr, i as u32))
@@ -1440,35 +1433,6 @@ fn merge_shard(isecs: &[InputSection], shard: Vec<Literal>) -> Vec<(u32, u32)> {
         }
     }
     losers.into_iter().map(|(i, group)| (i, best[group as usize])).collect()
-}
-
-/// Whether ld-prime merges a literal element with identical ones: a C
-/// string of a section of any name, but a fixed-size record only of the
-/// standard pool of its size, __TEXT,__literal4, __literal8 or
-/// __literal16 of that type - its records in a section of another name
-/// or type stay, however many copies there are. Nor does an element
-/// that carries a relocation merge, as identical bytes may point at
-/// different targets (ld-prime merges a __literal8 record by its bytes,
-/// making every copy point where the first does).
-///
-/// __TEXT,__ustring, which holds the UTF-16 strings of CFString
-/// constants (and C's u"" literals), is a regular section that ld-prime
-/// cuts at its symbols, like ld64, but merges each subsection with
-/// identical ones whatever labels it: every object that spells @"é" has
-/// its own copy, and so its own CFString, which merges only once the
-/// strings have (iTerm2's debug dylib had 67 CFStrings too many).
-fn is_mergeable_literal(hdr: &MachSection, isec: &InputSection) -> bool {
-    if isec.nrels != 0 {
-        return false;
-    }
-    match hdr.section_type() {
-        S_CSTRING_LITERALS => true,
-        S_4BYTE_LITERALS => hdr.segname_is(b"__TEXT") && hdr.sectname_is(b"__literal4"),
-        S_8BYTE_LITERALS => hdr.segname_is(b"__TEXT") && hdr.sectname_is(b"__literal8"),
-        S_16BYTE_LITERALS => hdr.segname_is(b"__TEXT") && hdr.sectname_is(b"__literal16"),
-        S_REGULAR => hdr.segname_is(b"__TEXT") && hdr.sectname_is(b"__ustring"),
-        _ => false,
-    }
 }
 
 /// Points every symbol defined in a merged-away subsection at the

@@ -801,6 +801,119 @@ pub fn is_unknown_ld_section(hdr: &MachSection) -> bool {
     hdr.segname() == b"__LD" && hdr.sectname() != b"__compact_unwind"
 }
 
+/// Whether -remove_swift_reflection_metadata_sections drops an input
+/// section: Swift's field descriptors, associated type records and the
+/// names they give (but not the type references), in any segment.
+pub(crate) fn is_swift_reflection_section(hdr: &MachSection) -> bool {
+    matches!(hdr.sectname(), b"__swift5_fieldmd" | b"__swift5_assocty" | b"__swift5_reflstr")
+}
+
+/// The flags ld-prime reads a section of an input object as having,
+/// which decide how the link splits the section into subsections and
+/// what it makes of them - mold's canonicalize_type for a section typed
+/// by name alone. __TEXT,__constructor, where GCC put the constructors
+/// of code built without dyld (-static, -mkernel) with the assembler's
+/// .constructor directive, is a list of initializer pointers whatever
+/// its type (__TEXT,__destructor stays data). ld-prime knows the
+/// Objective-C runtime's sections by name too (see
+/// standard_section_flags): one of another type has the table's flags,
+/// so a regular __objc_methname is C strings and a list typed as
+/// strings or literals is pointers still. __objc_selrefs keeps its own
+/// type, which says whether its references merge, and __DATA,__got,
+/// GOT slots whatever its type, its own, which
+/// says whether the object asks for an indirect-symbol GOT (see
+/// check_sections); but neither is ever split into strings or
+/// literals. Superclass and protocol references keep the
+/// literal-pointer type, whose references all merge (see
+/// has_unnamed_subsecs), though a -r output has the table's flags. Its
+/// own flags otherwise.
+pub(crate) fn canonical_section_flags(segname: &[u8], sectname: &[u8], flags: u32) -> u32 {
+    if (segname, sectname) == (b"__TEXT", b"__constructor") {
+        return S_MOD_INIT_FUNC_POINTERS;
+    }
+    let ty = flags & SECTION_TYPE;
+    let is_literal =
+        matches!(ty, S_CSTRING_LITERALS | S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS);
+    if (segname, sectname) == (b"__DATA", b"__got") {
+        return if is_literal { flags & !SECTION_TYPE } else { flags };
+    }
+    if !sectname.starts_with(b"__objc_") {
+        return flags;
+    }
+    let Some(table) = standard_section_flags(segname, sectname) else {
+        return flags;
+    };
+    if sectname == b"__objc_selrefs" {
+        return if is_literal { flags & !SECTION_TYPE } else { flags };
+    }
+    if ty == table & SECTION_TYPE
+        || (ty == S_LITERAL_POINTERS && is_class_or_protocol_ref_name(sectname))
+    {
+        flags
+    } else {
+        table
+    }
+}
+
+/// The flags of a section ld-prime's table of standard sections names:
+/// those a compiler marks a section of that name with, or ld-prime its
+/// own sections - code (the stubs and helpers too), literals, pointer
+/// lists, the thread-local and zero-fill types, no-dead-strip for the
+/// lists the Objective-C runtime scans, and none for the rest of the
+/// data. None for another name, or in another segment.
+pub(crate) fn standard_section_flags(segname: &[u8], sectname: &[u8]) -> Option<u32> {
+    let flags = match (segname, sectname) {
+        (
+            b"__TEXT",
+            b"__text" | b"__StaticInit" | b"__stub_helper" | b"__objc_stubs" | b"__objc_clsstubs"
+            | b"__delay_stubs" | b"__delay_helper" | b"__lazy_helpers" | b"__resolver_help",
+        ) => S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS,
+        (
+            b"__TEXT",
+            b"__cstring" | b"__objc_classname" | b"__objc_methname" | b"__objc_methtype"
+            | b"__oslogstring",
+        ) => S_CSTRING_LITERALS,
+        (b"__TEXT", b"__literal4") => S_4BYTE_LITERALS,
+        (b"__TEXT", b"__literal8") => S_8BYTE_LITERALS,
+        (b"__TEXT", b"__literal16") => S_16BYTE_LITERALS,
+        (b"__TEXT", b"__const" | b"__ustring" | b"__gcc_except_tab" | b"__objc_methlist") => {
+            S_REGULAR
+        }
+        (b"__DATA", b"__got" | b"__auth_got" | b"__weak_got" | b"__weak_auth_got") => {
+            S_NON_LAZY_SYMBOL_POINTERS
+        }
+        (b"__DATA", b"__la_symbol_ptr" | b"__la_resolver") => S_LAZY_SYMBOL_POINTERS,
+        (b"__DATA", b"__mod_init_func") => S_MOD_INIT_FUNC_POINTERS,
+        (b"__DATA", b"__mod_term_func") => S_MOD_TERM_FUNC_POINTERS,
+        (
+            b"__DATA",
+            b"__objc_classlist" | b"__objc_nlclslist" | b"__objc_catlist" | b"__objc_catlist2"
+            | b"__objc_nlcatlist" | b"__objc_classrefs" | b"__objc_superrefs" | b"__objc_clsrolist",
+        ) => S_ATTR_NO_DEAD_STRIP,
+        (b"__DATA", b"__objc_protolist") => S_COALESCED,
+        (b"__DATA", b"__objc_protorefs") => S_COALESCED | S_ATTR_NO_DEAD_STRIP,
+        (b"__DATA", b"__objc_selrefs") => S_LITERAL_POINTERS | S_ATTR_NO_DEAD_STRIP,
+        (b"__DATA", b"__thread_vars") => S_THREAD_LOCAL_VARIABLES,
+        (b"__DATA", b"__thread_ptrs") => S_THREAD_LOCAL_VARIABLE_POINTERS,
+        (b"__DATA", b"__thread_data") => S_THREAD_LOCAL_REGULAR,
+        (b"__DATA", b"__thread_bss") => S_THREAD_LOCAL_ZEROFILL,
+        (b"__DATA", b"__bss" | b"__common") => S_ZEROFILL,
+        (
+            b"__DATA",
+            b"__data" | b"__const" | b"__cfstring" | b"__auth_ptr" | b"__objc_data"
+            | b"__objc_const" | b"__objc_ivar" | b"__objc_imageinfo" | b"__objc_intobj"
+            | b"__objc_floatobj" | b"__objc_doubleobj" | b"__objc_dateobj" | b"__objc_dictobj"
+            | b"__objc_arrayobj" | b"__objc_arraydata" | b"__const_cfobj2",
+        ) => S_REGULAR,
+        // The compiler's records for the linker to encode into
+        // __unwind_info, which no output carries (but a boundary
+        // symbol's empty section).
+        (b"__LD", b"__compact_unwind") => S_ATTR_DEBUG,
+        _ => return None,
+    };
+    Some(flags)
+}
+
 /// An object file parsed in isolation: all cross-references are local
 /// indices, so staging runs in parallel across files with no shared
 /// state; `integrate_object` rebases them into the global arenas.
@@ -975,11 +1088,8 @@ impl LoadCommands {
             match cmd {
                 LC_SEGMENT_64 => {
                     for mut sect in segment_sections(bytes) {
-                        sect.flags = crate::output_sections::canonical_section_flags(
-                            sect.segname(),
-                            sect.sectname(),
-                            sect.flags,
-                        );
+                        sect.flags =
+                            canonical_section_flags(sect.segname(), sect.sectname(), sect.flags);
                         cmds.sect_hdrs.push(sect);
                     }
                 }
@@ -1515,6 +1625,35 @@ pub fn is_literal_section(sect: &MachSection) -> bool {
 /// makes for itself name none of (see Context::subsec_label).
 pub fn has_merged_subsecs(sect: &MachSection) -> bool {
     is_literal_section(sect) && !(sect.segname() == b"__DATA" && is_pointer_list(sect))
+}
+
+/// Whether ld-prime merges a literal element with identical ones: a C
+/// string of a section of any name, but a fixed-size record only of the
+/// standard pool of its size, __TEXT,__literal4, __literal8 or
+/// __literal16 of that type - its records in a section of another name
+/// or type stay, however many copies there are. Nor does an element
+/// that carries a relocation merge, as identical bytes may point at
+/// different targets (ld-prime merges a __literal8 record by its bytes,
+/// making every copy point where the first does).
+///
+/// __TEXT,__ustring, which holds the UTF-16 strings of CFString
+/// constants (and C's u"" literals), is a regular section that ld-prime
+/// cuts at its symbols, like ld64, but merges each subsection with
+/// identical ones whatever labels it: every object that spells @"é" has
+/// its own copy, and so its own CFString, which merges only once the
+/// strings have (iTerm2's debug dylib had 67 CFStrings too many).
+pub(crate) fn is_mergeable_literal(hdr: &MachSection, isec: &InputSection) -> bool {
+    if isec.nrels != 0 {
+        return false;
+    }
+    match hdr.section_type() {
+        S_CSTRING_LITERALS => true,
+        S_4BYTE_LITERALS => hdr.segname_is(b"__TEXT") && hdr.sectname_is(b"__literal4"),
+        S_8BYTE_LITERALS => hdr.segname_is(b"__TEXT") && hdr.sectname_is(b"__literal8"),
+        S_16BYTE_LITERALS => hdr.segname_is(b"__TEXT") && hdr.sectname_is(b"__literal16"),
+        S_REGULAR => hdr.segname_is(b"__TEXT") && hdr.sectname_is(b"__ustring"),
+        _ => false,
+    }
 }
 
 /// Whether a __DATA section is one of pointers the linker takes one by

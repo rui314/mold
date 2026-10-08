@@ -18,9 +18,9 @@ use crate::chunks::symtab::keep_local_symbol;
 use crate::cmdline::SymbolMove;
 use crate::context::Context;
 use crate::error::{RawPath, raw};
-use crate::input_files::FileId;
+use crate::input_files::{FileId, canonical_section_flags};
 use crate::macho::*;
-use crate::output_sections::{canonical_section_flags, common_owners};
+use crate::output_sections::common_owners;
 use crate::symbol::SymbolId;
 use crate::util::leak_bytes;
 
