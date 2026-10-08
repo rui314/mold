@@ -14,7 +14,7 @@ use crate::fatal;
 use crate::filetype::{
     fat_arch_names, fat_slice, foreign_arch, is_subtype_mismatch, without_fat_arch,
 };
-use crate::input_sections::InputSection;
+use crate::input_sections::{InputSection, NO_REPLACEMENT};
 use crate::macho::*;
 use crate::mapped_file::{MappedFile, unreadable_file};
 use crate::symbol::{Symbol, SymbolId};
@@ -1886,6 +1886,27 @@ pub fn remove_dead_unwind_info<E: Target>(ctx: &mut Context<E>) {
 
     // The compaction moved the surviving records; refresh the ranges.
     refresh_unwind_ranges(ctx);
+}
+
+/// Points every symbol defined in a merged-away subsection at the
+/// surviving one - mold makes the merged section's fragment the
+/// symbol's origin - so a symbol's address never follows a replacement
+/// chain. The copies are identical, so the symbol's offset is
+/// unchanged. (Section-relative relocations still resolve through the
+/// chain in isec_addr.)
+pub(crate) fn redirect_symbols_to_replacements<E: Target>(ctx: &mut Context<E>) {
+    let isecs = &ctx.isecs;
+    ctx.symbols.syms.par_iter_mut().for_each(|sym| {
+        if let Some(i) = sym.input_section() {
+            let mut r = i as usize;
+            while isecs[r].replacement != NO_REPLACEMENT {
+                r = isecs[r].replacement as usize;
+            }
+            if r != i as usize {
+                sym.set_input_section(Some(r as u32));
+            }
+        }
+    });
 }
 
 /// Each staged object's place in the global arenas, after what they

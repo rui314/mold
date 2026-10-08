@@ -1349,7 +1349,7 @@ pub fn merge_literals<E: Target>(ctx: &mut Context<E>) {
     for (loser, winner) in folds.into_iter().flatten() {
         ctx.isecs[loser as usize].replacement = winner;
     }
-    redirect_symbols_to_replacements(ctx);
+    input_files::redirect_symbols_to_replacements(ctx);
 }
 
 /// A literal element to merge: its content hash, its section's header
@@ -1395,27 +1395,6 @@ fn merge_shard(isecs: &[InputSection], shard: Vec<Literal>) -> Vec<(u32, u32)> {
         }
     }
     losers.into_iter().map(|(i, group)| (i, best[group as usize])).collect()
-}
-
-/// Points every symbol defined in a merged-away subsection at the
-/// surviving one - mold makes the merged section's fragment the
-/// symbol's origin - so a symbol's address never follows a replacement
-/// chain. The copies are identical, so the symbol's offset is
-/// unchanged. (Section-relative relocations still resolve through the
-/// chain in isec_addr.)
-pub(crate) fn redirect_symbols_to_replacements<E: Target>(ctx: &mut Context<E>) {
-    let isecs = &ctx.isecs;
-    ctx.symbols.syms.par_iter_mut().for_each(|sym| {
-        if let Some(i) = sym.input_section() {
-            let mut r = i as usize;
-            while isecs[r].replacement != NO_REPLACEMENT {
-                r = isecs[r].replacement as usize;
-            }
-            if r != i as usize {
-                sym.set_input_section(Some(r as u32));
-            }
-        }
-    });
 }
 
 /// Auto-hides eligible weak definitions. Compilers mark a weak
