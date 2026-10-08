@@ -883,6 +883,12 @@ point symbol in a script.
   `GNU_PROPERTY_AARCH64_FEATURE_1_GCS` bit in its `.note.gnu.property`
   section.
 
+* `-z pac-plt`:
+  Generate an ARM64 PLT that authenticates function addresses read from
+  `.got.plt` using Pointer Authentication (PAC), and turn on
+  `GNU_PROPERTY_AARCH64_FEATURE_1_PAC` bit in `.note.gnu.property` section.
+  The output works only with a dynamic linker that signs `.got.plt` entries.
+
 * `-z now`, `-z lazy`:
   By default, functions referring to other ELF modules are resolved by the
   dynamic linker when they are called for the first time. `-z now` marks an

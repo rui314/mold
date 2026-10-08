@@ -514,6 +514,7 @@ pub struct Args {
     pub z_nodefaultlib: bool,
     pub z_now: bool,
     pub z_origin: bool,
+    pub z_pac_plt: bool,
     pub z_relro: bool,
     pub z_rewrite_endbr: bool,
     pub z_rodynamic: bool,
@@ -657,6 +658,7 @@ impl Default for Args {
             z_nodefaultlib: false,
             z_now: false,
             z_origin: false,
+            z_pac_plt: false,
             z_relro: true,
             z_rewrite_endbr: false,
             z_rodynamic: false,
@@ -1698,6 +1700,8 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
         } else if cursor.read_z_flag("ibtplt") {
         } else if cursor.read_z_flag("force-bti") {
             a.z_force_bti = true;
+        } else if cursor.read_z_flag("pac-plt") {
+            a.z_pac_plt = true;
         } else if cursor.read_z_flag("gcs=implicit") {
             a.z_gcs = GcsKind::Implicit;
         } else if cursor.read_z_flag("gcs=never") {

@@ -107,6 +107,9 @@ pub fn construct<E: Target>(ctx: &mut Context<E>) {
         if ctx.args.z_force_bti {
             *features |= GNU_PROPERTY_AARCH64_FEATURE_1_BTI;
         }
+        if ctx.args.z_pac_plt {
+            *features |= GNU_PROPERTY_AARCH64_FEATURE_1_PAC;
+        }
         match ctx.args.z_gcs {
             GcsKind::Implicit => {}
             GcsKind::Never => *features &= !GNU_PROPERTY_AARCH64_FEATURE_1_GCS,
