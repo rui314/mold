@@ -590,6 +590,145 @@ fn search_library<E: Target>(
     None
 }
 
+/// An LC_RPATH entry as a search directory: @loader_path stands for the
+/// directory of the dylib that carries the entry.
+pub(crate) fn loader_rpath(dylib: &Path, rpath: &[u8]) -> PathBuf {
+    match rpath.strip_prefix(b"@loader_path/") {
+        Some(rest) => dir_of(dylib).join(crate::util::os_str(rest)),
+        None => PathBuf::from(crate::util::os_str(rpath)),
+    }
+}
+
+/// The directory dyld would use for a dylib's @loader_path: that of
+/// the real file, symlinks resolved. A framework's X.framework/X is a
+/// symlink to Versions/A/X, and its LC_RPATH entries are written for
+/// that location (XCTest's `@loader_path/../../../../PrivateFrameworks`
+/// reaches XCTestCore only from Versions/A). A fat file's name may
+/// carry the "(for architecture ...)" suffix the loader adds.
+fn dir_of(path: &Path) -> PathBuf {
+    let bytes = crate::util::path_bytes(path);
+    let end = memchr::memmem::find(bytes, b"(for architecture").unwrap_or(bytes.len());
+    let path = Path::new(crate::util::os_str(&bytes[..end]));
+    if let Ok(real) = std::fs::canonicalize(path)
+        && let Some(dir) = real.parent()
+    {
+        return dir.to_path_buf();
+    }
+    match path.parent() {
+        Some(dir) if !dir.as_os_str().is_empty() => dir.to_path_buf(),
+        _ => PathBuf::from("."),
+    }
+}
+
+/// Resolves a dependent dylib's install name the way dyld would, but
+/// at link time: @loader_path is the directory of the dylib that
+/// names the dependency, and @rpath tries that dylib's own LC_RPATH
+/// entries. ld-prime expands no @executable_path (ld64 took the output
+/// executable's directory, or -executable_path's), so such a name
+/// resolves only by its leaf. A -dylib_file for the name comes first,
+/// unless its file isn't there; one that is ld-prime reads as any input.
+/// Then the name is looked for as
+/// find_dylib_ref does, the files not found noted for -dependency_info
+/// - but for the name itself if a stub has the library `inlined`.
+pub(crate) fn resolve_dylib_ref<E: Target>(
+    ctx: &Context<E>,
+    name: &[u8],
+    loader: &Path,
+    loader_rpaths: &[PathBuf],
+    inlined: bool,
+) -> Option<&'static MappedFile> {
+    let dylib_files = ctx.args.dylib_files.iter().filter(|(install_name, _)| install_name == name);
+    for (_, file) in dylib_files {
+        match MappedFile::try_open(file) {
+            Ok(mf) if mf.size() > 0 => return Some(mf),
+            Ok(_) => fatal!("file is empty in '{}'", file.raw()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound && !file.exists() => {}
+            Err(e) => fatal!("{}", crate::error::raw(&unreadable_file(file, &e))),
+        }
+    }
+    let prober = Prober::new(ctx);
+    let loader = Some((loader, loader_rpaths));
+    MappedFile::open(&find_dylib_ref(ctx, &prober, name, loader, inlined)?)
+}
+
+/// Locates a re-exported library by its install name as load_reexports
+/// does, but quietly: ahead of the link, or again after it.
+fn find_reexport<E: Target>(ctx: &Context<E>, name: &[u8]) -> Option<&'static MappedFile> {
+    let prober = Prober::quiet(ctx);
+    MappedFile::open(&find_dylib_ref(ctx, &prober, name, None, false)?)
+}
+
+/// Finds the file of a dependent dylib's install name with `prober`, as
+/// ld-prime looks for it: a name relative to its `loader` - the file of
+/// the dylib that names it, whose directory @loader_path stands for
+/// (looked up only for such a name: it resolves symbolic links), and
+/// that dylib's rpaths - in its place there first; then by the name's end in the search paths
+/// (see find_by_leaf); then the name itself, an absolute one under each
+/// -syslibroot first (reexports between freshly built dylibs use
+/// absolute install names outside any SDK) - but not where a stub has
+/// the library `inlined`, which ld-prime takes in its place. Each place
+/// is looked in for a stub too (see Prober::library).
+fn find_dylib_ref<E: Target>(
+    ctx: &Context<E>,
+    prober: &Prober,
+    name: &[u8],
+    loader: Option<(&Path, &[PathBuf])>,
+    inlined: bool,
+) -> Option<PathBuf> {
+    use crate::util::os_str;
+    if let Some((loader, loader_rpaths)) = loader {
+        if let Some(rest) = name.strip_prefix(b"@loader_path/") {
+            if let Some(path) = prober.library(&dir_of(loader).join(os_str(rest))) {
+                return Some(path);
+            }
+        } else if let Some(rest) = name.strip_prefix(b"@rpath/") {
+            let mut rpaths = loader_rpaths.iter();
+            if let Some(path) = rpaths.find_map(|rpath| prober.library(&rpath.join(os_str(rest)))) {
+                return Some(path);
+            }
+        }
+    }
+    if let Some(path) = find_by_leaf(ctx, prober, name) {
+        return Some(path);
+    }
+    let path = Path::new(os_str(name));
+    if path.is_absolute() {
+        for root in &ctx.args.syslibroot {
+            if let Some(path) = prober.library(&under_root(root, path)) {
+                return Some(path);
+            }
+        }
+    }
+    if inlined {
+        return None;
+    }
+    prober.library(path)
+}
+
+/// Looks a dependent dylib up by the end of its install name in the
+/// search paths, as ld-prime does before the name itself: a framework's
+/// path from its .framework directory (/Foo.framework/Versions/A/Foo)
+/// in each framework directory, another library's leaf
+/// (libfoo.1.dylib) in each library directory - but for a library
+/// inside a framework, which is looked up by its name alone.
+fn find_by_leaf<E: Target>(ctx: &Context<E>, prober: &Prober, name: &[u8]) -> Option<PathBuf> {
+    use crate::util::{os_str, path_bytes};
+    use memchr::{memmem, memrchr};
+    let leaf = memrchr(b'/', name).map_or(name, |slash| &name[slash + 1..]);
+    let framework_dir = [b"/", leaf, b".framework/"].concat();
+    if leaf.len() < name.len() && memmem::rfind(name, &framework_dir).is_some() {
+        let end = memmem::rfind(name, b".framework").unwrap();
+        let from = &name[memrchr(b'/', &name[..end]).unwrap()..];
+        return (ctx.args.framework_paths.iter())
+            .find_map(|dir| prober.library(Path::new(os_str(&[path_bytes(dir), from].concat()))));
+    }
+    if leaf.ends_with(b".dylib") && memmem::find(name, b".framework/").is_some() {
+        return None;
+    }
+    let leaf = Path::new(os_str(leaf));
+    ctx.args.library_paths.iter().find_map(|dir| prober.library(&dir.join(leaf)))
+}
+
 /// How an input was named: the flags its option gives the file, as
 /// mold's ReaderContext carries --as-needed and --whole-archive.
 #[derive(Clone, Copy, Default)]
@@ -820,7 +959,7 @@ fn prefetch_stub<'s, E: Target>(
         for &name in stub.reexports() {
             if !stub.inlines(name)
                 && seen.names.lock().unwrap().insert(name)
-                && let Some(dep) = input_files::find_reexport(ctx, name)
+                && let Some(dep) = find_reexport(ctx, name)
             {
                 prefetch_stub(ctx, scope, seen, dep);
             }
@@ -1264,7 +1403,9 @@ fn load_pending<E: Target>(ctx: &mut Context<E>, pending: Vec<PendingObject>) {
         })
         .collect();
     drop(t);
-    warn_about_sections(&staged);
+    for obj in &staged {
+        obj.warn_about_sections();
+    }
 
     // Intern every staged object's global names in one parallel batch
     // (mold's sharded symbol table), so the serial integration loop
@@ -1295,34 +1436,6 @@ fn load_pending<E: Target>(ctx: &mut Context<E>, pending: Vec<PendingObject>) {
     let t = ctx.timer("integrate");
     input_files::integrate_objects(ctx, staged, ids, counts);
     drop(t);
-}
-
-/// ld-prime warns of some sections of every object it parses - archive
-/// members the link doesn't use included: it drops each __LD section it
-/// doesn't know, and aligns the constants of a __DATA,__cfstring to a
-/// pointer whatever the section says. Staging runs in parallel, so the
-/// diagnostics come here, in input order.
-fn warn_about_sections(staged: &[input_files::StagedObject]) {
-    for obj in staged {
-        for (i, hdr) in obj.sect_hdrs.iter().enumerate() {
-            if input_files::is_unknown_ld_section(hdr) {
-                crate::warn!(
-                    "unknown section: __LD/{} in {}",
-                    raw(hdr.sectname()),
-                    obj.mf.name.raw()
-                );
-            } else if hdr.segname() == b"__DATA"
-                && hdr.sectname() == b"__cfstring"
-                && hdr.p2align != 3
-                && obj.isecs.iter().any(|isec| isec.shndx == i as u32 && isec.is_alive())
-            {
-                crate::warn!(
-                    "section __DATA/__cfstring is not pointer aligned in {}",
-                    obj.mf.name.raw()
-                );
-            }
-        }
-    }
 }
 
 /// Acts on the auto-link options (LC_LINKER_OPTION) of the live
