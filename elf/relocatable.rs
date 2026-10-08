@@ -34,7 +34,7 @@ use std::collections::HashMap;
 
 use mold_common::util::align_to;
 
-use crate::arch::Target;
+use crate::arch::{Family, Target};
 use crate::chunks::comdat_group::ComdatGroupSection;
 use crate::chunks::note_property::NotePropertySection;
 use crate::chunks::output_section::{self, OutputSection};
@@ -109,7 +109,7 @@ fn create_synthetic_sections<E: Target>(ctx: &mut Context<E>) {
         ChunkId::Symtab,
         ChunkId::Shstrtab,
     ]);
-    if E::IS_X86 {
+    if E::IS_X86 || E::FAMILY == Family::Arm64 {
         ctx.note_property = Some(NotePropertySection::<E>::new());
         ctx.chunks.push(ChunkId::NoteProperty);
     }

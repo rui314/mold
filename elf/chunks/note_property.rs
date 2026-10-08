@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::arch::Target;
+use crate::arch::{Family, Target};
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
@@ -46,15 +46,21 @@ pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
     // Merge values for each key
     let mut map: BTreeMap<u32, u32> = BTreeMap::new();
     for key in keys {
-        if (GNU_PROPERTY_X86_UINT32_AND_LO..=GNU_PROPERTY_X86_UINT32_AND_HI).contains(&key) {
+        if (E::IS_X86
+            && (GNU_PROPERTY_X86_UINT32_AND_LO..=GNU_PROPERTY_X86_UINT32_AND_HI).contains(&key))
+            || (E::FAMILY == Family::Arm64 && key == GNU_PROPERTY_AARCH64_FEATURE_1_AND)
+        {
             // An AND feature is set if all input objects have the property and
             // the feature.
             map.insert(key, files.iter().fold(u32::MAX, |acc, f| acc & value(f, key)));
-        } else if (GNU_PROPERTY_X86_UINT32_OR_LO..=GNU_PROPERTY_X86_UINT32_OR_HI).contains(&key) {
+        } else if E::IS_X86
+            && (GNU_PROPERTY_X86_UINT32_OR_LO..=GNU_PROPERTY_X86_UINT32_OR_HI).contains(&key)
+        {
             // An OR feature is set if some input object has the feature.
             map.insert(key, files.iter().fold(0, |acc, f| acc | value(f, key)));
-        } else if (GNU_PROPERTY_X86_UINT32_OR_AND_LO..=GNU_PROPERTY_X86_UINT32_OR_AND_HI)
-            .contains(&key)
+        } else if E::IS_X86
+            && (GNU_PROPERTY_X86_UINT32_OR_AND_LO..=GNU_PROPERTY_X86_UINT32_OR_AND_HI)
+                .contains(&key)
         {
             // An OR-AND feature is set if all input object files have the property
             // and some of them have the feature.
@@ -64,13 +70,17 @@ pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
         }
     }
 
-    if ctx.args.z_ibt {
-        *map.entry(GNU_PROPERTY_X86_FEATURE_1_AND).or_insert(0) |= GNU_PROPERTY_X86_FEATURE_1_IBT;
+    if E::IS_X86 {
+        if ctx.args.z_ibt {
+            *map.entry(GNU_PROPERTY_X86_FEATURE_1_AND).or_insert(0) |=
+                GNU_PROPERTY_X86_FEATURE_1_IBT;
+        }
+        if ctx.args.z_shstk {
+            *map.entry(GNU_PROPERTY_X86_FEATURE_1_AND).or_insert(0) |=
+                GNU_PROPERTY_X86_FEATURE_1_SHSTK;
+        }
+        *map.entry(GNU_PROPERTY_X86_ISA_1_NEEDED).or_insert(0) |= ctx.args.z_x86_64_isa_level;
     }
-    if ctx.args.z_shstk {
-        *map.entry(GNU_PROPERTY_X86_FEATURE_1_AND).or_insert(0) |= GNU_PROPERTY_X86_FEATURE_1_SHSTK;
-    }
-    *map.entry(GNU_PROPERTY_X86_ISA_1_NEEDED).or_insert(0) |= ctx.args.z_x86_64_isa_level;
 
     // Serialize the map
     let contents: Vec<(u32, u32)> = map.into_iter().filter(|&(_, v)| v != 0).collect();
