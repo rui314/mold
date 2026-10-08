@@ -477,7 +477,7 @@ impl SyntheticSection {
 }
 
 /// The merged __objc_imageinfo, if any input has one
-/// (create_output_sections folded the inputs' records into
+/// (create_synthetic_sections folded the inputs' records into
 /// ctx.objc_imageinfo.flags). The record is what makes the
 /// Objective-C runtime look at an image at all: without it, dyld
 /// never hands the image to the runtime, so no class or category it

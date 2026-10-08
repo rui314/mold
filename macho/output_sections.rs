@@ -595,31 +595,91 @@ fn place_tail_blobs<E: Target>(ctx: &mut Context<E>) {
     }
 }
 
-/// Creates the output sections: assigns each input section to its
-/// output section, adds the sections the linker synthesizes, sorts them
-/// all into file order and groups them into segments.
-pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
+/// Bins the input sections into output sections, after the mach
+/// header: assigns each input section to its output section (see
+/// assign_input_sections), puts the records the linker rewrote in
+/// place of input subsections where those were, and places the input
+/// sections of -sectcreate. `moves` are the symbol moves (see
+/// symbol_moves::find_moves).
+pub fn create_output_sections<E: Target>(
+    ctx: &mut Context<E>,
+    moves: &hashbrown::HashMap<u32, Move>,
+) {
     ctx.chunks.push(ChunkId::MachHeader);
     let text = text_section_name(ctx);
-    let moves = crate::symbol_moves::find_moves(ctx);
-    assign_input_sections(ctx, text, &moves);
-    place_replacing_blobs(ctx, text, &moves);
+    assign_input_sections(ctx, text, moves);
+    place_replacing_blobs(ctx, text, moves);
     place_sectcreate_inputs(ctx);
+}
 
-    set_section_alignments(ctx);
-    sort_section_members(ctx);
-    compute_section_sizes(ctx);
+/// Creates the sections the linker synthesizes, now that the input
+/// sections are laid out in theirs: the stubs and the GOT, the
+/// initializer offsets, the Objective-C ones (some of which go in the
+/// tail of an input section's output section), those of -sectcreate,
+/// the unwind tables and the __LINKEDIT tables, in that order. `moves`
+/// are the symbol moves (see symbol_moves::find_moves). sold's
+/// create_synthetic_chunks.
+pub fn create_synthetic_sections<E: Target>(
+    ctx: &mut Context<E>,
+    moves: &hashbrown::HashMap<u32, Move>,
+) {
+    let text = text_section_name(ctx);
 
-    // The sections the linker synthesizes.
-    add_stub_and_got_chunks(ctx);
+    // The stubs, the lazy-binding helper and pointers, the lazy-load
+    // helpers and slots, and the GOT, the ones in use, each sized by its
+    // update_shdr.
+    if !ctx.stubs.symbols.is_empty() {
+        chunks::stubs::update_shdr(ctx);
+        ctx.chunks.push(ChunkId::Stubs);
+    }
+    // (A stub bound by weak lookup goes through the GOT; only lazily
+    // bound stubs need the helper and lazy pointers.)
+    if !ctx.stubs.lazy.is_empty() {
+        chunks::stub_helper::update_shdr(ctx);
+        ctx.chunks.push(ChunkId::StubHelper);
+        chunks::lazy_ptrs::update_shdr(ctx);
+        ctx.chunks.push(ChunkId::LazyPtrs);
+    }
+
+    // The delay-init stubs and helpers.
+    if !ctx.delay_init.stubs.is_empty() {
+        chunks::delay_init::update_stubs_shdr(ctx);
+        ctx.chunks.push(ChunkId::DelayStubs);
+    }
+    if !ctx.delay_init.dlopens.is_empty() {
+        chunks::delay_init::update_helper_shdr(ctx);
+        ctx.chunks.push(ChunkId::DelayHelper);
+    }
+
+    // The lazy-load helpers, and their slots.
+    if !ctx.lazy_helpers.helpers.is_empty() {
+        chunks::lazy_helpers::update_shdr(ctx);
+        ctx.chunks.push(ChunkId::LazyHelpers);
+    }
+    if !ctx.lazy_load_got.slots.is_empty() {
+        chunks::lazy_load_got::update_shdr(ctx);
+        ctx.chunks.push(ChunkId::LazyLoadGot);
+    }
+
+    if !ctx.got.got_syms.is_empty() {
+        chunks::got::update_shdr(ctx);
+        ctx.chunks.push(ChunkId::Got);
+    }
+
     if !ctx.init_offsets.init_funcs.is_empty() {
         chunks::init_offsets::update_shdr(ctx);
         ctx.chunks.push(ChunkId::InitOffsets);
     }
     add_objc_stubs(ctx);
     place_tail_blobs(ctx);
-    chunks::objc_methlist::lay_out_objc_method_lists(ctx, text, &moves);
-    add_sectcreate_sections(ctx);
+    chunks::objc_methlist::lay_out_objc_method_lists(ctx, text, moves);
+
+    // The sections the -sectcreate and -add_empty_section options make
+    // (see place_sectcreate_inputs).
+    for i in 0..ctx.sectcreate_sections.len() {
+        ctx.chunks.push(ChunkId::SectCreate(i as u32));
+    }
+
     chunks::objc_imageinfo::create(ctx);
     if ctx.args.fixup_chains_section {
         ctx.chain_starts.hdr.reserved1 = ctx.args.chain_starts_kind;
@@ -630,28 +690,74 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     }
     lay_out_eh_frame(ctx);
     warn_eh_frame_too_large(ctx);
-    add_linkedit_chunks(ctx);
-    rename_synthetic_sections(ctx);
-    add_boundary_sections(ctx);
-    trace_symbol_layout(ctx);
 
-    sort_output_sections(ctx);
-    create_segments(ctx);
-    add_boundary_segments(ctx);
-    add_stack_segment(ctx);
-    finish_section_alignments(ctx, text);
-    crate::chunks::indirect_symtab::assign_indices(ctx);
-    check_segment_order(ctx);
-    check_section_order(ctx);
-    check_interposing(ctx);
-    // The mach header's segment must come first after __PAGEZERO. A
-    // -static image's header moves with -rename_segment __TEXT, and
-    // only -segment_order can then put its segment there.
+    // The __LINKEDIT tables, in ld-prime's order.
+    //
+    // What dyld reads. A -static image or a kext has no dyld: a -static
+    // one has only the fixups -fixup_chains or -no_fixup_chains asks
+    // for (chains, or rebase and weak-bind opcodes, never an export
+    // trie), or under -pie local relocations to slide by; a kext has
+    // its relocations, by which kmutil links it. Legacy LINKEDIT has
+    // dyld slide an image that slides by its local relocations; ld-prime
+    // writes an export trie after them, which no load command names.
+    if ctx.args.legacy_linkedit {
+        if !chunks::rebase_info::is_never_slid(ctx) {
+            ctx.chunks.push(ChunkId::LocalRelocs);
+        }
+        ctx.chunks.push(ChunkId::ExportTrie);
+    } else if !ctx.args.without_dyld() {
+        ctx.chunks.push(ChunkId::ChainedFixups);
+        ctx.chunks.push(ChunkId::RebaseInfo);
+        ctx.chunks.push(ChunkId::BindInfo);
+        ctx.chunks.push(ChunkId::WeakBindInfo);
+        ctx.chunks.push(ChunkId::LazyBindInfo);
+        ctx.chunks.push(ChunkId::ExportTrie);
+    } else if ctx.use_chained_fixups() {
+        if !ctx.args.fixup_chains_section {
+            ctx.chunks.push(ChunkId::ChainedFixups);
+        }
+    } else if ctx.args.no_fixup_chains {
+        ctx.chunks.push(ChunkId::RebaseInfo);
+        ctx.chunks.push(ChunkId::WeakBindInfo);
+    } else if ctx.args.pie || ctx.args.is_kext() {
+        ctx.chunks.push(ChunkId::LocalRelocs);
+    }
+    // An empty one marks an image -no_shared_cache_eligible keeps out
+    // of the shared cache.
+    if ctx.args.shared_region || (ctx.args.shared_cache_marker && !ctx.args.preload) {
+        ctx.chunks.push(ChunkId::SplitInfo);
+    }
+    if !ctx.lazy_load_info.dylibs.is_empty() {
+        ctx.chunks.push(ChunkId::LazyLoadInfo);
+    }
+    ctx.chunks.push(ChunkId::FunctionStarts);
+    if ctx.args.data_in_code_info {
+        ctx.chunks.push(ChunkId::DataInCode);
+    }
+    if ctx.args.make_mergeable {
+        ctx.chunks.push(ChunkId::MergeableRecord);
+    }
+    ctx.chunks.push(ChunkId::Symtab);
+    if ctx.args.is_kext() || ctx.args.legacy_linkedit {
+        ctx.chunks.push(ChunkId::ExternRelocs);
+    }
+    // (Sized once the sections are in order, see assign_indices.)
+    if chunks::indirect_symtab::sections(ctx).next().is_some() {
+        ctx.chunks.push(ChunkId::IndirectSymtab);
+    }
+    ctx.chunks.push(ChunkId::Strtab);
+    if ctx.args.adhoc_codesign {
+        ctx.chunks.push(ChunkId::CodeSignature);
+    }
+}
+
+/// Fails the link if the mach header's segment does not come first
+/// after __PAGEZERO. A -static image's header moves with
+/// -rename_segment __TEXT, and only -segment_order can then put its
+/// segment there.
+pub fn check_header_segment<E: Target>(ctx: &Context<E>) {
     if ctx.chunks.first() != Some(&ChunkId::MachHeader) {
         fatal!("Invalid -segment_order, __TEXT must be the first segment after zero page");
-    }
-    if ctx.args.no_zero_fill_sections && !ctx.args.relocatable {
-        fill_zero_fill_sections(ctx);
     }
 }
 
@@ -940,7 +1046,7 @@ impl OutputSectionTable {
 /// mapped to __TEXT/__text". A file that can't be
 /// written is a warning, ending with a blank line as ld-prime's does,
 /// and the trace goes nowhere then. A -r link reports nothing.
-fn trace_symbol_layout<E: Target>(ctx: &Context<E>) {
+pub fn trace_symbol_layout<E: Target>(ctx: &Context<E>) {
     let args = &ctx.args;
     if args.relocatable {
         return;
@@ -1033,7 +1139,7 @@ fn find_output_section<E: Target>(ctx: &Context<E>, name: SectionName) -> Option
 /// Settles the output sections' alignments, which their members raised
 /// to the largest of theirs: the thread-local template's sections share
 /// the strictest one (see also finish_section_alignments).
-fn set_section_alignments<E: Target>(ctx: &mut Context<E>) {
+pub fn set_section_alignments<E: Target>(ctx: &mut Context<E>) {
     // The thread-local template (the initial values, __thread_data,
     // followed by the zero fill, __thread_bss) is one image dyld copies
     // per thread, so ld-prime gives all its sections, by type, the
@@ -1062,7 +1168,7 @@ fn set_section_alignments<E: Target>(ctx: &mut Context<E>) {
 /// but not in a -static or -preload image or a kext, which no dyld
 /// maps: ld-prime starts the section's segment on the alignment there
 /// (see segment_start_align).
-fn finish_section_alignments<E: Target>(ctx: &mut Context<E>, text: SectionName) {
+pub fn finish_section_alignments<E: Target>(ctx: &mut Context<E>) {
     let capped = !ctx.args.relocatable && !ctx.args.static_link && !ctx.args.is_kext();
     let max = ctx.args.segment_align.max(1).trailing_zeros();
     let warn_capped = ctx.args.warn_reduced_section_align;
@@ -1109,7 +1215,7 @@ fn finish_section_alignments<E: Target>(ctx: &mut Context<E>, text: SectionName)
     // whatever the inputs or -sectalign ask, and leaves no room between
     // the load commands and it (see chunks::header_pad).
     if ctx.args.is_dylinker()
-        && let Some(id) = find_output_section(ctx, text)
+        && let Some(id) = find_output_section(ctx, text_section_name(ctx))
     {
         ctx.output_sections[id.index()].hdr.p2align = 12;
     }
@@ -1118,7 +1224,7 @@ fn finish_section_alignments<E: Target>(ctx: &mut Context<E>, text: SectionName)
 /// Orders each output section's members: the subsections -order_file
 /// names first, cold code last, and the rest in input order (see
 /// assign_input_sections).
-fn sort_section_members<E: Target>(ctx: &mut Context<E>) {
+pub fn sort_section_members<E: Target>(ctx: &mut Context<E>) {
     // -order_file moves the subsections it names to the front of their
     // output sections, in the file's order; everything else keeps its
     // input order behind them. A stable sort by rank does both.
@@ -1163,7 +1269,7 @@ fn sort_section_members<E: Target>(ctx: &mut Context<E>) {
 /// results are written back serially. Code gets range-extension thunks
 /// later, if a branch can be out of reach at all, once the order of the
 /// sections is known (see thunks.rs).
-fn compute_section_sizes<E: Target>(ctx: &mut Context<E>) {
+pub fn compute_section_sizes<E: Target>(ctx: &mut Context<E>) {
     let layouts: Vec<(Vec<u64>, u64)> = ctx
         .output_sections
         .par_iter()
@@ -1283,14 +1389,6 @@ fn add_sectcreate_isec<E: Target>(
     id
 }
 
-/// Adds the sections the -sectcreate and -add_empty_section options
-/// make (see place_sectcreate_inputs) to the image's chunks.
-fn add_sectcreate_sections<E: Target>(ctx: &mut Context<E>) {
-    for i in 0..ctx.sectcreate_sections.len() {
-        ctx.chunks.push(ChunkId::SectCreate(i as u32));
-    }
-}
-
 /// Lays out __eh_frame, the surviving DWARF unwind records: the CIEs
 /// the kept FDEs use, then the FDEs, as mold's EhFrameSection does (an
 /// FDE's CIE pointer is a backward offset). Their offsets are needed
@@ -1380,7 +1478,7 @@ fn warn_eh_frame_too_large<E: Target>(ctx: &Context<E>) {
 /// always last. Zero-fill sections go last in their segment so that
 /// they take no file space in the middle of it, and -section_order
 /// orders the sections of each kind.
-fn sort_output_sections<E: Target>(ctx: &mut Context<E>) {
+pub fn sort_output_sections<E: Target>(ctx: &mut Context<E>) {
     let mut order = ctx.chunks.clone();
     let mut first_seen: hashbrown::HashMap<&'static [u8], usize> = hashbrown::HashMap::new();
     for &id in &order {
@@ -1457,7 +1555,7 @@ fn section_rank<E: Target>(ctx: &Context<E>, id: ChunkId) -> u32 {
 /// Groups the chunks, in file order, into segments, and numbers the
 /// sections: a MachSym's sect is the 1-based ordinal of its section in
 /// the load commands.
-fn create_segments<E: Target>(ctx: &mut Context<E>) {
+pub fn create_segments<E: Target>(ctx: &mut Context<E>) {
     let mut segments = Vec::new();
     if ctx.args.pagezero_size > 0 {
         segments.push(OutputSegment::new(b"__PAGEZERO"));
@@ -1489,7 +1587,7 @@ fn create_segments<E: Target>(ctx: &mut Context<E>) {
 /// its segment. A thread-local one becomes S_THREAD_LOCAL_REGULAR, not
 /// S_REGULAR as in ld-prime (which ld64 left thread-local): dyld finds
 /// the thread-local template by those two types.
-fn fill_zero_fill_sections<E: Target>(ctx: &mut Context<E>) {
+pub fn fill_zero_fill_sections<E: Target>(ctx: &mut Context<E>) {
     for osec in &mut ctx.output_sections {
         let hdr = &mut osec.hdr;
         let regular = match hdr.flags & SECTION_TYPE {
@@ -1523,7 +1621,7 @@ fn is_text_section(hdr: &ChunkHeader) -> bool {
 /// has no file bytes, ahead of one with contents: the listed sections
 /// lead their segment, so a listed zero-fill section must follow every
 /// other section with contents, listed or not.
-fn check_section_order<E: Target>(ctx: &Context<E>) {
+pub fn check_section_order<E: Target>(ctx: &Context<E>) {
     for (seg, list) in &ctx.args.section_order {
         let sects: Vec<&ChunkHeader> = ctx
             .chunks
@@ -1556,7 +1654,7 @@ fn check_section_order<E: Target>(ctx: &Context<E>) {
 /// __interpose in a segment whose name starts with __DATA or __AUTH,
 /// by its final name - and rejects even an empty one, naming the last
 /// in the image.
-fn check_interposing<E: Target>(ctx: &Context<E>) {
+pub fn check_interposing<E: Target>(ctx: &Context<E>) {
     if !ctx.args.shared_region {
         return;
     }
@@ -1607,7 +1705,7 @@ fn text_section_name<E: Target>(ctx: &Context<E>) -> SectionName {
 /// -sectcreate, got their renamed names when created.) A -sectcreate
 /// __DATA,__interpose moves to __DATA_CONST like an input section (see
 /// SectionMap::renamed).
-fn rename_synthetic_sections<E: Target>(ctx: &mut Context<E>) {
+pub fn rename_synthetic_sections<E: Target>(ctx: &mut Context<E>) {
     let map = SectionMap::final_link(ctx);
     if ctx.args.rename_sections.is_empty()
         && ctx.args.rename_segments.is_empty()
@@ -1640,7 +1738,7 @@ fn rename_synthetic_sections<E: Target>(ctx: &mut Context<E>) {
 /// but merges and drops nothing: section$start$__TEXT$__literal8
 /// names an empty __literal8 of its own, with the flags of the
 /// standard section of its name (see standard_section_flags), if any.
-fn add_boundary_sections<E: Target>(ctx: &mut Context<E>) {
+pub fn add_boundary_sections<E: Target>(ctx: &mut Context<E>) {
     let map = SectionMap::final_link(ctx);
     for i in 0..ctx.boundary_syms.len() {
         let (_, _, seg, sect) = ctx.boundary_syms[i];
@@ -1659,7 +1757,9 @@ fn add_boundary_sections<E: Target>(ctx: &mut Context<E>) {
         }) {
             let mut sec = SectCreateSection::new(seg, sect, &[]);
             sec.hdr.flags = flags;
-            add_sectcreate(ctx, sec);
+            let idx = ctx.sectcreate_sections.len() as u32;
+            ctx.sectcreate_sections.push(sec);
+            ctx.chunks.push(ChunkId::SectCreate(idx));
         }
     }
 }
@@ -1669,7 +1769,7 @@ fn add_boundary_sections<E: Target>(ctx: &mut Context<E>) {
 /// empty segment (no sections, vmsize 0) to point at, as ld-prime
 /// does: just before __LINKEDIT and at its address, in the order of
 /// the symbols' names.
-fn add_boundary_segments<E: Target>(ctx: &mut Context<E>) {
+pub fn add_boundary_segments<E: Target>(ctx: &mut Context<E>) {
     let mut syms: Vec<(&[u8], &'static [u8])> = ctx
         .boundary_syms
         .iter()
@@ -1690,113 +1790,10 @@ fn add_boundary_segments<E: Target>(ctx: &mut Context<E>) {
 /// The -stack_size stack of an executable that starts from
 /// LC_UNIXTHREAD: a segment of address space alone before __LINKEDIT,
 /// pinned where resolve_stack says.
-fn add_stack_segment<E: Target>(ctx: &mut Context<E>) {
+pub fn add_stack_segment<E: Target>(ctx: &mut Context<E>) {
     if ctx.args.unixthread && ctx.args.stack_size != 0 {
         let linkedit = ctx.segments.len() - 1;
         ctx.segments.insert(linkedit, OutputSegment::new(b"__UNIXSTACK"));
-    }
-}
-
-/// Adds the stubs, the lazy-binding helper and pointers, the lazy-load
-/// helpers and slots, and the GOT to the output, the ones in use, each
-/// sized by its update_shdr.
-fn add_stub_and_got_chunks<E: Target>(ctx: &mut Context<E>) {
-    if !ctx.stubs.symbols.is_empty() {
-        chunks::stubs::update_shdr(ctx);
-        ctx.chunks.push(ChunkId::Stubs);
-    }
-    // (A stub bound by weak lookup goes through the GOT; only lazily
-    // bound stubs need the helper and lazy pointers.)
-    if !ctx.stubs.lazy.is_empty() {
-        chunks::stub_helper::update_shdr(ctx);
-        ctx.chunks.push(ChunkId::StubHelper);
-        chunks::lazy_ptrs::update_shdr(ctx);
-        ctx.chunks.push(ChunkId::LazyPtrs);
-    }
-
-    // The delay-init stubs and helpers.
-    if !ctx.delay_init.stubs.is_empty() {
-        chunks::delay_init::update_stubs_shdr(ctx);
-        ctx.chunks.push(ChunkId::DelayStubs);
-    }
-    if !ctx.delay_init.dlopens.is_empty() {
-        chunks::delay_init::update_helper_shdr(ctx);
-        ctx.chunks.push(ChunkId::DelayHelper);
-    }
-
-    // The lazy-load helpers, and their slots.
-    if !ctx.lazy_helpers.helpers.is_empty() {
-        chunks::lazy_helpers::update_shdr(ctx);
-        ctx.chunks.push(ChunkId::LazyHelpers);
-    }
-    if !ctx.lazy_load_got.slots.is_empty() {
-        chunks::lazy_load_got::update_shdr(ctx);
-        ctx.chunks.push(ChunkId::LazyLoadGot);
-    }
-
-    if !ctx.got.got_syms.is_empty() {
-        chunks::got::update_shdr(ctx);
-        ctx.chunks.push(ChunkId::Got);
-    }
-}
-
-/// Adds the __LINKEDIT tables, in ld-prime's order.
-fn add_linkedit_chunks<E: Target>(ctx: &mut Context<E>) {
-    // What dyld reads. A -static image or a kext has no dyld: a -static
-    // one has only the fixups -fixup_chains or -no_fixup_chains asks
-    // for (chains, or rebase and weak-bind opcodes, never an export
-    // trie), or under -pie local relocations to slide by; a kext has
-    // its relocations, by which kmutil links it. Legacy LINKEDIT has
-    // dyld slide an image that slides by its local relocations; ld-prime
-    // writes an export trie after them, which no load command names.
-    if ctx.args.legacy_linkedit {
-        if !chunks::rebase_info::is_never_slid(ctx) {
-            ctx.chunks.push(ChunkId::LocalRelocs);
-        }
-        ctx.chunks.push(ChunkId::ExportTrie);
-    } else if !ctx.args.without_dyld() {
-        ctx.chunks.push(ChunkId::ChainedFixups);
-        ctx.chunks.push(ChunkId::RebaseInfo);
-        ctx.chunks.push(ChunkId::BindInfo);
-        ctx.chunks.push(ChunkId::WeakBindInfo);
-        ctx.chunks.push(ChunkId::LazyBindInfo);
-        ctx.chunks.push(ChunkId::ExportTrie);
-    } else if ctx.use_chained_fixups() {
-        if !ctx.args.fixup_chains_section {
-            ctx.chunks.push(ChunkId::ChainedFixups);
-        }
-    } else if ctx.args.no_fixup_chains {
-        ctx.chunks.push(ChunkId::RebaseInfo);
-        ctx.chunks.push(ChunkId::WeakBindInfo);
-    } else if ctx.args.pie || ctx.args.is_kext() {
-        ctx.chunks.push(ChunkId::LocalRelocs);
-    }
-    // An empty one marks an image -no_shared_cache_eligible keeps out
-    // of the shared cache.
-    if ctx.args.shared_region || (ctx.args.shared_cache_marker && !ctx.args.preload) {
-        ctx.chunks.push(ChunkId::SplitInfo);
-    }
-    if !ctx.lazy_load_info.dylibs.is_empty() {
-        ctx.chunks.push(ChunkId::LazyLoadInfo);
-    }
-    ctx.chunks.push(ChunkId::FunctionStarts);
-    if ctx.args.data_in_code_info {
-        ctx.chunks.push(ChunkId::DataInCode);
-    }
-    if ctx.args.make_mergeable {
-        ctx.chunks.push(ChunkId::MergeableRecord);
-    }
-    ctx.chunks.push(ChunkId::Symtab);
-    if ctx.args.is_kext() || ctx.args.legacy_linkedit {
-        ctx.chunks.push(ChunkId::ExternRelocs);
-    }
-    // (Sized once the sections are in order, see assign_indices.)
-    if chunks::indirect_symtab::sections(ctx).next().is_some() {
-        ctx.chunks.push(ChunkId::IndirectSymtab);
-    }
-    ctx.chunks.push(ChunkId::Strtab);
-    if ctx.args.adhoc_codesign {
-        ctx.chunks.push(ChunkId::CodeSignature);
     }
 }
 
@@ -1853,7 +1850,7 @@ pub(crate) fn common_owners<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u
 /// __LINKEDIT where they cannot go, or leaves segments out (they follow
 /// the listed ones in the usual order). The __TEXT of a -preload image
 /// holds no mach header, and is ordered like any other segment.
-fn check_segment_order<E: Target>(ctx: &Context<E>) {
+pub fn check_segment_order<E: Target>(ctx: &Context<E>) {
     let order = &ctx.args.segment_order;
     if order.is_empty() {
         return;
@@ -1879,13 +1876,6 @@ fn check_segment_order<E: Target>(ctx: &Context<E>) {
             crate::warn!("-segment_order should list all segments, {} is missing", raw(seg.name));
         }
     }
-}
-
-/// Adds a synthesized section with fixed contents to the output.
-fn add_sectcreate<E: Target>(ctx: &mut Context<E>, sec: SectCreateSection) {
-    let idx = ctx.sectcreate_sections.len() as u32;
-    ctx.sectcreate_sections.push(sec);
-    ctx.chunks.push(ChunkId::SectCreate(idx));
 }
 
 /// A line of the -order_file lists: [arch:][object-file:]symbol. An

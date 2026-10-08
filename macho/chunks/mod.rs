@@ -935,7 +935,7 @@ pub fn mach_header_size<E: Target>(ctx: &Context<E>) -> u64 {
 fn header_pad<E: Target>(ctx: &Context<E>) -> u64 {
     // A -preload image's header has pages of its own, ahead of the
     // segments; dyld's __text starts on the next 4 KiB boundary (see
-    // create_output_sections), whatever -headerpad says.
+    // finish_section_alignments), whatever -headerpad says.
     if ctx.args.preload || ctx.args.is_dylinker() {
         return 0;
     }
