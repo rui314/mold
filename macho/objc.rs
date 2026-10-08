@@ -22,15 +22,15 @@
 use rayon::prelude::*;
 
 use crate::arch::Target;
+use crate::chunks::got::add_classref_stand_ins;
+use crate::chunks::objc_methlist::add_relative_method_list;
 use crate::context::Context;
 use crate::input_files::{
-    DataField, FileId, add_data_blob, add_placed_isec, add_synthetic_section,
-    redirect_symbols_to_replacements,
+    DataField, FileId, add_data_blob, add_synthetic_section, redirect_symbols_to_replacements,
 };
-use crate::input_sections::{InputSection, Reloc, RelocTarget};
+use crate::input_sections::{Reloc, RelocTarget};
 use crate::macho::*;
 use crate::symbol::{NEEDS_GOT, NEEDS_STUB};
-use crate::util::align_to;
 
 /// A reference held by a rewritten method-list entry, resolved to an
 /// address when the list is written.
@@ -95,23 +95,6 @@ fn add_methlist_section<E: Target>(ctx: &mut Context<E>) -> (u32, u32) {
         ..Default::default()
     };
     add_synthetic_section(ctx, hdr)
-}
-
-/// Appends a method list in the relative form, at `*offset` in `sect`
-/// (an __objc_methlist section of the internal object), and returns
-/// its subsection.
-fn add_relative_method_list<E: Target>(
-    ctx: &mut Context<E>,
-    sect: (u32, u32),
-    offset: &mut u64,
-    methods: Vec<ObjcMethod>,
-) -> u32 {
-    let size = 8 + 12 * methods.len() as u64;
-    *offset = align_to(*offset, 4);
-    let isec = add_placed_isec(ctx, sect, 2, size, *offset);
-    *offset += size;
-    ctx.objc_methlist.lists.push(ObjcMethList { isec, methods });
-    isec
 }
 
 /// The relocation of the pointer field at `off` in a subsection, the
@@ -478,12 +461,13 @@ pub fn scan_objc_stubs<E: Target>(ctx: &mut Context<E>) {
 ///
 /// A reference that can't become a GOT load (one that takes the slot's
 /// address, or a pointer to the slot) keeps the slot, replaced by a
-/// stand-in for the class's GOT entry (see add_classref_stand_ins). On
-/// arm64 the loads of a class are rewritten only if each adrp of its
-/// slots is followed in its subsection by one page-offset use before
-/// the next adrp of it (-O0 code can load twice through one adrp); if
-/// any reference of the class, in any object, pairs up otherwise, all
-/// of them keep their slots, and so read the GOT entry.
+/// stand-in for the class's GOT entry (see
+/// chunks::got::add_classref_stand_ins). On arm64 the loads of a class
+/// are rewritten only if each adrp of its slots is followed in its
+/// subsection by one page-offset use before the next adrp of it (-O0
+/// code can load twice through one adrp); if any reference of the
+/// class, in any object, pairs up otherwise, all of them keep their
+/// slots, and so read the GOT entry.
 ///
 /// What folds is what is referenced: the slots of a class nothing
 /// refers to through one stay in __objc_classrefs, coalesced as below
@@ -694,40 +678,6 @@ fn pair_classref_uses<E: Target>(
         }
     }
     offset_half
-}
-
-/// Replaces the class reference slots that stay (see
-/// fold_objc_classrefs), each with its class, by stand-ins for the
-/// classes' GOT entries: subsections of a synthetic __got section,
-/// placed at the entries once passes::scan_relocations has made them
-/// (see chunks::got::update_shdr), so that what refers to a slot reads
-/// its class's entry. A stand-in is not alive: the GOT chunk writes the
-/// entry, and the slot's local symbol is not emitted.
-fn add_classref_stand_ins<E: Target>(
-    ctx: &mut Context<E>,
-    kept: Vec<(u32, crate::symbol::SymbolId)>,
-) {
-    if kept.is_empty() {
-        return;
-    }
-    let hdr = MachSection {
-        sectname: bytes_to_name(b"__got"),
-        segname: bytes_to_name(b"__DATA"),
-        p2align: 3,
-        flags: S_NON_LAZY_SYMBOL_POINTERS,
-        ..Default::default()
-    };
-    let (file, shndx) = add_synthetic_section(ctx, hdr);
-    for (slot, class) in kept {
-        ctx.isecs.push(InputSection {
-            output_section: crate::chunks::ChunkId::Got.pack(),
-            flags: InputSection::flags_dead(),
-            ..InputSection::new(file, shndx, 3, 8, &[])
-        });
-        let stand_in = (ctx.isecs.len() - 1) as u32;
-        ctx.isecs[slot as usize].replacement = stand_in;
-        ctx.got.stand_ins.push((stand_in, class));
-    }
 }
 
 /// Rewrites the Objective-C method lists in the relative form, as

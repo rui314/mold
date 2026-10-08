@@ -2,8 +2,10 @@
 //! ones. mold's got.rs holds the ELF counterpart.
 
 use crate::arch::Target;
-use crate::chunks::ChunkHeader;
+use crate::chunks::{ChunkHeader, ChunkId};
 use crate::context::Context;
+use crate::input_files::add_synthetic_section;
+use crate::input_sections::InputSection;
 use crate::macho::*;
 use crate::symbol::SymbolId;
 
@@ -44,6 +46,37 @@ pub fn add_got_symbol<E: Target>(ctx: &mut Context<E>, id: SymbolId) {
     if !ctx.symbols[id].has_got(&ctx.symbols) {
         ctx.symbols.aux_mut(id).got_idx = ctx.got.got_syms.len() as u32;
         ctx.got.got_syms.push(id);
+    }
+}
+
+/// Replaces the class reference slots that stay (see
+/// objc::fold_objc_classrefs), each with its class, by stand-ins for
+/// the classes' GOT entries: subsections of a synthetic __got section,
+/// placed at the entries once passes::scan_relocations has made them
+/// (see update_shdr), so that what refers to a slot reads its class's
+/// entry. A stand-in is not alive: the GOT chunk writes the entry, and
+/// the slot's local symbol is not emitted.
+pub(crate) fn add_classref_stand_ins<E: Target>(ctx: &mut Context<E>, kept: Vec<(u32, SymbolId)>) {
+    if kept.is_empty() {
+        return;
+    }
+    let hdr = MachSection {
+        sectname: bytes_to_name(b"__got"),
+        segname: bytes_to_name(b"__DATA"),
+        p2align: 3,
+        flags: S_NON_LAZY_SYMBOL_POINTERS,
+        ..Default::default()
+    };
+    let (file, shndx) = add_synthetic_section(ctx, hdr);
+    for (slot, class) in kept {
+        ctx.isecs.push(InputSection {
+            output_section: ChunkId::Got.pack(),
+            flags: InputSection::flags_dead(),
+            ..InputSection::new(file, shndx, 3, 8, &[])
+        });
+        let stand_in = (ctx.isecs.len() - 1) as u32;
+        ctx.isecs[slot as usize].replacement = stand_in;
+        ctx.got.stand_ins.push((stand_in, class));
     }
 }
 

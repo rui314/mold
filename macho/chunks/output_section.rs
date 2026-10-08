@@ -171,26 +171,10 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]
     let tail = &mut buf[osec.tail_off as usize..];
     match osec.tail {
         Tail::None => {}
-        Tail::ObjcMethname => {
-            let data = &ctx.objc_stubs.methname_data;
-            tail[..data.len()].copy_from_slice(data);
-        }
+        Tail::ObjcMethname => crate::chunks::objc_stubs::write_methnames(ctx, tail),
         // Written above, each record at its offset in the section.
         Tail::DataBlobs | Tail::ObjcMethlists => {}
-        Tail::ObjcSelrefs => {
-            let stubs = &ctx.objc_stubs;
-            for i in 0..stubs.symbols.len() {
-                // Its selector's name, in the tail of __objc_methname.
-                let methname = ctx.output_section(stubs.methname.unwrap());
-                let val = methname.hdr.addr + methname.tail_off + stubs.methname_offs[i];
-                tail[i * 8..i * 8 + 8].copy_from_slice(&val.to_le_bytes());
-            }
-            let n = stubs.symbols.len();
-            for (j, &name) in stubs.extra_selrefs.iter().enumerate() {
-                let val = ctx.isecs[name as usize].addr(ctx);
-                tail[(n + j) * 8..(n + j) * 8 + 8].copy_from_slice(&val.to_le_bytes());
-            }
-        }
+        Tail::ObjcSelrefs => crate::chunks::objc_stubs::write_selrefs(ctx, tail),
     }
 }
 

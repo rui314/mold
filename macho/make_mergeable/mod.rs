@@ -214,7 +214,7 @@ struct Builder<'a, E: Target> {
     /// folded, each with its subsection (see add_folded_function).
     folded: Vec<(u32, u32)>,
     /// The class of each stand-in for a class reference slot the GOT
-    /// took over (see objc::add_classref_stand_ins).
+    /// took over (see chunks::got::add_classref_stand_ins).
     stand_ins: HashMap<u32, SymbolId>,
     sections: Vec<CustomSection>,
     debug: Vec<DebugRecord>,
@@ -599,8 +599,8 @@ impl<'a, E: Target> Builder<'a, E> {
     }
 
     /// The stand-in for a class reference slot the GOT took over (see
-    /// objc::add_classref_stand_ins) that a relocation refers to, and
-    /// the offset there.
+    /// chunks::got::add_classref_stand_ins) that a relocation refers to,
+    /// and the offset there.
     fn class_ref(&self, obj: usize, r: &Reloc) -> Option<(u32, i64)> {
         if self.stand_ins.is_empty() {
             return None;

@@ -104,3 +104,28 @@ pub fn populate_symtab<E: Target>(ctx: &Context<E>, out: &mut Vec<NamedEntry>) {
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     E::write_objc_stubs(ctx, ctx.objc_stubs.hdr.addr, buf);
 }
+
+/// Writes the selector names of the stubs into `buf`, the tail of
+/// __objc_methname.
+pub fn write_methnames<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
+    let data = &ctx.objc_stubs.methname_data;
+    buf[..data.len()].copy_from_slice(data);
+}
+
+/// Writes the synthesized selector references into `buf`, the tail of
+/// __objc_selrefs: the stubs', each to its selector's name in the tail
+/// of __objc_methname, then the method lists' extra ones.
+pub fn write_selrefs<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
+    let stubs = &ctx.objc_stubs;
+    for i in 0..stubs.symbols.len() {
+        // Its selector's name, in the tail of __objc_methname.
+        let methname = ctx.output_section(stubs.methname.unwrap());
+        let val = methname.hdr.addr + methname.tail_off + stubs.methname_offs[i];
+        buf[i * 8..i * 8 + 8].copy_from_slice(&val.to_le_bytes());
+    }
+    let n = stubs.symbols.len();
+    for (j, &name) in stubs.extra_selrefs.iter().enumerate() {
+        let val = ctx.isecs[name as usize].addr(ctx);
+        buf[(n + j) * 8..(n + j) * 8 + 8].copy_from_slice(&val.to_le_bytes());
+    }
+}

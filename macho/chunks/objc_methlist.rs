@@ -5,7 +5,8 @@ use crate::arch::Target;
 use crate::chunks::output_section::append_tail;
 use crate::chunks::{ChunkHeader, ChunkId, OutputSectionId, Tail};
 use crate::context::Context;
-use crate::objc::ObjcMethList;
+use crate::input_files::add_placed_isec;
+use crate::objc::{ObjcMethList, ObjcMethod};
 use crate::passes::{SectionName, record_section};
 use crate::symbol_moves::{Move, MoveOption};
 use crate::util::align_to;
@@ -33,6 +34,23 @@ impl Default for ObjcMethlistSection {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Appends a method list in the relative form, at `*offset` in `sect`
+/// (an __objc_methlist section of the internal object), and returns
+/// its subsection.
+pub(crate) fn add_relative_method_list<E: Target>(
+    ctx: &mut Context<E>,
+    sect: (u32, u32),
+    offset: &mut u64,
+    methods: Vec<ObjcMethod>,
+) -> u32 {
+    let size = 8 + 12 * methods.len() as u64;
+    *offset = align_to(*offset, 4);
+    let isec = add_placed_isec(ctx, sect, 2, size, *offset);
+    *offset += size;
+    ctx.objc_methlist.lists.push(ObjcMethList { isec, methods });
+    isec
 }
 
 /// Lays out __objc_methlist, the method lists rewritten in the relative
