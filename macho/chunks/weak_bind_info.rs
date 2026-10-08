@@ -57,8 +57,9 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
         if !isec.is_emitted() {
             continue;
         }
+        let file = &ctx.objs[isec.file as usize];
         for (addr, rel) in rebase_info::pointer_relocs(ctx, isec) {
-            if let Some(id) = ctx.reloc_target_sym(isec.file as usize, rel)
+            if let Some(id) = rel.sym(file)
                 && binds_weak(id)
             {
                 binds.push((id, addr));

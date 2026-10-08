@@ -54,14 +54,16 @@ pub fn rebase_locations<E: Target>(ctx: &Context<E>) -> Vec<u64> {
         if !isec.is_emitted() {
             continue;
         }
+        let file = &ctx.objs[isec.file as usize];
         for (addr, rel) in pointer_relocs(ctx, isec) {
             // Pointers to thread-local data are thread-pointer-relative
             // offsets, not addresses, so they are not rebased.
-            let target = ctx.reloc_target_sym(isec.file as usize, rel).map(|id| &ctx.symbols[id]);
-            let imported =
-                target.is_some_and(|sym| sym.binds_pointer(ctx) || sym.is_dtrace_pointer_target());
-            let absolute = target.is_some_and(|sym| sym.is_absolute(ctx));
-            if !imported && !absolute && !ctx.reloc_target_is_tls(isec.file as usize, rel) {
+            let target = rel.sym(file);
+            let imported = target.is_some_and(|id| {
+                ctx.symbols[id].binds_pointer(ctx) || ctx.symbols[id].is_dtrace_pointer_target()
+            });
+            let absolute = target.is_some_and(|id| ctx.symbols[id].is_absolute(ctx));
+            if !imported && !absolute && !rel.refers_to_tls(ctx, file) {
                 locs.push(addr);
             }
         }

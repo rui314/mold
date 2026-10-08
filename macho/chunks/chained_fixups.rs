@@ -444,8 +444,15 @@ fn collect_fixups<E: Target>(ctx: &Context<E>) -> (Vec<Fixup>, Vec<(u32, u64)>) 
         .filter(|(_, isec)| isec.is_emitted())
         .flat_map_iter(|(id, isec)| {
             let unaligned = &unaligned;
+            let file = &ctx.objs[isec.file as usize];
             rebase_info::pointer_relocs(ctx, isec).filter_map(move |(addr, rel)| {
-                let fixup = match ctx.reloc_target_sym(isec.file as usize, rel) {
+                let fixup = match rel.sym(file) {
+                    Some(id)
+                        if ctx.symbols[id].is_absolute(ctx)
+                            && !ctx.symbols[id].binds_at_runtime(ctx) =>
+                    {
+                        None
+                    }
                     Some(id)
                         if ctx.symbols[id].is_absolute(ctx)
                             && !ctx.symbols[id].binds_at_runtime(ctx) =>
@@ -459,7 +466,7 @@ fn collect_fixups<E: Target>(ctx: &Context<E>) -> (Vec<Fixup>, Vec<(u32, u64)>) 
                     {
                         Some((addr, Some(id), rel.addend as u64))
                     }
-                    _ if ctx.reloc_target_is_tls(isec.file as usize, rel) => None,
+                    _ if rel.refers_to_tls(ctx, file) => None,
                     _ => Some((addr, None, 0)),
                 };
                 if fixup.is_some() && !addr.is_multiple_of(8) {

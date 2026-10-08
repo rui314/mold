@@ -59,7 +59,7 @@ fn check_adrp(ctx: &Context<Arm64>, isec: usize, r: &Reloc, p: u64, t: u64) {
     if adrp_reaches(t, p) {
         return;
     }
-    let name = ctx.reloc_target_name(ctx.isecs[isec].file as usize, r);
+    let name = r.target_name(ctx, &ctx.objs[ctx.isecs[isec].file as usize]);
     let name = crate::error::raw(&name);
     let msg = format_args!("ADRP out of range, from 0x{p:08X} to 0x{t:08X} ('{name}')");
     ctx.fixup_error(isec, r.offset, msg);
@@ -110,7 +110,7 @@ fn write_add_ldst(loc: &mut [u8], val: u64) -> Result<(), u32> {
 /// Reports an LDR or STR, relocation `r` of subsection `isec`, whose
 /// target (or the GOT slot it loads) its access size doesn't divide.
 fn report_ldst_alignment(ctx: &Context<Arm64>, isec: usize, r: &Reloc, size: u32) {
-    let target = ctx.reloc_target_name(ctx.isecs[isec].file as usize, r);
+    let target = r.target_name(ctx, &ctx.objs[ctx.isecs[isec].file as usize]);
     let target = crate::error::raw(&target);
     let msg = format_args!(
         "target '{target}' not {size}-byte aligned, which is required by LDR/STR instruction"
@@ -130,8 +130,8 @@ const NOP: u32 = 0xd503_201f;
 /// What the bl or b of a DTrace probe site becomes, if relocation `r`
 /// is one (see dtrace): a nop, or for an is-enabled test "movz x0, #0",
 /// its result false.
-fn dtrace_site_insn(ctx: &Context<Arm64>, obj: usize, r: &Reloc) -> Option<u32> {
-    let id = ctx.reloc_target_sym(obj, r)?;
+fn dtrace_site_insn(ctx: &Context<Arm64>, file: &ObjectFile, r: &Reloc) -> Option<u32> {
+    let id = r.sym(file)?;
     match crate::dtrace::site_kind(ctx, id)? {
         SiteKind::Probe => Some(NOP),
         SiteKind::IsEnabled => Some(0xd280_0000),
@@ -1249,9 +1249,9 @@ impl Target for Arm64 {
     }
 
     fn scan_relocations(ctx: &Context<Self>, isec: &InputSection) {
-        let file = isec.file as usize;
-        for rel in isec.rels(&ctx.objs[file]) {
-            let Some(id) = ctx.reloc_target_sym(file, rel) else { continue };
+        let file = &ctx.objs[isec.file as usize];
+        for rel in isec.rels(file) {
+            let Some(id) = rel.sym(file) else { continue };
             let sym = &ctx.symbols[id];
             // A lazy dylib's symbols take no stub or GOT slot; the image
             // reaches them through the helpers of
@@ -1311,11 +1311,12 @@ impl Target for Arm64 {
         buf: &mut [u8],
     ) {
         let obj = ctx.isecs[isec_id].file as usize;
+        let file = &ctx.objs[obj];
         let mut i = 0;
         while i < rels.len() {
             let r = &rels[i];
             let loc = &mut buf[r.offset as usize..];
-            let s = ctx.reloc_target_addr(obj, r);
+            let s = r.addr(ctx, file);
             let a = r.addend;
             let p = base + r.offset as u64;
 
@@ -1324,12 +1325,11 @@ impl Target for Arm64 {
                     ctx.check_text_reloc(isec_id, rels, i, p);
                     // An imported symbol's address is written by dyld,
                     // via a bind record (an interposable export's too).
-                    let imported = ctx
-                        .reloc_target_sym(obj, r)
-                        .is_some_and(|id| ctx.symbols[id].binds_as_import(ctx));
+                    let imported =
+                        r.sym(file).is_some_and(|id| ctx.symbols[id].binds_as_import(ctx));
                     if imported {
                         // The slot is filled by dyld.
-                    } else if ctx.reloc_target_is_tls(obj, r) {
+                    } else if r.refers_to_tls(ctx, file) {
                         // __thread_vars holds thread-pointer-relative
                         // offsets into the TLS initialization image.
                         write64(loc, s.wrapping_add_signed(a).wrapping_sub(ctx.tls_begin));
@@ -1344,10 +1344,8 @@ impl Target for Arm64 {
                     // pair to materialize a relative address between two
                     // locations.
                     i += 1;
-                    let val = ctx
-                        .reloc_target_addr(obj, &rels[i])
-                        .wrapping_add_signed(rels[i].addend)
-                        .wrapping_sub(s);
+                    let val =
+                        rels[i].addr(ctx, file).wrapping_add_signed(rels[i].addend).wrapping_sub(s);
                     if r.size == 4 {
                         write32(loc, val as u32);
                     } else {
@@ -1356,12 +1354,12 @@ impl Target for Arm64 {
                 }
                 ARM64_RELOC_BRANCH26 => {
                     // A DTrace probe site does nothing (see dtrace).
-                    if let Some(insn) = dtrace_site_insn(ctx, obj, r) {
+                    if let Some(insn) = dtrace_site_insn(ctx, file, r) {
                         write32(loc, insn);
                         i += 1;
                         continue;
                     }
-                    let sym = ctx.reloc_target_sym(obj, r);
+                    let sym = r.sym(file);
                     let s = match sym {
                         Some(id) => ctx.symbols[id].branch_target_addr(ctx),
                         None => s,
@@ -1385,7 +1383,7 @@ impl Target for Arm64 {
                                 val = thunk.wrapping_sub(p) as i64
                             }
                             _ => {
-                                let name = ctx.reloc_target_name(obj, r);
+                                let name = r.target_name(ctx, file);
                                 let name = crate::error::raw(&name);
                                 let msg = format_args!(
                                     "B/BL out of range (displacement={val}, max is +/-128MB), \
@@ -1433,8 +1431,12 @@ impl Target for Arm64 {
                 // __thread_vars descriptor. Other loads keep loading the
                 // address from __got.
                 ARM64_RELOC_GOT_LOAD_PAGE21 | ARM64_RELOC_TLVP_LOAD_PAGE21 => {
-                    let sym = &ctx.symbols[ctx.reloc_target_sym(obj, r).unwrap()];
-                    let t = if sym.can_relax_got(ctx) { s } else { sym.got_addr(ctx) };
+                    let id = r.sym(file).unwrap();
+                    let t = if ctx.symbols[id].can_relax_got(ctx) {
+                        s
+                    } else {
+                        ctx.symbols[id].got_addr(ctx)
+                    };
                     check_adrp(ctx, isec_id, r, p, t.wrapping_add_signed(a));
                     write_adrp(loc, t.wrapping_add_signed(a), p);
                 }
@@ -1442,9 +1444,9 @@ impl Target for Arm64 {
                 // load's 64-bit add as one relaxed already, and refuses
                 // any other instruction.
                 ARM64_RELOC_GOT_LOAD_PAGEOFF12 | ARM64_RELOC_TLVP_LOAD_PAGEOFF12 => {
-                    let sym = &ctx.symbols[ctx.reloc_target_sym(obj, r).unwrap()];
-                    if !sym.can_relax_got(ctx) {
-                        let g = sym.got_addr(ctx);
+                    let id = r.sym(file).unwrap();
+                    if !ctx.symbols[id].can_relax_got(ctx) {
+                        let g = ctx.symbols[id].got_addr(ctx);
                         if let Err(size) = write_add_ldst(loc, g.wrapping_add_signed(a)) {
                             report_ldst_alignment(ctx, isec_id, r, size);
                         }
@@ -1463,7 +1465,7 @@ impl Target for Arm64 {
                     }
                 }
                 ARM64_RELOC_POINTER_TO_GOT => {
-                    let g = ctx.symbols[ctx.reloc_target_sym(obj, r).unwrap()].got_addr(ctx);
+                    let g = ctx.symbols[r.sym(file).unwrap()].got_addr(ctx);
                     write32(loc, g.wrapping_add_signed(a).wrapping_sub(p) as u32);
                 }
                 _ => fatal!("unsupported relocation type: {}", r.ty),

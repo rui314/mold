@@ -60,8 +60,9 @@ pub fn build<E: Target>(ctx: &mut Context<E>) {
             continue;
         };
         let base = ctx.chunk_header(chunk).addr + isec.offset as u64;
-        for rel in isec.rels(&ctx.objs[isec.file as usize]) {
-            let Some(id) = ctx.reloc_target_sym(isec.file as usize, rel) else {
+        let file = &ctx.objs[isec.file as usize];
+        for rel in isec.rels(file) {
+            let Some(id) = rel.sym(file) else {
                 continue;
             };
             if !binds(id) || rel.is_subtracted {

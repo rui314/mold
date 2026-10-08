@@ -332,7 +332,8 @@ impl<'a, E: Target> Places<'a, E> {
             return;
         };
         let hdr = ctx.chunk_header(chunk);
-        let rels = isec.rels(&ctx.objs[isec.file as usize]);
+        let file = &ctx.objs[isec.file as usize];
+        let rels = isec.rels(file);
         let mut i = 0;
         while i < rels.len() {
             let r = &rels[i];
@@ -355,7 +356,7 @@ impl<'a, E: Target> Places<'a, E> {
                 }
                 // A thread-local's descriptor holds an offset into the
                 // thread-local template, which doesn't move.
-                SplitRef::Pointer if ctx.reloc_target_is_tls(isec.file as usize, r) => {}
+                SplitRef::Pointer if r.refers_to_tls(ctx, file) => {}
                 SplitRef::Pointer => push(out, from, pointer, self.reloc_target(isec, r, true)),
                 split => {
                     // A GOT load of a lazy or delay-init dylib's symbol

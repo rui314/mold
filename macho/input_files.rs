@@ -275,7 +275,7 @@ impl ObjectFile {
         let hi = *addrs.iter().max()?;
         let (id, _) = self.find_subsec(isecs, lo)?;
         let isec = &isecs[id];
-        let is_code = self.sect_hdrs[isec.shndx as usize].flags & S_ATTR_PURE_INSTRUCTIONS != 0;
+        let is_code = isec.hdr(self).flags & S_ATTR_PURE_INSTRUCTIONS != 0;
         let spans_symbol = || {
             self.mach_syms.iter().any(|msym| {
                 !msym.is_stab()

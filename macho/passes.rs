@@ -1016,14 +1016,14 @@ pub fn check_removed_swift_metadata_refs<E: Target>(ctx: &Context<E>) {
             && input_files::is_swift_reflection_section(isec.hdr(&ctx.objs[isec.file as usize]))
     };
     for (i, isec) in ctx.isecs.iter().enumerate().filter(|(_, isec)| isec.is_emitted()) {
-        for rel in isec.rels(&ctx.objs[isec.file as usize]) {
-            let file = isec.file as usize;
-            let target = match ctx.reloc_target_sym(file, rel) {
+        let file = &ctx.objs[isec.file as usize];
+        for rel in isec.rels(file) {
+            let target = match rel.sym(file) {
                 Some(id) => ctx.symbols[id].input_section().map(|t| t as usize),
-                None => ctx.reloc_target_isec(file, rel),
+                None => rel.subsec(ctx, file),
             };
             if target.is_some_and(removed) {
-                let target = ctx.reloc_target_name(file, rel);
+                let target = rel.target_name(ctx, file);
                 let msg = format_args!("target '{}' does not have address", raw(&target));
                 ctx.fixup_error(i, rel.offset, msg);
             }
@@ -1710,11 +1710,10 @@ pub fn check_poisoned_symbols<E: Target>(ctx: &Context<E>) {
         .flat_map_iter(|obj| obj.subsecs.iter().map(|&id| id as usize))
         .filter(|&isec| ctx.isecs[isec].is_alive())
         .flat_map_iter(|isec| {
-            let file = ctx.isecs[isec].file as usize;
-            let rels = ctx.isecs[isec].rels(&ctx.objs[file]);
-            (rels.iter())
+            let file = &ctx.objs[ctx.isecs[isec].file as usize];
+            (ctx.isecs[isec].rels(file).iter())
                 .filter(|rel| rel.ty != E::RELOC_SUBTRACTOR)
-                .filter_map(move |rel| ctx.reloc_target_sym(file, rel))
+                .filter_map(move |rel| rel.sym(file))
                 .filter(|&id| poisoned.find(ctx.symbols[id].name()) != -1)
                 .map(move |id| (id, isec))
         })
@@ -2014,8 +2013,9 @@ fn referenced_symbols<E: Target>(ctx: &Context<E>) -> Vec<std::sync::atomic::Ato
     let referenced: Vec<AtomicBool> =
         (0..ctx.symbols.syms.len()).map(|_| AtomicBool::new(false)).collect();
     ctx.isecs.par_iter().filter(|isec| isec.is_alive()).for_each(|isec| {
-        for rel in isec.rels(&ctx.objs[isec.file as usize]) {
-            if let Some(id) = ctx.reloc_target_sym(isec.file as usize, rel) {
+        let file = &ctx.objs[isec.file as usize];
+        for rel in isec.rels(file) {
+            if let Some(id) = rel.sym(file) {
                 referenced[id as usize].store(true, Ordering::Relaxed);
             }
         }
@@ -2566,9 +2566,10 @@ fn check_libsystem_linked<E: Target>(ctx: &Context<E>) {
 pub fn compute_address_significance<E: Target>(ctx: &mut Context<E>) {
     let ctx_ref: &Context<E> = ctx;
     ctx_ref.isecs.par_iter().filter(|isec| isec.is_emitted()).for_each(|isec| {
-        for r in isec.rels(&ctx_ref.objs[isec.file as usize]) {
+        let file = &ctx_ref.objs[isec.file as usize];
+        for r in isec.rels(file) {
             if !r.is_func_call::<E>()
-                && let Some(dst) = ctx_ref.reloc_target_isec(isec.file as usize, r)
+                && let Some(dst) = r.subsec(ctx_ref, file)
             {
                 ctx_ref.isecs[ctx_ref.isecs.resolve(dst)].set_address_taken();
             }
@@ -3027,8 +3028,9 @@ pub fn report_text_relocs<E: Target>(ctx: &Context<E>) {
     }
     for &(id, i) in &found {
         let isec = &ctx.isecs[id as usize];
-        let rel = &isec.rels(&ctx.objs[isec.file as usize])[i as usize];
-        let target = ctx.reloc_target_name(isec.file as usize, rel);
+        let file = &ctx.objs[isec.file as usize];
+        let rel = &isec.rels(file)[i as usize];
+        let target = rel.target_name(ctx, file);
         crate::error::notice(format_args!(
             "  text-relocation in {} to '{}'",
             raw(&ctx.subsec_ref(id as usize, rel.offset)),

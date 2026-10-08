@@ -89,9 +89,10 @@ pub(crate) fn import_uses<E: Target>(
         .into_par_iter()
         .filter(|&i| ctx.isecs[i].is_emitted())
         .flat_map_iter(|i| {
-            let (file, data) = (ctx.isecs[i].file as usize, ctx.isecs[i].data());
-            ctx.isecs[i].rels(&ctx.objs[file]).iter().filter_map(move |r| {
-                let id = ctx.reloc_target_sym(file, r)?;
+            let isec = &ctx.isecs[i];
+            let (file, data) = (&ctx.objs[isec.file as usize], isec.data());
+            isec.rels(file).iter().filter_map(move |r| {
+                let id = r.sym(file)?;
                 is_import(id).then(|| (i as u32, r.offset, id, E::lazy_ref(r, data)))
             })
         })

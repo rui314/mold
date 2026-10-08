@@ -493,8 +493,9 @@ fn sweep<E: Target>(ctx: &mut Context<E>) {
 fn mark_live_references<E: Target>(ctx: &mut Context<E>) {
     ctx.symbols.syms.par_iter().for_each(|sym| sym.unmark());
     ctx.isecs.par_iter().filter(|isec| isec.is_emitted()).for_each(|isec| {
-        for rel in isec.rels(&ctx.objs[isec.file as usize]) {
-            if let Some(id) = ctx.reloc_target_sym(isec.file as usize, rel) {
+        let file = &ctx.objs[isec.file as usize];
+        for rel in isec.rels(file) {
+            if let Some(id) = rel.sym(file) {
                 ctx.symbols[id].mark();
             }
         }
@@ -574,8 +575,9 @@ fn print_why_live<E: Target>(ctx: &Context<E>, redirects: &[usize], why: &[Why])
 
     let mut seen = HashSet::new();
     for (id, isec) in ctx.isecs.iter().enumerate().filter(|(_, isec)| isec.is_alive()) {
-        for rel in isec.rels(&ctx.objs[isec.file as usize]) {
-            let Some(sym_id) = ctx.reloc_target_sym(isec.file as usize, rel) else { continue };
+        let file = &ctx.objs[isec.file as usize];
+        for rel in isec.rels(file) {
+            let Some(sym_id) = rel.sym(file) else { continue };
             let sym = &ctx.symbols[sym_id];
             let Some(FileId::Dylib(dylib)) = sym.file() else { continue };
             if dylib != u32::MAX && matches(sym) && seen.insert(sym_id) {

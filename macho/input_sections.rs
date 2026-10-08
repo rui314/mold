@@ -4,7 +4,8 @@ use crate::arch::Target;
 use crate::chunks::ChunkId;
 use crate::context::Context;
 use crate::input_files::ObjectFile;
-use crate::macho::MachSection;
+use crate::macho::{MachSection, S_THREAD_LOCAL_REGULAR, S_THREAD_LOCAL_ZEROFILL};
+use crate::symbol::SymbolId;
 
 /// A subsection index, u32 as in mold.
 pub type InputSectionId = u32;
@@ -141,6 +142,60 @@ impl Reloc {
     #[inline]
     pub fn is_func_call<E: crate::arch::Target>(&self) -> bool {
         self.ty == E::RELOC_BRANCH
+    }
+
+    /// The output address of the relocation's target, a symbol or a
+    /// subsection, as sold's Relocation::get_addr. `file` is the object
+    /// the relocation is of.
+    pub fn addr<E: Target>(&self, ctx: &Context<E>, file: &ObjectFile) -> u64 {
+        match self.target() {
+            RelocTarget::Sym(idx) => ctx.symbols[file.symbols[idx as usize]].addr(ctx),
+            RelocTarget::Section(idx) => ctx.isecs[idx as usize].addr(ctx),
+        }
+    }
+
+    /// The symbol the relocation refers to, if it refers to one.
+    #[inline]
+    pub fn sym(&self, file: &ObjectFile) -> Option<SymbolId> {
+        match self.target() {
+            RelocTarget::Sym(idx) => Some(file.symbols[idx as usize]),
+            RelocTarget::Section(_) => None,
+        }
+    }
+
+    /// The subsection the relocation's target lives in, if any: the
+    /// one it refers to, or its symbol's.
+    pub fn subsec<E: Target>(&self, ctx: &Context<E>, file: &ObjectFile) -> Option<usize> {
+        match self.target() {
+            RelocTarget::Sym(idx) => {
+                ctx.symbols[file.symbols[idx as usize]].input_section().map(|i| i as usize)
+            }
+            RelocTarget::Section(idx) => Some(idx as usize),
+        }
+    }
+
+    /// Whether the relocation's target is thread-local data.
+    pub fn refers_to_tls<E: Target>(&self, ctx: &Context<E>, file: &ObjectFile) -> bool {
+        self.subsec(ctx, file).is_some_and(|isec| {
+            let isec = &ctx.isecs[isec];
+            matches!(
+                isec.hdr(&ctx.objs[isec.file as usize]).section_type(),
+                S_THREAD_LOCAL_REGULAR | S_THREAD_LOCAL_ZEROFILL
+            )
+        })
+    }
+
+    /// How a diagnostic names the relocation's target: its symbol, or
+    /// the subsection it points to.
+    pub fn target_name<E: Target>(
+        &self,
+        ctx: &Context<E>,
+        file: &ObjectFile,
+    ) -> std::borrow::Cow<'static, [u8]> {
+        match self.target() {
+            RelocTarget::Sym(idx) => ctx.symbols[file.symbols[idx as usize]].name().into(),
+            RelocTarget::Section(idx) => ctx.subsec_name(idx as usize),
+        }
     }
 }
 

@@ -359,13 +359,12 @@ fn scan_batch<E: Target>(
         .par_iter()
         .fold(Vec::new, |mut syms, &id| {
             let isec = &ctx.isecs[id];
-            let obj = isec.file as usize;
-            let rels = &ctx.objs[obj].relocs[isec.rel_offset as usize..][..isec.nrels as usize];
-            for rel in rels {
+            let file = &ctx.objs[isec.file as usize];
+            for rel in isec.rels(file) {
                 if !rel.is_func_call::<E>() || rel.addend != 0 {
                     continue;
                 }
-                let Some(sym) = ctx.reloc_target_sym(obj, rel) else {
+                let Some(sym) = rel.sym(file) else {
                     continue;
                 };
                 let p = isec.offset as u64 + rel.offset as u64;

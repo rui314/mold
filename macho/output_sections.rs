@@ -787,7 +787,7 @@ fn group_input_sections<E: Target>(
                 let group = match last {
                     Some((last_sec, group)) if last_sec == sec && mv.is_none() => group,
                     _ => {
-                        let hdr = &objs[isec.file as usize].sect_hdrs[isec.shndx as usize];
+                        let hdr = isec.hdr(&objs[isec.file as usize]);
                         let key = output_section_key(hdr, mv);
                         let section = *cache
                             .sections

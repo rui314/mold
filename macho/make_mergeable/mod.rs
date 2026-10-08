@@ -735,8 +735,9 @@ impl<'a, E: Target> Builder<'a, E> {
         let ctx = self.ctx;
         let isec = &ctx.isecs[id];
         let obj = isec.file as usize;
-        let rels = isec.rels(&ctx.objs[obj]);
-        let hdr = isec.hdr(&ctx.objs[obj]);
+        let file = &ctx.objs[obj];
+        let rels = isec.rels(file);
+        let hdr = isec.hdr(file);
         let mut out = Vec::with_capacity(rels.len());
         let mut i = 0;
         while i < rels.len() {
@@ -753,7 +754,7 @@ impl<'a, E: Target> Builder<'a, E> {
             if r.ty == 0 {
                 let kind = if r.size == 4 {
                     fk::PTR32
-                } else if ctx.reloc_target_is_tls(obj, r) {
+                } else if r.refers_to_tls(ctx, file) {
                     fk::TLV_OFFSET
                 } else {
                     fk::PTR64

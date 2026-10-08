@@ -172,12 +172,12 @@ fn collect_sites<E: Target>(ctx: &Context<E>) -> Vec<Site> {
             isec.is_emitted()
         })
         .flat_map_iter(|i| {
-            let file = ctx.isecs[i].file as usize;
-            ctx.isecs[i].rels(&ctx.objs[file]).iter().filter_map(move |r| {
+            let file = &ctx.objs[ctx.isecs[i].file as usize];
+            ctx.isecs[i].rels(file).iter().filter_map(move |r| {
                 if !r.is_func_call::<E>() || r.size != 4 {
                     return None;
                 }
-                let sym = ctx.reloc_target_sym(file, r)?;
+                let sym = r.sym(file)?;
                 let (defined, name) = (ctx.symbols[sym].is_defined(), ctx.symbols[sym].name());
                 (!defined && site_kind_of(name).is_some()).then_some(Site {
                     isec: i as u32,

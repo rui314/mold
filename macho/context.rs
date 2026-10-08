@@ -40,8 +40,8 @@ use crate::chunks::{
 };
 use crate::cmdline::Args;
 use crate::input_files::{DylibFile, FileId, ObjectFile};
-use crate::input_sections::{InputSection, Reloc, RelocTarget};
-use crate::macho::{MachSection, S_THREAD_LOCAL_REGULAR, S_THREAD_LOCAL_ZEROFILL, bytes_to_name};
+use crate::input_sections::{InputSection, Reloc};
+use crate::macho::{MachSection, bytes_to_name};
 use crate::objc::{DataBlob, DataField};
 use crate::symbol::{SymbolId, SymbolTable};
 use crate::util::perf::Timers;
@@ -508,43 +508,6 @@ impl<E: Target> Context<E> {
         self.symbols[self.objc_stubs.msgsend_sym.unwrap()].got_addr(self)
     }
 
-    /// Returns the symbol a relocation refers to, if it refers to one.
-    pub fn reloc_target_sym(&self, obj: usize, rel: &Reloc) -> Option<SymbolId> {
-        match rel.target() {
-            RelocTarget::Sym(idx) => Some(self.objs[obj].symbols[idx as usize]),
-            RelocTarget::Section(_) => None,
-        }
-    }
-
-    /// Returns the input section a relocation's target lives in, if any.
-    pub fn reloc_target_isec(&self, obj: usize, rel: &Reloc) -> Option<usize> {
-        match rel.target() {
-            RelocTarget::Sym(idx) => self.symbols[self.objs[obj].symbols[idx as usize]]
-                .input_section()
-                .map(|i| i as usize),
-            RelocTarget::Section(idx) => Some(idx as usize),
-        }
-    }
-
-    /// Returns true if a relocation's target is thread-local data.
-    pub fn reloc_target_is_tls(&self, obj: usize, rel: &Reloc) -> bool {
-        self.reloc_target_isec(obj, rel).is_some_and(|isec| {
-            let isec = &self.isecs[isec];
-            matches!(
-                isec.hdr(&self.objs[isec.file as usize]).section_type(),
-                S_THREAD_LOCAL_REGULAR | S_THREAD_LOCAL_ZEROFILL
-            )
-        })
-    }
-
-    /// Resolves a relocation target to its output address.
-    pub fn reloc_target_addr(&self, obj: usize, rel: &Reloc) -> u64 {
-        match rel.target() {
-            RelocTarget::Sym(idx) => self.symbols[self.objs[obj].symbols[idx as usize]].addr(self),
-            RelocTarget::Section(idx) => self.isecs[idx as usize].addr(self),
-        }
-    }
-
     /// The symbol that names subsection `id`: of those at its start, the
     /// one input_files::subsec_name_rank ranks first. A literal merged by
     /// its content (see input_files::has_merged_subsecs) is named by none
@@ -596,17 +559,6 @@ impl<E: Target> Context<E> {
         crate::error::render(format_args!("{seg},{sect}+0x{off:x}")).into()
     }
 
-    /// How a diagnostic names the target of relocation `rel` of object
-    /// `obj`: its symbol, or the subsection it points to.
-    pub fn reloc_target_name(&self, obj: usize, rel: &Reloc) -> std::borrow::Cow<'static, [u8]> {
-        match rel.target() {
-            RelocTarget::Sym(idx) => {
-                self.symbols[self.objs[obj].symbols[idx as usize]].name().into()
-            }
-            RelocTarget::Section(idx) => self.subsec_name(idx as usize),
-        }
-    }
-
     /// Reports a relocation that can't be applied where it is, `offset`
     /// bytes into subsection `isec`.
     pub fn fixup_error(&self, isec: usize, offset: u32, msg: std::fmt::Arguments) {
@@ -623,8 +575,7 @@ impl<E: Target> Context<E> {
     /// x86-64 RIP-relative one, an arm64 adrp or the offset into its
     /// page): an import has none, which is an error.
     pub fn target_has_address(&self, obj: usize, isec: usize, r: &Reloc) -> bool {
-        let Some(id) = self.reloc_target_sym(obj, r).filter(|&id| self.symbols[id].is_imported())
-        else {
+        let Some(id) = r.sym(&self.objs[obj]).filter(|&id| self.symbols[id].is_imported()) else {
             return true;
         };
         let msg = format_args!("target '{}' does not have address", self.symbols[id]);
@@ -650,10 +601,15 @@ impl<E: Target> Context<E> {
         let file = self.isecs[isec].file as usize;
         let rel = &rels[i];
         let slides = self.args.pie || self.args.output_type != crate::macho::MH_EXECUTE;
-        let needs_fixup = match self.reloc_target_sym(file, rel).map(|id| &self.symbols[id]) {
-            Some(sym) if sym.binds_at_runtime(self) || sym.binds_to_self(self) => true,
-            Some(sym) if sym.is_absolute(self) => false,
-            _ => slides && !self.reloc_target_is_tls(file, rel),
+        let needs_fixup = match rel.sym(&self.objs[file]) {
+            Some(id)
+                if self.symbols[id].binds_at_runtime(self)
+                    || self.symbols[id].binds_to_self(self) =>
+            {
+                true
+            }
+            Some(id) if self.symbols[id].is_absolute(self) => false,
+            _ => slides && !rel.refers_to_tls(self, &self.objs[file]),
         };
         if needs_fixup {
             self.text_relocs.lock().unwrap().push((isec as u32, i as u32));

@@ -10,6 +10,7 @@ use crate::chunks::lazy_helpers::{LazyTarget, LazyUse};
 use crate::chunks::{delay_init, objc_stubs, stub_helper, stubs};
 use crate::context::Context;
 use crate::dtrace::SiteKind;
+use crate::input_files::ObjectFile;
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
 use crate::symbol::{NEEDS_GOT, NEEDS_STUB, SymbolId};
@@ -70,8 +71,12 @@ const DLOPEN_HELPER: [u8; 153] = [
 /// on, if relocation `r` is one (see dtrace): a nop and a 4-byte nop,
 /// or for an is-enabled test "xorl %eax, %eax" (its result false) and
 /// nops.
-fn dtrace_site_code(ctx: &Context<X86_64>, obj: usize, r: &Reloc) -> Option<&'static [u8; 5]> {
-    let id = ctx.reloc_target_sym(obj, r)?;
+fn dtrace_site_code(
+    ctx: &Context<X86_64>,
+    file: &ObjectFile,
+    r: &Reloc,
+) -> Option<&'static [u8; 5]> {
+    let id = r.sym(file)?;
     match crate::dtrace::site_kind(ctx, id)? {
         SiteKind::Probe => Some(&[0x90, 0x0f, 0x1f, 0x40, 0x00]),
         SiteKind::IsEnabled => Some(&[0x33, 0xc0, 0x90, 0x90, 0x90]),
@@ -125,7 +130,7 @@ fn is_supported(r: &MachRel) -> bool {
 fn rip32_displacement(ctx: &Context<X86_64>, isec: usize, r: &Reloc, p: u64, t: u64) -> u32 {
     let disp = t.wrapping_sub(p + 4).wrapping_sub(reloc_bias(r.ty) as u64) as i64;
     if i32::try_from(disp).is_err() {
-        let name = ctx.reloc_target_name(ctx.isecs[isec].file as usize, r);
+        let name = r.target_name(ctx, &ctx.objs[ctx.isecs[isec].file as usize]);
         let name = crate::error::raw(&name);
         let msg = format_args!(
             "32-bit RIP-relative reference out of range (displacement={disp}, max is +/-2GB), \
@@ -567,9 +572,9 @@ impl Target for X86_64 {
     }
 
     fn scan_relocations(ctx: &Context<Self>, isec: &InputSection) {
-        let file = isec.file as usize;
-        for rel in isec.rels(&ctx.objs[file]) {
-            let Some(id) = ctx.reloc_target_sym(file, rel) else { continue };
+        let file = &ctx.objs[isec.file as usize];
+        for rel in isec.rels(file) {
+            let Some(id) = rel.sym(file) else { continue };
             let sym = &ctx.symbols[id];
             // A lazy dylib's symbols take no stub or GOT slot; the image
             // reaches them through the helpers of
@@ -625,6 +630,7 @@ impl Target for X86_64 {
         buf: &mut [u8],
     ) {
         let obj = ctx.isecs[isec_id].file as usize;
+        let file = &ctx.objs[obj];
         let mut i = 0;
         while i < rels.len() {
             let r = &rels[i];
@@ -635,9 +641,7 @@ impl Target for X86_64 {
             // before the fixup, so it is rewritten before the slice
             // below is taken.
             let relaxed_got_load = matches!(r.ty, X86_64_RELOC_GOT_LOAD | X86_64_RELOC_TLV)
-                && ctx
-                    .reloc_target_sym(obj, r)
-                    .is_some_and(|id| ctx.symbols[id].can_relax_got(ctx));
+                && r.sym(file).is_some_and(|id| ctx.symbols[id].can_relax_got(ctx));
             if relaxed_got_load {
                 match r.offset.checked_sub(2).map(|i| &mut buf[i as usize]) {
                     Some(op) if *op == 0x8b => *op = 0x8d,
@@ -667,7 +671,7 @@ impl Target for X86_64 {
             // A DTrace probe site does nothing (see dtrace).
             if r.ty == X86_64_RELOC_BRANCH
                 && r.size == 4
-                && let Some(code) = dtrace_site_code(ctx, obj, r)
+                && let Some(code) = dtrace_site_code(ctx, file, r)
             {
                 let at = r.offset as usize - 1;
                 buf[at..at + 5].copy_from_slice(code);
@@ -675,7 +679,7 @@ impl Target for X86_64 {
                 continue;
             }
             let loc = &mut buf[r.offset as usize..];
-            let s = ctx.reloc_target_addr(obj, r);
+            let s = r.addr(ctx, file);
             let a = r.addend;
             let p = base + r.offset as u64;
 
@@ -705,14 +709,12 @@ impl Target for X86_64 {
                 }
                 X86_64_RELOC_UNSIGNED => {
                     ctx.check_text_reloc(isec_id, rels, i, p);
-                    let imported = ctx
-                        .reloc_target_sym(obj, r)
-                        .is_some_and(|id| ctx.symbols[id].binds_pointer(ctx));
+                    let imported = r.sym(file).is_some_and(|id| ctx.symbols[id].binds_pointer(ctx));
                     if imported {
                         // The slot is filled by dyld. It keeps the
                         // addend, to which a legacy LINKEDIT external
                         // relocation has dyld add the symbol's address.
-                    } else if ctx.reloc_target_is_tls(obj, r) {
+                    } else if r.refers_to_tls(ctx, file) {
                         write64(loc, s.wrapping_add_signed(a).wrapping_sub(ctx.tls_begin));
                     } else {
                         write64(loc, s.wrapping_add_signed(a));
@@ -721,10 +723,8 @@ impl Target for X86_64 {
                 // The assembler pairs it with an UNSIGNED of its size.
                 X86_64_RELOC_SUBTRACTOR => {
                     i += 1;
-                    let val = ctx
-                        .reloc_target_addr(obj, &rels[i])
-                        .wrapping_add_signed(rels[i].addend)
-                        .wrapping_sub(s);
+                    let val =
+                        rels[i].addr(ctx, file).wrapping_add_signed(rels[i].addend).wrapping_sub(s);
                     if r.size == 4 {
                         write32(loc, val as u32);
                     } else {
@@ -732,13 +732,13 @@ impl Target for X86_64 {
                     }
                 }
                 X86_64_RELOC_BRANCH if r.size == 1 => {
-                    let sym = ctx.reloc_target_sym(obj, r).unwrap();
+                    let sym = r.sym(file).unwrap();
                     write_branch8(ctx, isec_id, r, sym, s.wrapping_add_signed(a), p, loc);
                 }
                 // A kext's call to an import, without a stub, keeps
                 // its addend for kmutil's external relocation.
                 X86_64_RELOC_BRANCH
-                    if ctx.reloc_target_sym(obj, r).is_some_and(|id| {
+                    if r.sym(file).is_some_and(|id| {
                         let sym = &ctx.symbols[id];
                         sym.is_imported() && !sym.has_stub(&ctx.symbols)
                     }) =>
@@ -747,7 +747,7 @@ impl Target for X86_64 {
                 }
                 // A pc-relative fixup that can't reach is an error.
                 X86_64_RELOC_BRANCH => {
-                    let s = match ctx.reloc_target_sym(obj, r) {
+                    let s = match r.sym(file) {
                         Some(id) => ctx.symbols[id].branch_target_addr(ctx),
                         None => s,
                     };
@@ -771,7 +771,7 @@ impl Target for X86_64 {
                     write32(loc, rip32_displacement(ctx, isec_id, r, p, t));
                 }
                 X86_64_RELOC_GOT_LOAD | X86_64_RELOC_GOT | X86_64_RELOC_TLV => {
-                    let g = ctx.symbols[ctx.reloc_target_sym(obj, r).unwrap()].got_addr(ctx);
+                    let g = ctx.symbols[r.sym(file).unwrap()].got_addr(ctx);
                     let t = g.wrapping_add_signed(a);
                     write32(loc, rip32_displacement(ctx, isec_id, r, p, t));
                 }
