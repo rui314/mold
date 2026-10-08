@@ -63,6 +63,21 @@ pub fn write64(loc: &mut [u8], val: u64) {
     loc[..8].copy_from_slice(&val.to_le_bytes());
 }
 
+// Little-endian appends of an integer to a buffer: the fields of the
+// tables the linker builds in full before writing them out (the chained
+// fixups, the unwind info, a DOF section).
+pub fn push16(buf: &mut Vec<u8>, val: u16) {
+    buf.extend_from_slice(&val.to_le_bytes());
+}
+
+pub fn push32(buf: &mut Vec<u8>, val: u32) {
+    buf.extend_from_slice(&val.to_le_bytes());
+}
+
+pub fn push64(buf: &mut Vec<u8>, val: u64) {
+    buf.extend_from_slice(&val.to_le_bytes());
+}
+
 /// A sort key that orders byte strings like the strings themselves but
 /// settles most comparisons on one integer: the first eight bytes,
 /// big-endian, zero-padded. Symbol names cannot contain NULs, so

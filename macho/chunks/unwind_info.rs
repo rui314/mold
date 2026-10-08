@@ -9,6 +9,7 @@ use crate::context::Context;
 use crate::input_sections::{InputSection, UnwindRecord};
 use crate::macho::*;
 use crate::symbol::SymbolId;
+use crate::util::{push16, push32};
 
 #[derive(Debug)]
 pub struct UnwindInfoSection {
@@ -266,8 +267,6 @@ fn write_table<E: Target>(
     let lsda_off = page1_off + (pages.len() + 1) * 12;
     let page2_off = lsda_off + num_lsda * 8;
 
-    let push32 = |buf: &mut Vec<u8>, val: u32| buf.extend_from_slice(&val.to_le_bytes());
-
     let mut buf = Vec::new();
     push32(&mut buf, UNWIND_SECTION_VERSION);
     push32(&mut buf, personality_off as u32);
@@ -325,8 +324,6 @@ fn encode_page<E: Target>(ctx: &Context<E>, records: &[UnwindRecord], page: &Pag
     let base = ctx.mach_header.hdr.addr;
     let span = &records[page.records.clone()];
     let encs = &page.encodings;
-    let push32 = |buf: &mut Vec<u8>, val: u32| buf.extend_from_slice(&val.to_le_bytes());
-    let push16 = |buf: &mut Vec<u8>, val: u16| buf.extend_from_slice(&val.to_le_bytes());
 
     let mut lsda = Vec::new();
     for rec in span {

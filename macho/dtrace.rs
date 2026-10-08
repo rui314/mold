@@ -34,7 +34,7 @@ use crate::input_files::add_synthetic_section;
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
 use crate::symbol::SymbolId;
-use crate::util::split_once;
+use crate::util::{push16, push32, push64, split_once};
 
 /// The prefix of the names of the symbols a `dtrace -h` header makes
 /// code refer to. ld-prime takes every undefined symbol whose name
@@ -525,9 +525,9 @@ impl ProbeTables {
                 let offidx = t.sites.len() as u32;
                 put_u32s(&mut t.records, &[func, name, nargv, xargv, argidx, offidx]);
                 t.records.extend_from_slice(&[nargc, nargc]);
-                t.records.extend_from_slice(&(inst.sites.len() as u16).to_le_bytes());
+                push16(&mut t.records, inst.sites.len() as u16);
                 put_u32s(&mut t.records, &[t.tests.len() as u32]);
-                t.records.extend_from_slice(&(inst.tests.len() as u16).to_le_bytes());
+                push16(&mut t.records, inst.tests.len() as u16);
                 t.records.extend_from_slice(&[0; 6]);
                 t.sites.extend(&inst.sites);
                 t.tests.extend(&inst.tests);
@@ -599,14 +599,14 @@ fn lay_out_dof(
 }
 
 fn put_u32s(out: &mut Vec<u8>, vals: &[u32]) {
-    for v in vals {
-        out.extend_from_slice(&v.to_le_bytes());
+    for &v in vals {
+        push32(out, v);
     }
 }
 
 fn put_u64s(out: &mut Vec<u8>, vals: &[u64]) {
-    for v in vals {
-        out.extend_from_slice(&v.to_le_bytes());
+    for &v in vals {
+        push64(out, v);
     }
 }
 

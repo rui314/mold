@@ -12,6 +12,7 @@ use crate::fatal;
 use crate::input_files::{FileId, data_blob_binds, data_blob_pointers};
 use crate::macho::*;
 use crate::symbol::{Symbol, SymbolId};
+use crate::util::{push16, push32, push64};
 
 #[derive(Debug)]
 pub struct ChainedFixupsSection {
@@ -95,18 +96,6 @@ pub(crate) fn pointer_format<E: Target>(ctx: &Context<E>) -> u16 {
     } else {
         DYLD_CHAINED_PTR_64
     }
-}
-
-fn push16(buf: &mut Vec<u8>, val: u16) {
-    buf.extend_from_slice(&val.to_le_bytes());
-}
-
-fn push32(buf: &mut Vec<u8>, val: u32) {
-    buf.extend_from_slice(&val.to_le_bytes());
-}
-
-fn push64(buf: &mut Vec<u8>, val: u64) {
-    buf.extend_from_slice(&val.to_le_bytes());
 }
 
 fn pad(buf: &mut Vec<u8>, align: usize) {
