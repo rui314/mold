@@ -52,7 +52,13 @@ grep -E 'lea.*<foo>' $t/exe1.objdump
 grep -Fw R_X86_64_PC32 $t/exe1.objdump
 not grep -Fw R_X86_64_REX_GOTPCRELX $t/exe1.objdump
 awk '
-  /R_X86_64_PC32/ { if (prev !~ /lea/) { bad=1; print "not on lea: " prev }; next }
+  /R_X86_64_PC32/ {
+    if ($0 !~ /lea/ && prev !~ /lea/) {
+      bad=1
+      print "not on lea: " prev
+    }
+     next
+  }
   { prev = $0 }
   END { exit bad+0 }
 ' $t/exe1.objdump
