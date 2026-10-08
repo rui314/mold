@@ -4,7 +4,7 @@
 use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
-use crate::input_files::Fde;
+use crate::input_sections::FdeRecord;
 
 #[derive(Debug)]
 pub struct EhFrameSection {
@@ -66,7 +66,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 /// so.
 pub fn relocate_fde<E: Target>(
     ctx: &Context<E>,
-    fde: &Fde,
+    fde: &FdeRecord,
     buf: &mut [u8],
     fde_addr: u64,
     cie_ptr: u32,

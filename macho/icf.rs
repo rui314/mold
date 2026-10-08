@@ -29,8 +29,8 @@ use rayon::prelude::*;
 
 use crate::arch::Target;
 use crate::context::Context;
-use crate::input_files::{Fde, FileId, ObjectFile, subsec_name_rank};
-use crate::input_sections::{InputSection, Reloc, RelocTarget};
+use crate::input_files::{FileId, ObjectFile, subsec_name_rank};
+use crate::input_sections::{FdeRecord, InputSection, Reloc, RelocTarget};
 use crate::macho::*;
 use crate::symbol::SymbolId;
 use crate::util::siphash::SipHash13_128;
@@ -473,7 +473,7 @@ fn compute_digest<E: Target>(ctx: &Context<E>, cand_index: &[usize], id: usize) 
 /// pointers, which compute_digest hashes as targets - zeroed. Like mold,
 /// it leaves out the length and the trailing DW_CFA_nops, which pad a
 /// record to the section's alignment without meaning anything.
-fn hash_dwarf_cfi<E: Target>(ctx: &Context<E>, h: &mut SipHash13_128, fde: &Fde) {
+fn hash_dwarf_cfi<E: Target>(ctx: &Context<E>, h: &mut SipHash13_128, fde: &FdeRecord) {
     let hash_record = |h: &mut SipHash13_128, body: &[u8]| {
         let len = body.iter().rposition(|&b| b != 0).map_or(0, |i| i + 1);
         h.update(&len.to_ne_bytes());

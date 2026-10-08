@@ -6,8 +6,7 @@ use rayon::prelude::*;
 use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
-use crate::input_files::UnwindRecord;
-use crate::input_sections::InputSection;
+use crate::input_sections::{InputSection, UnwindRecord};
 use crate::macho::*;
 use crate::symbol::SymbolId;
 
@@ -398,7 +397,7 @@ fn bare_code_records<E: Target>(ctx: &Context<E>) -> Vec<UnwindRecord> {
 
 /// The record of a piece of code with no unwind information.
 fn bare_record(isec: u32, off: u32) -> UnwindRecord {
-    use crate::input_files::UNWIND_NONE;
+    use crate::input_sections::UNWIND_NONE;
     UnwindRecord {
         isec,
         input_offset: off,

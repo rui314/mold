@@ -155,10 +155,10 @@ pub struct Context<E: Target> {
     /// re-exported, and the classes it is for.
     pub bundle_hook: crate::bundle_hook::BundleHook,
     /// Unwind records from all objects' __compact_unwind sections.
-    pub unwind_records: Vec<crate::input_files::UnwindRecord>,
+    pub unwind_records: Vec<crate::input_sections::UnwindRecord>,
     /// DWARF CIEs and FDEs from all objects' __eh_frame sections.
-    pub cies: Vec<crate::input_files::Cie>,
-    pub fdes: Vec<crate::input_files::Fde>,
+    pub cies: Vec<crate::input_sections::CieRecord>,
+    pub fdes: Vec<crate::input_sections::FdeRecord>,
     /// The chunks of the output, in file order, and the segments they
     /// are grouped into. Each chunk's header and data live in the
     /// typed field for its kind below, as in mold.

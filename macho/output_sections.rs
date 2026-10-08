@@ -1312,7 +1312,7 @@ fn lay_out_eh_frame<E: Target>(ctx: &mut Context<E>) {
     ctx.fdes = kept_fdes;
     let num_records = ctx.unwind_records.len();
     ctx.unwind_records.retain_mut(|rec| {
-        if rec.fde_idx == crate::input_files::UNWIND_NONE {
+        if rec.fde_idx == crate::input_sections::UNWIND_NONE {
             return true;
         }
         let mapped = fde_map[rec.fde_idx as usize];

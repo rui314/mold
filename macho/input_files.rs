@@ -14,7 +14,9 @@ use crate::fatal;
 use crate::filetype::{
     fat_arch_names, fat_slice, foreign_arch, is_subtype_mismatch, without_fat_arch,
 };
-use crate::input_sections::{InputSection, NO_REPLACEMENT};
+use crate::input_sections::{
+    CieRecord, FdeRecord, InputSection, NO_REPLACEMENT, UNWIND_NONE, UnwindRecord,
+};
 use crate::macho::*;
 use crate::mapped_file::{MappedFile, unreadable_file};
 use crate::symbol::{Symbol, SymbolId};
@@ -950,8 +952,8 @@ pub struct StagedObject {
     /// __compact_unwind, or made for a function that has only an FDE),
     /// and the CIEs and FDEs of its __eh_frame.
     pub unwind: Vec<UnwindRecord>,
-    pub cies: Vec<Cie>,
-    pub fdes: Vec<Fde>,
+    pub cies: Vec<CieRecord>,
+    pub fdes: Vec<FdeRecord>,
     pub objc_image_info: Option<ObjcImageInfo>,
     pub has_debug_info: bool,
     /// LC_DATA_IN_CODE entries: (file offset in the object, length,
@@ -2081,69 +2083,6 @@ fn symbol_name(strtab: &'static [u8], msym: &MachSym) -> &'static [u8] {
     memchr::memchr(0, rest).map_or(rest, |len| &rest[..len])
 }
 
-/// Sentinel for an absent index in `UnwindRecord` (no personality, no
-/// LSDA, no FDE).
-pub const UNWIND_NONE: u32 = u32::MAX;
-
-/// A record from a __compact_unwind section, describing how to unwind
-/// the stack through one function.
-///
-/// One record per function, walked by unwind-info encoding, dead-strip
-/// and ICF, so it is kept to eight u32s (32 bytes): every index is a
-/// u32 with `UNWIND_NONE` for "absent" rather than an `Option<usize>`,
-/// which is 16 bytes each - as mold's Fde/Cie hold u32 indices.
-/// Read the optional fields through `personality()`, `lsda()`, `fde()`.
-#[derive(Clone, Debug)]
-pub struct UnwindRecord {
-    /// The input section holding the function.
-    pub isec: u32,
-    /// The function's offset within `isec`.
-    pub input_offset: u32,
-    pub code_len: u32,
-    pub encoding: u32,
-    /// The personality symbol, or `UNWIND_NONE`.
-    pub personality_sym: u32,
-    /// The language-specific data area: an input section (or
-    /// `UNWIND_NONE`) and an offset within it.
-    pub lsda_isec: u32,
-    pub lsda_off: u32,
-    /// For a record synthesized from DWARF unwind info, the FDE it
-    /// points to (an index into `ctx.fdes`), or `UNWIND_NONE`.
-    pub fde_idx: u32,
-}
-
-const _: () = assert!(std::mem::size_of::<UnwindRecord>() == 32);
-
-impl UnwindRecord {
-    #[inline]
-    pub fn personality(&self) -> Option<SymbolId> {
-        (self.personality_sym != UNWIND_NONE).then_some(self.personality_sym)
-    }
-    #[inline]
-    pub fn lsda(&self) -> Option<(usize, u32)> {
-        (self.lsda_isec != UNWIND_NONE).then_some((self.lsda_isec as usize, self.lsda_off))
-    }
-    #[inline]
-    pub fn fde(&self) -> Option<usize> {
-        (self.fde_idx != UNWIND_NONE).then_some(self.fde_idx as usize)
-    }
-
-    /// The personality routine of the record's function: the record's
-    /// own, or for one in DWARF mode, its FDE's CIE's.
-    pub fn function_personality<E: Target>(&self, ctx: &Context<E>) -> Option<SymbolId> {
-        self.personality().or_else(|| ctx.cies[ctx.fdes[self.fde()?].cie as usize].personality)
-    }
-
-    /// The LSDA of the record's function: the record's own, or for one
-    /// in DWARF mode, its FDE's.
-    pub fn function_lsda<E: Target>(&self, ctx: &Context<E>) -> Option<(usize, u32)> {
-        self.lsda().or_else(|| {
-            let (isec, off) = ctx.fdes[self.fde()?].lsda?;
-            Some((isec as usize, off))
-        })
-    }
-}
-
 impl StagedObject {
     /// Reads the object's unwind info: the records of its
     /// __compact_unwind, and the CIEs of its __eh_frame with the FDEs
@@ -2162,7 +2101,7 @@ impl StagedObject {
             if let Some(hdr) =
                 sect_hdrs.iter().find(|s| s.segname() == b"__TEXT" && s.sectname() == b"__eh_frame")
             {
-                self.parse_eh_frame::<E>(hdr, kept_fdes == KeptFdes::All);
+                self.parse_ehframe::<E>(hdr, kept_fdes == KeptFdes::All);
             }
             // A DWARF-mode record whose FDE never turned up describes
             // nothing.
@@ -2180,7 +2119,7 @@ impl StagedObject {
     /// section's.
     ///
     /// Records that point to DWARF unwind info keep their DWARF-mode
-    /// encoding; parse_eh_frame attaches the FDE (a final link
+    /// encoding; parse_ehframe attaches the FDE (a final link
     /// regenerates the encoding from it, a -r output copies the record
     /// as it came, like ld64). Object files usually don't contain such
     /// records, but `ld -r` output does.
@@ -2315,89 +2254,12 @@ impl StagedObject {
     }
 }
 
-/// A DWARF Common Information Entry from an object's __eh_frame.
-#[derive(Debug)]
-pub struct Cie {
-    /// The owning object (u32 index).
-    pub obj: u32,
-    pub input_addr: u32,
-    /// The CIE bytes: a slice of the object's __eh_frame (with its
-    /// relocations pre-applied), not a per-record copy - mold's
-    /// CieRecord borrows its contents the same way.
-    pub data: &'static [u8],
-    pub personality: Option<SymbolId>,
-    pub personality_offset: u32,
-    /// How the CIE's FDEs encode their function's address and size:
-    /// its 'R' augmentation, or DW_EH_PE_absptr without one. Each FDE
-    /// checks it as it is read.
-    pub fde_enc: u8,
-    /// How they encode their LSDA pointer, if the CIE has an 'L'
-    /// augmentation; checked the same way.
-    pub lsda_enc: Option<u8>,
-    pub output_offset: u32,
-    pub is_alive: bool,
-}
-
-#[cfg(target_pointer_width = "64")]
-const _: () = assert!(std::mem::size_of::<Cie>() == 48);
-
-impl Cie {
-    /// The size of the function address and size that start its FDEs'
-    /// fields: 4 bytes in DW_EH_PE_sdata4 (GCC's 0x1b), 8 in
-    /// DW_EH_PE_absptr (0x10, what clang writes).
-    pub fn pc_size(&self) -> usize {
-        if self.fde_enc & 0xf == DW_EH_PE_SDATA4 { 4 } else { 8 }
-    }
-
-    /// The size of an LSDA pointer of its FDEs, in the same encodings.
-    pub fn lsda_size(&self) -> usize {
-        if self.lsda_enc.is_some_and(|enc| enc & 0xf == DW_EH_PE_SDATA4) { 4 } else { 8 }
-    }
-}
-
-/// A DWARF Frame Description Entry from an object's __eh_frame.
-#[derive(Debug)]
-pub struct Fde {
-    /// The owning object (u32 index).
-    pub obj: u32,
-    pub input_addr: u32,
-    /// The FDE bytes: a slice of the object's processed __eh_frame.
-    pub data: &'static [u8],
-    /// Index of the CIE this FDE points at (ctx.cies).
-    pub cie: u32,
-    /// The subsection holding the function.
-    pub isec: u32,
-    pub func_offset: u32,
-    pub code_len: u32,
-    /// The language-specific data area: a subsection and an offset.
-    pub lsda: Option<(u32, u32)>,
-    pub output_offset: u32,
-}
-
-// Every index a u32 and the record bytes borrowed, as in mold
-// (whose FdeRecord derives even more and is 16 bytes).
-#[cfg(target_pointer_width = "64")]
-const _: () = assert!(std::mem::size_of::<Fde>() == 56);
-
-impl Fde {
-    /// The offset of the LSDA pointer: the augmentation data, past its
-    /// ULEB128 length, after the length, CIE pointer, pc_begin and
-    /// pc_range (`pc_size` bytes each, see Cie::pc_size).
-    pub fn lsda_pos(&self, pc_size: usize) -> usize {
-        let mut pos = 8 + 2 * pc_size;
-        while self.data[pos] & 0x80 != 0 {
-            pos += 1;
-        }
-        pos + 1
-    }
-}
-
 impl StagedObject {
     /// Parses a __TEXT,__eh_frame section. Unlike other sections it is not
     /// copied through: the linker re-synthesizes it, keeping only FDEs for
     /// functions that have no compact unwind record, patching each CIE's
     /// personality cell to be GOT-relative, and dropping the rest.
-    fn parse_eh_frame<E: Target>(&mut self, hdr: &MachSection, keep_all_fdes: bool) {
+    fn parse_ehframe<E: Target>(&mut self, hdr: &MachSection, keep_all_fdes: bool) {
         let mf = self.mf;
         let data = mf.data();
         let rels: Vec<MachRel> = read_array(data, hdr.reloff as usize, hdr.nreloc as usize);
@@ -2424,7 +2286,7 @@ impl StagedObject {
             if id == 0 {
                 let (fde_enc, lsda_enc, personality_enc) = parse_cie_augmentation(rec, &mf.name);
                 personality_encs.push(personality_enc);
-                self.cies.push(Cie {
+                self.cies.push(CieRecord {
                     obj: u32::MAX,
                     input_addr,
                     data: rec,
@@ -2527,7 +2389,7 @@ impl StagedObject {
             }
 
             let fde_idx = self.fdes.len();
-            self.fdes.push(Fde {
+            self.fdes.push(FdeRecord {
                 obj: u32::MAX,
                 input_addr,
                 data: rec,
@@ -2647,7 +2509,7 @@ fn is_code_section(hdr: &MachSection) -> bool {
 /// records' pointers become plain values: a SUBTRACTOR adds the next
 /// relocation's target less its own, and an UNSIGNED of no pair adds
 /// its target. Its GOT-relative relocations, a CIE's personality
-/// reference, are left for parse_eh_frame; there may be no other kind.
+/// reference, are left for parse_ehframe; there may be no other kind.
 ///
 /// Either half of a pair may be non-extern, naming a section instead
 /// of a symbol. The x86_64 assembler writes one for a label that no
@@ -2694,7 +2556,7 @@ fn apply_eh_frame_relocs<E: Target>(
 // format, the next three what the value is relative to, and the top
 // bit (DW_EH_PE_indirect) makes it the address of the pointer.
 const DW_EH_PE_ABSPTR: u8 = 0x00;
-const DW_EH_PE_SDATA4: u8 = 0x0b;
+pub(crate) const DW_EH_PE_SDATA4: u8 = 0x0b;
 const DW_EH_PE_PCREL: u8 = 0x10;
 const DW_EH_PE_INDIRECT: u8 = 0x80;
 
@@ -2728,9 +2590,9 @@ fn read_pcrel(rec: &[u8], pos: usize, size: usize, rec_addr: u32) -> u64 {
 }
 
 /// Reads a CIE's version and augmentation and returns how its FDEs
-/// encode their function and their LSDA pointer (see Cie::fde_enc and
-/// Cie::lsda_enc), and its personality pointer. Fails the link on a
-/// version other than 1 or 3.
+/// encode their function and their LSDA pointer (see
+/// CieRecord::fde_enc and CieRecord::lsda_enc), and its personality
+/// pointer. Fails the link on a version other than 1 or 3.
 fn parse_cie_augmentation(data: &[u8], file_name: &Path) -> (u8, Option<u8>, Option<u8>) {
     // The version byte follows the length and the CIE ID, then the
     // augmentation string.

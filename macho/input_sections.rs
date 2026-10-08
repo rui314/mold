@@ -3,7 +3,7 @@
 use crate::arch::Target;
 use crate::chunks::ChunkId;
 use crate::context::Context;
-use crate::input_files::ObjectFile;
+use crate::input_files::{DW_EH_PE_SDATA4, ObjectFile};
 use crate::macho::{MachSection, S_THREAD_LOCAL_REGULAR, S_THREAD_LOCAL_ZEROFILL};
 use crate::symbol::SymbolId;
 
@@ -653,4 +653,145 @@ impl InputSection {
 /// Where a symbol labels a subsection's start, if it is a label at all.
 fn msym_label_key(msym: &crate::macho::MachSym) -> Option<(u32, u64)> {
     (!msym.is_stab() && msym.ty() == crate::macho::N_SECT).then_some((msym.sect as u32, msym.value))
+}
+
+/// Sentinel for an absent index in `UnwindRecord` (no personality, no
+/// LSDA, no FDE).
+pub const UNWIND_NONE: u32 = u32::MAX;
+
+/// A record from a __compact_unwind section, describing how to unwind
+/// the stack through one function.
+///
+/// One record per function, walked by unwind-info encoding, dead-strip
+/// and ICF, so it is kept to eight u32s (32 bytes): every index is a
+/// u32 with `UNWIND_NONE` for "absent" rather than an `Option<usize>`,
+/// which is 16 bytes each - as mold's FdeRecord/CieRecord hold u32
+/// indices. Read the optional fields through `personality()`, `lsda()`,
+/// `fde()`.
+#[derive(Clone, Debug)]
+pub struct UnwindRecord {
+    /// The input section holding the function.
+    pub isec: u32,
+    /// The function's offset within `isec`.
+    pub input_offset: u32,
+    pub code_len: u32,
+    pub encoding: u32,
+    /// The personality symbol, or `UNWIND_NONE`.
+    pub personality_sym: u32,
+    /// The language-specific data area: an input section (or
+    /// `UNWIND_NONE`) and an offset within it.
+    pub lsda_isec: u32,
+    pub lsda_off: u32,
+    /// For a record synthesized from DWARF unwind info, the FDE it
+    /// points to (an index into `ctx.fdes`), or `UNWIND_NONE`.
+    pub fde_idx: u32,
+}
+
+const _: () = assert!(std::mem::size_of::<UnwindRecord>() == 32);
+
+impl UnwindRecord {
+    #[inline]
+    pub fn personality(&self) -> Option<SymbolId> {
+        (self.personality_sym != UNWIND_NONE).then_some(self.personality_sym)
+    }
+    #[inline]
+    pub fn lsda(&self) -> Option<(usize, u32)> {
+        (self.lsda_isec != UNWIND_NONE).then_some((self.lsda_isec as usize, self.lsda_off))
+    }
+    #[inline]
+    pub fn fde(&self) -> Option<usize> {
+        (self.fde_idx != UNWIND_NONE).then_some(self.fde_idx as usize)
+    }
+
+    /// The personality routine of the record's function: the record's
+    /// own, or for one in DWARF mode, its FDE's CIE's.
+    pub fn function_personality<E: Target>(&self, ctx: &Context<E>) -> Option<SymbolId> {
+        self.personality().or_else(|| ctx.cies[ctx.fdes[self.fde()?].cie as usize].personality)
+    }
+
+    /// The LSDA of the record's function: the record's own, or for one
+    /// in DWARF mode, its FDE's.
+    pub fn function_lsda<E: Target>(&self, ctx: &Context<E>) -> Option<(usize, u32)> {
+        self.lsda().or_else(|| {
+            let (isec, off) = ctx.fdes[self.fde()?].lsda?;
+            Some((isec as usize, off))
+        })
+    }
+}
+
+/// A DWARF Common Information Entry from an object's __eh_frame.
+#[derive(Debug)]
+pub struct CieRecord {
+    /// The owning object (u32 index).
+    pub obj: u32,
+    pub input_addr: u32,
+    /// The CIE bytes: a slice of the object's __eh_frame (with its
+    /// relocations pre-applied), not a per-record copy - mold's
+    /// CieRecord borrows its contents the same way.
+    pub data: &'static [u8],
+    pub personality: Option<SymbolId>,
+    pub personality_offset: u32,
+    /// How the CIE's FDEs encode their function's address and size:
+    /// its 'R' augmentation, or DW_EH_PE_absptr without one. Each FDE
+    /// checks it as it is read.
+    pub fde_enc: u8,
+    /// How they encode their LSDA pointer, if the CIE has an 'L'
+    /// augmentation; checked the same way.
+    pub lsda_enc: Option<u8>,
+    pub output_offset: u32,
+    pub is_alive: bool,
+}
+
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(std::mem::size_of::<CieRecord>() == 48);
+
+impl CieRecord {
+    /// The size of the function address and size that start its FDEs'
+    /// fields: 4 bytes in DW_EH_PE_sdata4 (GCC's 0x1b), 8 in
+    /// DW_EH_PE_absptr (0x10, what clang writes).
+    pub fn pc_size(&self) -> usize {
+        if self.fde_enc & 0xf == DW_EH_PE_SDATA4 { 4 } else { 8 }
+    }
+
+    /// The size of an LSDA pointer of its FDEs, in the same encodings.
+    pub fn lsda_size(&self) -> usize {
+        if self.lsda_enc.is_some_and(|enc| enc & 0xf == DW_EH_PE_SDATA4) { 4 } else { 8 }
+    }
+}
+
+/// A DWARF Frame Description Entry from an object's __eh_frame.
+#[derive(Debug)]
+pub struct FdeRecord {
+    /// The owning object (u32 index).
+    pub obj: u32,
+    pub input_addr: u32,
+    /// The FDE bytes: a slice of the object's processed __eh_frame.
+    pub data: &'static [u8],
+    /// Index of the CIE this FDE points at (ctx.cies).
+    pub cie: u32,
+    /// The subsection holding the function.
+    pub isec: u32,
+    pub func_offset: u32,
+    pub code_len: u32,
+    /// The language-specific data area: a subsection and an offset.
+    pub lsda: Option<(u32, u32)>,
+    pub output_offset: u32,
+}
+
+// Every index a u32 and the record bytes borrowed, as in mold
+// (whose FdeRecord derives even more and is 16 bytes).
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(std::mem::size_of::<FdeRecord>() == 56);
+
+impl FdeRecord {
+    /// The offset of the LSDA pointer: the augmentation data, past its
+    /// ULEB128 length, after the length, CIE pointer, pc_begin and
+    /// pc_range (`pc_size` bytes each, see CieRecord::pc_size).
+    pub fn lsda_pos(&self, pc_size: usize) -> usize {
+        let mut pos = 8 + 2 * pc_size;
+        while self.data[pos] & 0x80 != 0 {
+            pos += 1;
+        }
+        pos + 1
+    }
 }
