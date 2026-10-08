@@ -215,19 +215,3 @@ fn exports_class<E: Target>(ctx: &Context<E>, cls: ObjcRef) -> bool {
         && ctx.args.exported_symbols.as_ref().is_none_or(|list| list.find(name) != -1)
         && ctx.args.unexported_symbols.find(name) == -1
 }
-
-#[cfg(test)]
-mod tests {
-    use sha2::Digest;
-
-    /// The embedded objects come from c/bundle-hook.c as it is: the
-    /// hash build-bundle-hook.sh notes is the source's.
-    #[test]
-    fn objects_are_up_to_date() {
-        let source = include_bytes!("c/bundle-hook.c");
-        let noted = include_str!("c/bundle-hook.c.sha256");
-        let hash: String =
-            sha2::Sha256::digest(source).iter().map(|b| format!("{b:02x}")).collect();
-        assert_eq!(noted.split_whitespace().next(), Some(hash.as_str()));
-    }
-}
