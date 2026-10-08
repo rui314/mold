@@ -3,6 +3,7 @@
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
+use portable_atomic::AtomicU64;
 use rayon::prelude::*;
 
 use crate::chunks::init_offsets::InitFunc;
@@ -361,11 +362,8 @@ fn weak_definition_rank(isec: &InputSection, nlist: &NList, hidden: bool) -> u64
 /// winner is the same whatever the interleaving, and since each object
 /// has a unique priority, exactly one object ends up owning each
 /// symbol.
-fn race_definitions<E: Target>(
-    ctx: &Context<E>,
-    only_alive: bool,
-) -> Vec<std::sync::atomic::AtomicU64> {
-    use std::sync::atomic::{AtomicU64, Ordering};
+fn race_definitions<E: Target>(ctx: &Context<E>, only_alive: bool) -> Vec<AtomicU64> {
+    use std::sync::atomic::Ordering;
     let best: Vec<AtomicU64> =
         (0..ctx.symbols.syms.len()).map(|_| AtomicU64::new(u64::MAX)).collect();
     ctx.objs.par_iter().filter(|obj| !only_alive || obj.is_alive).for_each(|obj| {
@@ -383,11 +381,7 @@ fn race_definitions<E: Target>(
 /// Each object writes the symbols whose race it won. Ranks are unique
 /// per object, so every symbol has exactly one writer and the parallel
 /// writes are disjoint.
-fn claim_definitions<E: Target>(
-    ctx: &mut Context<E>,
-    only_alive: bool,
-    best: &[std::sync::atomic::AtomicU64],
-) {
+fn claim_definitions<E: Target>(ctx: &mut Context<E>, only_alive: bool, best: &[AtomicU64]) {
     use std::sync::atomic::Ordering;
     let syms = SymbolSlots::new(&mut ctx.symbols.syms);
     let isecs = &ctx.isecs;
@@ -504,7 +498,7 @@ fn live_common_symbols<E: Target>(ctx: &Context<E>) -> Vec<(SymbolId, u64, u8, b
 fn merge_common_symbols<E: Target>(
     ctx: &mut Context<E>,
     commons: &[(SymbolId, u64, u8, bool)],
-    best: &[std::sync::atomic::AtomicU64],
+    best: &[AtomicU64],
 ) {
     use std::sync::atomic::Ordering;
     for &(sym_id, size, p2align, pext) in commons {
@@ -531,7 +525,7 @@ fn claim_dylib_exports<E: Target>(
     ctx: &mut Context<E>,
     ranking: &DylibRanking,
     used: &[std::sync::atomic::AtomicBool],
-    best: &[std::sync::atomic::AtomicU64],
+    best: &[AtomicU64],
     commons: &[(SymbolId, u64, u8, bool)],
 ) {
     use std::sync::atomic::Ordering;

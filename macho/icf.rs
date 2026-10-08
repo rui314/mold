@@ -22,8 +22,9 @@
 //! leaves apart; either is correct, and ours is the cheaper to find.
 
 use std::hash::Hash;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
+use portable_atomic::AtomicU64;
 use rayon::prelude::*;
 
 use crate::chunks::eh_frame::lsda_pos;

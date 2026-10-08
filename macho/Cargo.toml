@@ -15,6 +15,8 @@ hashbrown = "0.17"
 libc.workspace = true
 memchr = "2.8.3"
 memmap2 = "0.9"
+# std has no 64-bit atomics on hosts such as 32-bit PowerPC.
+portable-atomic = "1"
 rayon = "1.12.0"
 serde_json = "1.0.151"
 sha1 = "0.11"
