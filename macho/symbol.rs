@@ -459,14 +459,27 @@ impl Symbol {
         self.binds_as_import(ctx) || (ctx.args.legacy_linkedit && self.is_weak_coalesced(ctx))
     }
 
-    /// The library ordinal a bind of this symbol names: its dylib's, or
-    /// for an interposable export, the flat lookup under
-    /// -flat_namespace, else the image itself.
+    /// The library ordinal a bind of this symbol names: its dylib's
+    /// (see DylibFile::bind_ordinal), the flat lookup for an import
+    /// left to dynamic lookup, or for an interposable export, the flat
+    /// lookup under -flat_namespace, else the image itself.
     pub fn bind_ordinal<E: Target>(&self, ctx: &Context<E>) -> i32 {
         match self.file() {
-            Some(FileId::Dylib(dylib)) => ctx.bind_ordinal(dylib),
+            Some(FileId::Dylib(d)) if d != u32::MAX => {
+                ctx.dylibs[d as usize].bind_ordinal(ctx.args.flat_namespace)
+            }
+            Some(FileId::Dylib(_)) => crate::macho::BIND_SPECIAL_DYLIB_FLAT_LOOKUP,
             _ if self.is_dtrace_pointer_target() => crate::macho::BIND_SPECIAL_DYLIB_FLAT_LOOKUP,
-            _ => ctx.export_bind_ordinal(),
+            _ => self.export_bind_ordinal(ctx),
+        }
+    }
+
+    /// The library ordinal this symbol binds with as an interposable
+    /// export.
+    pub fn export_bind_ordinal<E: Target>(&self, ctx: &Context<E>) -> i32 {
+        match ctx.args.flat_namespace {
+            true => crate::macho::BIND_SPECIAL_DYLIB_FLAT_LOOKUP,
+            false => crate::macho::BIND_SPECIAL_DYLIB_SELF,
         }
     }
 

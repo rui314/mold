@@ -765,6 +765,20 @@ impl DylibFile {
             file == Some(FileId::Dylib(target as u32))
         })
     }
+
+    /// Returns the bind ordinal for a symbol imported from this dylib:
+    /// its load-command ordinal under two-level namespace (the image's
+    /// own for one of its private re-exports; see binds_to_image), or
+    /// the flat-lookup sentinel under -flat_namespace (`flat_namespace`).
+    pub fn bind_ordinal(&self, flat_namespace: bool) -> i32 {
+        if flat_namespace {
+            BIND_SPECIAL_DYLIB_FLAT_LOOKUP
+        } else if self.binds_to_image {
+            BIND_SPECIAL_DYLIB_SELF
+        } else {
+            self.dylib_idx
+        }
+    }
 }
 
 /// Whose install name a dylib has, which decides between the dylibs of

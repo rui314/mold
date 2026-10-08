@@ -368,21 +368,6 @@ impl<E: Target> Context<E> {
         &mut self.output_sections[id.index()]
     }
 
-    /// Returns the bind ordinal for a symbol imported from `dylib`:
-    /// the dylib's load-command ordinal under two-level namespace (the
-    /// image's own for one of its private re-exports; see
-    /// DylibFile::binds_to_image), or the flat-lookup sentinel with
-    /// -flat_namespace / dynamic lookup.
-    pub fn bind_ordinal(&self, dylib: u32) -> i32 {
-        if self.args.flat_namespace || dylib == u32::MAX {
-            crate::macho::BIND_SPECIAL_DYLIB_FLAT_LOOKUP
-        } else if self.dylibs[dylib as usize].binds_to_image {
-            crate::macho::BIND_SPECIAL_DYLIB_SELF
-        } else {
-            self.dylibs[dylib as usize].dylib_idx
-        }
-    }
-
     /// Returns the next input-order priority value.
     pub fn next_priority(&mut self) -> u32 {
         self.priority_counter += 1;
@@ -458,14 +443,6 @@ impl<E: Target> Context<E> {
             sym.set_input_section(None);
         }
         Some(id)
-    }
-
-    /// The library ordinal an interposable export binds with.
-    pub fn export_bind_ordinal(&self) -> i32 {
-        match self.args.flat_namespace {
-            true => crate::macho::BIND_SPECIAL_DYLIB_FLAT_LOOKUP,
-            false => crate::macho::BIND_SPECIAL_DYLIB_SELF,
-        }
     }
 
     /// Returns the address of the __got slot the objc stubs load

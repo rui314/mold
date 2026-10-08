@@ -12,7 +12,7 @@ use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::input_files::{FileId, ObjectFile};
 use crate::macho::*;
-use crate::symbol::SymbolId;
+use crate::symbol::{Symbol, SymbolId};
 use crate::util::{leak_bytes, path_bytes};
 
 /// The symbol table, laid out before addresses are known. The symbol
@@ -1043,10 +1043,10 @@ fn global_entry<E: Target>(ctx: &Context<E>, i: SymbolId) -> NamedEntry {
 /// high byte of `desc`.
 fn import_entry<E: Target>(ctx: &Context<E>, i: usize) -> NamedEntry {
     let sym = &ctx.symbols[i];
-    let Some(FileId::Dylib(dylib)) = sym.file() else { unreachable!() };
+    let Some(FileId::Dylib(_)) = sym.file() else { unreachable!() };
     // A dynamic-lookup import records the DYNAMIC_LOOKUP ordinal, a
     // -bundle_loader import the EXECUTABLE ordinal.
-    let ordinal = msym_library_ordinal(ctx, dylib) as u16;
+    let ordinal = msym_library_ordinal(ctx, sym) as u16;
     let mut desc = ordinal << 8;
     if sym.is_weak_ref() {
         desc |= N_WEAK_REF;
@@ -1061,11 +1061,11 @@ fn import_entry<E: Target>(ctx: &Context<E>, i: usize) -> NamedEntry {
 /// a symbol left to dynamic lookup, else the dylib's. ld-prime
 /// writes 0 in a -flat_namespace image, where every import is a
 /// flat lookup.
-fn msym_library_ordinal<E: Target>(ctx: &Context<E>, dylib: u32) -> u8 {
+fn msym_library_ordinal<E: Target>(ctx: &Context<E>, sym: &Symbol) -> u8 {
     if ctx.args.flat_namespace {
         return 0;
     }
-    match ctx.bind_ordinal(dylib) {
+    match sym.bind_ordinal(ctx) {
         BIND_SPECIAL_DYLIB_MAIN_EXECUTABLE => 0xff,
         n => n as u8,
     }

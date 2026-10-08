@@ -159,10 +159,10 @@ fn exports<E: Target>(
             let target = ctx.indirect_aliases.iter().find_map(|&(a, t)| (a == id).then_some(t));
             if let Some(target) = target {
                 let same_name = ctx.symbols[target].name() == sym.name();
-                let Some(FileId::Dylib(dylib)) = ctx.symbols[target].file() else {
+                let Some(FileId::Dylib(_)) = ctx.symbols[target].file() else {
                     return None;
                 };
-                let ordinal = ctx.bind_ordinal(dylib) as u32;
+                let ordinal = ctx.symbols[target].bind_ordinal(ctx) as u32;
                 let name = if same_name { b"" } else { ctx.symbols[target].name() };
                 return Some((sym.name(), Export::Reexport { ordinal, name }));
             }

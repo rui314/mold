@@ -11,7 +11,7 @@ use crate::context::Context;
 use crate::fatal;
 use crate::input_files::FileId;
 use crate::macho::*;
-use crate::symbol::SymbolId;
+use crate::symbol::{Symbol, SymbolId};
 
 #[derive(Debug)]
 pub struct ChainedFixupsSection {
@@ -286,12 +286,12 @@ fn import_ordinal<E: Target>(ctx: &Context<E>, sym: SymbolId, bits: u32) -> u64 
     let special = |ordinal: i32| (ordinal as i64 as u64) & ((1u64 << bits) - 1);
     let sym = &ctx.symbols[sym];
     match sym.file() {
-        Some(FileId::Dylib(dylib)) if !sym.binds_weak_lookup(ctx) => {
-            chained_import_ordinal(ctx, dylib, bits)
+        Some(FileId::Dylib(_)) if !sym.binds_weak_lookup(ctx) => {
+            chained_import_ordinal(ctx, sym, bits)
         }
         _ if sym.binds_to_self(ctx) => BIND_SPECIAL_DYLIB_SELF as u64,
         _ if sym.is_interposable_export(ctx) && !sym.binds_weak_lookup(ctx) => {
-            special(ctx.export_bind_ordinal())
+            special(sym.export_bind_ordinal(ctx))
         }
         _ if sym.is_dtrace_pointer_target() => special(BIND_SPECIAL_DYLIB_FLAT_LOOKUP),
         _ => special(BIND_SPECIAL_DYLIB_WEAK_LOOKUP),
@@ -303,8 +303,8 @@ fn import_ordinal<E: Target>(ctx: &Context<E>, sym: SymbolId, bits: u32) -> u64 
 /// special ones as negative values in the field's two's complement,
 /// and, unlike the bind opcodes, the main executable as -1 (0 is
 /// the image itself there).
-fn chained_import_ordinal<E: Target>(ctx: &Context<E>, dylib: u32, bits: u32) -> u64 {
-    let ordinal = match ctx.bind_ordinal(dylib) {
+fn chained_import_ordinal<E: Target>(ctx: &Context<E>, sym: &Symbol, bits: u32) -> u64 {
+    let ordinal = match sym.bind_ordinal(ctx) {
         BIND_SPECIAL_DYLIB_MAIN_EXECUTABLE => -1i64,
         n => n as i64,
     };
