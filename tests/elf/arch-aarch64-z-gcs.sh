@@ -30,3 +30,22 @@ not grep . $t/log
 
 not ./mold -o $t/exe6 $t/a.o $t/b.o -z gcs-report=error 2> $t/log
 grep 'b.o: -z gcs-report=error: missing GNU_PROPERTY_AARCH64_FEATURE_1_GCS' $t/log
+
+# c.so is marked with GCS, and d.so isn't.
+echo 'void bar() {}' | $CLANG -fPIC -mbranch-protection=bti+gcs -c -o $t/c.o -xc -
+echo 'void baz() {}' | $CLANG -fPIC -mbranch-protection=bti -c -o $t/d.o -xc -
+./mold -shared -o $t/c.so $t/c.o
+./mold -shared -o $t/d.so $t/d.o
+
+./mold -o $t/exe7 $t/a.o $t/c.so $t/d.so 2> $t/log
+not grep . $t/log
+
+./mold -o $t/exe8 $t/a.o $t/c.so $t/d.so -z gcs=always 2> $t/log
+grep 'd.so: -z gcs-report-dynamic=warning: missing GNU_PROPERTY_AARCH64_FEATURE_1_GCS' $t/log
+not grep c.so: $t/log
+
+./mold -o $t/exe9 $t/a.o $t/d.so -z gcs=always -z gcs-report-dynamic=none \
+  --fatal-warnings
+
+not ./mold -o $t/exe10 $t/a.o $t/d.so -z gcs-report-dynamic=error 2> $t/log
+grep 'd.so: -z gcs-report-dynamic=error: missing GNU_PROPERTY_AARCH64_FEATURE_1_GCS' $t/log

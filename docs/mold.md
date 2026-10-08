@@ -876,10 +876,16 @@ point symbol in a script.
   `implicit`, which is the default, `GNU_PROPERTY_AARCH64_FEATURE_1_GCS` bit
   in `.note.gnu.property` section is turned on only if all object files have
   the bit. `always` turns it on regardless of object files and implies `-z
-  gcs-report=warning`. `never` turns it off.
+  gcs-report=warning` and `-z gcs-report-dynamic=warning`. `never` turns it
+  off.
 
 * `-z gcs-report`=[ `warning` | `error` | `none` ]:
   Print out a warning or an error message if an object file lacks
+  `GNU_PROPERTY_AARCH64_FEATURE_1_GCS` bit in its `.note.gnu.property`
+  section.
+
+* `-z gcs-report-dynamic`=[ `warning` | `error` | `none` ]:
+  Print out a warning or an error message if a shared library lacks
   `GNU_PROPERTY_AARCH64_FEATURE_1_GCS` bit in its `.note.gnu.property`
   section.
 

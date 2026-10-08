@@ -440,6 +440,7 @@ pub struct Args {
     pub z_cet_report: ReportKind,
     pub z_bti_report: ReportKind,
     pub z_gcs_report: ReportKind,
+    pub z_gcs_report_dynamic: ReportKind,
     pub z_gcs: GcsKind,
     pub undefined_glob: Glob,
     pub unique: Glob,
@@ -584,6 +585,7 @@ impl Default for Args {
             z_cet_report: ReportKind::None,
             z_bti_report: ReportKind::None,
             z_gcs_report: ReportKind::None,
+            z_gcs_report_dynamic: ReportKind::None,
             z_gcs: GcsKind::Implicit,
             undefined_glob: Glob::new(),
             unique: Glob::new(),
@@ -1241,6 +1243,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
     let mut z_dynamic_undefined_weak: Option<bool> = None;
     let mut z_bti_report: Option<ReportKind> = None;
     let mut z_gcs_report: Option<ReportKind> = None;
+    let mut z_gcs_report_dynamic: Option<ReportKind> = None;
     let mut separate_debug_file: Option<PathBuf> = None;
     // An explicit seed survives intervening --reverse-sections options.
     let mut shuffle_sections_seed: Option<u64> = None;
@@ -1658,6 +1661,12 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             z_gcs_report = Some(ReportKind::Warning);
         } else if cursor.read_z_flag("gcs-report=error") {
             z_gcs_report = Some(ReportKind::Error);
+        } else if cursor.read_z_flag("gcs-report-dynamic=none") {
+            z_gcs_report_dynamic = Some(ReportKind::None);
+        } else if cursor.read_z_flag("gcs-report-dynamic=warning") {
+            z_gcs_report_dynamic = Some(ReportKind::Warning);
+        } else if cursor.read_z_flag("gcs-report-dynamic=error") {
+            z_gcs_report_dynamic = Some(ReportKind::Error);
         } else if cursor.read_z_flag("execstack") {
             a.z_execstack = true;
         } else if cursor.read_z_flag("execstack-if-needed") {
@@ -2080,14 +2089,13 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
     a.z_dynamic_undefined_weak = z_dynamic_undefined_weak.unwrap_or(a.shared);
 
     // `-z force-bti` implies `-z bti-report=warning`, and `-z gcs=always`
-    // implies `-z gcs-report=warning`.
+    // implies `-z gcs-report=warning` and `-z gcs-report-dynamic=warning`.
     a.z_bti_report =
         z_bti_report.unwrap_or(if a.z_force_bti { ReportKind::Warning } else { ReportKind::None });
-    a.z_gcs_report = z_gcs_report.unwrap_or(if a.z_gcs == GcsKind::Always {
-        ReportKind::Warning
-    } else {
-        ReportKind::None
-    });
+    let gcs_report =
+        if a.z_gcs == GcsKind::Always { ReportKind::Warning } else { ReportKind::None };
+    a.z_gcs_report = z_gcs_report.unwrap_or(gcs_report);
+    a.z_gcs_report_dynamic = z_gcs_report_dynamic.unwrap_or(gcs_report);
 
     // --section-order implies `-z norelro`
     a.z_relro = z_relro.unwrap_or(a.section_order.is_empty());

@@ -866,6 +866,53 @@ fn is_debug_section<E: Target>(shdr: &ElfShdr<E>, name: &[u8]) -> bool {
     shdr.sh_flags.get() & SHF_ALLOC as u64 == 0 && name.starts_with(b".debug_")
 }
 
+/// The type and the value of each property in the contents of a
+/// .note.gnu.property section. Only properties with 32-bit values, which
+/// most of the defined ones have, are returned. Others such as
+/// GNU_PROPERTY_STACK_SIZE and GNU_PROPERTY_NO_COPY_ON_PROTECTED are skipped.
+fn gnu_properties<E: Target>(mut data: &[u8]) -> impl Iterator<Item = (u32, u32)> + '_ {
+    // The descriptors of the GNU property notes
+    let descs = std::iter::from_fn(move || {
+        while data.len() >= size_of::<ElfNhdr<E>>() {
+            let hdr = ElfNhdr::<E>::parse(data);
+            data = &data[size_of::<ElfNhdr<E>>()..];
+
+            let name_len = hdr.n_namesz.get() as usize;
+            let name = &data[..name_len.saturating_sub(1).min(data.len())];
+            data = &data[(align_to(name_len as u64, 4) as usize).min(data.len())..];
+
+            let desc_len = hdr.n_descsz.get() as usize;
+            let desc = &data[..desc_len.min(data.len())];
+            data =
+                &data[(align_to(desc_len as u64, E::WORD_SIZE as u64) as usize).min(data.len())..];
+
+            if hdr.n_type.get() == NT_GNU_PROPERTY_TYPE_0 && name == b"GNU" {
+                return Some(desc);
+            }
+        }
+        None
+    });
+
+    descs.flat_map(|mut desc| {
+        std::iter::from_fn(move || {
+            while desc.len() >= 8 {
+                let ty = E::read_u32(desc);
+                let size = E::read_u32(&desc[4..]) as usize;
+                desc = &desc[8..];
+                let val = desc.get(..4).map(E::read_u32);
+                desc =
+                    &desc[(align_to(size as u64, E::WORD_SIZE as u64) as usize).min(desc.len())..];
+                if size == 4
+                    && let Some(val) = val
+                {
+                    return Some((ty, val));
+                }
+            }
+            None
+        })
+    })
+}
+
 fn is_known_section_type<E: Target>(shdr: &ElfShdr<E>) -> bool {
     let ty = shdr.sh_type.get();
     let flags = shdr.sh_flags.get() as u32;
@@ -1497,46 +1544,6 @@ impl<E: Target> ObjectFile<E> {
         }
     }
 
-    fn parse_note_gnu_property(&mut self, mut data: &'static [u8]) {
-        while data.len() >= size_of::<ElfNhdr<E>>() {
-            let hdr = ElfNhdr::<E>::parse(data);
-            data = &data[size_of::<ElfNhdr<E>>()..];
-
-            let name_len = hdr.n_namesz.get() as usize;
-            let name = &data[..name_len.saturating_sub(1).min(data.len())];
-            data = &data[(align_to(name_len as u64, 4) as usize).min(data.len())..];
-
-            let desc_len = hdr.n_descsz.get() as usize;
-            let mut desc = &data[..desc_len.min(data.len())];
-            data =
-                &data[(align_to(desc_len as u64, E::WORD_SIZE as u64) as usize).min(data.len())..];
-
-            if hdr.n_type.get() != NT_GNU_PROPERTY_TYPE_0 || name != b"GNU" {
-                continue;
-            }
-
-            while desc.len() >= 8 {
-                let ty = E::read_u32(desc);
-                let size = E::read_u32(&desc[4..]) as usize;
-                desc = &desc[8..];
-
-                // The majority of currently defined .note.gnu.property
-                // use 32-bit values.
-                // We don't know how to handle anything else, so if we encounter
-                // one, skip it.
-                //
-                // The following properties have a different size:
-                // - GNU_PROPERTY_STACK_SIZE
-                // - GNU_PROPERTY_NO_COPY_ON_PROTECTED
-                if size == 4 && desc.len() >= 4 {
-                    *self.gnu_properties.entry(ty).or_insert(0) |= E::read_u32(desc);
-                }
-                desc =
-                    &desc[(align_to(size as u64, E::WORD_SIZE as u64) as usize).min(desc.len())..];
-            }
-        }
-    }
-
     // <format-version>
     // [ <section-length> "vendor-name" [ <file-tag> <size> <attribute>*]+ ]*
     fn read_riscv_attributes(&mut self, data: &'static [u8]) {
@@ -1671,7 +1678,9 @@ impl<E: Target> ObjectFile<E> {
 
                     if name == b".note.gnu.property" {
                         let contents = self.base.section_contents_from_shdr(shdr);
-                        self.parse_note_gnu_property(contents);
+                        for (ty, val) in gnu_properties::<E>(contents) {
+                            *self.gnu_properties.entry(ty).or_insert(0) |= val;
+                        }
                         continue;
                     }
 
@@ -3039,6 +3048,22 @@ impl<E: Target> SharedFile<E> {
             mf.name.file_name().unwrap_or_default()
         };
         name.as_encoded_bytes()
+    }
+
+    /// The value of GNU_PROPERTY_AARCH64_FEATURE_1_AND in this file's
+    /// .note.gnu.property, or 0 if the file doesn't have the property.
+    pub fn aarch64_features(&self) -> u32 {
+        let mut features = 0;
+        for i in 0..self.base.shdrs.len() {
+            if self.base.section_name(i) == b".note.gnu.property" {
+                for (ty, val) in gnu_properties::<E>(self.base.section_contents(i)) {
+                    if ty == GNU_PROPERTY_AARCH64_FEATURE_1_AND {
+                        features |= val;
+                    }
+                }
+            }
+        }
+        features
     }
 
     fn parse(&mut self, bins: &mut Bins<SymbolSlot>) {

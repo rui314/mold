@@ -1574,6 +1574,23 @@ pub fn check_arm64_feature_errors<E: Target>(ctx: &Context<E>) {
             }
         }
     }
+
+    if ctx.args.z_gcs_report_dynamic != ReportKind::None {
+        for file in &ctx.dsos {
+            if file.aarch64_features() & GNU_PROPERTY_AARCH64_FEATURE_1_GCS != 0 {
+                continue;
+            }
+            if ctx.args.z_gcs_report_dynamic == ReportKind::Warning {
+                warn!(
+                    "{file}: -z gcs-report-dynamic=warning: missing GNU_PROPERTY_AARCH64_FEATURE_1_GCS"
+                );
+            } else {
+                error!(
+                    "{file}: -z gcs-report-dynamic=error: missing GNU_PROPERTY_AARCH64_FEATURE_1_GCS"
+                );
+            }
+        }
+    }
 }
 
 pub fn print_dependencies<E: Target>(ctx: &Context<E>) {
