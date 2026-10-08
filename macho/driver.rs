@@ -251,7 +251,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     // its ranges are written from background threads as copy_chunks
     // finishes them; finish() waits for the last one.
     let t_copy = ctx.timer("copy");
-    let mut buf = vec![0; ctx.output_size as usize];
+    let mut buf = vec![0; output_file::buffer_len(&ctx.args.output, ctx.output_size)];
     let out = output_file::OutputFile::create(&ctx.args.output, 0o777, buf.as_ptr(), buf.len());
     passes::copy_chunks(&ctx, &mut buf, &out);
     crate::error::checkpoint();

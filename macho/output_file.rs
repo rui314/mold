@@ -72,6 +72,16 @@ fn open(path: &Path, mode: u32) -> (std::fs::File, bool) {
     (file, created)
 }
 
+/// Returns the length of the buffer that holds a file of the given size.
+/// No Rust object can be larger than isize::MAX bytes, which limits the
+/// output to 2 GiB on 32-bit hosts.
+pub fn buffer_len(path: &Path, size: u64) -> usize {
+    if isize::try_from(size).is_err() {
+        fatal!("{}: output file is too large for this host: {size} bytes", path.raw());
+    }
+    size as usize
+}
+
 fn write_error(path: &Path, e: &io::Error) -> ! {
     fatal!("cannot write {}: {}", path.raw(), strerror(e))
 }

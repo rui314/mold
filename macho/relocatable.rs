@@ -201,7 +201,7 @@ fn write_object<E: Target>(
         })
         .collect();
 
-    let mut buf = vec![0u8; layout.size as usize];
+    let mut buf = vec![0u8; output_file::buffer_len(&ctx.args.output, layout.size)];
     write_load_commands(ctx, &mut buf, cmds, &headers, layout, targets.symtab);
     copy_section_contents(targets, &merged, &mut buf);
     for sec in synthetic {
