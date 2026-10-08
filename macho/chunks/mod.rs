@@ -52,7 +52,7 @@ use crate::macho::*;
 use crate::symbol::SymbolId;
 use crate::symbol_moves::MoveOption;
 
-pub use output_section::{OutputSection, Tail, Thunk};
+pub use output_section::{OutputSection, Tail};
 
 /// A chunk's place in the output: its section header's fields, the
 /// names among them bytes, as Mach-O names are (see

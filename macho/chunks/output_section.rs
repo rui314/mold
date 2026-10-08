@@ -9,18 +9,8 @@ use crate::chunks::{ChunkHeader, ChunkId, OutputSectionId};
 use crate::context::Context;
 use crate::input_sections::InputSectionId;
 use crate::objc::DataField;
-use crate::symbol::SymbolId;
 use crate::symbol_moves::MoveOption;
-
-/// A range-extension thunk: a block of jump entries placed inside an
-/// output section so that branches whose targets are further than the
-/// instruction's reach can hop through it.
-#[derive(Debug)]
-pub struct Thunk {
-    /// Offset of the thunk within the output section.
-    pub offset: u64,
-    pub syms: Vec<SymbolId>,
-}
+use crate::thunks::Thunk;
 
 /// Linker-synthesized data appended to an output section after its
 /// input subsections. The Objective-C runtime reads exactly one
@@ -138,11 +128,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]
     });
 
     // The range-extension thunks, between the members.
-    for thunk in &osec.thunks {
-        let off = thunk.offset as usize;
-        let end = off + thunk.syms.len() * E::THUNK_SIZE as usize;
-        E::write_thunk(ctx, osec.hdr.addr + thunk.offset, &thunk.syms, &mut buf[off..end]);
-    }
+    crate::thunks::copy_buf(ctx, osec, buf);
 
     // Synthesized Objective-C records, in the tail or among the members.
     if osec.tail == Tail::DataBlobs || osec.has_blobs {

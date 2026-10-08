@@ -1374,9 +1374,9 @@ impl Target for Arm64 {
                         // entry jumps to its symbol, so a branch with an
                         // addend can't take one (ld-prime's branches to
                         // its island plus the addend, past the island).
-                        let thunk = sym.filter(|_| a == 0).and_then(|sym| {
-                            crate::thunks::reachable_thunk_addr::<Self>(ctx, sym, p)
-                        });
+                        let thunk = sym
+                            .filter(|_| a == 0)
+                            .and_then(|sym| ctx.sym_aux(sym).thunk_addr::<Self>(p));
                         match thunk {
                             Some(thunk) if adrp_reaches(t, thunk) => {
                                 val = thunk.wrapping_sub(p) as i64

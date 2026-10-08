@@ -736,11 +736,7 @@ impl Target for X86_64 {
                 // its addend for kmutil's external relocation.
                 X86_64_RELOC_BRANCH
                     if ctx.reloc_target_sym(obj, r).is_some_and(|id| {
-                        let aux = ctx.sym_aux(id);
-                        ctx.symbols[id].is_imported()
-                            && aux.stub_idx == crate::symbol::NO_IDX
-                            && aux.lazy_stub_idx == crate::symbol::NO_IDX
-                            && aux.delay_stub_idx == crate::symbol::NO_IDX
+                        ctx.symbols[id].is_imported() && !ctx.sym_aux(id).has_stub()
                     }) =>
                 {
                     write32(loc, a as u32);

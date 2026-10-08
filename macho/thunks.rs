@@ -36,7 +36,7 @@
 use rayon::prelude::*;
 
 use crate::arch::Target;
-use crate::chunks::{self, ChunkId, OutputSectionId};
+use crate::chunks::{ChunkId, OutputSection, OutputSectionId};
 use crate::context::Context;
 use crate::input_files::FileId;
 use crate::input_sections::InputSectionId;
@@ -54,6 +54,16 @@ const THUNK_ALIGN: u64 = 16;
 
 /// A subsection offset that hasn't been assigned yet.
 const UNPLACED: u32 = u32::MAX;
+
+/// A range-extension thunk: a block of jump entries placed inside an
+/// output section so that branches whose targets are further than the
+/// instruction's reach can hop through it.
+#[derive(Debug)]
+pub struct Thunk {
+    /// Offset of the thunk within the output section.
+    pub offset: u64,
+    pub syms: Vec<SymbolId>,
+}
 
 /// Whether the link needs range-extension thunks: Some(false) if its
 /// code spans no more than a branch reaches, Some(true) if it may span
@@ -236,7 +246,7 @@ fn create_thunks<E: Target>(ctx: &mut Context<E>, reach: &mut Reach) {
 
     let distance = E::BRANCH_RANGE / 2;
     let n = members.len();
-    let mut thunks: Vec<chunks::Thunk> = Vec::new();
+    let mut thunks: Vec<Thunk> = Vec::new();
     let (mut a, mut b, mut d) = (0, 0, 0);
     let mut offset = 0;
     // The first thunk still within reach of the current batch.
@@ -291,7 +301,7 @@ fn create_thunks<E: Target>(ctx: &mut Context<E>, reach: &mut Reach) {
             offset = align_to(offset, THUNK_ALIGN);
             let size = syms.len() as u64 * E::THUNK_SIZE;
             debug_assert!(size <= MAX_THUNK_SIZE);
-            thunks.push(chunks::Thunk { offset, syms });
+            thunks.push(Thunk { offset, syms });
             offset += size;
         }
         b = c;
@@ -479,13 +489,12 @@ pub fn island_symbols<E: Target>(ctx: &Context<E>) -> Vec<(u64, u8, &'static [u8
     syms
 }
 
-/// The address of a thunk entry for `sym` that a branch at `pc` can
-/// reach, if it has one.
-#[inline]
-pub fn reachable_thunk_addr<E: Target>(ctx: &Context<E>, sym: SymbolId, pc: u64) -> Option<u64> {
-    let range = (E::BRANCH_RANGE / 2) as i64;
-    ctx.sym_aux(sym).thunk_addrs.iter().copied().find(|&t| {
-        let d = t.wrapping_sub(pc) as i64;
-        (-range..range).contains(&d)
-    })
+/// Writes an output section's range-extension thunks, between its
+/// members, to `buf`, its contents.
+pub fn copy_buf<E: Target>(ctx: &Context<E>, osec: &OutputSection, buf: &mut [u8]) {
+    for thunk in &osec.thunks {
+        let off = thunk.offset as usize;
+        let end = off + thunk.syms.len() * E::THUNK_SIZE as usize;
+        E::write_thunk(ctx, osec.hdr.addr + thunk.offset, &thunk.syms, &mut buf[off..end]);
+    }
 }

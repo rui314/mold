@@ -2,6 +2,7 @@
 
 use rayon::prelude::*;
 
+use crate::arch::Target;
 use crate::input_files::FileId;
 
 /// A symbol index, u32 as in mold: every per-symbol and
@@ -349,6 +350,25 @@ impl SymAux {
         delay_stub_idx: NO_IDX,
         thunk_addrs: Vec::new(),
     };
+
+    /// Whether calls to the symbol go through a stub of any kind: its
+    /// __stubs entry, or for a lazily loaded or delay-init import, its
+    /// call helper or delay-init stub - mold's Symbol::has_plt.
+    #[inline]
+    pub fn has_stub(&self) -> bool {
+        self.stub_idx != NO_IDX || self.lazy_stub_idx != NO_IDX || self.delay_stub_idx != NO_IDX
+    }
+
+    /// The address of a thunk entry for the symbol that a branch at `pc`
+    /// can reach, if it has one - mold's Symbol::thunk_addr.
+    #[inline]
+    pub fn thunk_addr<E: Target>(&self, pc: u64) -> Option<u64> {
+        let range = (E::BRANCH_RANGE / 2) as i64;
+        self.thunk_addrs.iter().copied().find(|&t| {
+            let d = t.wrapping_sub(pc) as i64;
+            (-range..range).contains(&d)
+        })
+    }
 }
 
 /// The shared "no slots" entry that sym_aux() returns for symbols
