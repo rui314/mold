@@ -12,9 +12,7 @@ use crate::context::Context;
 use crate::error::RawPath;
 use crate::error::raw;
 use crate::fatal;
-use crate::filetype::{
-    fat_arch_names, fat_slice, foreign_arch, is_subtype_mismatch, without_fat_arch,
-};
+use crate::filetype::{fat_arch_names, fat_slice, without_fat_arch};
 use crate::input_sections::{
     CieRecord, FdeRecord, InputSection, NO_REPLACEMENT, RelocTarget, UNWIND_NONE, UnwindRecord,
 };
@@ -3491,14 +3489,14 @@ pub fn parse_bundle_loader<E: Target>(ctx: &mut Context<E>, mf: &'static MappedF
 /// LdSymbols); and the install names it re-exports, with its rpaths,
 /// resolved for its location, to look them up by.
 #[derive(Default)]
-struct DylibBinary {
-    install_name: Vec<u8>,
+pub(crate) struct DylibBinary {
+    pub(crate) install_name: Vec<u8>,
     current_version: u32,
     compatibility_version: u32,
-    exports: Vec<&'static [u8]>,
+    pub(crate) exports: Vec<&'static [u8]>,
     weak_exports: Vec<&'static [u8]>,
     tlv_exports: Vec<&'static [u8]>,
-    ld_symbols: Vec<&'static [u8]>,
+    pub(crate) ld_symbols: Vec<&'static [u8]>,
     reexports: Vec<Vec<u8>>,
     rpaths: Vec<PathBuf>,
 }
@@ -3519,7 +3517,7 @@ pub fn has_uuid(data: &[u8]) -> bool {
     load_commands(data).any(|(cmd, _)| cmd == LC_UUID)
 }
 
-fn read_dylib_binary(mf: &'static MappedFile) -> DylibBinary {
+pub(crate) fn read_dylib_binary(mf: &'static MappedFile) -> DylibBinary {
     let data = mf.data();
     let mut dylib = DylibBinary {
         current_version: encode_version(1, 0, 0),
@@ -3602,7 +3600,10 @@ fn interpret_binary_ld_symbols<E: Target>(
 
 /// A stub's library, read for the link's architecture and platform;
 /// None if it has no target on the architecture.
-fn read_tbd<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> Option<tapi::TbdFile> {
+pub(crate) fn read_tbd<E: Target>(
+    ctx: &Context<E>,
+    mf: &'static MappedFile,
+) -> Option<tapi::TbdFile> {
     tapi::parse_cached(mf, E::NAME, ctx.args.platform)
 }
 
@@ -3693,60 +3694,6 @@ pub fn load_tbd<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> Option<
         ignore_foreign_file(ctx, mf, &why);
     }
     stub
-}
-
-/// A dylib's or stub's install name, and the Objective-C and Swift
-/// classes (see is_class_export) it exports itself for the link's
-/// target, after its $ld$hide and $ld$add directives: the classes of
-/// the libraries it re-exports don't count, those it re-exports one by
-/// one (an alias, a -reexported_symbols_list entry) do. None for a file
-/// the link ignores, or one that is no library. (ld-prime adds its hook
-/// for such classes to an image that re-exports the library with
-/// -no_merge_*; see bundle_hook.)
-pub fn exported_classes<E: Target>(
-    ctx: &Context<E>,
-    mf: &'static MappedFile,
-) -> Option<(Vec<u8>, Vec<&'static [u8]>)> {
-    use crate::filetype::{FileType, get_file_type};
-    let mf = match get_file_type(mf) {
-        FileType::Fat => fat_slice::<E>(&ctx.args, mf)?,
-        _ => mf,
-    };
-    let (install_name, ld, exports) = match get_file_type(mf) {
-        FileType::Tapi => {
-            let tbd = read_tbd(ctx, mf)?;
-            let ld = LdSymbols::read(ctx, &tbd.ld_symbols);
-            let exports = [tbd.exports, tbd.weak_exports, tbd.tlv_exports].concat();
-            (tbd.install_name.to_vec(), ld, exports)
-        }
-        FileType::Dylib
-            if foreign_arch::<E>(mf).is_none()
-                || (ctx.args.allow_sub_type_mismatches && is_subtype_mismatch::<E>(mf)) =>
-        {
-            let dylib = read_dylib_binary(mf);
-            (dylib.install_name, LdSymbols::read(ctx, &dylib.ld_symbols), dylib.exports)
-        }
-        _ => return None,
-    };
-    let own = exports.into_iter().filter(|name| ld.keeps(name)).chain(ld.added.iter().copied());
-    // A binary names its exports in its symbol table and export trie.
-    let mut classes: Vec<&[u8]> = own.filter(|name| is_class_export(name)).collect();
-    classes.sort_unstable();
-    classes.dedup();
-    Some((install_name, classes))
-}
-
-/// Whether an export is that of a class, as ld-prime's hook for the
-/// classes of mergeable libraries goes by its name: an Objective-C
-/// class or metaclass object (_OBJC_CLASS_$_Foo, _OBJC_METACLASS_$_Foo),
-/// or a Swift class's type metadata (_$s...CN, of any class, Objective-C
-/// or not). A Swift class's other symbols (its nominal type descriptor,
-/// metaclass or accessor), and an Objective-C class's exception type or
-/// instance variables, don't count.
-fn is_class_export(name: &[u8]) -> bool {
-    name.starts_with(b"_OBJC_CLASS_$_")
-        || name.starts_with(b"_OBJC_METACLASS_$_")
-        || (name.starts_with(b"_$s") && name.ends_with(b"CN"))
 }
 
 /// Adds a .tbd stub's library to the link; None if the stub has no

@@ -23,11 +23,13 @@
 use crate::arch::Target;
 use crate::cmdline::Args;
 use crate::context::Context;
-use crate::input_files::{DataField, FileId, add_data_blob};
+use crate::filetype::{fat_slice, foreign_arch, is_subtype_mismatch};
+use crate::input_files::{DataField, FileId, add_data_blob, read_dylib_binary, read_tbd};
 use crate::macho::*;
 use crate::mapped_file::MappedFile;
 use crate::objc::ObjcRef;
 use crate::symbol::SymbolId;
+use crate::tapi::LdSymbols;
 
 /// The hook, built by c/build-bundle-hook.sh.
 static ARM64_OBJECT: &[u8] = include_bytes!("c/bundle-hook-arm64.o");
@@ -88,19 +90,73 @@ pub fn note_merged_library<E: Target>(
 }
 
 /// Notes the classes a library a -no_merge_* option names exports
-/// itself (see input_files::exported_classes), which the hook binds to
-/// in whichever library loads them.
+/// itself (see exported_classes), which the hook binds to in whichever
+/// library loads them.
 pub fn note_reexported_library<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFile) {
     if !may_hook(&ctx.args) {
         return;
     }
-    let Some((install_name, classes)) = crate::input_files::exported_classes(ctx, mf) else {
+    let Some((install_name, classes)) = exported_classes(ctx, mf) else {
         return;
     };
     if !classes.is_empty() {
         let ids = classes.into_iter().map(|name| ctx.symbols.intern(name)).collect();
         ctx.bundle_hook.reexported.push((leaf(&install_name), ids));
     }
+}
+
+/// A dylib's or stub's install name, and the Objective-C and Swift
+/// classes (see is_class_export) it exports itself for the link's
+/// target, after its $ld$hide and $ld$add directives: the classes of
+/// the libraries it re-exports don't count, those it re-exports one by
+/// one (an alias, a -reexported_symbols_list entry) do. None for a file
+/// the link ignores, or one that is no library. (ld-prime adds its hook
+/// for such classes to an image that re-exports the library with
+/// -no_merge_*.)
+fn exported_classes<E: Target>(
+    ctx: &Context<E>,
+    mf: &'static MappedFile,
+) -> Option<(Vec<u8>, Vec<&'static [u8]>)> {
+    use crate::filetype::{FileType, get_file_type};
+    let mf = match get_file_type(mf) {
+        FileType::Fat => fat_slice::<E>(&ctx.args, mf)?,
+        _ => mf,
+    };
+    let (install_name, ld, exports) = match get_file_type(mf) {
+        FileType::Tapi => {
+            let tbd = read_tbd(ctx, mf)?;
+            let ld = LdSymbols::read(ctx, &tbd.ld_symbols);
+            let exports = [tbd.exports, tbd.weak_exports, tbd.tlv_exports].concat();
+            (tbd.install_name.to_vec(), ld, exports)
+        }
+        FileType::Dylib
+            if foreign_arch::<E>(mf).is_none()
+                || (ctx.args.allow_sub_type_mismatches && is_subtype_mismatch::<E>(mf)) =>
+        {
+            let dylib = read_dylib_binary(mf);
+            (dylib.install_name, LdSymbols::read(ctx, &dylib.ld_symbols), dylib.exports)
+        }
+        _ => return None,
+    };
+    let own = exports.into_iter().filter(|name| ld.keeps(name)).chain(ld.added.iter().copied());
+    // A binary names its exports in its symbol table and export trie.
+    let mut classes: Vec<&[u8]> = own.filter(|name| is_class_export(name)).collect();
+    classes.sort_unstable();
+    classes.dedup();
+    Some((install_name, classes))
+}
+
+/// Whether an export is that of a class, as ld-prime's hook for the
+/// classes of mergeable libraries goes by its name: an Objective-C
+/// class or metaclass object (_OBJC_CLASS_$_Foo, _OBJC_METACLASS_$_Foo),
+/// or a Swift class's type metadata (_$s...CN, of any class, Objective-C
+/// or not). A Swift class's other symbols (its nominal type descriptor,
+/// metaclass or accessor), and an Objective-C class's exception type or
+/// instance variables, don't count.
+fn is_class_export(name: &[u8]) -> bool {
+    name.starts_with(b"_OBJC_CLASS_$_")
+        || name.starts_with(b"_OBJC_METACLASS_$_")
+        || (name.starts_with(b"_$s") && name.ends_with(b"CN"))
 }
 
 /// The hook's object, which goes ahead of the inputs as ld-prime's does,

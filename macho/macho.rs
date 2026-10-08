@@ -447,56 +447,6 @@ impl MachRel {
     }
 }
 
-/// A season's releases of Apple's OSes, which ld64 names its version
-/// sets after (ld::version2019Fall and the like): it turns a default on
-/// for every deployment target at or past such a set, as dyld and the
-/// runtimes of that season support what the default makes. tvOS is
-/// numbered as iOS is, and a simulator as its device; visionOS, which
-/// came later, has every default up to its own first release. Firmware,
-/// which no OS release governs, has the defaults of the older sets.
-pub struct VersionSet {
-    macos: u32,
-    ios: u32,
-    visionos: u32,
-    firmware: bool,
-}
-
-pub const VERSION_2012_FALL: VersionSet = VersionSet::new((10, 8), (6, 0), (0, 0), true);
-pub const VERSION_2013_FALL: VersionSet = VersionSet::new((10, 9), (7, 0), (0, 0), true);
-pub const VERSION_2018_FALL: VersionSet = VersionSet::new((10, 14), (12, 0), (0, 0), true);
-pub const VERSION_2019_FALL: VersionSet = VersionSet::new((10, 15), (13, 0), (0, 0), true);
-pub const VERSION_2020_FALL: VersionSet = VersionSet::new((11, 0), (14, 0), (0, 0), true);
-pub const VERSION_2021_FALL: VersionSet = VersionSet::new((12, 0), (15, 0), (0, 0), true);
-pub const VERSION_2024_SPRING: VersionSet = VersionSet::new((14, 4), (17, 4), (1, 1), false);
-pub const VERSION_2024_FALL: VersionSet = VersionSet::new((15, 0), (18, 0), (2, 0), false);
-pub const VERSION_2026_FALL: VersionSet = VersionSet::new((27, 0), (27, 0), (27, 0), false);
-
-impl VersionSet {
-    /// The set of macOS, iOS and visionOS (major, minor) versions.
-    const fn new(macos: (u32, u32), ios: (u32, u32), visionos: (u32, u32), firmware: bool) -> Self {
-        Self {
-            macos: encode_version(macos.0, macos.1, 0),
-            ios: encode_version(ios.0, ios.1, 0),
-            visionos: encode_version(visionos.0, visionos.1, 0),
-            firmware,
-        }
-    }
-
-    /// Whether a deployment target is at or past this set: never for
-    /// a -r or -preload output linked for no platform.
-    pub fn reached_by(&self, platform: u32, minos: u32) -> bool {
-        match platform {
-            PLATFORM_MACOS => minos >= self.macos,
-            PLATFORM_IOS | PLATFORM_IOSSIMULATOR | PLATFORM_TVOS | PLATFORM_TVOSSIMULATOR => {
-                minos >= self.ios
-            }
-            PLATFORM_VISIONOS | PLATFORM_VISIONOSSIMULATOR => minos >= self.visionos,
-            PLATFORM_FIRMWARE => self.firmware,
-            _ => false,
-        }
-    }
-}
-
 /// Encodes an X.Y.Z version number for a load command.
 pub const fn encode_version(major: u32, minor: u32, patch: u32) -> u32 {
     (major << 16) | (minor << 8) | patch

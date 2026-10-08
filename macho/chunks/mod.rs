@@ -563,7 +563,7 @@ pub fn create_version_cmd<E: Target>(platform: u32, minos: u32, sdk: u32) -> Vec
     };
     let arm64_on_mac =
         E::CPUTYPE == CPU_TYPE_ARM64 && (platform == PLATFORM_MACOS || is_simulator(platform));
-    let old = !arm64_on_mac && !VERSION_2018_FALL.reached_by(platform, minos);
+    let old = !arm64_on_mac && !crate::cmdline::VERSION_2018_FALL.reached_by(platform, minos);
     if let Some(cmd) = legacy.filter(|_| old) {
         return to_vec(&VersionMinCommand {
             cmd,

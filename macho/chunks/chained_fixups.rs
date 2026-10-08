@@ -90,7 +90,7 @@ fn import_table(fixups: &[Fixup]) -> (Vec<(SymbolId, u64)>, ImportOrdinals) {
 /// where chains came earlier (iOS 13.4, see cmdline::is_new_os) or when
 /// -fixup_chains forces them on an older OS.
 pub(crate) fn pointer_format<E: Target>(ctx: &Context<E>) -> u16 {
-    if ctx.args.static_link || ctx.args.targets(&crate::macho::VERSION_2021_FALL) {
+    if ctx.args.static_link || ctx.args.targets(&crate::cmdline::VERSION_2021_FALL) {
         DYLD_CHAINED_PTR_64_OFFSET
     } else {
         DYLD_CHAINED_PTR_64

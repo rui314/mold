@@ -2893,7 +2893,7 @@ const DATA_CONST_SECTIONS: &[&[u8]] = &[
 /// there; from the next releases on most class references fold into
 /// __got, see objc::fold_objc_classrefs).
 fn objc_refs_are_const<E: Target>(ctx: &Context<E>) -> bool {
-    ctx.args.targets(&crate::macho::VERSION_2024_SPRING)
+    ctx.args.targets(&crate::cmdline::VERSION_2024_SPRING)
 }
 
 /// dyld reads an image's interposing tuples (__DATA,__interpose) but
@@ -2903,7 +2903,7 @@ fn objc_refs_are_const<E: Target>(ctx: &Context<E>) -> bool {
 /// image, keeps a -sectcreate __DATA,__interpose in __DATA.)
 fn interpose_is_const<E: Target>(ctx: &Context<E>) -> bool {
     !ctx.args.relocatable
-        && ctx.args.targets(&crate::macho::VERSION_2024_FALL)
+        && ctx.args.targets(&crate::cmdline::VERSION_2024_FALL)
         && !ctx.args.without_dyld()
 }
 
