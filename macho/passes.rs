@@ -972,7 +972,7 @@ fn retire_bitcode_placeholders<E: Target>(ctx: &mut Context<E>) {
 pub fn remove_unreachable_files<E: Target>(ctx: &mut Context<E>) {
     for isec in ctx.isecs.iter_mut() {
         if !ctx.objs[isec.file as usize].is_alive {
-            isec.set_alive(false);
+            isec.kill();
         }
     }
 
@@ -996,7 +996,7 @@ pub fn remove_swift_reflection_metadata<E: Target>(ctx: &mut Context<E>) {
         })
         .collect();
     for i in removed {
-        ctx.isecs[i].set_alive(false);
+        ctx.isecs[i].kill();
     }
 }
 
@@ -1074,7 +1074,7 @@ pub fn convert_init_offsets<E: Target>(ctx: &mut Context<E>) {
             };
             ctx.init_offsets.init_funcs.push(func);
         }
-        ctx.isecs[i].set_alive(false);
+        ctx.isecs[i].kill();
     }
 }
 
@@ -1287,7 +1287,7 @@ pub fn merge_literals<E: Target>(ctx: &mut Context<E>) {
             if !input_files::is_mergeable_literal(hdr, isec) {
                 return None;
             }
-            Some((xxhash_rust::xxh3::xxh3_64(isec.data()), hdr, i as u32))
+            Some((xxhash_rust::xxh3::xxh3_64(isec.contents()), hdr, i as u32))
         })
         .collect();
 
@@ -1324,13 +1324,13 @@ fn merge_shard(isecs: &[InputSection], shard: Vec<Literal>) -> Vec<(u32, u32)> {
     let mut losers: Vec<(u32, u32)> = Vec::new();
     let p2align = |i: u32| isecs[i as usize].p2align_at(isecs[i as usize].input_addr as u64);
     for (hash, hdr, i) in shard {
-        let data = isecs[i as usize].data();
+        let data = isecs[i as usize].contents();
         let same = |&(h, other, j, _): &(u64, &MachSection, u32, u32)| {
             h == hash
                 && other.segname == hdr.segname
                 && other.sectname == hdr.sectname
                 && other.section_type() == hdr.section_type()
-                && isecs[j as usize].data() == data
+                && isecs[j as usize].contents() == data
         };
         match table.entry(hash, same, |e| e.0) {
             hashbrown::hash_table::Entry::Occupied(e) => {

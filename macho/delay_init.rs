@@ -164,7 +164,7 @@ fn create_delay_helpers<E: Target>(
         let kind = match how {
             LazyRef::Cmp => DelayUse::Cmp,
             LazyRef::Load => {
-                let (reg, own) = E::lazy_load_site(ctx.isecs[isec as usize].data(), offset);
+                let (reg, own) = E::lazy_load_site(ctx.isecs[isec as usize].contents(), offset);
                 DelayUse::Load { reg, site: own.then_some((isec, offset)) }
             }
             _ => continue,

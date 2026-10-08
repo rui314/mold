@@ -426,7 +426,7 @@ impl<'a, E: Target> Builder<'a, E> {
                     Content::Image(out.fileoff + isec.offset as u64)
                 }
             }
-            _ => Content::Pool(isec.data()),
+            _ => Content::Pool(isec.contents()),
         }
     }
 
@@ -639,7 +639,7 @@ impl<'a, E: Target> Builder<'a, E> {
         let arm64 = E::CPUTYPE == CPU_TYPE_ARM64;
         let code = isec.hdr(&ctx.objs[obj]).flags & S_ATTR_SOME_INSTRUCTIONS != 0;
         let insn = |r: &Reloc| {
-            u32::from_le_bytes(isec.data()[r.offset as usize..][..4].try_into().unwrap())
+            u32::from_le_bytes(isec.contents()[r.offset as usize..][..4].try_into().unwrap())
         };
         // The other references to the slot in the subsection, after or
         // before this one.
@@ -774,7 +774,7 @@ impl<'a, E: Target> Builder<'a, E> {
                 continue;
             }
             let fixup = if E::CPUTYPE == CPU_TYPE_ARM64 {
-                arm64_fixup(isec.data(), r, target, addend)
+                arm64_fixup(isec.contents(), r, target, addend)
             } else {
                 x86_64_fixup(hdr, r, target, addend)
             };

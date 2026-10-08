@@ -163,7 +163,7 @@ fn collect_root_set<E: Target>(
     // the end.
     let mut enqueue = |id: usize, root: Root| {
         let id = redirects[id];
-        if ctx.isecs[id].mark_visited() {
+        if ctx.isecs[id].visit() {
             roots.push(id);
             if let Some(why) = why.as_deref_mut() {
                 why[id] = Why::Root(root);
@@ -260,7 +260,7 @@ pub fn native_refs_before_lto<E: Target>(
         for (msym, &id) in obj.mach_syms.iter().zip(&obj.symbols) {
             if msym.ty() == N_UNDF
                 && let Some(isec) = ctx.symbols[id].input_section()
-                && ctx.isecs[redirects[isec as usize]].mark_visited()
+                && ctx.isecs[redirects[isec as usize]].visit()
             {
                 roots.push(redirects[isec as usize]);
             }
@@ -370,7 +370,7 @@ fn visit_section<E: Target>(
     for_each_edge(ctx, id, |target| targets.push(target));
     for target in targets {
         let target = redirects[target];
-        if ctx.isecs[target].mark_visited() {
+        if ctx.isecs[target].visit() {
             if depth < 3 {
                 visit_section(ctx, redirects, target, depth + 1, next);
             } else {
@@ -429,7 +429,7 @@ fn walk<E: Target>(
     while let Some(id) = queue.pop_front() {
         for_each_edge(ctx, id, |target| {
             let target = redirects[target];
-            if ctx.isecs[target].mark_visited() {
+            if ctx.isecs[target].visit() {
                 if let Some(why) = why.as_deref_mut() {
                     why[target] = Why::From(id as u32);
                 }
@@ -466,7 +466,7 @@ fn mark_live_support<E: Target>(
             references_live |= ctx.isecs[redirects[target]].is_visited();
         });
         let id = redirects[id];
-        if references_live && ctx.isecs[id].mark_visited() {
+        if references_live && ctx.isecs[id].visit() {
             if let Some(why) = why.as_deref_mut() {
                 why[id] = Why::Root(Root::LiveSupport);
             }

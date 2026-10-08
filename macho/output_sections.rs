@@ -803,7 +803,7 @@ fn group_input_sections<E: Target>(
                 };
                 let Some(group) = group else {
                     // Consumed by the link: no output section.
-                    isec.set_alive(false);
+                    isec.kill();
                     continue;
                 };
                 let group = &mut groups[group].1;

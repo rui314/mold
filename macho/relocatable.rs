@@ -975,19 +975,21 @@ fn copy_section_contents<E: Target>(
         let osec = ctx.output_section(osec);
         if !osec.hdr.is_zerofill() {
             let isecs = osec.members.iter().map(|&id| &ctx.isecs[id]);
-            jobs.extend(isecs.filter(|isec| !isec.data().is_empty()).map(|isec| (&osec.hdr, isec)));
+            jobs.extend(
+                isecs.filter(|isec| !isec.contents().is_empty()).map(|isec| (&osec.hdr, isec)),
+            );
         }
     }
     let ranges: Vec<std::ops::Range<u64>> = jobs
         .iter()
         .map(|&(hdr, isec)| {
             let start = hdr.fileoff + isec.offset as u64;
-            start..start + isec.data().len() as u64
+            start..start + isec.contents().len() as u64
         })
         .collect();
     let slices = output_file::split_ranges(buf, &ranges);
     jobs.into_par_iter().zip(slices).for_each(|((hdr, isec), out)| {
-        out.copy_from_slice(isec.data());
+        out.copy_from_slice(isec.contents());
         for rel in isec.rels(&ctx.objs[isec.file as usize]) {
             let here = hdr.addr + isec.offset as u64 + rel.offset as u64;
             rewrite_field(targets, isec, rel, here, &mut out[rel.offset as usize..]);

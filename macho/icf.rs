@@ -415,8 +415,8 @@ fn compute_digest<E: Target>(ctx: &Context<E>, cand_index: &[usize], id: usize) 
     let isec = &ctx.isecs[id];
     let mut h = SipHash13_128::new(&KEY);
     h.update(&isec.size.to_ne_bytes());
-    h.update(&isec.data().len().to_ne_bytes());
-    h.update(isec.data());
+    h.update(&isec.contents().len().to_ne_bytes());
+    h.update(isec.contents());
     for rel in isec.rels(&ctx.objs[isec.file as usize]) {
         h.update(&rel.offset.to_ne_bytes());
         h.update(&rel.ty.to_ne_bytes());
@@ -609,7 +609,7 @@ fn verify_leaders<E: Target>(
     let equal = |a: usize, b: usize| -> bool {
         let (x, y) = (&ctx.isecs[a], &ctx.isecs[b]);
         let (xr, yr) = (x.rels(&ctx.objs[x.file as usize]), y.rels(&ctx.objs[y.file as usize]));
-        x.data() == y.data()
+        x.contents() == y.contents()
             && xr.len() == yr.len()
             && xr.iter().zip(yr).all(|(r, s)| {
                 r.offset == s.offset

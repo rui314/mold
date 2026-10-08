@@ -90,7 +90,7 @@ pub(crate) fn import_uses<E: Target>(
         .filter(|&i| ctx.isecs[i].is_emitted())
         .flat_map_iter(|i| {
             let isec = &ctx.isecs[i];
-            let (file, data) = (&ctx.objs[isec.file as usize], isec.data());
+            let (file, data) = (&ctx.objs[isec.file as usize], isec.contents());
             isec.rels(file).iter().filter_map(move |r| {
                 let id = r.sym(file)?;
                 is_import(id).then(|| (i as u32, r.offset, id, E::lazy_ref(r, data)))
@@ -215,7 +215,7 @@ fn create_lazy_helpers<E: Target>(
             LazyRef::Call => LazyUse::Call,
             LazyRef::Cmp => LazyUse::Cmp,
             LazyRef::Load => {
-                let (reg, own) = E::lazy_load_site(ctx.isecs[isec as usize].data(), offset);
+                let (reg, own) = E::lazy_load_site(ctx.isecs[isec as usize].contents(), offset);
                 LazyUse::Load { reg, site: own.then_some((isec, offset)) }
             }
             LazyRef::Slot | LazyRef::Unsupported => continue,

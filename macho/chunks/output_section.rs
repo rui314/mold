@@ -133,7 +133,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]
     // only ever write within their own subsection.
     for_each_member(ctx, osec, buf, |m, slice| {
         let isec = &ctx.isecs[m];
-        let data = isec.data();
+        let data = isec.contents();
         if data.is_empty() {
             return;
         }

@@ -285,7 +285,7 @@ fn objc_class_ro<E: Target>(ctx: &Context<E>, cls: (u32, u64)) -> Option<(u32, u
 /// The C string a reference points at, if it is in the image.
 fn objc_cstring_at<E: Target>(ctx: &Context<E>, r: Option<ObjcRef>) -> Option<&'static [u8]> {
     let (isec, off) = objc_ref_location(ctx, r?)?;
-    let data = ctx.isecs[isec as usize].data();
+    let data = ctx.isecs[isec as usize].contents();
     let bytes = data.get(off as usize..)?;
     let end = bytes.iter().position(|&b| b == 0)?;
     Some(&bytes[..end])
@@ -427,7 +427,7 @@ fn ref_key<E: Target>(ctx: &Context<E>, i: usize) -> Option<RefKey> {
             targets.sort_by_key(|t| t.0);
             // The relocated fields hold per-object addends (x86-64
             // embeds the target's address); the targets stand for them.
-            let mut bytes = isec.data().to_vec();
+            let mut bytes = isec.contents().to_vec();
             for rel in rels {
                 let (a, b) = (rel.offset as usize, rel.offset as usize + rel.size as usize);
                 bytes[a..b].fill(0);
@@ -581,7 +581,7 @@ pub fn fold_objc_classrefs<E: Target>(ctx: &mut Context<E>) {
         // A pair's halves go together, as its offset half decides.
         let mut keep = hashbrown::HashSet::new();
         for u in &uses[obj_idx] {
-            let data = ctx.isecs[u.isec as usize].data();
+            let data = ctx.isecs[u.isec as usize].contents();
             let relocs = &ctx.objs[obj_idx].relocs;
             let decider = offset_half[obj_idx].get(&u.k).copied().unwrap_or(u.k);
             let (rel, decider) = (relocs[u.k], relocs[decider]);
@@ -621,7 +621,7 @@ pub fn fold_objc_classrefs<E: Target>(ctx: &mut Context<E>) {
                 ctx.symbols[class].add_flags(NEEDS_GOT);
                 kept.push((slot, class));
             } else {
-                ctx.isecs[slot as usize].set_alive(false);
+                ctx.isecs[slot as usize].kill();
             }
         }
     }
@@ -1030,7 +1030,7 @@ fn classic_list_header(data: &[u8]) -> Option<(u32, u64)> {
 fn classic_methods<E: Target>(ctx: &Context<E>, list: u32) -> Option<Vec<(u32, ObjcRef, ObjcRef)>> {
     // Not in the relative form already (the top flag), and 24 bytes an
     // entry.
-    let (entsize_flags, count) = classic_list_header(ctx.isecs[list as usize].data())?;
+    let (entsize_flags, count) = classic_list_header(ctx.isecs[list as usize].contents())?;
     if entsize_flags & 0x8000_0000 != 0 || entsize_flags & 0xffff != 24 {
         return None;
     }
@@ -1112,7 +1112,7 @@ pub fn merge_objc_categories<E: Target>(ctx: &mut Context<E>) {
         retarget_class_data(ctx, class.meta, meta_ro);
 
         for &ci in &class.cats {
-            ctx.isecs[cats[ci].isec as usize].set_alive(false);
+            ctx.isecs[cats[ci].isec as usize].kill();
             cats[ci].merged = true;
         }
         if !class.nonlazy && class.cats.iter().any(|&ci| cats[ci].nonlazy) {
@@ -1398,7 +1398,7 @@ fn read_method_list<E: Target>(
     if relative {
         return None;
     }
-    let (entsize_flags, count) = classic_list_header(ctx.isecs[isec as usize].data())?;
+    let (entsize_flags, count) = classic_list_header(ctx.isecs[isec as usize].contents())?;
     if entsize_flags != 24 {
         return None;
     }
@@ -1419,7 +1419,7 @@ fn read_method_list<E: Target>(
 fn read_protocol_list<E: Target>(ctx: &Context<E>, list: Option<ObjcRef>) -> Option<Vec<ObjcRef>> {
     let Some(r) = list else { return Some(Vec::new()) };
     let (isec, off) = objc_ref_location(ctx, r)?;
-    let data = ctx.isecs[isec as usize].data();
+    let data = ctx.isecs[isec as usize].contents();
     let count = u64::from_le_bytes(data.get(off as usize..off as usize + 8)?.try_into().unwrap());
     (0..count).map(|i| objc_pointer_at(ctx, isec, off + 8 + 8 * i)).collect()
 }
@@ -1432,7 +1432,7 @@ fn read_property_list<E: Target>(
 ) -> Option<Vec<(ObjcRef, ObjcRef)>> {
     let Some(r) = list else { return Some(Vec::new()) };
     let (isec, off) = objc_ref_location(ctx, r)?;
-    let data = ctx.isecs[isec as usize].data();
+    let data = ctx.isecs[isec as usize].contents();
     let entsize = u32::from_le_bytes(data.get(off as usize..off as usize + 4)?.try_into().unwrap());
     let count =
         u32::from_le_bytes(data.get(off as usize + 4..off as usize + 8)?.try_into().unwrap())
@@ -1615,7 +1615,7 @@ fn drop_superseded_lists<E: Target>(
 
 fn drop_list<E: Target>(ctx: &mut Context<E>, list: Option<ObjcRef>) {
     if let Some((isec, 0)) = list.and_then(|r| objc_ref_location(ctx, r)) {
-        ctx.isecs[isec as usize].set_alive(false);
+        ctx.isecs[isec as usize].kill();
     }
 }
 
@@ -1635,7 +1635,7 @@ fn rewrite_ro<E: Target>(
     protocols: Option<ObjcRef>,
     props: Option<ObjcRef>,
 ) -> u32 {
-    let data = ctx.isecs[ro.0 as usize].data()[ro.1 as usize..ro.1 as usize + 16].to_vec();
+    let data = ctx.isecs[ro.0 as usize].contents()[ro.1 as usize..ro.1 as usize + 16].to_vec();
     let flags = u32::from_le_bytes(data[0..4].try_into().unwrap());
     let len = if flags & (1 << 6) != 0 { 80 } else { 72 };
     let mut fields = vec![DataField::Bytes(data)];
@@ -1664,7 +1664,7 @@ fn rewrite_ro<E: Target>(
         // The record was a subsection of its own: replace it, so its
         // symbol names the new record too (ld64 keeps
         // __OBJC_CLASS_RO_$_Foo).
-        isec.set_alive(false);
+        isec.kill();
         isec.replacement = blob;
     }
     blob
@@ -1701,7 +1701,7 @@ fn rebuild_category_lists<E: Target>(
         if !list.entries.iter().any(|&(_, ci)| merged(ci)) {
             continue;
         }
-        ctx.isecs[list.isec as usize].set_alive(false);
+        ctx.isecs[list.isec as usize].kill();
         let survivors: Vec<DataField> = (list.entries.iter())
             .filter(|&&(_, ci)| !merged(ci))
             .map(|&(r, _)| DataField::Ptr(r))

@@ -231,7 +231,7 @@ pub struct InputSection {
     /// The subsection contents, as a bare pointer - the length is
     /// `size` - or 0 when there are none (a zero-fill or empty
     /// section). Stored as an integer, not a slice, to save 8 bytes and
-    /// keep the struct trivially Send/Sync; read through `data()`.
+    /// keep the struct trivially Send/Sync; read through `contents()`.
     /// mold likewise keeps `contents` as a bare address.
     pub contents: usize,
     /// This subsection's relocations: a range in the owning object's
@@ -410,9 +410,14 @@ impl InputSection {
             *f &= !IS_ALIVE;
         }
     }
+    /// Marks the subsection dead.
+    #[inline]
+    pub fn kill(&mut self) {
+        *self.flags.get_mut() &= !IS_ALIVE;
+    }
     /// Atomically sets the visited bit; true if this call set it.
     #[inline]
-    pub fn mark_visited(&self) -> bool {
+    pub fn visit(&self) -> bool {
         self.flags.fetch_or(IS_VISITED, std::sync::atomic::Ordering::Relaxed) & IS_VISITED == 0
     }
     /// Clears the visited bit, through a shared reference.
@@ -461,7 +466,7 @@ impl InputSection {
     /// otherwise the `size` bytes at `contents` (which point into the
     /// mmap'd input, so they live for the whole link).
     #[inline]
-    pub fn data(&self) -> &'static [u8] {
+    pub fn contents(&self) -> &'static [u8] {
         if self.contents == 0 {
             &[]
         } else {
