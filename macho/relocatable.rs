@@ -21,12 +21,12 @@ use rayon::prelude::*;
 use std::sync::atomic::{AtomicU16, AtomicU32, Ordering};
 
 use crate::arch::Target;
-use crate::chunks::symtab::{SymtabSection, local_symbol_name, par_push_entries};
+use crate::chunks::symtab::{SymtabSection, par_push_entries};
 use crate::chunks::{ChunkHeader, OutputSectionId};
 use crate::context::Context;
 use crate::error;
 use crate::fatal;
-use crate::input_files::FileId;
+use crate::input_files::{FileId, LocalSymbol};
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
 use crate::output_file;
@@ -37,7 +37,7 @@ use crate::util::{align_to, encode_uleb, leak_bytes};
 /// marks every symbol of a no_dead_strip section, local or global, so
 /// the next link keeps it even when the output section takes another
 /// member's attributes - but none of __objc_classrefs.
-fn section_desc<E: Target>(ctx: &Context<E>, isec: usize) -> u16 {
+pub(crate) fn section_desc<E: Target>(ctx: &Context<E>, isec: usize) -> u16 {
     let isec = &ctx.isecs[isec];
     let h = isec.hdr(&ctx.objs[isec.file as usize]);
     if h.flags & S_ATTR_NO_DEAD_STRIP != 0
@@ -234,11 +234,11 @@ fn write_object<E: Target>(
 /// "l<sect-create>" and the section's name as the option spelled it,
 /// whichever section each went to, marked no-dead-strip so that a later
 /// link keeps the data nothing refers to.
-fn sectcreate_locals<E: Target>(ctx: &Context<E>) -> Vec<Local> {
+fn sectcreate_locals<E: Target>(ctx: &Context<E>) -> Vec<LocalSymbol> {
     (ctx.sectcreate_inputs.iter().zip(&ctx.args.sectcreate))
         .map(|(input, sc)| {
             let (value, sect) = input.place(ctx);
-            Local {
+            LocalSymbol {
                 name: leak_bytes(
                     [b"l<sect-create>", &sc.segname[..], b",", &sc.sectname[..]].concat(),
                 ),
@@ -1050,21 +1050,8 @@ impl RSymtab {
     }
 }
 
-/// A local symbol of a -r output.
-#[derive(Clone, Copy)]
-struct Local {
-    name: &'static [u8],
-    /// Its entry, but for the name.
-    msym: MachSym,
-    /// Whether the name is hidden, the symbol taking a name made up for
-    /// it (see local_symbols).
-    hidden: bool,
-    /// The input symbol it stands for, if any.
-    sym: Option<SymbolId>,
-}
-
 /// A symbol's address in the -r output.
-fn sym_addr<E: Target>(ctx: &Context<E>, id: SymbolId) -> u64 {
+pub(crate) fn sym_addr<E: Target>(ctx: &Context<E>, id: SymbolId) -> u64 {
     let sym = &ctx.symbols[id];
     match sym.input_section() {
         Some(isec) => ctx.isecs[isec as usize].addr(ctx) + sym.value,
@@ -1258,15 +1245,16 @@ fn undefined_symbols<E: Target>(ctx: &Context<E>) -> Vec<(MachSym, SymbolId)> {
         .collect()
 }
 
-/// The local symbols of a -r output: each object's (see object_locals),
-/// in the objects' order, then those naming the -sectcreate inputs.
-/// Under -x, or where -non_global_symbols_strip_list or
-/// -non_global_symbols_no_strip_list strips a name, the symbol stays,
-/// as a relocation may name it, under a name made up for it, l<n>
-/// numbered in the table's order; the notes of its unit keep its own.
-fn local_symbols<E: Target>(ctx: &Context<E>) -> Vec<Local> {
-    let per_obj: Vec<Vec<Local>> =
-        (0..ctx.objs.len()).into_par_iter().map(|i| object_locals(ctx, i)).collect();
+/// The local symbols of a -r output: each object's (see
+/// ObjectFile::populate_symtab), in the objects' order, then those
+/// naming the -sectcreate inputs. Under -x, or where
+/// -non_global_symbols_strip_list or -non_global_symbols_no_strip_list
+/// strips a name, the symbol stays, as a relocation may name it, under
+/// a name made up for it, l<n> numbered in the table's order; the notes
+/// of its unit keep its own.
+fn local_symbols<E: Target>(ctx: &Context<E>) -> Vec<LocalSymbol> {
+    let per_obj: Vec<Vec<LocalSymbol>> =
+        ctx.objs.par_iter().enumerate().map(|(i, obj)| obj.populate_symtab(ctx, i)).collect();
     let mut locals = per_obj.concat();
     locals.extend(sectcreate_locals(ctx));
     let mut counter = 0;
@@ -1275,54 +1263,4 @@ fn local_symbols<E: Target>(ctx: &Context<E>) -> Vec<Local> {
         l.name = format!("l{counter:03}").leak().as_bytes();
     }
     locals
-}
-
-/// An object's local symbols in a -r output, in its symbol table's
-/// order: its labels in live sections, as each marked a subsection's
-/// start in it and a later link splits the output at them the same way,
-/// its absolute symbols, and unless -keep_private_externs (which Apple's
-/// strip passes to the `ld -r` it runs on each archive member) the
-/// private externals it defines, demoted to non-external symbols that
-/// keep N_PEXT, as in ld64 (nm: "was a private external").
-fn object_locals<E: Target>(ctx: &Context<E>, obj_idx: usize) -> Vec<Local> {
-    let obj = &ctx.objs[obj_idx];
-    let mut out = Vec::new();
-    if !obj.is_reachable {
-        return out;
-    }
-    for (msym, &sym_id) in obj.mach_syms.iter().zip(&obj.symbols) {
-        let sym = &ctx.symbols[sym_id];
-        let (n_type, mut desc) = if msym.is_stab() {
-            continue;
-        } else if !msym.is_extern() {
-            (msym.n_type, msym.desc)
-        } else if !ctx.args.keep_private_externs
-            && sym.is_private_extern()
-            && matches!(sym.file(), Some(FileId::Obj(o)) if o as usize == obj_idx)
-        {
-            let desc = msym.desc & (N_ALT_ENTRY | N_NO_DEAD_STRIP | N_WEAK_DEF);
-            (N_PEXT | msym.ty(), desc)
-        } else {
-            continue;
-        };
-        let (sect, value) = match sym.input_section() {
-            Some(input) => {
-                let isec = ctx.isecs.resolve(input as usize);
-                if !ctx.isecs[isec].is_alive() {
-                    continue;
-                }
-                desc |= section_desc(ctx, input as usize);
-                (ctx.isecs[isec].sect_idx(ctx), sym_addr(ctx, sym_id))
-            }
-            None if msym.ty() == N_ABS => (0, sym.value),
-            None => continue,
-        };
-        out.push(Local {
-            name: local_symbol_name(sym.name()),
-            msym: MachSym { stroff: 0, n_type, sect, desc, value },
-            hidden: ctx.args.strip_locals || crate::chunks::symtab::is_listed_out(ctx, sym.name()),
-            sym: Some(sym_id),
-        });
-    }
-    out
 }

@@ -8,6 +8,7 @@ use portable_atomic::AtomicU64;
 use rayon::prelude::*;
 
 use crate::arch::Target;
+use crate::chunks::symtab::{local_msym, local_symbol_name};
 use crate::context::Context;
 use crate::error::RawPath;
 use crate::error::raw;
@@ -305,6 +306,152 @@ impl ObjectFile {
             && hi + 4 <= isec.input_addr as u64 + isec.size as u64
             && (self.subsections_via_symbols || !spans_symbol()))
         .then_some(id)
+    }
+
+    /// The object's local symbols the output's symbol table lists, in
+    /// its symbol table's order - mold's populate_symtab, which a final
+    /// image and a -r output share. `id` is the object's index.
+    ///
+    /// A final image lists the non-external symbols the object keeps (see
+    /// should_write_to_local_symtab) but those
+    /// -non_global_symbols_no_strip_list or -non_global_symbols_strip_list
+    /// filters out (see is_listed_out): each of a live subsection, in its
+    /// section - a folded function's name names the function it folded
+    /// into - and each absolute one (N_ABS, as `.set x, 5` makes), in no
+    /// section, with no flags, its value filled in when the table is
+    /// written. The private externals it demotes to locals come after
+    /// every object's (see symtab::plan_local_symbols).
+    ///
+    /// A -r output lists its labels in live sections, as each marked a
+    /// subsection's start in it and a later link splits the output at
+    /// them the same way, its absolute symbols, and unless
+    /// -keep_private_externs (which Apple's strip passes to the `ld -r`
+    /// it runs on each archive member) the private externals it defines,
+    /// demoted to non-external symbols that keep N_PEXT, as in ld64 (nm:
+    /// "was a private external"); each with its flags and its value. One
+    /// that -x or the lists filter out is listed all the same, as a
+    /// relocation may name it, its name hidden (see
+    /// relocatable::local_symbols).
+    pub fn populate_symtab<E: Target>(&self, ctx: &Context<E>, id: usize) -> Vec<LocalSymbol> {
+        let mut out = Vec::new();
+        if !self.is_reachable {
+            return out;
+        }
+        let relocatable = ctx.args.relocatable;
+        let range = if relocatable { 0..self.mach_syms.len() } else { self.local_range() };
+        for i in range {
+            let (msym, sym_id) = (&self.mach_syms[i], self.symbols[i]);
+            let sym = &ctx.symbols[sym_id];
+            let (n_type, desc) = if msym.is_stab() {
+                continue;
+            } else if !msym.is_extern() {
+                (msym.n_type, msym.desc)
+            } else if relocatable
+                && !ctx.args.keep_private_externs
+                && sym.is_private_extern()
+                && matches!(sym.file(), Some(FileId::Obj(o)) if o as usize == id)
+            {
+                let desc = msym.desc & (N_ALT_ENTRY | N_NO_DEAD_STRIP | N_WEAK_DEF);
+                (N_PEXT | msym.ty(), desc)
+            } else {
+                continue;
+            };
+            if !relocatable && !should_write_to_local_symtab(sym.name()) {
+                continue;
+            }
+            let hidden = ctx.args.strip_locals || is_listed_out(ctx, sym.name());
+            if hidden && !relocatable {
+                continue;
+            }
+            let sect = match sym.input_section() {
+                Some(isec) => {
+                    let kept = ctx.isecs.resolve(isec as usize);
+                    if !ctx.isecs[kept].is_alive() {
+                        continue;
+                    }
+                    ctx.isecs[kept].sect_idx(ctx)
+                }
+                None if msym.ty() == N_ABS => 0,
+                None => continue,
+            };
+            let msym = if relocatable {
+                use crate::relocatable::{section_desc, sym_addr};
+                let isec = sym.input_section();
+                let desc = desc | isec.map_or(0, |isec| section_desc(ctx, isec as usize));
+                MachSym { stroff: 0, n_type, sect, desc, value: sym_addr(ctx, sym_id) }
+            } else {
+                MachSym { n_type: msym.ty(), ..local_msym(sect, 0) }
+            };
+            let name = local_symbol_name(sym.name());
+            out.push(LocalSymbol { name, msym, hidden, sym: Some(sym_id) });
+        }
+        out
+    }
+}
+
+/// A local symbol of the output's symbol table (see
+/// ObjectFile::populate_symtab).
+#[derive(Clone, Copy)]
+pub struct LocalSymbol {
+    pub name: &'static [u8],
+    /// Its entry, but for the name.
+    pub msym: MachSym,
+    /// Whether the name is hidden, the symbol taking a name made up for
+    /// it (see relocatable::local_symbols).
+    pub hidden: bool,
+    /// The input symbol it stands for, if any.
+    pub sym: Option<SymbolId>,
+}
+
+/// Returns true if a local symbol should appear in the output symbol
+/// table. Assembler temporaries, which begin with 'l' or 'L', are
+/// dropped. (ld-prime also drops the names of the entries of the
+/// Objective-C lists and of the sections it splits by content, which
+/// are no temporaries: Swift's _objc_classes_*, clang's
+/// __unnamed_array_storage.)
+pub(crate) fn should_write_to_local_symtab(name: &[u8]) -> bool {
+    !name.is_empty() && !name.starts_with(b"l") && !name.starts_with(b"L")
+}
+
+/// Whether -non_global_symbols_no_strip_list or -non_global_symbols_strip_list
+/// filters out a local symbol, by name. (Stabs are unaffected.)
+pub(crate) fn is_listed_out<E: Target>(ctx: &Context<E>, name: &[u8]) -> bool {
+    ctx.args.local_keep_list.as_ref().is_some_and(|keep| keep.find(name) == -1)
+        || ctx.args.local_strip_list.find(name) != -1
+}
+
+/// An object's block of the symbol table and of the string table, which
+/// its debug notes are written into in place - mold-rust's SymtabBlock.
+/// Blocks don't overlap, so they are written in parallel.
+pub struct SymtabBlock<'a> {
+    syms: &'a mut [u8],
+    len: usize,
+    strtab: &'a mut [u8],
+    /// The offset of `strtab` within the string table.
+    strtab_base: u32,
+    strtab_len: usize,
+}
+
+impl<'a> SymtabBlock<'a> {
+    pub fn new(syms: &'a mut [u8], strtab: &'a mut [u8], strtab_base: u32) -> Self {
+        SymtabBlock { syms, len: 0, strtab, strtab_base, strtab_len: 0 }
+    }
+
+    #[inline]
+    pub fn push(&mut self, msym: MachSym) {
+        msym.write_to(&mut self.syms[self.len * size_of::<MachSym>()..]);
+        self.len += 1;
+    }
+
+    /// Adds a string, returning its offset in the string table.
+    #[inline]
+    pub fn add_string(&mut self, name: &[u8]) -> u32 {
+        let strx = self.strtab_base + self.strtab_len as u32;
+        let strs = &mut self.strtab[self.strtab_len..];
+        strs[..name.len()].copy_from_slice(name);
+        strs[name.len()] = 0;
+        self.strtab_len += name.len() + 1;
+        strx
     }
 }
 

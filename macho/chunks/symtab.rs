@@ -10,7 +10,9 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use crate::arch::Target;
 use crate::chunks::{ChunkHeader, ChunkId, OutputSectionId};
 use crate::context::Context;
-use crate::input_files::{FileId, ObjectFile};
+use crate::input_files::{
+    FileId, LocalSymbol, ObjectFile, SymtabBlock, should_write_to_local_symtab,
+};
 use crate::macho::*;
 use crate::symbol::{Symbol, SymbolId};
 use crate::util::{leak_bytes, path_bytes};
@@ -157,16 +159,6 @@ pub fn local_symbol_name(name: &[u8]) -> &[u8] {
     LLVM.find(name).map_or(name, |i| &name[..i])
 }
 
-/// Returns true if a local symbol should appear in the output symbol
-/// table. Assembler temporaries, which begin with 'l' or 'L', are
-/// dropped. (ld-prime also drops the names of the entries of the
-/// Objective-C lists and of the sections it splits by content, which
-/// are no temporaries: Swift's _objc_classes_*, clang's
-/// __unnamed_array_storage.)
-pub(crate) fn keep_local_symbol(name: &[u8]) -> bool {
-    !name.is_empty() && !name.starts_with(b"l") && !name.starts_with(b"L")
-}
-
 /// One stab entry: its name and MachSym, the symbol whose final address
 /// fills in `value`, and the symbol the name is, if any, whose string
 /// the entry shares.
@@ -232,7 +224,7 @@ impl StabPlan {
         &self,
         ctx: &Context<E>,
         strx_of: &[u32],
-        block: &mut crate::chunks::symtab::SymtabBlock<'_>,
+        block: &mut SymtabBlock<'_>,
     ) {
         // A function's notes take its address three times in a row.
         let mut addr = (u32::MAX, 0);
@@ -364,7 +356,7 @@ fn plan_object_stabs<E: Target>(ctx: &Context<E>, obj_idx: usize, cwd: &Path) ->
         let common = msym.is_common() && is_still_common(ctx, sym_id);
         if msym.is_stab()
             || (!common && !matches!(sym.file(), Some(FileId::Obj(o)) if o as usize == obj_idx))
-            || !keep_local_symbol(sym.name())
+            || !should_write_to_local_symtab(sym.name())
         {
             continue;
         }
@@ -650,7 +642,8 @@ fn is_still_common<E: Target>(ctx: &Context<E>, id: SymbolId) -> bool {
 pub const STAB_END: MachSym = MachSym { stroff: 1, n_type: N_SO, sect: 1, desc: 0, value: 0 };
 
 /// A final image's local symbols: each object's non-external symbols
-/// it keeps, in its symbol table's order, then the private externals
+/// it keeps, in its symbol table's order (see
+/// ObjectFile::populate_symtab), then the private externals
 /// demoted to locals, then the linker's own names and the objc_msgSend$
 /// stubs. -x drops them all, the demoted private externals too, as ld64
 /// lists no local symbol under it. (ld-prime lists them by address, the
@@ -659,9 +652,10 @@ fn plan_local_symbols<E: Target>(ctx: &Context<E>, pexts: &[usize]) -> Vec<Named
     if ctx.args.strip_locals {
         return Vec::new();
     }
-    let per_obj: Vec<Vec<NamedEntry>> =
-        ctx.objs.par_iter().map(|obj| object_locals(ctx, obj)).collect();
-    let mut ents = per_obj.concat();
+    let per_obj: Vec<Vec<LocalSymbol>> =
+        ctx.objs.par_iter().enumerate().map(|(i, obj)| obj.populate_symtab(ctx, i)).collect();
+    let mut ents: Vec<NamedEntry> = Vec::with_capacity(per_obj.iter().map(Vec::len).sum());
+    ents.extend(per_obj.into_iter().flatten().map(|l| (l.name, l.msym, l.sym)));
 
     // Private external symbols resolve globally but appear as locals
     // (with N_PEXT still set) in the output.
@@ -723,51 +717,6 @@ fn linker_locals<E: Target>(ctx: &Context<E>) -> Vec<NamedEntry> {
 /// A local symbol's entry, in section `sect`.
 pub fn local_msym(sect: u8, value: u64) -> MachSym {
     MachSym { stroff: 0, n_type: N_SECT, sect, desc: 0, value }
-}
-
-/// Whether -non_global_symbols_no_strip_list or -non_global_symbols_strip_list
-/// filters out a local symbol, by name. (Stabs are unaffected.)
-pub(crate) fn is_listed_out<E: Target>(ctx: &Context<E>, name: &[u8]) -> bool {
-    ctx.args.local_keep_list.as_ref().is_some_and(|keep| keep.find(name) == -1)
-        || ctx.args.local_strip_list.find(name) != -1
-}
-
-/// The non-external symbols of an object that the output lists, in
-/// symbol-table order.
-fn object_locals<E: Target>(ctx: &Context<E>, obj: &ObjectFile) -> Vec<NamedEntry> {
-    let mut out = Vec::new();
-    if !obj.is_reachable {
-        return out;
-    }
-    for i in obj.local_range() {
-        let (msym, sym_id) = (&obj.mach_syms[i], obj.symbols[i]);
-        let sym = &ctx.symbols[sym_id];
-        if msym.is_stab() || msym.is_extern() || !keep_local_symbol(sym.name()) {
-            continue;
-        }
-        if is_listed_out(ctx, sym.name()) {
-            continue;
-        }
-        // An absolute symbol (N_ABS, as `.set x, 5` makes) is kept too,
-        // in no section.
-        let Some(isec) = sym.input_section().map(|i| i as usize) else {
-            if msym.ty() == N_ABS {
-                let ent = MachSym { n_type: N_ABS, ..local_msym(0, 0) };
-                let name = local_symbol_name(sym.name());
-                out.push((name, ent, Some(sym_id)));
-            }
-            continue;
-        };
-        // A folded function's name names the function it folded into.
-        let kept = ctx.isecs.resolve(isec);
-        if !matches!(sym.file(), Some(FileId::Obj(_))) || !ctx.isecs[kept].is_alive() {
-            continue;
-        }
-        let ent = local_msym(ctx.isecs[kept].sect_idx(ctx), 0);
-        let name = local_symbol_name(sym.name());
-        out.push((name, ent, Some(sym_id)));
-    }
-    out
 }
 
 /// A symbol table entry with its name, and the symbol whose address
@@ -962,7 +911,7 @@ fn classify_symbols<E: Target>(ctx: &Context<E>, indexed: &[bool]) -> Vec<Symbol
                 // A private external becomes a local, and a label
                 // is not emitted (clang's __OBJC_LABEL_PROTOCOL_$_X is
                 // listed, demoted, but not an l_OBJC_LABEL_PROTOCOL_$_X).
-                if !keep_local_symbol(sym.name()) {
+                if !should_write_to_local_symtab(sym.name()) {
                     return SymbolClass::No;
                 }
                 return SymbolClass::Pext;
@@ -1104,13 +1053,7 @@ pub fn copy_buf<E: Target>(
         let (syms, rest) = stab_syms.split_at_mut(plan.len() * size_of::<MachSym>());
         let (strs, strs_rest) = stab_strtab.split_at_mut((strx[1] - strx[0]) as usize);
         (stab_syms, stab_strtab) = (rest, strs_rest);
-        blocks.push(SymtabBlock {
-            syms,
-            len: 0,
-            strtab: strs,
-            strtab_base: strx[0],
-            strtab_len: 0,
-        });
+        blocks.push(SymtabBlock::new(syms, strs, strx[0]));
     }
     let stabs = || {
         symtab.stabs.par_iter().zip(blocks).for_each(|(plan, mut block)| {
@@ -1159,37 +1102,6 @@ pub fn copy_buf<E: Target>(
         )
     };
     rayon::join(entries, stabs);
-}
-
-/// An object's block of the symbol table and of the string table, which
-/// its debug notes are written into in place - mold-rust's SymtabBlock.
-/// Blocks don't overlap, so they are written in parallel.
-pub struct SymtabBlock<'a> {
-    syms: &'a mut [u8],
-    len: usize,
-    strtab: &'a mut [u8],
-    /// The offset of `strtab` within the string table.
-    strtab_base: u32,
-    strtab_len: usize,
-}
-
-impl SymtabBlock<'_> {
-    #[inline]
-    pub fn push(&mut self, msym: MachSym) {
-        msym.write_to(&mut self.syms[self.len * size_of::<MachSym>()..]);
-        self.len += 1;
-    }
-
-    /// Adds a string, returning its offset in the string table.
-    #[inline]
-    pub fn add_string(&mut self, name: &[u8]) -> u32 {
-        let strx = self.strtab_base + self.strtab_len as u32;
-        let strs = &mut self.strtab[self.strtab_len..];
-        strs[..name.len()].copy_from_slice(name);
-        strs[name.len()] = 0;
-        self.strtab_len += name.len() + 1;
-        strx
-    }
 }
 
 /// Lays out a symbol table's strings and sets every entry's stroff:

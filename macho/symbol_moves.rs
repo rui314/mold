@@ -14,11 +14,10 @@
 use std::os::unix::ffi::OsStrExt;
 
 use crate::arch::Target;
-use crate::chunks::symtab::keep_local_symbol;
 use crate::cmdline::SymbolMove;
 use crate::context::Context;
 use crate::error::{RawPath, raw};
-use crate::input_files::{FileId, canonical_section_flags};
+use crate::input_files::{FileId, canonical_section_flags, should_write_to_local_symtab};
 use crate::macho::*;
 use crate::symbol::SymbolId;
 use crate::util::leak_bytes;
@@ -282,11 +281,11 @@ fn rewritten_records<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32, boo
 
 /// The subsection the symbol `id` of object `obj`, whose entry is
 /// `msym`, names: a definition the link kept, external or local but no
-/// assembler label (see symtab::keep_local_symbol), in a section or
-/// absolute; or a common symbol, if the object's tentative definition is
-/// the one its subsection stands for (see common_owners). A method list
-/// rewritten in the relative form (see rewritten_records) is code, as
-/// ld-prime counts it.
+/// assembler label (see input_files::should_write_to_local_symtab), in
+/// a section or absolute; or a common symbol, if the object's tentative
+/// definition is the one its subsection stands for (see common_owners).
+/// A method list rewritten in the relative form (see rewritten_records)
+/// is code, as ld-prime counts it.
 fn subsec_named<'a, E: Target>(
     ctx: &'a Context<E>,
     commons: &hashbrown::HashMap<u32, u32>,
@@ -304,7 +303,7 @@ fn subsec_named<'a, E: Target>(
     if msym.is_stab()
         || !matches!(msym.ty(), N_SECT | N_ABS)
         || sym.file() != Some(FileId::Obj(obj as u32))
-        || (!msym.is_extern() && !keep_local_symbol(sym.name()))
+        || (!msym.is_extern() && !should_write_to_local_symtab(sym.name()))
     {
         return None;
     }

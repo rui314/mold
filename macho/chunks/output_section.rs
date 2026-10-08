@@ -5,10 +5,10 @@
 use rayon::prelude::*;
 
 use crate::arch::Target;
-use crate::chunks::symtab::{NamedEntry, is_listed_out, local_msym};
+use crate::chunks::symtab::{NamedEntry, local_msym};
 use crate::chunks::{ChunkHeader, ChunkId, OutputSectionId};
 use crate::context::Context;
-use crate::input_files::DataField;
+use crate::input_files::{DataField, is_listed_out};
 use crate::input_sections::InputSectionId;
 use crate::symbol_moves::MoveOption;
 use crate::thunks::Thunk;
