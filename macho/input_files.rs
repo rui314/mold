@@ -4,6 +4,7 @@ use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use portable_atomic::AtomicU64;
 use rayon::prelude::*;
 
 use crate::arch::Target;
@@ -4030,5 +4031,162 @@ impl ObjectFile {
             _ => unreachable!(),
         }
         true
+    }
+
+    /// Races the ranks of this object's definitions into `best`, the
+    /// best rank of each symbol (see passes::race_definitions).
+    pub fn race_definitions(
+        &self,
+        isecs: &[InputSection],
+        autolink_priority: u32,
+        best: &[AtomicU64],
+    ) {
+        use std::sync::atomic::Ordering;
+        for i in self.global_range() {
+            let sym_id = self.symbols[i];
+            let rank = self.definition_rank(isecs, i, autolink_priority);
+            if let Some(rank) = rank {
+                best[sym_id as usize].fetch_min(rank, Ordering::Relaxed);
+            }
+        }
+    }
+
+    /// Writes the symbols whose race this object, object `obj_idx`, won
+    /// (see passes::claim_definitions).
+    pub fn claim_definitions(
+        &self,
+        syms: &SymbolSlots,
+        obj_idx: usize,
+        isecs: &[InputSection],
+        autolink_priority: u32,
+        best: &[AtomicU64],
+    ) {
+        use std::sync::atomic::Ordering;
+        for i in self.global_range() {
+            let sym_id = self.symbols[i];
+            let rank = self.definition_rank(isecs, i, autolink_priority);
+            let Some(rank) = rank else { continue };
+            if best[sym_id as usize].load(Ordering::Relaxed) != rank {
+                continue;
+            }
+            // SAFETY: this object holds the unique minimum rank for
+            // sym_id, so no other thread writes this slot.
+            let sym = unsafe { syms.get(sym_id) };
+            if !self.claim_definition(sym, obj_idx, i, isecs) {
+                best[sym_id as usize].store(u64::MAX, Ordering::Relaxed);
+            }
+        }
+    }
+
+    /// Gives each non-external symbol of this object, object `obj_idx`,
+    /// its definition (see passes::claim_locals).
+    pub fn initialize_local_symbols(
+        &self,
+        syms: &SymbolSlots,
+        obj_idx: usize,
+        isecs: &[InputSection],
+    ) {
+        for i in self.local_range() {
+            let msym = &self.mach_syms[i];
+            if msym.is_stab() || msym.is_extern() {
+                continue;
+            }
+            // SAFETY: a local symbol belongs to this object alone (see
+            // passes::claim_locals).
+            let sym = unsafe { syms.get(self.symbols[i]) };
+            let file = FileId::Obj(obj_idx as u32);
+            match msym.ty() {
+                N_ABS => {
+                    sym.set_file(file);
+                    sym.set_input_section(None);
+                    sym.value = msym.value;
+                }
+                N_SECT => {
+                    if let Some((isec, off)) = self.symbol_subsec(isecs, i) {
+                        sym.set_file(file);
+                        sym.set_input_section(Some(isec as u32));
+                        sym.value = off;
+                        sym.set_no_dead_strip(
+                            msym.desc & (N_NO_DEAD_STRIP | REFERENCED_DYNAMICALLY) != 0,
+                        );
+                        sym.set_alt_entry(msym.desc & N_ALT_ENTRY != 0);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// The subsections of this object, object `obj_idx`, that hold a
+    /// losing copy of a weak definition, each with the winning copy's
+    /// subsection, in MachSym order. The definition must be at the same
+    /// offset in both copies, and the losing subsection hold no other
+    /// symbol: an object without subsections-via-symbols has one
+    /// subsection per section, and folding it away would take every
+    /// other symbol's bytes with it. ld64 splits at symbols regardless;
+    /// we keep such a copy.
+    pub fn weak_def_losers<E: Target>(
+        &self,
+        ctx: &Context<E>,
+        obj_idx: usize,
+    ) -> Vec<(usize, usize)> {
+        let mut out = Vec::new();
+        if !self.is_reachable {
+            return out;
+        }
+        // The addresses of the object's symbols, sorted, once there is a
+        // losing copy to check.
+        let mut values: Option<Vec<u64>> = None;
+        for i in self.global_range() {
+            let (msym, sym_id) = (&self.mach_syms[i], self.symbols[i]);
+            if !msym.is_weak_def() {
+                continue;
+            }
+            let sym = &ctx.symbols[sym_id];
+            let Some(FileId::Obj(owner)) = sym.file() else { continue };
+            if owner as usize == obj_idx {
+                continue;
+            }
+            let Some(winner) = sym.input_section() else { continue };
+            let Some((loser, off)) = self.symbol_subsec(&ctx.isecs, i) else { continue };
+            if off != sym.value {
+                continue;
+            }
+            let values = values.get_or_insert_with(|| {
+                let mut v: Vec<u64> = (self.mach_syms.iter())
+                    .filter(|n| !n.is_stab() && n.ty() == N_SECT)
+                    .map(|n| n.value)
+                    .collect();
+                v.sort_unstable();
+                v.dedup();
+                v
+            });
+            let l = &ctx.isecs[loser];
+            let (start, end) = (l.input_addr as u64, l.input_addr as u64 + l.size as u64);
+            let lo = values.partition_point(|&v| v < start);
+            let hi = values.partition_point(|&v| v < end);
+            if values[lo..hi].iter().all(|&v| v == msym.value) {
+                out.push((loser, winner as usize));
+            }
+        }
+        out
+    }
+
+    /// The imports this object references, each once, and whether
+    /// weakly (its undefined symbol is N_WEAK_REF).
+    pub fn import_references<E: Target>(&self, ctx: &Context<E>) -> Vec<(SymbolId, bool)> {
+        use crate::input_sections::RelocTarget;
+        let mut seen = hashbrown::HashSet::new();
+        let mut out = Vec::new();
+        for &id in &self.subsecs {
+            for rel in ctx.isecs[id].rels(self) {
+                let RelocTarget::Sym(idx) = rel.target() else { continue };
+                let sym_id = self.symbols[idx as usize];
+                if ctx.symbols[sym_id].is_imported() && seen.insert(sym_id) {
+                    out.push((sym_id, self.mach_syms[idx as usize].desc & N_WEAK_REF != 0));
+                }
+            }
+        }
+        out
     }
 }

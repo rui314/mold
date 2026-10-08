@@ -98,48 +98,6 @@ fn intern_command_line_symbols<E: Target>(ctx: &mut Context<E>) {
     }
 }
 
-/// Non-external symbols are private to their object and never compete:
-/// each gets its definition directly. Relocations reference them by
-/// symbol index just like externals, so they need locations too.
-fn claim_locals<E: Target>(ctx: &mut Context<E>) {
-    let _t = ctx.timer("claim_locals");
-    // A local symbol belongs to exactly one object (locals get fresh
-    // slots, never interned), so the per-object claims write disjoint
-    // symbols and the objects proceed in parallel.
-    let syms = SymbolSlots::new(&mut ctx.symbols.syms);
-    let isecs = &ctx.isecs;
-    ctx.objs.par_iter().enumerate().for_each(|(obj_idx, obj)| {
-        for i in obj.local_range() {
-            let msym = &obj.mach_syms[i];
-            if msym.is_stab() || msym.is_extern() {
-                continue;
-            }
-            // SAFETY: disjoint per object, as above.
-            let sym = unsafe { syms.get(obj.symbols[i]) };
-            let file = FileId::Obj(obj_idx as u32);
-            match msym.ty() {
-                N_ABS => {
-                    sym.set_file(file);
-                    sym.set_input_section(None);
-                    sym.value = msym.value;
-                }
-                N_SECT => {
-                    if let Some((isec, off)) = obj.symbol_subsec(isecs, i) {
-                        sym.set_file(file);
-                        sym.set_input_section(Some(isec as u32));
-                        sym.value = off;
-                        sym.set_no_dead_strip(
-                            msym.desc & (N_NO_DEAD_STRIP | REFERENCED_DYNAMICALLY) != 0,
-                        );
-                        sym.set_alt_entry(msym.desc & N_ALT_ENTRY != 0);
-                    }
-                }
-                _ => {}
-            }
-        }
-    });
-}
-
 /// Resets the resolution of every symbol a file claimed, and of every
 /// common one, for a resolution round to start over. Which imports are
 /// weak is decided afresh too: the final round counts only the live
@@ -265,17 +223,10 @@ fn collect_references<E: Target>(ctx: &Context<E>, only_alive: bool) -> Referenc
 /// has a unique priority, exactly one object ends up owning each
 /// symbol.
 fn race_definitions<E: Target>(ctx: &Context<E>, only_alive: bool) -> Vec<AtomicU64> {
-    use std::sync::atomic::Ordering;
     let best: Vec<AtomicU64> =
         (0..ctx.symbols.syms.len()).map(|_| AtomicU64::new(u64::MAX)).collect();
     ctx.objs.par_iter().filter(|obj| !only_alive || obj.is_reachable).for_each(|obj| {
-        for i in obj.global_range() {
-            let sym_id = obj.symbols[i];
-            let rank = obj.definition_rank(&ctx.isecs, i, ctx.autolink_priority);
-            if let Some(rank) = rank {
-                best[sym_id as usize].fetch_min(rank, Ordering::Relaxed);
-            }
-        }
+        obj.race_definitions(&ctx.isecs, ctx.autolink_priority, &best);
     });
     best
 }
@@ -284,26 +235,12 @@ fn race_definitions<E: Target>(ctx: &Context<E>, only_alive: bool) -> Vec<Atomic
 /// per object, so every symbol has exactly one writer and the parallel
 /// writes are disjoint.
 fn claim_definitions<E: Target>(ctx: &mut Context<E>, only_alive: bool, best: &[AtomicU64]) {
-    use std::sync::atomic::Ordering;
     let syms = SymbolSlots::new(&mut ctx.symbols.syms);
     let isecs = &ctx.isecs;
     let autolink_priority = ctx.autolink_priority;
     let objs = ctx.objs.par_iter().enumerate().filter(|(_, obj)| !only_alive || obj.is_reachable);
     objs.for_each(|(obj_idx, obj)| {
-        for i in obj.global_range() {
-            let sym_id = obj.symbols[i];
-            let rank = obj.definition_rank(isecs, i, autolink_priority);
-            let Some(rank) = rank else { continue };
-            if best[sym_id as usize].load(Ordering::Relaxed) != rank {
-                continue;
-            }
-            // SAFETY: this object holds the unique minimum rank for
-            // sym_id, so no other thread writes this slot.
-            let sym = unsafe { syms.get(sym_id) };
-            if !obj.claim_definition(sym, obj_idx, i, isecs) {
-                best[sym_id as usize].store(u64::MAX, Ordering::Relaxed);
-            }
-        }
+        obj.claim_definitions(&syms, obj_idx, isecs, autolink_priority, best);
     });
 }
 
@@ -581,7 +518,7 @@ fn claim_new_dylibs<E: Target>(ctx: &mut Context<E>, first: usize) {
 /// likewise. So a symbol of both Foundation and CFNetwork that
 /// `-framework Carbon -framework Foundation` finds binds to Foundation,
 /// though Carbon re-exports CoreServices, which re-exports CFNetwork.
-pub fn dylib_ranks(dylibs: &[input_files::DylibFile]) -> Vec<u64> {
+fn dylib_ranks(dylibs: &[input_files::DylibFile]) -> Vec<u64> {
     let phase = |phase: u64| (2 << 40) | (phase << 32);
     let mut ranks = vec![u64::MAX; dylibs.len()];
     for (i, d) in dylibs.iter().enumerate().filter(|(_, d)| !d.is_implicit) {
@@ -688,6 +625,21 @@ fn load_owner<E: Target>(ctx: &mut Context<E>, sym_id: SymbolId, queue: &mut Vec
             queue.push(owner);
         }
     }
+}
+
+/// Non-external symbols are private to their object and never compete:
+/// each gets its definition directly. Relocations reference them by
+/// symbol index just like externals, so they need locations too.
+fn claim_locals<E: Target>(ctx: &mut Context<E>) {
+    let _t = ctx.timer("claim_locals");
+    // A local symbol belongs to exactly one object (locals get fresh
+    // slots, never interned), so the per-object claims write disjoint
+    // symbols and the objects proceed in parallel.
+    let syms = SymbolSlots::new(&mut ctx.symbols.syms);
+    let isecs = &ctx.isecs;
+    ctx.objs.par_iter().enumerate().for_each(|(obj_idx, obj)| {
+        obj.initialize_local_symbols(&syms, obj_idx, isecs);
+    });
 }
 
 /// The objects check_input_versions has checked, and the Objective-C
@@ -1526,8 +1478,8 @@ pub fn force_symbol_weakness<E: Target>(ctx: &mut Context<E>) {
 /// in ld64: an inline function compiled at different optimization
 /// levels, or a Swift __swift5_typeref string with or without a pad
 /// byte, still has one definition, and a loser's bytes, relocations,
-/// unwind info and data-in-code go with it (see weak_def_losers for
-/// the copies that stay).
+/// unwind info and data-in-code go with it (see
+/// ObjectFile::weak_def_losers for the copies that stay).
 pub fn coalesce_weak_defs<E: Target>(ctx: &mut Context<E>) {
     // A C++ debug link has millions of weak-def MachSyms (every inline
     // and template instance), so the losing copies are found in
@@ -1535,7 +1487,7 @@ pub fn coalesce_weak_defs<E: Target>(ctx: &mut Context<E>) {
     // earlier one, so the replacements are made serially, in object
     // order.
     let losers: Vec<Vec<(usize, usize)>> =
-        (0..ctx.objs.len()).into_par_iter().map(|i| weak_def_losers(ctx, i)).collect();
+        ctx.objs.par_iter().enumerate().map(|(i, obj)| obj.weak_def_losers(ctx, i)).collect();
     for (loser, winner) in losers.into_iter().flatten() {
         let winner = ctx.isecs.resolve(winner);
         let loser = ctx.isecs.resolve(loser);
@@ -1543,57 +1495,6 @@ pub fn coalesce_weak_defs<E: Target>(ctx: &mut Context<E>) {
             ctx.isecs[loser].replacement = winner as u32;
         }
     }
-}
-
-/// The subsections of object `obj_idx` that hold a losing copy of a
-/// weak definition, each with the winning copy's subsection, in MachSym
-/// order. The definition must be at the same offset in both copies, and
-/// the losing subsection hold no other symbol: an object without
-/// subsections-via-symbols has one subsection per section, and folding
-/// it away would take every other symbol's bytes with it. ld64 splits
-/// at symbols regardless; we keep such a copy.
-fn weak_def_losers<E: Target>(ctx: &Context<E>, obj_idx: usize) -> Vec<(usize, usize)> {
-    let obj = &ctx.objs[obj_idx];
-    let mut out = Vec::new();
-    if !obj.is_reachable {
-        return out;
-    }
-    // The addresses of the object's symbols, sorted, once there is a
-    // losing copy to check.
-    let mut values: Option<Vec<u64>> = None;
-    for i in obj.global_range() {
-        let (msym, sym_id) = (&obj.mach_syms[i], obj.symbols[i]);
-        if !msym.is_weak_def() {
-            continue;
-        }
-        let sym = &ctx.symbols[sym_id];
-        let Some(FileId::Obj(owner)) = sym.file() else { continue };
-        if owner as usize == obj_idx {
-            continue;
-        }
-        let Some(winner) = sym.input_section() else { continue };
-        let Some((loser, off)) = obj.symbol_subsec(&ctx.isecs, i) else { continue };
-        if off != sym.value {
-            continue;
-        }
-        let values = values.get_or_insert_with(|| {
-            let mut v: Vec<u64> = (obj.mach_syms.iter())
-                .filter(|n| !n.is_stab() && n.ty() == N_SECT)
-                .map(|n| n.value)
-                .collect();
-            v.sort_unstable();
-            v.dedup();
-            v
-        });
-        let l = &ctx.isecs[loser];
-        let (start, end) = (l.input_addr as u64, l.input_addr as u64 + l.size as u64);
-        let lo = values.partition_point(|&v| v < start);
-        let hi = values.partition_point(|&v| v < end);
-        if values[lo..hi].iter().all(|&v| v == msym.value) {
-            out.push((loser, winner as usize));
-        }
-    }
-    out
 }
 
 /// Reports the symbols live objects define strongly more than once,
@@ -1793,40 +1694,23 @@ pub fn check_common_conflicts<E: Target>(ctx: &Context<E>) {
     }
 }
 
-/// The imports an object references, each once, and whether weakly
-/// (its undefined symbol is N_WEAK_REF).
-fn import_references<E: Target>(ctx: &Context<E>, obj_idx: usize) -> Vec<(SymbolId, bool)> {
-    let obj = &ctx.objs[obj_idx];
-    let mut seen = hashbrown::HashSet::new();
-    let mut out = Vec::new();
-    for &id in &obj.subsecs {
-        for rel in ctx.isecs[id].rels(obj) {
-            let RelocTarget::Sym(idx) = rel.target() else { continue };
-            let sym_id = obj.symbols[idx as usize];
-            if ctx.symbols[sym_id].is_imported() && seen.insert(sym_id) {
-                out.push((sym_id, obj.mach_syms[idx as usize].desc & N_WEAK_REF != 0));
-            }
-        }
-    }
-    out
-}
-
 /// -no_weak_imports and -weak_reference_mismatches error go through each
-/// object's imports (see import_references): -no_weak_imports names
-/// each one an object references weakly, and -weak_reference_mismatches
-/// error names the object that references one otherwise than the
-/// objects before it did (where any strong reference makes a strong
-/// one).
+/// object's imports (see ObjectFile::import_references): -no_weak_imports
+/// names each one an object references weakly, and
+/// -weak_reference_mismatches error names the object that references
+/// one otherwise than the objects before it did (where any strong
+/// reference makes a strong one).
 pub fn check_weak_imports<E: Target>(ctx: &Context<E>) {
     use crate::cmdline::WeakRefMismatches;
     let mismatches = ctx.args.weak_reference_mismatches == WeakRefMismatches::Error;
     if (!ctx.args.no_weak_imports && !mismatches) || ctx.args.relocatable {
         return;
     }
-    let refs: Vec<Vec<(SymbolId, bool)>> = (0..ctx.objs.len())
-        .into_par_iter()
-        .map(|i| match ctx.objs[i].is_reachable {
-            true => import_references(ctx, i),
+    let refs: Vec<Vec<(SymbolId, bool)>> = ctx
+        .objs
+        .par_iter()
+        .map(|obj| match obj.is_reachable {
+            true => obj.import_references(ctx),
             false => Vec::new(),
         })
         .collect();
