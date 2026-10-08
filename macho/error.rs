@@ -173,6 +173,17 @@ pub fn exit_after_cleanup(status: i32) -> ! {
     unsafe { libc::_exit(status) }
 }
 
+/// Makes a panic remove a partially-written output file, as a fatal error
+/// does, before the default hook reports the panic. Nothing recovers from
+/// a panic, so it always terminates the process.
+pub fn install_panic_hook() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        crate::output_file::cleanup();
+        default_hook(info);
+    }));
+}
+
 /// A byte string that a diagnostic prints as it is (see raw).
 pub struct Raw<'a>(&'a [u8]);
 

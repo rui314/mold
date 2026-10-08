@@ -73,6 +73,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
 
     let t_all = ctx.timer("all");
     crate::subprocess::install_signal_handler();
+    crate::error::install_panic_hook();
 
     // Runs a pass under a -print_statistics timer.
     macro_rules! timed {
