@@ -59,8 +59,10 @@ pub struct SymtabSection {
 
 impl SymtabSection {
     pub fn new() -> Self {
+        let mut hdr = ChunkHeader::linkedit();
+        hdr.p2align = 3;
         Self {
-            hdr: ChunkHeader::linkedit(),
+            hdr,
             entries: Vec::new(),
             strtab_size: 0,
             names: Vec::new(),

@@ -17,7 +17,9 @@ pub struct CodeSignatureSection {
 
 impl CodeSignatureSection {
     pub fn new() -> Self {
-        Self { hdr: ChunkHeader::linkedit() }
+        let mut hdr = ChunkHeader::linkedit();
+        hdr.p2align = 4;
+        Self { hdr }
     }
 }
 

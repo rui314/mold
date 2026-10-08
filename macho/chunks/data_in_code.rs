@@ -20,7 +20,9 @@ pub struct DataInCodeSection {
 
 impl DataInCodeSection {
     pub fn new() -> Self {
-        Self { hdr: ChunkHeader::linkedit(), entries: Vec::new() }
+        let mut hdr = ChunkHeader::linkedit();
+        hdr.p2align = 3;
+        Self { hdr, entries: Vec::new() }
     }
 }
 

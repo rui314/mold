@@ -97,7 +97,11 @@ impl ChunkHeader {
     }
 
     /// The header of a __LINKEDIT table, which no section header
-    /// describes.
+    /// describes. ld-prime starts the dyld opcodes, the chained fixups
+    /// and the local relocations wherever the table before them ends -
+    /// the first of them where __LINKEDIT starts, which a -segalign
+    /// below 8 leaves unaligned (each table's size is a multiple of 8);
+    /// the other tables set the alignment ld-prime gives them.
     pub fn linkedit() -> Self {
         let mut hdr = Self::new(b"__LINKEDIT", b"");
         hdr.is_sect = false;

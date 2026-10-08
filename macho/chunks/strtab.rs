@@ -10,7 +10,9 @@ pub struct StrtabSection {
 
 impl StrtabSection {
     pub fn new() -> Self {
-        Self { hdr: ChunkHeader::linkedit() }
+        let mut hdr = ChunkHeader::linkedit();
+        hdr.p2align = 3;
+        Self { hdr }
     }
 }
 

@@ -55,12 +55,9 @@ pub struct MergeableRecordSection {
 
 impl MergeableRecordSection {
     pub fn new() -> Self {
-        Self {
-            hdr: ChunkHeader::linkedit(),
-            contents: Vec::new(),
-            image_contents: Vec::new(),
-            pool_offset: 0,
-        }
+        let mut hdr = ChunkHeader::linkedit();
+        hdr.p2align = 3;
+        Self { hdr, contents: Vec::new(), image_contents: Vec::new(), pool_offset: 0 }
     }
 }
 

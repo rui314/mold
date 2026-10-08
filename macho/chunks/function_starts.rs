@@ -21,7 +21,9 @@ pub struct FunctionStartsSection {
 
 impl FunctionStartsSection {
     pub fn new() -> Self {
-        Self { hdr: ChunkHeader::linkedit(), contents: Vec::new() }
+        let mut hdr = ChunkHeader::linkedit();
+        hdr.p2align = 3;
+        Self { hdr, contents: Vec::new() }
     }
 }
 

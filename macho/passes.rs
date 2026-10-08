@@ -3181,7 +3181,7 @@ fn layout_segment<E: Target>(
         if ctx.chunk_header(id).is_zerofill() {
             continue;
         }
-        let align = 1 << chunk_p2align(ctx, id);
+        let align = 1 << ctx.chunk_header(id).p2align;
         let addr = if linkedit {
             cursor = align_to(cursor, align);
             vmaddr + (cursor - fileoff)
@@ -3240,34 +3240,6 @@ fn layout_segment<E: Target>(
     seg.cmd.filesize = align_to(filesize, page);
     seg.cmd.vmsize = align_to(vm_end - vmaddr, page).max(seg.cmd.filesize);
     fileoff + align_to(seg.cmd.filesize, seg_page)
-}
-
-/// The alignment a chunk starts on: a section's own, and a __LINKEDIT
-/// table's as ld-prime gives it. ld-prime starts the dyld opcodes, the
-/// chained fixups and the local relocations wherever the table before
-/// them ends - the first of them where __LINKEDIT starts, which a
-/// -segalign below 8 leaves unaligned (each table's size is a multiple
-/// of 8).
-fn chunk_p2align<E: Target>(ctx: &Context<E>, id: ChunkId) -> u32 {
-    match id {
-        ChunkId::RebaseInfo
-        | ChunkId::BindInfo
-        | ChunkId::WeakBindInfo
-        | ChunkId::LazyBindInfo
-        | ChunkId::ChainedFixups
-        | ChunkId::LocalRelocs => 0,
-        ChunkId::Symtab
-        | ChunkId::Strtab
-        | ChunkId::ExportTrie
-        | ChunkId::FunctionStarts
-        | ChunkId::DataInCode
-        | ChunkId::MergeableRecord
-        | ChunkId::SplitInfo
-        | ChunkId::ExternRelocs => 3,
-        ChunkId::IndirectSymtab => 2,
-        ChunkId::CodeSignature => 4,
-        _ => ctx.chunk_header(id).p2align,
-    }
 }
 
 /// Gives every segment but __LINKEDIT its address, as ld-prime does:

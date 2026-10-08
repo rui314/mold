@@ -19,7 +19,9 @@ pub struct IndirectSymtabSection {
 
 impl IndirectSymtabSection {
     pub fn new() -> Self {
-        Self { hdr: ChunkHeader::linkedit() }
+        let mut hdr = ChunkHeader::linkedit();
+        hdr.p2align = 2;
+        Self { hdr }
     }
 }
 

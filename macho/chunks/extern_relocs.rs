@@ -22,7 +22,9 @@ pub struct ExternRelocsSection {
 
 impl ExternRelocsSection {
     pub fn new() -> Self {
-        Self { hdr: ChunkHeader::linkedit(), relocs: Vec::new() }
+        let mut hdr = ChunkHeader::linkedit();
+        hdr.p2align = 3;
+        Self { hdr, relocs: Vec::new() }
     }
 }
 
