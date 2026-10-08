@@ -34,7 +34,7 @@ impl Default for LazyBindInfoSection {
 /// bound stub (segment/offset of its lazy pointer, dylib ordinal,
 /// symbol, bind, done), and each record's offset, which the stub helper
 /// entry pushes for dyld_stub_binder. ld64's layout, byte for byte.
-pub fn build<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<u32>) {
+pub fn construct<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<u32>) {
     if ctx.stubs.lazy.is_empty() {
         return (Vec::new(), Vec::new());
     }

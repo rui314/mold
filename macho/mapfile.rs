@@ -129,7 +129,7 @@ fn dependency_inputs<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
         .iter()
         .enumerate()
         .filter(|&(i, o)| {
-            o.is_alive && !ctx.is_internal(i) && !ctx.is_bundle_hook(i) && !ctx.is_lto_obj(i)
+            o.is_reachable && !ctx.is_internal(i) && !ctx.is_bundle_hook(i) && !ctx.is_lto_obj(i)
         })
         .map(|(_, o)| o.mf.parent.map_or(o.mf.name.as_path(), |p| p.name.as_path()))
         .collect();
@@ -269,7 +269,7 @@ impl<'a> TraceInputs<'a> {
         for obj in &ctx.objs {
             let Some(archive) = obj.mf.parent else { continue };
             let entry = members.entry(archive.name.as_path()).or_default();
-            if !obj.is_alive {
+            if !obj.is_reachable {
                 entry.1 = true;
                 continue;
             }
@@ -521,7 +521,7 @@ impl<'a> MapFiles<'a> {
         let mut paths = Vec::new();
         let mut objs = vec![0; ctx.objs.len()];
         for (i, obj) in ctx.objs.iter().enumerate() {
-            if obj.is_alive && !ctx.is_internal(i) && !ctx.is_bundle_hook(i) {
+            if obj.is_reachable && !ctx.is_internal(i) && !ctx.is_bundle_hook(i) {
                 paths.push(obj.mf.name.as_path());
                 objs[i] = paths.len();
             }

@@ -222,7 +222,7 @@ fn collect_references<E: Target>(ctx: &Context<E>, only_alive: bool) -> Referenc
         weak: (0..n).map(|_| AtomicBool::new(false)).collect(),
         strong: (0..n).map(|_| AtomicBool::new(false)).collect(),
     };
-    ctx.objs.par_iter().filter(|obj| !only_alive || obj.is_alive).for_each(|obj| {
+    ctx.objs.par_iter().filter(|obj| !only_alive || obj.is_reachable).for_each(|obj| {
         let r = obj.global_range();
         for (msym, &sym_id) in obj.mach_syms[r.clone()].iter().zip(&obj.symbols[r]) {
             if msym.is_undef() {
@@ -259,7 +259,7 @@ fn race_definitions<E: Target>(ctx: &Context<E>, only_alive: bool) -> Vec<Atomic
     use std::sync::atomic::Ordering;
     let best: Vec<AtomicU64> =
         (0..ctx.symbols.syms.len()).map(|_| AtomicU64::new(u64::MAX)).collect();
-    ctx.objs.par_iter().filter(|obj| !only_alive || obj.is_alive).for_each(|obj| {
+    ctx.objs.par_iter().filter(|obj| !only_alive || obj.is_reachable).for_each(|obj| {
         for i in obj.global_range() {
             let sym_id = obj.symbols[i];
             let rank = obj.definition_rank(&ctx.isecs, i, ctx.autolink_priority);
@@ -279,7 +279,7 @@ fn claim_definitions<E: Target>(ctx: &mut Context<E>, only_alive: bool, best: &[
     let syms = SymbolSlots::new(&mut ctx.symbols.syms);
     let isecs = &ctx.isecs;
     let autolink_priority = ctx.autolink_priority;
-    let objs = ctx.objs.par_iter().enumerate().filter(|(_, obj)| !only_alive || obj.is_alive);
+    let objs = ctx.objs.par_iter().enumerate().filter(|(_, obj)| !only_alive || obj.is_reachable);
     objs.for_each(|(obj_idx, obj)| {
         for i in obj.global_range() {
             let sym_id = obj.symbols[i];
@@ -303,7 +303,7 @@ fn claim_definitions<E: Target>(ctx: &mut Context<E>, only_alive: bool, best: &[
 fn live_common_symbols<E: Target>(ctx: &Context<E>) -> Vec<(SymbolId, u64, u8, bool)> {
     ctx.objs
         .par_iter()
-        .filter(|obj| obj.is_alive)
+        .filter(|obj| obj.is_reachable)
         .flat_map_iter(|obj| {
             let r = obj.global_range();
             obj.mach_syms[r.clone()].iter().zip(&obj.symbols[r]).filter_map(|(msym, &sym_id)| {
@@ -632,7 +632,7 @@ fn mark_live_objects<E: Target>(ctx: &mut Context<E>) {
     let _t = ctx.timer("mark_live_objects");
     // Resolution runs in rounds (auto-linking, LTO), and a file live
     // after one stays so, with the -why_load reason it was loaded for.
-    let mut queue: Vec<usize> = (0..ctx.objs.len()).filter(|&i| ctx.objs[i].is_alive).collect();
+    let mut queue: Vec<usize> = (0..ctx.objs.len()).filter(|&i| ctx.objs[i].is_reachable).collect();
 
     // The entry point and -u symbols are roots too. A dylib or bundle
     // has no entry point: an archive member that defines _main stays
@@ -645,8 +645,8 @@ fn mark_live_objects<E: Target>(ctx: &mut Context<E>) {
             && let Some(FileId::Obj(owner)) = ctx.symbols[id].file()
         {
             let owner = owner as usize;
-            if !ctx.objs[owner].is_alive {
-                ctx.objs[owner].is_alive = true;
+            if !ctx.objs[owner].is_reachable {
+                ctx.objs[owner].is_reachable = true;
                 ctx.why_load.insert(owner, ctx.symbols[id].name());
                 queue.push(owner);
             }
@@ -673,8 +673,8 @@ fn mark_live_objects<E: Target>(ctx: &mut Context<E>) {
 fn load_owner<E: Target>(ctx: &mut Context<E>, sym_id: SymbolId, queue: &mut Vec<usize>) {
     if let Some(FileId::Obj(owner)) = ctx.symbols[sym_id].file() {
         let owner = owner as usize;
-        if !ctx.objs[owner].is_alive {
-            ctx.objs[owner].is_alive = true;
+        if !ctx.objs[owner].is_reachable {
+            ctx.objs[owner].is_reachable = true;
             ctx.why_load.insert(owner, ctx.symbols[sym_id].name());
             queue.push(owner);
         }
@@ -714,7 +714,7 @@ pub fn check_input_versions<E: Target>(ctx: &Context<E>, checked: &mut CheckedIn
     for (i, obj) in ctx.objs.iter().enumerate() {
         // The hook for the classes of mergeable libraries is the
         // linker's, for any macOS.
-        if !obj.is_alive || checked.objs[i] || ctx.is_bundle_hook(i) {
+        if !obj.is_reachable || checked.objs[i] || ctx.is_bundle_hook(i) {
             continue;
         }
         checked.objs[i] = true;
@@ -892,7 +892,7 @@ pub fn links_only_bitcode<E: Target>(ctx: &Context<E>) -> bool {
             .objs
             .iter()
             .enumerate()
-            .all(|(i, obj)| !obj.is_alive || obj.lto_module.is_some() || ctx.is_internal(i))
+            .all(|(i, obj)| !obj.is_reachable || obj.lto_module.is_some() || ctx.is_internal(i))
 }
 
 /// Writes a -r link of bitcode alone as one merged bitcode file (see
@@ -939,7 +939,7 @@ fn retire_bitcode_placeholders<E: Target>(ctx: &mut Context<E>) {
     for module in std::mem::take(&mut ctx.lto_modules) {
         let obj_idx = module.obj;
         let obj = &ctx.objs[obj_idx];
-        if obj.is_alive {
+        if obj.is_reachable {
             let won = obj
                 .symbols
                 .iter()
@@ -961,7 +961,7 @@ fn retire_bitcode_placeholders<E: Target>(ctx: &mut Context<E>) {
             }
         }
         let obj = &mut ctx.objs[obj_idx];
-        obj.is_alive = false;
+        obj.is_reachable = false;
         obj.mach_syms = std::borrow::Cow::Borrowed(&[]);
         obj.symbols.clear();
     }
@@ -971,7 +971,7 @@ fn retire_bitcode_placeholders<E: Target>(ctx: &mut Context<E>) {
 /// dead, so nothing of theirs reaches the output.
 pub fn remove_unreachable_files<E: Target>(ctx: &mut Context<E>) {
     for isec in ctx.isecs.iter_mut() {
-        if !ctx.objs[isec.file as usize].is_alive {
+        if !ctx.objs[isec.file as usize].is_reachable {
             isec.kill();
         }
     }
@@ -1123,7 +1123,7 @@ pub fn check_initializers<E: Target>(ctx: &Context<E>) {
     let profiling = |obj: &input_files::ObjectFile| {
         obj.sect_hdrs.iter().any(|hdr| hdr.sectname().starts_with(b"__llvm_prf_"))
     };
-    if ctx.objs.iter().any(|obj| obj.is_alive && profiling(obj)) {
+    if ctx.objs.iter().any(|obj| obj.is_reachable && profiling(obj)) {
         return;
     }
     let inits = initializers(ctx);
@@ -1177,7 +1177,7 @@ fn initializers<E: Target>(ctx: &Context<E>) -> Vec<(&[u8], error::Raw<'_>)> {
 fn common_symbols_in_order<E: Target>(ctx: &Context<E>) -> Vec<SymbolId> {
     let mut seen = hashbrown::HashSet::new();
     let mut out = Vec::new();
-    for obj in ctx.objs.iter().filter(|obj| obj.is_alive) {
+    for obj in ctx.objs.iter().filter(|obj| obj.is_reachable) {
         let r = obj.global_range();
         for (msym, &id) in obj.mach_syms[r.clone()].iter().zip(&obj.symbols[r]) {
             let sym = &ctx.symbols[id];
@@ -1382,7 +1382,7 @@ pub fn auto_hide_weak_defs<E: Target>(ctx: &mut Context<E>) {
     const NOT_HIDABLE: u8 = 2;
     let flags: Vec<AtomicU8> = (0..ctx.symbols.syms.len()).map(|_| AtomicU8::new(0)).collect();
     ctx.objs.par_iter().for_each(|obj| {
-        if !obj.is_alive {
+        if !obj.is_reachable {
             return;
         }
         let r = obj.global_range();
@@ -1545,7 +1545,7 @@ pub fn coalesce_weak_defs<E: Target>(ctx: &mut Context<E>) {
 fn weak_def_losers<E: Target>(ctx: &Context<E>, obj_idx: usize) -> Vec<(usize, usize)> {
     let obj = &ctx.objs[obj_idx];
     let mut out = Vec::new();
-    if !obj.is_alive {
+    if !obj.is_reachable {
         return out;
     }
     // The addresses of the object's symbols, sorted, once there is a
@@ -1627,7 +1627,7 @@ fn duplicate_symbols<E: Target>(ctx: &Context<E>, among_bitcode: bool) -> Vec<Du
         .objs
         .par_iter()
         .enumerate()
-        .filter(|(_, obj)| obj.is_alive)
+        .filter(|(_, obj)| obj.is_reachable)
         .flat_map_iter(|(obj_idx, obj)| {
             obj.global_range().filter_map(move |i| {
                 let (msym, sym_id) = (&obj.mach_syms[i], obj.symbols[i]);
@@ -1706,7 +1706,7 @@ pub fn check_poisoned_symbols<E: Target>(ctx: &Context<E>) {
     let mut refs: Vec<(SymbolId, usize)> = ctx
         .objs
         .par_iter()
-        .filter(|obj| obj.is_alive)
+        .filter(|obj| obj.is_reachable)
         .flat_map_iter(|obj| obj.subsecs.iter().map(|&id| id as usize))
         .filter(|&isec| ctx.isecs[isec].is_alive())
         .flat_map_iter(|isec| {
@@ -1763,7 +1763,7 @@ pub fn check_common_conflicts<E: Target>(ctx: &Context<E>) {
         }
         // The first object declaring it.
         let declares = |obj: &&input_files::ObjectFile| {
-            obj.is_alive
+            obj.is_reachable
                 && (obj.mach_syms.iter().zip(&obj.symbols)).any(|(n, &s)| s == id && n.is_common())
         };
         let Some(obj) = ctx.objs.iter().find(declares) else { continue };
@@ -1815,7 +1815,7 @@ pub fn check_weak_imports<E: Target>(ctx: &Context<E>) {
     }
     let refs: Vec<Vec<(SymbolId, bool)>> = (0..ctx.objs.len())
         .into_par_iter()
-        .map(|i| match ctx.objs[i].is_alive {
+        .map(|i| match ctx.objs[i].is_reachable {
             true => import_references(ctx, i),
             false => Vec::new(),
         })
@@ -1994,7 +1994,7 @@ pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
 /// The first live object that names each symbol undefined.
 fn first_referencers<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<SymbolId, usize> {
     let mut map = hashbrown::HashMap::new();
-    for (obj_idx, obj) in ctx.objs.iter().enumerate().filter(|(_, obj)| obj.is_alive) {
+    for (obj_idx, obj) in ctx.objs.iter().enumerate().filter(|(_, obj)| obj.is_reachable) {
         let r = obj.global_range();
         for (msym, &sym_id) in obj.mach_syms[r.clone()].iter().zip(&obj.symbols[r]) {
             if !msym.is_stab() && msym.ty() == N_UNDF && !msym.is_common() {
@@ -2059,7 +2059,7 @@ pub fn print_dependencies<E: Target>(ctx: &Context<E>) {
     if !ctx.args.print_dependencies {
         return;
     }
-    for (obj_idx, obj) in ctx.objs.iter().enumerate().filter(|(_, obj)| obj.is_alive) {
+    for (obj_idx, obj) in ctx.objs.iter().enumerate().filter(|(_, obj)| obj.is_reachable) {
         let r = obj.global_range();
         for (msym, &sym_id) in obj.mach_syms[r.clone()].iter().zip(&obj.symbols[r]) {
             if msym.is_stab() || msym.ty() != N_UNDF || msym.is_common() {
@@ -2069,7 +2069,7 @@ pub fn print_dependencies<E: Target>(ctx: &Context<E>) {
             let provider = match sym.file() {
                 Some(FileId::Obj(idx)) => {
                     let idx = idx as usize;
-                    if !ctx.objs[idx].is_alive || idx == obj_idx {
+                    if !ctx.objs[idx].is_reachable || idx == obj_idx {
                         continue;
                     }
                     ctx.objs[idx].mf.name.raw()
@@ -2115,7 +2115,7 @@ pub fn print_why_load<E: Target>(ctx: &Context<E>) {
     let compiled: hashbrown::HashSet<usize> = ctx.lto_inputs.iter().map(|i| i.obj).collect();
     for (i, obj) in ctx.objs.iter().enumerate() {
         let Some(archive) = obj.mf.parent else { continue };
-        if !obj.is_alive && !compiled.contains(&i) {
+        if !obj.is_reachable && !compiled.contains(&i) {
             continue;
         }
         let file = obj.mf.name.raw();
@@ -2150,7 +2150,7 @@ pub fn print_implicit_trace<E: Target>(ctx: &Context<E>) {
             || args.trace_implicit_library.iter().any(|s| memchr::memmem::find(name, s).is_some())
     };
     let mut out = Vec::new();
-    for obj in ctx.objs.iter().filter(|obj| obj.is_alive) {
+    for obj in ctx.objs.iter().filter(|obj| obj.is_reachable) {
         for opt in &obj.linker_options {
             let (kind, name) = match opt.as_slice() {
                 [flag, name] if flag.ends_with(b"framework") => ("framework", name.as_slice()),
@@ -2626,7 +2626,7 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
             .objs
             .par_iter()
             .enumerate()
-            .filter(|(_, file)| file.is_alive)
+            .filter(|(_, file)| file.is_reachable)
             .map(|(i, file)| {
                 let id = FileId::Obj(i as u32);
                 file.symbols
@@ -3546,12 +3546,12 @@ fn build_linkedit_tables<E: Target>(ctx: &mut Context<E>) {
                     rayon::join(
                         || {
                             let _t = shared.timer("function_starts");
-                            chunks::function_starts::build(shared)
+                            chunks::function_starts::construct(shared)
                         },
                         || {
                             let _t = shared.timer("data_in_code");
-                            let dice = chunks::data_in_code::build(shared, |hdr| hdr.fileoff);
-                            (dice, chunks::split_info::build(shared))
+                            let dice = chunks::data_in_code::construct(shared, |hdr| hdr.fileoff);
+                            (dice, chunks::split_info::construct(shared))
                         },
                     )
                 },
@@ -3597,14 +3597,14 @@ fn build_linkedit_tables<E: Target>(ctx: &mut Context<E>) {
     // -static -pie image's local ones, and a kext's local and external
     // ones.
     if ctx.chunks.contains(&ChunkId::LocalRelocs) {
-        chunks::local_relocs::build(ctx);
+        chunks::local_relocs::construct(ctx);
     }
     if ctx.chunks.contains(&ChunkId::ExternRelocs) {
-        chunks::extern_relocs::build(ctx);
+        chunks::extern_relocs::construct(ctx);
     }
     if ctx.chunks.contains(&ChunkId::MergeableRecord) {
         let _t = ctx.timer("mergeable_record");
-        crate::make_mergeable::build(ctx);
+        crate::make_mergeable::construct(ctx);
     }
 }
 
@@ -3656,15 +3656,15 @@ fn build_fixups<E: Target>(ctx: &Context<E>) -> Fixups {
     let (rebase, bind) = rayon::join(
         || {
             let _t = ctx.timer("rebase_info");
-            chunks::rebase_info::build(ctx)
+            chunks::rebase_info::construct(ctx)
         },
         || {
             let _t = ctx.timer("bind_info");
-            chunks::bind_info::build(ctx)
+            chunks::bind_info::construct(ctx)
         },
     );
-    let (lazy_bind, lazy_offsets) = chunks::lazy_bind_info::build(ctx);
-    let weak_bind = chunks::weak_bind_info::build(ctx);
+    let (lazy_bind, lazy_offsets) = chunks::lazy_bind_info::construct(ctx);
+    let weak_bind = chunks::weak_bind_info::construct(ctx);
     Fixups::Classic { rebase, bind, weak_bind, lazy_bind, lazy_offsets }
 }
 
@@ -3769,4 +3769,23 @@ pub fn compute_uuid<E: Target>(
         chunks::code_signature::rehash_pages(&buf[..sig_start], &mut hashes, 0..hdr_end);
     }
     hashes
+}
+
+/// ld64's -print_statistics reports its phase times and memory to
+/// stderr; ours reports the pass timers and the sizes that drive them.
+pub fn show_stats<E: Target>(ctx: &Context<E>) {
+    if ctx.args.perf {
+        ctx.timers.print();
+        eprintln!(
+            "  objects: {} alive of {}; dylibs: {}; output: {} bytes",
+            ctx.objs
+                .iter()
+                .enumerate()
+                .filter(|(i, o)| o.is_reachable && !ctx.is_internal(*i))
+                .count(),
+            ctx.objs.len() - 1,
+            ctx.dylibs.len(),
+            ctx.output_size,
+        );
+    }
 }

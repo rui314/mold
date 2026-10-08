@@ -777,7 +777,7 @@ pub fn read_lto_object<E: Target>(
     let obj_idx = ctx.objs.len();
     let priority = ctx.next_priority();
     ctx.objs.push(ObjectFile {
-        is_alive: alive,
+        is_reachable: alive,
         priority,
         platform_versions,
         sym_subsecs: vec![crate::symbol::NONE; mach_syms.len()],
@@ -836,7 +836,7 @@ fn is_bitcode_subtype_mismatch<E: Target>(arch: &str) -> bool {
 
 /// The bitcode modules of live files, in input order.
 pub fn live_bitcode_modules<E: Target>(ctx: &Context<E>) -> impl Iterator<Item = &BitcodeModule> {
-    ctx.lto_modules.iter().filter(|module| ctx.objs[module.obj].is_alive)
+    ctx.lto_modules.iter().filter(|module| ctx.objs[module.obj].is_reachable)
 }
 
 /// Writes a -r link of bitcode alone as one merged bitcode file (see
@@ -922,7 +922,7 @@ fn lto_roots<E: Target>(ctx: &Context<E>) -> Vec<&[u8]> {
         thin[module.obj] = Some(module.is_thin);
     }
     let flags: Vec<AtomicU8> = (0..ctx.symbols.syms.len()).map(|_| AtomicU8::new(0)).collect();
-    ctx.objs.par_iter().enumerate().filter(|(_, obj)| obj.is_alive).for_each(|(i, obj)| {
+    ctx.objs.par_iter().enumerate().filter(|(_, obj)| obj.is_reachable).for_each(|(i, obj)| {
         let r = obj.global_range();
         for (msym, &sym_id) in obj.mach_syms[r.clone()].iter().zip(&obj.symbols[r]) {
             if msym.is_stab() || !msym.is_extern() {
@@ -957,7 +957,7 @@ fn lto_roots<E: Target>(ctx: &Context<E>) -> Vec<&[u8]> {
     for (i, sym) in ctx.symbols.syms.iter().enumerate() {
         let Some(FileId::Obj(obj)) = sym.file() else { continue };
         let Some(is_thin) = thin[obj as usize] else { continue };
-        if !ctx.objs[obj as usize].is_alive || !sym.is_extern() {
+        if !ctx.objs[obj as usize].is_reachable || !sym.is_extern() {
             continue;
         }
         let outside = THIN_REF | if is_thin { MERGED_REF } else { 0 };

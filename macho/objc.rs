@@ -663,7 +663,7 @@ fn classref_slots<E: Target>(
     obj_idx: usize,
 ) -> hashbrown::HashMap<u32, (u32, crate::symbol::SymbolId)> {
     let obj = &ctx.objs[obj_idx];
-    if !obj.is_alive {
+    if !obj.is_reachable {
         return hashbrown::HashMap::new();
     }
     obj.subsecs

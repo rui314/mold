@@ -204,7 +204,7 @@ fn for_each_subsec_symbol<'a, E: Target>(
     let commons = common_owners(ctx);
     let rewritten = rewritten_records(ctx);
     for (i, obj) in ctx.objs.iter().enumerate() {
-        if !obj.is_alive || ctx.is_internal(i) {
+        if !obj.is_reachable || ctx.is_internal(i) {
             continue;
         }
         for (msym, &id) in obj.mach_syms.iter().zip(&obj.symbols) {

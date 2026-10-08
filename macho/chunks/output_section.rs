@@ -141,7 +141,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]
         own.copy_from_slice(data);
         let base = osec.hdr.addr + isec.offset as u64;
         let rels = isec.rels(&ctx.objs[isec.file as usize]);
-        E::apply_relocs(ctx, rels, m as usize, base, own);
+        E::apply_reloc_alloc(ctx, rels, m as usize, base, own);
     });
 
     // The range-extension thunks, between the members.

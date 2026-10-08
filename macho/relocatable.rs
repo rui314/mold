@@ -60,7 +60,7 @@ fn section_desc<E: Target>(ctx: &Context<E>, isec: usize) -> u16 {
 fn optimization_hints<E: Target>(ctx: &Context<E>) -> Option<Vec<u8>> {
     // The subsection's new and input addresses, and the hint.
     let mut hints = Vec::new();
-    for obj in ctx.objs.iter().filter(|o| o.is_alive) {
+    for obj in ctx.objs.iter().filter(|o| o.is_reachable) {
         for hint in &obj.loh {
             let Some(id) = obj.hint_subsec(&ctx.isecs, &hint.1) else {
                 continue;
@@ -98,7 +98,7 @@ fn relocatable_linker_options<E: Target>(ctx: &Context<E>) -> Vec<&[Vec<u8>]> {
     if ctx.args.ignore_auto_link {
         return Vec::new();
     }
-    let objs = ctx.objs.iter().filter(|obj| obj.is_alive).flat_map(|obj| &obj.linker_options);
+    let objs = ctx.objs.iter().filter(|obj| obj.is_reachable).flat_map(|obj| &obj.linker_options);
     let mut seen = HashSet::new();
     (ctx.cmdline_linker_options.iter().flatten().chain(objs))
         .filter(|opt| seen.insert(*opt))
@@ -107,7 +107,7 @@ fn relocatable_linker_options<E: Target>(ctx: &Context<E>) -> Vec<&[Vec<u8>]> {
 }
 
 /// Writes the -r output, returning its size.
-pub fn link<E: Target>(ctx: &mut Context<E>) -> u64 {
+pub fn combine_objects<E: Target>(ctx: &mut Context<E>) -> u64 {
     // The sections the output synthesizes: the merged __objc_imageinfo,
     // the re-synthesized __LD,__compact_unwind and __TEXT,__eh_frame.
     let t = ctx.timer("r-layout");
@@ -120,11 +120,11 @@ pub fn link<E: Target>(ctx: &mut Context<E>) -> u64 {
     // Every section - the -sectcreate options' own ones too - laid out
     // from address zero, and placed in the file right after the load
     // commands.
-    let sects = sort_sections(ctx, &synthetic);
+    let sects = sort_output_sections(ctx, &synthetic);
     let vmsize = assign_addresses(ctx, &mut synthetic, &sects);
     let cmds = LoadCommands::new(ctx, sects.len());
     let cmds_end = (size_of::<MachHeader>() + cmds.size()) as u64;
-    let (seg_fileoff, content_end) = assign_file_offsets(ctx, &mut synthetic, &sects, cmds_end);
+    let (seg_fileoff, content_end) = set_osec_offsets(ctx, &mut synthetic, &sects, cmds_end);
     drop(t);
 
     // The symbol table, then what refers to its symbols: the synthetic
@@ -132,7 +132,7 @@ pub fn link<E: Target>(ctx: &mut Context<E>) -> u64 {
     // merged tables.
     let ctx = &*ctx;
     let t = ctx.timer("r-symtab");
-    let symtab = build_symtab(ctx);
+    let symtab = create_output_symtab(ctx);
     drop(t);
     let t = ctx.timer("r-relocs");
     let targets = RelocTargets::new(ctx, &symtab);
@@ -225,7 +225,7 @@ fn write_object<E: Target>(
     let (syms, strtab) =
         buf[layout.symoff as usize..].split_at_mut(symtab.len() * size_of::<MachSym>());
     let strtab = &mut strtab[..symtab.strtab_size];
-    crate::chunks::symtab::write_symtab(ctx, symtab, syms, strtab);
+    crate::chunks::symtab::copy_buf(ctx, symtab, syms, strtab);
     buf
 }
 
@@ -287,7 +287,7 @@ fn sect_hdr_mut<'a, E: Target>(
 /// The sections of the output: the merged ones in creation order (that
 /// of their first members), the ones only -sectcreate makes, then the
 /// synthetic ones. A later link orders the sections by its own rules.
-fn sort_sections<E: Target>(ctx: &Context<E>, synthetic: &[SyntheticSection]) -> Vec<Sect> {
+fn sort_output_sections<E: Target>(ctx: &Context<E>, synthetic: &[SyntheticSection]) -> Vec<Sect> {
     let merged =
         (0..ctx.output_sections.len()).map(|i| Sect::Merged(OutputSectionId::new(i as u32)));
     let own = (0..ctx.sectcreate_sections.len()).map(Sect::Created);
@@ -354,7 +354,7 @@ impl LoadCommands {
                 .iter()
                 .map(|opt| linker_option_command(opt))
                 .collect(),
-            dice: crate::chunks::data_in_code::build(ctx, |hdr| hdr.addr),
+            dice: crate::chunks::data_in_code::construct(ctx, |hdr| hdr.addr),
             loh: optimization_hints(ctx),
         }
     }
@@ -399,7 +399,7 @@ fn linker_option_command(opt: &[Vec<u8>]) -> Vec<u8> {
 /// space. The contents start aligned for every section, so that none
 /// lies further into them than into the address space: the segment's
 /// file size is no larger than its size.
-fn assign_file_offsets<E: Target>(
+fn set_osec_offsets<E: Target>(
     ctx: &mut Context<E>,
     synthetic: &mut [SyntheticSection],
     sects: &[Sect],
@@ -488,7 +488,7 @@ impl SyntheticSection {
 /// __DATA in a -r output, and ld-prime renames it like the input
 /// sections (but not __eh_frame and __compact_unwind).
 fn objc_imageinfo_section<E: Target>(ctx: &Context<E>) -> Option<SyntheticSection> {
-    if !ctx.objs.iter().any(|o| o.is_alive && o.objc_image_info.is_some()) {
+    if !ctx.objs.iter().any(|o| o.is_reachable && o.objc_image_info.is_some()) {
         return None;
     }
     let (seg, sect) = crate::output_sections::renamed(&ctx.args, (b"__DATA", b"__objc_imageinfo"));
@@ -887,7 +887,7 @@ fn write_load_commands<E: Target>(
         .objs
         .iter()
         .enumerate()
-        .filter(|(i, o)| o.is_alive && !ctx.is_internal(*i))
+        .filter(|(i, o)| o.is_reachable && !ctx.is_internal(*i))
         .all(|(_, o)| o.subsections_via_symbols);
     let hdr = MachHeader {
         magic: MH_MAGIC_64,
@@ -1035,7 +1035,7 @@ fn rewrite_field<E: Target>(
 /// A -r output's symbol and string tables.
 struct RSymtab {
     /// The tables, laid out as a final image's are and written by the
-    /// same writer (see write_symtab), but with every entry's value
+    /// same writer (see copy_buf), but with every entry's value
     /// set already.
     table: SymtabSection,
     /// Each symbol's index in the table, or u32::MAX if it has none.
@@ -1077,7 +1077,7 @@ fn sym_addr<E: Target>(ctx: &Context<E>, id: SymbolId) -> u64 {
 /// then the stabs, then the defined externals and the undefined
 /// symbols. The strings are laid out as a final image's (see
 /// layout_strings).
-fn build_symtab<E: Target>(ctx: &Context<E>) -> RSymtab {
+fn create_output_symtab<E: Target>(ctx: &Context<E>) -> RSymtab {
     let t = ctx.timer("r-symtab-locals");
     let locals = local_symbols(ctx);
     drop(t);
@@ -1164,7 +1164,7 @@ fn defined_externals<E: Target>(ctx: &Context<E>) -> Vec<(MachSym, SymbolId)> {
     // symbol away from every non-symbolic reference to it.
     let nsyms = ctx.symbols.syms.len();
     let desc_of: Vec<AtomicU16> = (0..nsyms).into_par_iter().map(|_| AtomicU16::new(0)).collect();
-    ctx.objs.par_iter().enumerate().filter(|(_, obj)| obj.is_alive).for_each(|(obj_idx, obj)| {
+    ctx.objs.par_iter().enumerate().filter(|(_, obj)| obj.is_reachable).for_each(|(obj_idx, obj)| {
         let r = obj.global_range();
         for (msym, &sym_id) in obj.mach_syms[r.clone()].iter().zip(&obj.symbols[r]) {
             if !msym.is_stab()
@@ -1287,7 +1287,7 @@ fn local_symbols<E: Target>(ctx: &Context<E>) -> Vec<Local> {
 fn object_locals<E: Target>(ctx: &Context<E>, obj_idx: usize) -> Vec<Local> {
     let obj = &ctx.objs[obj_idx];
     let mut out = Vec::new();
-    if !obj.is_alive {
+    if !obj.is_reachable {
         return out;
     }
     for (msym, &sym_id) in obj.mach_syms.iter().zip(&obj.symbols) {

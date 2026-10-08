@@ -33,7 +33,7 @@ impl Default for LocalRelocsSection {
 /// Lists the pointers in address order, and sizes the table. A
 /// record's offset is a signed 32-bit distance from relocation_base,
 /// which must reach each.
-pub fn build<E: Target>(ctx: &mut Context<E>) {
+pub fn construct<E: Target>(ctx: &mut Context<E>) {
     let mut locs = crate::chunks::rebase_info::rebase_locations(ctx);
     locs.sort_unstable();
     let base = relocation_base(ctx);

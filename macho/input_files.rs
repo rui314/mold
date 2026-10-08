@@ -161,7 +161,7 @@ pub struct ObjectFile {
     pub mf: &'static MappedFile,
     /// False for an archive member no live code needs (yet). Dead
     /// files' subsections never reach the output.
-    pub is_alive: bool,
+    pub is_reachable: bool,
     /// Position in input order, for resolution tie-breaking: the
     /// earlier file wins.
     pub priority: u32,
@@ -243,7 +243,7 @@ impl ObjectFile {
     pub(crate) fn new(mf: &'static MappedFile) -> Self {
         Self {
             mf,
-            is_alive: true,
+            is_reachable: true,
             priority: 0,
             linker_options: Vec::new(),
             linker_options_read: false,
@@ -1765,7 +1765,7 @@ impl StagedObject {
     fn into_object_file(self, symbols: Vec<crate::symbol::SymbolId>) -> ObjectFile {
         ObjectFile {
             mf: self.mf,
-            is_alive: self.alive,
+            is_reachable: self.alive,
             priority: self.priority,
             linker_options: self.linker_options,
             linker_options_read: false,
@@ -3923,11 +3923,11 @@ impl ObjectFile {
         }
         let is_weak = msym.desc & N_WEAK_DEF != 0;
         let class: u64 = match msym.ty() {
-            N_SECT | N_ABS if self.is_alive && !is_weak => 0,
-            N_SECT | N_ABS if self.is_alive => 1,
+            N_SECT | N_ABS if self.is_reachable && !is_weak => 0,
+            N_SECT | N_ABS if self.is_reachable => 1,
             N_SECT | N_ABS if !is_weak => 2,
             N_SECT | N_ABS => 3,
-            N_UNDF if msym.is_common() && self.is_alive => 4,
+            N_UNDF if msym.is_common() && self.is_reachable => 4,
             N_UNDF if msym.is_common() => 5,
             _ => return None,
         };
@@ -4003,7 +4003,7 @@ impl ObjectFile {
             // for the member, for the liveness walk to load it for a
             // reference, but not for a live file's tentative definition
             // (see passes::mark_live_objects).
-            N_UNDF if !self.is_alive => {
+            N_UNDF if !self.is_reachable => {
                 sym.set_file(file);
                 sym.set_input_section(None);
                 sym.set_common(true);

@@ -602,7 +602,7 @@ fn apply_hints(ctx: &Context<Arm64>, buf: &mut [u8]) {
     let bufp = BufPtr(buf.as_mut_ptr());
     let bufp = &bufp;
 
-    ctx.objs.par_iter().filter(|obj| obj.is_alive).for_each(|obj| {
+    ctx.objs.par_iter().filter(|obj| obj.is_reachable).for_each(|obj| {
         // AdrpAdrp goes last, as ld64's second pass.
         for last in [false, true] {
             for (kind, addrs) in &obj.loh {
@@ -1303,7 +1303,7 @@ impl Target for Arm64 {
         }
     }
 
-    fn apply_relocs(
+    fn apply_reloc_alloc(
         ctx: &Context<Self>,
         rels: &[Reloc],
         isec_id: usize,

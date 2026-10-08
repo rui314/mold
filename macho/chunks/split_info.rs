@@ -72,7 +72,7 @@ fn push(out: &mut Vec<Entry>, from: Place, kind: u8, to: Option<Place>) {
     }
 }
 
-pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
+pub fn construct<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     if !ctx.args.shared_region {
         return Vec::new();
     }
@@ -293,7 +293,7 @@ impl<'a, E: Target> Places<'a, E> {
         (key < end).then_some((n, addr - start))
     }
 
-    /// Where relocation `r` of a subsection points, as apply_relocs
+    /// Where relocation `r` of a subsection points, as apply_reloc_alloc
     /// resolves it: at a stub or GOT slot, or at the target plus the
     /// addend; for a distance's positive term, at the target itself,
     /// as ld64 takes it. None for a reference dyld binds.

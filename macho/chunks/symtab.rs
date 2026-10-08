@@ -340,7 +340,7 @@ pub fn plan_stabs<E: Target>(ctx: &Context<E>) -> Vec<StabPlan> {
 /// copy_object_stabs).
 fn plan_object_stabs<E: Target>(ctx: &Context<E>, obj_idx: usize, cwd: &Path) -> StabPlan {
     let obj = &ctx.objs[obj_idx];
-    if !obj.is_alive {
+    if !obj.is_reachable {
         return StabPlan::default();
     }
     if obj.mach_syms.iter().any(|n| n.n_type == N_OSO) {
@@ -772,7 +772,7 @@ pub(crate) fn is_listed_out<E: Target>(ctx: &Context<E>, name: &[u8]) -> bool {
 /// symbol-table order.
 fn object_locals<E: Target>(ctx: &Context<E>, obj: &ObjectFile) -> Vec<NamedEntry> {
     let mut out = Vec::new();
-    if !obj.is_alive {
+    if !obj.is_reachable {
         return out;
     }
     for i in obj.local_range() {
@@ -989,7 +989,7 @@ fn classify_symbols<E: Target>(ctx: &Context<E>, indexed: &[bool]) -> Vec<Symbol
             // import, which it drops.
             if sym.is_extern()
                 && sym.is_private_extern()
-                && matches!(sym.file(), Some(FileId::Obj(o)) if ctx.objs[o as usize].is_alive)
+                && matches!(sym.file(), Some(FileId::Obj(o)) if ctx.objs[o as usize].is_reachable)
                 && match sym.input_section() {
                     Some(isec) => ctx.isecs[ctx.isecs.resolve(isec as usize)].is_alive(),
                     None => !ctx.indirect_aliases.iter().any(|&(a, _)| a == i as u32),
@@ -1110,7 +1110,7 @@ pub fn copy_symtab<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
         let (lo, hi) = buf.split_at_mut(symoff);
         (&mut hi[..symsize], &mut lo[stroff..stroff + symtab.strtab_size])
     };
-    write_symtab(ctx, symtab, syms, strtab);
+    copy_buf(ctx, symtab, syms, strtab);
 }
 
 /// Writes a symbol table's entries into `syms` and their strings into
@@ -1118,7 +1118,7 @@ pub fn copy_symtab<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 /// with the address of its symbol, if it has one, as `value`, and each
 /// object's debug notes from its plan. A -r output's table is written
 /// this way too.
-pub fn write_symtab<E: Target>(
+pub fn copy_buf<E: Target>(
     ctx: &Context<E>,
     symtab: &SymtabSection,
     syms: &mut [u8],

@@ -159,7 +159,7 @@ impl OutputFile {
     /// permissions `mode` less the umask (see open), and starts the
     /// writers. The buffer must outlive the OutputFile, and a range must
     /// not be modified after it has been queued.
-    pub fn create(path: &Path, mode: u32, buf: *const u8, len: usize) -> Self {
+    pub fn open(path: &Path, mode: u32, buf: *const u8, len: usize) -> Self {
         // An existing file is removed first (see open). Overwriting a
         // running executable is an error on some systems, and on macOS
         // the kernel caches code signature state per vnode, so a fresh
@@ -236,7 +236,7 @@ impl OutputFile {
     }
 
     /// Waits for every queued range to reach the file.
-    pub fn finish(mut self) {
+    pub fn close(mut self) {
         drop(self.tx.take());
         for thread in self.threads.drain(..) {
             match thread.join() {
@@ -257,9 +257,9 @@ impl OutputFile {
 /// Writes a complete buffer: for output that is built in full before
 /// anything can be written (-r, an object, which is not executable).
 pub fn write(path: &Path, buf: &[u8]) {
-    let out = OutputFile::create(path, 0o644, buf.as_ptr(), buf.len());
+    let out = OutputFile::open(path, 0o644, buf.as_ptr(), buf.len());
     out.queue(0, buf.len());
-    out.finish();
+    out.close();
 }
 
 /// Borrows several disjoint ranges of a buffer mutably at once.

@@ -40,7 +40,7 @@ impl Default for FunctionStartsSection {
 /// a local, an alt entry or an l-prefixed label too, but not a label at
 /// its end - and each thunk entry, ld-prime's branch islands. The stubs
 /// of every kind, sections of their own, are left out.
-pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
+pub fn construct<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     if !ctx.args.function_starts {
         return Vec::new();
     }

@@ -58,7 +58,7 @@ pub fn write_entries(entries: &[(u32, u16, u16)], buf: &mut [u8]) {
 fn live_entries<E: Target>(
     ctx: &Context<E>,
 ) -> impl Iterator<Item = (&InputSection, u64, u16, u16)> {
-    ctx.objs.iter().filter(|obj| obj.is_alive).flat_map(move |obj| {
+    ctx.objs.iter().filter(|obj| obj.is_reachable).flat_map(move |obj| {
         obj.dice.iter().filter_map(move |&(off, len, kind)| {
             let (isec, off_in) = obj.find_subsec(&ctx.isecs, off as u64)?;
             let isec = &ctx.isecs[isec];
@@ -74,7 +74,7 @@ fn live_entries<E: Target>(
 /// offsets the entries record are final by then, so the table is built
 /// exactly once (sold builds its contents in compute_size the same way)
 /// and copied out verbatim.
-pub fn build<E: Target>(
+pub fn construct<E: Target>(
     ctx: &Context<E>,
     pos: impl Fn(&ChunkHeader) -> u64,
 ) -> Vec<(u32, u16, u16)> {

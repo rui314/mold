@@ -112,7 +112,7 @@ pub fn is_never_slid<E: Target>(ctx: &Context<E>) -> bool {
 /// Every absolute address the linker writes into a data section gets a
 /// record. Runs during layout, once every segment before __LINKEDIT has
 /// an address.
-pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
+pub fn construct<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     if is_never_slid(ctx) {
         return Vec::new();
     }

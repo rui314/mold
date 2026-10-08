@@ -254,7 +254,7 @@ pub fn native_refs_before_lto<E: Target>(
     let mut roots = collect_root_set(ctx, &redirects, is_root, None);
     for module in &ctx.lto_modules {
         let obj = &ctx.objs[module.obj];
-        if !obj.is_alive {
+        if !obj.is_reachable {
             continue;
         }
         for (msym, &id) in obj.mach_syms.iter().zip(&obj.symbols) {
@@ -557,7 +557,7 @@ fn print_why_live<E: Target>(ctx: &Context<E>, redirects: &[usize], why: &[Why])
         }
     };
 
-    for (i, obj) in ctx.objs.iter().enumerate().filter(|(_, obj)| obj.is_alive) {
+    for (i, obj) in ctx.objs.iter().enumerate().filter(|(_, obj)| obj.is_reachable) {
         for &id in &obj.symbols {
             let sym = &ctx.symbols[id];
             if sym.file() != Some(FileId::Obj(i as u32)) || !matches(sym) {

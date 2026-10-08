@@ -38,7 +38,7 @@ impl Default for ObjcImageInfoSection {
 /// whose Objective-C no runtime sets up, gets none from ld-prime.
 pub fn create<E: Target>(ctx: &mut Context<E>) {
     let mut objs: Vec<&crate::input_files::ObjectFile> =
-        ctx.objs.iter().filter(|o| o.is_alive && o.objc_image_info.is_some()).collect();
+        ctx.objs.iter().filter(|o| o.is_reachable && o.objc_image_info.is_some()).collect();
     objs.sort_by_key(|o| o.priority);
     let info = objs
         .iter()

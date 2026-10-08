@@ -38,7 +38,7 @@ impl Default for WeakBindInfoSection {
 /// name, then address, and encoded as the bind stream is (see
 /// bind_info::bind_ops), each piece of state set only when it changes,
 /// as ld64 writes them.
-pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
+pub fn construct<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     // A -static image calls its weak definitions directly, but under
     // -no_fixup_chains ld-prime still lists the slots holding their
     // addresses, as the chains do.

@@ -159,11 +159,11 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
         // NetNewsWire's RSCore prelink's __DATA,__const otherwise.
         timed!("coalesce_weak_defs", passes::coalesce_weak_defs(&mut ctx));
         timed!("create_output_sections", output_sections::create_output_sections(&mut ctx));
-        timed!("relocatable", ctx.output_size = crate::relocatable::link(&mut ctx));
+        timed!("relocatable", ctx.output_size = crate::relocatable::combine_objects(&mut ctx));
         crate::error::checkpoint();
         crate::subprocess::notify_parent();
         drop(t_all);
-        print_statistics(&ctx);
+        passes::show_stats(&ctx);
         return Ok(0);
     }
 
@@ -261,7 +261,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     // signature last. finish() waits for the last one.
     let t_copy = ctx.timer("copy");
     let mut buf = vec![0; output_file::buffer_len(&ctx.args.output, ctx.output_size)];
-    let out = output_file::OutputFile::create(&ctx.args.output, 0o777, buf.as_ptr(), buf.len());
+    let out = output_file::OutputFile::open(&ctx.args.output, 0o777, buf.as_ptr(), buf.len());
 
     // Copy input sections to the output file and apply relocations.
     copy_chunks(&ctx, &mut buf);
@@ -297,7 +297,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     out.queue(hdr_end, symtab_start - hdr_end);
     timed!("copy_symtab", chunks::symtab::copy_symtab(&ctx, &mut buf));
     out.queue(symtab_start, sig_start - symtab_start);
-    chunks::copy_mach_header(&ctx, &mut buf);
+    chunks::write_mach_header(&ctx, &mut buf);
 
     let hashes = passes::compute_uuid(&ctx, &mut buf, sig_start);
     out.queue(0, hdr_end);
@@ -311,13 +311,13 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     // fails the link, which leaves no output.
     crate::mapfile::write_trace_files(&ctx);
     crate::error::checkpoint();
-    timed!("close_file", out.finish());
+    timed!("close_file", out.close());
     drop(t_copy);
     let _ = std::io::Write::flush(&mut std::io::stdout());
     let _ = std::io::Write::flush(&mut std::io::stderr());
     crate::subprocess::notify_parent();
     drop(t_all);
-    print_statistics(&ctx);
+    passes::show_stats(&ctx);
     Ok(0)
 }
 
@@ -348,19 +348,4 @@ pub(crate) fn copy_chunks<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let t = ctx.timer("copy_chunks");
     jobs.par_iter().zip(slices).for_each(|(&(id, _), slice)| chunks::copy_buf(ctx, id, slice));
     drop(t);
-}
-
-/// ld64's -print_statistics reports its phase times and memory to
-/// stderr; ours reports the pass timers and the sizes that drive them.
-fn print_statistics<E: Target>(ctx: &Context<E>) {
-    if ctx.args.perf {
-        ctx.timers.print();
-        eprintln!(
-            "  objects: {} alive of {}; dylibs: {}; output: {} bytes",
-            ctx.objs.iter().enumerate().filter(|(i, o)| o.is_alive && !ctx.is_internal(*i)).count(),
-            ctx.objs.len() - 1,
-            ctx.dylibs.len(),
-            ctx.output_size,
-        );
-    }
 }

@@ -123,7 +123,7 @@ pub fn create_class_table<E: Target>(ctx: &mut Context<E>) {
     let libraries = hooked_classes(ctx);
     if libraries.iter().all(|(_, classes)| classes.is_empty()) {
         // Resolving the symbols again unbinds what only the hook named.
-        ctx.objs[obj].is_alive = false;
+        ctx.objs[obj].is_reachable = false;
         crate::passes::resolve_symbols(ctx);
         return;
     }
@@ -195,7 +195,7 @@ fn listed_classes<E: Target>(ctx: &Context<E>, of: impl Fn(usize) -> bool) -> Ve
         let isec = &ctx.isecs[i];
         let file = isec.file as usize;
         of(file)
-            && ctx.objs[file].is_alive
+            && ctx.objs[file].is_reachable
             && isec.is_alive()
             && isec.hdr(&ctx.objs[file]).sectname() == b"__objc_classlist"
     });

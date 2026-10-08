@@ -38,7 +38,7 @@ impl Default for ExternRelocsSection {
 /// address, and the calls to one (on x86-64, which has no stubs for a
 /// kext), and sizes the table. In legacy LINKEDIT, the data pointers
 /// dyld binds (see Symbol::binds_pointer).
-pub fn build<E: Target>(ctx: &mut Context<E>) {
+pub fn construct<E: Target>(ctx: &mut Context<E>) {
     let got = &ctx.got;
     let mut vec: Vec<(u64, SymbolId, bool)> = Vec::new();
     if !ctx.args.legacy_linkedit {

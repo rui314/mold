@@ -628,7 +628,7 @@ impl Target for X86_64 {
         }
     }
 
-    fn apply_relocs(
+    fn apply_reloc_alloc(
         ctx: &Context<Self>,
         rels: &[Reloc],
         isec_id: usize,

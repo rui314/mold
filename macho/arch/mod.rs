@@ -309,7 +309,13 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
     /// Applies the relocations of one input section to `buf`, its bytes
     /// in the output. `isec` is the subsection's arena index and `base`
     /// its output address.
-    fn apply_relocs(ctx: &Context<Self>, rels: &[Reloc], isec: usize, base: u64, buf: &mut [u8]);
+    fn apply_reloc_alloc(
+        ctx: &Context<Self>,
+        rels: &[Reloc],
+        isec: usize,
+        base: u64,
+        buf: &mut [u8],
+    );
 
     /// Applies LC_LINKER_OPTIMIZATION_HINT rewrites after relocation.
     /// Only arm64 defines hints; the default does nothing.

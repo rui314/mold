@@ -30,7 +30,7 @@ impl Default for BindInfoSection {
 /// Builds the bind opcode stream: it tells dyld which imported symbol to
 /// write into each GOT slot. Runs during layout, once every segment
 /// before __LINKEDIT has an address.
-pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
+pub fn construct<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     let mut binds: Vec<(u64, crate::symbol::SymbolId, i64)> = Vec::new();
 
     // GOT slots for imported symbols.

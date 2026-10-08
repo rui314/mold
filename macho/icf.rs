@@ -181,7 +181,7 @@ impl DigestMap {
 fn insignificant_sections<E: Target>(ctx: &Context<E>) -> Vec<bool> {
     let flags: Vec<AtomicBool> = (0..ctx.isecs.len()).map(|_| AtomicBool::new(false)).collect();
     ctx.objs.par_iter().enumerate().for_each(|(i, obj)| {
-        if obj.is_alive {
+        if obj.is_reachable {
             mark_auto_hidden(ctx, i, obj, &flags);
             mark_swift_functions(ctx, i, obj, &flags);
         }
@@ -334,7 +334,7 @@ fn kept_sections<E: Target>(ctx: &Context<E>) -> Vec<bool> {
 
 /// Candidates: the non-empty functions whose addresses no one can
 /// compare, but those -keep_duplicate names.
-fn is_candidate<E: Target>(
+fn is_eligible<E: Target>(
     ctx: &Context<E>,
     insignificant: &[bool],
     kept: &[bool],
@@ -372,7 +372,7 @@ fn report_folds<E: Target>(
 /// What relocation `rel` of object `obj` points at, and its addend. A
 /// symbol's offset into a candidate moves into the addend, so that
 /// references to the same place in equal candidates compare equal.
-fn edge_of<E: Target>(
+fn edge_target<E: Target>(
     ctx: &Context<E>,
     cand_index: &[usize],
     obj: usize,
@@ -421,7 +421,7 @@ fn compute_digest<E: Target>(ctx: &Context<E>, cand_index: &[usize], id: usize) 
         h.update(&rel.offset.to_ne_bytes());
         h.update(&rel.ty.to_ne_bytes());
         h.update(&[rel.size, rel.is_pcrel as u8, rel.is_subtracted as u8]);
-        let (edge, addend) = edge_of(ctx, cand_index, isec.file as usize, rel);
+        let (edge, addend) = edge_target(ctx, cand_index, isec.file as usize, rel);
         h.update(&addend.to_ne_bytes());
         // A candidate edge contributes nothing to the base; the
         // rounds fold in the target's evolving digest.
@@ -507,7 +507,7 @@ fn for_each_edge<E: Target>(
 ) {
     let obj = ctx.isecs[id].file as usize;
     for rel in ctx.isecs[id].rels(&ctx.objs[obj]) {
-        if let Edge::Candidate(c) = edge_of(ctx, cand_index, obj, rel).0 {
+        if let Edge::Candidate(c) = edge_target(ctx, cand_index, obj, rel).0 {
             f(c as u32);
         }
     }
@@ -602,7 +602,7 @@ fn verify_leaders<E: Target>(
 ) {
     // Two members may reference different candidates of one class: those
     // were folded together, so an edge names the class's leader.
-    let edge = |obj: usize, r: &Reloc| match edge_of(ctx, cand_index, obj, r) {
+    let edge = |obj: usize, r: &Reloc| match edge_target(ctx, cand_index, obj, r) {
         (Edge::Candidate(c), addend) => (Edge::Candidate(leaders[c] as usize), addend),
         e => e,
     };
@@ -631,7 +631,7 @@ pub fn icf_sections<E: Target>(ctx: &mut Context<E>) {
     let kept = kept_sections(ctx);
     let candidates: Vec<usize> = (0..ctx.isecs.len())
         .into_par_iter()
-        .filter(|&i| is_candidate(ctx, &insignificant, &kept, i))
+        .filter(|&i| is_eligible(ctx, &insignificant, &kept, i))
         .collect();
     if candidates.len() < 2 {
         return;

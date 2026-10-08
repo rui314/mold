@@ -1342,7 +1342,7 @@ pub fn load_autolink_deps<E: Target>(ctx: &mut Context<E>) -> bool {
     // Those of objects new to the link are read, in parallel (a Swift
     // object has dozens), and warned of in object order.
     let new: Vec<&mut input_files::ObjectFile> =
-        ctx.objs.iter_mut().filter(|obj| obj.is_alive && !obj.linker_options_read).collect();
+        ctx.objs.iter_mut().filter(|obj| obj.is_reachable && !obj.linker_options_read).collect();
     let warnings: Vec<Vec<error::Message>> = new
         .into_par_iter()
         .map(|obj| {
@@ -1384,7 +1384,7 @@ fn load_autolinked_libraries<E: Target>(ctx: &mut Context<E>) {
     // ordinals too.
     // (Objects mostly repeat each other's options, which are deduplicated
     // before they are sorted.)
-    let objs = ctx.objs.iter().filter(|obj| obj.is_alive);
+    let objs = ctx.objs.iter().filter(|obj| obj.is_reachable);
     let opts = ctx.cmdline_linker_options.iter().flatten();
     let opts: hashbrown::HashSet<&Vec<Vec<u8>>> =
         opts.chain(objs.flat_map(|obj| &obj.linker_options)).collect();

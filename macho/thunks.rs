@@ -368,7 +368,7 @@ fn scan_batch<E: Target>(
                     continue;
                 };
                 let p = isec.offset as u64 + rel.offset as u64;
-                if needs_thunk(ctx, reach, p, sym) && ctx.symbols[sym].mark() {
+                if requires_thunk(ctx, reach, p, sym) && ctx.symbols[sym].mark() {
                     syms.push(sym);
                 }
             }
@@ -387,7 +387,7 @@ fn scan_batch<E: Target>(
 /// Whether a branch at offset `p` of the section being laid out may not
 /// reach `sym`, where it goes: its subsection, its stub (an import or a
 /// weak definition that may be interposed) or its _objc_msgSend stub.
-fn needs_thunk<E: Target>(ctx: &Context<E>, reach: &Reach, p: u64, id: SymbolId) -> bool {
+fn requires_thunk<E: Target>(ctx: &Context<E>, reach: &Reach, p: u64, id: SymbolId) -> bool {
     let sym = &ctx.symbols[id];
     let stub = sym.stub_idx(&ctx.symbols).is_some();
     let side = match sym.file() {

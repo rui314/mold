@@ -635,7 +635,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     add_boundary_sections(ctx);
     trace_symbol_layout(ctx);
 
-    sort_chunks(ctx);
+    sort_output_sections(ctx);
     create_segments(ctx);
     add_boundary_segments(ctx);
     add_stack_segment(ctx);
@@ -1136,7 +1136,7 @@ fn sort_section_members<E: Target>(ctx: &mut Context<E>) {
     let mut cold = vec![false; ctx.isecs.len()];
     let mut any = false;
     for obj in &ctx.objs {
-        if !obj.is_alive {
+        if !obj.is_reachable {
             continue;
         }
         for (msym, &sym_id) in obj.mach_syms.iter().zip(&obj.symbols) {
@@ -1380,7 +1380,7 @@ fn warn_eh_frame_too_large<E: Target>(ctx: &Context<E>) {
 /// always last. Zero-fill sections go last in their segment so that
 /// they take no file space in the middle of it, and -section_order
 /// orders the sections of each kind.
-fn sort_chunks<E: Target>(ctx: &mut Context<E>) {
+fn sort_output_sections<E: Target>(ctx: &mut Context<E>) {
     let mut order = ctx.chunks.clone();
     let mut first_seen: hashbrown::HashMap<&'static [u8], usize> = hashbrown::HashMap::new();
     for &id in &order {
@@ -1433,7 +1433,7 @@ fn sort_chunks<E: Target>(ctx: &mut Context<E>) {
 /// first, then code, then data. The thread-local template is one block
 /// dyld copies for each thread, so its initial values come last among
 /// the file-backed sections and its zero fill first among the zero-fill
-/// ones (see sort_chunks). An -encryptable image's __oslogstring, which
+/// ones (see sort_output_sections). An -encryptable image's __oslogstring, which
 /// stays unencrypted, follows the rest of __TEXT, the encrypted range
 /// (see create_encryption_info_cmd); the code signature ends the file.
 fn section_rank<E: Target>(ctx: &Context<E>, id: ChunkId) -> u32 {
@@ -1830,7 +1830,7 @@ fn resolve_zerofill_conflicts<E: Target>(ctx: &mut Context<E>, fill_kinds: &[u8]
 pub(crate) fn common_owners<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32, u32> {
     let mut decls: hashbrown::HashMap<crate::symbol::SymbolId, (u64, u32)> =
         hashbrown::HashMap::new();
-    for (i, obj) in ctx.objs.iter().enumerate().filter(|(_, obj)| obj.is_alive) {
+    for (i, obj) in ctx.objs.iter().enumerate().filter(|(_, obj)| obj.is_reachable) {
         let r = obj.global_range();
         for (msym, &sym) in obj.mach_syms[r.clone()].iter().zip(&obj.symbols[r]) {
             if !msym.is_stab() && msym.ty() == N_UNDF && msym.is_common() {

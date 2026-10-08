@@ -952,7 +952,7 @@ fn header_pad<E: Target>(ctx: &Context<E>) -> u64 {
 }
 
 /// Writes the mach header and the load commands.
-pub fn copy_mach_header<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
+pub fn write_mach_header<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let cmds = create_load_commands(ctx);
     let hdr = MachHeader {
         magic: MH_MAGIC_64,
@@ -1053,7 +1053,7 @@ fn binds_to_weak<E: Target>(ctx: &Context<E>) -> bool {
 }
 
 /// Writes the UUID into the LC_UUID command of a header that
-/// `copy_mach_header` already wrote, leaving everything else as it is.
+/// `write_mach_header` already wrote, leaving everything else as it is.
 pub fn write_uuid<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let hdr = MachHeader::read_from(buf);
     let mut off = size_of::<MachHeader>();

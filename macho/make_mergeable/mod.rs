@@ -84,7 +84,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 }
 
 /// Builds the record, once the sections have their places in the file.
-pub fn build<E: Target>(ctx: &mut Context<E>) {
+pub fn construct<E: Target>(ctx: &mut Context<E>) {
     let mut b = Builder::new(ctx);
     b.add_object_entries();
     let selrefs = b.add_objc_entries();
@@ -288,7 +288,7 @@ impl<'a, E: Target> Builder<'a, E> {
     fn add_object_entries(&mut self) {
         let ctx = self.ctx;
         for (obj_idx, obj) in ctx.objs.iter().enumerate() {
-            if !obj.is_alive || ctx.is_internal(obj_idx) {
+            if !obj.is_reachable || ctx.is_internal(obj_idx) {
                 continue;
             }
             let debug = self.add_debug_record(obj);
@@ -898,7 +898,7 @@ impl<'a, E: Target> Builder<'a, E> {
     fn add_compact_unwind_entries(&mut self) {
         let ctx = self.ctx;
         for (obj_idx, obj) in ctx.objs.iter().enumerate() {
-            if !obj.is_alive || ctx.is_internal(obj_idx) {
+            if !obj.is_reachable || ctx.is_internal(obj_idx) {
                 continue;
             }
             let sect = obj
@@ -1228,7 +1228,7 @@ fn record_flags<E: Target>(ctx: &Context<E>) -> u64 {
         ctx.objs
             .iter()
             .enumerate()
-            .filter(|(i, o)| o.is_alive && !ctx.is_internal(*i))
+            .filter(|(i, o)| o.is_reachable && !ctx.is_internal(*i))
             .map(|(_, o)| o)
     };
     let has_section = |names: &[&[u8]]| {
