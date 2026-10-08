@@ -30,7 +30,7 @@ use crate::chunks::output_section::OutputSection;
 use crate::chunks::{ChunkId, OutputSectionId};
 use crate::context::Context;
 use crate::elf::*;
-use crate::input_sections::InputSection;
+use crate::input_sections::{InputSection, InputSectionId};
 use crate::symbol::{AddrFlags, Symbol, SymbolId};
 
 /// A block of branch stubs placed between input sections.
@@ -38,6 +38,9 @@ use crate::symbol::{AddrFlags, Symbol, SymbolId};
 pub struct Thunk {
     /// Offset within the output section.
     pub offset: u64,
+    /// Functions whose landing pads are at the beginning of this thunk. See
+    /// landing_pad_candidates().
+    pub landing_pads: Vec<SymbolId>,
     pub symbols: Vec<SymbolId>,
     /// Offset of each stub within the thunk; the last entry is the size.
     pub offsets: Vec<u64>,
@@ -53,12 +56,14 @@ impl Thunk {
         osec.hdr.shdr.sh_addr.get() + self.offset
     }
 
-    /// The entry offsets of a thunk with fixed-size entries.
-    pub fn fixed_offsets<E: Target>(&self) -> Vec<u64> {
+    /// The entry offsets of a thunk, followed by its size, if every entry
+    /// takes the maximum size. They can be computed before addresses are
+    /// known, and they are upper bounds of the actual ones, so a thunk only
+    /// shrinks once its actual layout is computed.
+    pub fn upper_bound_offsets<E: Target>(&self, ctx: &Context<E>) -> Vec<u64> {
         let layout = E::THUNK.expect("target without thunks");
-        (0..=self.symbols.len())
-            .map(|i| layout.header_size + i as u64 * layout.entry_size)
-            .collect()
+        let base = self.landing_pads.len() as u64 * E::landing_pad_size(ctx) + layout.header_size;
+        (0..=self.symbols.len()).map(|i| base + i as u64 * layout.max_entry_size).collect()
     }
 }
 
@@ -68,12 +73,12 @@ const UNPLACED: u64 = u64::MAX;
 /// We create thunks for each 32/8/16 MiB code block for
 /// ARM64/ARM32/PPC, respectively.
 fn batch_size<E: Target>() -> u64 {
-    let mib = match E::FAMILY {
-        Family::Arm64 => 32,
-        Family::Arm32 => 8,
-        _ => 16,
-    };
-    mib << 20
+    match E::FAMILY {
+        Family::Arm64 => 32 * 1024 * 1024,
+        Family::Arm32 => 8 * 1024 * 1024,
+        Family::Ppc32 | Family::Ppc64V1 | Family::Ppc64V2 => 16 * 1024 * 1024,
+        _ => unreachable!("{} has no range extension thunks", E::NAME),
+    }
 }
 
 /// We assume that a single thunk group is smaller than 16/4/8 MiB
@@ -151,6 +156,120 @@ fn executable_sections<E: Target>(ctx: &Context<E>) -> Vec<OutputSectionId> {
         .collect()
 }
 
+/// The key to sort symbols in a thunk for deterministic output. Symbols that
+/// redirect_section_relocations() creates for branches via the same section
+/// symbol share its index, so their IDs, which are assigned in file order,
+/// break the tie.
+fn sort_key<E: Target>(ctx: &Context<E>, id: SymbolId) -> (u32, u32, SymbolId) {
+    let sym = &ctx.symbols[id];
+    (sym.file().map_or(0, |f| ctx.file(f).priority), sym.sym_idx(), id)
+}
+
+/// The input section containing the code of `sym`. A section folded by ICF
+/// has no code of its own, so this returns the section it was folded into.
+fn code_section<E: Target>(ctx: &Context<E>, sym: &Symbol) -> Option<InputSectionId> {
+    let id = sym.input_section()?;
+    match ctx.input_section(id).icf_leader() {
+        Some(leader) => ctx.objs[leader.file.index()].section_id(leader.shndx as usize),
+        None => Some(id),
+    }
+}
+
+/// If ARM64 BTI is enabled, an indirect branch must land on a landing pad
+/// instruction such as `bti c`, and a thunk jumps to its destination with
+/// an indirect branch. However, the compiler doesn't emit a landing pad at
+/// the beginning of a function that is only called directly, so such a
+/// function can't be a destination of a thunk as is.
+///
+/// For such a function, we create a landing pad (`bti c` and `b <function>`
+/// on ARM64) at the beginning of the first thunk after the function's
+/// section, and other thunks jump to the landing pad instead. The thunk is
+/// always within direct branch range of the function because it's
+/// reachable from all sections in its batch, and the batch starts at or
+/// before the function's section.
+///
+/// This function returns functions that may need a landing pad. We don't
+/// know yet which calls are out of range, so any function called from
+/// another section is a candidate. The result is indexed by output section,
+/// and each element is a list of pairs of the index of a function's section
+/// in the output section's members and the function, in the order of the
+/// index, which is the order in which create_section_thunks() places the
+/// sections.
+fn landing_pad_candidates<E: Target>(ctx: &Context<E>) -> Vec<Vec<(usize, SymbolId)>> {
+    let mut candidates = vec![Vec::new(); ctx.output_sections.len()];
+    if E::landing_pad_size(ctx) == 0 {
+        return candidates;
+    }
+
+    // Record the index of each section in its output section's members in
+    // its offset. create_section_thunks() overwrites the offsets right away
+    // before laying out the sections.
+    let sections = executable_sections(ctx);
+    for &id in &sections {
+        ctx.output_sections[id.index()].members.par_iter().enumerate().for_each(|(i, &member)| {
+            ctx.input_section(member).set_offset(i as u64);
+        });
+    }
+
+    let members: Vec<InputSectionId> = sections
+        .iter()
+        .flat_map(|id| ctx.output_sections[id.index()].members.iter().copied())
+        .collect();
+
+    let mut syms: Vec<(OutputSectionId, usize, SymbolId)> = members
+        .par_iter()
+        .flat_map_iter(|&member| {
+            let isec = ctx.input_section(member);
+            let file = &ctx.objs[isec.file.index()];
+            isec.rels(file).iter().filter_map(move |rel| {
+                let id = file.base.symbols[rel.r_sym() as usize];
+                let sym = &ctx.symbols[id];
+                if !rel.is_func_call::<E>() || sym.has_plt(&ctx.symbols) {
+                    return None;
+                }
+                let target = code_section(ctx, sym)?;
+                let tsec = ctx.input_section(target);
+                if target == member || !E::needs_landing_pad(tsec, sym) {
+                    return None;
+                }
+                Some((tsec.output_section?, tsec.offset() as usize, id))
+            })
+        })
+        .collect();
+
+    syms.par_sort_by_key(|&(osec, idx, id)| (osec, idx, sort_key(ctx, id)));
+    syms.dedup();
+    for (osec, idx, id) in syms {
+        candidates[osec.index()].push((idx, id));
+    }
+    candidates
+}
+
+/// Returns the address of the landing pad of `id` if it has one.
+pub fn landing_pad_addr<E: Target>(ctx: &Context<E>, id: SymbolId) -> Option<u64> {
+    let size = E::landing_pad_size(ctx);
+    if size == 0 {
+        return None;
+    }
+    let isec = ctx.input_section(code_section(ctx, &ctx.symbols[id])?);
+    let osec = &ctx.output_sections[isec.output_section?.index()];
+
+    // Find the first thunk after the section.
+    let thunk = osec.thunks.get(osec.thunks.partition_point(|t| t.offset <= isec.offset()))?;
+    let key = sort_key(ctx, id);
+    let i = thunk.landing_pads.binary_search_by_key(&key, |&x| sort_key(ctx, x)).ok()?;
+    Some(thunk.addr(osec) + i as u64 * size)
+}
+
+/// Creates range extension thunks for all executable output sections and
+/// lays out the sections.
+pub fn create_range_extension_thunks<E: Target>(ctx: &mut Context<E>) {
+    let candidates = landing_pad_candidates(ctx);
+    for id in executable_sections(ctx) {
+        create_section_thunks(ctx, id, &candidates[id.index()]);
+    }
+}
+
 /// We create thunks from the beginning of the section to the end.
 /// We manage progress using four offsets which increase monotonically.
 /// The locations they point to are always A <= B <= C <= D.
@@ -170,7 +289,14 @@ fn executable_sections<E: Target>(ctx: &Context<E>) -> Vec<OutputSectionId> {
 ///     <-------->       Smaller than branch_distance()
 ///          <-------->  Smaller than branch_distance()
 ///     <------------->  Reachable from the current batch
-pub fn create_range_extension_thunks<E: Target>(ctx: &mut Context<E>, id: OutputSectionId) {
+///
+/// `candidates` is this output section's part of the result of
+/// landing_pad_candidates().
+fn create_section_thunks<E: Target>(
+    ctx: &mut Context<E>,
+    id: OutputSectionId,
+    candidates: &[(usize, SymbolId)],
+) {
     let members = std::mem::take(&mut ctx.output_sections[id.index()].members);
     if members.is_empty() {
         return;
@@ -200,6 +326,8 @@ pub fn create_range_extension_thunks<E: Target>(ctx: &mut Context<E>, id: Output
     let mut offset = 0u64;
     // The smallest thunk index that is reachable from the current batch.
     let mut t = 0usize;
+    // Candidates before this index already have landing pads in a thunk.
+    let mut pad = 0usize;
 
     while b < n {
         // Move D forward as far as we can jump from B to a thunk at D.
@@ -273,11 +401,20 @@ pub fn create_range_extension_thunks<E: Target>(ctx: &mut Context<E>, id: Output
                     symbols
                 })
         };
-        // Add symbols to the thunk
-        let mut thunk = Thunk { offset, symbols, offsets: Vec::new(), name: String::new() };
+        // Add symbols to the thunk. Functions in the sections placed since
+        // the previous thunk get their landing pads in this thunk.
+        let end = pad + candidates[pad..].partition_point(|&(idx, _)| idx < d);
+        let mut thunk = Thunk {
+            offset,
+            landing_pads: candidates[pad..end].iter().map(|&(_, sym)| sym).collect(),
+            symbols,
+            offsets: Vec::new(),
+            name: String::new(),
+        };
+        pad = end;
         // Now that we know the number of symbols in the thunk, we can compute
         // the thunk's size.
-        thunk.offsets = thunk.fixed_offsets::<E>();
+        thunk.offsets = thunk.upper_bound_offsets(ctx);
         debug_assert!(thunk.size() < max_thunk);
         offset += thunk.size();
         thunks.push(thunk);
@@ -297,10 +434,8 @@ pub fn create_range_extension_thunks<E: Target>(ctx: &mut Context<E>, id: Output
     {
         let ctx: &Context<E> = ctx;
         thunks.par_iter_mut().for_each(|thunk| {
-            thunk.symbols.sort_unstable_by_key(|&id| {
-                let sym = &ctx.symbols[id];
-                (sym.file().map_or(0, |f| ctx.file(f).priority), sym.sym_idx())
-            });
+            thunk.landing_pads.sort_unstable_by_key(|&id| sort_key(ctx, id));
+            thunk.symbols.sort_unstable_by_key(|&id| sort_key(ctx, id));
         });
     }
 
@@ -370,17 +505,31 @@ pub fn remove_redundant_thunks<E: Target>(ctx: &mut Context<E>) {
         }
     }
 
+    // Remove symbols from thunks if they don't actually need range extension
+    // thunks. The same goes for landing pads.
     for &id in &sections {
-        let mut thunks = std::mem::take(&mut ctx.output_sections[id.index()].thunks);
-        {
+        let symbols = &ctx.symbols;
+        ctx.output_sections[id.index()].thunks.par_iter_mut().for_each(|thunk| {
+            thunk.symbols.retain(|&sym| symbols[sym].is_marked());
+            thunk.landing_pads.retain(|&sym| symbols[sym].is_marked());
+        });
+    }
+
+    for &id in &sections {
+        // A thunk's size depends on the distances to its destinations, which
+        // may be landing pads in other thunks, so compute sizes while all
+        // thunks are in place.
+        let offsets: Vec<Vec<u64>> = {
             let ctx: &Context<E> = ctx;
             let osec = &ctx.output_sections[id.index()];
-            // Remove symbols from thunks if they don't actually need range
-            // extension thunks
-            thunks.par_iter_mut().for_each(|thunk| {
-                thunk.symbols.retain(|&sym| ctx.symbols[sym].is_marked());
-                thunk.offsets = E::thunk_offsets(ctx, thunk, thunk.addr(osec));
-            });
+            osec.thunks
+                .par_iter()
+                .map(|thunk| E::thunk_offsets(ctx, thunk, thunk.addr(osec)))
+                .collect()
+        };
+        let mut thunks = std::mem::take(&mut ctx.output_sections[id.index()].thunks);
+        for (thunk, offsets) in thunks.iter_mut().zip(offsets) {
+            thunk.offsets = offsets;
         }
 
         // Recompute section sizes. The layout is sequential, so read the

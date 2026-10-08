@@ -30,8 +30,8 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::NonAllocReloc;
 use crate::input_sections::{InputSection, check_tlsle, scan_absrel, scan_pcrel, scan_tlsdesc};
-use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol};
-use crate::thunks::Thunk;
+use crate::symbol::{NEEDS_GOT, NEEDS_GOTTP, NEEDS_PLT, NEEDS_TLSGD, Symbol, SymbolId};
+use crate::thunks::{self, Thunk};
 
 /// ARM64, in either byte order.
 #[derive(Clone, Copy, Debug, Default)]
@@ -89,6 +89,10 @@ fn is_add(loc: &[u8]) -> bool {
 const NOP: u32 = 0xd503_201f;
 const BTI_C: u32 = 0xd503_245f;
 
+/// The size of a landing pad that a thunk provides, which consists of
+/// `bti c` and `b <function>`.
+const LANDING_PAD_SIZE: u64 = 8;
+
 /// Writes a `bti c` to the beginning of `buf` if `needed` is true. Returns
 /// the offset of the next instruction.
 fn write_landing_pad(buf: &mut [u8], needed: bool) -> usize {
@@ -117,6 +121,11 @@ impl<const LE: bool> Arm64Target<LE> {
     /// -z pac-plt is given.
     fn plt_entry_size(ctx: &Context<Self>) -> u64 {
         if note_property::is_bti(ctx) || ctx.args.z_pac_plt { 24 } else { 16 }
+    }
+
+    /// The address that a thunk entry for `sym` jumps to.
+    fn thunk_dest(ctx: &Context<Self>, sym: SymbolId) -> u64 {
+        thunks::landing_pad_addr(ctx, sym).unwrap_or_else(|| ctx.symbols[sym].addr(ctx))
     }
 
     /// Whether the ADRP+ADD pair at relocation `i` can become NOP+ADR,
@@ -172,7 +181,7 @@ impl<const LE: bool> Target for Arm64Target<LE> {
     const PAGE_SIZE: u64 = 65536;
     const E_MACHINE: u32 = EM_AARCH64;
     const PLTGOT_SIZE: u64 = 16;
-    const THUNK: Option<ThunkLayout> = Some(ThunkLayout { header_size: 0, entry_size: 24 });
+    const THUNK: Option<ThunkLayout> = Some(ThunkLayout { header_size: 0, max_entry_size: 24 });
     const SFRAME_ABI: Option<u8> = Some(if Self::IS_LITTLE {
         SFRAME_ABI_AARCH64_ENDIAN_LITTLE
     } else {
@@ -801,6 +810,24 @@ impl<const LE: bool> Target for Arm64Target<LE> {
         }
     }
 
+    // If BTI is enabled, a thunk provides a landing pad consisting of `bti c`
+    // and `b <function>` for a function that doesn't start with one.
+    fn landing_pad_size(ctx: &Context<Self>) -> u64 {
+        if note_property::is_bti(ctx) { LANDING_PAD_SIZE } else { 0 }
+    }
+
+    // An indirect branch can land on `bti c`, `bti j`, `bti jc`, `paciasp`
+    // or `pacibsp`. If `sym` is not within `isec`'s contents, we can't tell,
+    // so we assume that it starts with one, as lld does.
+    fn needs_landing_pad(isec: &InputSection<Self>, sym: &Symbol) -> bool {
+        let off = sym.value as usize;
+        let Some(loc) = isec.contents().get(off..off + 4) else {
+            return false;
+        };
+        let insn = read_ul32(loc);
+        !matches!(insn, 0xd503_245f | 0xd503_249f | 0xd503_24df | 0xd503_233f | 0xd503_237f)
+    }
+
     // The size of a thunk entry varies on ARM64 depending on the distance to
     // the branch target. This function computes the size of each thunk entry.
     fn thunk_offsets(ctx: &Context<Self>, thunk: &Thunk, addr: u64) -> Vec<u64> {
@@ -812,10 +839,10 @@ impl<const LE: bool> Target for Arm64Target<LE> {
         // page(0x1100) – page(0xfff) is 0x1000, even though the latter
         // distance is shorter than the former.
         let is_small = |prel: i64| is_int(prel + 0x1000, 33) && is_int(prel - 0x1000, 33);
-        let mut offsets = vec![0];
-        let mut off = 0;
+        let mut off = thunk.landing_pads.len() as u64 * LANDING_PAD_SIZE;
+        let mut offsets = vec![off];
         for &sym in &thunk.symbols {
-            let s = ctx.symbols[sym].addr(ctx);
+            let s = Self::thunk_dest(ctx, sym);
             let p = addr + off;
             let prel = page(s).wrapping_sub(page(p)) as i64;
             off += if is_small(prel) { 12 } else { 24 };
@@ -840,9 +867,25 @@ impl<const LE: bool> Target for Arm64Target<LE> {
             0x8b11_0210, // add  x16, x16, x17
             0xd61f_0200, // br   x16
         ];
+        // Landing pad for a function that doesn't start with one
+        const LANDING_PAD: [u32; 2] = [
+            0xd503_245f, // bti  c
+            0x1400_0000, // b    0
+        ];
+
+        for (i, &sym) in thunk.landing_pads.iter().enumerate() {
+            let s = ctx.symbols[sym].addr(ctx);
+            let off = i * LANDING_PAD_SIZE as usize;
+            let disp = s.wrapping_sub(addr + off as u64 + 4);
+            debug_assert!(is_int(disp as i64, 28));
+            for (j, &v) in LANDING_PAD.iter().enumerate() {
+                write_ul32(&mut buf[off + j * 4..], v);
+            }
+            or_insn(&mut buf[off + 4..], bits(disp, 27, 2) as u32);
+        }
 
         for (i, &sym) in thunk.symbols.iter().enumerate() {
-            let s = ctx.symbols[sym].addr(ctx);
+            let s = Self::thunk_dest(ctx, sym);
             let p = addr + thunk.offsets[i];
             let entry = &mut buf[thunk.offsets[i] as usize..thunk.offsets[i + 1] as usize];
             if entry.len() == 12 {

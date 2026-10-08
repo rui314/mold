@@ -69,7 +69,8 @@ pub enum Family {
 #[derive(Clone, Copy, Debug)]
 pub struct ThunkLayout {
     pub header_size: u64,
-    pub entry_size: u64,
+    /// The size of a thunk entry, or the largest one if entries vary in size.
+    pub max_entry_size: u64,
 }
 
 /// The ELF32 or ELF64 forms of the word and of the records that differ
@@ -180,7 +181,8 @@ pub trait Target: Copy + Default + fmt::Debug + Send + Sync + 'static {
         let bits = match Self::FAMILY {
             Family::Arm64 => 27,
             Family::Arm32 => 24,
-            _ => 25,
+            Family::Ppc32 | Family::Ppc64V1 | Family::Ppc64V2 => 25,
+            _ => unreachable!("{} has no range extension thunks", Self::NAME),
         };
         (1 << bits) - 32
     }
@@ -252,8 +254,22 @@ pub trait Target: Copy + Default + fmt::Debug + Send + Sync + 'static {
     /// Lays out the entries of a thunk placed at `addr` once addresses are
     /// known: the offset of each entry, followed by the thunk's size.
     /// Entries have a fixed size unless the target says otherwise.
-    fn thunk_offsets(_ctx: &Context<Self>, thunk: &Thunk, _addr: u64) -> Vec<u64> {
-        thunk.fixed_offsets::<Self>()
+    fn thunk_offsets(ctx: &Context<Self>, thunk: &Thunk, _addr: u64) -> Vec<u64> {
+        // The upper bounds are exact if entries have a fixed size.
+        thunk.upper_bound_offsets(ctx)
+    }
+
+    /// The size of a landing pad that a thunk provides for a function that
+    /// an indirect branch can't land on, or 0 if the output needs none. See
+    /// thunks::landing_pad_candidates().
+    fn landing_pad_size(_ctx: &Context<Self>) -> u64 {
+        0
+    }
+
+    /// Whether `sym` in `isec` can't be the destination of a thunk's indirect
+    /// branch as is.
+    fn needs_landing_pad(_isec: &InputSection<Self>, _sym: &Symbol) -> bool {
+        false
     }
 
     /// Writes the code of a thunk placed at `addr`.

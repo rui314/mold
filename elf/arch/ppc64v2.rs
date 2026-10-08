@@ -174,7 +174,7 @@ impl Target for Ppc64V2 {
     const PAGE_SIZE: u64 = 65536;
     const E_MACHINE: u32 = EM_PPC64;
     const PLTGOT_SIZE: u64 = 0;
-    const THUNK: Option<ThunkLayout> = Some(ThunkLayout { header_size: 0, entry_size: 24 });
+    const THUNK: Option<ThunkLayout> = Some(ThunkLayout { header_size: 0, max_entry_size: 24 });
     const TRAP: &'static [u8] = &[0x08, 0x00, 0xe0, 0x7f]; // trap
 
     const R_COPY: u32 = R_PPC64_COPY;

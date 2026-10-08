@@ -2311,13 +2311,8 @@ pub fn compute_section_sizes<E: Target>(ctx: &mut Context<E>) {
     };
 
     // create_range_extension_thunks is not thread-safe
-    for i in 0..ctx.chunks.len() {
-        let id = ctx.chunks[i];
-        if let ChunkId::Output(osec) = id
-            && needs_thunks(ctx, id)
-        {
-            crate::thunks::create_range_extension_thunks(ctx, osec);
-        }
+    if E::NEEDS_THUNK && !ctx.args.relocatable {
+        crate::thunks::create_range_extension_thunks(ctx);
     }
 
     // Merged sections without SHF_ALLOC are resolved here.

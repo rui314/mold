@@ -327,7 +327,7 @@ impl<const LE: bool> Target for Arm32Target<LE> {
     const PAGE_SIZE: u64 = 65536;
     const E_MACHINE: u32 = EM_ARM;
     const PLTGOT_SIZE: u64 = 16;
-    const THUNK: Option<ThunkLayout> = Some(ThunkLayout { header_size: 16, entry_size: 16 });
+    const THUNK: Option<ThunkLayout> = Some(ThunkLayout { header_size: 16, max_entry_size: 16 });
     const TRAP: &'static [u8] = &[0xff, 0xde]; // udf
 
     const R_COPY: u32 = R_ARM_COPY;
