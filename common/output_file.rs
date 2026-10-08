@@ -383,7 +383,10 @@ impl OutputFile {
                 preallocate(file, *len as u64, size as u64);
                 if map.as_ref().is_none_or(|map| new_len > map.len()) {
                     // The appended data does not fit in the existing mapping, so map
-                    // the grown file again.
+                    // the grown file again. Release the old mapping first, as the
+                    // address space may be too tight for both. The data written
+                    // through it stays in the file.
+                    *map = None;
                     *map = map_file(file, new_len).unwrap_or_else(|e| {
                         fatal!("{}: mmap failed: {}", self.path.display(), strerror(&e))
                     });
