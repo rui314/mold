@@ -35,12 +35,9 @@ EOF
 $CC --ld-path=$mold -o $t/exe $t/a.o -Wl,-dead_strip
 
 python3 - $t/exe > $t/lsda <<'EOF'
-import struct, subprocess, sys
-out = subprocess.run(['otool', '-l', sys.argv[1]], capture_output=True, text=True).stdout.splitlines()
-for i, l in enumerate(out):
-    if l.strip() == 'sectname __unwind_info':
-        off = int(out[i + 4].split()[1])
-d = open(sys.argv[1], 'rb').read()[off:]
+import struct, sys, macho
+m = macho.MachO(sys.argv[1])
+d = m.contents(m.section('__unwind_info'))
 iso, isc = struct.unpack_from('<2I', d, 20)
 start = struct.unpack_from('<I', d, iso + 8)[0]
 end = struct.unpack_from('<I', d, iso + 12 * (isc - 1) + 8)[0]

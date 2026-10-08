@@ -8,15 +8,10 @@ source "$(dirname "$0")"/common.inc
 # Selectors, protocols, CFStrings or categories alone don't set it.
 flags() {
   python3 - $1 <<'EOF'
-import struct, sys
-data = open(sys.argv[1], 'rb').read()
-off = 32
-for _ in range(struct.unpack_from('<I', data, 16)[0]):
-    cmd, size, dataoff = struct.unpack_from('<III', data, off)
-    if cmd == 0x36:
-        flags = struct.unpack_from('<Q', data, dataoff + 0x28)[0]
-        print(flags >> 26 & 1, flags >> 31 & 1)
-    off += size
+import struct, sys, macho
+b = macho.MachO(sys.argv[1]).linkedit_data(macho.LC_ATOM_INFO)
+flags = struct.unpack_from('<Q', b, 0x28)[0]
+print(flags >> 26 & 1, flags >> 31 & 1)
 EOF
 }
 

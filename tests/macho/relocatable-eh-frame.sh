@@ -50,14 +50,10 @@ otool -rv $t/merged.o | sed -n '/__compact_unwind/,/^Rel/p' > $t/cu_relocs
 grep -q '^00000000 .*False  UNSIGND False     1 (__TEXT,__text)$' $t/cu_relocs
 grep -q 'True   UNSIGND False     ___gxx_personality_v0$' $t/cu_relocs
 python3 - $t/merged.o <<'EOF2'
-import struct, subprocess, sys
-f = sys.argv[1]
-out = subprocess.run(['otool', '-l', f], capture_output=True, text=True).stdout.splitlines()
-for i, l in enumerate(out):
-    if l.strip() == 'sectname __compact_unwind':
-        size = int(out[i + 3].split()[1], 16); off = int(out[i + 4].split()[1])
-data = open(f, 'rb').read()[off:off + size]
-encs = [struct.unpack_from('<I', data, e + 12)[0] for e in range(0, size, 32)]
+import struct, sys, macho
+m = macho.MachO(sys.argv[1])
+data = m.contents(m.section('__compact_unwind'))
+encs = [struct.unpack_from('<I', data, e + 12)[0] for e in range(0, len(data), 32)]
 assert 0x04000000 in encs, [hex(e) for e in encs]  # UNWIND_X86_64_MODE_DWARF
 EOF2
 

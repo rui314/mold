@@ -11,19 +11,11 @@ source "$(dirname "$0")"/common.inc
 # came before it, and draws the warning where one without did.
 set_flags() {
   python3 - "$@" <<'EOF'
-import struct, sys
+import sys, macho
 path, flags = sys.argv[1], int(sys.argv[2], 0)
-d = bytearray(open(path, 'rb').read())
-off = 32
-for _ in range(struct.unpack_from('<I', d, 16)[0]):
-    cmd, size = struct.unpack_from('<II', d, off)
-    if cmd == 0x19:
-        for k in range(struct.unpack_from('<I', d, off + 64)[0]):
-            s = off + 72 + 80 * k
-            if d[s:s + 16].rstrip(b'\0') == b'__objc_imageinfo':
-                struct.pack_into('<I', d, struct.unpack_from('<I', d, s + 48)[0] + 4, flags)
-    off += size
-open(path, 'wb').write(d)
+m = macho.MachO(path)
+m.set_u32(m.section('__objc_imageinfo').offset + 4, flags)
+m.save(path)
 EOF
 }
 

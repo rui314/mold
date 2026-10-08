@@ -24,17 +24,13 @@ $CC --ld-path=$mold -o $t/b.dylib -shared $t/b.o
 
 layout() {
   python3 - $1 <<'EOF2'
-import subprocess, sys
+import sys, macho
 def uleb(b, i):
     v = s = 0
     while True:
         x = b[i]; i += 1; v |= (x & 0x7f) << s; s += 7
         if not x & 0x80: return v, i
-out = subprocess.run(['otool', '-l', sys.argv[1]], capture_output=True, text=True).stdout.splitlines()
-for k, l in enumerate(out):
-    if 'LC_DYLD_EXPORTS_TRIE' in l:
-        off = int(out[k + 2].split()[1]); size = int(out[k + 3].split()[1])
-b = open(sys.argv[1], 'rb').read()[off:off + size]
+b = macho.MachO(sys.argv[1]).linkedit_data(macho.LC_DYLD_EXPORTS_TRIE)
 nodes = {}; stack = [(0, '')]
 while stack:
     o, path = stack.pop()

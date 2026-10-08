@@ -31,24 +31,16 @@ EOF
 # Makes _p1, _p2 and _p3 section-relative to __data (section 2), at the
 # addresses given.
 cat > $t/patch.py <<'EOF2'
-import struct, sys
+import struct, sys, macho
 src, dst = sys.argv[1], sys.argv[2]
 vals = [int(v, 0) for v in sys.argv[3:]]
-d = bytearray(open(src, 'rb').read())
-off = 32
-for _ in range(struct.unpack_from('<I', d, 16)[0]):
-    cmd, size = struct.unpack_from('<II', d, off)
-    for i in range(struct.unpack_from('<I', d, off + 64)[0] if cmd == 0x19 else 0):
-        s = off + 72 + i * 80
-        if d[s:s + 16].rstrip(b'\0') == b'__data':
-            addr, _ = struct.unpack_from('<QQ', d, s + 32)
-            base, _, reloff, nreloc = struct.unpack_from('<IIII', d, s + 48)
-            assert addr == 8 and nreloc == 3
-            for j, (field, val) in enumerate(zip((24, 16, 8), reversed(vals))):
-                struct.pack_into('<II', d, reloff + 8 * j, field, 2 | 3 << 25)
-                struct.pack_into('<Q', d, base + field, val)
-    off += size
-open(dst, 'wb').write(d)
+m = macho.MachO(src)
+data = m.section('__data')
+assert data.addr == 8 and data.nreloc == 3
+for (roff, _, _), field, val in zip(m.relocs(data), (24, 16, 8), reversed(vals)):
+    struct.pack_into('<II', m.data, roff, field, 2 | 3 << 25)
+    m.set_u64(data.offset + field, val)
+m.save(dst)
 EOF2
 python3 $t/patch.py $t/a.o $t/b.o 0x0 0x40 0x30
 

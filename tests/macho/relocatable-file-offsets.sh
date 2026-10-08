@@ -20,26 +20,19 @@ for n in 1 3 4; do
   $mold -r -arch $ARCH $t/a$n.o -o $t/r$n.o
 
   python3 - $t/r$n.o <<'EOF'
-import struct, sys
-d = open(sys.argv[1], 'rb').read()
-off = 32
-for _ in range(struct.unpack_from('<I', d, 16)[0]):
-    cmd, size = struct.unpack_from('<II', d, off)
-    if cmd == 0x19:
-        vmsize, fileoff, filesize = struct.unpack_from('<QQQ', d, off + 32)
-        nsects = struct.unpack_from('<I', d, off + 64)[0]
-        sects = [struct.unpack_from('<16s16sQQIIIII', d, off + 72 + i * 80) for i in range(nsects)]
-    off += size
+import sys, macho
+m = macho.MachO(sys.argv[1])
+seg, = m.segments
 end = 0
-for name, seg, addr, size, offset, align, _, _, flags in sects:
-    if flags & 0xff == 1:
-        assert offset == 0, name
+for s in m.sections:
+    if s.flags & 0xff == 1:  # S_ZEROFILL
+        assert s.offset == 0, s.sectname
         continue
-    assert offset % (1 << align) == 0, name
-    assert offset >= max(end, fileoff), name
-    end = offset + size
-assert vmsize == max(s[2] + s[3] for s in sects), vmsize
-assert filesize == end - fileoff and filesize <= vmsize, (filesize, vmsize)
+    assert s.offset % (1 << s.align) == 0, s.sectname
+    assert s.offset >= max(end, seg.fileoff), s.sectname
+    end = s.offset + s.size
+assert seg.vmsize == max(s.addr + s.size for s in m.sections), seg.vmsize
+assert seg.filesize == end - seg.fileoff and seg.filesize <= seg.vmsize, (seg.filesize, seg.vmsize)
 EOF
 
   # The contents are the object's.

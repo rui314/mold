@@ -63,20 +63,16 @@ fi
 # program uses, which the chain binds in turn. Records and symbols may
 # come in any order.
 python3 - $t/exe > $t/recs <<'EOF'
-import struct, sys
-d = open(sys.argv[1], 'rb').read()
-off = 32
-for _ in range(struct.unpack_from('<I', d, 16)[0]):
-    cmd, size = struct.unpack_from('<II', d, off)
-    if cmd == 0x19 and d[off + 8:off + 24].rstrip(b'\0') == b'__TEXT':
-        base = struct.unpack_from('<Q', d, off + 24)[0]
-    if cmd == 0x3a:
-        rec = struct.unpack_from('<II', d, off + 8)[0]
+import struct, sys, macho
+m = macho.MachO(sys.argv[1])
+d, base = m.data, m.segment('__TEXT').vmaddr
+for off, cmd, _ in m.commands:
+    if cmd == macho.LC_LAZY_LOAD_DYLIB_INFO:
+        rec = m.u32(off + 8)
         name, flag, fmt, chain, n, arr = struct.unpack_from('<6I', d, rec)
         cstr = lambda o: d[rec + o:d.index(b'\0', rec + o)].decode()
-        syms = sorted({cstr(struct.unpack_from('<I', d, rec + arr + 4 * i)[0]) for i in range(n)})
+        syms = sorted({cstr(m.u32(rec + arr + 4 * i)) for i in range(n)})
         print(cstr(name), ' '.join(syms), hex(fmt), hex(base + flag), hex(base + chain))
-    off += size
 EOF
 nm $t/exe > $t/syms
 addrs() {

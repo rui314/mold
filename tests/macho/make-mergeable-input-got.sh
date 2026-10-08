@@ -66,14 +66,8 @@ $CC -shared -o $t/l/libfoo.dylib $t/a.o -L$t -limp -Wl,-make_mergeable \
 # The record's entries of content type "got" (22, bits 8-14 of their
 # flags).
 python3 - $t/m/libfoo.dylib > $t/got <<'EOF'
-import struct, sys
-data = open(sys.argv[1], 'rb').read()
-off = 32
-for _ in range(struct.unpack_from('<I', data, 16)[0]):
-    cmd, size, dataoff = struct.unpack_from('<III', data, off)
-    if cmd == 0x36:
-        b = data[dataoff:]
-    off += size
+import struct, sys, macho
+b = macho.MachO(sys.argv[1]).linkedit_data(macho.LC_ATOM_INFO)
 nents, count = struct.unpack_from('<II', b, 0x60)
 flags = [struct.unpack_from('<I', b, nents + 40 * i + 16)[0] for i in range(count)]
 print(sum(1 for f in flags if f >> 8 & 0x7f == 22))

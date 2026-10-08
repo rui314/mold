@@ -37,20 +37,11 @@ EOF
 # starts as offsets from __DATA's start.
 starts() {
   python3 - $1 <<'EOF'
-import struct, sys
-d = open(sys.argv[1], 'rb').read()
-off, segs = 32, {}
-for _ in range(struct.unpack_from('<I', d, 16)[0]):
-    cmd, size = struct.unpack_from('<II', d, off)
-    if cmd == 0x19:
-        segs[d[off + 8:off + 24].rstrip(b'\0')] = struct.unpack_from('<Q', d, off + 24)[0]
-        for i in range(struct.unpack_from('<I', d, off + 64)[0]):
-            s = off + 72 + i * 80
-            if d[s:s + 16].rstrip(b'\0') == b'__chain_starts':
-                _, sect_size, sect_off = struct.unpack_from('<QQI', d, s + 32)
-    off += size
-words = struct.unpack_from('<%dI' % (sect_size // 4), d, sect_off)
-base = segs[b'__DATA'] - segs[b'__TEXT']
+import struct, sys, macho
+m = macho.MachO(sys.argv[1])
+sect = m.section('__chain_starts')
+words = struct.unpack_from('<%dI' % (sect.size // 4), m.data, sect.offset)
+base = m.segment('__DATA').vmaddr - m.segment('__TEXT').vmaddr
 rest = ['0' if w == 0 else hex(w - base) for w in words[2:]]
 print(' '.join([str(words[0]), str(words[1])] + rest))
 EOF

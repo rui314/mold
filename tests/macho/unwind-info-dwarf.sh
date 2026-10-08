@@ -30,12 +30,9 @@ $RUN $t/exe
 personality() {
   enc=$(unwind_lookup $1 $2)
   python3 - $1 $enc <<'EOF2'
-import struct, subprocess, sys
-out = subprocess.run(['otool', '-l', sys.argv[1]], capture_output=True, text=True).stdout.splitlines()
-for i, l in enumerate(out):
-    if l.strip() == 'sectname __unwind_info':
-        size = int(out[i + 3].split()[1], 16); off = int(out[i + 4].split()[1])
-d = open(sys.argv[1], 'rb').read()[off:off + size]
+import struct, sys, macho
+m = macho.MachO(sys.argv[1])
+d = m.contents(m.section('__unwind_info'))
 _, _, _, po, pc = struct.unpack_from('<5I', d, 0)
 idx = (int(sys.argv[2], 16) >> 28) & 3
 print(hex(0x100000000 + struct.unpack_from('<I', d, po + 4 * (idx - 1))[0]) if idx else 'none')

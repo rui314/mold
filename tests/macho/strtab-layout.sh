@@ -18,22 +18,11 @@ EOF
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o
 
 python3 - $t/exe <<'EOF2'
-import struct, sys
-d = open(sys.argv[1], 'rb').read()
-off = 32
-for _ in range(struct.unpack_from('<I', d, 16)[0]):
-    cmd, size = struct.unpack_from('<II', d, off)
-    if cmd == 0x2:
-        symoff, nsyms, stroff, strsize = struct.unpack_from('<IIII', d, off + 8)
-    if cmd == 0xb:
-        ilocal, nlocal, iext, next_, iundef, nundef = struct.unpack_from('<6I', d, off + 8)
-    off += size
-ents = []
-for i in range(nsyms):
-    strx, typ, sect, desc, val = struct.unpack_from('<IBBHQ', d, symoff + i * 16)
-    name = d[stroff + strx:d.index(b'\0', stroff + strx)].decode()
-    ents.append((strx, typ, name))
-assert d[stroff:stroff + 2] == b' \0'
+import sys, macho
+m = macho.MachO(sys.argv[1])
+_, _, stroff, _ = m.symtab()
+assert m.data[stroff:stroff + 2] == b' \0'
+ents = [(s.strx, s.type, s.name.decode()) for s in m.symbols()]
 syms = [e for e in ents if e[1] & 0xe0 == 0]
 helpers = [e for e in syms if e[2] == '_helper']
 assert len(helpers) == 2 and helpers[0][0] != helpers[1][0], helpers

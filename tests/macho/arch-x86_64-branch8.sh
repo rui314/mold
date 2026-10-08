@@ -8,23 +8,14 @@ source "$(dirname "$0")"/common.inc
 # one, so the test rewrites it: relocation 0 of __text gets length 0,
 # the jmp opcode 0xeb, and nops after its displacement byte.
 cat > $t/patch.py <<'EOF2'
-import struct, sys
-src, dst = sys.argv[1], sys.argv[2]
-d = bytearray(open(src, 'rb').read())
-off = 32
-for _ in range(struct.unpack_from('<I', d, 16)[0]):
-    cmd, size = struct.unpack_from('<II', d, off)
-    for i in range(struct.unpack_from('<I', d, off + 64)[0] if cmd == 0x19 else 0):
-        s = off + 72 + i * 80
-        if d[s:s + 16].rstrip(b'\0') == b'__text':
-            base = struct.unpack_from('<I', d, s + 48)[0]
-            p = struct.unpack_from('<I', d, s + 56)[0]
-    off += size
-addr, w = struct.unpack_from('<iI', d, p)
-struct.pack_into('<iI', d, p, addr, w & ~(3 << 25))
-d[base + addr - 1] = 0xeb
-struct.pack_into('<I', d, base + addr, 0x90909000)
-open(dst, 'wb').write(d)
+import sys, macho
+m = macho.MachO(sys.argv[1])
+text = m.section('__text')
+roff, addr, info = m.relocs(text)[0]
+m.set_u32(roff + 4, info & ~(3 << 25))
+m.data[text.offset + addr - 1] = 0xeb
+m.set_u32(text.offset + addr, 0x90909000)
+m.save(sys.argv[2])
 EOF2
 
 # The jmp becomes one, with three nops after it.

@@ -61,13 +61,10 @@ EOF
 # pointer of the zPR CIE as an address.
 eh_frame() {
   python3 - $1 <<'EOF2'
-import struct, subprocess, sys
-out = subprocess.run(['otool', '-l', sys.argv[1]], capture_output=True, text=True).stdout.splitlines()
-for i, l in enumerate(out):
-    if l.strip() == 'sectname __eh_frame':
-        addr = int(out[i + 2].split()[1], 16)
-        size = int(out[i + 3].split()[1], 16); off = int(out[i + 4].split()[1])
-d = open(sys.argv[1], 'rb').read()[off:off + size]
+import struct, sys, macho
+m = macho.MachO(sys.argv[1])
+sect = m.section('__eh_frame')
+addr, d = sect.addr, m.contents(sect)
 pos = 0
 while pos < len(d):
     length, id = struct.unpack_from('<II', d, pos)

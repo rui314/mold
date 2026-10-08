@@ -24,17 +24,11 @@ EOF2
 $SWIFTC -parse-as-library -module-name M -emit-object -o $t/foo.o $t/foo.swift
 # The class_ro_t carries RO_HAS_SWIFT_INITIALIZER (1 << 6).
 python3 - $t/foo.o <<'EOF2'
-import subprocess, sys, re
-f = sys.argv[1]
-nm = subprocess.run(['nm', '-xp', f], capture_output=True, text=True).stdout
-ro = [l.split() for l in nm.splitlines() if l.endswith(' __DATA_Foo')]
-assert ro, nm
-addr, sect = int(ro[0][0], 16), int(ro[0][2], 16)
-out = subprocess.run(['otool', '-l', f], capture_output=True, text=True).stdout
-secs = re.findall(r'sectname \S+\n\s*segname \S+\n\s*addr (0x[0-9a-f]+)\n\s*size 0x[0-9a-f]+\n\s*offset (\d+)', out)
-saddr, off = int(secs[sect - 1][0], 16), int(secs[sect - 1][1])
-data = open(f, 'rb').read()
-flags = int.from_bytes(data[off + addr - saddr:off + addr - saddr + 4], 'little')
+import sys, macho
+m = macho.MachO(sys.argv[1])
+sym = next(s for s in m.symbols() if s.name == b'__DATA_Foo')
+sect = m.sections[sym.sect - 1]
+flags = m.u32(sect.offset + sym.value - sect.addr)
 assert flags & 0x40, hex(flags)
 EOF2
 

@@ -22,14 +22,8 @@ EOF
 # The hash type of each code directory, in blob index order.
 hash_types() {
   python3 - $1 <<'EOF'
-import struct, sys
-d = open(sys.argv[1], 'rb').read()
-off = 32
-for _ in range(struct.unpack_from('<I', d, 16)[0]):
-    cmd, size = struct.unpack_from('<II', d, off)
-    if cmd == 0x1d:
-        sig = d[struct.unpack_from('<I', d, off + 8)[0]:]
-    off += size
+import struct, sys, macho
+sig = macho.MachO(sys.argv[1]).linkedit_data(macho.LC_CODE_SIGNATURE)
 for i in range(struct.unpack_from('>I', sig, 8)[0]):
     slot, pos = struct.unpack_from('>II', sig, 12 + i * 8)
     print('%x:%d' % (slot, sig[pos + 37]), end=' ')

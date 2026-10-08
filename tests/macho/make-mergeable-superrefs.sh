@@ -34,14 +34,8 @@ $CC --ld-path=$mold -shared -o $t/libfoo.dylib $t/a.o -framework Foundation \
 # The flags of the record's entry named for the superclass reference:
 # bit 17 is "don't dead strip".
 python3 - $t/libfoo.dylib > $t/flags <<'EOF'
-import struct, sys
-data = open(sys.argv[1], 'rb').read()
-off = 32
-for _ in range(struct.unpack_from('<I', data, 16)[0]):
-    cmd, size, dataoff = struct.unpack_from('<III', data, off)
-    if cmd == 0x36:
-        b = data[dataoff:]
-    off += size
+import struct, sys, macho
+b = macho.MachO(sys.argv[1]).linkedit_data(macho.LC_ATOM_INFO)
 nents, count = struct.unpack_from('<II', b, 0x60)
 names, _ = struct.unpack_from('<II', b, 0x88)
 for i in range(count):

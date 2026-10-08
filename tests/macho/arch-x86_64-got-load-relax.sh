@@ -13,21 +13,13 @@ source "$(dirname "$0")"/common.inc
 # Rewrites the opcode byte of the instruction under the first
 # relocation of type TYPE in __text: the byte 2 before the field.
 cat > $t/opcode.py <<'EOF2'
-import struct, sys
+import sys, macho
 src, dst, rtype, opcode = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4], 0)
-d = bytearray(open(src, 'rb').read())
-off = 32
-for _ in range(struct.unpack_from('<I', d, 16)[0]):
-    cmd, size = struct.unpack_from('<II', d, off)
-    for i in range(struct.unpack_from('<I', d, off + 64)[0] if cmd == 0x19 else 0):
-        s = off + 72 + i * 80
-        if d[s:s + 16].rstrip(b'\0') == b'__text':
-            base, _, reloff, nreloc = struct.unpack_from('<IIII', d, s + 48)
-            addrs = [struct.unpack_from('<I', d, reloff + 8 * j)[0] for j in range(nreloc)
-                     if struct.unpack_from('<I', d, reloff + 8 * j + 4)[0] >> 28 == rtype]
-            d[base + min(addrs) - 2] = opcode
-    off += size
-open(dst, 'wb').write(d)
+m = macho.MachO(src)
+text = m.section('__text')
+p = text.offset + min(addr for _, addr, info in m.relocs(text) if info >> 28 == rtype)
+m.data[p - 2] = opcode
+m.save(dst)
 EOF2
 
 cat <<EOF | $CC -o $t/a.o -c -xassembler -

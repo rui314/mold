@@ -40,27 +40,16 @@ EOF
 # assembler might write them: the ordinal of the target's section, and
 # its address in the field.
 cat > $t/patch.py <<'EOF2'
-import struct, sys
-d = bytearray(open(sys.argv[1], 'rb').read())
-off = 32
-sects = []
-for _ in range(struct.unpack_from('<I', d, 16)[0]):
-    cmd, size = struct.unpack_from('<II', d, off)
-    if cmd == 0x19:
-        sects += [off + 72 + i * 80 for i in range(struct.unpack_from('<I', d, off + 64)[0])]
-    if cmd == 0x2:
-        symoff = struct.unpack_from('<I', d, off + 8)[0]
-    off += size
-for s in sects:
-    base, _, reloff, nreloc = struct.unpack_from('<IIII', d, s + 48)
-    for i in range(nreloc):
-        addr, info = struct.unpack_from('<II', d, reloff + 8 * i)
+import sys, macho
+m = macho.MachO(sys.argv[1])
+syms = m.symbols()
+for sect in m.sections:
+    for roff, addr, info in m.relocs(sect):
         if info >> 27 & 1:
-            _, _, sect, _, val = struct.unpack_from('<IBBHQ', d, symoff + 16 * (info & 0xffffff))
-            field = struct.unpack_from('<Q', d, base + addr)[0]
-            struct.pack_into('<Q', d, base + addr, (field + val) % 2**64)
-            struct.pack_into('<I', d, reloff + 8 * i + 4, sect | 3 << 25)
-open(sys.argv[2], 'wb').write(d)
+            sym = syms[info & 0xffffff]
+            m.set_u64(sect.offset + addr, m.u64(sect.offset + addr) + sym.value)
+            m.set_u32(roff + 4, sym.sect | 3 << 25)
+m.save(sys.argv[2])
 EOF2
 python3 $t/patch.py $t/a.o $t/b.o
 otool -rv $t/b.o > $t/log

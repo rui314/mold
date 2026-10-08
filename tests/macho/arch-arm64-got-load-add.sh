@@ -13,24 +13,14 @@ source "$(dirname "$0")"/common.inc
 # Rewrites the instruction under the first relocation of type TYPE in
 # __text to (insn & AND) | OR.
 cat > $t/insn.py <<'EOF2'
-import struct, sys
+import sys, macho
 src, dst, rtype = sys.argv[1], sys.argv[2], int(sys.argv[3])
 mask, bits = int(sys.argv[4], 0), int(sys.argv[5], 0)
-d = bytearray(open(src, 'rb').read())
-off = 32
-for _ in range(struct.unpack_from('<I', d, 16)[0]):
-    cmd, size = struct.unpack_from('<II', d, off)
-    for i in range(struct.unpack_from('<I', d, off + 64)[0] if cmd == 0x19 else 0):
-        s = off + 72 + i * 80
-        if d[s:s + 16].rstrip(b'\0') == b'__text':
-            base, _, reloff, nreloc = struct.unpack_from('<IIII', d, s + 48)
-            addrs = [struct.unpack_from('<I', d, reloff + 8 * j)[0] for j in range(nreloc)
-                     if struct.unpack_from('<I', d, reloff + 8 * j + 4)[0] >> 28 == rtype]
-            p = base + min(addrs)
-            insn = struct.unpack_from('<I', d, p)[0]
-            struct.pack_into('<I', d, p, insn & mask | bits)
-    off += size
-open(dst, 'wb').write(d)
+m = macho.MachO(src)
+text = m.section('__text')
+p = text.offset + min(addr for _, addr, info in m.relocs(text) if info >> 28 == rtype)
+m.set_u32(p, m.u32(p) & mask | bits)
+m.save(dst)
 EOF2
 
 cat <<EOF | $CC -o $t/a.o -c -xassembler -

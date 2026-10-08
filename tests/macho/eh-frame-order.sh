@@ -25,12 +25,9 @@ $RUN $t/exe
 
 objdump --macho --unwind-info $t/exe > $t/unwind
 python3 - $t/exe $t/unwind $ARCH > $t/records <<'EOF'
-import re, struct, subprocess, sys
-out = subprocess.run(['otool', '-l', sys.argv[1]], capture_output=True, text=True).stdout.splitlines()
-for i, l in enumerate(out):
-    if l.strip() == 'sectname __eh_frame':
-        size = int(out[i + 3].split()[1], 16); off = int(out[i + 4].split()[1])
-d = open(sys.argv[1], 'rb').read()[off:off + size]
+import re, struct, sys, macho
+image = macho.MachO(sys.argv[1])
+d = image.contents(image.section('__eh_frame'))
 pos = 0
 cies, fdes = set(), set()
 while pos < len(d):
