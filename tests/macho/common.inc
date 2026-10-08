@@ -146,46 +146,10 @@ same_sections_and_symbols() {
   diff "$1.layout" "$2.layout"
 }
 
-# Prints, for each symbol or address given after an image, the
-# __unwind_info encoding the unwinder finds for that address - as
-# libunwind looks it up, the last entry at or below it, through the
-# first-level index and a regular or compressed page - or "none" past
-# the table's end.
+# unwind_lookup IMAGE SYMBOL|ADDRESS...: prints the __unwind_info
+# encoding the unwinder finds for each (see unwind-lookup.py).
 unwind_lookup() {
-  python3 - "$@" <<'EOF'
-import bisect, struct, subprocess, sys
-path, keys = sys.argv[1], sys.argv[2:]
-lc = subprocess.run(['otool', '-l', path], capture_output=True, text=True).stdout.splitlines()
-for i, l in enumerate(lc):
-    if l.split() == ['segname', '__TEXT'] and lc[i - 2].split()[-1] == 'LC_SEGMENT_64':
-        base = int(lc[i + 1].split()[1], 16)
-    if l.split() == ['sectname', '__unwind_info']:
-        size, off = int(lc[i + 3].split()[1], 16), int(lc[i + 4].split()[1])
-d = open(path, 'rb').read()[off:off + size]
-nm = subprocess.run(['nm', path], capture_output=True, text=True).stdout.split('\n')
-syms = {f[2]: int(f[0], 16) for f in (l.split() for l in nm) if len(f) == 3}
-_, ceo, cec, _, _, iso, isc = struct.unpack_from('<7I', d, 0)
-common = struct.unpack_from(f'<{cec}I', d, ceo)
-index = [struct.unpack_from('<3I', d, iso + 12 * k) for k in range(isc)]
-for key in keys:
-    fo = (int(key, 16) if key.startswith('0x') else syms[key]) - base
-    k = bisect.bisect_right([e[0] for e in index], fo) - 1
-    if k < 0 or k >= isc - 1:
-        print('none')
-        continue
-    first, page, _ = index[k]
-    kind = struct.unpack_from('<I', d, page)[0]
-    if kind == 3:
-        _, eo, ec, eco, ecc = struct.unpack_from('<IHHHH', d, page)
-        local = struct.unpack_from(f'<{ecc}I', d, page + eco)
-        ents = [(first + (e & 0xffffff), e >> 24) for e in struct.unpack_from(f'<{ec}I', d, page + eo)]
-        ents = [(a, common[i] if i < cec else local[i - cec]) for a, i in ents]
-    else:
-        _, eo, ec = struct.unpack_from('<IHH', d, page)
-        ents = [struct.unpack_from('<II', d, page + eo + 8 * j) for j in range(ec)]
-    j = bisect.bisect_right([a for a, _ in ents], fo) - 1
-    print(hex(ents[j][1]) if j >= 0 else 'none')
-EOF
+  python3 "$(dirname "$0")"/unwind-lookup.py "$@"
 }
 
 # Looks in a dump of dyld_info -shared_region ($3) for an entry that

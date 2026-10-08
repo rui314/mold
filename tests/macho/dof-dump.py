@@ -13,9 +13,9 @@ Usage: dof-dump.py IMAGE
 import struct
 import sys
 
-LC_SEGMENT_64 = 0x19
+import macho
+
 S_DTRACE_DOF = 0xF
-CPU_TYPE_ARM64 = 0x0100000C
 
 DOF_SECT_STRTAB = 8
 DOF_SECT_PROVIDER = 15
@@ -24,42 +24,12 @@ DOF_SECT_PROFFS = 18
 DOF_SECT_PRENOFFS = 26
 
 
-class Image:
-    def __init__(self, data):
-        self.data = data
-        self.segments = []  # (vmaddr, vmsize, fileoff)
-        self.sections = []  # (name, addr, size, fileoff, align, flags)
-        ncmds = self.u32(16)
-        off = 32
-        for _ in range(ncmds):
-            cmd, size = self.u32(off), self.u32(off + 4)
-            if cmd == LC_SEGMENT_64:
-                vmaddr, vmsize, fileoff = struct.unpack_from('<QQQ', data, off + 24)
-                self.segments.append((vmaddr, vmsize, fileoff))
-                for i in range(self.u32(off + 64)):
-                    s = off + 72 + 80 * i
-                    name = data[s:s + 16].rstrip(b'\0').decode()
-                    addr, sz, foff, align = struct.unpack_from('<QQII', data, s + 32)
-                    self.sections.append((name, addr, sz, foff, align, self.u32(s + 64)))
-            off += size
-
-    def u32(self, off):
-        return struct.unpack_from('<I', self.data, off)[0]
-
-    def at(self, addr, n):
-        """The n bytes at a virtual address, or none if it is unmapped."""
-        for vmaddr, vmsize, fileoff in self.segments:
-            if vmaddr <= addr < vmaddr + vmsize:
-                return self.data[fileoff + addr - vmaddr:][:n]
-        return b''
-
-
 def main():
-    image = Image(open(sys.argv[1], 'rb').read())
+    image = macho.MachO(sys.argv[1])
 
     # What the linker writes at a probe site and at an is-enabled test,
     # and the bytes of a site to compare with them.
-    if image.u32(4) == CPU_TYPE_ARM64:
+    if image.cputype == macho.CPU_TYPE_ARM64:
         # nop; mov x0, #0
         sites = (bytes.fromhex('1f2003d5'), bytes.fromhex('000080d2'))
         at_site = lambda a: image.at(a, 4)
@@ -69,11 +39,11 @@ def main():
         sites = (bytes.fromhex('900f1f4000'), bytes.fromhex('33c0909090'))
         at_site = lambda a: image.at(a - 1, 5)
 
-    for name, addr, size, foff, align, flags in image.sections:
-        if flags & 0xFF != S_DTRACE_DOF:
+    for sect in image.sections:
+        if sect.flags & 0xFF != S_DTRACE_DOF:
             continue
-        dof = image.data[foff:foff + size]
-        nsecs = image.u32(foff + 28)
+        dof = image.contents(sect)
+        nsecs = struct.unpack_from('<I', dof, 28)[0]
         headers = [struct.unpack_from('<IIIIQQ', dof, 64 + 32 * i) for i in range(nsecs)]
         by_type = {h[0]: h for h in headers}
         strtab = dof[by_type[DOF_SECT_STRTAB][4]:][:by_type[DOF_SECT_STRTAB][5]]
@@ -84,7 +54,7 @@ def main():
         prov = by_type[DOF_SECT_PROVIDER][4]
         attrs = struct.unpack_from('<5I', dof, prov + 20)
         provider = string(struct.unpack_from('<I', dof, prov + 16)[0])
-        print(f'dof {name} {provider} flags 0x{flags:x} align {align}')
+        print(f'dof {sect.sectname} {provider} flags 0x{sect.flags:x} align {sect.align}')
         print('attrs ' + ' '.join(f'0x{a:08x}' for a in attrs))
 
         probes = by_type[DOF_SECT_PROBES]
@@ -105,7 +75,7 @@ def main():
                 continue
             for k in range(by_type[ty][5] // 4):
                 o = by_type[ty][4] + 4 * k
-                site = addr + struct.unpack_from('<i', dof, o)[0]
+                site = sect.addr + struct.unpack_from('<i', dof, o)[0]
                 if at_site(site) != sites[kind]:
                     print(f'bad site 0x{site:x}: {at_site(site).hex()}')
 
