@@ -28,6 +28,7 @@ pub mod lazy_load_got;
 pub mod lazy_load_info;
 pub mod lazy_ptrs;
 pub mod local_relocs;
+pub mod mergeable_record;
 pub mod objc_imageinfo;
 pub mod objc_methlist;
 pub mod objc_stubs;
@@ -372,7 +373,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, id: ChunkId, buf: &mut [u8]) {
         ChunkId::ExportTrie => copy_contents(&ctx.export_trie.contents, buf),
         ChunkId::FunctionStarts => copy_contents(&ctx.function_starts.contents, buf),
         ChunkId::DataInCode => data_in_code::copy_buf(ctx, buf),
-        ChunkId::MergeableRecord => crate::make_mergeable::copy_buf(ctx, buf),
+        ChunkId::MergeableRecord => mergeable_record::copy_buf(ctx, buf),
         ChunkId::SplitInfo => copy_contents(&ctx.split_info.contents, buf),
         ChunkId::LazyLoadInfo => lazy_load_info::copy_buf(ctx, buf),
         ChunkId::IndirectSymtab => indirect_symtab::copy_buf(ctx, buf),
