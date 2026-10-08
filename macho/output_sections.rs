@@ -1162,23 +1162,12 @@ fn sort_section_members<E: Target>(ctx: &mut Context<E>) {
 /// later, if a branch can be out of reach at all, once the order of the
 /// sections is known (see thunks.rs).
 fn compute_section_sizes<E: Target>(ctx: &mut Context<E>) {
-    let offsets: Vec<(usize, Vec<u64>, u64)> = ctx
+    let layouts: Vec<(Vec<u64>, u64)> = ctx
         .output_sections
         .par_iter()
-        .enumerate()
-        .map(|(i, osec)| {
-            let mut offs = Vec::with_capacity(osec.members.len());
-            let mut off = 0;
-            for &id in &osec.members {
-                let isec = &ctx.isecs[id];
-                off = isec.align_offset(off);
-                offs.push(off);
-                off += isec.size as u64;
-            }
-            (i, offs, off)
-        })
+        .map(|osec| chunks::output_section::layout(ctx, osec))
         .collect();
-    for (i, offs, size) in offsets {
+    for (i, (offs, size)) in layouts.into_iter().enumerate() {
         for (&id, off) in ctx.output_sections[i].members.iter().zip(offs) {
             ctx.isecs[id].offset = off as u32;
         }

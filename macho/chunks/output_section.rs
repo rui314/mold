@@ -73,6 +73,22 @@ impl OutputSection {
     }
 }
 
+/// Lays out an output section's members, each at its alignment after
+/// the one before, and returns their offsets, in member order, and the
+/// section's size, for compute_section_sizes to record. mold's layout,
+/// which records the offsets itself.
+pub fn layout<E: Target>(ctx: &Context<E>, osec: &OutputSection) -> (Vec<u64>, u64) {
+    let mut offs = Vec::with_capacity(osec.members.len());
+    let mut off = 0;
+    for &id in &osec.members {
+        let isec = &ctx.isecs[id];
+        off = isec.align_offset(off);
+        offs.push(off);
+        off += isec.size as u64;
+    }
+    (offs, off)
+}
+
 /// Runs `f` in parallel on each member's bytes in `buf`, the output
 /// section's contents, along with the bytes up to the next member, as
 /// mold's for_each_member does: splitting `buf` at member offsets,
