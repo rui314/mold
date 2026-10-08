@@ -481,32 +481,7 @@ fn sweep<E: Target>(ctx: &mut Context<E>) {
         isec.set_alive(visited && alive);
     }
 
-    // Remap the record-to-FDE links around the dropped FDEs.
-    let mut fde_map = vec![usize::MAX; ctx.fdes.len()];
-    let mut kept_fdes = Vec::new();
-    let fdes = std::mem::take(&mut ctx.fdes);
-    for (i, fde) in fdes.into_iter().enumerate() {
-        if ctx.isecs[fde.isec as usize].is_alive() {
-            fde_map[i] = kept_fdes.len();
-            kept_fdes.push(fde);
-        }
-    }
-    ctx.fdes = kept_fdes;
-    let isecs = &ctx.isecs;
-    let map = &fde_map;
-    ctx.unwind_records.retain_mut(|rec| {
-        if !isecs[rec.isec as usize].is_alive() {
-            return false;
-        }
-        if rec.fde_idx != crate::input_files::UNWIND_NONE {
-            // usize::MAX (a dropped FDE) narrows to UNWIND_NONE.
-            rec.fde_idx = map[rec.fde_idx as usize] as u32;
-        }
-        true
-    });
-
-    // The compaction moved the surviving records; refresh the ranges.
-    crate::passes::refresh_unwind_ranges(ctx);
+    crate::input_files::remove_dead_unwind_info(ctx);
 }
 
 /// Refresh symbol usage after subsection liveness is known. Undefined

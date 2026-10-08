@@ -1425,7 +1425,7 @@ fn lay_out_eh_frame<E: Target>(ctx: &mut Context<E>) {
     // The compaction moved the surviving records; refresh the
     // subsections' ranges, which the __unwind_info encoding reads.
     if ctx.unwind_records.len() < num_records {
-        crate::passes::refresh_unwind_ranges(ctx);
+        crate::input_files::refresh_unwind_ranges(ctx);
     }
     if ctx.fdes.is_empty() {
         return;

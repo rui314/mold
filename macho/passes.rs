@@ -1027,46 +1027,8 @@ pub fn remove_unreachable_files<E: Target>(ctx: &mut Context<E>) {
         }
     }
 
-    // Unwind records and FDEs of dead files go too, remapping the
-    // record-to-FDE links around the removals.
-    let mut fde_map = vec![usize::MAX; ctx.fdes.len()];
-    let mut kept_fdes = Vec::new();
-    let fdes = std::mem::take(&mut ctx.fdes);
-    for (i, fde) in fdes.into_iter().enumerate() {
-        if ctx.isecs[fde.isec].is_alive() {
-            fde_map[i] = kept_fdes.len();
-            kept_fdes.push(fde);
-        }
-    }
-    ctx.fdes = kept_fdes;
-    let isecs = &ctx.isecs;
-    let map = &fde_map;
-    ctx.unwind_records.retain_mut(|rec| {
-        if !isecs[rec.isec as usize].is_alive() {
-            return false;
-        }
-        if rec.fde_idx != crate::input_files::UNWIND_NONE {
-            rec.fde_idx = map[rec.fde_idx as usize] as u32;
-        }
-        true
-    });
-    refresh_unwind_ranges(ctx);
-}
-
-/// Rebuilds each subsection's compact-unwind record range after the
-/// records vector was compacted; the records stay grouped by
-/// subsection, so one walk over runs restores every range.
-pub fn refresh_unwind_ranges<E: Target>(ctx: &mut Context<E>) {
-    let mut i = 0;
-    while i < ctx.unwind_records.len() {
-        let isec = ctx.unwind_records[i].isec;
-        let start = i;
-        while i < ctx.unwind_records.len() && ctx.unwind_records[i].isec == isec {
-            i += 1;
-        }
-        ctx.isecs[isec as usize].unwind_offset = start as u32;
-        ctx.isecs[isec as usize].nunwind = (i - start) as u32;
-    }
+    // Unwind records and FDEs of dead files go too.
+    input_files::remove_dead_unwind_info(ctx);
 }
 
 /// -remove_swift_reflection_metadata_sections: drops the Swift

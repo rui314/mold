@@ -1841,6 +1841,53 @@ impl StagedObject {
     }
 }
 
+/// Rebuilds each subsection's compact-unwind record range after the
+/// records vector was compacted; the records stay grouped by
+/// subsection, so one walk over runs restores every range.
+pub fn refresh_unwind_ranges<E: Target>(ctx: &mut Context<E>) {
+    let mut i = 0;
+    while i < ctx.unwind_records.len() {
+        let isec = ctx.unwind_records[i].isec;
+        let start = i;
+        while i < ctx.unwind_records.len() && ctx.unwind_records[i].isec == isec {
+            i += 1;
+        }
+        ctx.isecs[isec as usize].unwind_offset = start as u32;
+        ctx.isecs[isec as usize].nunwind = (i - start) as u32;
+    }
+}
+
+/// Drops the unwind records and FDEs of the subsections that are no
+/// longer alive, and refreshes the ranges of the records that stay.
+pub fn remove_dead_unwind_info<E: Target>(ctx: &mut Context<E>) {
+    // Remap the record-to-FDE links around the dropped FDEs.
+    let mut fde_map = vec![usize::MAX; ctx.fdes.len()];
+    let mut kept_fdes = Vec::new();
+    let fdes = std::mem::take(&mut ctx.fdes);
+    for (i, fde) in fdes.into_iter().enumerate() {
+        if ctx.isecs[fde.isec as usize].is_alive() {
+            fde_map[i] = kept_fdes.len();
+            kept_fdes.push(fde);
+        }
+    }
+    ctx.fdes = kept_fdes;
+    let isecs = &ctx.isecs;
+    let map = &fde_map;
+    ctx.unwind_records.retain_mut(|rec| {
+        if !isecs[rec.isec as usize].is_alive() {
+            return false;
+        }
+        if rec.fde_idx != UNWIND_NONE {
+            // usize::MAX (a dropped FDE) narrows to UNWIND_NONE.
+            rec.fde_idx = map[rec.fde_idx as usize] as u32;
+        }
+        true
+    });
+
+    // The compaction moved the surviving records; refresh the ranges.
+    refresh_unwind_ranges(ctx);
+}
+
 /// Each staged object's place in the global arenas, after what they
 /// hold already, for objects with `num_locals` local symbols and
 /// `counts` globals each.
