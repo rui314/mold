@@ -1,6 +1,5 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
-source "$(dirname "$0")"/dtrace.inc
 
 # A dtrace -h header has a probe site call an undefined
 # ___dtrace_probe$... function and an is-enabled test call

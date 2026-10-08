@@ -1,6 +1,5 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
-source "$(dirname "$0")"/dtrace.inc
 
 # Each provider gets a DOF section of its own. A probe has an instance
 # per function it has sites in, named after the name of the function's

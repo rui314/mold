@@ -1,6 +1,5 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
-source "$(dirname "$0")"/dtrace.inc
 
 # A probe symbol of another encoding than the v1 of dtrace -h fails the
 # link, as its fields can't be read.

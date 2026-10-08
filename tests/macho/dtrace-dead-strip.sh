@@ -1,6 +1,5 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
-source "$(dirname "$0")"/dtrace.inc
 
 # The DOF lists the probe sites of the code dead stripping leaves:
 # -dead_strip removes a function nothing calls with its probe sites, and

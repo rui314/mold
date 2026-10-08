@@ -1,6 +1,5 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
-source "$(dirname "$0")"/dtrace.inc
 
 # The DOF of a provider: its name, the attributes its stability symbol
 # gives, and each probe with its argument types and an instance for the

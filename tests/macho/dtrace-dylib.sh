@@ -1,6 +1,5 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
-source "$(dirname "$0")"/dtrace.inc
 
 # A dylib or a bundle describes its probe sites in a DOF section as an
 # executable does, which dyld hands to the kernel as it loads the image.

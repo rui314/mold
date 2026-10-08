@@ -1,6 +1,5 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
-source "$(dirname "$0")"/dtrace.inc
 
 # A probe's argument types are in its symbol's name, as dtrace -h spelled
 # them, and the DOF names each of them, a typedef of the D script as an

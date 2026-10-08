@@ -5,7 +5,6 @@ source "$(dirname "$0")"/common.inc
 # too: also a provider's stability and typedefs symbols, which nothing
 # relocates (the header names them by N_NO_DEAD_STRIP .reference) but
 # the final link reads the provider's attributes from.
-source "$(dirname "$0")"/dtrace.inc
 cat > $t/p.d <<EOF
 provider myapp {
   probe start(int, char *);
