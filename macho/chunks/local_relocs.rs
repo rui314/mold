@@ -30,9 +30,10 @@ impl Default for LocalRelocsSection {
     }
 }
 
-/// Lists the pointers in address order. A record's offset is a
-/// signed 32-bit distance from relocation_base, which must reach each.
-pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u64> {
+/// Lists the pointers in address order, and sizes the table. A
+/// record's offset is a signed 32-bit distance from relocation_base,
+/// which must reach each.
+pub fn build<E: Target>(ctx: &mut Context<E>) {
     let mut locs = crate::chunks::rebase_info::rebase_locations(ctx);
     locs.sort_unstable();
     let base = relocation_base(ctx);
@@ -40,7 +41,8 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u64> {
     if let Some(&addr) = locs.iter().find(|&&addr| !reaches(addr)) {
         crate::error!("a local relocation can't reach the pointer at {addr:#x} from {base:#x}");
     }
-    locs
+    ctx.local_relocs.hdr.size = (locs.len() * size_of::<MachRel>()) as u64;
+    ctx.local_relocs.locs = locs;
 }
 
 /// Where the relocation addresses count from: the first segment, or on

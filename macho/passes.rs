@@ -2927,20 +2927,6 @@ fn mach_header_addr<E: Target>(ctx: &Context<E>) -> u64 {
     ctx.args.segaddr(header_segment(ctx)).unwrap_or(ctx.image_base())
 }
 
-/// Collects the relocations of an image no dyld loads (LC_DYSYMTAB's):
-/// a -static -pie image's local ones, and a kext's local and external
-/// ones.
-fn collect_relocations<E: Target>(ctx: &mut Context<E>) {
-    if ctx.chunks.contains(&ChunkId::LocalRelocs) {
-        ctx.local_relocs.locs = chunks::local_relocs::build(ctx);
-        ctx.local_relocs.hdr.size = (ctx.local_relocs.locs.len() * size_of::<MachRel>()) as u64;
-    }
-    if ctx.chunks.contains(&ChunkId::ExternRelocs) {
-        ctx.extern_relocs.relocs = chunks::extern_relocs::build(ctx);
-        ctx.extern_relocs.hdr.size = (ctx.extern_relocs.relocs.len() * size_of::<MachRel>()) as u64;
-    }
-}
-
 /// Lays out the output: each segment's contents in file order, and the
 /// segments in the address space. Where ld-prime puts a segment can
 /// depend on the size of any other one (place_segments), so a segment
@@ -2967,7 +2953,7 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
         fileoff = lay_out_segments_with_unwind_info(ctx);
     }
 
-    while !finish_chain_starts(ctx) {
+    while !chunks::chain_starts::finish_chain_starts(ctx) {
         fileoff = lay_out_segments(ctx);
     }
 
@@ -3151,42 +3137,12 @@ fn finish_unwind_info<E: Target>(ctx: &mut Context<E>) -> bool {
     {
         return true;
     }
-    let size = encode_unwind_info(ctx);
+    let size = chunks::unwind_info::compute_size(ctx);
     if size > ctx.unwind_info.hdr.size {
         ctx.unwind_info.min_size = size;
         return false;
     }
     true
-}
-
-/// Encodes __unwind_info for the addresses its segment has, and returns
-/// its size. The personality cells the encoding cannot know yet (GOT
-/// addresses) come back as a patch list for the copy phase.
-fn encode_unwind_info<E: Target>(ctx: &mut Context<E>) -> u64 {
-    let (data, personalities) = {
-        let _t = ctx.timer("unwind_encode");
-        chunks::unwind_info::encode_unwind_info(ctx)
-    };
-    let size = data.len() as u64;
-    ctx.unwind_info.contents = data;
-    ctx.unwind_info.personalities = personalities;
-    size
-}
-
-/// Finds where the chains __TEXT,__chain_starts lists start, which
-/// follows from where the fixups in the other segments are. Returns
-/// false if their number changes the section's size; the layout is
-/// then done again (which moves later segments whole, and so no chain).
-fn finish_chain_starts<E: Target>(ctx: &mut Context<E>) -> bool {
-    if !ctx.args.fixup_chains_section {
-        return true;
-    }
-    let starts = chunks::chained_fixups::section_chain_starts(ctx);
-    let size = chunks::chain_starts::ChainStartsSection::size(starts.len());
-    let fits = size == ctx.chain_starts.hdr.size;
-    ctx.chain_starts.hdr.size = size;
-    ctx.chain_starts.starts = starts;
-    fits
 }
 
 /// Lays out a segment's chunks from file offset `fileoff` and address
@@ -3237,7 +3193,9 @@ fn layout_segment<E: Target>(
             ChunkId::MachHeader => mach_header_size(ctx),
             // Encoded once its segment's addresses are known, as it
             // embeds __TEXT offsets.
-            ChunkId::UnwindInfo => encode_unwind_info(ctx).max(ctx.unwind_info.min_size),
+            ChunkId::UnwindInfo => {
+                chunks::unwind_info::compute_size(ctx).max(ctx.unwind_info.min_size)
+            }
             // It holds a hash of every page before it.
             ChunkId::CodeSignature => chunks::code_signature::size(ctx, cursor),
             _ => ctx.chunk_header(id).size,
@@ -3651,7 +3609,15 @@ fn build_linkedit_tables<E: Target>(ctx: &mut Context<E>) {
     ctx.function_starts.contents = starts;
     ctx.export_trie.hdr.size = trie.len() as u64;
     ctx.export_trie.contents = trie;
-    collect_relocations(ctx);
+    // The relocations of an image no dyld loads (LC_DYSYMTAB's): a
+    // -static -pie image's local ones, and a kext's local and external
+    // ones.
+    if ctx.chunks.contains(&ChunkId::LocalRelocs) {
+        chunks::local_relocs::build(ctx);
+    }
+    if ctx.chunks.contains(&ChunkId::ExternRelocs) {
+        chunks::extern_relocs::build(ctx);
+    }
     if ctx.chunks.contains(&ChunkId::MergeableRecord) {
         let _t = ctx.timer("mergeable_record");
         crate::make_mergeable::build(ctx);

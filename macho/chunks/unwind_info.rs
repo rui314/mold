@@ -43,6 +43,20 @@ impl Default for UnwindInfoSection {
     }
 }
 
+/// Encodes __unwind_info for the addresses its segment has, and returns
+/// its size. The personality cells the encoding cannot know yet (GOT
+/// addresses) come back as a patch list for the copy phase.
+pub fn compute_size<E: Target>(ctx: &mut Context<E>) -> u64 {
+    let (data, personalities) = {
+        let _t = ctx.timer("unwind_encode");
+        encode_unwind_info(ctx)
+    };
+    let size = data.len() as u64;
+    ctx.unwind_info.contents = data;
+    ctx.unwind_info.personalities = personalities;
+    size
+}
+
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let sec = &ctx.unwind_info;
     debug_assert!(sec.contents.len() as u64 <= sec.hdr.size);

@@ -34,9 +34,9 @@ impl Default for ExternRelocsSection {
 
 /// Collects the GOT slots and data pointers that hold an import's
 /// address, and the calls to one (on x86-64, which has no stubs for a
-/// kext). In legacy LINKEDIT, the data pointers dyld binds (see
-/// Context::binds_pointer).
-pub fn build<E: Target>(ctx: &Context<E>) -> Vec<(u64, SymbolId, bool)> {
+/// kext), and sizes the table. In legacy LINKEDIT, the data pointers
+/// dyld binds (see Context::binds_pointer).
+pub fn build<E: Target>(ctx: &mut Context<E>) {
     let got = &ctx.got;
     let mut vec: Vec<(u64, SymbolId, bool)> = Vec::new();
     if !ctx.args.legacy_linkedit {
@@ -72,7 +72,8 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<(u64, SymbolId, bool)> {
             }
         }
     }
-    vec
+    ctx.extern_relocs.hdr.size = (vec.len() * size_of::<MachRel>()) as u64;
+    ctx.extern_relocs.relocs = vec;
 }
 
 /// Writes the records once the symbol table is numbered, in ld-prime's
