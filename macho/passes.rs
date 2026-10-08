@@ -3007,7 +3007,7 @@ fn text_reloc_ranges<E: Target>(ctx: &Context<E>) -> Vec<Range<u64>> {
 /// Fails the link on the text relocations found applying relocations,
 /// listed by address, and on the 32-bit pointers of an x86-64 image
 /// dyld loads, which it could neither slide nor bind.
-fn report_text_relocs<E: Target>(ctx: &Context<E>) {
+pub fn report_text_relocs<E: Target>(ctx: &Context<E>) {
     let mut found = std::mem::take(&mut *ctx.text_relocs.lock().unwrap());
     let addr = |isec: u32, off: u32| ctx.isec_addr(isec as usize) + off as u64;
     found.sort_unstable_by_key(|&(isec, i)| {
@@ -3703,93 +3703,11 @@ pub fn resolve_stub_binder<E: Target>(ctx: &mut Context<E>) {
     }
 }
 
-/// Copies all chunks to the output buffer and applies relocations, in
-/// parallel: the buffer is carved into disjoint per-chunk slices, and
-/// every chunk writes only within its own. The fixups, the symbol table
-/// (which also fills the string table), the mach header, the UUID and
-/// the code signature follow serially, in that order, since each
-/// depends on the bytes before it. Each range of the buffer is queued
-/// to `out` the moment it is final, so the file is written while the
-/// rest is produced: everything between the header and the symbol
-/// table after the copy and its fix-ups, the symbol and string tables
-/// after copy_symtab, the header after the UUID, the signature last.
-pub fn copy_chunks<E: Target>(
-    ctx: &Context<E>,
-    buf: &mut [u8],
-    out: &crate::output_file::OutputFile,
-) {
-    let jobs: Vec<(ChunkId, Range<u64>)> = ctx
-        .chunks
-        .iter()
-        .map(|&id| (id, ctx.chunk_header(id)))
-        .filter(|(id, hdr)| {
-            !matches!(
-                id,
-                ChunkId::MachHeader | ChunkId::Symtab | ChunkId::Strtab | ChunkId::CodeSignature
-            ) && !hdr.is_zerofill()
-                // An empty section (every subsection of a coverage
-                // section dead, say) shares its file offset with its
-                // neighbor; it has nothing to copy, and its range would
-                // start inside the neighbor's.
-                && hdr.size != 0
-        })
-        .map(|(id, hdr)| (id, hdr.fileoff..hdr.fileoff + hdr.size))
-        .collect();
-    let ranges: Vec<Range<u64>> = jobs.iter().map(|(_, range)| range.clone()).collect();
-    let slices = crate::output_file::split_ranges(buf, &ranges);
-
-    let t = ctx.timer("copy_chunks");
-    jobs.par_iter().zip(slices).for_each(|(&(id, _), slice)| chunks::copy_buf(ctx, id, slice));
-    drop(t);
-    // Relocations that failed to apply fail the link before the fixups
-    // are written.
-    report_text_relocs(ctx);
-    crate::error::checkpoint();
-
-    if ctx.use_chained_fixups() {
-        let _t = ctx.timer("write_fixup_chains");
-        chunks::chained_fixups::write_fixup_chains(ctx, buf);
-    }
-    if ctx.chunks.contains(&ChunkId::LocalRelocs) {
-        chunks::local_relocs::write(ctx, buf);
-    }
-    if ctx.chunks.contains(&ChunkId::ExternRelocs) {
-        chunks::extern_relocs::write(ctx, buf);
-    }
-    let t = ctx.timer("apply_optimization_hints");
-    E::apply_optimization_hints(ctx, buf);
-    drop(t);
-
-    let hdr_end = ctx.mach_header.hdr.size as usize;
-    let sig_start = if ctx.chunks.contains(&ChunkId::CodeSignature) {
-        ctx.code_signature.hdr.fileoff as usize
-    } else {
-        buf.len()
-    };
-    let symtab_start = (ctx.symtab.hdr.fileoff as usize).min(ctx.strtab.hdr.fileoff as usize);
-
-    // Nothing below writes between the header and the symbol table.
-    out.queue(hdr_end, symtab_start - hdr_end);
-    let t = ctx.timer("copy_symtab");
-    chunks::symtab::copy_symtab(ctx, buf);
-    drop(t);
-    out.queue(symtab_start, sig_start - symtab_start);
-    chunks::copy_mach_header(ctx, buf);
-
-    let hashes = compute_uuid(ctx, buf, sig_start);
-    out.queue(0, hdr_end);
-
-    if ctx.args.adhoc_codesign {
-        let _t = ctx.timer("write_code_signature");
-        chunks::code_signature::write(ctx, buf, &hashes);
-    }
-    out.queue(sig_start, buf.len() - sig_start);
-}
-
 /// Computes the UUID that identifies the build and writes it into the
 /// header's LC_UUID, and returns the SHA256 hashes of every 4KiB page
 /// before the code signature at `sig_start`, which the signature is
-/// made of.
+/// made of. This is mold's write_build_id: a Mach-O build ID is its
+/// UUID.
 ///
 /// The UUID is derived from those page hashes rather than from a second
 /// pass over the contents: the pages are hashed while the LC_UUID field
@@ -3802,7 +3720,11 @@ pub fn copy_chunks<E: Target>(
 /// signature blob (whose identifier is the output's basename); unsigned
 /// output hashes its pages the same way. A -random_uuid one goes in
 /// before anything is hashed.
-fn compute_uuid<E: Target>(ctx: &Context<E>, buf: &mut [u8], sig_start: usize) -> Vec<[u8; 32]> {
+pub fn compute_uuid<E: Target>(
+    ctx: &Context<E>,
+    buf: &mut [u8],
+    sig_start: usize,
+) -> Vec<[u8; 32]> {
     let set_uuid = |uuid: &[u8], buf: &mut [u8]| {
         let mut uuid: [u8; 16] = uuid[..16].try_into().unwrap();
         uuid[6] = (uuid[6] & 0x0f) | 0x40; // version 4

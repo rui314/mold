@@ -2,10 +2,14 @@
 
 use std::borrow::Cow;
 use std::ffi::{OsStr, OsString};
+use std::ops::Range;
 use std::sync::Arc;
+
+use rayon::prelude::*;
 
 use crate::arch::Target;
 use crate::bundle_hook;
+use crate::chunks::{self, ChunkId};
 use crate::cmdline;
 use crate::context::Context;
 use crate::dead_strip;
@@ -249,12 +253,59 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     crate::mapfile::write_sdk_imports(&ctx);
 
     // Write the output. The file is created up front, executable, and
-    // its ranges are written from background threads as copy_chunks
-    // finishes them; finish() waits for the last one.
+    // each range of the buffer is queued to `out` the moment it is
+    // final, so the file is written from background threads while the
+    // rest is produced: everything between the header and the symbol
+    // table after the copy and its fix-ups, the symbol and string
+    // tables after copy_symtab, the header after the UUID, the
+    // signature last. finish() waits for the last one.
     let t_copy = ctx.timer("copy");
     let mut buf = vec![0; output_file::buffer_len(&ctx.args.output, ctx.output_size)];
     let out = output_file::OutputFile::create(&ctx.args.output, 0o777, buf.as_ptr(), buf.len());
-    passes::copy_chunks(&ctx, &mut buf, &out);
+
+    // Copy input sections to the output file and apply relocations.
+    copy_chunks(&ctx, &mut buf);
+
+    // Relocations that failed to apply fail the link before the fixups
+    // are written.
+    passes::report_text_relocs(&ctx);
+    crate::error::checkpoint();
+
+    // The fixups, the symbol table (which also fills the string table),
+    // the mach header, the UUID and the code signature follow serially,
+    // in that order, since each depends on the bytes before it.
+    if ctx.use_chained_fixups() {
+        timed!("write_fixup_chains", chunks::chained_fixups::write_fixup_chains(&ctx, &mut buf));
+    }
+    if ctx.chunks.contains(&ChunkId::LocalRelocs) {
+        chunks::local_relocs::write(&ctx, &mut buf);
+    }
+    if ctx.chunks.contains(&ChunkId::ExternRelocs) {
+        chunks::extern_relocs::write(&ctx, &mut buf);
+    }
+    timed!("apply_optimization_hints", E::apply_optimization_hints(&ctx, &mut buf));
+
+    let hdr_end = ctx.mach_header.hdr.size as usize;
+    let sig_start = if ctx.chunks.contains(&ChunkId::CodeSignature) {
+        ctx.code_signature.hdr.fileoff as usize
+    } else {
+        buf.len()
+    };
+    let symtab_start = (ctx.symtab.hdr.fileoff as usize).min(ctx.strtab.hdr.fileoff as usize);
+
+    // Nothing below writes between the header and the symbol table.
+    out.queue(hdr_end, symtab_start - hdr_end);
+    timed!("copy_symtab", chunks::symtab::copy_symtab(&ctx, &mut buf));
+    out.queue(symtab_start, sig_start - symtab_start);
+    chunks::copy_mach_header(&ctx, &mut buf);
+
+    let hashes = passes::compute_uuid(&ctx, &mut buf, sig_start);
+    out.queue(0, hdr_end);
+
+    if ctx.args.adhoc_codesign {
+        timed!("write_code_signature", chunks::code_signature::write(&ctx, &mut buf, &hashes));
+    }
+    out.queue(sig_start, buf.len() - sig_start);
     crate::error::checkpoint();
     // The traces name the output by its UUID; one that can't be written
     // fails the link, which leaves no output.
@@ -268,6 +319,35 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     drop(t_all);
     print_statistics(&ctx);
     Ok(0)
+}
+
+/// Copies all chunks to the output buffer and applies relocations, in
+/// parallel: the buffer is carved into disjoint per-chunk slices, and
+/// every chunk writes only within its own.
+pub(crate) fn copy_chunks<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
+    let jobs: Vec<(ChunkId, Range<u64>)> = ctx
+        .chunks
+        .iter()
+        .map(|&id| (id, ctx.chunk_header(id)))
+        .filter(|(id, hdr)| {
+            !matches!(
+                id,
+                ChunkId::MachHeader | ChunkId::Symtab | ChunkId::Strtab | ChunkId::CodeSignature
+            ) && !hdr.is_zerofill()
+                // An empty section (every subsection of a coverage
+                // section dead, say) shares its file offset with its
+                // neighbor; it has nothing to copy, and its range would
+                // start inside the neighbor's.
+                && hdr.size != 0
+        })
+        .map(|(id, hdr)| (id, hdr.fileoff..hdr.fileoff + hdr.size))
+        .collect();
+    let ranges: Vec<Range<u64>> = jobs.iter().map(|(_, range)| range.clone()).collect();
+    let slices = output_file::split_ranges(buf, &ranges);
+
+    let t = ctx.timer("copy_chunks");
+    jobs.par_iter().zip(slices).for_each(|(&(id, _), slice)| chunks::copy_buf(ctx, id, slice));
+    drop(t);
 }
 
 /// ld64's -print_statistics reports its phase times and memory to
