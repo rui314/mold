@@ -463,7 +463,7 @@ impl SyntheticSection {
         let (data, relocs) = match &self.kind {
             SyntheticKind::ObjcImageInfo => {
                 let mut data = vec![0u8; 8];
-                data[4..8].copy_from_slice(&targets.ctx.objc_imageinfo.flags.to_le_bytes());
+                crate::chunks::objc_imageinfo::copy_buf(targets.ctx, &mut data);
                 (data, Vec::new())
             }
             SyntheticKind::CompactUnwind(records) => compact_unwind_contents(targets, records),

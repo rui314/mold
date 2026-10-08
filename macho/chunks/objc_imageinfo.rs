@@ -28,6 +28,8 @@ impl Default for ObjcImageInfoSection {
     }
 }
 
+/// Writes the record: its version, 0, and the merged flags. A
+/// relocatable output's __objc_imageinfo is written so too.
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     buf[..4].copy_from_slice(&0u32.to_le_bytes());
     buf[4..8].copy_from_slice(&ctx.objc_imageinfo.flags.to_le_bytes());
