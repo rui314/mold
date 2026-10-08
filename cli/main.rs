@@ -17,9 +17,9 @@ type LinkFn = fn(Cmdline) -> LinkResult;
 // enabled target and switch to the matching function if the inputs differ.
 const TARGETS: &[(&str, LinkFn)] = &[
     #[cfg(feature = "arm64")]
-    ("arm64", mold_macho_target_arm64::link),
+    ("arm64", mold_macho_arm64::link),
     #[cfg(feature = "x86_64")]
-    ("x86_64", mold_macho_target_x86_64::link),
+    ("x86_64", mold_macho_x86_64::link),
 ];
 
 fn link_for_target(target: &str, cmdline: Cmdline) -> LinkResult {

@@ -218,28 +218,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "mold-macho-arm64"
+version = "0.1.0"
+dependencies = [
+ "mold-macho",
+]
+
+[[package]]
 name = "mold-macho-cli"
 version = "0.1.0"
 dependencies = [
  "mimalloc",
  "mold-macho",
- "mold-macho-target-arm64",
- "mold-macho-target-x86_64",
+ "mold-macho-arm64",
  "mold-macho-tests",
-]
-
-[[package]]
-name = "mold-macho-target-arm64"
-version = "0.1.0"
-dependencies = [
- "mold-macho",
-]
-
-[[package]]
-name = "mold-macho-target-x86_64"
-version = "0.1.0"
-dependencies = [
- "mold-macho",
+ "mold-macho-x86_64",
 ]
 
 [[package]]
@@ -248,6 +241,13 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "serde_json",
+]
+
+[[package]]
+name = "mold-macho-x86_64"
+version = "0.1.0"
+dependencies = [
+ "mold-macho",
 ]
 
 [[package]]

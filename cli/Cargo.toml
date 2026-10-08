@@ -17,8 +17,8 @@ harness = false
 [dependencies]
 mimalloc = { git = "https://github.com/rui314/mimalloc_rust", rev = "cc58b72775b8b5bc89ee37752af61fcb4f7c2909" }
 mold-macho.workspace = true
-mold-macho-target-arm64 = { path = "../arch/arm64", optional = true }
-mold-macho-target-x86_64 = { path = "../arch/x86_64", optional = true }
+mold-macho-arm64 = { path = "../arch/macho-arm64", optional = true }
+mold-macho-x86_64 = { path = "../arch/macho-x86_64", optional = true }
 
 [dev-dependencies]
 mold-macho-tests = { path = "../tests" }
@@ -28,5 +28,5 @@ mold-macho-tests = { path = "../tests" }
 [features]
 default = ["arm64", "x86_64"]
 system-allocator = []
-arm64 = ["dep:mold-macho-target-arm64"]
-x86_64 = ["dep:mold-macho-target-x86_64"]
+arm64 = ["dep:mold-macho-arm64"]
+x86_64 = ["dep:mold-macho-x86_64"]

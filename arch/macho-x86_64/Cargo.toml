@@ -1,8 +1,8 @@
 [package]
-name = "mold-macho-target-arm64"
+name = "mold-macho-x86_64"
 version.workspace = true
 edition.workspace = true
-description = "The mold Mach-O linker instantiated for arm64"
+description = "The mold Mach-O linker instantiated for x86_64"
 license.workspace = true
 
 [lib]
