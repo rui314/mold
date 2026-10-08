@@ -31,9 +31,11 @@ void *bar1(void) { return foo1; }
 void *bar2(void) { return foo2; }
 EOF
 
-# Some targets call a function in non-PIC code by its absolute address,
-# which makes the function address-taken. -fPIC avoids that.
-cat <<EOF | $CC -c -o $t/c.o -fPIC -xc -
+# c.o must not make foo3 address-taken. Some targets call a function in
+# non-PIC code by its absolute address, so we use -fPIC. Clang at -O0
+# lists all referenced functions, including foo3, in .llvm_addrsig, so we
+# use -O2.
+cat <<EOF | $CC -c -o $t/c.o -O2 -fPIC -xc -
 #include <stdio.h>
 
 int foo1(int);
