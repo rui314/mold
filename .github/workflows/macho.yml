@@ -34,7 +34,13 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - run: cargo test
+      # The unit tests, then the shell tests with twice the harness's
+      # default timeout, as mold's CI gives its slow configurations more:
+      # here the simulator's tests are slow, lldb's above all, whose lldb
+      # session alone takes ten seconds on a Mac, and the first of which
+      # ran past a minute on the hosted runners.
+      - run: cargo test --workspace --lib --bins
+      - run: cargo test -p mold-macho-cli --test integration -- --timeout 120
 
       # The harness reports only which tests failed; each test's log
       # and its output directory are kept under the target directory.
