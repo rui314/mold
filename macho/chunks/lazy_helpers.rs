@@ -78,6 +78,11 @@ impl LazyHelpersSection {
         hdr.flags = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
         Self { hdr, helpers: Vec::new(), sites: Default::default(), dyld_lazy_load: None }
     }
+
+    /// Returns the address of helper `i`.
+    pub fn helper_addr(&self, i: usize) -> u64 {
+        self.hdr.addr + self.helpers[i].offset as u64
+    }
 }
 
 impl Default for LazyHelpersSection {

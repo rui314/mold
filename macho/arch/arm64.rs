@@ -10,6 +10,7 @@ use crate::arch::{
 };
 use crate::chunks::delay_init::{DelayCode, DelayTarget, DelayUse};
 use crate::chunks::lazy_helpers::{LazyTarget, LazyUse};
+use crate::chunks::{delay_init, objc_stubs, stub_helper, stubs};
 use crate::context::Context;
 use crate::dtrace::SiteKind;
 use crate::input_files::{ObjectFile, isec_relocs_of};
@@ -836,8 +837,9 @@ impl Target for Arm64 {
 
     fn write_stubs(ctx: &Context<Self>, addr: u64, buf: &mut [u8]) {
         for (i, &sym) in ctx.stubs.symbols.iter().enumerate() {
-            let ent = &mut buf[i * 12..];
-            let ent_addr = addr + i as u64 * 12;
+            let off = stubs::entry_offset::<Self>(i as u32);
+            let ent = &mut buf[off as usize..];
+            let ent_addr = addr + off;
             let ptr_addr = ctx.stub_ptr_addr(i, sym);
             if !adrp_reaches(ptr_addr, ent_addr) {
                 crate::error!(
@@ -873,7 +875,7 @@ impl Target for Arm64 {
         // b header; .long offset.
         let lazy_offsets = &ctx.lazy_bind_info.offsets[..ctx.stubs.lazy.len()];
         for (i, &lazy_off) in lazy_offsets.iter().enumerate() {
-            let off = 24 + i * 12;
+            let off = stub_helper::entry_offset(ctx, i as u32) as usize;
             let ent_addr = addr + off as u64;
             write32(&mut buf[off..], 0x1800_0050);
             let rel = addr.wrapping_sub(ent_addr + 4) as i64 >> 2;
@@ -886,9 +888,10 @@ impl Target for Arm64 {
         if ctx.args.objc_stubs_small {
             let msgsend = ctx.branch_target_addr(ctx.objc_stubs.msgsend_sym.unwrap());
             for i in 0..ctx.objc_stubs.symbols.len() {
-                let ent = &mut buf[i * 12..];
-                let ent_addr = addr + i as u64 * 12;
-                let sel_addr = ctx.objc_selref_addr(i);
+                let off = objc_stubs::entry_offset(ctx, i as u32);
+                let ent = &mut buf[off as usize..];
+                let ent_addr = addr + off;
+                let sel_addr = ctx.objc_stubs.selref_addr(ctx, i);
 
                 // adrp x1, sel@PAGE; ldr x1, [x1, sel@PAGEOFF]
                 // b _objc_msgSend
@@ -902,9 +905,10 @@ impl Target for Arm64 {
 
         let msgsend_got = ctx.objc_msgsend_got_addr();
         for i in 0..ctx.objc_stubs.symbols.len() {
-            let ent = &mut buf[i * 32..];
-            let ent_addr = addr + i as u64 * 32;
-            let sel_addr = ctx.objc_selref_addr(i);
+            let off = objc_stubs::entry_offset(ctx, i as u32);
+            let ent = &mut buf[off as usize..];
+            let ent_addr = addr + off;
+            let sel_addr = ctx.objc_stubs.selref_addr(ctx, i);
 
             // adrp x1, sel@PAGE; ldr x1, [x1, sel@PAGEOFF]
             // adrp x16, _objc_msgSend@GOTPAGE; ldr x16, [...]; br x16
@@ -1011,10 +1015,10 @@ impl Target for Arm64 {
     // 1: adrp x16, slot@PAGE; ldr x16, [x16, slot@PAGEOFF]; br x16
     fn write_delay_stubs(ctx: &Context<Self>, addr: u64, buf: &mut [u8]) {
         for (i, stub) in ctx.delay_init.stubs.iter().enumerate() {
-            let off = i * Self::DELAY_STUB_SIZE as usize;
+            let off = delay_init::stub_offset::<Self>(i as u32) as usize;
             let insn = HelperInsn { base: addr + off as u64 };
             let flag = ctx.isec_addr(ctx.delay_init.dlopens[stub.dlopen as usize].flag as usize);
-            let helper = ctx.dlopen_helper_addr(stub.dlopen as usize);
+            let helper = ctx.delay_init.dlopen_helper_addr(stub.dlopen as usize);
             let slot = ctx.got.slot_addr(stub.got as usize);
             let code = [
                 insn.adrp(0, 16, flag),
@@ -1046,7 +1050,7 @@ impl Target for Arm64 {
             let DelayUse::Load { reg, site } = h.kind else { unreachable!() };
             let (insn, rd) = (HelperInsn { base: addr + h.offset as u64 }, reg as u32);
             let flag = ctx.isec_addr(delay.dlopens[h.dlopen as usize].flag as usize);
-            let helper = ctx.dlopen_helper_addr(h.dlopen as usize);
+            let helper = delay.dlopen_helper_addr(h.dlopen as usize);
             let slot = ctx.sym_got_addr(h.sym);
             let code = [
                 insn.adrp(0, rd, flag),

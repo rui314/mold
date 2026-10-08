@@ -41,6 +41,20 @@ impl Default for StubHelperSection {
     }
 }
 
+/// The size of __stub_helper's header, the code its entries jump to
+/// that enters dyld_stub_binder. Legacy LINKEDIT's entries go to
+/// crt1.o's dyld_stub_binding_helper instead, and its helper has no
+/// header.
+pub fn header_size<E: Target>(ctx: &Context<E>) -> u64 {
+    if ctx.args.legacy_linkedit { 0 } else { E::STUB_HELPER_HEADER_SIZE }
+}
+
+/// The offset in __stub_helper of the entry of lazily bound stub `idx`
+/// (an index into StubsSection::lazy), past the header.
+pub fn entry_offset<E: Target>(ctx: &Context<E>, idx: u32) -> u64 {
+    header_size(ctx) + idx as u64 * E::STUB_HELPER_ENTRY_SIZE
+}
+
 /// With lazy binding, the stub helper enters dyld through
 /// dyld_stub_binder (libSystem's): the symbol is bound from whichever
 /// loaded dylib exports it - or, where the image may look it up

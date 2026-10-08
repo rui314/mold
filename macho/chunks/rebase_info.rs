@@ -77,7 +77,7 @@ pub fn rebase_locations<E: Target>(ctx: &Context<E>) -> Vec<u64> {
     // Synthesized selector reference slots hold pointers into
     // __objc_methname.
     for i in 0..ctx.objc_stubs.symbols.len() + ctx.objc_stubs.extra_selrefs.len() {
-        locs.push(ctx.objc_selref_addr(i));
+        locs.push(ctx.objc_stubs.selref_addr(ctx, i));
     }
     // Pointer fields of the synthesized Objective-C records.
     for (addr, _) in data_blob_pointers(ctx) {

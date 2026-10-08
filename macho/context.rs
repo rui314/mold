@@ -382,21 +382,6 @@ impl<E: Target> Context<E> {
         isec.output_section().map_or(0, |id| self.chunk_header(id).sect_idx)
     }
 
-    /// Address of the selector reference slot `i` in the tail of the
-    /// __objc_selrefs output section: objc stub `i`'s, or past the
-    /// stubs, extra selector reference `i - stubs`.
-    pub fn objc_selref_addr(&self, i: usize) -> u64 {
-        let osec = self.output_section(self.objc_stubs.selrefs.unwrap());
-        osec.hdr.addr + osec.tail_off + i as u64 * 8
-    }
-
-    /// Address of the selector name string for objc stub `i`, in the
-    /// tail of the __objc_methname output section.
-    pub fn objc_methname_addr(&self, i: usize) -> u64 {
-        let osec = self.output_section(self.objc_stubs.methname.unwrap());
-        osec.hdr.addr + osec.tail_off + self.objc_stubs.methname_offs[i]
-    }
-
     /// The library ordinal as the chained-fixups import formats encode
     /// it in a `bits`-wide field: dylib ordinals as they are, the
     /// special ones as negative values in the field's two's complement,
@@ -643,8 +628,8 @@ impl<E: Target> Context<E> {
                 if let Some(isec) = sym.input_section().map(|i| i as usize) {
                     self.isec_addr(isec) + sym.value
                 } else if self.sym_aux(id).objc_stub_idx != crate::symbol::NO_IDX {
-                    self.objc_stubs.hdr.addr
-                        + self.sym_aux(id).objc_stub_idx as u64 * self.objc_stub_size()
+                    let idx = self.sym_aux(id).objc_stub_idx;
+                    self.objc_stubs.hdr.addr + crate::chunks::objc_stubs::entry_offset(self, idx)
                 } else {
                     sym.value
                 }
@@ -658,9 +643,9 @@ impl<E: Target> Context<E> {
                 if aux.stub_idx != crate::symbol::NO_IDX {
                     self.sym_stub_addr(id)
                 } else if aux.lazy_stub_idx != crate::symbol::NO_IDX {
-                    self.lazy_helper_addr(aux.lazy_stub_idx as usize)
+                    self.lazy_helpers.helper_addr(aux.lazy_stub_idx as usize)
                 } else if aux.delay_stub_idx != crate::symbol::NO_IDX {
-                    self.delay_stub_addr(aux.delay_stub_idx as usize)
+                    self.delay_init.stub_addr::<E>(aux.delay_stub_idx as usize)
                 } else {
                     0
                 }
@@ -668,34 +653,15 @@ impl<E: Target> Context<E> {
         }
     }
 
-    /// The size of one __objc_stubs entry.
+    /// The size of one __objc_stubs entry: see
+    /// chunks::objc_stubs::entry_size.
     pub fn objc_stub_size(&self) -> u64 {
-        if self.args.objc_stubs_small { E::OBJC_SMALL_STUB_SIZE } else { E::OBJC_STUB_SIZE }
+        crate::chunks::objc_stubs::entry_size(self)
     }
 
     /// Returns the address of a symbol's __stubs entry.
     pub fn sym_stub_addr(&self, id: SymbolId) -> u64 {
-        self.stubs.hdr.addr + self.sym_aux(id).stub_idx as u64 * E::STUB_SIZE
-    }
-
-    /// Returns the address of __lazy_helpers entry `i`.
-    pub fn lazy_helper_addr(&self, i: usize) -> u64 {
-        self.lazy_helpers.hdr.addr + self.lazy_helpers.helpers[i].offset as u64
-    }
-
-    /// Returns the address of __delay_stubs entry `i`.
-    pub fn delay_stub_addr(&self, i: usize) -> u64 {
-        self.delay_init.stubs_hdr.addr + i as u64 * E::DELAY_STUB_SIZE
-    }
-
-    /// Returns the address of __delay_helper's load helper `i`.
-    pub fn delay_helper_addr(&self, i: usize) -> u64 {
-        self.delay_init.helper_hdr.addr + self.delay_init.helpers[i].offset as u64
-    }
-
-    /// Returns the address of __delay_helper's dlopen helper `i`.
-    pub fn dlopen_helper_addr(&self, i: usize) -> u64 {
-        self.delay_init.helper_hdr.addr + self.delay_init.dlopens[i].offset as u64
+        self.stubs.hdr.addr + crate::chunks::stubs::entry_offset::<E>(self.sym_aux(id).stub_idx)
     }
 
     /// True for a symbol of a dylib whose initializers wait for the
@@ -734,12 +700,10 @@ impl<E: Target> Context<E> {
         }
     }
 
-    /// The size of __stub_helper's header, the code its entries jump to
-    /// that enters dyld_stub_binder. Legacy LINKEDIT's entries go to
-    /// crt1.o's dyld_stub_binding_helper instead, and its helper has no
-    /// header.
+    /// The size of __stub_helper's header: see
+    /// chunks::stub_helper::header_size.
     pub fn stub_helper_header_size(&self) -> u64 {
-        if self.args.legacy_linkedit { 0 } else { E::STUB_HELPER_HEADER_SIZE }
+        crate::chunks::stub_helper::header_size(self)
     }
 
     /// The address of the pointer slot stub `i` (for symbol `id`)
@@ -749,7 +713,7 @@ impl<E: Target> Context<E> {
     pub fn stub_ptr_addr(&self, i: usize, id: SymbolId) -> u64 {
         if self.args.lazy_binding && !self.binds_weak_lookup(id) {
             let slot = self.stubs.lazy.binary_search(&(i as u32)).unwrap();
-            self.lazy_ptrs.hdr.addr + slot as u64 * 8
+            self.lazy_ptrs.slot_addr(slot)
         } else {
             self.sym_got_addr(id)
         }

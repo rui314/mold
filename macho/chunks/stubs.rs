@@ -33,6 +33,11 @@ impl Default for StubsSection {
     }
 }
 
+/// The offset of stub `idx` in __stubs.
+pub fn entry_offset<E: Target>(idx: u32) -> u64 {
+    idx as u64 * E::STUB_SIZE
+}
+
 /// Gives a symbol a stub, unless it has one, and the stub what it jumps
 /// through: the symbol's lazy pointer, which the stub helper fills in,
 /// or, without lazy binding, its GOT slot. A symbol dyld resolves by

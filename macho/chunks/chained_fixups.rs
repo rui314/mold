@@ -460,7 +460,7 @@ fn collect_fixups<E: Target>(ctx: &Context<E>) -> (Vec<Fixup>, Vec<(u32, u64)>) 
         fixups.push((slot, sym, 0));
     }
     for i in 0..ctx.objc_stubs.symbols.len() + ctx.objc_stubs.extra_selrefs.len() {
-        let slot = ctx.objc_selref_addr(i);
+        let slot = ctx.objc_stubs.selref_addr(ctx, i);
         fixups.push((slot, None, 0));
     }
     for (addr, _) in rebase_info::data_blob_pointers(ctx) {

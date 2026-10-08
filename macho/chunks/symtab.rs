@@ -706,7 +706,7 @@ fn linker_locals<E: Target>(ctx: &Context<E>) -> Vec<NamedEntry> {
     // NetNewsWire's debug dylib has 851 _objc_msgSend$... entries.
     let hdr = &ctx.objc_stubs.hdr;
     for (i, &(sym, _)) in ctx.objc_stubs.symbols.iter().enumerate() {
-        let addr = hdr.addr + i as u64 * ctx.objc_stub_size();
+        let addr = hdr.addr + crate::chunks::objc_stubs::entry_offset(ctx, i as u32);
         let ent = MachSym { n_type: N_PEXT | N_SECT, ..local_msym(hdr.sect_idx, addr) };
         ents.push((ctx.symbols[sym].name(), ent, None));
     }
@@ -714,7 +714,7 @@ fn linker_locals<E: Target>(ctx: &Context<E>) -> Vec<NamedEntry> {
     // with N_PEXT set - and slots.
     let hdr = &ctx.lazy_helpers.hdr;
     for (i, h) in ctx.lazy_helpers.helpers.iter().enumerate() {
-        let addr = ctx.lazy_helper_addr(i);
+        let addr = ctx.lazy_helpers.helper_addr(i);
         let n_type = match h.kind {
             crate::chunks::lazy_helpers::LazyUse::Call => N_PEXT | N_SECT,
             _ => N_SECT,
@@ -724,24 +724,24 @@ fn linker_locals<E: Target>(ctx: &Context<E>) -> Vec<NamedEntry> {
     }
     let hdr = &ctx.lazy_load_got.hdr;
     for (i, &(_, name)) in ctx.lazy_load_got.slots.iter().enumerate() {
-        let addr = hdr.addr + i as u64 * 8;
+        let addr = ctx.lazy_load_got.slot_addr(i as u32);
         ents.push((name, local_msym(hdr.sect_idx, addr), None));
     }
     // The delay-init stubs, like selector stubs with N_PEXT set, and
     // the helpers. (The dlopen helpers' flags are extra_local_syms.)
     let delay = &ctx.delay_init;
     for (i, stub) in delay.stubs.iter().enumerate() {
-        let addr = ctx.delay_stub_addr(i);
+        let addr = delay.stub_addr::<E>(i);
         let ent = MachSym { n_type: N_PEXT | N_SECT, ..local_msym(delay.stubs_hdr.sect_idx, addr) };
         ents.push((stub.name, ent, None));
     }
     let sect = delay.helper_hdr.sect_idx;
     for (i, h) in delay.helpers.iter().enumerate() {
-        let addr = ctx.delay_helper_addr(i);
+        let addr = delay.helper_addr(i);
         ents.push((h.name, local_msym(sect, addr), None));
     }
     for (i, d) in delay.dlopens.iter().enumerate() {
-        let addr = ctx.dlopen_helper_addr(i);
+        let addr = delay.dlopen_helper_addr(i);
         ents.push((d.name, local_msym(sect, addr), None));
     }
     // The range-extension thunks' entries, named as ld-prime names

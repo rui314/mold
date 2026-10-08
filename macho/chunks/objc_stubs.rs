@@ -50,12 +50,30 @@ impl ObjcStubsSection {
             msgsend_sym: None,
         }
     }
+
+    /// Address of the selector reference slot `i` in the tail of the
+    /// __objc_selrefs output section: objc stub `i`'s, or past the
+    /// stubs, extra selector reference `i - stubs`.
+    pub fn selref_addr<E: Target>(&self, ctx: &Context<E>, i: usize) -> u64 {
+        let osec = ctx.output_section(self.selrefs.unwrap());
+        osec.hdr.addr + osec.tail_off + i as u64 * 8
+    }
 }
 
 impl Default for ObjcStubsSection {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// The size of one __objc_stubs entry.
+pub fn entry_size<E: Target>(ctx: &Context<E>) -> u64 {
+    if ctx.args.objc_stubs_small { E::OBJC_SMALL_STUB_SIZE } else { E::OBJC_STUB_SIZE }
+}
+
+/// The offset of objc stub `idx` in __objc_stubs.
+pub fn entry_offset<E: Target>(ctx: &Context<E>, idx: u32) -> u64 {
+    idx as u64 * entry_size(ctx)
 }
 
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {

@@ -130,12 +130,32 @@ impl DelayInit {
             dlopen_sym: None,
         }
     }
+
+    /// Returns the address of __delay_stubs entry `i`.
+    pub fn stub_addr<E: Target>(&self, i: usize) -> u64 {
+        self.stubs_hdr.addr + stub_offset::<E>(i as u32)
+    }
+
+    /// Returns the address of __delay_helper's load helper `i`.
+    pub fn helper_addr(&self, i: usize) -> u64 {
+        self.helper_hdr.addr + self.helpers[i].offset as u64
+    }
+
+    /// Returns the address of __delay_helper's dlopen helper `i`.
+    pub fn dlopen_helper_addr(&self, i: usize) -> u64 {
+        self.helper_hdr.addr + self.dlopens[i].offset as u64
+    }
 }
 
 impl Default for DelayInit {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// The offset of stub `idx` in __delay_stubs.
+pub fn stub_offset<E: Target>(idx: u32) -> u64 {
+    idx as u64 * E::DELAY_STUB_SIZE
 }
 
 pub fn copy_stubs<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {

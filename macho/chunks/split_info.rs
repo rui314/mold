@@ -21,7 +21,7 @@ use rayon::prelude::*;
 
 use crate::arch::{SplitRef, Target};
 use crate::chunks::init_offsets::InitFunc;
-use crate::chunks::{ChunkHeader, ChunkId};
+use crate::chunks::{ChunkHeader, ChunkId, delay_init, objc_stubs, stub_helper, stubs};
 use crate::context::Context;
 use crate::input_files::FileId;
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
@@ -203,6 +203,12 @@ impl<'a, E: Target> Places<'a, E> {
         (hdr.sect_idx, hdr.addr - self.starts[hdr.sect_idx as usize] + off)
     }
 
+    /// Where address `addr`, in chunk `id`, lies.
+    fn chunk_addr(&self, id: ChunkId, addr: u64) -> Place {
+        let hdr = self.ctx.chunk_header(id);
+        (hdr.sect_idx, addr - self.starts[hdr.sect_idx as usize])
+    }
+
     /// Where a subsection lies, if it is laid out.
     fn isec(&self, id: usize) -> Option<Place> {
         let isec = &self.ctx.isecs[self.ctx.resolve_isec(id)];
@@ -223,21 +229,17 @@ impl<'a, E: Target> Places<'a, E> {
                 Some(self.lazy_helper(aux.lazy_stub_idx))
             }
             FileId::Dylib(_) if aux.delay_stub_idx != NO_IDX => Some(
-                self.chunk(ChunkId::DelayStubs, aux.delay_stub_idx as u64 * E::DELAY_STUB_SIZE),
+                self.chunk(ChunkId::DelayStubs, delay_init::stub_offset::<E>(aux.delay_stub_idx)),
             ),
             FileId::Dylib(_) => (aux.stub_idx != NO_IDX)
-                .then(|| self.chunk(ChunkId::Stubs, aux.stub_idx as u64 * E::STUB_SIZE)),
+                .then(|| self.chunk(ChunkId::Stubs, stubs::entry_offset::<E>(aux.stub_idx))),
             FileId::Obj(obj) => {
                 if let Some(isec) = sym.input_section() {
                     let (n, off) = self.isec(isec as usize)?;
                     Some((n, off + sym.value))
                 } else if aux.objc_stub_idx != NO_IDX {
-                    Some(
-                        self.chunk(
-                            ChunkId::ObjcStubs,
-                            aux.objc_stub_idx as u64 * ctx.objc_stub_size(),
-                        ),
-                    )
+                    let off = objc_stubs::entry_offset(ctx, aux.objc_stub_idx);
+                    Some(self.chunk(ChunkId::ObjcStubs, off))
                 } else if ctx.is_internal(obj as usize) {
                     let header = (0, sym.value.wrapping_sub(self.header_addr));
                     Some(self.boundaries.get(&id).copied().unwrap_or(header))
@@ -258,19 +260,19 @@ impl<'a, E: Target> Places<'a, E> {
     fn got_slot(&self, id: SymbolId) -> Place {
         let aux = self.ctx.sym_aux(id);
         if aux.got_idx == NO_IDX && aux.lazy_got_idx != NO_IDX {
-            return self.chunk(ChunkId::LazyLoadGot, aux.lazy_got_idx as u64 * 8);
+            let addr = self.ctx.lazy_load_got.slot_addr(aux.lazy_got_idx);
+            return self.chunk_addr(ChunkId::LazyLoadGot, addr);
         }
         self.got_index(aux.got_idx as usize)
     }
 
     /// Where __lazy_helpers entry `i` lies.
     fn lazy_helper(&self, i: u32) -> Place {
-        let offset = self.ctx.lazy_helpers.helpers[i as usize].offset;
-        self.chunk(ChunkId::LazyHelpers, offset as u64)
+        self.chunk_addr(ChunkId::LazyHelpers, self.ctx.lazy_helpers.helper_addr(i as usize))
     }
 
     fn got_index(&self, i: usize) -> Place {
-        self.chunk(ChunkId::Got, i as u64 * 8)
+        self.chunk_addr(ChunkId::Got, self.ctx.got.slot_addr(i))
     }
 
     /// The place of an image offset (in __unwind_info): the section it
@@ -304,7 +306,7 @@ impl<'a, E: Target> Places<'a, E> {
         if r.is_func_call::<E>() {
             let stub = ctx.sym_aux(id).stub_idx;
             if ctx.is_interposable(id) && stub != NO_IDX {
-                return Some(self.chunk(ChunkId::Stubs, stub as u64 * E::STUB_SIZE));
+                return Some(self.chunk(ChunkId::Stubs, stubs::entry_offset::<E>(stub)));
             }
             let (n, off) = self.sym(id)?;
             return Some((n, off.wrapping_add_signed(addend)));
@@ -396,21 +398,20 @@ impl<'a, E: Target> Places<'a, E> {
             for (i, &id) in ctx.stubs.symbols.iter().enumerate() {
                 let slot = if ctx.args.lazy_binding && !ctx.binds_weak_lookup(id) {
                     let lazy = ctx.stubs.lazy.binary_search(&(i as u32)).unwrap();
-                    self.chunk(ChunkId::LazyPtrs, lazy as u64 * 8)
+                    self.chunk_addr(ChunkId::LazyPtrs, ctx.lazy_ptrs.slot_addr(lazy))
                 } else {
                     self.got_slot(id)
                 };
-                let from = self.chunk(ChunkId::Stubs, i as u64 * E::STUB_SIZE + E::STUB_REF_OFF);
-                self.pcrel(out, from, Some(slot));
+                let off = stubs::entry_offset::<E>(i as u32) + E::STUB_REF_OFF;
+                self.pcrel(out, self.chunk(ChunkId::Stubs, off), Some(slot));
             }
         }
         if has(ChunkId::LazyPtrs) {
-            for i in 0..ctx.stubs.lazy.len() as u64 {
-                let helper = E::STUB_HELPER_HEADER_SIZE + i * E::STUB_HELPER_ENTRY_SIZE;
-                let to = self.chunk(ChunkId::StubHelper, helper);
+            for i in 0..ctx.stubs.lazy.len() {
+                let to = self.chunk(ChunkId::StubHelper, stub_helper::entry_offset(ctx, i as u32));
                 push(
                     out,
-                    self.chunk(ChunkId::LazyPtrs, i * 8),
+                    self.chunk_addr(ChunkId::LazyPtrs, ctx.lazy_ptrs.slot_addr(i)),
                     DYLD_CACHE_ADJ_V2_POINTER_64,
                     Some(to),
                 );
@@ -447,13 +448,16 @@ impl<'a, E: Target> Places<'a, E> {
         let lazy = &ctx.lazy_helpers;
         let Some(lazy_load) = lazy.dyld_lazy_load else { return };
         let stub =
-            self.chunk(ChunkId::Stubs, ctx.sym_aux(lazy_load).stub_idx as u64 * E::STUB_SIZE);
+            self.chunk(ChunkId::Stubs, stubs::entry_offset::<E>(ctx.sym_aux(lazy_load).stub_idx));
         for (i, h) in lazy.helpers.iter().enumerate() {
             let (n, at) = self.lazy_helper(i as u32);
             for (off, kind, to) in E::lazy_helper_refs(h.kind) {
                 let to = match to {
                     LazyTarget::Flag => self.isec(h.flag as usize),
-                    LazyTarget::Slot => Some(self.chunk(ChunkId::LazyLoadGot, h.slot as u64 * 8)),
+                    LazyTarget::Slot => {
+                        let slot = ctx.lazy_load_got.slot_addr(h.slot);
+                        Some(self.chunk_addr(ChunkId::LazyLoadGot, slot))
+                    }
                     LazyTarget::Header => Some((0, 0)),
                     LazyTarget::LazyLoad => Some(stub),
                     LazyTarget::Site => match h.kind {
@@ -470,8 +474,7 @@ impl<'a, E: Target> Places<'a, E> {
 
     /// Where __delay_helper's load helper `i` lies.
     fn delay_helper(&self, i: usize) -> Place {
-        let offset = self.ctx.delay_init.helpers[i].offset;
-        self.chunk(ChunkId::DelayHelper, offset as u64)
+        self.chunk_addr(ChunkId::DelayHelper, self.ctx.delay_init.helper_addr(i))
     }
 
     /// The delay-init stubs' and helpers' references to other sections
@@ -481,9 +484,9 @@ impl<'a, E: Target> Places<'a, E> {
         let ctx = self.ctx;
         let delay = &ctx.delay_init;
         let Some(dlopen) = delay.dlopen_sym else { return };
-        let dlopen_stub = ctx.sym_aux(dlopen).stub_idx as u64 * E::STUB_SIZE;
+        let dlopen_stub = stubs::entry_offset::<E>(ctx.sym_aux(dlopen).stub_idx);
         let dlopen_helper =
-            |i: u32| self.chunk(ChunkId::DelayHelper, delay.dlopens[i as usize].offset as u64);
+            |i: u32| self.chunk_addr(ChunkId::DelayHelper, delay.dlopen_helper_addr(i as usize));
         let mut push_refs = |from: Place, code: DelayCode, resolve: &dyn Fn(DelayTarget) -> _| {
             for (off, kind, to) in E::delay_refs(code) {
                 let from = (from.0, from.1 + off as u64);
@@ -494,7 +497,7 @@ impl<'a, E: Target> Places<'a, E> {
             }
         };
         for (i, stub) in delay.stubs.iter().enumerate() {
-            let from = self.chunk(ChunkId::DelayStubs, i as u64 * E::DELAY_STUB_SIZE);
+            let from = self.chunk(ChunkId::DelayStubs, delay_init::stub_offset::<E>(i as u32));
             let flag = delay.dlopens[stub.dlopen as usize].flag;
             push_refs(from, DelayCode::Stub, &|to| match to {
                 DelayTarget::Flag => self.isec(flag as usize),
@@ -555,7 +558,7 @@ impl<'a, E: Target> Places<'a, E> {
             let [sel, msgsend] = E::OBJC_STUB_REF_OFFS;
             let msgsend_slot = self.got_slot(stubs.msgsend_sym.unwrap());
             for i in 0..stubs.symbols.len() {
-                let at = i as u64 * ctx.objc_stub_size();
+                let at = objc_stubs::entry_offset(ctx, i as u32);
                 self.pcrel(out, self.chunk(ChunkId::ObjcStubs, at + sel), Some(self.selref(i)));
                 self.pcrel(out, self.chunk(ChunkId::ObjcStubs, at + msgsend), Some(msgsend_slot));
             }

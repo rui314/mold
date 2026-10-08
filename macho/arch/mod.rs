@@ -343,14 +343,14 @@ pub fn load_helper<E: Target>(ctx: &Context<E>, isec: usize, r: &Reloc) -> Optio
         && let Some(&i) = lazy.sites.get(&site)
     {
         let own = matches!(lazy.helpers[i as usize].kind, LazyUse::Load { site: Some(_), .. });
-        return Some((ctx.lazy_helper_addr(i as usize), own));
+        return Some((lazy.helper_addr(i as usize), own));
     }
     let delay = &ctx.delay_init;
     if !delay.sites.is_empty()
         && let Some(&i) = delay.sites.get(&site)
     {
         let own = matches!(delay.helpers[i as usize].kind, DelayUse::Load { site: Some(_), .. });
-        return Some((ctx.delay_helper_addr(i as usize), own));
+        return Some((delay.helper_addr(i as usize), own));
     }
     None
 }

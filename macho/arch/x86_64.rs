@@ -7,6 +7,7 @@ use crate::arch::{
 };
 use crate::chunks::delay_init::{DelayCode, DelayTarget, DelayUse};
 use crate::chunks::lazy_helpers::{LazyTarget, LazyUse};
+use crate::chunks::{delay_init, objc_stubs, stub_helper, stubs};
 use crate::context::Context;
 use crate::dtrace::SiteKind;
 use crate::input_files::isec_relocs_of;
@@ -24,7 +25,7 @@ pub struct X86_64;
 /// dlopen helper; pop %rbp; 1:
 fn write_delay_check(ctx: &Context<X86_64>, ent: &mut [u8], base: u64, dlopen: u32) {
     let flag = ctx.isec_addr(ctx.delay_init.dlopens[dlopen as usize].flag as usize);
-    let helper = ctx.dlopen_helper_addr(dlopen as usize);
+    let helper = ctx.delay_init.dlopen_helper_addr(dlopen as usize);
     ent[..19].copy_from_slice(&[
         0x83, 0x3d, 0, 0, 0, 0, 0, 0x75, 0x0a, 0x55, 0x48, 0x89, 0xe5, 0xe8, 0, 0, 0, 0, 0x5d,
     ]);
@@ -175,9 +176,10 @@ fn write_legacy_stub_helper(ctx: &Context<X86_64>, addr: u64, buf: &mut [u8]) {
         crate::error!("stub helper: target 'dyld_stub_binding_helper' does not have address");
     }
     for i in 0..ctx.stubs.lazy.len() {
-        let ent = &mut buf[i * 12..];
-        let ent_addr = addr + i as u64 * 12;
-        let ptr = ctx.lazy_ptrs.hdr.addr + i as u64 * 8;
+        let off = stub_helper::entry_offset(ctx, i as u32);
+        let ent = &mut buf[off as usize..];
+        let ent_addr = addr + off;
+        let ptr = ctx.lazy_ptrs.slot_addr(i);
         ent[0..3].copy_from_slice(&[0x4c, 0x8d, 0x1d]);
         write32(&mut ent[3..], ptr.wrapping_sub(ent_addr + 7) as u32);
         ent[7] = 0xe9;
@@ -251,8 +253,9 @@ impl Target for X86_64 {
 
     fn write_stubs(ctx: &Context<Self>, addr: u64, buf: &mut [u8]) {
         for (i, &sym) in ctx.stubs.symbols.iter().enumerate() {
-            let ent = &mut buf[i * 6..];
-            let ent_addr = addr + i as u64 * 6;
+            let off = stubs::entry_offset::<Self>(i as u32);
+            let ent = &mut buf[off as usize..];
+            let ent_addr = addr + off;
             let ptr_addr = ctx.stub_ptr_addr(i, sym);
             let disp = ptr_addr.wrapping_sub(ent_addr + 6) as i64;
             if i32::try_from(disp).is_err() {
@@ -292,8 +295,7 @@ impl Target for X86_64 {
         // Each entry: push $offset; jmp header; the zero padding.
         let lazy_offsets = &ctx.lazy_bind_info.offsets[..ctx.stubs.lazy.len()];
         for (i, &lazy_off) in lazy_offsets.iter().enumerate() {
-            let off =
-                (Self::STUB_HELPER_HEADER_SIZE + i as u64 * Self::STUB_HELPER_ENTRY_SIZE) as usize;
+            let off = stub_helper::entry_offset(ctx, i as u32) as usize;
             let ent_addr = addr + off as u64;
             buf[off] = 0x68;
             write32(&mut buf[off + 1..], lazy_off);
@@ -307,9 +309,10 @@ impl Target for X86_64 {
         let msgsend_got = ctx.objc_msgsend_got_addr();
 
         for i in 0..ctx.objc_stubs.symbols.len() {
-            let ent = &mut buf[i * 13..];
-            let ent_addr = addr + i as u64 * 13;
-            let sel_addr = ctx.objc_selref_addr(i);
+            let off = objc_stubs::entry_offset(ctx, i as u32);
+            let ent = &mut buf[off as usize..];
+            let ent_addr = addr + off;
+            let sel_addr = ctx.objc_stubs.selref_addr(ctx, i);
 
             // mov sel(%rip), %rsi; jmp *_objc_msgSend@GOT(%rip), packed
             // back to back as ld-prime lays them out.
@@ -382,7 +385,7 @@ impl Target for X86_64 {
     // 1: jmp *slot(%rip)
     fn write_delay_stubs(ctx: &Context<Self>, addr: u64, buf: &mut [u8]) {
         for (i, stub) in ctx.delay_init.stubs.iter().enumerate() {
-            let at = i * Self::DELAY_STUB_SIZE as usize;
+            let at = delay_init::stub_offset::<Self>(i as u32) as usize;
             let ent = &mut buf[at..at + Self::DELAY_STUB_SIZE as usize];
             let base = addr + at as u64;
             write_delay_check(ctx, ent, base, stub.dlopen);

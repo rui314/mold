@@ -20,6 +20,10 @@ impl LazyPtrsSection {
         hdr.p2align = 3;
         Self { hdr }
     }
+
+    pub fn slot_addr(&self, i: usize) -> u64 {
+        self.hdr.addr + i as u64 * 8
+    }
 }
 
 impl Default for LazyPtrsSection {
@@ -30,9 +34,9 @@ impl Default for LazyPtrsSection {
 
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     // Each lazy pointer starts at its stub helper entry.
-    let helper = ctx.stub_helper.hdr.addr + ctx.stub_helper_header_size();
+    let helper = ctx.stub_helper.hdr.addr;
     for i in 0..ctx.stubs.lazy.len() {
-        let val = helper + i as u64 * E::STUB_HELPER_ENTRY_SIZE;
+        let val = helper + crate::chunks::stub_helper::entry_offset(ctx, i as u32);
         buf[i * 8..i * 8 + 8].copy_from_slice(&val.to_le_bytes());
     }
 }

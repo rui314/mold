@@ -166,7 +166,9 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]
         Tail::ObjcSelrefs => {
             let stubs = &ctx.objc_stubs;
             for i in 0..stubs.symbols.len() {
-                let val = ctx.objc_methname_addr(i);
+                // Its selector's name, in the tail of __objc_methname.
+                let methname = ctx.output_section(stubs.methname.unwrap());
+                let val = methname.hdr.addr + methname.tail_off + stubs.methname_offs[i];
                 tail[i * 8..i * 8 + 8].copy_from_slice(&val.to_le_bytes());
             }
             let n = stubs.symbols.len();

@@ -108,7 +108,7 @@ pub fn objc_ref_addr<E: Target>(ctx: &Context<E>, r: ObjcRef) -> u64 {
     match r {
         ObjcRef::Isec(isec, off) => ctx.isec_addr(isec as usize) + off,
         ObjcRef::Sym(id, addend) => (ctx.sym_addr(id) as i64 + addend) as u64,
-        ObjcRef::TailSelref(n) => ctx.objc_selref_addr(n),
+        ObjcRef::TailSelref(n) => ctx.objc_stubs.selref_addr(ctx, n),
         ObjcRef::Null => 0,
     }
 }
