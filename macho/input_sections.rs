@@ -87,8 +87,9 @@ pub struct Reloc {
 // A Reloc is the size of an ELF RELA entry, which mold reads from
 // the mapping without materializing anything; Mach-O needs the record
 // processed (ADDEND fusion, SUBTRACTOR pairing, subsection rebasing),
-// so this is the form that processing produces.
-const _: () = assert!(std::mem::size_of::<Reloc>() == 24);
+// so this is the form that processing produces. It can be smaller on
+// 32-bit hosts, as i386 aligns i64 to 4 bytes.
+const _: () = assert!(std::mem::size_of::<Reloc>() <= 24);
 
 const TARGET_SECTION: u32 = 1 << 31;
 
