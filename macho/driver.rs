@@ -250,6 +250,8 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     chunks::stub_helper::resolve_stub_binder(&mut ctx);
     crate::lazy_load::bind_dyld_lazy_load(&mut ctx);
     timed!("dead_strip_dylibs", passes::dead_strip_dylibs(&mut ctx));
+    passes::check_shared_cache_deps(&ctx);
+    passes::check_libsystem_linked(&ctx);
     passes::bind_private_reexports_to_image(&mut ctx);
     passes::check_weak_assertions(&ctx);
     crate::error::checkpoint();

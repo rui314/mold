@@ -2137,32 +2137,6 @@ pub fn check_weak_assertions<E: Target>(ctx: &Context<E>) {
     error!("{}", raw(&msg));
 }
 
-/// An image bound for the dyld shared cache may link only libraries
-/// that are in it too, since the cache builder binds every dependency
-/// inside the cache. ld-prime rejects the first dylib in load-command
-/// order installed anywhere else (@rpath, /usr/local, /Library, ...);
-/// one that -dead_strip_dylibs drops doesn't count.
-fn check_shared_cache_deps<E: Target>(ctx: &Context<E>) {
-    if !ctx.args.shared_region {
-        return;
-    }
-    if let Some(dylib) = ctx
-        .dylibs
-        .iter()
-        .filter(|d| !d.is_bundle_loader && !d.is_lazy)
-        .filter(|d| !crate::cmdline::in_shared_cache_path(&d.install_name, ctx.args.platform))
-        .min_by_key(|d| d.dylib_idx)
-    {
-        error!(
-            "Shared cache eligible dylib cannot link to ineligible dylib '{}'.  Remove link to \
-             ineligible dylib, fix its eligibility, or opt out of the shared cache using the \
-             build setting 'LD_SHARED_CACHE_ELIGIBLE=NO' (or linker flag \
-             '-not_for_dyld_shared_cache')",
-            raw(&dylib.install_name)
-        );
-    }
-}
-
 /// Warns about each dylib the command line links that nothing binds
 /// to, under -warn_unused_dylibs, which a dylib bound for the dyld
 /// shared cache gets by default (see Args::warn_unused_dylibs). A
@@ -2353,8 +2327,6 @@ pub fn dead_strip_dylibs<E: Target>(ctx: &mut Context<E>) {
             }
         }
     }
-    check_shared_cache_deps(ctx);
-    check_libsystem_linked(ctx);
 }
 
 /// Drops the dylibs not `used`, and points what refers to a dylib - a
@@ -2389,21 +2361,29 @@ fn remove_unused_dylibs<E: Target>(ctx: &mut Context<E>, used: &[bool], twins: &
     }
 }
 
-/// Has the imports from the libraries this image re-exports from
-/// locations that aren't public bind to the image itself, where there
-/// are two or more such libraries, as ld64 and ld-prime do (see
-/// DylibFile::binds_to_image). A public location is no such one under
-/// -no_implicit_dylibs, as for the libraries a dylib re-exports (see
-/// input_files::is_public_location).
-pub fn bind_private_reexports_to_image<E: Target>(ctx: &mut Context<E>) {
-    let no_implicit = ctx.args.no_implicit_dylibs;
-    let private = |d: &input_files::DylibFile| {
-        d.is_reexported && (no_implicit || !input_files::is_public_location(&d.install_name))
-    };
-    if ctx.dylibs.iter().filter(|d| private(d)).count() >= 2 {
-        for dylib in ctx.dylibs.iter_mut().filter(|d| private(d)) {
-            dylib.binds_to_image = true;
-        }
+/// An image bound for the dyld shared cache may link only libraries
+/// that are in it too, since the cache builder binds every dependency
+/// inside the cache. ld-prime rejects the first dylib in load-command
+/// order installed anywhere else (@rpath, /usr/local, /Library, ...);
+/// one that -dead_strip_dylibs drops doesn't count.
+pub fn check_shared_cache_deps<E: Target>(ctx: &Context<E>) {
+    if !ctx.args.shared_region {
+        return;
+    }
+    if let Some(dylib) = ctx
+        .dylibs
+        .iter()
+        .filter(|d| !d.is_bundle_loader && !d.is_lazy)
+        .filter(|d| !crate::cmdline::in_shared_cache_path(&d.install_name, ctx.args.platform))
+        .min_by_key(|d| d.dylib_idx)
+    {
+        error!(
+            "Shared cache eligible dylib cannot link to ineligible dylib '{}'.  Remove link to \
+             ineligible dylib, fix its eligibility, or opt out of the shared cache using the \
+             build setting 'LD_SHARED_CACHE_ELIGIBLE=NO' (or linker flag \
+             '-not_for_dyld_shared_cache')",
+            raw(&dylib.install_name)
+        );
     }
 }
 
@@ -2416,7 +2396,7 @@ pub fn bind_private_reexports_to_image<E: Target>(ctx: &mut Context<E>) {
 /// lets off libsystem_kernel, which libSystem is built on, and any link
 /// with an exit-asm.o (a stopgap for rdar://39514191). Firmware has no
 /// libSystem to link.
-fn check_libsystem_linked<E: Target>(ctx: &Context<E>) {
+pub fn check_libsystem_linked<E: Target>(ctx: &Context<E>) {
     if ctx.args.platform == crate::macho::PLATFORM_FIRMWARE {
         return;
     }
@@ -2437,6 +2417,24 @@ fn check_libsystem_linked<E: Target>(ctx: &Context<E>) {
         return;
     }
     fatal!("dynamic executables or dylibs must link with libSystem.dylib");
+}
+
+/// Has the imports from the libraries this image re-exports from
+/// locations that aren't public bind to the image itself, where there
+/// are two or more such libraries, as ld64 and ld-prime do (see
+/// DylibFile::binds_to_image). A public location is no such one under
+/// -no_implicit_dylibs, as for the libraries a dylib re-exports (see
+/// input_files::is_public_location).
+pub fn bind_private_reexports_to_image<E: Target>(ctx: &mut Context<E>) {
+    let no_implicit = ctx.args.no_implicit_dylibs;
+    let private = |d: &input_files::DylibFile| {
+        d.is_reexported && (no_implicit || !input_files::is_public_location(&d.install_name))
+    };
+    if ctx.dylibs.iter().filter(|d| private(d)).count() >= 2 {
+        for dylib in ctx.dylibs.iter_mut().filter(|d| private(d)) {
+            dylib.binds_to_image = true;
+        }
+    }
 }
 
 /// Sets the address-taken bit of every subsection whose address the
