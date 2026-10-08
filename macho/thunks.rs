@@ -35,13 +35,13 @@
 
 use rayon::prelude::*;
 
+use crate::arch::Target;
 use crate::chunks::{self, ChunkId, OutputSectionId};
 use crate::context::Context;
 use crate::input_files::FileId;
 use crate::input_sections::InputSectionId;
 use crate::macho::{S_ATTR_PURE_INSTRUCTIONS, S_ATTR_SOME_INSTRUCTIONS};
 use crate::symbol::{NO_IDX, SymbolId};
-use crate::target::Target;
 use crate::util::align_to;
 
 /// We create a thunk for each 10 MiB batch of code (mold: 32 MiB).

@@ -13,6 +13,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use rayon::prelude::*;
 
+use crate::arch::Target;
 use crate::chunks::init_offsets::InitFunc;
 use crate::context::Context;
 use crate::error::{RawPath, notice, raw};
@@ -20,7 +21,6 @@ use crate::input_files::{FileId, is_literal_section};
 use crate::input_sections::{InputSection, RelocTarget};
 use crate::macho::*;
 use crate::symbol::{Symbol, SymbolId};
-use crate::target::Target;
 
 /// Strips dead code (see Context::strips_dead_code) and refreshes which
 /// symbols live code uses.

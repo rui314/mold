@@ -9,13 +9,13 @@ use std::path::{Path, PathBuf};
 use rayon::prelude::*;
 use serde_json::{Value, json};
 
+use crate::arch::Target;
 use crate::chunks::{ChunkHeader, ChunkId, OutputSectionId};
 use crate::context::Context;
 use crate::error::RawPath;
 use crate::input_files::{DylibFile, FileId, NameSource};
 use crate::macho::*;
 use crate::symbol::SymbolId;
-use crate::target::Target;
 use crate::util::path_bytes;
 
 /// The API list -sdk_imports_api_list names: its version goes into the

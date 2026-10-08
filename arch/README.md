@@ -7,6 +7,6 @@ long serial compilation step. A directory is named after its crate without
 the `mold-` prefix, e.g. `macho-arm64` holds `mold-macho-arm64`.
 
 The shared linker implementation lives in [`macho/`](../macho/), with
-target-specific code in [`macho/target/`](../macho/target/). These crates
+target-specific code in [`macho/arch/`](../macho/arch/). These crates
 provide entry points that the [`cli/`](../cli/) executable selects for the
 input files' target.

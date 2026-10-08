@@ -2,10 +2,10 @@
 //! constants), so disassemblers and the signature verifier can treat them
 //! as bytes.
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::input_sections::InputSection;
-use crate::target::Target;
 
 /// LC_DATA_IN_CODE: ranges inside __text that hold data (jump tables,
 /// inline constants), so disassemblers and the signature verifier can

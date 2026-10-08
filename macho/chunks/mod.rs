@@ -45,12 +45,12 @@ pub mod weak_bind_info;
 use rayon::prelude::*;
 use std::num::NonZeroU32;
 
+use crate::arch::Target;
 use crate::context::Context;
 use crate::input_files::FileId;
 use crate::macho::*;
 use crate::symbol::SymbolId;
 use crate::symbol_moves::MoveOption;
-use crate::target::Target;
 
 pub use output_section::{OutputSection, Tail, Thunk};
 

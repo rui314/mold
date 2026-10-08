@@ -3,11 +3,11 @@
 //! lazy-bind record - or, in legacy LINKEDIT, dyld_stub_binding_helper
 //! with the pointer's address.
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::macho::*;
 use crate::symbol::SymbolId;
-use crate::target::Target;
 
 /// __TEXT,__stub_helper: with classic dyld info, the code a lazy
 /// pointer initially points at, which enters dyld_stub_binder with the

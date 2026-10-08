@@ -5,10 +5,10 @@
 //! LINKEDIT (Args::legacy_linkedit). mold's reldyn.rs holds the ELF
 //! relative relocations they stand in for.
 
+use crate::arch::Target;
 use crate::chunks::{ChunkHeader, segment_and_offset, segment_prot};
 use crate::context::Context;
 use crate::macho::*;
-use crate::target::Target;
 
 #[derive(Debug)]
 pub struct LocalRelocsSection {

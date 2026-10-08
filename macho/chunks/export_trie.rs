@@ -2,12 +2,12 @@
 
 use rayon::prelude::*;
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::input_files::FileId;
 use crate::macho::*;
 use crate::symbol::SymbolId;
-use crate::target::Target;
 
 #[derive(Debug)]
 pub struct ExportTrieSection {

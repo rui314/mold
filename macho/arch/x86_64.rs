@@ -2,6 +2,9 @@
 
 use std::path::Path;
 
+use crate::arch::{
+    SplitRef, Target, has_reloc_form, load_helper, reloc_form, section_target, write32, write64,
+};
 use crate::chunks::delay_init::{DelayCode, DelayTarget, DelayUse};
 use crate::chunks::lazy_helpers::{LazyTarget, LazyUse};
 use crate::context::Context;
@@ -10,9 +13,6 @@ use crate::input_files::isec_relocs_of;
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
 use crate::symbol::{NEEDS_GOT, NEEDS_STUB, SymbolId};
-use crate::target::{
-    SplitRef, Target, has_reloc_form, load_helper, reloc_form, section_target, write32, write64,
-};
 use crate::{error, fatal};
 
 #[derive(Clone, Copy, Default)]
@@ -470,8 +470,8 @@ impl Target for X86_64 {
         refs.into_iter().map(|(off, to)| (off, DYLD_CACHE_ADJ_V2_DELTA_32, to)).collect()
     }
 
-    fn lazy_ref(r: &Reloc, data: &[u8]) -> crate::target::LazyRef {
-        use crate::target::LazyRef;
+    fn lazy_ref(r: &Reloc, data: &[u8]) -> crate::arch::LazyRef {
+        use crate::arch::LazyRef;
         let off = r.offset as usize;
         match r.ty {
             X86_64_RELOC_BRANCH if r.size == 4 => LazyRef::Call,
@@ -525,7 +525,7 @@ impl Target for X86_64 {
 
         for (i, r) in rels.iter().enumerate() {
             if !is_supported(r) {
-                crate::target::bad_reloc(file_name, hdr, r, "unsupported relocation");
+                crate::arch::bad_reloc(file_name, hdr, r, "unsupported relocation");
             }
 
             // On x86-64 every relocation's addend is embedded in the

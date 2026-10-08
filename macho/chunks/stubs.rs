@@ -1,10 +1,10 @@
 //! __TEXT,__stubs: jump stubs for calls to imported functions.
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::macho::*;
 use crate::symbol::{NO_IDX, SymbolId};
-use crate::target::Target;
 
 /// __TEXT,__stubs: jump stubs for calls to imported functions.
 #[derive(Debug)]

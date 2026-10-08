@@ -2,11 +2,11 @@
 //! dyld loads lazily, what __dyld_lazy_load needs to load it and bind
 //! the image's slots for its symbols.
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::macho::DYLD_CHAINED_PTR_64_OFFSET;
 use crate::symbol::SymbolId;
-use crate::target::Target;
 
 /// A dylib dyld loads lazily, one of whose symbols the image uses.
 #[derive(Debug)]

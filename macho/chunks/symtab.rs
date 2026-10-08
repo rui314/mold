@@ -7,12 +7,12 @@ use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::input_files::{FileId, ObjectFile};
 use crate::macho::*;
 use crate::symbol::SymbolId;
-use crate::target::Target;
 use crate::util::{leak_bytes, path_bytes};
 
 /// The symbol table, laid out before addresses are known. The symbol

@@ -13,6 +13,7 @@
 
 use std::os::unix::ffi::OsStrExt;
 
+use crate::arch::Target;
 use crate::chunks::symtab::keep_local_symbol;
 use crate::cmdline::SymbolMove;
 use crate::context::Context;
@@ -21,7 +22,6 @@ use crate::input_files::FileId;
 use crate::macho::*;
 use crate::output_sections::{canonical_section_flags, common_owners};
 use crate::symbol::SymbolId;
-use crate::target::Target;
 use crate::util::leak_bytes;
 
 /// The option that moves a subsection.

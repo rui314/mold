@@ -1,10 +1,10 @@
 //! __TEXT,__objc_methlist: the Objective-C method lists rewritten in the
 //! relative (12-byte entry) form, which needs no fixups.
 
+use crate::arch::Target;
 use crate::chunks::{ChunkHeader, ChunkId};
 use crate::context::Context;
 use crate::objc::{ObjcMethList, objc_ref_addr};
-use crate::target::Target;
 
 /// __TEXT,__objc_methlist: the Objective-C method lists rewritten in
 /// the relative (12-byte entry) form, which needs no fixups.

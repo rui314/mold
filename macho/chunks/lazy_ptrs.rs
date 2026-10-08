@@ -1,10 +1,10 @@
 //! __DATA,__la_symbol_ptr: the lazy pointers the stubs jump through, bound
 //! by dyld on first call.
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::macho::*;
-use crate::target::Target;
 
 /// __DATA,__la_symbol_ptr: the lazy pointers the stubs jump through,
 /// bound by dyld on first call.

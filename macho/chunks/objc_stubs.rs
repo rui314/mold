@@ -1,11 +1,11 @@
 //! __TEXT,__objc_stubs: the linker-synthesized _objc_msgSend$<selector>
 //! stubs, with the selector strings and references they load.
 
+use crate::arch::Target;
 use crate::chunks::{ChunkHeader, OutputSectionId};
 use crate::context::Context;
 use crate::macho::*;
 use crate::symbol::SymbolId;
-use crate::target::Target;
 
 /// __TEXT,__objc_stubs: linker-synthesized _objc_msgSend$<selector>
 /// stubs, with the selector strings and references they load (laid

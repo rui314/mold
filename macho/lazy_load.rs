@@ -8,6 +8,7 @@
 
 use rayon::prelude::*;
 
+use crate::arch::{LazyRef, Target};
 use crate::chunks::lazy_helpers::{LazyHelper, LazyUse};
 use crate::chunks::lazy_load_info::{LazyDylib, record_size};
 use crate::context::Context;
@@ -15,7 +16,6 @@ use crate::error::raw;
 use crate::input_files::FileId;
 use crate::passes::{add_data_word, bind_linker_import};
 use crate::symbol::SymbolId;
-use crate::target::{LazyRef, Target};
 use crate::util::leak_bytes;
 
 /// Binds __dyld_lazy_load, which the lazy-load helpers call (see

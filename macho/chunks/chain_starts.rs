@@ -2,9 +2,9 @@
 //! loads start, for its own loader to walk (-fixup_chains_section), in
 //! place of the LC_DYLD_CHAINED_FIXUPS payload.
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
-use crate::target::Target;
 
 /// __TEXT,__chain_starts: a dyld_chained_starts_offsets - the chains'
 /// pointer format, their count, then each chain's first fixup as an

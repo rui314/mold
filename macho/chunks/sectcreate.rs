@@ -2,9 +2,9 @@
 //! makes empty, and an empty one for a section only a boundary symbol
 //! names.
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
-use crate::target::Target;
 
 /// A section the -sectcreate and -add_empty_section options make (see
 /// SectCreateInput) of a name no input section has, or an empty one

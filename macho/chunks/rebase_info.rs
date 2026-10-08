@@ -1,13 +1,13 @@
 //! The LC_DYLD_INFO rebase opcode stream: every pointer dyld slides.
 //! mold's reldyn.rs holds the ELF relative relocations it stands in for.
 
+use crate::arch::Target;
 use crate::chunks::{ChunkHeader, segment_and_offset};
 use crate::context::Context;
 use crate::input_sections::{InputSection, Reloc};
 use crate::macho::*;
 use crate::objc::{DataField, ObjcRef, objc_ref_addr};
 use crate::symbol::SymbolId;
-use crate::target::Target;
 use crate::util::encode_uleb;
 
 /// The rebase opcode stream: every pointer dyld slides.

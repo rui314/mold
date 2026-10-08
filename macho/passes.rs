@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use portable_atomic::AtomicU64;
 use rayon::prelude::*;
 
+use crate::arch::Target;
 use crate::chunks::init_offsets::InitFunc;
 use crate::chunks::{self, ChunkHeader, ChunkId, OutputSegment, mach_header_size};
 use crate::cmdline::{Args, Treatment};
@@ -22,7 +23,6 @@ use crate::mapped_file::MappedFile;
 use crate::objc::{DataBlob, DataField};
 use crate::output_sections::header_segment;
 use crate::symbol::{NEEDS_GOT, NEEDS_STUB, Symbol, SymbolId};
-use crate::target::Target;
 use crate::util::{align_to, path_bytes, split_once};
 
 /// Adds the object that owns what the linker synthesizes: the

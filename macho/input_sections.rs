@@ -125,7 +125,7 @@ impl Reloc {
 
     /// Whether the relocation is a branch: a direct call or jump.
     #[inline]
-    pub fn is_func_call<E: crate::target::Target>(&self) -> bool {
+    pub fn is_func_call<E: crate::arch::Target>(&self) -> bool {
         self.ty == E::RELOC_BRANCH
     }
 }

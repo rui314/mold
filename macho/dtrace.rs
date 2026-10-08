@@ -27,12 +27,12 @@
 use hashbrown::HashMap;
 use rayon::prelude::*;
 
+use crate::arch::Target;
 use crate::context::Context;
 use crate::error::raw;
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
 use crate::symbol::SymbolId;
-use crate::target::Target;
 use crate::util::split_once;
 
 /// The prefix of the names of the symbols a `dtrace -h` header makes

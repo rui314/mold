@@ -1,10 +1,10 @@
 //! The LC_DYLD_INFO bind opcode stream: every slot dyld fills with an
 //! import.
 
+use crate::arch::Target;
 use crate::chunks::{ChunkHeader, rebase_info, segment_and_offset};
 use crate::context::Context;
 use crate::macho::*;
-use crate::target::Target;
 use crate::util::encode_uleb;
 
 /// The bind opcode stream: every slot dyld fills with an import.

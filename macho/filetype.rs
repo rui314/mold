@@ -32,7 +32,7 @@ fn macho_header(data: &[u8]) -> Option<MachHeader> {
 /// Returns the target name of a Mach-O file, or `None` if it is not a
 /// 64-bit Mach-O file for a CPU type we recognize.
 pub fn get_macho_target(data: &[u8]) -> Option<&'static str> {
-    crate::target::cputype_name(macho_header(data)?.cputype)
+    crate::arch::cputype_name(macho_header(data)?.cputype)
 }
 
 /// Returns the file type (MH_EXECUTE, MH_BUNDLE, ...) of a 64-bit

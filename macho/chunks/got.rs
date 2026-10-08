@@ -1,11 +1,11 @@
 //! The global offset table: pointers to symbols, bound by dyld for imported
 //! ones. mold's got.rs holds the ELF counterpart.
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::macho::*;
 use crate::symbol::{NO_IDX, SymbolId};
-use crate::target::Target;
 
 /// The global offset table: pointers to symbols, bound by dyld for
 /// imported ones.

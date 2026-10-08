@@ -1,9 +1,9 @@
 //! The merged __objc_imageinfo section: the Objective-C runtime reads
 //! exactly one 8-byte record per image.
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
-use crate::target::Target;
 
 /// The merged __objc_imageinfo section: the Objective-C runtime reads
 /// exactly one 8-byte record per image.

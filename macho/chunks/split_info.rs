@@ -19,6 +19,7 @@
 
 use rayon::prelude::*;
 
+use crate::arch::{SplitRef, Target};
 use crate::chunks::init_offsets::InitFunc;
 use crate::chunks::{ChunkHeader, ChunkId};
 use crate::context::Context;
@@ -27,7 +28,6 @@ use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho_consts::*;
 use crate::objc::{DataField, ObjcRef};
 use crate::symbol::{NO_IDX, SymbolId};
-use crate::target::{SplitRef, Target};
 use crate::util::encode_uleb;
 
 #[derive(Debug)]

@@ -21,13 +21,13 @@
 
 use rayon::prelude::*;
 
+use crate::arch::Target;
 use crate::context::Context;
 use crate::input_files::FileId;
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
 use crate::passes::redirect_symbols_to_replacements;
 use crate::symbol::{NEEDS_GOT, NEEDS_STUB};
-use crate::target::Target;
 use crate::util::align_to;
 
 /// A reference held by a rewritten method-list entry, resolved to an

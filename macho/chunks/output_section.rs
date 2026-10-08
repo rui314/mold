@@ -4,13 +4,13 @@
 
 use rayon::prelude::*;
 
+use crate::arch::Target;
 use crate::chunks::{ChunkHeader, ChunkId, OutputSectionId};
 use crate::context::Context;
 use crate::input_sections::InputSectionId;
 use crate::objc::{DataField, objc_ref_addr};
 use crate::symbol::SymbolId;
 use crate::symbol_moves::MoveOption;
-use crate::target::Target;
 
 /// A range-extension thunk: a block of jump entries placed inside an
 /// output section so that branches whose targets are further than the

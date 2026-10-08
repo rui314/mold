@@ -1054,7 +1054,7 @@ const JOINED_LIBRARY_OPTIONS: [(&str, LibraryKind); 13] = [
 
 /// The target a triple's architecture names.
 fn triple_arch(arch: &str, triple: &str) -> &'static str {
-    crate::target::canonical_name(arch)
+    crate::arch::canonical_name(arch)
         .unwrap_or_else(|| fatal!("unknown architecture in target triple '{triple}'"))
 }
 
@@ -1939,7 +1939,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-arch" => {
                 let arch = cur.next_text(name);
                 args.arch = Some(
-                    crate::target::canonical_name(arch)
+                    crate::arch::canonical_name(arch)
                         .unwrap_or_else(|| fatal!("unknown -arch name: {arch}")),
                 );
             }

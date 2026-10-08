@@ -3,6 +3,7 @@
 
 use std::marker::PhantomData;
 
+use crate::arch::Target;
 use crate::chunks::bind_info::BindInfoSection;
 use crate::chunks::chain_starts::ChainStartsSection;
 use crate::chunks::chained_fixups::ChainedFixupsSection;
@@ -43,7 +44,6 @@ use crate::input_files::{DylibFile, FileId, ObjectFile};
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::{S_THREAD_LOCAL_REGULAR, S_THREAD_LOCAL_ZEROFILL};
 use crate::symbol::{SymbolId, SymbolTable};
-use crate::target::Target;
 use crate::util::perf::Timers;
 
 // Keep immutable and mutable chunk lookup in the same static match.

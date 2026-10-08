@@ -22,6 +22,7 @@
 
 use hashbrown::HashMap;
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::error::RawPath;
@@ -33,7 +34,6 @@ use crate::mergeable::{
     CustomSection, Entry, Fixup, ctype, fk, header, kind, scope, standard_content_type,
 };
 use crate::symbol::SymbolId;
-use crate::target::Target;
 
 mod cityhash;
 mod objc;
@@ -1265,7 +1265,7 @@ fn is_subtractor<E: Target>(ty: u8) -> bool {
 
 /// An x86-64 relocation's fixup. ld-prime's addend is to the
 /// target, the instruction's distance to the field's end aside (see
-/// target::x86_64's reloc_bias).
+/// arch::x86_64's reloc_bias).
 fn x86_64_fixup(hdr: &MachSection, r: &Reloc, target: To, addend: i64) -> Option<OutFixup> {
     use fk::*;
     let mut f = OutFixup::new(r.offset, target, 0, addend);

@@ -1,5 +1,6 @@
 //! A high-performance Mach-O linker.
 
+pub mod arch;
 pub(crate) mod archive_file;
 pub(crate) mod bundle_hook;
 pub(crate) mod chunks;
@@ -33,6 +34,5 @@ pub(crate) mod subprocess;
 pub(crate) mod symbol;
 pub(crate) mod symbol_moves;
 pub(crate) mod tapi;
-pub mod target;
 pub(crate) mod thunks;
 pub mod util;

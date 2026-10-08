@@ -4,6 +4,7 @@
 
 use rayon::prelude::*;
 
+use crate::arch::Target;
 use crate::chunks::{ChunkHeader, OutputSegment, rebase_info};
 use crate::cmdline::Treatment;
 use crate::context::Context;
@@ -11,7 +12,6 @@ use crate::fatal;
 use crate::input_files::FileId;
 use crate::macho::*;
 use crate::symbol::SymbolId;
-use crate::target::Target;
 
 #[derive(Debug)]
 pub struct ChainedFixupsSection {

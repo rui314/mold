@@ -4,6 +4,7 @@ use std::borrow::Cow;
 use std::ffi::{OsStr, OsString};
 use std::sync::Arc;
 
+use crate::arch::Target;
 use crate::bundle_hook;
 use crate::cmdline;
 use crate::context::Context;
@@ -13,7 +14,6 @@ use crate::output_file;
 use crate::output_sections;
 use crate::passes;
 use crate::reader;
-use crate::target::Target;
 
 /// The fully expanded command line.
 pub type Cmdline = Arc<[Cow<'static, OsStr>]>;

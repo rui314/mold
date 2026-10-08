@@ -2,11 +2,11 @@
 //! another image's copy of one of this image's weak definitions wins
 //! coalescing.
 
+use crate::arch::Target;
 use crate::chunks::bind_info::{self, Op};
 use crate::chunks::{ChunkHeader, rebase_info};
 use crate::context::Context;
 use crate::macho::*;
-use crate::target::Target;
 
 /// The weak-bind opcode stream: the slots dyld redirects when another
 /// image's copy of one of this image's weak definitions wins

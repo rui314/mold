@@ -1,11 +1,11 @@
 //! The LC_DYLD_INFO lazy-bind opcode stream: one record per lazy pointer,
 //! entered by its stub helper on first call.
 
+use crate::arch::Target;
 use crate::chunks::bind_info::{self, Op};
 use crate::chunks::{ChunkHeader, segment_and_offset};
 use crate::context::Context;
 use crate::macho::*;
-use crate::target::Target;
 
 /// The lazy-bind opcode stream: one record per lazy pointer, entered
 /// by its stub helper on first call.

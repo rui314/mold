@@ -5,11 +5,11 @@
 //! the symbol's slot, and before that it first has __dyld_lazy_load
 //! load the dylib.
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::macho::*;
 use crate::symbol::SymbolId;
-use crate::target::Target;
 
 /// The reference a helper stands in for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

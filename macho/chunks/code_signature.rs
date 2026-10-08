@@ -3,10 +3,10 @@
 
 use rayon::prelude::*;
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::macho::*;
-use crate::target::Target;
 use crate::util::align_to;
 
 /// The ad-hoc code signature. Must be the last chunk in the file.

@@ -7,11 +7,11 @@
 //! (which sets the flag) the first time, and then goes on through the
 //! symbol's __got slot.
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::macho::*;
 use crate::symbol::SymbolId;
-use crate::target::Target;
 
 /// A __delay_stubs entry, which the calls of a symbol branch to:
 /// `_foo$delayInitStub`. It jumps through a __got slot of its own when

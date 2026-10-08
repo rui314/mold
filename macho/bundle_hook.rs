@@ -20,6 +20,7 @@
 //! initializer first from __mod_init_func, but last from __init_offsets
 //! (see passes::convert_init_offsets).
 
+use crate::arch::Target;
 use crate::cmdline::Args;
 use crate::context::Context;
 use crate::input_files::FileId;
@@ -27,7 +28,6 @@ use crate::macho::*;
 use crate::mapped_file::MappedFile;
 use crate::objc::{DataField, ObjcRef};
 use crate::symbol::SymbolId;
-use crate::target::Target;
 
 /// The hook, built by c/build-bundle-hook.sh.
 static ARM64_OBJECT: &[u8] = include_bytes!("c/bundle-hook-arm64.o");

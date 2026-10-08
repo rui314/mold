@@ -7,13 +7,13 @@
 //! the public libraries such a dylib re-exports are delayed with it,
 //! by its dlopen helper.
 
+use crate::arch::{LazyRef, Target};
 use crate::chunks::delay_init::{DelayHelper, DelayStub, DelayUse, DlopenHelper};
 use crate::context::Context;
 use crate::input_files::FileId;
 use crate::lazy_load::{LazyUseSite, import_uses, load_helper_name};
 use crate::macho::*;
 use crate::symbol::SymbolId;
-use crate::target::{LazyRef, Target};
 use crate::util::leak_bytes;
 
 /// Makes the stubs and helpers through which the image reaches the

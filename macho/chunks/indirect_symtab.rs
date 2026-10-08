@@ -2,12 +2,12 @@
 //! __la_symbol_ptr slot, and each slot of the inputs' other non-lazy
 //! symbol pointer sections, the output symbol it holds.
 
+use crate::arch::Target;
 use crate::chunks::{ChunkHeader, ChunkId};
 use crate::context::Context;
 use crate::input_sections::RelocTarget;
 use crate::macho::*;
 use crate::symbol::SymbolId;
-use crate::target::Target;
 
 /// The indirect symbol table: for each __stubs, __got and
 /// __la_symbol_ptr slot, and each slot of the inputs' other non-lazy

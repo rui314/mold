@@ -43,7 +43,7 @@ Build with `cargo build --release`. The binary is `target/release/mold`;
 ## Architecture
 
 The code mirrors mold's layout: `macho/driver.rs` runs the passes in
-order, `macho/passes.rs` implements them, `macho/target/` isolates the
+order, `macho/passes.rs` implements them, `macho/arch/` isolates the
 target-dependent relocation handling (arm64 and x86-64 are each
 instantiated in a crate under `arch/` and dispatched by the
 executable in `cli/`), and `macho/chunks/` builds every piece of

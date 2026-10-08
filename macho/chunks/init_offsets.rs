@@ -1,11 +1,11 @@
 //! __TEXT,__init_offsets: 32-bit image-relative initializer offsets,
 //! replacing __mod_init_func's absolute pointers.
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::macho::*;
 use crate::symbol::SymbolId;
-use crate::target::Target;
 
 /// __TEXT,__init_offsets: 32-bit image-relative initializer offsets,
 /// replacing __mod_init_func's absolute pointers.

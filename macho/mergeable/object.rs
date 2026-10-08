@@ -15,10 +15,10 @@ use super::{
     Entry, FLAG_CATEGORY_CLASS_PROPERTIES, FLAG_HAS_OBJC_INFO, FLAG_SIGNED_CLASS_RO, Fixup,
     MergeableRecord, ctype, fk, kind, read32, read64, scope, standard_section,
 };
+use crate::arch::Target;
 use crate::error::RawPath;
 use crate::fatal;
 use crate::macho::*;
-use crate::target::Target;
 use crate::util::align_to_mod;
 
 /// Whether a section's subsections are fixed-size records or literals

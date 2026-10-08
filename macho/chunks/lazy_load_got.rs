@@ -1,10 +1,10 @@
 //! __DATA,__lazy_load_got: the pointers through which the lazy-load
 //! helpers reach the symbols of the dylibs dyld loads lazily.
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::symbol::SymbolId;
-use crate::target::Target;
 
 /// __DATA,__lazy_load_got: a slot per lazily loaded symbol (on x86-64,
 /// a second one for its call helper: see Target::LAZY_CALL_OWN_SLOT),

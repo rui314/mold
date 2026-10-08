@@ -8,9 +8,9 @@
 use hashbrown::HashSet;
 
 use super::{Builder, Content, OutEntry, OutFixup, To, record_size};
+use crate::arch::Target;
 use crate::mergeable::{ctype, fk, kind, scope, standard_content_type};
 use crate::objc::{DataField, ObjcRef};
-use crate::target::Target;
 
 impl<E: Target> Builder<'_, E> {
     /// The entries of the metadata the link made: the selector

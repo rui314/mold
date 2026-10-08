@@ -6,11 +6,11 @@
 //! in data by them too, its GOT slots and lazy pointers being bound by
 //! the indirect symbol table.
 
+use crate::arch::Target;
 use crate::chunks::{ChunkHeader, rebase_info};
 use crate::context::Context;
 use crate::macho::*;
 use crate::symbol::SymbolId;
-use crate::target::Target;
 
 #[derive(Debug)]
 pub struct ExternRelocsSection {

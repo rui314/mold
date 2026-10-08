@@ -1,10 +1,10 @@
 //! __TEXT,__eh_frame: the re-synthesized DWARF unwind records that
 //! compact unwind can't express.
 
+use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::input_files::Fde;
-use crate::target::Target;
 
 #[derive(Debug)]
 pub struct EhFrameSection {

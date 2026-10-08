@@ -8,6 +8,7 @@ use std::sync::Mutex;
 
 use rayon::prelude::*;
 
+use crate::arch::Target;
 use crate::chunks::sectcreate::{InputPlace, SectCreateInput, SectCreateSection};
 use crate::chunks::{
     self, ChunkHeader, ChunkId, OutputSection, OutputSectionId, OutputSegment, Tail,
@@ -23,7 +24,6 @@ use crate::input_sections::{InputSection, InputSectionId};
 use crate::macho::*;
 use crate::objc::DataBlob;
 use crate::symbol_moves::{Move, MoveOption};
-use crate::target::Target;
 use crate::util::align_to;
 use crate::util::worker_local::WorkerLocal;
 

@@ -4,6 +4,10 @@ use std::path::Path;
 
 use rayon::prelude::*;
 
+use crate::arch::{
+    SplitRef, Target, has_reloc_form, load_helper, read32, reloc_form, section_target, write32,
+    write64,
+};
 use crate::chunks::delay_init::{DelayCode, DelayTarget, DelayUse};
 use crate::chunks::lazy_helpers::{LazyTarget, LazyUse};
 use crate::context::Context;
@@ -12,10 +16,6 @@ use crate::input_files::{ObjectFile, isec_relocs_of};
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
 use crate::symbol::{NEEDS_GOT, NEEDS_STUB};
-use crate::target::{
-    SplitRef, Target, has_reloc_form, load_helper, read32, reloc_form, section_target, write32,
-    write64,
-};
 use crate::util::{bits, sign_extend};
 use crate::{error, fatal};
 
@@ -291,7 +291,7 @@ fn check_reloc(file: &Path, hdr: &MachSection, rels: &[MachRel], i: usize, loc: 
         && r.p2size() == 2
         && (i == 0 || rels[i - 1].ty() != ARM64_RELOC_SUBTRACTOR);
     if !is_supported(r) || pointer32 {
-        crate::target::bad_reloc(file, hdr, r, "unsupported relocation");
+        crate::arch::bad_reloc(file, hdr, r, "unsupported relocation");
     }
     let load = || parse_ldst(read32(loc)).filter(|ls| !ls.is_store);
     let ok = match r.ty() {
@@ -303,7 +303,7 @@ fn check_reloc(file: &Path, hdr: &MachSection, rels: &[MachRel], i: usize, loc: 
         _ => true,
     };
     if !ok {
-        crate::target::bad_reloc(file, hdr, r, "relocation on an invalid instruction");
+        crate::arch::bad_reloc(file, hdr, r, "relocation on an invalid instruction");
     }
 }
 
@@ -1142,8 +1142,8 @@ impl Target for Arm64 {
         refs
     }
 
-    fn lazy_ref(r: &Reloc, _data: &[u8]) -> crate::target::LazyRef {
-        use crate::target::LazyRef;
+    fn lazy_ref(r: &Reloc, _data: &[u8]) -> crate::arch::LazyRef {
+        use crate::arch::LazyRef;
         match r.ty {
             ARM64_RELOC_BRANCH26 => LazyRef::Call,
             ARM64_RELOC_GOT_LOAD_PAGE21 => LazyRef::Load,

@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
 
+use crate::arch::Target;
 use crate::cmdline::{Args, InputArg, LibraryKind, LibraryName};
 use crate::context::Context;
 use crate::error;
@@ -24,7 +25,6 @@ use crate::input_files;
 use crate::macho::*;
 use crate::mapped_file::MappedFile;
 use crate::mergeable::MergedLibrary;
-use crate::target::Target;
 use crate::util::path_bytes;
 
 /// The default library search path: ld64's /usr/lib and /usr/local/lib,

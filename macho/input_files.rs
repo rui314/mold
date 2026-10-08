@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use rayon::prelude::*;
 
+use crate::arch::Target;
 use crate::context::Context;
 use crate::error::RawPath;
 use crate::error::raw;
@@ -15,7 +16,6 @@ use crate::macho::*;
 use crate::mapped_file::MappedFile;
 use crate::symbol::SymbolId;
 use crate::tapi;
-use crate::target::Target;
 
 /// A file a symbol is owned by: an object or a dylib, by index in
 /// ctx.objs or ctx.dylibs. Dylib(u32::MAX) is an import resolved by

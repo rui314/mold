@@ -27,6 +27,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use portable_atomic::AtomicU64;
 use rayon::prelude::*;
 
+use crate::arch::Target;
 use crate::chunks::eh_frame::lsda_pos;
 use crate::chunks::unwind_info::{function_lsda, function_personality};
 use crate::context::Context;
@@ -34,7 +35,6 @@ use crate::input_files::{Fde, FileId, ObjectFile, subsec_name_rank};
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
 use crate::symbol::SymbolId;
-use crate::target::Target;
 use crate::util::siphash::SipHash13_128;
 
 /// A stable identifier for what a relocation edge points at.
