@@ -52,7 +52,7 @@ pub struct OutputSection {
     pub has_blobs: bool,
     /// Whether thread-local data (input sections so typed) went here,
     /// which a rename may have put in a section of another type (see
-    /// passes::check_tlv_template).
+    /// passes::set_osec_offsets).
     pub has_tlv_data: bool,
     /// For a section a symbol move made (see symbol_moves), the option
     /// that moved its first member.

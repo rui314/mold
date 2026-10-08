@@ -111,7 +111,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     if ctx.args.relocatable && passes::links_only_bitcode(&ctx) {
         t.stop();
         passes::print_why_load(&ctx);
-        passes::write_merged_bitcode(&ctx);
+        crate::lto::write_merged_bitcode(&ctx);
         crate::error::checkpoint();
         crate::mapfile::write_dependency_info(&ctx);
         crate::error::checkpoint();

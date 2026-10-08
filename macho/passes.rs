@@ -586,17 +586,10 @@ fn mark_live_objects<E: Target>(ctx: &mut Context<E>) {
     let mut root_syms: Vec<&[u8]> =
         ctx.args.has_entry_point().then_some(ctx.args.entry.as_slice()).into_iter().collect();
     root_syms.extend(ctx.args.forced_undefined.iter().map(Vec::as_slice));
-    for name in root_syms {
-        if let Some(id) = ctx.symbols.lookup(name)
-            && let Some(FileId::Obj(owner)) = ctx.symbols[id].file()
-        {
-            let owner = owner as usize;
-            if !ctx.objs[owner].is_reachable {
-                ctx.objs[owner].is_reachable = true;
-                ctx.why_load.insert(owner, ctx.symbols[id].name());
-                queue.push(owner);
-            }
-        }
+    let roots: Vec<SymbolId> =
+        root_syms.into_iter().filter_map(|name| ctx.symbols.lookup(name)).collect();
+    for id in roots {
+        load_owner(ctx, id, &mut queue);
     }
 
     while let Some(obj_idx) = queue.pop() {
@@ -856,12 +849,6 @@ pub fn links_only_bitcode<E: Target>(ctx: &Context<E>) -> bool {
             .all(|(i, obj)| !obj.is_reachable || obj.lto_module.is_some() || ctx.is_internal(i))
 }
 
-/// Writes a -r link of bitcode alone as one merged bitcode file (see
-/// links_only_bitcode and lto::write_merged_bitcode).
-pub fn write_merged_bitcode<E: Target>(ctx: &Context<E>) {
-    crate::lto::write_merged_bitcode(ctx);
-}
-
 /// Whether a live file is bitcode, for LTO to compile.
 pub fn has_lto_obj<E: Target>(ctx: &Context<E>) -> bool {
     crate::lto::live_bitcode_modules(ctx).next().is_some()
@@ -992,72 +979,6 @@ pub fn check_removed_swift_metadata_refs<E: Target>(ctx: &Context<E>) {
     }
 }
 
-/// With -init_offsets (which chained fixups imply, see
-/// Args::init_offsets), replaces __mod_init_func's absolute pointers
-/// (which each need a rebase) with 32-bit image-relative offsets in a
-/// __TEXT,__init_offsets section (type S_INIT_FUNC_OFFSETS), which
-/// dyld runs the same way but never has to fix up.
-pub fn convert_init_offsets<E: Target>(ctx: &mut Context<E>) {
-    let init = init_function(ctx);
-    if !ctx.args.init_offsets {
-        // ld-prime runs an -init function only from __init_offsets and
-        // drops it here. ld64 named it in LC_ROUTINES_64, which dyld
-        // runs before the image's other initializers; so do we, for an
-        // image dyld loads, if the function is its own.
-        if !ctx.args.without_dyld() {
-            ctx.init_routine = init.filter(|&id| ctx.symbols[id].input_section().is_some());
-        }
-        return;
-    }
-    // ld-prime makes it the first of the initializer offsets.
-    if let Some(id) = init {
-        let func = InitFunc::new(ctx, id);
-        ctx.init_offsets.init_funcs.push(func);
-    }
-    // ld-prime runs the hook for the classes of mergeable libraries (see
-    // bundle_hook) last, though its object comes first.
-    let mut pointers: Vec<usize> = (0..ctx.isecs.len())
-        .filter(|&i| {
-            let isec = &ctx.isecs[i];
-            isec.hdr(&ctx.objs[isec.file as usize]).section_type() == S_MOD_INIT_FUNC_POINTERS
-                && isec.is_alive()
-        })
-        .collect();
-    pointers.sort_by_key(|&i| ctx.is_bundle_hook(ctx.isecs[i].file as usize));
-    for i in pointers {
-        let obj = ctx.isecs[i].file as usize;
-        for rel in initializer_relocs(ctx, i) {
-            let func = match rel.target() {
-                RelocTarget::Sym(idx) => InitFunc::new(ctx, ctx.objs[obj].symbols[idx as usize]),
-                RelocTarget::Section(isec) => {
-                    InitFunc::Local(ctx.isecs.resolve(isec as usize), rel.addend as u64)
-                }
-            };
-            ctx.init_offsets.init_funcs.push(func);
-        }
-        ctx.isecs[i].kill();
-    }
-}
-
-/// The function -init names, if it is defined. An undefined one is
-/// reported with the other initial undefines.
-fn init_function<E: Target>(ctx: &Context<E>) -> Option<crate::symbol::SymbolId> {
-    let id = ctx.symbols.lookup(ctx.args.init.as_deref()?)?;
-    ctx.symbols[id].is_defined().then_some(id)
-}
-
-/// The relocations naming the functions of the initializer pointers
-/// subsection `i` holds, in slot order. A pointer the difference of two
-/// symbols makes (a SUBTRACTOR and an UNSIGNED relocation) names the
-/// function it adds, as in ld-prime, not the one it subtracts too.
-fn initializer_relocs<E: Target>(ctx: &Context<E>, i: usize) -> Vec<crate::input_sections::Reloc> {
-    let isec = &ctx.isecs[i];
-    let rels = isec.rels(&ctx.objs[isec.file as usize]);
-    let mut relocs: Vec<_> = rels.iter().filter(|r| r.ty != E::RELOC_SUBTRACTOR).copied().collect();
-    relocs.sort_by_key(|r| r.offset);
-    relocs
-}
-
 /// ld-prime's diagnostics for static initializers: a warning for each
 /// in a dylib bound for the dyld shared cache, where every process
 /// would run it, unless -no_warn_inits; with -no_inits, an error listing
@@ -1120,6 +1041,68 @@ fn initializers<E: Target>(ctx: &Context<E>) -> Vec<(&[u8], error::Raw<'_>)> {
         }
     }
     vec
+}
+
+/// The relocations naming the functions of the initializer pointers
+/// subsection `i` holds, in slot order. A pointer the difference of two
+/// symbols makes (a SUBTRACTOR and an UNSIGNED relocation) names the
+/// function it adds, as in ld-prime, not the one it subtracts too.
+fn initializer_relocs<E: Target>(ctx: &Context<E>, i: usize) -> Vec<crate::input_sections::Reloc> {
+    let isec = &ctx.isecs[i];
+    let rels = isec.rels(&ctx.objs[isec.file as usize]);
+    let mut relocs: Vec<_> = rels.iter().filter(|r| r.ty != E::RELOC_SUBTRACTOR).copied().collect();
+    relocs.sort_by_key(|r| r.offset);
+    relocs
+}
+
+/// With -init_offsets (which chained fixups imply, see
+/// Args::init_offsets), replaces __mod_init_func's absolute pointers
+/// (which each need a rebase) with 32-bit image-relative offsets in a
+/// __TEXT,__init_offsets section (type S_INIT_FUNC_OFFSETS), which
+/// dyld runs the same way but never has to fix up.
+pub fn convert_init_offsets<E: Target>(ctx: &mut Context<E>) {
+    // The function -init names, if it is defined. An undefined one is
+    // reported with the other initial undefines.
+    let init = ctx.args.init.as_deref().and_then(|name| ctx.symbols.lookup(name));
+    let init = init.filter(|&id| ctx.symbols[id].is_defined());
+    if !ctx.args.init_offsets {
+        // ld-prime runs an -init function only from __init_offsets and
+        // drops it here. ld64 named it in LC_ROUTINES_64, which dyld
+        // runs before the image's other initializers; so do we, for an
+        // image dyld loads, if the function is its own.
+        if !ctx.args.without_dyld() {
+            ctx.init_routine = init.filter(|&id| ctx.symbols[id].input_section().is_some());
+        }
+        return;
+    }
+    // ld-prime makes it the first of the initializer offsets.
+    if let Some(id) = init {
+        let func = InitFunc::new(ctx, id);
+        ctx.init_offsets.init_funcs.push(func);
+    }
+    // ld-prime runs the hook for the classes of mergeable libraries (see
+    // bundle_hook) last, though its object comes first.
+    let mut pointers: Vec<usize> = (0..ctx.isecs.len())
+        .filter(|&i| {
+            let isec = &ctx.isecs[i];
+            isec.hdr(&ctx.objs[isec.file as usize]).section_type() == S_MOD_INIT_FUNC_POINTERS
+                && isec.is_alive()
+        })
+        .collect();
+    pointers.sort_by_key(|&i| ctx.is_bundle_hook(ctx.isecs[i].file as usize));
+    for i in pointers {
+        let obj = ctx.isecs[i].file as usize;
+        for rel in initializer_relocs(ctx, i) {
+            let func = match rel.target() {
+                RelocTarget::Sym(idx) => InitFunc::new(ctx, ctx.objs[obj].symbols[idx as usize]),
+                RelocTarget::Section(isec) => {
+                    InitFunc::Local(ctx.isecs.resolve(isec as usize), rel.addend as u64)
+                }
+            };
+            ctx.init_offsets.init_funcs.push(func);
+        }
+        ctx.isecs[i].kill();
+    }
 }
 
 /// The tentative definitions (common symbols) no definition replaced,
@@ -4666,7 +4649,17 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
     crate::thunks::gather_thunk_addresses(ctx);
 
     check_segments(ctx);
-    check_tlv_template(ctx);
+
+    // Thread-local data (of input sections so typed) that a rename put
+    // in a section of another type is no part of the template: the
+    // offset from the template's start its variables' descriptors hold
+    // falls outside it. ld-prime reports data before the template,
+    // whose offset wraps past 4GB; mold also data after it, of which
+    // ld-prime writes an image dyld refuses, and data with no template
+    // left, on which ld-prime crashes.
+    if ctx.output_sections.iter().any(|osec| osec.has_tlv_data && !osec.hdr.is_thread_local()) {
+        error!("thread-locals too large.  Max 4GB for 64-bit architectures");
+    }
     crate::error::checkpoint();
 
     // The fixup builders leave a text relocation's alignment alone.
@@ -5123,19 +5116,6 @@ fn check_segments<E: Target>(ctx: &Context<E>) {
         && addr < last.cmd.vmaddr
     {
         error!("segment {} address is out of order", raw(linkedit.name));
-    }
-}
-
-/// Reports thread-local data (of input sections so typed) that a rename
-/// put in a section of another type, no part of the template: the
-/// offset from the template's start its variables' descriptors hold
-/// falls outside it. ld-prime reports data before the template, whose
-/// offset wraps past 4GB; mold also data after it, of which ld-prime
-/// writes an image dyld refuses, and data with no template left, on
-/// which ld-prime crashes.
-fn check_tlv_template<E: Target>(ctx: &Context<E>) {
-    if ctx.output_sections.iter().any(|osec| osec.has_tlv_data && !osec.hdr.is_thread_local()) {
-        error!("thread-locals too large.  Max 4GB for 64-bit architectures");
     }
 }
 
