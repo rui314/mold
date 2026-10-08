@@ -216,6 +216,9 @@ pub fn combine_objects<E: Target>(ctx: &mut Context<E>) {
     split_link_order_sections(ctx);
     create_synthetic_sections(ctx);
     claim_unresolved_symbols(ctx);
+    if ctx.note_property.is_some() {
+        chunks::note_property::construct(ctx);
+    }
     passes::compute_section_sizes(ctx);
     passes::sort_output_sections(ctx);
     passes::create_output_symtab(ctx);

@@ -21,6 +21,11 @@ impl<E: Target> NotePropertySection<E> {
         hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
         Self { hdr, contents: Vec::new() }
     }
+
+    /// The merged value of a property, or 0 if the output doesn't have it.
+    pub fn get(&self, ty: u32) -> u32 {
+        self.contents.iter().find(|&&(key, _)| key == ty).map_or(0, |&(_, val)| val)
+    }
 }
 
 impl<E: Target> Default for NotePropertySection<E> {
@@ -33,8 +38,22 @@ fn entry_size<E: Target>() -> usize {
     if E::IS_64 { 16 } else { 12 }
 }
 
-// Merges input files' .note.gnu.property values.
-pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
+/// Whether the output is marked as compatible with ARM64 Branch Target
+/// Identification (BTI). The code of such a file is mapped to guarded pages
+/// in which an indirect branch must land on a `bti` instruction. Therefore,
+/// linker-synthesized code that may be reached by an indirect branch has
+/// to start with one.
+pub fn is_bti<E: Target>(ctx: &Context<E>) -> bool {
+    E::FAMILY == Family::Arm64
+        && ctx.note_property.as_ref().is_some_and(|sec| {
+            sec.get(GNU_PROPERTY_AARCH64_FEATURE_1_AND) & GNU_PROPERTY_AARCH64_FEATURE_1_BTI != 0
+        })
+}
+
+// Merges input files' .note.gnu.property values. This has to be done
+// before computing section sizes because the result affects the PLT
+// format on ARM64.
+pub fn construct<E: Target>(ctx: &mut Context<E>) {
     // Obtain the list of keys
     let files: Vec<&crate::input_files::ObjectFile<E>> =
         ctx.objs.iter().filter(|file| !ctx.is_internal(file.id())).collect();
@@ -82,15 +101,14 @@ pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
         *map.entry(GNU_PROPERTY_X86_ISA_1_NEEDED).or_insert(0) |= ctx.args.z_x86_64_isa_level;
     }
 
-    // Serialize the map
-    let contents: Vec<(u32, u32)> = map.into_iter().filter(|&(_, v)| v != 0).collect();
+    ctx.note_property.as_mut().unwrap().contents =
+        map.into_iter().filter(|&(_, v)| v != 0).collect();
+}
+
+pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
     let sec = ctx.note_property.as_mut().unwrap();
-    sec.hdr.shdr.sh_size.set(if contents.is_empty() {
-        0
-    } else {
-        (16 + contents.len() * entry_size::<E>()) as u64
-    });
-    sec.contents = contents;
+    let n = sec.contents.len();
+    sec.hdr.shdr.sh_size.set(if n == 0 { 0 } else { (16 + n * entry_size::<E>()) as u64 });
 }
 
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {

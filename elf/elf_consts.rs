@@ -219,6 +219,7 @@ pub const DT_VERNEEDNUM: u32 = 0x6fffffff;
 pub const DT_PPC_GOT: u32 = 0x70000000;
 pub const DT_PPC64_GLINK: u32 = 0x70000000;
 pub const DT_RISCV_VARIANT_CC: u32 = 0x70000001;
+pub const DT_AARCH64_BTI_PLT: u32 = 0x70000001;
 pub const DT_AARCH64_VARIANT_PCS: u32 = 0x70000005;
 pub const DT_AUXILIARY: u32 = 0x7ffffffd;
 pub const DT_FILTER: u32 = 0x7fffffff;
