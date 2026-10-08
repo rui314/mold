@@ -56,6 +56,14 @@ pub fn add_symbol<E: Target>(ctx: &mut Context<E>, id: SymbolId) {
     }
 }
 
+pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
+    if ctx.args.text_exec {
+        ctx.stubs.hdr.segname = b"__TEXT_EXEC";
+    }
+    ctx.stubs.hdr.reserved2 = E::STUB_SIZE as u32;
+    ctx.stubs.hdr.size = ctx.stubs.symbols.len() as u64 * E::STUB_SIZE;
+}
+
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     E::write_stubs(ctx, ctx.stubs.hdr.addr, buf);
 }

@@ -767,9 +767,9 @@ fn pair_classref_uses<E: Target>(
 /// fold_objc_classrefs), each with its class, by stand-ins for the
 /// classes' GOT entries: subsections of a synthetic __got section,
 /// placed at the entries once passes::scan_relocations has made them
-/// (see output_sections::add_stub_and_got_chunks), so that what refers
-/// to a slot reads its class's entry. A stand-in is not alive: the GOT
-/// chunk writes the entry, and the slot's local symbol is not emitted.
+/// (see chunks::got::update_shdr), so that what refers to a slot reads
+/// its class's entry. A stand-in is not alive: the GOT chunk writes the
+/// entry, and the slot's local symbol is not emitted.
 fn add_classref_stand_ins<E: Target>(
     ctx: &mut Context<E>,
     kept: Vec<(u32, crate::symbol::SymbolId)>,

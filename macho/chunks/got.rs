@@ -47,6 +47,25 @@ pub fn add_got_symbol<E: Target>(ctx: &mut Context<E>, id: SymbolId) {
     }
 }
 
+pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
+    let seg = crate::output_sections::data_seg(ctx);
+    // A kext's are plain data to ld-prime (indexed into the indirect
+    // symbol table all the same), and so are a -static image's, but for
+    // a PIE's - one that has an indirect symbol table.
+    let plain = ctx.args.is_kext() || (ctx.args.static_link && !ctx.args.pie);
+    let flags = if plain { S_REGULAR } else { S_NON_LAZY_SYMBOL_POINTERS };
+    let hdr = &mut ctx.got.hdr;
+    hdr.size = ctx.got.got_syms.len() as u64 * 8;
+    hdr.segname = seg;
+    hdr.flags = flags;
+    // The stand-ins for the __objc_classrefs slots that stay go at their
+    // classes' entries (see objc::fold_objc_classrefs).
+    for i in 0..ctx.got.stand_ins.len() {
+        let (stand_in, class) = ctx.got.stand_ins[i];
+        ctx.isecs[stand_in as usize].offset = ctx.sym_aux(class).got_idx * 8;
+    }
+}
+
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     // Slots for imported symbols stay zero; dyld fills them via
     // the bind stream. Legacy LINKEDIT's slot of an interposable

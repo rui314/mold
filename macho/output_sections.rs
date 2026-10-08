@@ -29,7 +29,7 @@ use crate::util::worker_local::WorkerLocal;
 
 /// The segment for read-only-after-fixup data: __DATA_CONST unless
 /// -no_data_const.
-fn data_seg<E: Target>(ctx: &Context<E>) -> &'static [u8] {
+pub(crate) fn data_seg<E: Target>(ctx: &Context<E>) -> &'static [u8] {
     if ctx.args.data_const { b"__DATA_CONST" } else { b"__DATA" }
 }
 
@@ -612,7 +612,7 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     // The sections the linker synthesizes.
     add_stub_and_got_chunks(ctx);
     if !ctx.init_offsets.init_funcs.is_empty() {
-        ctx.init_offsets.hdr.size = ctx.init_offsets.init_funcs.len() as u64 * 4;
+        chunks::init_offsets::update_shdr(ctx);
         ctx.chunks.push(ChunkId::InitOffsets);
     }
     add_objc_stubs(ctx);
@@ -1186,24 +1186,16 @@ fn compute_section_sizes<E: Target>(ctx: &mut Context<E>) {
     }
 }
 
-/// Sizes the objc_msgSend$ stubs, and appends their selector strings and
-/// reference slots to the sections of those names (as their tail): the
-/// Objective-C runtime uniques the selectors of one __objc_selrefs
-/// section per image, and a second one would leave every compiler-
-/// emitted @selector() unregistered. The input subsections are placed
-/// already, so the tail's offset and the section's final size are
-/// known here.
+/// Adds the objc_msgSend$ stubs to the output, and appends their
+/// selector strings and reference slots to the sections of those names
+/// (as their tail): the Objective-C runtime uniques the selectors of
+/// one __objc_selrefs section per image, and a second one would leave
+/// every compiler-emitted @selector() unregistered. The input
+/// subsections are placed already, so the tail's offset and the
+/// section's final size are known here.
 fn add_objc_stubs<E: Target>(ctx: &mut Context<E>) {
     if !ctx.objc_stubs.symbols.is_empty() {
-        ctx.objc_stubs.hdr.size = ctx.objc_stubs.symbols.len() as u64 * ctx.objc_stub_size();
-        // Code, which -text_exec moves as it does __stubs.
-        if ctx.args.text_exec {
-            ctx.objc_stubs.hdr.segname = b"__TEXT_EXEC";
-        }
-        // 32-byte aligned, but arm64's small stubs word-aligned.
-        if ctx.args.objc_stubs_small {
-            ctx.objc_stubs.hdr.p2align = 2;
-        }
+        chunks::objc_stubs::update_shdr(ctx);
         ctx.chunks.push(ChunkId::ObjcStubs);
     }
 
@@ -1796,85 +1788,46 @@ fn add_stack_segment<E: Target>(ctx: &mut Context<E>) {
     }
 }
 
-/// Sizes the stubs, the lazy-binding helper and pointers, the
-/// lazy-load helpers and slots, and the GOT, and adds the ones in use
-/// to the output.
+/// Adds the stubs, the lazy-binding helper and pointers, the lazy-load
+/// helpers and slots, and the GOT to the output, the ones in use, each
+/// sized by its update_shdr.
 fn add_stub_and_got_chunks<E: Target>(ctx: &mut Context<E>) {
     if !ctx.stubs.symbols.is_empty() {
-        if ctx.args.text_exec {
-            ctx.stubs.hdr.segname = b"__TEXT_EXEC";
-        }
-        ctx.stubs.hdr.reserved2 = E::STUB_SIZE as u32;
-        ctx.stubs.hdr.size = ctx.stubs.symbols.len() as u64 * E::STUB_SIZE;
+        chunks::stubs::update_shdr(ctx);
         ctx.chunks.push(ChunkId::Stubs);
     }
     // (A stub bound by weak lookup goes through the GOT; only lazily
     // bound stubs need the helper and lazy pointers.)
     if !ctx.stubs.lazy.is_empty() {
-        ctx.stub_helper.hdr.size =
-            ctx.stub_helper_header_size() + ctx.stubs.lazy.len() as u64 * E::STUB_HELPER_ENTRY_SIZE;
+        chunks::stub_helper::update_shdr(ctx);
         ctx.chunks.push(ChunkId::StubHelper);
-        // In the shared region, dyld binds them all at load, and the
-        // section joins the read-only data.
-        if ctx.args.shared_region {
-            ctx.lazy_ptrs.hdr.segname = data_seg(ctx);
-        }
-        ctx.lazy_ptrs.hdr.size = ctx.stubs.lazy.len() as u64 * 8;
+        chunks::lazy_ptrs::update_shdr(ctx);
         ctx.chunks.push(ChunkId::LazyPtrs);
     }
 
     // The delay-init stubs and helpers.
-    let delay = &mut ctx.delay_init;
-    if !delay.stubs.is_empty() {
-        delay.stubs_hdr.segname = ctx.stubs.hdr.segname;
-        delay.stubs_hdr.p2align = E::DELAY_P2ALIGN;
-        delay.stubs_hdr.size = delay.stubs.len() as u64 * E::DELAY_STUB_SIZE;
+    if !ctx.delay_init.stubs.is_empty() {
+        chunks::delay_init::update_stubs_shdr(ctx);
         ctx.chunks.push(ChunkId::DelayStubs);
     }
-    if let Some(last) = delay.dlopens.last() {
-        delay.helper_hdr.segname = ctx.stubs.hdr.segname;
-        delay.helper_hdr.p2align = E::DELAY_P2ALIGN;
-        delay.helper_hdr.size = (last.offset + E::DLOPEN_HELPER_SIZE) as u64;
+    if !ctx.delay_init.dlopens.is_empty() {
+        chunks::delay_init::update_helper_shdr(ctx);
         ctx.chunks.push(ChunkId::DelayHelper);
     }
 
-    // The lazy-load helpers, and their slots: read-only data in the
-    // shared region, as its lazy pointers are.
+    // The lazy-load helpers, and their slots.
     if !ctx.lazy_helpers.helpers.is_empty() {
-        let last = ctx.lazy_helpers.helpers.last().unwrap();
-        let size = last.offset + E::lazy_helper_size(last.kind);
-        let hdr = &mut ctx.lazy_helpers.hdr;
-        hdr.segname = ctx.stubs.hdr.segname;
-        hdr.p2align = E::LAZY_HELPERS_P2ALIGN;
-        hdr.size = size as u64;
+        chunks::lazy_helpers::update_shdr(ctx);
         ctx.chunks.push(ChunkId::LazyHelpers);
     }
     if !ctx.lazy_load_got.slots.is_empty() {
-        if ctx.args.shared_region {
-            ctx.lazy_load_got.hdr.segname = data_seg(ctx);
-        }
-        ctx.lazy_load_got.hdr.size = ctx.lazy_load_got.slots.len() as u64 * 8;
+        chunks::lazy_load_got::update_shdr(ctx);
         ctx.chunks.push(ChunkId::LazyLoadGot);
     }
 
-    let seg = data_seg(ctx);
-    // A kext's are plain data to ld-prime (indexed into the indirect
-    // symbol table all the same), and so are a -static image's, but for
-    // a PIE's - one that has an indirect symbol table.
-    let plain = ctx.args.is_kext() || (ctx.args.static_link && !ctx.args.pie);
-    let flags = if plain { S_REGULAR } else { S_NON_LAZY_SYMBOL_POINTERS };
     if !ctx.got.got_syms.is_empty() {
-        let hdr = &mut ctx.got.hdr;
-        hdr.size = ctx.got.got_syms.len() as u64 * 8;
-        hdr.segname = seg;
-        hdr.flags = flags;
+        chunks::got::update_shdr(ctx);
         ctx.chunks.push(ChunkId::Got);
-    }
-    // The stand-ins for the __objc_classrefs slots that stay go at their
-    // classes' entries (see objc::fold_objc_classrefs).
-    for i in 0..ctx.got.stand_ins.len() {
-        let (stand_in, class) = ctx.got.stand_ins[i];
-        ctx.isecs[stand_in as usize].offset = ctx.sym_aux(class).got_idx * 8;
     }
 }
 

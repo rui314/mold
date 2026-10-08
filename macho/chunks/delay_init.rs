@@ -158,6 +158,24 @@ pub fn stub_offset<E: Target>(idx: u32) -> u64 {
     idx as u64 * E::DELAY_STUB_SIZE
 }
 
+/// Sizes the stubs, which go where the other stubs do.
+pub fn update_stubs_shdr<E: Target>(ctx: &mut Context<E>) {
+    let delay = &mut ctx.delay_init;
+    delay.stubs_hdr.segname = ctx.stubs.hdr.segname;
+    delay.stubs_hdr.p2align = E::DELAY_P2ALIGN;
+    delay.stubs_hdr.size = delay.stubs.len() as u64 * E::DELAY_STUB_SIZE;
+}
+
+/// Sizes the helpers, which go where the stubs do: the dlopen helpers
+/// come last.
+pub fn update_helper_shdr<E: Target>(ctx: &mut Context<E>) {
+    let delay = &mut ctx.delay_init;
+    let last = delay.dlopens.last().unwrap();
+    delay.helper_hdr.segname = ctx.stubs.hdr.segname;
+    delay.helper_hdr.p2align = E::DELAY_P2ALIGN;
+    delay.helper_hdr.size = (last.offset + E::DLOPEN_HELPER_SIZE) as u64;
+}
+
 pub fn copy_stubs<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     E::write_delay_stubs(ctx, ctx.delay_init.stubs_hdr.addr, buf);
 }

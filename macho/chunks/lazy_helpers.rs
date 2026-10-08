@@ -91,6 +91,16 @@ impl Default for LazyHelpersSection {
     }
 }
 
+/// Sizes the helpers, which go where the stubs do.
+pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
+    let last = ctx.lazy_helpers.helpers.last().unwrap();
+    let size = last.offset + E::lazy_helper_size(last.kind);
+    let hdr = &mut ctx.lazy_helpers.hdr;
+    hdr.segname = ctx.stubs.hdr.segname;
+    hdr.p2align = E::LAZY_HELPERS_P2ALIGN;
+    hdr.size = size as u64;
+}
+
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     E::write_lazy_helpers(ctx, ctx.lazy_helpers.hdr.addr, buf);
 }

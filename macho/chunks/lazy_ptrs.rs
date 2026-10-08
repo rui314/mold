@@ -32,6 +32,15 @@ impl Default for LazyPtrsSection {
     }
 }
 
+pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
+    // In the shared region, dyld binds them all at load, and the
+    // section joins the read-only data.
+    if ctx.args.shared_region {
+        ctx.lazy_ptrs.hdr.segname = crate::output_sections::data_seg(ctx);
+    }
+    ctx.lazy_ptrs.hdr.size = ctx.stubs.lazy.len() as u64 * 8;
+}
+
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     // Each lazy pointer starts at its stub helper entry.
     let helper = ctx.stub_helper.hdr.addr;

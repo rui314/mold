@@ -76,6 +76,18 @@ pub fn entry_offset<E: Target>(ctx: &Context<E>, idx: u32) -> u64 {
     idx as u64 * entry_size(ctx)
 }
 
+pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
+    ctx.objc_stubs.hdr.size = ctx.objc_stubs.symbols.len() as u64 * entry_size(ctx);
+    // Code, which -text_exec moves as it does __stubs.
+    if ctx.args.text_exec {
+        ctx.objc_stubs.hdr.segname = b"__TEXT_EXEC";
+    }
+    // 32-byte aligned, but arm64's small stubs word-aligned.
+    if ctx.args.objc_stubs_small {
+        ctx.objc_stubs.hdr.p2align = 2;
+    }
+}
+
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     E::write_objc_stubs(ctx, ctx.objc_stubs.hdr.addr, buf);
 }

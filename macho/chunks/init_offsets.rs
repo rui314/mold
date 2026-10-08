@@ -40,6 +40,10 @@ impl Default for InitOffsetsSection {
     }
 }
 
+pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
+    ctx.init_offsets.hdr.size = ctx.init_offsets.init_funcs.len() as u64 * 4;
+}
+
 /// Writes the offsets. An initializer dyld binds has no offset in the
 /// image: that is an error.
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
