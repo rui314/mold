@@ -210,8 +210,13 @@ impl<const LE: bool> Target for Arm64Target<LE> {
         32 + idx as u64 * Self::plt_entry_size(ctx)
     }
 
+    // PLT entries jump to the header with an indirect branch, so the header
+    // starts with a BTI landing pad. We write it even if BTI is disabled, in
+    // which case `bti c` is a no-op, because the header is executed only when
+    // a symbol is resolved lazily.
     fn write_plt_header(ctx: &Context<Self>, buf: &mut [u8]) {
         const INSN: [u32; 8] = [
+            0xd503_245f, // bti  c
             0xa9bf_7bf0, // stp  x16, x30, [sp,#-16]!
             0x9000_0010, // adrp x16, .got.plt[2]
             0xf940_0211, // ldr  x17, [x16, .got.plt[2]]
@@ -219,20 +224,15 @@ impl<const LE: bool> Target for Arm64Target<LE> {
             0xd61f_0220, // br   x17
             0xd420_7d00, // brk
             0xd420_7d00, // brk
-            0xd420_7d00, // brk
         ];
-        // PLT entries jump to the header with an indirect branch. A landing
-        // pad, if any, replaces one of the trailing brks.
-        let off = write_landing_pad(buf, note_property::is_bti(ctx));
-        let buf = &mut buf[off..32];
-        for (loc, &v) in buf.chunks_exact_mut(4).zip(&INSN) {
-            write_ul32(loc, v);
+        for (i, &v) in INSN.iter().enumerate() {
+            write_ul32(&mut buf[i * 4..], v);
         }
         let gotplt = ctx.gotplt.shdr.sh_addr.get() + 16;
-        let plt = ctx.plt.hdr.shdr.sh_addr.get() + off as u64;
-        write_adrp(&mut buf[4..], page(gotplt).wrapping_sub(page(plt + 4)));
-        or_insn(&mut buf[8..], (bits(gotplt, 11, 3) << 10) as u32);
-        or_insn(&mut buf[12..], ((gotplt & 0xfff) << 10) as u32);
+        let plt = ctx.plt.hdr.shdr.sh_addr.get();
+        write_adrp(&mut buf[8..], page(gotplt).wrapping_sub(page(plt + 8)));
+        or_insn(&mut buf[12..], (bits(gotplt, 11, 3) << 10) as u32);
+        or_insn(&mut buf[16..], ((gotplt & 0xfff) << 10) as u32);
     }
 
     // A PLT entry is 16 bytes long by default and 24 bytes long if BTI is

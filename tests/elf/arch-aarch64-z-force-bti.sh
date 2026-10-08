@@ -14,7 +14,10 @@ EOF
 
 ./mold -shared -o $t/c.so $t/a.o $t/b.o
 readelf -n $t/c.so | not grep 'AArch64 feature'
-$OBJDUMP -d -j .plt $t/c.so | grep -A1 '<_PROCEDURE_LINKAGE_TABLE_>:' | not grep -w bti
+readelf --dynamic $t/c.so | not grep AARCH64_BTI_PLT
+
+# The PLT header starts with `bti c` even if BTI is disabled.
+$OBJDUMP -d -j .plt $t/c.so | grep -A1 '<_PROCEDURE_LINKAGE_TABLE_>:' | grep -w bti
 
 ./mold -shared -o $t/c.so $t/a.o $t/b.o -z force-bti 2> $t/log
 readelf -n $t/c.so | grep 'AArch64 feature: BTI'
