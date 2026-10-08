@@ -44,7 +44,7 @@ impl Default for LazyLoadGotSection {
 pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
     // Read-only data in the shared region, as its lazy pointers are.
     if ctx.args.shared_region {
-        ctx.lazy_load_got.hdr.segname = crate::output_sections::data_seg(ctx);
+        ctx.lazy_load_got.hdr.segname = crate::chunks::data_seg(ctx);
     }
     ctx.lazy_load_got.hdr.size = ctx.lazy_load_got.slots.len() as u64 * 8;
 }

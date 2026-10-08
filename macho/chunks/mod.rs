@@ -298,6 +298,12 @@ pub fn segment_prot(name: &[u8]) -> u32 {
     }
 }
 
+/// The segment for read-only-after-fixup data: __DATA_CONST unless
+/// -no_data_const.
+pub(crate) fn data_seg<E: Target>(ctx: &Context<E>) -> &'static [u8] {
+    if ctx.args.data_const { b"__DATA_CONST" } else { b"__DATA" }
+}
+
 /// Returns the load-command index of the segment containing `addr`, and
 /// the offset within it.
 pub fn segment_and_offset<E: Target>(ctx: &Context<E>, addr: u64) -> (usize, u64) {

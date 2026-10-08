@@ -26,7 +26,6 @@ pub(crate) mod mapped_file;
 pub(crate) mod mergeable;
 pub(crate) mod objc;
 pub(crate) mod output_file;
-pub(crate) mod output_sections;
 pub(crate) mod passes;
 pub(crate) mod reader;
 pub(crate) mod relocatable;

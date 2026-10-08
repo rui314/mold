@@ -15,7 +15,6 @@ use crate::context::Context;
 use crate::dead_strip;
 use crate::objc;
 use crate::output_file;
-use crate::output_sections;
 use crate::passes;
 use crate::reader;
 use crate::symbol_moves;
@@ -160,26 +159,23 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
         // NetNewsWire's RSCore prelink's __DATA,__const otherwise.
         timed!("coalesce_weak_defs", passes::coalesce_weak_defs(&mut ctx));
         let moves = symbol_moves::find_moves(&ctx);
-        timed!("create_output_sections", output_sections::create_output_sections(&mut ctx, &moves));
-        output_sections::set_section_alignments(&mut ctx);
-        output_sections::sort_section_members(&mut ctx);
-        timed!("compute_section_sizes", output_sections::compute_section_sizes(&mut ctx));
-        timed!(
-            "create_synthetic_sections",
-            output_sections::create_synthetic_sections(&mut ctx, &moves)
-        );
-        output_sections::rename_synthetic_sections(&mut ctx);
-        output_sections::add_boundary_sections(&mut ctx);
-        timed!("sort_output_sections", output_sections::sort_output_sections(&mut ctx));
-        output_sections::create_segments(&mut ctx);
-        output_sections::add_boundary_segments(&mut ctx);
-        output_sections::add_stack_segment(&mut ctx);
-        output_sections::finish_section_alignments(&mut ctx);
+        timed!("create_output_sections", passes::create_output_sections(&mut ctx, &moves));
+        passes::set_section_alignments(&mut ctx);
+        passes::sort_section_members(&mut ctx);
+        timed!("compute_section_sizes", passes::compute_section_sizes(&mut ctx));
+        timed!("create_synthetic_sections", passes::create_synthetic_sections(&mut ctx, &moves));
+        passes::rename_synthetic_sections(&mut ctx);
+        passes::add_boundary_sections(&mut ctx);
+        timed!("sort_output_sections", passes::sort_output_sections(&mut ctx));
+        passes::create_segments(&mut ctx);
+        passes::add_boundary_segments(&mut ctx);
+        passes::add_stack_segment(&mut ctx);
+        passes::finish_section_alignments(&mut ctx);
         chunks::indirect_symtab::assign_indices(&mut ctx);
-        output_sections::check_segment_order(&ctx);
-        output_sections::check_section_order(&ctx);
-        output_sections::check_interposing(&ctx);
-        output_sections::check_header_segment(&ctx);
+        passes::check_segment_order(&ctx);
+        passes::check_section_order(&ctx);
+        passes::check_interposing(&ctx);
+        passes::check_header_segment(&ctx);
         timed!("relocatable", ctx.output_size = crate::relocatable::combine_objects(&mut ctx));
         crate::error::checkpoint();
         crate::subprocess::notify_parent();
@@ -264,44 +260,41 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     // Bin input sections into output sections. -move_to_rw_segment and
     // the like take the subsections they name to other segments.
     let moves = symbol_moves::find_moves(&ctx);
-    timed!("create_output_sections", output_sections::create_output_sections(&mut ctx, &moves));
-    output_sections::set_section_alignments(&mut ctx);
+    timed!("create_output_sections", passes::create_output_sections(&mut ctx, &moves));
+    passes::set_section_alignments(&mut ctx);
 
     // Order each output section's members: -order_file's first, cold
     // code last.
-    output_sections::sort_section_members(&mut ctx);
+    passes::sort_section_members(&mut ctx);
 
     // Compute sizes of output sections while assigning offsets within
     // an output section to input sections.
-    timed!("compute_section_sizes", output_sections::compute_section_sizes(&mut ctx));
+    timed!("compute_section_sizes", passes::compute_section_sizes(&mut ctx));
 
     // Create linker-synthesized sections such as __stubs or __got, and
     // give them their final names.
-    timed!(
-        "create_synthetic_sections",
-        output_sections::create_synthetic_sections(&mut ctx, &moves)
-    );
-    output_sections::rename_synthetic_sections(&mut ctx);
+    timed!("create_synthetic_sections", passes::create_synthetic_sections(&mut ctx, &moves));
+    passes::rename_synthetic_sections(&mut ctx);
 
     // Create the sections section$start$ and section$end$ symbols name.
-    output_sections::add_boundary_sections(&mut ctx);
-    output_sections::trace_symbol_layout(&ctx);
+    passes::add_boundary_sections(&mut ctx);
+    crate::mapfile::trace_symbol_layout(&ctx);
 
     // Sort the sections into file order, and group them into segments.
-    timed!("sort_output_sections", output_sections::sort_output_sections(&mut ctx));
-    output_sections::create_segments(&mut ctx);
-    output_sections::add_boundary_segments(&mut ctx);
-    output_sections::add_stack_segment(&mut ctx);
-    output_sections::finish_section_alignments(&mut ctx);
+    timed!("sort_output_sections", passes::sort_output_sections(&mut ctx));
+    passes::create_segments(&mut ctx);
+    passes::add_boundary_segments(&mut ctx);
+    passes::add_stack_segment(&mut ctx);
+    passes::finish_section_alignments(&mut ctx);
     chunks::indirect_symtab::assign_indices(&mut ctx);
-    output_sections::check_segment_order(&ctx);
-    output_sections::check_section_order(&ctx);
-    output_sections::check_interposing(&ctx);
-    output_sections::check_header_segment(&ctx);
+    passes::check_segment_order(&ctx);
+    passes::check_section_order(&ctx);
+    passes::check_interposing(&ctx);
+    passes::check_header_segment(&ctx);
 
     // Handle -no_zero_fill_sections.
     if ctx.args.no_zero_fill_sections {
-        output_sections::fill_zero_fill_sections(&mut ctx);
+        passes::fill_zero_fill_sections(&mut ctx);
     }
 
     // The output symbol table builds inside set_osec_offsets, as part

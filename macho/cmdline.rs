@@ -789,7 +789,7 @@ pub struct Args {
     pub force_load_swift_libs: bool,
     /// -merge_zero_fill_sections: each segment's zero-fill sections, the
     /// commons too, form one __zerofill section (see
-    /// output_sections::SectionMap::zero_fill_name).
+    /// passes::SectionMap::zero_fill_name).
     pub merge_zero_fill_sections: bool,
     /// -fixup_chains_section (or -fixup_chains_section_vm): a -static
     /// image's fixup chains start where __TEXT,__chain_starts says, for

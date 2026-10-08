@@ -1,6 +1,7 @@
 //! The link's reports: the -map file (where every object file, section
-//! and symbol ended up, in ld64's format), -sdk_imports with the API list
-//! it may be limited to, -dependency_info and the trace files.
+//! and symbol ended up, in ld64's format), -trace_symbol_layout,
+//! -sdk_imports with the API list it may be limited to, -dependency_info
+//! and the trace files.
 
 use std::borrow::Cow;
 use std::io::Write;
@@ -478,6 +479,47 @@ fn dylib_imports<E: Target>(ctx: &Context<E>) -> Vec<Vec<&'static [u8]>> {
         list.dedup();
     }
     imports
+}
+
+/// -trace_symbol_layout prints, or -trace_symbol_layout_file writes,
+/// the output section each symbol the map lists (see is_map_symbol)
+/// went to, in symbol order: "symbol '_x', mapped to __TEXT/__text". A
+/// file that can't be written is a warning, ending with a blank line as
+/// ld-prime's does, and the trace goes nowhere then. A -r link reports
+/// nothing.
+pub fn trace_symbol_layout<E: Target>(ctx: &Context<E>) {
+    let args = &ctx.args;
+    if args.relocatable {
+        return;
+    }
+    let mut out: Box<dyn std::io::Write> = match &args.trace_symbol_layout_file {
+        Some(path) => match std::fs::File::create(path) {
+            Ok(file) => Box::new(std::io::BufWriter::new(file)),
+            Err(e) => {
+                crate::warn!(
+                    "could not open -trace_symbol_layout_file {} for writing ({})\n",
+                    path.raw(),
+                    e.raw_os_error().unwrap_or(0)
+                );
+                return;
+            }
+        },
+        None if args.trace_symbol_layout => Box::new(std::io::stdout().lock()),
+        None => return,
+    };
+    for sym in &ctx.symbols.syms {
+        let Some(isec) = sym.input_section() else { continue };
+        if !is_map_symbol(sym) {
+            continue;
+        }
+        let Some(chunk) = ctx.isecs[ctx.isecs.resolve(isec as usize)].output_section() else {
+            continue;
+        };
+        let hdr = ctx.chunk_header(chunk);
+        let line = [b"symbol '", sym.name(), b"', mapped to ", hdr.segname, b"/", hdr.sectname];
+        let _ = out.write_all(&line.concat());
+        let _ = out.write_all(b"\n");
+    }
 }
 
 /// Whether a symbol names a row of the map: any named one but a local

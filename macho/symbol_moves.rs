@@ -5,7 +5,7 @@
 //! __DATA_DIRTY. Each option takes the first of its lists that names one
 //! of a subsection's symbols, or matches it with a pattern, and moves
 //! the subsection to the section of its name in the list's segment (see
-//! output_sections::assign_input_sections). A new segment follows the
+//! passes::assign_input_sections). A new segment follows the
 //! linker's own, read-write as any other ld-prime doesn't know - but one
 //! made for moved code, which mold makes executable (see
 //! chunks::segment_prots). Fixups, symbols and -order_file treat a moved
@@ -20,7 +20,6 @@ use crate::context::Context;
 use crate::error::{RawPath, raw};
 use crate::input_files::{FileId, canonical_section_flags};
 use crate::macho::*;
-use crate::output_sections::common_owners;
 use crate::symbol::SymbolId;
 use crate::util::leak_bytes;
 
@@ -113,7 +112,7 @@ fn content_of(seg: &[u8], sect: &[u8], flags: u32) -> Content {
 /// silently, -move_to_rw_segment's wins over the other's, and
 /// -dirty_data_list's applies only if neither moves the subsection, nor
 /// to the thread-local template (and only in __DATA, see
-/// output_sections::SectionMap::moved_name). A -r link moves nothing
+/// passes::SectionMap::moved_name). A -r link moves nothing
 /// (cmdline::check_relocatable).
 pub(crate) fn find_moves<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32, Move> {
     let args = &ctx.args;
@@ -227,6 +226,31 @@ fn for_each_subsec_symbol<'a, E: Target>(
             f(SymbolFile::Aliases(base), alias, subsec);
         }
     }
+}
+
+/// The object each common symbol's subsection stands for the tentative
+/// definition of, by subsection: the one declaring the largest size,
+/// the first of equals, as in ld-prime.
+fn common_owners<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32, u32> {
+    let mut decls: hashbrown::HashMap<crate::symbol::SymbolId, (u64, u32)> =
+        hashbrown::HashMap::new();
+    for (i, obj) in ctx.objs.iter().enumerate().filter(|(_, obj)| obj.is_reachable) {
+        let r = obj.global_range();
+        for (msym, &sym) in obj.mach_syms[r.clone()].iter().zip(&obj.symbols[r]) {
+            if !msym.is_stab() && msym.ty() == N_UNDF && msym.is_common() {
+                let decl = decls.entry(sym).or_insert((msym.value, i as u32));
+                if msym.value > decl.0 {
+                    *decl = (msym.value, i as u32);
+                }
+            }
+        }
+    }
+    // A symbol a real definition took is no common symbol's.
+    decls
+        .into_iter()
+        .filter_map(|(sym, (_, obj))| Some((ctx.symbols[sym].input_section()?, obj)))
+        .filter(|&(isec, _)| ctx.is_internal(ctx.isecs[isec as usize].file as usize))
+        .collect()
 }
 
 /// The -alias names of definitions in objects, in the options' order,

@@ -491,7 +491,7 @@ fn objc_imageinfo_section<E: Target>(ctx: &Context<E>) -> Option<SyntheticSectio
     if !ctx.objs.iter().any(|o| o.is_reachable && o.objc_image_info.is_some()) {
         return None;
     }
-    let (seg, sect) = crate::output_sections::renamed(&ctx.args, (b"__DATA", b"__objc_imageinfo"));
+    let (seg, sect) = crate::passes::renamed(&ctx.args, (b"__DATA", b"__objc_imageinfo"));
     Some(SyntheticSection::new(seg, sect, 0, 2, 8, SyntheticKind::ObjcImageInfo))
 }
 

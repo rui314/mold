@@ -2,10 +2,11 @@
 //! relative (12-byte entry) form, which needs no fixups.
 
 use crate::arch::Target;
+use crate::chunks::output_section::append_tail;
 use crate::chunks::{ChunkHeader, ChunkId, OutputSectionId, Tail};
 use crate::context::Context;
 use crate::objc::ObjcMethList;
-use crate::output_sections::{SectionName, append_tail, record_section};
+use crate::passes::{SectionName, record_section};
 use crate::symbol_moves::{Move, MoveOption};
 use crate::util::align_to;
 

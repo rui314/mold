@@ -27,7 +27,7 @@ impl SectCreateSection {
 /// The input section of a -sectcreate or -add_empty_section option. It
 /// joins the output section of its name of the input sections, after
 /// them, or a section of the options' own (see
-/// output_sections::place_sectcreate_inputs).
+/// passes::place_sectcreate_inputs).
 #[derive(Debug)]
 pub struct SectCreateInput {
     pub size: u64,

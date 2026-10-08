@@ -11,6 +11,7 @@ use crate::input_sections::InputSectionId;
 use crate::objc::DataField;
 use crate::symbol_moves::MoveOption;
 use crate::thunks::Thunk;
+use crate::util::align_to;
 
 /// Linker-synthesized data appended to an output section after its
 /// input subsections. The Objective-C runtime reads exactly one
@@ -71,6 +72,15 @@ impl OutputSection {
             moved: None,
         }
     }
+}
+
+/// Appends a synthesized `tail` of `tail_size` bytes aligned to
+/// 2^`p2align` to an output section, after its input subsections.
+pub(crate) fn append_tail(osec: &mut OutputSection, p2align: u32, tail: Tail, tail_size: u64) {
+    osec.hdr.p2align = osec.hdr.p2align.max(p2align);
+    osec.tail = tail;
+    osec.tail_off = align_to(osec.hdr.size, 1 << p2align);
+    osec.hdr.size = osec.tail_off + tail_size;
 }
 
 /// Lays out an output section's members, each at its alignment after

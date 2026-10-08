@@ -48,7 +48,7 @@ pub fn add_got_symbol<E: Target>(ctx: &mut Context<E>, id: SymbolId) {
 }
 
 pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
-    let seg = crate::output_sections::data_seg(ctx);
+    let seg = crate::chunks::data_seg(ctx);
     // A kext's are plain data to ld-prime (indexed into the indirect
     // symbol table all the same), and so are a -static image's, but for
     // a PIE's - one that has an indirect symbol table.

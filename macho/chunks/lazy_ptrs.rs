@@ -36,7 +36,7 @@ pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
     // In the shared region, dyld binds them all at load, and the
     // section joins the read-only data.
     if ctx.args.shared_region {
-        ctx.lazy_ptrs.hdr.segname = crate::output_sections::data_seg(ctx);
+        ctx.lazy_ptrs.hdr.segname = crate::chunks::data_seg(ctx);
     }
     ctx.lazy_ptrs.hdr.size = ctx.stubs.lazy.len() as u64 * 8;
 }

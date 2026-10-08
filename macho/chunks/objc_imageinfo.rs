@@ -50,7 +50,7 @@ pub fn create<E: Target>(ctx: &mut Context<E>) {
         return;
     }
     ctx.objc_imageinfo.flags = flags;
-    ctx.objc_imageinfo.hdr.segname = crate::output_sections::data_seg(ctx);
+    ctx.objc_imageinfo.hdr.segname = crate::chunks::data_seg(ctx);
     ctx.objc_imageinfo.hdr.size = 8;
     ctx.chunks.push(ChunkId::ObjcImageInfo);
 }
