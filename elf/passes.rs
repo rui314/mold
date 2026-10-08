@@ -1547,22 +1547,30 @@ pub fn check_cet_errors<E: Target>(ctx: &Context<E>) {
 }
 
 pub fn check_arm64_feature_errors<E: Target>(ctx: &Context<E>) {
+    let has_feature = |file: &ObjectFile<E>, feature: u32| {
+        file.gnu_properties
+            .get(&GNU_PROPERTY_AARCH64_FEATURE_1_AND)
+            .is_some_and(|v| v & feature != 0)
+    };
     for file in &ctx.objs {
-        if ctx.is_internal(file.id())
-            || file
-                .gnu_properties
-                .get(&GNU_PROPERTY_AARCH64_FEATURE_1_AND)
-                .is_some_and(|v| v & GNU_PROPERTY_AARCH64_FEATURE_1_BTI != 0)
-        {
+        if ctx.is_internal(file.id()) {
             continue;
         }
-        match ctx.args.z_bti_report {
-            ReportKind::None => {}
-            ReportKind::Warning => {
-                warn!("{file}: -z bti-report=warning: missing GNU_PROPERTY_AARCH64_FEATURE_1_BTI")
+        for (kind, option, feature, name) in [
+            (ctx.args.z_bti_report, "bti-report", GNU_PROPERTY_AARCH64_FEATURE_1_BTI, "BTI"),
+            (ctx.args.z_gcs_report, "gcs-report", GNU_PROPERTY_AARCH64_FEATURE_1_GCS, "GCS"),
+        ] {
+            if has_feature(file, feature) {
+                continue;
             }
-            ReportKind::Error => {
-                error!("{file}: -z bti-report=error: missing GNU_PROPERTY_AARCH64_FEATURE_1_BTI")
+            match kind {
+                ReportKind::None => {}
+                ReportKind::Warning => warn!(
+                    "{file}: -z {option}=warning: missing GNU_PROPERTY_AARCH64_FEATURE_1_{name}"
+                ),
+                ReportKind::Error => error!(
+                    "{file}: -z {option}=error: missing GNU_PROPERTY_AARCH64_FEATURE_1_{name}"
+                ),
             }
         }
     }

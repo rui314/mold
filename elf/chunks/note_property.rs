@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::arch::{Family, Target};
 use crate::chunks::ChunkHeader;
+use crate::cmdline::GcsKind;
 use crate::context::Context;
 use crate::elf::*;
 
@@ -105,6 +106,11 @@ pub fn construct<E: Target>(ctx: &mut Context<E>) {
         let features = map.entry(GNU_PROPERTY_AARCH64_FEATURE_1_AND).or_insert(0);
         if ctx.args.z_force_bti {
             *features |= GNU_PROPERTY_AARCH64_FEATURE_1_BTI;
+        }
+        match ctx.args.z_gcs {
+            GcsKind::Implicit => {}
+            GcsKind::Never => *features &= !GNU_PROPERTY_AARCH64_FEATURE_1_GCS,
+            GcsKind::Always => *features |= GNU_PROPERTY_AARCH64_FEATURE_1_GCS,
         }
     }
 

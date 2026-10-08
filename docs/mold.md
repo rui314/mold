@@ -871,6 +871,18 @@ point symbol in a script.
   section even if some object files were not compiled with BTI, and generate
   a PLT with BTI landing pads. This option implies `-z bti-report=warning`.
 
+* `-z gcs`=[ `implicit` | `always` | `never` ]:
+  Guarded Control Stack (GCS) is an ARM64 shadow stack feature. With
+  `implicit`, which is the default, `GNU_PROPERTY_AARCH64_FEATURE_1_GCS` bit
+  in `.note.gnu.property` section is turned on only if all object files have
+  the bit. `always` turns it on regardless of object files and implies `-z
+  gcs-report=warning`. `never` turns it off.
+
+* `-z gcs-report`=[ `warning` | `error` | `none` ]:
+  Print out a warning or an error message if an object file lacks
+  `GNU_PROPERTY_AARCH64_FEATURE_1_GCS` bit in its `.note.gnu.property`
+  section.
+
 * `-z now`, `-z lazy`:
   By default, functions referring to other ELF modules are resolved by the
   dynamic linker when they are called for the first time. `-z now` marks an

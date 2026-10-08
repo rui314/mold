@@ -294,6 +294,14 @@ pub enum ReportKind {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum GcsKind {
+    #[default]
+    Implicit,
+    Never,
+    Always,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ShuffleSections {
     #[default]
     None,
@@ -431,6 +439,8 @@ pub struct Args {
     pub build_id: BuildId,
     pub z_cet_report: ReportKind,
     pub z_bti_report: ReportKind,
+    pub z_gcs_report: ReportKind,
+    pub z_gcs: GcsKind,
     pub undefined_glob: Glob,
     pub unique: Glob,
     pub z_separate_code: SeparateCodeKind,
@@ -572,6 +582,8 @@ impl Default for Args {
             build_id: BuildId::default(),
             z_cet_report: ReportKind::None,
             z_bti_report: ReportKind::None,
+            z_gcs_report: ReportKind::None,
+            z_gcs: GcsKind::Implicit,
             undefined_glob: Glob::new(),
             unique: Glob::new(),
             z_separate_code: SeparateCodeKind::NoSeparateCode,
@@ -1226,6 +1238,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
     let mut z_relro: Option<bool> = None;
     let mut z_dynamic_undefined_weak: Option<bool> = None;
     let mut z_bti_report: Option<ReportKind> = None;
+    let mut z_gcs_report: Option<ReportKind> = None;
     let mut separate_debug_file: Option<PathBuf> = None;
     // An explicit seed survives intervening --reverse-sections options.
     let mut shuffle_sections_seed: Option<u64> = None;
@@ -1637,6 +1650,12 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             z_bti_report = Some(ReportKind::Warning);
         } else if cursor.read_z_flag("bti-report=error") {
             z_bti_report = Some(ReportKind::Error);
+        } else if cursor.read_z_flag("gcs-report=none") {
+            z_gcs_report = Some(ReportKind::None);
+        } else if cursor.read_z_flag("gcs-report=warning") {
+            z_gcs_report = Some(ReportKind::Warning);
+        } else if cursor.read_z_flag("gcs-report=error") {
+            z_gcs_report = Some(ReportKind::Error);
         } else if cursor.read_z_flag("execstack") {
             a.z_execstack = true;
         } else if cursor.read_z_flag("execstack-if-needed") {
@@ -1679,6 +1698,12 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
         } else if cursor.read_z_flag("ibtplt") {
         } else if cursor.read_z_flag("force-bti") {
             a.z_force_bti = true;
+        } else if cursor.read_z_flag("gcs=implicit") {
+            a.z_gcs = GcsKind::Implicit;
+        } else if cursor.read_z_flag("gcs=never") {
+            a.z_gcs = GcsKind::Never;
+        } else if cursor.read_z_flag("gcs=always") {
+            a.z_gcs = GcsKind::Always;
         } else if cursor.read_z_flag("muldefs") {
             a.allow_multiple_definition = true;
         } else if let Some(value) =
@@ -2050,9 +2075,15 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
     // `-z dynamic-undefined-weak` is enabled by default for DSOs.
     a.z_dynamic_undefined_weak = z_dynamic_undefined_weak.unwrap_or(a.shared);
 
-    // `-z force-bti` implies `-z bti-report=warning`.
+    // `-z force-bti` implies `-z bti-report=warning`, and `-z gcs=always`
+    // implies `-z gcs-report=warning`.
     a.z_bti_report =
         z_bti_report.unwrap_or(if a.z_force_bti { ReportKind::Warning } else { ReportKind::None });
+    a.z_gcs_report = z_gcs_report.unwrap_or(if a.z_gcs == GcsKind::Always {
+        ReportKind::Warning
+    } else {
+        ReportKind::None
+    });
 
     // --section-order implies `-z norelro`
     a.z_relro = z_relro.unwrap_or(a.section_order.is_empty());

@@ -319,8 +319,11 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     if ctx.args.z_cet_report != cmdline::ReportKind::None {
         passes::check_cet_errors(&ctx);
     }
-    // Handle `-z bti-report`.
-    if E::FAMILY == Family::Arm64 && ctx.args.z_bti_report != cmdline::ReportKind::None {
+    // Handle `-z bti-report` and `-z gcs-report`.
+    if E::FAMILY == Family::Arm64
+        && (ctx.args.z_bti_report != cmdline::ReportKind::None
+            || ctx.args.z_gcs_report != cmdline::ReportKind::None)
+    {
         passes::check_arm64_feature_errors(&ctx);
     }
     // Handle `-z execstack-if-needed`.
