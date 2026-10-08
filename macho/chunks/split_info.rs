@@ -229,31 +229,24 @@ impl<'a, E: Target> Places<'a, E> {
     }
 
     /// Where a symbol's address lies, as Symbol::addr resolves it
-    /// (a dylib symbol at its stub); None for an absolute symbol. The
-    /// linker's own sectionless symbols are the layout boundaries and
-    /// the mach header's names (___dso_handle, __mh_*_header).
+    /// (a dylib symbol at its stub, see Symbol::stub_entry); None for
+    /// an absolute symbol. The linker's own sectionless symbols are the
+    /// layout boundaries and the mach header's names (___dso_handle,
+    /// __mh_*_header).
     pub(crate) fn sym(&self, id: SymbolId) -> Option<Place> {
         let ctx = self.ctx;
-        let symbols = &ctx.symbols;
-        let sym = &symbols[id];
+        let sym = &ctx.symbols[id];
         match sym.file()? {
             FileId::Dylib(_) => {
-                if let Some(idx) = sym.lazy_stub_idx(symbols) {
-                    Some(self.lazy_helper(idx))
-                } else if let Some(idx) = sym.delay_stub_idx(symbols) {
-                    Some(self.chunk(ChunkId::DelayStubs, delay_init::stub_offset::<E>(idx)))
-                } else {
-                    let idx = sym.stub_idx(symbols)?;
-                    Some(self.chunk(ChunkId::Stubs, stubs::entry_offset::<E>(idx)))
-                }
+                let (chunk, addr) = sym.stub_entry(ctx)?;
+                Some(self.chunk_addr(chunk, addr))
             }
             FileId::Obj(obj) => {
                 if let Some(isec) = sym.input_section() {
                     let (n, off) = self.isec(isec as usize)?;
                     Some((n, off + sym.value))
-                } else if let Some(idx) = sym.objc_stub_idx(symbols) {
-                    let off = objc_stubs::entry_offset(ctx, idx);
-                    Some(self.chunk(ChunkId::ObjcStubs, off))
+                } else if let Some((chunk, addr)) = sym.stub_entry(ctx) {
+                    Some(self.chunk_addr(chunk, addr))
                 } else if ctx.is_internal(obj as usize) {
                     let header = (0, sym.value.wrapping_sub(self.header_addr));
                     Some(self.boundaries.get(&id).copied().unwrap_or(header))
@@ -272,15 +265,8 @@ impl<'a, E: Target> Places<'a, E> {
     /// A symbol's GOT slot, or a lazy dylib's symbol's __lazy_load_got
     /// slot.
     pub(crate) fn got_slot(&self, id: SymbolId) -> Place {
-        let symbols = &self.ctx.symbols;
-        let sym = &symbols[id];
-        match sym.got_idx(symbols) {
-            Some(idx) => self.got_index(idx as usize),
-            None => {
-                let addr = self.ctx.lazy_load_got.slot_addr(sym.lazy_got_idx(symbols).unwrap());
-                self.chunk_addr(ChunkId::LazyLoadGot, addr)
-            }
-        }
+        let (chunk, addr) = self.ctx.symbols[id].got_slot(self.ctx);
+        self.chunk_addr(chunk, addr)
     }
 
     /// Where __lazy_helpers entry `i` lies.

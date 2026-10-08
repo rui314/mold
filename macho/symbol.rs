@@ -3,6 +3,7 @@
 use rayon::prelude::*;
 
 use crate::arch::Target;
+use crate::chunks::ChunkId;
 use crate::context::Context;
 use crate::input_files::FileId;
 
@@ -594,8 +595,8 @@ impl Symbol {
             Some(FileId::Obj(_)) => {
                 if let Some(isec) = self.input_section().map(|i| i as usize) {
                     ctx.isecs[isec].addr(ctx) + self.value
-                } else if let Some(idx) = self.objc_stub_idx(&ctx.symbols) {
-                    ctx.objc_stubs.hdr.addr + crate::chunks::objc_stubs::entry_offset(ctx, idx)
+                } else if let Some((_, addr)) = self.stub_entry(ctx) {
+                    addr
                 } else {
                     self.value
                 }
@@ -604,15 +605,34 @@ impl Symbol {
             // a lazily loaded dylib's, its call helper. Other
             // references to dylib symbols are filled in by dyld; the
             // relocation scan has already validated them.
-            Some(FileId::Dylib(_)) => {
-                if self.stub_idx(&ctx.symbols).is_some() {
-                    self.stub_addr(ctx)
-                } else if let Some(idx) = self.lazy_stub_idx(&ctx.symbols) {
-                    ctx.lazy_helpers.helper_addr(idx as usize)
-                } else if let Some(idx) = self.delay_stub_idx(&ctx.symbols) {
-                    ctx.delay_init.stub_addr::<E>(idx as usize)
+            Some(FileId::Dylib(_)) => self.stub_entry(ctx).map_or(0, |(_, addr)| addr),
+        }
+    }
+
+    /// The entry of the linker's code that stands in for a symbol with
+    /// no section of its own, where Symbol::addr puts it: a dylib
+    /// symbol's stub, or for a lazily loaded or delay-init dylib's, its
+    /// call helper or delay-init stub; an _objc_msgSend$<selector>
+    /// symbol's selector stub. The chunk, and the entry's address.
+    /// LC_SEGMENT_SPLIT_INFO places such a symbol by it too.
+    #[inline]
+    pub fn stub_entry<E: Target>(&self, ctx: &Context<E>) -> Option<(ChunkId, u64)> {
+        let symbols = &ctx.symbols;
+        match self.file()? {
+            FileId::Obj(_) => {
+                let idx = self.objc_stub_idx(symbols)?;
+                let addr =
+                    ctx.objc_stubs.hdr.addr + crate::chunks::objc_stubs::entry_offset(ctx, idx);
+                Some((ChunkId::ObjcStubs, addr))
+            }
+            FileId::Dylib(_) => {
+                if self.stub_idx(symbols).is_some() {
+                    Some((ChunkId::Stubs, self.stub_addr(ctx)))
+                } else if let Some(idx) = self.lazy_stub_idx(symbols) {
+                    Some((ChunkId::LazyHelpers, ctx.lazy_helpers.helper_addr(idx as usize)))
                 } else {
-                    0
+                    let idx = self.delay_stub_idx(symbols)?;
+                    Some((ChunkId::DelayStubs, ctx.delay_init.stub_addr::<E>(idx as usize)))
                 }
             }
         }
@@ -620,10 +640,21 @@ impl Symbol {
 
     /// Returns the address of the symbol's __got slot, or for a lazily
     /// loaded dylib's symbol, its __lazy_load_got slot.
+    #[inline]
     pub fn got_addr<E: Target>(&self, ctx: &Context<E>) -> u64 {
+        self.got_slot(ctx).1
+    }
+
+    /// The symbol's __got slot, or for a lazily loaded dylib's symbol,
+    /// its __lazy_load_got slot: the chunk, and the slot's address.
+    #[inline]
+    pub fn got_slot<E: Target>(&self, ctx: &Context<E>) -> (ChunkId, u64) {
         match self.got_idx(&ctx.symbols) {
-            Some(idx) => ctx.got.slot_addr(idx as usize),
-            None => ctx.lazy_load_got.slot_addr(self.lazy_got_idx(&ctx.symbols).unwrap()),
+            Some(idx) => (ChunkId::Got, ctx.got.slot_addr(idx as usize)),
+            None => {
+                let idx = self.lazy_got_idx(&ctx.symbols).unwrap();
+                (ChunkId::LazyLoadGot, ctx.lazy_load_got.slot_addr(idx))
+            }
         }
     }
 
