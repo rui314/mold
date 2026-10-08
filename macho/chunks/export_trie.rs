@@ -8,6 +8,7 @@ use crate::context::Context;
 use crate::input_files::FileId;
 use crate::macho::*;
 use crate::symbol::SymbolId;
+use crate::util::{uleb_size, write_uleb};
 
 #[derive(Debug)]
 pub struct ExportTrieSection {
@@ -46,10 +47,10 @@ impl Export {
     /// means the same name).
     fn terminal_size(self) -> usize {
         match self {
-            Self::Addr { flags, addr } => uleb_len(flags as u64) + uleb_len(addr),
+            Self::Addr { flags, addr } => uleb_size(flags as u64) + uleb_size(addr),
             Self::Reexport { ordinal, name } => {
-                uleb_len(EXPORT_SYMBOL_FLAGS_REEXPORT as u64)
-                    + uleb_len(ordinal as u64)
+                uleb_size(EXPORT_SYMBOL_FLAGS_REEXPORT as u64)
+                    + uleb_size(ordinal as u64)
                     + name.len()
                     + 1
             }
@@ -109,15 +110,6 @@ fn build_trie(names: &[(&'static [u8], Export)], depth: usize) -> TrieNode {
         groups.iter().map(build_child).collect()
     };
     node
-}
-
-fn uleb_len(mut val: u64) -> usize {
-    let mut len = 1;
-    while val >= 0x80 {
-        val >>= 7;
-        len += 1;
-    }
-    len
 }
 
 /// Encodes the export trie: dyld's index of the image's exported
@@ -275,7 +267,7 @@ fn place_nodes(nodes: &[&TrieNode]) -> Placement {
         .par_iter()
         .map(|node| {
             let terminal_size = node.export.map_or(0, Export::terminal_size);
-            let mut f = uleb_len(terminal_size as u64) + terminal_size + 1;
+            let mut f = uleb_size(terminal_size as u64) + terminal_size + 1;
             let mut k = Vec::with_capacity(node.children.len());
             for (label, child) in &node.children {
                 f += label.len() + 1;
@@ -303,7 +295,7 @@ fn place_nodes(nodes: &[&TrieNode]) -> Placement {
                 continue;
             }
             stack.pop();
-            let edges: usize = kids[node].iter().map(|&c| uleb_len(offs[c as usize] as u64)).sum();
+            let edges: usize = kids[node].iter().map(|&c| uleb_size(offs[c as usize] as u64)).sum();
             offs[node] = off;
             sizes[node] = (fixed[node] + edges) as u32;
             order.push(node as u32);
@@ -337,14 +329,14 @@ fn write_node(node: &TrieNode, offs: &[u32], dst: &mut [u8]) {
     let mut p = 0;
     match node.export {
         Some(export @ Export::Addr { flags, addr }) => {
-            p += write_uleb_at(dst, p, export.terminal_size() as u64);
-            p += write_uleb_at(dst, p, flags as u64);
-            p += write_uleb_at(dst, p, addr);
+            p += write_uleb(&mut dst[p..], export.terminal_size() as u64);
+            p += write_uleb(&mut dst[p..], flags as u64);
+            p += write_uleb(&mut dst[p..], addr);
         }
         Some(export @ Export::Reexport { ordinal, name }) => {
-            p += write_uleb_at(dst, p, export.terminal_size() as u64);
-            p += write_uleb_at(dst, p, EXPORT_SYMBOL_FLAGS_REEXPORT as u64);
-            p += write_uleb_at(dst, p, ordinal as u64);
+            p += write_uleb(&mut dst[p..], export.terminal_size() as u64);
+            p += write_uleb(&mut dst[p..], EXPORT_SYMBOL_FLAGS_REEXPORT as u64);
+            p += write_uleb(&mut dst[p..], ordinal as u64);
             dst[p..p + name.len()].copy_from_slice(name);
             p += name.len();
             dst[p] = 0;
@@ -362,26 +354,8 @@ fn write_node(node: &TrieNode, offs: &[u32], dst: &mut [u8]) {
         p += label.len();
         dst[p] = 0;
         p += 1;
-        p += write_uleb_at(dst, p, offs[child.index as usize] as u64);
+        p += write_uleb(&mut dst[p..], offs[child.index as usize] as u64);
     }
     // The root's unused reserved offset bytes stay zero.
     debug_assert!(if node.index == 0 { p <= dst.len() } else { p == dst.len() });
-}
-
-/// Writes `val` in ULEB128 at `dst[pos..]`, returning its length.
-fn write_uleb_at(dst: &mut [u8], mut pos: usize, mut val: u64) -> usize {
-    let start = pos;
-    loop {
-        let mut b = (val & 0x7f) as u8;
-        val >>= 7;
-        if val != 0 {
-            b |= 0x80;
-        }
-        dst[pos] = b;
-        pos += 1;
-        if val == 0 {
-            break;
-        }
-    }
-    pos - start
 }

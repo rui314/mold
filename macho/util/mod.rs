@@ -1,5 +1,6 @@
 //! Small helpers shared across the linker.
 
+pub(crate) mod cityhash;
 pub mod demangle;
 pub mod glob;
 pub mod perf;
@@ -77,6 +78,52 @@ pub fn encode_sleb(out: &mut Vec<u8>, mut value: i64) {
             return;
         }
         out.push(byte | 0x80);
+    }
+}
+
+/// Writes `value` in unsigned LEB128 encoding at the start of `buf`,
+/// returning its length.
+pub fn write_uleb(buf: &mut [u8], mut value: u64) -> usize {
+    let mut i = 0;
+    loop {
+        let mut byte = (value & 0x7f) as u8;
+        value >>= 7;
+        if value != 0 {
+            byte |= 0x80;
+        }
+        buf[i] = byte;
+        i += 1;
+        if value == 0 {
+            return i;
+        }
+    }
+}
+
+/// The length of `value` in unsigned LEB128 encoding.
+pub fn uleb_size(mut value: u64) -> usize {
+    let mut len = 1;
+    while value >= 0x80 {
+        value >>= 7;
+        len += 1;
+    }
+    len
+}
+
+/// Reads an unsigned LEB128 value, advancing `bytes` past it.
+#[inline]
+pub fn read_uleb(bytes: &mut &[u8]) -> u64 {
+    let mut value = 0;
+    let mut shift = 0;
+    loop {
+        let (&byte, rest) = bytes.split_first().expect("truncated LEB128");
+        *bytes = rest;
+        if shift < 64 {
+            value |= ((byte & 0x7f) as u64) << shift;
+        }
+        shift += 7;
+        if byte & 0x80 == 0 {
+            return value;
+        }
     }
 }
 
@@ -165,4 +212,24 @@ pub fn sha256(data: &[u8], out: &mut [u8; 32]) {
 pub fn sha1(data: &[u8], out: &mut [u8; 20]) {
     use sha1::Digest;
     out.copy_from_slice(&sha1::Sha1::digest(data));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn uleb_roundtrip() {
+        for &value in &[0u64, 1, 127, 128, 300, u32::MAX as u64, u64::MAX] {
+            let mut buf = Vec::new();
+            encode_uleb(&mut buf, value);
+            assert_eq!(uleb_size(value), buf.len());
+            let mut written = [0xff; 10];
+            assert_eq!(write_uleb(&mut written, value), buf.len());
+            assert_eq!(&written[..buf.len()], buf);
+            let mut slice = buf.as_slice();
+            assert_eq!(read_uleb(&mut slice), value);
+            assert!(slice.is_empty());
+        }
+    }
 }

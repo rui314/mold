@@ -8,7 +8,7 @@ const K1: u64 = 0xb492_b66f_be98_f273;
 const K2: u64 = 0x9ae1_6a3b_2f90_404f;
 const K3: u64 = 0xc949_d7c7_509e_6557;
 
-pub(super) fn hash(s: &[u8]) -> u64 {
+pub(crate) fn hash(s: &[u8]) -> u64 {
     let len = s.len();
     if len <= 16 {
         return hash_len_0_to_16(s);

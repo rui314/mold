@@ -1143,16 +1143,16 @@ impl LoadCommands {
                     // A stream of ULEB128 triples-and-more: kind, argument
                     // count, then that many instruction addresses.
                     let cmd = LinkEditDataCommand::read_from(bytes);
-                    let payload =
+                    use crate::util::read_uleb;
+                    let mut payload =
                         &data[cmd.dataoff as usize..(cmd.dataoff + cmd.datasize) as usize];
-                    let mut pos = 0;
-                    while pos < payload.len() {
-                        let kind = read_uleb_at(payload, &mut pos);
+                    while !payload.is_empty() {
+                        let kind = read_uleb(&mut payload);
                         if kind == 0 {
                             break;
                         }
-                        let count = read_uleb_at(payload, &mut pos);
-                        let addrs = (0..count).map(|_| read_uleb_at(payload, &mut pos)).collect();
+                        let count = read_uleb(&mut payload);
+                        let addrs = (0..count).map(|_| read_uleb(&mut payload)).collect();
                         cmds.loh.push((kind as u8, addrs));
                     }
                 }
@@ -2402,20 +2402,6 @@ impl Fde {
     }
 }
 
-fn read_uleb_at(data: &[u8], pos: &mut usize) -> u64 {
-    let mut val = 0;
-    let mut shift = 0;
-    loop {
-        let byte = data[*pos];
-        *pos += 1;
-        val |= ((byte & 0x7f) as u64) << shift;
-        if byte & 0x80 == 0 {
-            return val;
-        }
-        shift += 7;
-    }
-}
-
 impl StagedObject {
     /// Parses a __TEXT,__eh_frame section. Unlike other sections it is not
     /// copied through: the linker re-synthesizes it, keeping only FDEs for
@@ -2599,10 +2585,12 @@ impl StagedObject {
     /// reads it, an FDE with no augmentation data or with a zero pointer
     /// has none (GCC writes one for a function with no LSDA under a CIE
     /// that declares them).
-    fn fde_lsda(&self, rec: &[u8], input_addr: u32, mut pos: usize, enc: u8) -> Option<(u32, u32)> {
-        if read_uleb_at(rec, &mut pos) == 0 {
+    fn fde_lsda(&self, rec: &[u8], input_addr: u32, pos: usize, enc: u8) -> Option<(u32, u32)> {
+        let mut aug = &rec[pos..];
+        if crate::util::read_uleb(&mut aug) == 0 {
             return None;
         }
+        let pos = rec.len() - aug.len();
         let size = if enc & 0xf == DW_EH_PE_SDATA4 { 4 } else { 8 };
         if read_value(rec, pos, size) == 0 {
             return None;
@@ -2767,10 +2755,11 @@ fn parse_cie_augmentation(data: &[u8], file_name: &Path) -> (u8, Option<u8>, Opt
     let aug_end = aug_start + data[aug_start..].iter().position(|&b| b == 0).unwrap();
     // The code and data alignment factors, the return address register
     // and the augmentation data's length.
-    let mut pos = aug_end + 1;
+    let mut rest = &data[aug_end + 1..];
     for _ in 0..4 {
-        read_uleb_at(data, &mut pos);
+        crate::util::read_uleb(&mut rest);
     }
+    let mut pos = data.len() - rest.len();
     let mut fde_enc = DW_EH_PE_ABSPTR;
     let mut lsda_enc = None;
     let mut personality_enc = None;

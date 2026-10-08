@@ -35,7 +35,6 @@ use crate::mergeable::{
 };
 use crate::symbol::SymbolId;
 
-mod cityhash;
 mod objc;
 mod write;
 
