@@ -113,18 +113,18 @@ fn claim_locals<E: Target>(ctx: &mut Context<E>) {
     let isecs = &ctx.isecs;
     ctx.objs.par_iter().enumerate().for_each(|(obj_idx, obj)| {
         for i in obj.local_range() {
-            let nlist = &obj.nlists[i];
-            if nlist.is_stab() || nlist.is_extern() {
+            let msym = &obj.mach_syms[i];
+            if msym.is_stab() || msym.is_extern() {
                 continue;
             }
             // SAFETY: disjoint per object, as above.
             let sym = unsafe { syms.get(obj.symbols[i]) };
             let file = FileId::Obj(obj_idx as u32);
-            match nlist.n_type() {
+            match msym.ty() {
                 N_ABS => {
                     sym.set_file(file);
                     sym.set_input_section(None);
-                    sym.value = nlist.n_value;
+                    sym.value = msym.value;
                 }
                 N_SECT => {
                     if let Some((isec, off)) = obj.symbol_subsec(isecs, i) {
@@ -132,9 +132,9 @@ fn claim_locals<E: Target>(ctx: &mut Context<E>) {
                         sym.set_input_section(Some(isec as u32));
                         sym.value = off;
                         sym.set_no_dead_strip(
-                            nlist.n_desc & (N_NO_DEAD_STRIP | REFERENCED_DYNAMICALLY) != 0,
+                            msym.desc & (N_NO_DEAD_STRIP | REFERENCED_DYNAMICALLY) != 0,
                         );
-                        sym.set_is_alt_entry(nlist.n_desc & N_ALT_ENTRY != 0);
+                        sym.set_is_alt_entry(msym.desc & N_ALT_ENTRY != 0);
                     }
                 }
                 _ => {}
@@ -262,10 +262,10 @@ fn collect_references<E: Target>(ctx: &Context<E>, only_alive: bool) -> Referenc
     };
     ctx.objs.par_iter().filter(|obj| !only_alive || obj.is_alive).for_each(|obj| {
         let r = obj.global_range();
-        for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
-            if !nlist.is_stab() && nlist.is_extern() && nlist.n_type() == N_UNDF {
+        for (msym, &sym_id) in obj.mach_syms[r.clone()].iter().zip(&obj.symbols[r]) {
+            if !msym.is_stab() && msym.is_extern() && msym.ty() == N_UNDF {
                 refs.used[sym_id as usize].store(true, Ordering::Relaxed);
-                if nlist.n_desc & N_WEAK_REF != 0 {
+                if msym.desc & N_WEAK_REF != 0 {
                     refs.weak[sym_id as usize].store(true, Ordering::Relaxed);
                 } else {
                     refs.strong[sym_id as usize].store(true, Ordering::Relaxed);
@@ -316,26 +316,26 @@ fn definition_rank(
     i: usize,
     autolink_priority: u32,
 ) -> Option<u64> {
-    let nlist = &obj.nlists[i];
-    if nlist.is_stab() || !nlist.is_extern() {
+    let msym = &obj.mach_syms[i];
+    if msym.is_stab() || !msym.is_extern() {
         return None;
     }
-    let is_weak = nlist.n_desc & N_WEAK_DEF != 0;
-    let class: u64 = match nlist.n_type() {
+    let is_weak = msym.desc & N_WEAK_DEF != 0;
+    let class: u64 = match msym.ty() {
         N_SECT | N_ABS if obj.is_alive && !is_weak => 0,
         N_SECT | N_ABS if obj.is_alive => 1,
         N_SECT | N_ABS if !is_weak => 2,
         N_SECT | N_ABS => 3,
-        N_UNDF if nlist.is_common() && obj.is_alive => 4,
-        N_UNDF if nlist.is_common() => 5,
+        N_UNDF if msym.is_common() && obj.is_alive => 4,
+        N_UNDF if msym.is_common() => 5,
         _ => return None,
     };
     let mut weak_term = 0u64;
     if class == 1
-        && nlist.n_type() == N_SECT
+        && msym.ty() == N_SECT
         && let Some((isec, _)) = obj.symbol_subsec(isecs, i)
     {
-        weak_term = weak_definition_rank(&isecs[isec], nlist, obj.hidden);
+        weak_term = weak_definition_rank(&isecs[isec], msym, obj.hidden);
     }
     let lazy = class == 2 || class == 3;
     let phase = if lazy && obj.priority >= autolink_priority { 2 } else { 0 };
@@ -350,10 +350,10 @@ fn definition_rank(
 /// the subsection's address as the modulus, so a copy at 8 mod 16 is
 /// 8-aligned: a Swift metadata record comes at 16 from one object and
 /// at 8 from another, and the first copy wins only if equally aligned.
-fn weak_definition_rank(isec: &InputSection, nlist: &NList, hidden: bool) -> u64 {
-    let private = nlist.n_type & N_PEXT != 0 || hidden;
-    let auto_hide = !private && nlist.n_desc & N_WEAK_REF != 0;
-    let p2align = isec.p2align_at(nlist.n_value) as u64;
+fn weak_definition_rank(isec: &InputSection, msym: &MachSym, hidden: bool) -> u64 {
+    let private = msym.n_type & N_PEXT != 0 || hidden;
+    let auto_hide = !private && msym.desc & N_WEAK_REF != 0;
+    let p2align = isec.p2align_at(msym.value) as u64;
     ((auto_hide as u64) << 7) | ((private as u64) << 6) | (63 - p2align)
 }
 
@@ -405,7 +405,7 @@ fn claim_definitions<E: Target>(ctx: &mut Context<E>, only_alive: bool, best: &[
     });
 }
 
-/// Makes `sym` what nlist `i` of object `obj_idx`, the definition that
+/// Makes `sym` what MachSym `i` of object `obj_idx`, the definition that
 /// won the race for it, defines. Returns false for a symbol in a section
 /// that was discarded (debug info), which resolves as if undefined.
 fn claim_definition(
@@ -415,25 +415,25 @@ fn claim_definition(
     i: usize,
     isecs: &[InputSection],
 ) -> bool {
-    let nlist = &obj.nlists[i];
+    let msym = &obj.mach_syms[i];
     sym.set_is_extern(true);
     sym.set_is_imported(false);
     sym.set_is_common(false);
-    sym.set_is_weak_def(nlist.n_desc & N_WEAK_DEF != 0);
-    sym.set_is_private_extern(nlist.n_type & N_PEXT != 0 || obj.hidden);
-    sym.set_no_dead_strip(nlist.n_desc & (N_NO_DEAD_STRIP | REFERENCED_DYNAMICALLY) != 0);
+    sym.set_is_weak_def(msym.desc & N_WEAK_DEF != 0);
+    sym.set_is_private_extern(msym.n_type & N_PEXT != 0 || obj.hidden);
+    sym.set_no_dead_strip(msym.desc & (N_NO_DEAD_STRIP | REFERENCED_DYNAMICALLY) != 0);
     sym.set_is_referenced_dynamically(
-        nlist.n_type() == N_SECT
-            && nlist.n_desc & (REFERENCED_DYNAMICALLY | N_WEAK_DEF) == REFERENCED_DYNAMICALLY,
+        msym.ty() == N_SECT
+            && msym.desc & (REFERENCED_DYNAMICALLY | N_WEAK_DEF) == REFERENCED_DYNAMICALLY,
     );
-    sym.set_is_alt_entry(nlist.n_desc & N_ALT_ENTRY != 0);
+    sym.set_is_alt_entry(msym.desc & N_ALT_ENTRY != 0);
 
     let file = FileId::Obj(obj_idx as u32);
-    match nlist.n_type() {
+    match msym.ty() {
         N_ABS => {
             sym.set_file(file);
             sym.set_input_section(None);
-            sym.value = nlist.n_value;
+            sym.value = msym.value;
         }
         N_SECT => {
             let Some((isec, off)) = obj.symbol_subsec(isecs, i) else {
@@ -458,8 +458,8 @@ fn claim_definition(
         N_UNDF => {
             sym.clear_file();
             sym.set_is_common(true);
-            sym.value = nlist.n_value;
-            sym.common_p2align = ((nlist.n_desc >> 8) & 0xf) as u8;
+            sym.value = msym.value;
+            sym.common_p2align = ((msym.desc >> 8) & 0xf) as u8;
         }
         _ => unreachable!(),
     }
@@ -474,15 +474,11 @@ fn live_common_symbols<E: Target>(ctx: &Context<E>) -> Vec<(SymbolId, u64, u8, b
         .filter(|obj| obj.is_alive)
         .flat_map_iter(|obj| {
             let r = obj.global_range();
-            obj.nlists[r.clone()].iter().zip(&obj.symbols[r]).filter_map(|(nlist, &sym_id)| {
-                if !nlist.is_stab()
-                    && nlist.is_extern()
-                    && nlist.n_type() == N_UNDF
-                    && nlist.is_common()
-                {
-                    let p2align = ((nlist.n_desc >> 8) & 0xf) as u8;
-                    let pext = nlist.n_type & N_PEXT != 0 || obj.hidden;
-                    Some((sym_id, nlist.n_value, p2align, pext))
+            obj.mach_syms[r.clone()].iter().zip(&obj.symbols[r]).filter_map(|(msym, &sym_id)| {
+                if !msym.is_stab() && msym.is_extern() && msym.ty() == N_UNDF && msym.is_common() {
+                    let p2align = ((msym.desc >> 8) & 0xf) as u8;
+                    let pext = msym.n_type & N_PEXT != 0 || obj.hidden;
+                    Some((sym_id, msym.value, p2align, pext))
                 } else {
                     None
                 }
@@ -827,12 +823,12 @@ fn mark_live_objects<E: Target>(ctx: &mut Context<E>) {
 
     while let Some(obj_idx) = queue.pop() {
         for i in ctx.objs[obj_idx].global_range() {
-            let nlist = ctx.objs[obj_idx].nlists[i];
-            if nlist.is_stab() || !nlist.is_extern() || nlist.n_type() != N_UNDF {
+            let msym = ctx.objs[obj_idx].mach_syms[i];
+            if msym.is_stab() || !msym.is_extern() || msym.ty() != N_UNDF {
                 continue;
             }
             let sym_id = ctx.objs[obj_idx].symbols[i];
-            if nlist.is_common() && ctx.symbols[sym_id].is_common() {
+            if msym.is_common() && ctx.symbols[sym_id].is_common() {
                 continue;
             }
             load_owner(ctx, sym_id, &mut queue);
@@ -1208,13 +1204,13 @@ fn lto_roots<E: Target>(ctx: &Context<E>) -> Vec<&[u8]> {
     let flags: Vec<AtomicU8> = (0..ctx.symbols.syms.len()).map(|_| AtomicU8::new(0)).collect();
     ctx.objs.par_iter().enumerate().filter(|(_, obj)| obj.is_alive).for_each(|(i, obj)| {
         let r = obj.global_range();
-        for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
-            if nlist.is_stab() || !nlist.is_extern() {
+        for (msym, &sym_id) in obj.mach_syms[r.clone()].iter().zip(&obj.symbols[r]) {
+            if msym.is_stab() || !msym.is_extern() {
                 continue;
             }
-            let defined = matches!(nlist.n_type(), N_SECT | N_ABS);
+            let defined = matches!(msym.ty(), N_SECT | N_ABS);
             let lost = || ctx.symbols[sym_id].file() != Some(FileId::Obj(i as u32));
-            let mut flag = match (nlist.n_type(), thin[i]) {
+            let mut flag = match (msym.ty(), thin[i]) {
                 (N_UNDF, Some(true)) => THIN_REF,
                 (N_UNDF, Some(false)) => MERGED_REF,
                 (N_SECT | N_ABS, None) => NATIVE_DEF,
@@ -1222,8 +1218,8 @@ fn lto_roots<E: Target>(ctx: &Context<E>) -> Vec<&[u8]> {
                 (N_ABS, Some(false)) if lost() => MERGED_REF,
                 _ => 0,
             };
-            if defined && nlist.n_desc & N_WEAK_DEF != 0 {
-                flag |= if nlist.n_desc & N_WEAK_REF != 0 { WEAK } else { WEAK | NOT_HIDABLE };
+            if defined && msym.desc & N_WEAK_DEF != 0 {
+                flag |= if msym.desc & N_WEAK_REF != 0 { WEAK } else { WEAK | NOT_HIDABLE };
             } else if defined {
                 flag |= NOT_HIDABLE;
             }
@@ -1263,10 +1259,8 @@ fn lto_roots<E: Target>(ctx: &Context<E>) -> Vec<&[u8]> {
     // duplicate (ld-prime lists it in the compiled object).
     for module in live_bitcode_modules(ctx) {
         let obj = &ctx.objs[module.obj];
-        for (nlist, &id) in obj.nlists.iter().zip(&obj.symbols) {
-            if nlist.n_type() == N_ABS
-                && flags[id as usize].load(Ordering::Relaxed) & NATIVE_DEF != 0
-            {
+        for (msym, &id) in obj.mach_syms.iter().zip(&obj.symbols) {
+            if msym.ty() == N_ABS && flags[id as usize].load(Ordering::Relaxed) & NATIVE_DEF != 0 {
                 roots.push(ctx.symbols[id].name());
             }
         }
@@ -1357,8 +1351,8 @@ fn thin_lto<E: Target>(
     let mut cross = Vec::new();
     for module in modules {
         let obj = &ctx.objs[module.obj];
-        for (nlist, &id) in obj.nlists.iter().zip(&obj.symbols) {
-            if nlist.n_type() == N_UNDF {
+        for (msym, &id) in obj.mach_syms.iter().zip(&obj.symbols) {
+            if msym.ty() == N_UNDF {
                 cross.push(ctx.symbols[id].name());
             }
         }
@@ -1455,7 +1449,7 @@ fn retire_bitcode_placeholders<E: Target>(ctx: &mut Context<E>) {
         }
         let obj = &mut ctx.objs[obj_idx];
         obj.is_alive = false;
-        obj.nlists = std::borrow::Cow::Borrowed(&[]);
+        obj.mach_syms = std::borrow::Cow::Borrowed(&[]);
         obj.symbols.clear();
     }
 }
@@ -1648,7 +1642,7 @@ fn init_function<E: Target>(ctx: &Context<E>) -> Option<crate::symbol::SymbolId>
 /// function it adds, as in ld-prime, not the one it subtracts too.
 fn initializer_relocs<E: Target>(ctx: &Context<E>, i: usize) -> Vec<crate::input_sections::Reloc> {
     let mut relocs: Vec<_> =
-        ctx.isec_relocs(i).iter().filter(|r| r.r_type != E::RELOC_SUBTRACTOR).copied().collect();
+        ctx.isec_relocs(i).iter().filter(|r| r.ty != E::RELOC_SUBTRACTOR).copied().collect();
     relocs.sort_by_key(|r| r.offset);
     relocs
 }
@@ -1724,9 +1718,9 @@ fn common_symbols_in_order<E: Target>(ctx: &Context<E>) -> Vec<SymbolId> {
     let mut out = Vec::new();
     for obj in ctx.objs.iter().filter(|obj| obj.is_alive) {
         let r = obj.global_range();
-        for (nlist, &id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
+        for (msym, &id) in obj.mach_syms[r.clone()].iter().zip(&obj.symbols[r]) {
             let sym = &ctx.symbols[id];
-            if nlist.is_common() && sym.is_common() && !sym.is_defined() && seen.insert(id) {
+            if msym.is_common() && sym.is_common() && !sym.is_defined() && seen.insert(id) {
                 out.push(id);
             }
         }
@@ -1949,7 +1943,7 @@ pub(crate) fn redirect_symbols_to_replacements<E: Target>(ctx: &mut Context<E>) 
 
 /// Auto-hides eligible weak definitions. Compilers mark a weak
 /// definition whose address is never observed with
-/// .weak_def_can_be_hidden (nlist n_desc carries N_WEAK_DEF and
+/// .weak_def_can_be_hidden (a MachSym's desc carries N_WEAK_DEF and
 /// N_WEAK_REF together): no one can tell which image's copy they use,
 /// so ld64 demotes such symbols to non-external in every kind of
 /// output - executables, dylibs and bundles alike - gone from the
@@ -1965,7 +1959,7 @@ pub fn auto_hide_weak_defs<E: Target>(ctx: &mut Context<E>) {
     }
 
     // For each symbol, "seen a live weak def" and "every live weak def
-    // may be hidden". A C++ debug link has millions of weak-def nlists
+    // may be hidden". A C++ debug link has millions of weak-def MachSyms
     // (every inline and template instance), so this reduces over them
     // in parallel into a dense array keyed by the symbol's id - mold's
     // pattern - rather than a serial fold into a hash map. Bit 0 marks
@@ -1981,11 +1975,11 @@ pub fn auto_hide_weak_defs<E: Target>(ctx: &mut Context<E>) {
             return;
         }
         let r = obj.global_range();
-        for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
-            if !is_weak_def(nlist) {
+        for (msym, &sym_id) in obj.mach_syms[r.clone()].iter().zip(&obj.symbols[r]) {
+            if !is_weak_def(msym) {
                 continue;
             }
-            let bits = if nlist.n_desc & N_WEAK_REF != 0 { SEEN } else { SEEN | NOT_HIDABLE };
+            let bits = if msym.desc & N_WEAK_REF != 0 { SEEN } else { SEEN | NOT_HIDABLE };
             flags[sym_id as usize].fetch_or(bits, Ordering::Relaxed);
         }
     });
@@ -2005,12 +1999,9 @@ pub fn auto_hide_weak_defs<E: Target>(ctx: &mut Context<E>) {
     });
 }
 
-/// Whether an nlist is an external weak definition in a section.
-fn is_weak_def(nlist: &NList) -> bool {
-    !nlist.is_stab()
-        && nlist.is_extern()
-        && nlist.n_type() == N_SECT
-        && nlist.n_desc & N_WEAK_DEF != 0
+/// Whether a MachSym is an external weak definition in a section.
+fn is_weak_def(msym: &MachSym) -> bool {
+    !msym.is_stab() && msym.is_extern() && msym.ty() == N_SECT && msym.desc & N_WEAK_DEF != 0
 }
 
 /// Hide definitions before dead stripping and relocation scanning so
@@ -2122,7 +2113,7 @@ pub fn force_symbol_weakness<E: Target>(ctx: &mut Context<E>) {
 /// unwind info and data-in-code go with it (see weak_def_losers for
 /// the copies that stay).
 pub fn coalesce_weak_defs<E: Target>(ctx: &mut Context<E>) {
-    // A C++ debug link has millions of weak-def nlists (every inline
+    // A C++ debug link has millions of weak-def MachSyms (every inline
     // and template instance), so the losing copies are found in
     // parallel, object by object. A later loser may resolve through an
     // earlier one, so the replacements are made serially, in object
@@ -2139,7 +2130,7 @@ pub fn coalesce_weak_defs<E: Target>(ctx: &mut Context<E>) {
 }
 
 /// The subsections of object `obj_idx` that hold a losing copy of a
-/// weak definition, each with the winning copy's subsection, in nlist
+/// weak definition, each with the winning copy's subsection, in MachSym
 /// order. The definition must be at the same offset in both copies, and
 /// the losing subsection hold no other symbol: an object without
 /// subsections-via-symbols has one subsection per section, and folding
@@ -2155,8 +2146,8 @@ fn weak_def_losers<E: Target>(ctx: &Context<E>, obj_idx: usize) -> Vec<(usize, u
     // losing copy to check.
     let mut values: Option<Vec<u64>> = None;
     for i in obj.global_range() {
-        let (nlist, sym_id) = (&obj.nlists[i], obj.symbols[i]);
-        if !is_weak_def(nlist) {
+        let (msym, sym_id) = (&obj.mach_syms[i], obj.symbols[i]);
+        if !is_weak_def(msym) {
             continue;
         }
         let sym = &ctx.symbols[sym_id];
@@ -2170,9 +2161,9 @@ fn weak_def_losers<E: Target>(ctx: &Context<E>, obj_idx: usize) -> Vec<(usize, u
             continue;
         }
         let values = values.get_or_insert_with(|| {
-            let mut v: Vec<u64> = (obj.nlists.iter())
-                .filter(|n| !n.is_stab() && n.n_type() == N_SECT)
-                .map(|n| n.n_value)
+            let mut v: Vec<u64> = (obj.mach_syms.iter())
+                .filter(|n| !n.is_stab() && n.ty() == N_SECT)
+                .map(|n| n.value)
                 .collect();
             v.sort_unstable();
             v.dedup();
@@ -2182,7 +2173,7 @@ fn weak_def_losers<E: Target>(ctx: &Context<E>, obj_idx: usize) -> Vec<(usize, u
         let (start, end) = (l.input_addr as u64, l.input_addr as u64 + l.size as u64);
         let lo = values.partition_point(|&v| v < start);
         let hi = values.partition_point(|&v| v < end);
-        if values[lo..hi].iter().all(|&v| v == nlist.n_value) {
+        if values[lo..hi].iter().all(|&v| v == msym.value) {
             out.push((loser, winner as usize));
         }
     }
@@ -2233,11 +2224,11 @@ fn duplicate_symbols<E: Target>(ctx: &Context<E>, among_bitcode: bool) -> Vec<Du
         .filter(|(_, obj)| obj.is_alive)
         .flat_map_iter(|(obj_idx, obj)| {
             obj.global_range().filter_map(move |i| {
-                let (nlist, sym_id) = (&obj.nlists[i], obj.symbols[i]);
-                if nlist.is_stab()
-                    || !nlist.is_extern()
-                    || !matches!(nlist.n_type(), N_SECT | N_ABS)
-                    || nlist.n_desc & N_WEAK_DEF != 0
+                let (msym, sym_id) = (&obj.mach_syms[i], obj.symbols[i]);
+                if msym.is_stab()
+                    || !msym.is_extern()
+                    || !matches!(msym.ty(), N_SECT | N_ABS)
+                    || msym.desc & N_WEAK_DEF != 0
                     || !matches!(ctx.symbols[sym_id].file(), Some(FileId::Obj(owner)) if owner as usize != obj_idx)
                 {
                     return None;
@@ -2316,7 +2307,7 @@ pub fn check_poisoned_symbols<E: Target>(ctx: &Context<E>) {
             let file = ctx.isecs[isec].file as usize;
             let rels = input_files::isec_relocs_of(&ctx.objs, &ctx.isecs[isec]);
             (rels.iter())
-                .filter(|rel| rel.r_type != E::RELOC_SUBTRACTOR)
+                .filter(|rel| rel.ty != E::RELOC_SUBTRACTOR)
                 .filter_map(move |rel| ctx.reloc_target_sym(file, rel))
                 .filter(|&id| poisoned.find(ctx.symbols[id].name()) != -1)
                 .map(move |id| (id, isec))
@@ -2367,7 +2358,7 @@ pub fn check_common_conflicts<E: Target>(ctx: &Context<E>) {
         // The first object declaring it.
         let declares = |obj: &&input_files::ObjectFile| {
             obj.is_alive
-                && (obj.nlists.iter().zip(&obj.symbols)).any(|(n, &s)| s == id && n.is_common())
+                && (obj.mach_syms.iter().zip(&obj.symbols)).any(|(n, &s)| s == id && n.is_common())
         };
         let Some(obj) = ctx.objs.iter().find(declares) else { continue };
         let (name, obj) = (raw(sym.name()), obj.mf.name.raw());
@@ -2397,7 +2388,7 @@ fn import_references<E: Target>(ctx: &Context<E>, obj_idx: usize) -> Vec<(Symbol
             let RelocTarget::Sym(idx) = rel.target() else { continue };
             let sym_id = obj.symbols[idx as usize];
             if ctx.symbols[sym_id].is_imported() && seen.insert(sym_id) {
-                out.push((sym_id, obj.nlists[idx as usize].n_desc & N_WEAK_REF != 0));
+                out.push((sym_id, obj.mach_syms[idx as usize].desc & N_WEAK_REF != 0));
             }
         }
     }
@@ -2567,8 +2558,8 @@ fn first_referencers<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<SymbolId
     let mut map = hashbrown::HashMap::new();
     for (obj_idx, obj) in ctx.objs.iter().enumerate().filter(|(_, obj)| obj.is_alive) {
         let r = obj.global_range();
-        for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
-            if !nlist.is_stab() && nlist.n_type() == N_UNDF && !nlist.is_common() {
+        for (msym, &sym_id) in obj.mach_syms[r.clone()].iter().zip(&obj.symbols[r]) {
+            if !msym.is_stab() && msym.ty() == N_UNDF && !msym.is_common() {
                 map.entry(sym_id).or_insert(obj_idx);
             }
         }
@@ -2631,8 +2622,8 @@ pub fn print_dependencies<E: Target>(ctx: &Context<E>) {
     }
     for (obj_idx, obj) in ctx.objs.iter().enumerate().filter(|(_, obj)| obj.is_alive) {
         let r = obj.global_range();
-        for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
-            if nlist.is_stab() || nlist.n_type() != N_UNDF || nlist.is_common() {
+        for (msym, &sym_id) in obj.mach_syms[r.clone()].iter().zip(&obj.symbols[r]) {
+            if msym.is_stab() || msym.ty() != N_UNDF || msym.is_common() {
                 continue;
             }
             let sym = &ctx.symbols[sym_id];
@@ -2792,7 +2783,7 @@ pub fn check_weak_assertions<E: Target>(ctx: &Context<E>) {
                     return None;
                 };
                 let id = obj.symbols[idx as usize];
-                let strong = obj.nlists[idx as usize].n_desc & N_WEAK_REF == 0;
+                let strong = obj.mach_syms[idx as usize].desc & N_WEAK_REF == 0;
                 (strong && asserted(id).is_some()).then_some((id, file))
             })
         })
@@ -2965,7 +2956,7 @@ fn moved_dylib_twins<E: Target>(ctx: &Context<E>, used: &[bool]) -> Vec<Option<u
 /// order they were first named: where the command line or an auto-link
 /// option names one, or else where the dylib that re-exports it, or that
 /// its exports moved from ($ld$previous), was named. Returns them in
-/// that order. A lazy dylib has none: its imports' n_desc names the
+/// that order. A lazy dylib has none: its imports' desc names the
 /// image itself (ordinal 0), as ld-prime writes it.
 fn assign_dylib_ordinals<E: Target>(ctx: &mut Context<E>) -> Vec<usize> {
     for dylib in ctx.dylibs.iter_mut().filter(|d| d.is_lazy) {
@@ -3151,7 +3142,7 @@ pub fn compute_address_significance<E: Target>(ctx: &mut Context<E>) {
     let ctx_ref: &Context<E> = ctx;
     ctx_ref.isecs.par_iter().filter(|isec| isec.is_emitted()).for_each(|isec| {
         for r in input_files::isec_relocs_of(&ctx_ref.objs, isec) {
-            if E::classify_reloc(r.r_type) != RelocClass::Branch
+            if E::classify_reloc(r.ty) != RelocClass::Branch
                 && let Some(dst) = ctx_ref.reloc_target_isec(isec.file as usize, r)
             {
                 ctx_ref.isecs[ctx_ref.resolve_isec(dst)].set_address_taken();
@@ -4289,7 +4280,7 @@ fn build_linkedit_tables<E: Target>(ctx: &mut Context<E>) {
     );
 
     ctx.symtab = symtab;
-    ctx.symtab.hdr.size = (ctx.symtab.len() * size_of::<NList>()) as u64;
+    ctx.symtab.hdr.size = (ctx.symtab.len() * size_of::<MachSym>()) as u64;
     ctx.strtab.hdr.size = ctx.symtab.strtab_size as u64;
     ctx.data_in_code.hdr.size = (dice.len() * 8) as u64;
     ctx.data_in_code.entries = dice;

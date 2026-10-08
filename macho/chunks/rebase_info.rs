@@ -34,11 +34,11 @@ impl Default for RebaseInfoSection {
 /// slide or bind: an 8-byte absolute address, not a term of a
 /// SUBTRACTOR pair's difference.
 pub(crate) fn is_pointer_reloc<E: Target>(rel: &Reloc) -> bool {
-    E::classify_reloc(rel.r_type) == RelocClass::Plain
+    E::classify_reloc(rel.ty) == RelocClass::Plain
         && rel.size == 8
         && !rel.is_pcrel
         && !rel.is_subtracted
-        && rel.r_type != E::RELOC_SUBTRACTOR
+        && rel.ty != E::RELOC_SUBTRACTOR
 }
 
 /// The pointers (see is_pointer_reloc) the relocations of a live

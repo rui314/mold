@@ -16,7 +16,7 @@ use crate::target::Target;
 use crate::util::{leak_bytes, path_bytes};
 
 /// The symbol table, laid out before addresses are known. The symbol
-/// slot of each entry supplies its final `n_value` when the table is
+/// slot of each entry supplies its final `value` when the table is
 /// copied to the output.
 #[derive(Debug)]
 pub struct SymtabSection {
@@ -24,10 +24,10 @@ pub struct SymtabSection {
     /// The entries but the debug notes: those before the notes - the
     /// plain locals and N_AST paths - then the externals and imports,
     /// which follow the notes in the table.
-    pub entries: Vec<(NList, Option<SymbolId>)>,
+    pub entries: Vec<(MachSym, Option<SymbolId>)>,
     /// The string table's total size (bytes, padded to 8). The bytes
     /// themselves are not materialized here: copy_symtab writes each
-    /// entry's name at its n_strx straight into the output.
+    /// entry's name at its stroff straight into the output.
     pub strtab_size: usize,
     /// Each entry's name, empty for one that has no string of its own
     /// (it names nothing, or shares another entry's).
@@ -135,11 +135,11 @@ pub fn ast_paths<E: Target>(ctx: &Context<E>) -> &[PathBuf] {
 pub fn push_ast_paths<E: Target>(
     ctx: &Context<E>,
     names: &mut Vec<&'static [u8]>,
-    entries: &mut Vec<(NList, Option<SymbolId>)>,
+    entries: &mut Vec<(MachSym, Option<SymbolId>)>,
 ) {
     for path in ast_paths(ctx) {
         names.push(leak_bytes(path_bytes(path).to_vec()));
-        entries.push((NList { n_strx: 0, n_type: N_AST, ..Default::default() }, None));
+        entries.push((MachSym { stroff: 0, n_type: N_AST, ..Default::default() }, None));
     }
 }
 
@@ -165,19 +165,19 @@ pub(crate) fn keep_local_symbol(name: &[u8]) -> bool {
     !name.is_empty() && !name.starts_with(b"l") && !name.starts_with(b"L")
 }
 
-/// One stab entry: its name and nlist, the symbol whose final address
-/// fills in n_value, and the symbol the name is, if any, whose string
+/// One stab entry: its name and MachSym, the symbol whose final address
+/// fills in `value`, and the symbol the name is, if any, whose string
 /// the entry shares.
 #[derive(Clone, Copy, Debug)]
 pub struct Stab {
     pub name: &'static [u8],
-    pub ent: NList,
+    pub ent: MachSym,
     pub value_of: Option<SymbolId>,
     pub name_of: Option<SymbolId>,
 }
 
 impl Stab {
-    fn new(name: &'static [u8], ent: NList, value_of: Option<SymbolId>) -> Self {
+    fn new(name: &'static [u8], ent: MachSym, value_of: Option<SymbolId>) -> Self {
         Self { name, ent, value_of, name_of: None }
     }
 
@@ -240,11 +240,11 @@ impl StabPlan {
                 if addr.0 != id {
                     addr = (id, ctx.sym_addr(id));
                 }
-                ent.n_value = addr.1;
+                ent.value = addr.1;
             }
             // A nameless entry gets the empty string after the string
             // table's leading space.
-            ent.n_strx = match stab.shared_strx(strx_of) {
+            ent.stroff = match stab.shared_strx(strx_of) {
                 Some(strx) => strx,
                 None if stab.name.is_empty() => 1,
                 None => block.add_string(stab.name),
@@ -261,7 +261,7 @@ impl StabPlan {
 struct SymbolStabs {
     sym: SymbolId,
     size: u32,
-    n_sect: u8,
+    sect: u8,
     n_type: u8,
 }
 
@@ -281,10 +281,10 @@ impl SymbolStabs {
     fn stabs<E: Target>(&self, ctx: &Context<E>) -> impl Iterator<Item = Stab> {
         let id = Some(self.sym);
         let name = self.name(ctx);
-        let sect = self.n_sect;
+        let sect = self.sect;
         // Named entries get their string offsets later; the rest keep 1,
         // the empty string.
-        let stab = |n_type, n_sect| NList { n_strx: 1, n_type, n_sect, ..Default::default() };
+        let stab = |n_type, sect| MachSym { stroff: 1, n_type, sect, ..Default::default() };
         let mut out = [Stab::new(b"", stab(N_BNSYM, sect), id); 4];
         match self.n_type {
             N_FUN => {
@@ -292,20 +292,20 @@ impl SymbolStabs {
                 // address, then its size), N_ENSYM. Its stab reader takes
                 // an N_FUN without the bracketing symbols badly (a crash
                 // on a -r output that had only the pair).
-                let fun = NList { n_strx: 0, ..stab(N_FUN, sect) };
+                let fun = MachSym { stroff: 0, ..stab(N_FUN, sect) };
                 out[1] = Stab { name_of: id, ..Stab::new(name, fun, id) };
                 out[2] =
-                    Stab::new(b"", NList { n_value: self.size as u64, ..stab(N_FUN, 0) }, None);
+                    Stab::new(b"", MachSym { value: self.size as u64, ..stab(N_FUN, 0) }, None);
                 out[3] = Stab::new(b"", stab(N_ENSYM, sect), id);
             }
             // An N_GSYM names the global only, with no section or
             // address - the debugger looks the address up by name.
             N_GSYM => {
-                let ent = NList { n_type: N_GSYM, ..Default::default() };
+                let ent = MachSym { n_type: N_GSYM, ..Default::default() };
                 out[0] = Stab { name, ent, value_of: None, name_of: id };
             }
             _ => {
-                let ent = NList { n_strx: 0, ..stab(N_STSYM, sect) };
+                let ent = MachSym { stroff: 0, ..stab(N_STSYM, sect) };
                 out[0] = Stab { name_of: id, ..Stab::new(name, ent, id) };
             }
         }
@@ -341,7 +341,7 @@ fn plan_object_stabs<E: Target>(ctx: &Context<E>, obj_idx: usize, cwd: &Path) ->
     if !obj.is_alive {
         return StabPlan::default();
     }
-    if obj.nlists.iter().any(|n| n.n_type == N_OSO) {
+    if obj.mach_syms.iter().any(|n| n.n_type == N_OSO) {
         return copy_object_stabs(ctx, obj_idx);
     }
     if !obj.has_debug_info {
@@ -353,20 +353,20 @@ fn plan_object_stabs<E: Target>(ctx: &Context<E>, obj_idx: usize, cwd: &Path) ->
     // unit's notes by address instead, but no reader depends on that:
     // dsymutil and lldb map each unit's notes by name, and an N_FUN pair
     // stays together either way.
-    for (nlist, &sym_id) in obj.nlists.iter().zip(&obj.symbols) {
+    for (msym, &sym_id) in obj.mach_syms.iter().zip(&obj.symbols) {
         let sym = &ctx.symbols[sym_id];
         // A tentative definition gets its note in each object that
         // declares it. A global with an assembler-local name (Swift's
         // l_OBJC_PROTOCOL_SYMREF_$_*, weak private externals) gets none,
         // as no local of that name does.
-        let common = nlist.is_common() && is_still_common(ctx, sym_id);
-        if nlist.is_stab()
+        let common = msym.is_common() && is_still_common(ctx, sym_id);
+        if msym.is_stab()
             || (!common && !matches!(sym.file(), Some(FileId::Obj(o)) if o as usize == obj_idx))
             || !keep_local_symbol(sym.name())
         {
             continue;
         }
-        plan.syms.extend(symbol_stabs(ctx, obj, sym_id, nlist, common));
+        plan.syms.extend(symbol_stabs(ctx, obj, sym_id, msym, common));
     }
     plan.closed = true;
     plan.len = plan.fixed.len() + plan.syms.iter().map(|s| s.len()).sum::<usize>() + 1;
@@ -383,11 +383,11 @@ fn plan_object_stabs<E: Target>(ctx: &Context<E>, obj_idx: usize, cwd: &Path) ->
 fn copy_object_stabs<E: Target>(ctx: &Context<E>, obj_idx: usize) -> StabPlan {
     let obj = &ctx.objs[obj_idx];
     let mut out = Vec::new();
-    // Entries whose n_value is an address in the object (n_sect
+    // Entries whose value is an address in the object (sect
     // says which section); an N_FUN with an empty name holds the
     // function's size instead.
-    let addressed = |n: &NList| {
-        n.n_sect != 0
+    let addressed = |n: &MachSym| {
+        n.sect != 0
             && matches!(
                 n.n_type,
                 N_FUN | N_BNSYM | N_ENSYM | N_STSYM | N_LCSYM | N_SLINE | N_ECOMM | N_ECOML
@@ -396,7 +396,7 @@ fn copy_object_stabs<E: Target>(ctx: &Context<E>, obj_idx: usize) -> StabPlan {
     // The object's own local symbols by name, for the notes that
     // name them.
     let r = obj.local_range();
-    let locals: hashbrown::HashMap<&[u8], (SymbolId, &NList)> = obj.nlists[r.clone()]
+    let locals: hashbrown::HashMap<&[u8], (SymbolId, &MachSym)> = obj.mach_syms[r.clone()]
         .iter()
         .zip(&obj.symbols[r])
         .filter(|(n, _)| !n.is_stab())
@@ -404,15 +404,15 @@ fn copy_object_stabs<E: Target>(ctx: &Context<E>, obj_idx: usize) -> StabPlan {
         .collect();
     let mut skip_size = false;
     let mut in_unit = false;
-    for (nlist, &sym_id) in obj.nlists.iter().zip(&obj.symbols) {
-        if !nlist.is_stab() {
+    for (msym, &sym_id) in obj.mach_syms.iter().zip(&obj.symbols) {
+        if !msym.is_stab() {
             continue;
         }
-        let mut ent = *nlist;
+        let mut ent = *msym;
         let name = ctx.symbols[sym_id].name();
         // A closing N_SO before the first unit (ld-prime's -r outputs
         // open their stabs with one) closes nothing: it is not copied.
-        if nlist.n_type == N_SO && name.is_empty() {
+        if msym.n_type == N_SO && name.is_empty() {
             if !std::mem::replace(&mut in_unit, false) {
                 continue;
             }
@@ -423,30 +423,30 @@ fn copy_object_stabs<E: Target>(ctx: &Context<E>, obj_idx: usize) -> StabPlan {
         // name (a closing N_SO, an N_FUN size entry); offset 0
         // would read as the name " ", and lldb then never sees
         // the unit's end.
-        ent.n_strx = if name.is_empty() { 1 } else { 0 };
+        ent.stroff = if name.is_empty() { 1 } else { 0 };
         // -reproducible (or ZERO_AR_DATE) zeroes the modification time
         // the earlier link wrote, as it does an object's own.
-        if nlist.n_type == N_OSO && ctx.args.zero_ar_date {
-            ent.n_value = 0;
+        if msym.n_type == N_OSO && ctx.args.zero_ar_date {
+            ent.value = 0;
         }
-        if nlist.n_type == N_GSYM {
+        if msym.n_type == N_GSYM {
             out.extend(copy_global_stab(ctx, obj_idx, name, ent, &locals));
             continue;
         }
-        if addressed(nlist) {
-            let Some((isec, off)) = noted_subsec(ctx, obj, nlist.n_sect, nlist.n_value) else {
+        if addressed(msym) {
+            let Some((isec, off)) = noted_subsec(ctx, obj, msym.sect, msym.value) else {
                 // Dead code: drop the note, and a function's size
                 // entry with it.
-                skip_size = nlist.n_type == N_FUN;
+                skip_size = msym.n_type == N_FUN;
                 continue;
             };
-            ent.n_value = ctx.isec_addr(isec) + off;
-            ent.n_sect = ctx.isec_n_sect(&ctx.isecs[isec]);
-        } else if nlist.n_type == N_FUN && skip_size {
+            ent.value = ctx.isec_addr(isec) + off;
+            ent.sect = ctx.isec_sect_idx(&ctx.isecs[isec]);
+        } else if msym.n_type == N_FUN && skip_size {
             skip_size = false;
             continue;
         }
-        let name_of = match nlist.n_type {
+        let name_of = match msym.n_type {
             N_FUN | N_STSYM | N_LCSYM if !name.is_empty() => {
                 locals.get(name).map(|&(id, _)| id).or_else(|| ctx.symbols.get(name))
             }
@@ -468,40 +468,40 @@ fn copy_global_stab<E: Target>(
     ctx: &Context<E>,
     obj_idx: usize,
     name: &'static [u8],
-    ent: NList,
-    locals: &hashbrown::HashMap<&[u8], (SymbolId, &NList)>,
+    ent: MachSym,
+    locals: &hashbrown::HashMap<&[u8], (SymbolId, &MachSym)>,
 ) -> Option<Stab> {
     let obj = &ctx.objs[obj_idx];
-    if let Some(&(id, nlist)) = locals.get(name) {
-        let n_sect = if nlist.n_type() == N_ABS {
+    if let Some(&(id, msym)) = locals.get(name) {
+        let sect = if msym.ty() == N_ABS {
             0
         } else {
-            let (isec, _) = noted_subsec(ctx, obj, nlist.n_sect, nlist.n_value)?;
-            ctx.isec_n_sect(&ctx.isecs[isec])
+            let (isec, _) = noted_subsec(ctx, obj, msym.sect, msym.value)?;
+            ctx.isec_sect_idx(&ctx.isecs[isec])
         };
-        let ent = NList { n_type: N_STSYM, n_sect, ..ent };
+        let ent = MachSym { n_type: N_STSYM, sect, ..ent };
         return Some(Stab { name, ent, value_of: Some(id), name_of: Some(id) });
     }
     let id = ctx.symbols.get(name)?;
     let own = matches!(ctx.symbols[id].file(), Some(FileId::Obj(o)) if o as usize == obj_idx);
     (own || is_still_common(ctx, id)).then(|| {
-        let ent = NList { n_sect: 0, n_value: 0, ..ent };
+        let ent = MachSym { sect: 0, value: 0, ..ent };
         Stab { name, ent, value_of: None, name_of: Some(id) }
     })
 }
 
 /// The live subsection holding an object's symbol or note at
-/// `n_sect`/`n_value`, with the offset in it, unless it was coalesced
+/// `sect`/`value`, with the offset in it, unless it was coalesced
 /// away (see is_coalesced_away): ld-prime notes the survivor's
 /// symbols only.
 fn noted_subsec<E: Target>(
     ctx: &Context<E>,
     obj: &ObjectFile,
-    n_sect: u8,
-    n_value: u64,
+    sect: u8,
+    value: u64,
 ) -> Option<(usize, u64)> {
     let (isec, off) =
-        crate::input_files::find_symbol_subsec(&ctx.isecs, &obj.subsecs, n_sect, n_value)?;
+        crate::input_files::find_symbol_subsec(&ctx.isecs, &obj.subsecs, sect, value)?;
     if is_coalesced_away(ctx, isec) {
         return None;
     }
@@ -550,7 +550,7 @@ pub(crate) fn object_stabs_opening<E: Target>(
     let (dir, file) = path.split_at(path.iter().rposition(|&c| c == b'/').map_or(0, |i| i + 1));
     for name in [dir, file] {
         let name = leak_bytes(name.to_vec());
-        out.push(Stab::new(name, NList { n_type: N_SO, ..Default::default() }, None));
+        out.push(Stab::new(name, MachSym { n_type: N_SO, ..Default::default() }, None));
     }
     let path = match obj.mf.parent {
         Some(parent) if parent.name.is_absolute() => obj.mf.name.clone(),
@@ -573,7 +573,7 @@ pub(crate) fn object_stabs_opening<E: Target>(
             oso_name = rest.to_vec();
         }
     }
-    // n_value is the object's modification time, which dsymutil and
+    // The value is the object's modification time, which dsymutil and
     // lldb compare against the file they find (0 disables the check):
     // an archive member's is its header's, and the LTO object's 0
     // unless -object_path_lto wrote it out. ZERO_AR_DATE, set to
@@ -591,7 +591,7 @@ pub(crate) fn object_stabs_opening<E: Target>(
     };
     out.push(Stab::new(
         leak_bytes(oso_name),
-        NList { n_strx: 0, n_type: N_OSO, n_sect: E::CPUSUBTYPE as u8, n_desc: 1, n_value: mtime },
+        MachSym { stroff: 0, n_type: N_OSO, sect: E::CPUSUBTYPE as u8, desc: 1, value: mtime },
         None,
     ));
     out
@@ -606,17 +606,17 @@ fn symbol_stabs<E: Target>(
     ctx: &Context<E>,
     obj: &ObjectFile,
     sym_id: SymbolId,
-    nlist: &NList,
+    msym: &MachSym,
     common: bool,
 ) -> Option<SymbolStabs> {
     let sym = &ctx.symbols[sym_id];
-    let global = SymbolStabs { sym: sym_id, size: 0, n_sect: 0, n_type: N_GSYM };
+    let global = SymbolStabs { sym: sym_id, size: 0, sect: 0, n_type: N_GSYM };
     let Some(isec) = sym.input_section().map(|i| i as usize) else {
         return common.then_some(global);
     };
     // The symbol has moved to the survivor if its subsection was
     // coalesced away; its own is the one to look at.
-    if nlist.n_type() == N_SECT && noted_subsec(ctx, obj, nlist.n_sect, nlist.n_value).is_none() {
+    if msym.ty() == N_SECT && noted_subsec(ctx, obj, msym.sect, msym.value).is_none() {
         return None;
     }
     let isec = &ctx.isecs[ctx.resolve_isec(isec)];
@@ -624,15 +624,15 @@ fn symbol_stabs<E: Target>(
     if !isec.is_alive() {
         return None;
     }
-    let n_sect = ctx.isec_n_sect(isec);
+    let sect = ctx.isec_sect_idx(isec);
     let is_text = hdr.segname_is(b"__TEXT")
         && hdr.flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0;
     Some(if is_text {
-        SymbolStabs { size: isec.size, n_sect, n_type: N_FUN, ..global }
-    } else if nlist.is_extern() {
+        SymbolStabs { size: isec.size, sect, n_type: N_FUN, ..global }
+    } else if msym.is_extern() {
         global
     } else {
-        SymbolStabs { n_sect, n_type: N_STSYM, ..global }
+        SymbolStabs { sect, n_type: N_STSYM, ..global }
     })
 }
 
@@ -645,7 +645,7 @@ fn is_still_common<E: Target>(ctx: &Context<E>, id: SymbolId) -> bool {
 }
 
 /// An N_SO with an empty name: it closes an object's stabs.
-pub const STAB_END: NList = NList { n_strx: 1, n_type: N_SO, n_sect: 1, n_desc: 0, n_value: 0 };
+pub const STAB_END: MachSym = MachSym { stroff: 1, n_type: N_SO, sect: 1, desc: 0, value: 0 };
 
 /// A final image's local symbols: each object's non-external symbols
 /// it keeps, in its symbol table's order, then the private externals
@@ -669,19 +669,19 @@ fn plan_local_symbols<E: Target>(ctx: &Context<E>, pexts: &[usize]) -> Vec<Named
         let (ent, id) = match (sym.file(), sym.input_section()) {
             (_, Some(isec)) => {
                 let isec = &ctx.isecs[ctx.resolve_isec(isec as usize)];
-                (NList { n_type: N_SECT | N_PEXT, ..local_nlist(ctx.isec_n_sect(isec), 0) }, id)
+                (MachSym { n_type: N_SECT | N_PEXT, ..local_msym(ctx.isec_sect_idx(isec), 0) }, id)
             }
             // A hidden __mh_execute_header (an export list that omits
             // it, or -no_exported_symbols) sits in the first section,
             // the mach header.
             (Some(FileId::Obj(o)), None) if ctx.is_internal(o as usize) => {
-                (NList { n_type: N_SECT | N_PEXT, ..local_nlist(1, 0) }, id)
+                (MachSym { n_type: N_SECT | N_PEXT, ..local_msym(1, 0) }, id)
             }
-            (_, None) => (NList { n_type: N_ABS | N_PEXT, ..local_nlist(0, sym.value) }, None),
+            (_, None) => (MachSym { n_type: N_ABS | N_PEXT, ..local_msym(0, sym.value) }, None),
         };
         // A demoted weak definition keeps N_WEAK_DEF.
-        let n_desc = if sym.is_weak_def() { N_WEAK_DEF } else { 0 };
-        ents.push((local_symbol_name(sym.name()), NList { n_desc, ..ent }, id));
+        let desc = if sym.is_weak_def() { N_WEAK_DEF } else { 0 };
+        ents.push((local_symbol_name(sym.name()), MachSym { desc, ..ent }, id));
     }
     ents.extend(linker_locals(ctx));
     ents
@@ -698,7 +698,7 @@ fn linker_locals<E: Target>(ctx: &Context<E>) -> Vec<NamedEntry> {
         let sec = &ctx.isecs[isec as usize];
         if sec.is_alive() && sec.output_section().is_some() {
             let addr = ctx.isec_addr(isec as usize);
-            let ent = local_nlist(ctx.isec_n_sect(sec), addr);
+            let ent = local_msym(ctx.isec_sect_idx(sec), addr);
             ents.push((name, ent, None));
         }
     }
@@ -708,7 +708,7 @@ fn linker_locals<E: Target>(ctx: &Context<E>) -> Vec<NamedEntry> {
     let hdr = &ctx.objc_stubs.hdr;
     for (i, &(sym, _)) in ctx.objc_stubs.symbols.iter().enumerate() {
         let addr = hdr.addr + i as u64 * ctx.objc_stub_size();
-        let ent = NList { n_type: N_PEXT | N_SECT, ..local_nlist(hdr.n_sect, addr) };
+        let ent = MachSym { n_type: N_PEXT | N_SECT, ..local_msym(hdr.sect_idx, addr) };
         ents.push((ctx.symbols[sym].name(), ent, None));
     }
     // The lazy-load helpers - a call helper, like a selector stub,
@@ -720,44 +720,44 @@ fn linker_locals<E: Target>(ctx: &Context<E>) -> Vec<NamedEntry> {
             crate::chunks::lazy_helpers::LazyUse::Call => N_PEXT | N_SECT,
             _ => N_SECT,
         };
-        let ent = NList { n_type, ..local_nlist(hdr.n_sect, addr) };
+        let ent = MachSym { n_type, ..local_msym(hdr.sect_idx, addr) };
         ents.push((h.name, ent, None));
     }
     let hdr = &ctx.lazy_load_got.hdr;
     for (i, &(_, name)) in ctx.lazy_load_got.slots.iter().enumerate() {
         let addr = hdr.addr + i as u64 * 8;
-        ents.push((name, local_nlist(hdr.n_sect, addr), None));
+        ents.push((name, local_msym(hdr.sect_idx, addr), None));
     }
     // The delay-init stubs, like selector stubs with N_PEXT set, and
     // the helpers. (The dlopen helpers' flags are extra_local_syms.)
     let delay = &ctx.delay_init;
     for (i, stub) in delay.stubs.iter().enumerate() {
         let addr = ctx.delay_stub_addr(i);
-        let ent = NList { n_type: N_PEXT | N_SECT, ..local_nlist(delay.stubs_hdr.n_sect, addr) };
+        let ent = MachSym { n_type: N_PEXT | N_SECT, ..local_msym(delay.stubs_hdr.sect_idx, addr) };
         ents.push((stub.name, ent, None));
     }
-    let n_sect = delay.helper_hdr.n_sect;
+    let sect = delay.helper_hdr.sect_idx;
     for (i, h) in delay.helpers.iter().enumerate() {
         let addr = ctx.delay_helper_addr(i);
-        ents.push((h.name, local_nlist(n_sect, addr), None));
+        ents.push((h.name, local_msym(sect, addr), None));
     }
     for (i, d) in delay.dlopens.iter().enumerate() {
         let addr = ctx.dlopen_helper_addr(i);
-        ents.push((d.name, local_nlist(n_sect, addr), None));
+        ents.push((d.name, local_msym(sect, addr), None));
     }
     // The range-extension thunks' entries, named as ld-prime names
     // its branch islands.
-    for (addr, n_sect, name) in crate::thunks::island_symbols(ctx) {
+    for (addr, sect, name) in crate::thunks::island_symbols(ctx) {
         if !is_listed_out(ctx, name) {
-            ents.push((name, local_nlist(n_sect, addr), None));
+            ents.push((name, local_msym(sect, addr), None));
         }
     }
     ents
 }
 
-/// A local symbol's entry, in section `n_sect`.
-fn local_nlist(n_sect: u8, n_value: u64) -> NList {
-    NList { n_strx: 0, n_type: N_SECT, n_sect, n_desc: 0, n_value }
+/// A local symbol's entry, in section `sect`.
+fn local_msym(sect: u8, value: u64) -> MachSym {
+    MachSym { stroff: 0, n_type: N_SECT, sect, desc: 0, value }
 }
 
 /// Whether -non_global_symbols_no_strip_list or -non_global_symbols_strip_list
@@ -775,9 +775,9 @@ fn object_locals<E: Target>(ctx: &Context<E>, obj: &ObjectFile) -> Vec<NamedEntr
         return out;
     }
     for i in obj.local_range() {
-        let (nlist, sym_id) = (&obj.nlists[i], obj.symbols[i]);
+        let (msym, sym_id) = (&obj.mach_syms[i], obj.symbols[i]);
         let sym = &ctx.symbols[sym_id];
-        if nlist.is_stab() || nlist.is_extern() || !keep_local_symbol(sym.name()) {
+        if msym.is_stab() || msym.is_extern() || !keep_local_symbol(sym.name()) {
             continue;
         }
         if is_listed_out(ctx, sym.name()) {
@@ -786,8 +786,8 @@ fn object_locals<E: Target>(ctx: &Context<E>, obj: &ObjectFile) -> Vec<NamedEntr
         // An absolute symbol (N_ABS, as `.set x, 5` makes) is kept too,
         // in no section.
         let Some(isec) = sym.input_section().map(|i| i as usize) else {
-            if nlist.n_type() == N_ABS {
-                let ent = NList { n_type: N_ABS, ..local_nlist(0, 0) };
+            if msym.ty() == N_ABS {
+                let ent = MachSym { n_type: N_ABS, ..local_msym(0, 0) };
                 let name = local_symbol_name(sym.name());
                 out.push((name, ent, Some(sym_id)));
             }
@@ -798,7 +798,7 @@ fn object_locals<E: Target>(ctx: &Context<E>, obj: &ObjectFile) -> Vec<NamedEntr
         if !matches!(sym.file(), Some(FileId::Obj(_))) || !ctx.isecs[kept].is_alive() {
             continue;
         }
-        let ent = local_nlist(ctx.isec_n_sect(&ctx.isecs[kept]), 0);
+        let ent = local_msym(ctx.isec_sect_idx(&ctx.isecs[kept]), 0);
         let name = local_symbol_name(sym.name());
         out.push((name, ent, Some(sym_id)));
     }
@@ -806,14 +806,14 @@ fn object_locals<E: Target>(ctx: &Context<E>, obj: &ObjectFile) -> Vec<NamedEntr
 }
 
 /// A symbol table entry with its name, and the symbol whose address
-/// fills n_value.
-type NamedEntry = (&'static [u8], NList, Option<SymbolId>);
+/// fills `value`.
+type NamedEntry = (&'static [u8], MachSym, Option<SymbolId>);
 
 /// Appends an entry and its name for each item, made by `f` on all cores
 /// straight into the arrays' spare capacity, which the caller reserved.
 pub fn par_push_entries<T: Sync>(
     names: &mut Vec<&'static [u8]>,
-    entries: &mut Vec<(NList, Option<SymbolId>)>,
+    entries: &mut Vec<(MachSym, Option<SymbolId>)>,
     items: &[T],
     f: impl Fn(&T) -> NamedEntry + Sync,
 ) {
@@ -914,7 +914,7 @@ pub fn create_output_symtab<E: Target>(
         if let (ent, Some(id)) = data.entries[i] {
             let index = if i < stabs_start { i } else { i + nstabs };
             entry_of[id as usize].store(index as u32, Ordering::Relaxed);
-            strx_of[id as usize].store(ent.n_strx, Ordering::Relaxed);
+            strx_of[id as usize].store(ent.stroff, Ordering::Relaxed);
         }
     });
     undefs.par_iter().enumerate().for_each(|(k, &id)| {
@@ -1008,12 +1008,12 @@ fn classify_symbols<E: Target>(ctx: &Context<E>, indexed: &[bool]) -> Vec<Symbol
 }
 
 /// A defined global's entry, its name and the symbol whose address
-/// fills in n_value.
+/// fills in `value`.
 fn global_entry<E: Target>(ctx: &Context<E>, i: SymbolId) -> NamedEntry {
     let sym = &ctx.symbols[i];
-    let (n_type, n_sect, mut n_desc) = match (sym.file(), sym.input_section()) {
+    let (n_type, sect, mut desc) = match (sym.file(), sym.input_section()) {
         (_, Some(isec)) => {
-            (N_SECT | N_EXT, ctx.isec_n_sect(&ctx.isecs[ctx.resolve_isec(isec as usize)]), 0)
+            (N_SECT | N_EXT, ctx.isec_sect_idx(&ctx.isecs[ctx.resolve_isec(isec as usize)]), 0)
         }
         // A synthesized symbol with no section (__mh_execute_header)
         // sits in the first section: the mach header. Nothing slides
@@ -1029,36 +1029,36 @@ fn global_entry<E: Target>(ctx: &Context<E>, i: SymbolId) -> NamedEntry {
         (_, None) => (N_ABS | N_EXT, 0, 0),
     };
     if sym.is_weak_def() {
-        n_desc |= N_WEAK_DEF;
+        desc |= N_WEAK_DEF;
     }
     if sym.is_referenced_dynamically() {
-        n_desc |= REFERENCED_DYNAMICALLY;
+        desc |= REFERENCED_DYNAMICALLY;
     }
-    let ent = NList { n_strx: 0, n_type, n_sect, n_desc, n_value: 0 };
+    let ent = MachSym { stroff: 0, n_type, sect, desc, value: 0 };
     (sym.name(), ent, Some(i))
 }
 
 /// An import's entry and its name. The library ordinal lives in the
-/// high byte of n_desc.
+/// high byte of `desc`.
 fn import_entry<E: Target>(ctx: &Context<E>, i: usize) -> NamedEntry {
     let sym = &ctx.symbols[i];
     let Some(FileId::Dylib(dylib)) = sym.file() else { unreachable!() };
     // A dynamic-lookup import records the DYNAMIC_LOOKUP ordinal, a
     // -bundle_loader import the EXECUTABLE ordinal.
-    let ordinal = ctx.nlist_library_ordinal(dylib) as u16;
-    let mut n_desc = ordinal << 8;
+    let ordinal = ctx.msym_library_ordinal(dylib) as u16;
+    let mut desc = ordinal << 8;
     if sym.is_weak_ref() {
-        n_desc |= N_WEAK_REF;
+        desc |= N_WEAK_REF;
     }
-    let ent = NList { n_strx: 0, n_type: N_UNDF | N_EXT, n_sect: 0, n_desc, n_value: 0 };
+    let ent = MachSym { stroff: 0, n_type: N_UNDF | N_EXT, sect: 0, desc, value: 0 };
     (sym.name(), ent, None)
 }
 
-/// Makes each alias of an imported symbol an N_INDR entry whose n_value
+/// Makes each alias of an imported symbol an N_INDR entry whose value
 /// is the string-table offset of the name it stands for: the string of
 /// the import's own entry. (ld-prime writes the name again after the
 /// alias's.) The slot is detached from the symbol so copy_symtab leaves
-/// n_value alone.
+/// `value` alone.
 fn make_indirect_aliases<E: Target>(ctx: &Context<E>, data: &mut SymtabSection) {
     let (stabs_start, nstabs) = (data.stabs_start, data.nstabs);
     let entry = |index: u32| {
@@ -1071,12 +1071,12 @@ fn make_indirect_aliases<E: Target>(ctx: &Context<E>, data: &mut SymtabSection) 
         if a == u32::MAX || t == u32::MAX {
             continue;
         }
-        let target_strx = data.entries[entry(t)].0.n_strx;
+        let target_strx = data.entries[entry(t)].0.stroff;
         let ent = &mut data.entries[entry(a)];
         ent.0.n_type = N_INDR | N_EXT;
-        ent.0.n_sect = 0;
-        ent.0.n_desc = 0;
-        ent.0.n_value = target_strx as u64;
+        ent.0.sect = 0;
+        ent.0.desc = 0;
+        ent.0.value = target_strx as u64;
         ent.1 = None;
     }
 }
@@ -1085,7 +1085,7 @@ pub fn copy_symtab<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let symtab = &ctx.symtab;
     let symoff = symtab.hdr.fileoff as usize;
     let stroff = ctx.strtab.hdr.fileoff as usize;
-    let symsize = symtab.len() * size_of::<NList>();
+    let symsize = symtab.len() * size_of::<MachSym>();
     let (syms, strtab) = if symoff + symsize <= stroff {
         let (lo, hi) = buf.split_at_mut(stroff);
         (&mut lo[symoff..symoff + symsize], &mut hi[..symtab.strtab_size])
@@ -1098,7 +1098,7 @@ pub fn copy_symtab<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 
 /// Writes a symbol table's entries into `syms` and their strings into
 /// `strtab`, which hold exactly the table and its strings: each entry
-/// with the address of its symbol, if it has one, as n_value, and each
+/// with the address of its symbol, if it has one, as `value`, and each
 /// object's debug notes from its plan. A -r output's table is written
 /// this way too.
 pub fn write_symtab<E: Target>(
@@ -1110,8 +1110,8 @@ pub fn write_symtab<E: Target>(
     // The entries before the notes, the notes, and the externals; the
     // entries' strings, then the notes'.
     let start = symtab.stabs_start;
-    let (local_syms, rest) = syms.split_at_mut(start * size_of::<NList>());
-    let (mut stab_syms, extern_syms) = rest.split_at_mut(symtab.nstabs * size_of::<NList>());
+    let (local_syms, rest) = syms.split_at_mut(start * size_of::<MachSym>());
+    let (mut stab_syms, extern_syms) = rest.split_at_mut(symtab.nstabs * size_of::<MachSym>());
     let stab_strx = symtab.stab_strx.first().map_or(strtab.len(), |&strx| strx as usize);
     let (strtab, mut stab_strtab) = strtab.split_at_mut(stab_strx);
 
@@ -1120,7 +1120,7 @@ pub fn write_symtab<E: Target>(
     // symtab copy_buf and populate_symtab.
     let mut blocks = Vec::with_capacity(symtab.stabs.len());
     for (plan, strx) in symtab.stabs.iter().zip(symtab.stab_strx.windows(2)) {
-        let (syms, rest) = stab_syms.split_at_mut(plan.len() * size_of::<NList>());
+        let (syms, rest) = stab_syms.split_at_mut(plan.len() * size_of::<MachSym>());
         let (strs, strs_rest) = stab_strtab.split_at_mut((strx[1] - strx[0]) as usize);
         (stab_syms, stab_strtab) = (rest, strs_rest);
         blocks.push(SymtabBlock {
@@ -1147,25 +1147,25 @@ pub fn write_symtab<E: Target>(
     let strtab = &strtab;
 
     // Millions of entries, each wanting a sym_addr lookup for its
-    // n_value: emit them in parallel blocks.
+    // value: emit them in parallel blocks.
     const BLOCK: usize = 4096;
     let (locals, externs) = symtab.entries.split_at(start);
     let (local_names, extern_names) = symtab.names.split_at(start);
-    let write = |syms: &mut [u8], ents: &[(NList, Option<SymbolId>)], names: &[&[u8]]| {
-        syms.par_chunks_mut(BLOCK * size_of::<NList>())
+    let write = |syms: &mut [u8], ents: &[(MachSym, Option<SymbolId>)], names: &[&[u8]]| {
+        syms.par_chunks_mut(BLOCK * size_of::<MachSym>())
             .zip(ents.par_chunks(BLOCK))
             .zip(names.par_chunks(BLOCK))
             .for_each(|((out, ents), names)| {
-                for (i, ((nlist, sym), name)) in ents.iter().zip(names).enumerate() {
-                    let mut nlist = *nlist;
+                for (i, ((msym, sym), name)) in ents.iter().zip(names).enumerate() {
+                    let mut msym = *msym;
                     if let Some(id) = sym {
-                        nlist.n_value = ctx.sym_addr(*id);
+                        msym.value = ctx.sym_addr(*id);
                     }
-                    nlist.write_to(&mut out[i * size_of::<NList>()..]);
+                    msym.write_to(&mut out[i * size_of::<MachSym>()..]);
                     // SAFETY: layout_strings gave each name a range of
                     // its own within the string table.
                     unsafe {
-                        let dst = strtab.0.add(nlist.n_strx as usize);
+                        let dst = strtab.0.add(msym.stroff as usize);
                         std::ptr::copy_nonoverlapping(name.as_ptr(), dst, name.len());
                     }
                 }
@@ -1194,8 +1194,8 @@ pub struct SymtabBlock<'a> {
 
 impl SymtabBlock<'_> {
     #[inline]
-    pub fn push(&mut self, nlist: NList) {
-        nlist.write_to(&mut self.syms[self.len * size_of::<NList>()..]);
+    pub fn push(&mut self, msym: MachSym) {
+        msym.write_to(&mut self.syms[self.len * size_of::<MachSym>()..]);
         self.len += 1;
     }
 
@@ -1211,12 +1211,12 @@ impl SymtabBlock<'_> {
     }
 }
 
-/// Lays out a symbol table's strings and sets every entry's n_strx:
+/// Lays out a symbol table's strings and sets every entry's stroff:
 /// each entry's name in entry order, with a copy of its own - two
 /// locals of one name get two - but that an empty name is offset 1,
 /// after the table's leading " ". The debug notes' follow (see
 /// SymtabSection::set_stabs). Returns where the strings end.
-pub fn layout_strings(entries: &mut [(NList, Option<SymbolId>)], names: &[&[u8]]) -> usize {
+pub fn layout_strings(entries: &mut [(MachSym, Option<SymbolId>)], names: &[&[u8]]) -> usize {
     // Each block of entries at its prefix-summed offset.
     const CHUNK: usize = 1 << 16;
     let size = |name: &&[u8]| if name.is_empty() { 0 } else { name.len() as u32 + 1 };
@@ -1230,7 +1230,7 @@ pub fn layout_strings(entries: &mut [(NList, Option<SymbolId>)], names: &[&[u8]]
     entries.par_chunks_mut(CHUNK).zip(names.par_chunks(CHUNK)).zip(bases).for_each(
         |((ents, names), mut off)| {
             for ((ent, _), name) in ents.iter_mut().zip(names) {
-                ent.n_strx = if name.is_empty() { 1 } else { off };
+                ent.stroff = if name.is_empty() { 1 } else { off };
                 off += size(name);
             }
         },

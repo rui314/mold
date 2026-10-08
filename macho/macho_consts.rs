@@ -153,7 +153,7 @@ pub const S_ATTR_SELF_MODIFYING_CODE: u32 = 0x0400_0000;
 pub const S_ATTR_EXT_RELOC: u32 = 0x0000_0200;
 pub const S_ATTR_LOC_RELOC: u32 = 0x0000_0100;
 
-// Symbol types (n_type field of nlist)
+// Symbol types (n_type field of MachSym)
 pub const N_STAB: u8 = 0xe0;
 pub const N_PEXT: u8 = 0x10;
 pub const N_TYPE: u8 = 0x0e;
@@ -178,7 +178,7 @@ pub const N_ENSYM: u8 = 0x4e;
 pub const N_ECOMM: u8 = 0xe4;
 pub const N_ECOML: u8 = 0xe8;
 
-// Symbol descriptions (n_desc field of nlist)
+// Symbol descriptions (desc field of MachSym)
 pub const N_WEAK_REF: u16 = 0x0040;
 pub const N_WEAK_DEF: u16 = 0x0080;
 pub const N_NO_DEAD_STRIP: u16 = 0x0020;

@@ -30,8 +30,8 @@ impl Default for LocalRelocsSection {
     }
 }
 
-/// Lists the pointers in address order. A record's r_address is a
-/// signed 32-bit offset from relocation_base, which must reach each.
+/// Lists the pointers in address order. A record's offset is a
+/// signed 32-bit distance from relocation_base, which must reach each.
 pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u64> {
     let mut locs = crate::chunks::rebase_info::rebase_locations(ctx);
     locs.sort_unstable();
@@ -60,7 +60,7 @@ pub(crate) fn relocation_base<E: Target>(ctx: &Context<E>) -> u64 {
 }
 
 /// Writes the records once the sections are in the buffer. Each is a
-/// non-extern 8-byte UNSIGNED relocation whose r_symbolnum is the
+/// non-extern 8-byte UNSIGNED relocation whose idx is the
 /// ordinal of the section the pointer points into, and whose address
 /// counts from relocation_base.
 pub fn write<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
@@ -69,7 +69,7 @@ pub fn write<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
         .iter()
         .map(|&id| ctx.chunk_header(id))
         .filter(|hdr| hdr.is_sect)
-        .map(|hdr| (hdr.addr, hdr.n_sect))
+        .map(|hdr| (hdr.addr, hdr.sect_idx))
         .collect();
     sects.sort_unstable();
     let base = relocation_base(ctx);
@@ -81,10 +81,10 @@ pub fn write<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
         let value = u64::from_le_bytes(buf[pos..pos + 8].try_into().unwrap());
         // The last section starting at or below the target.
         let i = sects.partition_point(|&(start, _)| start <= value);
-        let n_sect = sects[i.saturating_sub(1)].1;
+        let sect = sects[i.saturating_sub(1)].1;
         let rel = MachRel {
-            r_address: addr.wrapping_sub(base) as u32,
-            bits: u32::from(n_sect) | (3 << 25) | (u32::from(E::RELOC_UNSIGNED) << 28),
+            offset: addr.wrapping_sub(base) as u32,
+            bits: u32::from(sect) | (3 << 25) | (u32::from(E::RELOC_UNSIGNED) << 28),
         };
         rel.write_to(&mut buf[off..]);
         off += size_of::<MachRel>();

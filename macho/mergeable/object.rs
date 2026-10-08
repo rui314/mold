@@ -113,7 +113,7 @@ struct Symbol {
     place: SymPlace,
     /// N_EXT, N_PEXT.
     n_type: u8,
-    n_desc: u16,
+    desc: u16,
 }
 
 /// The object a mergeable record stands for, under construction.
@@ -282,7 +282,7 @@ impl<E: Target> Synth<'_, E> {
                 name: format!("LMC{n}").into_bytes(),
                 place: SymPlace::Defined { sect, offset },
                 n_type: 0,
-                n_desc: 0,
+                desc: 0,
             });
             self.class_refs[n].label = label;
             let class = self.target_sym(class).expect("a fixup's target has a symbol");
@@ -338,16 +338,16 @@ impl<E: Target> Synth<'_, E> {
     fn undefined(&mut self, name: &[u8], weak: bool) -> usize {
         if let Some(&idx) = self.undefined.get(name) {
             if weak {
-                self.symbols[idx].n_desc |= N_WEAK_REF;
+                self.symbols[idx].desc |= N_WEAK_REF;
             }
             return idx;
         }
-        let n_desc = if weak { N_WEAK_REF } else { 0 };
+        let desc = if weak { N_WEAK_REF } else { 0 };
         let idx = self.add_symbol(Symbol {
             name: name.to_vec(),
             place: SymPlace::Undefined,
             n_type: N_EXT,
-            n_desc,
+            desc,
         });
         self.undefined.insert(name.to_vec(), idx);
         idx
@@ -372,24 +372,24 @@ impl<E: Target> Synth<'_, E> {
             }
             TENTATIVE_DEF => {
                 let Some(name) = name else { return };
-                let (n_type, n_desc) = scope_bits(entry.scope);
+                let (n_type, desc) = scope_bits(entry.scope);
                 self.sym_of[i] = Some(self.add_symbol(Symbol {
                     name: name.to_vec(),
                     place: SymPlace::Common { size: entry.size as u64, p2align: entry.p2align },
                     n_type: n_type | N_EXT,
-                    n_desc,
+                    desc,
                 }));
             }
             // Its value is its content, eight bytes.
             ABSOLUTE => {
                 let (Some(name), Some(value)) = (name, entry.content) else { return };
                 let value = value.get(..8).map_or(0, |v| read64(v, 0));
-                let (n_type, n_desc) = scope_bits(entry.scope);
+                let (n_type, desc) = scope_bits(entry.scope);
                 self.sym_of[i] = Some(self.add_symbol(Symbol {
                     name: name.to_vec(),
                     place: SymPlace::Absolute(value),
                     n_type,
-                    n_desc,
+                    desc,
                 }));
             }
             _ => {
@@ -399,30 +399,30 @@ impl<E: Target> Synth<'_, E> {
                 if entry.content_type == ctype::CFI {
                     return;
                 }
-                let (name, n_type, mut n_desc) = match name {
+                let (name, n_type, mut desc) = match name {
                     Some(name) => {
-                        let (n_type, n_desc) = scope_bits(entry.scope);
-                        (name.to_vec(), n_type, n_desc)
+                        let (n_type, desc) = scope_bits(entry.scope);
+                        (name.to_vec(), n_type, desc)
                     }
                     None => (format!("LM{i}").into_bytes(), 0, 0),
                 };
                 if entry.kind == WEAK_DEF {
-                    n_desc |= N_WEAK_DEF;
+                    desc |= N_WEAK_DEF;
                 }
                 if entry.kind == RESOLVER {
-                    n_desc |= N_SYMBOL_RESOLVER;
+                    desc |= N_SYMBOL_RESOLVER;
                 }
                 if entry.no_dead_strip {
-                    n_desc |= N_NO_DEAD_STRIP;
+                    desc |= N_NO_DEAD_STRIP;
                 }
                 if entry.cold {
-                    n_desc |= N_COLD_FUNC;
+                    desc |= N_COLD_FUNC;
                 }
                 self.sym_of[i] = Some(self.add_symbol(Symbol {
                     name,
                     place: SymPlace::Defined { sect, offset },
                     n_type,
-                    n_desc,
+                    desc,
                 }));
             }
         }
@@ -449,22 +449,22 @@ impl<E: Target> Synth<'_, E> {
             self.sym_of[i] = Some(self.undefined(name, false));
             return;
         };
-        let (n_type, mut n_desc) = scope_bits(entry.scope);
+        let (n_type, mut desc) = scope_bits(entry.scope);
         if f.addend != 0 {
-            n_desc |= N_ALT_ENTRY;
+            desc |= N_ALT_ENTRY;
         }
         if entry.kind == WEAK_DEF_ALIAS {
-            n_desc |= N_WEAK_DEF;
+            desc |= N_WEAK_DEF;
         }
         if entry.no_dead_strip {
-            n_desc |= N_NO_DEAD_STRIP;
+            desc |= N_NO_DEAD_STRIP;
         }
         let offset = offset.wrapping_add_signed(f.addend);
         self.sym_of[i] = Some(self.add_symbol(Symbol {
             name: name.to_vec(),
             place: SymPlace::Defined { sect, offset },
             n_type,
-            n_desc,
+            desc,
         }));
     }
 
@@ -480,14 +480,14 @@ impl<E: Target> Synth<'_, E> {
         self.sym_of.get(entry as usize).copied().flatten()
     }
 
-    fn reloc(r_address: u32, symbolnum: usize, r_type: u8, length: u32, pcrel: bool) -> MachRel {
+    fn reloc(offset: u32, idx: usize, ty: u8, p2size: u32, pcrel: bool) -> MachRel {
         MachRel {
-            r_address,
-            bits: symbolnum as u32 & 0xff_ffff
+            offset,
+            bits: idx as u32 & 0xff_ffff
                 | (pcrel as u32) << 24
-                | length << 25
+                | p2size << 25
                 | 1 << 27
-                | (r_type as u32) << 28,
+                | (ty as u32) << 28,
         }
     }
 
@@ -557,9 +557,9 @@ impl<E: Target> Synth<'_, E> {
         } else {
             (X86_64_RELOC_SUBTRACTOR, X86_64_RELOC_UNSIGNED)
         };
-        let length = if size == 8 { 3 } else { 2 };
+        let p2size = if size == 8 { 3 } else { 2 };
         self.put(sect, off, size, addend as u64);
-        [Self::reloc(off, from, sub, length, false), Self::reloc(off, sym, unsigned, length, false)]
+        [Self::reloc(off, from, sub, p2size, false), Self::reloc(off, sym, unsigned, p2size, false)]
     }
 
     /// The generic fixups, as either target encodes them.
@@ -621,7 +621,7 @@ impl<E: Target> Synth<'_, E> {
             if f.addend != 0 {
                 let bits =
                     (f.addend as u32 & 0xff_ffff) | 2 << 25 | (ARM64_RELOC_ADDEND as u32) << 28;
-                out.push(MachRel { r_address: at, bits });
+                out.push(MachRel { offset: at, bits });
             }
         };
         let second = off + 4 * f.second as u32;
@@ -704,7 +704,7 @@ impl<E: Target> Synth<'_, E> {
         out: &mut Vec<MachRel>,
     ) -> bool {
         use fk::*;
-        let (r_type, bias) = match f.kind {
+        let (ty, bias) = match f.kind {
             X86_64_CALL => (X86_64_RELOC_BRANCH, 0),
             X86_64_RIP => (X86_64_RELOC_SIGNED, 0),
             X86_64_RIP1 => (X86_64_RELOC_SIGNED_1, 1),
@@ -721,7 +721,7 @@ impl<E: Target> Synth<'_, E> {
             _ => return self.generic_fixup(sect, off, entry, f, sym, out),
         };
         // A movq ld-prime relaxed to a leaq loads again.
-        if matches!(r_type, X86_64_RELOC_GOT_LOAD | X86_64_RELOC_TLV)
+        if matches!(ty, X86_64_RELOC_GOT_LOAD | X86_64_RELOC_TLV)
             && let Some(at) = off.checked_sub(2)
             && self.sections[sect].data[at as usize] == 0x8d
         {
@@ -737,7 +737,7 @@ impl<E: Target> Synth<'_, E> {
             _ => f.addend - bias,
         };
         self.put(sect, off, 4, addend as u64);
-        out.push(Self::reloc(off, sym, r_type, 2, true));
+        out.push(Self::reloc(off, sym, ty, 2, true));
         true
     }
 
@@ -790,13 +790,13 @@ impl<E: Target> Synth<'_, E> {
                 fk::PCREL32_TO_GOT | fk::SWIFT_REL32_TO_GOT => {
                     let Some(sym) = self.target_sym(f.target) else { continue };
                     let swift = (f.kind == fk::SWIFT_REL32_TO_GOT) as i64;
-                    let (r_type, addend) = if Self::is_arm64() {
+                    let (ty, addend) = if Self::is_arm64() {
                         (ARM64_RELOC_POINTER_TO_GOT, f.addend + swift)
                     } else {
                         (X86_64_RELOC_GOT, f.addend + 4 + swift)
                     };
                     self.put(sect, off, 4, addend as u64);
-                    self.sections[sect].relocs.push(Self::reloc(off, sym, r_type, 2, true));
+                    self.sections[sect].relocs.push(Self::reloc(off, sym, ty, 2, true));
                 }
                 _ => {}
             }
@@ -807,17 +807,17 @@ impl<E: Target> Synth<'_, E> {
     /// writes them: for each, an empty N_SO, N_SO with the source
     /// directory and name, N_OSO naming the object, then the notes of
     /// its symbols by address; and an empty N_SO closing the last.
-    fn stabs(&self, strtab: &mut Strtab) -> Vec<NList> {
+    fn stabs(&self, strtab: &mut Strtab) -> Vec<MachSym> {
         let mut units: Vec<u16> = Vec::new();
         for entry in &self.rec.entries {
             if entry.debug != 0 && !units.contains(&entry.debug) {
                 units.push(entry.debug);
             }
         }
-        let so = |strtab: &mut Strtab, name: &[u8], n_sect: u8| NList {
-            n_strx: strtab.add(name),
+        let so = |strtab: &mut Strtab, name: &[u8], sect: u8| MachSym {
+            stroff: strtab.add(name),
             n_type: N_SO,
-            n_sect,
+            sect,
             ..Default::default()
         };
         let mut out = Vec::new();
@@ -826,14 +826,14 @@ impl<E: Target> Synth<'_, E> {
             out.push(so(strtab, b"", 1));
             out.push(so(strtab, &info.source_dir, 0));
             out.push(so(strtab, &info.source_name, 0));
-            out.push(NList {
-                n_strx: strtab.add(&info.object_path),
+            out.push(MachSym {
+                stroff: strtab.add(&info.object_path),
                 n_type: N_OSO,
-                n_sect: self.rec.cpusubtype as u8,
-                n_desc: 1,
-                n_value: info.mtime as u64,
+                sect: self.rec.cpusubtype as u8,
+                desc: 1,
+                value: info.mtime as u64,
             });
-            let mut notes: Vec<(u64, Vec<NList>)> = (0..self.rec.entries.len())
+            let mut notes: Vec<(u64, Vec<MachSym>)> = (0..self.rec.entries.len())
                 .filter(|&i| self.rec.entries[i].debug == unit)
                 .filter_map(|i| self.symbol_stabs(i, strtab))
                 .collect();
@@ -852,13 +852,12 @@ impl<E: Target> Synth<'_, E> {
     /// N_ENSYM, an external variable's N_GSYM (a private external's
     /// too), a local one's N_STSYM, and a tentative definition's N_GSYM,
     /// last.
-    fn symbol_stabs(&self, i: usize, strtab: &mut Strtab) -> Option<(u64, Vec<NList>)> {
+    fn symbol_stabs(&self, i: usize, strtab: &mut Strtab) -> Option<(u64, Vec<MachSym>)> {
         let sym = &self.symbols[self.sym_of[i]?];
         if crate::input_files::is_private_label(&sym.name) {
             return None;
         }
-        let entry =
-            |n_type, n_strx, n_sect, n_value| NList { n_strx, n_type, n_sect, n_desc: 0, n_value };
+        let entry = |n_type, stroff, sect, value| MachSym { stroff, n_type, sect, desc: 0, value };
         let name = strtab.add(&sym.name);
         let (sect, offset) = match sym.place {
             SymPlace::Common { .. } => return Some((u64::MAX, vec![entry(N_GSYM, name, 0, 0)])),
@@ -867,19 +866,19 @@ impl<E: Target> Synth<'_, E> {
         };
         let section = &self.sections[sect];
         let addr = section.addr + offset;
-        let n_sect = sect as u8 + 1;
+        let sect_idx = sect as u8 + 1;
         let notes = if section.flags & S_ATTR_PURE_INSTRUCTIONS != 0 {
             let empty = strtab.add(b"");
             vec![
-                entry(N_BNSYM, empty, n_sect, addr),
-                entry(N_FUN, name, n_sect, addr),
+                entry(N_BNSYM, empty, sect_idx, addr),
+                entry(N_FUN, name, sect_idx, addr),
                 entry(N_FUN, empty, 0, self.rec.entries[i].size as u64),
-                entry(N_ENSYM, empty, n_sect, addr),
+                entry(N_ENSYM, empty, sect_idx, addr),
             ]
         } else if sym.n_type & N_EXT != 0 {
             vec![entry(N_GSYM, name, 0, 0)]
         } else {
-            vec![entry(N_STSYM, name, n_sect, addr)]
+            vec![entry(N_STSYM, name, sect_idx, addr)]
         };
         Some((addr, notes))
     }
@@ -896,7 +895,7 @@ impl<E: Target> Synth<'_, E> {
         let mut order: Vec<usize> = (0..self.symbols.len()).collect();
         order.sort_by_key(|&i| kind(&self.symbols[i]));
         let mut table = SymbolTable {
-            nlists: Vec::new(),
+            mach_syms: Vec::new(),
             strtab: Strtab::new(),
             index: vec![0; self.symbols.len()],
             nlocal: 0,
@@ -907,8 +906,8 @@ impl<E: Target> Synth<'_, E> {
             self.push_symbol(&mut table, i);
         }
         let stabs = self.stabs(&mut table.strtab);
-        table.nlists.extend(stabs);
-        table.nlocal = table.nlists.len();
+        table.mach_syms.extend(stabs);
+        table.nlocal = table.mach_syms.len();
         for &i in &order[nlocal..] {
             self.push_symbol(&mut table, i);
         }
@@ -918,31 +917,31 @@ impl<E: Target> Synth<'_, E> {
 
     fn push_symbol(&self, table: &mut SymbolTable, i: usize) {
         let s = &self.symbols[i];
-        let mut n = NList {
-            n_strx: table.strtab.add(&s.name),
+        let mut n = MachSym {
+            stroff: table.strtab.add(&s.name),
             n_type: s.n_type,
-            n_sect: 0,
-            n_desc: s.n_desc,
-            n_value: 0,
+            sect: 0,
+            desc: s.desc,
+            value: 0,
         };
         match s.place {
             SymPlace::Defined { sect, offset } => {
                 n.n_type |= N_SECT;
-                n.n_sect = sect as u8 + 1;
-                n.n_value = self.sections[sect].addr + offset;
+                n.sect = sect as u8 + 1;
+                n.value = self.sections[sect].addr + offset;
             }
             SymPlace::Undefined => {}
             SymPlace::Common { size, p2align } => {
-                n.n_value = size;
-                n.n_desc |= (p2align as u16 & 0xf) << 8;
+                n.value = size;
+                n.desc |= (p2align as u16 & 0xf) << 8;
             }
             SymPlace::Absolute(value) => {
                 n.n_type |= N_ABS;
-                n.n_value = value;
+                n.value = value;
             }
         }
-        table.index[i] = table.nlists.len() as u32;
-        table.nlists.push(n);
+        table.index[i] = table.mach_syms.len() as u32;
+        table.mach_syms.push(n);
     }
 
     /// Writes the object out: the header and load commands (see
@@ -977,7 +976,7 @@ impl<E: Target> Synth<'_, E> {
             for r in &s.relocs {
                 let mut r = *r;
                 if r.is_extern() {
-                    r.bits = (r.bits & !0xff_ffff) | table.index[r.r_symbolnum() as usize];
+                    r.bits = (r.bits & !0xff_ffff) | table.index[r.idx() as usize];
                 }
                 out.extend_from_slice(r.as_bytes());
             }
@@ -985,7 +984,7 @@ impl<E: Target> Synth<'_, E> {
 
         let symoff = out.len().next_multiple_of(8);
         out.resize(symoff, 0);
-        for n in &table.nlists {
+        for n in &table.mach_syms {
             out.extend_from_slice(n.as_bytes());
         }
         let stroff = out.len();
@@ -1067,7 +1066,7 @@ impl<E: Target> Synth<'_, E> {
             cmd: LC_SYMTAB,
             cmdsize: size_of::<SymtabCommand>() as u32,
             symoff: layout.symoff as u32,
-            nsyms: table.nlists.len() as u32,
+            nsyms: table.mach_syms.len() as u32,
             stroff: layout.stroff as u32,
             strsize: table.strtab.data.len() as u32,
         };
@@ -1080,7 +1079,7 @@ impl<E: Target> Synth<'_, E> {
             iextdefsym: table.nlocal as u32,
             nextdefsym: table.nextdef as u32,
             iundefsym: (table.nlocal + table.nextdef) as u32,
-            nundefsym: (table.nlists.len() - table.nlocal - table.nextdef) as u32,
+            nundefsym: (table.mach_syms.len() - table.nlocal - table.nextdef) as u32,
             ..Default::default()
         };
         put(dysymtab.as_bytes());
@@ -1101,9 +1100,9 @@ struct FileLayout {
 
 /// The symbol table of the object being made.
 struct SymbolTable {
-    nlists: Vec<NList>,
+    mach_syms: Vec<MachSym>,
     strtab: Strtab,
-    /// Each symbol's index in `nlists`.
+    /// Each symbol's index in `mach_syms`.
     index: Vec<u32>,
     /// The locals and the debug notes.
     nlocal: usize,
@@ -1136,7 +1135,7 @@ impl Strtab {
     }
 }
 
-/// An entry's scope as an nlist's type and description bits.
+/// An entry's scope as a MachSym's type and description bits.
 fn scope_bits(scope: u8) -> (u8, u16) {
     match scope {
         scope::HIDDEN => (N_EXT | N_PEXT, 0),

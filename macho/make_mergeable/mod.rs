@@ -177,7 +177,7 @@ struct DylibRecord {
 #[derive(Debug)]
 struct DebugRecord {
     mtime: u32,
-    /// The object's CPU subtype, as N_OSO's n_sect has it.
+    /// The object's CPU subtype, as N_OSO's sect has it.
     cpusubtype: u8,
     source_dir: Vec<u8>,
     source_name: Vec<u8>,
@@ -323,8 +323,8 @@ impl<'a, E: Target> Builder<'a, E> {
         let stabs = crate::chunks::symtab::object_stabs_opening(self.ctx, obj, &cwd);
         let [dir, name, oso] = &stabs[..] else { return 0 };
         self.debug.push(DebugRecord {
-            mtime: oso.ent.n_value as u32,
-            cpusubtype: oso.ent.n_sect,
+            mtime: oso.ent.value as u32,
+            cpusubtype: oso.ent.sect,
             source_dir: dir.name.to_vec(),
             source_name: name.name.to_vec(),
             object_path: oso.name.to_vec(),
@@ -405,7 +405,7 @@ impl<'a, E: Target> Builder<'a, E> {
         {
             return;
         }
-        let (scope, kind) = linkage(ctx, &obj.nlists[label], sym_id);
+        let (scope, kind) = linkage(ctx, &obj.mach_syms[label], sym_id);
         let kind = if kind == kind::WEAK_DEF { kind::WEAK_DEF_ALIAS } else { kind::ALIAS };
         let mut alias = OutEntry::new(scope, kind, ctype::NONE);
         alias.name = Some(ctx.symbols[sym_id].name());
@@ -449,13 +449,13 @@ impl<'a, E: Target> Builder<'a, E> {
         let isec = &ctx.isecs[id];
         let start = isec.input_addr as u64;
         let end = start + isec.size as u64;
-        let syms = (0..obj.nlists.len()).filter(|&i| {
-            let n = &obj.nlists[i];
+        let syms = (0..obj.mach_syms.len()).filter(|&i| {
+            let n = &obj.mach_syms[i];
             Some(i) != label
                 && !n.is_stab()
-                && n.n_type() == N_SECT
-                && n.n_sect as u32 == isec.shndx + 1
-                && (start..end.max(start + 1)).contains(&n.n_value)
+                && n.ty() == N_SECT
+                && n.sect as u32 == isec.shndx + 1
+                && (start..end.max(start + 1)).contains(&n.value)
                 && !crate::input_files::is_private_label(ctx.symbols[obj.symbols[i]].name())
         });
         for i in syms {
@@ -464,14 +464,14 @@ impl<'a, E: Target> Builder<'a, E> {
             if sym.input_section() != Some(id) {
                 continue;
             }
-            let (scope, kind) = linkage(ctx, &obj.nlists[i], sym_id);
+            let (scope, kind) = linkage(ctx, &obj.mach_syms[i], sym_id);
             let kind = if kind == kind::WEAK_DEF { kind::WEAK_DEF_ALIAS } else { kind::ALIAS };
             let mut alias = OutEntry::new(scope, kind, ctype::NONE);
             alias.name = Some(sym.name());
             alias.dds_if_refs_live = true;
-            alias.no_dead_strip = obj.nlists[i].n_desc & N_NO_DEAD_STRIP != 0;
+            alias.no_dead_strip = obj.mach_syms[i].desc & N_NO_DEAD_STRIP != 0;
             alias.debug = debug;
-            let offset = (obj.nlists[i].n_value - start) as i64;
+            let offset = (obj.mach_syms[i].value - start) as i64;
             alias.fixups.push(OutFixup::new(0, To::Entry(entry), fk::ALIAS_OF, offset));
             let idx = self.push_entry(alias, None);
             self.sym_entry.insert(sym_id, To::Entry(idx));
@@ -483,10 +483,10 @@ impl<'a, E: Target> Builder<'a, E> {
     fn add_absolute_entries(&mut self, obj_idx: usize) {
         let ctx = self.ctx;
         let obj = &ctx.objs[obj_idx];
-        for (n, &sym_id) in obj.nlists.iter().zip(&obj.symbols) {
+        for (n, &sym_id) in obj.mach_syms.iter().zip(&obj.symbols) {
             let sym = &ctx.symbols[sym_id];
             if n.is_stab()
-                || n.n_type() != N_ABS
+                || n.ty() != N_ABS
                 || sym.file() != Some(FileId::Obj(obj_idx as u32))
                 || self.sym_entry.contains_key(&sym_id)
             {
@@ -508,8 +508,8 @@ impl<'a, E: Target> Builder<'a, E> {
     fn add_tentative_defs(&mut self, obj_idx: usize, debug: u16) {
         let ctx = self.ctx;
         let obj = &ctx.objs[obj_idx];
-        for (n, &sym_id) in obj.nlists.iter().zip(&obj.symbols) {
-            if n.is_stab() || !n.is_extern() || n.n_type() != N_UNDF || !n.is_common() {
+        for (n, &sym_id) in obj.mach_syms.iter().zip(&obj.symbols) {
+            if n.is_stab() || !n.is_extern() || n.ty() != N_UNDF || !n.is_common() {
                 continue;
             }
             if self.sym_entry.contains_key(&sym_id) {
@@ -650,11 +650,11 @@ impl<'a, E: Target> Builder<'a, E> {
         let same = |r: &&Reloc| self.class_ref(obj, r).is_some_and(|(s, _)| s == stand_in);
         let next = rels[i + 1..].iter().find(same);
         let prev = rels[..i].iter().rev().find(same);
-        let (kind, scale, second) = match r.r_type {
+        let (kind, scale, second) = match r.ty {
             _ if off != 0 || r.is_subtracted => (0, 0, 0),
             0 if r.size == 8 && !r.is_pcrel => (fk::PTR64_TO_GOT, 0, 0),
             ARM64_RELOC_PAGE21 if arm64 => match next {
-                Some(n) if n.r_type == ARM64_RELOC_PAGEOFF12 && is_add_x(insn(n)) => {
+                Some(n) if n.ty == ARM64_RELOC_PAGEOFF12 && is_add_x(insn(n)) => {
                     match n.offset.checked_sub(r.offset).and_then(|d| u8::try_from(d / 4).ok()) {
                         Some(second) => (fk::ARM64_ADRP_ADD_GOT, 1, second),
                         None => (0, 0, 0),
@@ -664,7 +664,7 @@ impl<'a, E: Target> Builder<'a, E> {
             },
             ARM64_RELOC_PAGEOFF12 if arm64 && is_ldr_x(insn(r)) => (fk::ARM64_LD12_GOT, 8, 0),
             ARM64_RELOC_PAGEOFF12 if arm64 && is_add_x(insn(r)) => {
-                if prev.is_some_and(|p| p.r_type == ARM64_RELOC_PAGE21) {
+                if prev.is_some_and(|p| p.ty == ARM64_RELOC_PAGE21) {
                     return None;
                 }
                 (0, 0, 0)
@@ -753,7 +753,7 @@ impl<'a, E: Target> Builder<'a, E> {
             let addend = r.addend + off;
             // UNSIGNED, which both targets number 0: a pointer, or a
             // thread-local variable's offset in the template.
-            if r.r_type == 0 {
+            if r.ty == 0 {
                 let kind = if r.size == 4 {
                     fk::PTR32
                 } else if ctx.reloc_target_is_tls(obj, r) {
@@ -766,7 +766,7 @@ impl<'a, E: Target> Builder<'a, E> {
                 continue;
             }
             // A SUBTRACTOR and the UNSIGNED of its size after it.
-            if is_subtractor::<E>(r.r_type) && i + 1 < rels.len() {
+            if is_subtractor::<E>(r.ty) && i + 1 < rels.len() {
                 let (to, to_off) = self.reloc_target(obj, &rels[i + 1]);
                 let kind = if rels[i + 1].size == 8 { fk::DIFF64 } else { fk::DIFF32 };
                 let mut f = OutFixup::new(r.offset, to, kind, rels[i + 1].addend + to_off - off);
@@ -784,7 +784,7 @@ impl<'a, E: Target> Builder<'a, E> {
                 fatal!(
                     "{}: -make_mergeable: unsupported relocation type {} at 0x{:x}",
                     ctx.objs[obj].mf.name.raw(),
-                    r.r_type,
+                    r.ty,
                     r.offset
                 );
             };
@@ -956,9 +956,9 @@ impl<'a, E: Target> Builder<'a, E> {
         };
         match r.target() {
             RelocTarget::Sym(idx) => {
-                let n = &obj.nlists[idx as usize];
-                if !n.is_stab() && n.n_type() == N_SECT {
-                    let (to, off) = local(n.n_value)?;
+                let n = &obj.mach_syms[idx as usize];
+                if !n.is_stab() && n.ty() == N_SECT {
+                    let (to, off) = local(n.value)?;
                     return Some((to, off + r.addend));
                 }
                 let (to, off) = self.sym_target(obj.symbols[idx as usize]);
@@ -1108,24 +1108,24 @@ fn record_content(content: Content, off: u32, size: u32) -> Content {
 /// to its object, hidden, hidden unless something takes its address
 /// (a weak definition that can be hidden), or global; a weak definition
 /// only where it is not hidden.
-fn linkage<E: Target>(ctx: &Context<E>, nlist: &NList, id: SymbolId) -> (u8, u8) {
-    if !nlist.is_extern() {
+fn linkage<E: Target>(ctx: &Context<E>, msym: &MachSym, id: SymbolId) -> (u8, u8) {
+    if !msym.is_extern() {
         return (scope::LOCAL, kind::REGULAR);
     }
     let sym = &ctx.symbols[id];
-    let weak = nlist.n_desc & N_WEAK_DEF != 0;
-    let scope = if nlist.n_type & N_PEXT != 0 {
+    let weak = msym.desc & N_WEAK_DEF != 0;
+    let scope = if msym.n_type & N_PEXT != 0 {
         scope::HIDDEN
-    } else if weak && nlist.n_desc & N_WEAK_REF != 0 {
+    } else if weak && msym.desc & N_WEAK_REF != 0 {
         scope::AUTO_HIDE
     } else if sym.is_private_extern() {
         scope::HIDDEN
-    } else if nlist.n_desc & REFERENCED_DYNAMICALLY != 0 {
+    } else if msym.desc & REFERENCED_DYNAMICALLY != 0 {
         scope::NEVER_STRIP
     } else {
         scope::GLOBAL
     };
-    let kind = if nlist.n_desc & N_SYMBOL_RESOLVER != 0 {
+    let kind = if msym.desc & N_SYMBOL_RESOLVER != 0 {
         kind::RESOLVER
     } else if weak && scope != scope::HIDDEN {
         kind::WEAK_DEF
@@ -1144,12 +1144,12 @@ fn named_entry<E: Target>(
     content_type: u8,
     debug: u16,
 ) -> OutEntry {
-    let (scope, kind) = linkage(ctx, &obj.nlists[i], obj.symbols[i]);
+    let (scope, kind) = linkage(ctx, &obj.mach_syms[i], obj.symbols[i]);
     let name = ctx.symbols[obj.symbols[i]].name();
     let mut entry = OutEntry::new(scope, kind, content_type);
     entry.name = Some(name);
-    entry.cold = obj.nlists[i].n_desc & N_COLD_FUNC != 0;
-    entry.no_dead_strip = obj.nlists[i].n_desc & N_NO_DEAD_STRIP != 0;
+    entry.cold = obj.mach_syms[i].desc & N_COLD_FUNC != 0;
+    entry.no_dead_strip = obj.mach_syms[i].desc & N_NO_DEAD_STRIP != 0;
     if !crate::input_files::is_private_label(name) {
         entry.debug = debug;
     }
@@ -1255,11 +1255,11 @@ fn record_flags<E: Target>(ctx: &Context<E>) -> u64 {
     flags
 }
 
-fn is_subtractor<E: Target>(r_type: u8) -> bool {
+fn is_subtractor<E: Target>(ty: u8) -> bool {
     if E::CPUTYPE == CPU_TYPE_ARM64 {
-        r_type == ARM64_RELOC_SUBTRACTOR
+        ty == ARM64_RELOC_SUBTRACTOR
     } else {
-        r_type == X86_64_RELOC_SUBTRACTOR
+        ty == X86_64_RELOC_SUBTRACTOR
     }
 }
 
@@ -1269,7 +1269,7 @@ fn is_subtractor<E: Target>(r_type: u8) -> bool {
 fn x86_64_fixup(hdr: &MachSection, r: &Reloc, target: To, addend: i64) -> Option<OutFixup> {
     use fk::*;
     let mut f = OutFixup::new(r.offset, target, 0, addend);
-    f.kind = match r.r_type {
+    f.kind = match r.ty {
         X86_64_RELOC_BRANCH if r.size == 1 => X86_64_BRANCH8,
         X86_64_RELOC_BRANCH => X86_64_CALL,
         X86_64_RELOC_SIGNED => X86_64_RIP,
@@ -1302,7 +1302,7 @@ fn arm64_fixup(data: &[u8], r: &Reloc, target: To, addend: i64) -> Option<OutFix
     use fk::*;
     let insn = u32::from_le_bytes(data[r.offset as usize..][..4].try_into().unwrap());
     let mut f = OutFixup::new(r.offset, target, 0, addend);
-    f.kind = match r.r_type {
+    f.kind = match r.ty {
         ARM64_RELOC_BRANCH26 if addend != 0 => ARM64_B26_ADDEND,
         ARM64_RELOC_BRANCH26 => ARM64_B26,
         ARM64_RELOC_PAGE21 if addend != 0 => ARM64_ADRP_ADDEND,

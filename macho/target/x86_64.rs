@@ -82,8 +82,8 @@ fn dtrace_site_code(ctx: &Context<X86_64>, obj: usize, r: &Reloc) -> Option<&'st
 /// The SIGNED_K relocation types describe a pcrel field followed by K
 /// more instruction bytes; the extra distance is folded into the addend
 /// when reading and taken back out when writing.
-fn reloc_bias(r_type: u8) -> i64 {
-    match r_type {
+fn reloc_bias(ty: u8) -> i64 {
+    match ty {
         X86_64_RELOC_SIGNED_1 => 1,
         X86_64_RELOC_SIGNED_2 => 2,
         X86_64_RELOC_SIGNED_4 => 4,
@@ -91,12 +91,12 @@ fn reloc_bias(r_type: u8) -> i64 {
     }
 }
 
-/// Whether a record's pcrel, length and extern fields are ones its type
+/// Whether a record's pcrel, p2size and extern fields are ones its type
 /// takes. An assembler writes other forms for `.short sym` or
 /// `.quad sym@GOTPCREL`.
 #[inline]
 fn is_supported(r: &MachRel) -> bool {
-    let forms = match r.r_type() {
+    let forms = match r.ty() {
         X86_64_RELOC_UNSIGNED => {
             reloc_form(false, 2, true)
                 | reloc_form(false, 3, true)
@@ -124,7 +124,7 @@ fn is_supported(r: &MachRel) -> bool {
 /// field and the immediate after it a SIGNED_1/2/4 counts. One that
 /// doesn't fit is an error.
 fn rip32_displacement(ctx: &Context<X86_64>, isec: usize, r: &Reloc, p: u64, t: u64) -> u32 {
-    let disp = t.wrapping_sub(p + 4).wrapping_sub(reloc_bias(r.r_type) as u64) as i64;
+    let disp = t.wrapping_sub(p + 4).wrapping_sub(reloc_bias(r.ty) as u64) as i64;
     if i32::try_from(disp).is_err() {
         let name = ctx.reloc_target_name(ctx.isecs[isec].file as usize, r);
         let name = crate::error::raw(&name);
@@ -224,17 +224,17 @@ impl Target for X86_64 {
     const THREAD_STATE_SP_OFFSET: usize = 7 * 8;
     const THREAD_STATE_PC_OFFSET: usize = 16 * 8;
 
-    fn relocatable_needs_addend(_r_type: u8) -> bool {
+    fn relocatable_needs_addend(_ty: u8) -> bool {
         false
     }
 
-    fn reloc_bias(r_type: u8) -> i64 {
-        reloc_bias(r_type)
+    fn reloc_bias(ty: u8) -> i64 {
+        reloc_bias(ty)
     }
 
-    fn classify_reloc(r_type: u8) -> crate::target::RelocClass {
+    fn classify_reloc(ty: u8) -> crate::target::RelocClass {
         use crate::target::RelocClass;
-        match r_type {
+        match ty {
             X86_64_RELOC_BRANCH => RelocClass::Branch,
             X86_64_RELOC_GOT_LOAD => RelocClass::GotLoad,
             X86_64_RELOC_GOT => RelocClass::Got,
@@ -243,8 +243,8 @@ impl Target for X86_64 {
         }
     }
 
-    fn split_ref(r_type: u8) -> SplitRef {
-        match r_type {
+    fn split_ref(ty: u8) -> SplitRef {
+        match ty {
             X86_64_RELOC_UNSIGNED => SplitRef::Pointer,
             X86_64_RELOC_SUBTRACTOR => SplitRef::Subtractor,
             _ => SplitRef::PcRel32,
@@ -254,9 +254,9 @@ impl Target for X86_64 {
     // GOT_LOAD marks "movq sym@GOTPCREL(%rip), %reg" (opcode 0x8b,
     // after a REX prefix), which a local target relaxes to lea (0x8d).
     // A leaq of a slot takes its address.
-    fn got_load_form(r_type: u8, data: &[u8], offset: u32) -> Option<u8> {
+    fn got_load_form(ty: u8, data: &[u8], offset: u32) -> Option<u8> {
         let mov = offset >= 2 && data.get(offset as usize - 2) == Some(&0x8b);
-        (r_type == X86_64_RELOC_SIGNED && mov).then_some(X86_64_RELOC_GOT_LOAD)
+        (ty == X86_64_RELOC_SIGNED && mov).then_some(X86_64_RELOC_GOT_LOAD)
     }
 
     fn write_stubs(ctx: &Context<Self>, addr: u64, buf: &mut [u8]) {
@@ -483,7 +483,7 @@ impl Target for X86_64 {
     fn lazy_ref(r: &Reloc, data: &[u8]) -> crate::target::LazyRef {
         use crate::target::LazyRef;
         let off = r.offset as usize;
-        match r.r_type {
+        match r.ty {
             X86_64_RELOC_BRANCH if r.size == 4 => LazyRef::Call,
             X86_64_RELOC_GOT_LOAD => LazyRef::Load,
             // cmpq $0, sym@GOTPCREL(%rip)
@@ -540,30 +540,30 @@ impl Target for X86_64 {
 
             // On x86-64 every relocation's addend is embedded in the
             // relocated field.
-            let loc = &contents[r.r_address as usize..];
-            let embedded = match r.r_length() {
+            let loc = &contents[r.offset as usize..];
+            let embedded = match r.p2size() {
                 0 => loc[0] as i8 as i64,
                 2 => i32::from_le_bytes(loc[..4].try_into().unwrap()) as i64,
                 _ => i64::from_le_bytes(loc[..8].try_into().unwrap()),
             };
-            let addend = embedded + reloc_bias(r.r_type());
-            let is_subtracted = i > 0 && rels[i - 1].r_type() == X86_64_RELOC_SUBTRACTOR;
+            let addend = embedded + reloc_bias(r.ty());
+            let is_subtracted = i > 0 && rels[i - 1].ty() == X86_64_RELOC_SUBTRACTOR;
 
             // A non-extern record's field holds the address it points
             // at, a pcrel one as a displacement from the field's end.
             let (target, addend) = if r.is_extern() {
-                (RelocTarget::Sym(r.r_symbolnum()), addend)
+                (RelocTarget::Sym(r.idx()), addend)
             } else if r.is_pcrel() {
-                let addr = (hdr.addr + r.r_address as u64 + 4).wrapping_add_signed(addend);
+                let addr = (hdr.addr + r.offset as u64 + 4).wrapping_add_signed(addend);
                 section_target(file_name, sections, r, addr)
             } else {
                 section_target(file_name, sections, r, addend as u64)
             };
 
             vec.push(Reloc {
-                offset: r.r_address,
-                r_type: r.r_type(),
-                size: 1 << r.r_length(),
+                offset: r.offset,
+                ty: r.ty(),
+                size: 1 << r.p2size(),
                 is_pcrel: r.is_pcrel(),
                 is_subtracted,
                 target: target.pack(),
@@ -583,9 +583,9 @@ impl Target for X86_64 {
             if ctx.is_lazy_import(id) {
                 continue;
             }
-            check_tlv(ctx, id, rel.r_type == X86_64_RELOC_TLV);
+            check_tlv(ctx, id, rel.ty == X86_64_RELOC_TLV);
 
-            match rel.r_type {
+            match rel.ty {
                 // A one-byte branch (jmp rel8) reaches only code near it,
                 // so it takes no stub: one to an import is a fixup error,
                 // as in ld-prime.
@@ -624,7 +624,7 @@ impl Target for X86_64 {
             // ld-prime refuses any other instruction. The opcode sits
             // before the fixup, so it is rewritten before the slice
             // below is taken.
-            let relaxed_got_load = matches!(r.r_type, X86_64_RELOC_GOT_LOAD | X86_64_RELOC_TLV)
+            let relaxed_got_load = matches!(r.ty, X86_64_RELOC_GOT_LOAD | X86_64_RELOC_TLV)
                 && ctx.reloc_target_sym(obj, r).is_some_and(|id| ctx.can_relax_got(id));
             if relaxed_got_load {
                 match r.offset.checked_sub(2).map(|i| &mut buf[i as usize]) {
@@ -640,20 +640,20 @@ impl Target for X86_64 {
             // A GOT load or compare of a lazy or delay-init dylib's
             // symbol becomes a call of its helper, nops filling the rest
             // of the movq or cmpq (see LazyUse and DelayUse).
-            if matches!(r.r_type, X86_64_RELOC_GOT_LOAD | X86_64_RELOC_GOT)
+            if matches!(r.ty, X86_64_RELOC_GOT_LOAD | X86_64_RELOC_GOT)
                 && let Some((helper, _)) = load_helper(ctx, isec_id, r)
             {
                 let at = r.offset as usize - 3;
                 let disp = helper.wrapping_sub(base + at as u64 + 5);
                 buf[at] = 0xe8;
                 write32(&mut buf[at + 1..], disp as u32);
-                let end = r.offset as usize + if r.r_type == X86_64_RELOC_GOT { 5 } else { 4 };
+                let end = r.offset as usize + if r.ty == X86_64_RELOC_GOT { 5 } else { 4 };
                 buf[at + 5..end].fill(0x90);
                 i += 1;
                 continue;
             }
             // A DTrace probe site does nothing (see dtrace).
-            if r.r_type == X86_64_RELOC_BRANCH
+            if r.ty == X86_64_RELOC_BRANCH
                 && r.size == 4
                 && let Some(code) = dtrace_site_code(ctx, obj, r)
             {
@@ -667,7 +667,7 @@ impl Target for X86_64 {
             let a = r.addend;
             let p = base + r.offset as u64;
 
-            match r.r_type {
+            match r.ty {
                 X86_64_RELOC_UNSIGNED if r.size == 4 => {
                     // A 32-bit pointer (.long sym) can be neither slid
                     // nor bound, so ld-prime takes one only in an image
@@ -765,7 +765,7 @@ impl Target for X86_64 {
                     let t = g.wrapping_add_signed(a);
                     write32(loc, rip32_displacement(ctx, isec_id, r, p, t));
                 }
-                _ => fatal!("unsupported relocation type: {}", r.r_type),
+                _ => fatal!("unsupported relocation type: {}", r.ty),
             }
             i += 1;
         }

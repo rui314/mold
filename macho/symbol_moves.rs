@@ -207,8 +207,8 @@ fn for_each_subsec_symbol<'a, E: Target>(
         if !obj.is_alive || ctx.is_internal(i) {
             continue;
         }
-        for (nlist, &id) in obj.nlists.iter().zip(&obj.symbols) {
-            if let Some(subsec) = subsec_named(ctx, &commons, &rewritten, i, nlist, id) {
+        for (msym, &id) in obj.mach_syms.iter().zip(&obj.symbols) {
+            if let Some(subsec) = subsec_named(ctx, &commons, &rewritten, i, msym, id) {
                 f(SymbolFile::Obj(i), id, subsec);
             }
         }
@@ -222,8 +222,8 @@ fn for_each_subsec_symbol<'a, E: Target>(
         let Some(i) = ctx.objs[obj].symbols.iter().position(|&id| id == base) else {
             continue;
         };
-        let nlist = &ctx.objs[obj].nlists[i];
-        if let Some(subsec) = subsec_named(ctx, &commons, &rewritten, obj, nlist, base) {
+        let msym = &ctx.objs[obj].mach_syms[i];
+        if let Some(subsec) = subsec_named(ctx, &commons, &rewritten, obj, msym, base) {
             f(SymbolFile::Aliases(base), alias, subsec);
         }
     }
@@ -257,7 +257,7 @@ fn rewritten_records<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32, boo
 }
 
 /// The subsection the symbol `id` of object `obj`, whose entry is
-/// `nlist`, names: a definition the link kept, external or local but no
+/// `msym`, names: a definition the link kept, external or local but no
 /// assembler label (see symtab::keep_local_symbol), in a section or
 /// absolute; or a common symbol, if the object's tentative definition is
 /// the one its subsection stands for (see common_owners). A method list
@@ -268,19 +268,19 @@ fn subsec_named<'a, E: Target>(
     commons: &hashbrown::HashMap<u32, u32>,
     rewritten: &hashbrown::HashMap<u32, bool>,
     obj: usize,
-    nlist: &NList,
+    msym: &MachSym,
     id: SymbolId,
 ) -> Option<Subsec<'a>> {
     let sym = &ctx.symbols[id];
-    if nlist.is_common() {
+    if msym.is_common() {
         let isec = sym.input_section().filter(|isec| commons.get(isec) == Some(&(obj as u32)))?;
         let content = Content::Data;
         return Some(Subsec { isec: Some(isec), segment: b"__DATA", content, tlv_template: false });
     }
-    if nlist.is_stab()
-        || !matches!(nlist.n_type(), N_SECT | N_ABS)
+    if msym.is_stab()
+        || !matches!(msym.ty(), N_SECT | N_ABS)
         || sym.file() != Some(FileId::Obj(obj as u32))
-        || (!nlist.is_extern() && !keep_local_symbol(sym.name()))
+        || (!msym.is_extern() && !keep_local_symbol(sym.name()))
     {
         return None;
     }

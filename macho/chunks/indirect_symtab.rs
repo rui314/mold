@@ -75,7 +75,7 @@ fn input_slots<E: Target>(ctx: &Context<E>, isec: usize) -> Vec<Option<SymbolId>
     // Each slot's relocation, the first at its offset, found in one pass.
     let mut slots = vec![None; size.div_ceil(8) as usize];
     for rel in ctx.isec_relocs(isec).iter().rev() {
-        if rel.offset % 8 == 0 && rel.offset < size && rel.r_type != E::RELOC_SUBTRACTOR {
+        if rel.offset % 8 == 0 && rel.offset < size && rel.ty != E::RELOC_SUBTRACTOR {
             slots[(rel.offset / 8) as usize] = Some(rel);
         }
     }

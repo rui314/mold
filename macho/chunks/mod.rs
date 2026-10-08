@@ -73,9 +73,9 @@ pub struct ChunkHeader {
     /// not.
     pub is_sect: bool,
     /// The 1-based ordinal of the section among the output's sections
-    /// (what an nlist's n_sect holds), 0 for a chunk that is not a
+    /// (what a MachSym's sect holds), 0 for a chunk that is not a
     /// section; mold's shndx.
-    pub n_sect: u8,
+    pub sect_idx: u8,
 }
 
 impl ChunkHeader {
@@ -92,7 +92,7 @@ impl ChunkHeader {
             reserved1: 0,
             reserved2: 0,
             is_sect: true,
-            n_sect: 0,
+            sect_idx: 0,
         }
     }
 

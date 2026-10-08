@@ -186,7 +186,7 @@ pub struct ObjectFile {
     pub relocs: Vec<crate::input_sections::Reloc>,
     /// All of this object's subsections, sorted by input address.
     pub subsecs: Vec<crate::input_sections::InputSectionId>,
-    /// The subsection each nlist is defined in, or NONE (see
+    /// The subsection each MachSym is defined in, or NONE (see
     /// symbol_subsec).
     pub sym_subsecs: Vec<crate::input_sections::InputSectionId>,
     /// The object's __objc_imageinfo, if it has one.
@@ -197,11 +197,11 @@ pub struct ObjectFile {
     /// For a bitcode input, the lto_module handle: the object is a
     /// placeholder that only claims symbols until LTO compiles it.
     pub lto_module: Option<usize>,
-    pub nlists: std::borrow::Cow<'static, [NList]>,
-    /// Index of the first external nlist, if the table is partitioned
+    pub mach_syms: std::borrow::Cow<'static, [MachSym]>,
+    /// Index of the first external MachSym, if the table is partitioned
     /// locals-then-externals (see first_global_of).
     pub first_global: Option<u32>,
-    /// The symbol slot for each nlist entry.
+    /// The symbol slot for each MachSym.
     pub symbols: Vec<SymbolId>,
     /// LC_DATA_IN_CODE entries: (file offset in the object, length,
     /// kind).
@@ -227,7 +227,7 @@ impl ObjectFile {
         }));
         Self {
             sect_hdrs: std::borrow::Cow::Owned(Vec::new()),
-            nlists: std::borrow::Cow::Owned(Vec::new()),
+            mach_syms: std::borrow::Cow::Owned(Vec::new()),
             ..Self::new(mf)
         }
     }
@@ -251,7 +251,7 @@ impl ObjectFile {
             objc_image_info: None,
             has_debug_info: false,
             lto_module: None,
-            nlists: std::borrow::Cow::Borrowed(&[]),
+            mach_syms: std::borrow::Cow::Borrowed(&[]),
             first_global: None,
             symbols: Vec::new(),
             dice: Vec::new(),
@@ -273,12 +273,12 @@ impl ObjectFile {
         let isec = &isecs[id];
         let is_code = self.sect_hdrs[isec.shndx as usize].flags & S_ATTR_PURE_INSTRUCTIONS != 0;
         let spans_symbol = || {
-            self.nlists.iter().any(|nlist| {
-                !nlist.is_stab()
-                    && nlist.n_type() == N_SECT
-                    && nlist.n_sect as u32 == isec.shndx + 1
-                    && lo < nlist.n_value
-                    && nlist.n_value <= hi
+            self.mach_syms.iter().any(|msym| {
+                !msym.is_stab()
+                    && msym.ty() == N_SECT
+                    && msym.sect as u32 == isec.shndx + 1
+                    && lo < msym.value
+                    && msym.value <= hi
             })
         };
         (is_code
@@ -392,14 +392,14 @@ pub(crate) fn is_class_or_protocol_ref_name(sectname: &[u8]) -> bool {
 /// subsection in a diagnostic: an exported one before a private extern,
 /// a local, a weak definition and an ltmpN label; among equals, the
 /// greatest name.
-pub fn subsec_name_rank(nlist: &NList, name: &[u8]) -> u8 {
+pub fn subsec_name_rank(msym: &MachSym, name: &[u8]) -> u8 {
     if name.starts_with(b"ltmp") {
         0
-    } else if nlist.n_desc & N_WEAK_DEF != 0 {
+    } else if msym.desc & N_WEAK_DEF != 0 {
         1
-    } else if !nlist.is_extern() {
+    } else if !msym.is_extern() {
         2
-    } else if nlist.n_type & N_PEXT != 0 {
+    } else if msym.n_type & N_PEXT != 0 {
         3
     } else {
         4
@@ -439,8 +439,8 @@ pub fn find_subsec(
     }
 }
 
-/// Finds the subsection a symbol at `addr` in section `n_sect` (1-based,
-/// as nlists count) belongs to, returning it with the offset within it.
+/// Finds the subsection a symbol at `addr` in section `sect` (1-based,
+/// as MachSyms count) belongs to, returning it with the offset within it.
 /// The section decides where addresses alone can't: a label on an empty
 /// section starts where the next section does, and one past a section's
 /// last byte (an array's `_end`) ends where the next one starts; both
@@ -448,11 +448,11 @@ pub fn find_subsec(
 pub fn find_symbol_subsec(
     isecs: &[InputSection],
     subsecs: &[crate::input_sections::InputSectionId],
-    n_sect: u8,
+    sect: u8,
     addr: u64,
 ) -> Option<(usize, u64)> {
     let end = subsecs.partition_point(|&id| isecs[id as usize].input_addr as u64 <= addr);
-    symbol_subsec_before(isecs, &subsecs[..end], n_sect, addr)
+    symbol_subsec_before(isecs, &subsecs[..end], sect, addr)
 }
 
 /// find_symbol_subsec's answer from `before`, the object's subsections
@@ -460,10 +460,10 @@ pub fn find_symbol_subsec(
 fn symbol_subsec_before(
     isecs: &[InputSection],
     before: &[crate::input_sections::InputSectionId],
-    n_sect: u8,
+    sect: u8,
     addr: u64,
 ) -> Option<(usize, u64)> {
-    let shndx = u32::from(n_sect).wrapping_sub(1);
+    let shndx = u32::from(sect).wrapping_sub(1);
     // The nearest subsection of the section starting at or before
     // `addr`; any in between belong to empty sections at that address.
     let id = before.iter().rev().map(|&id| id as usize).find(|&id| isecs[id].shndx == shndx)?;
@@ -513,7 +513,7 @@ pub struct DylibFile {
     /// Re-exported from a location that isn't public, as two or more
     /// libraries are (see passes::bind_private_reexports_to_image): its
     /// imports bind to this image (BIND_SPECIAL_DYLIB_SELF, and library
-    /// ordinal 0 in their n_desc), through whose re-exports dyld finds
+    /// ordinal 0 in their desc), through whose re-exports dyld finds
     /// them, and their GOT slots go with the image's own. Its load
     /// command keeps its place and ordinal.
     pub binds_to_image: bool,
@@ -806,14 +806,14 @@ pub struct StagedObject {
     pub relocs: Vec<crate::input_sections::Reloc>,
     /// Indices into `isecs`, sorted by input address.
     pub subsecs: Vec<crate::input_sections::InputSectionId>,
-    /// Each nlist's subsection, an index into `isecs`, or NONE (see
+    /// Each MachSym's subsection, an index into `isecs`, or NONE (see
     /// find_symbol_subsecs).
     pub sym_subsecs: Vec<crate::input_sections::InputSectionId>,
-    pub nlists: std::borrow::Cow<'static, [NList]>,
-    /// Index of the first external nlist, if the table is partitioned
+    pub mach_syms: std::borrow::Cow<'static, [MachSym]>,
+    /// Index of the first external MachSym, if the table is partitioned
     /// locals-then-externals (see first_global_of).
     pub first_global: Option<u32>,
-    /// Each nlist's name, interned at integration.
+    /// Each MachSym's name, interned at integration.
     pub sym_names: Vec<&'static [u8]>,
     /// xxh3 of each extern non-stab name (0 otherwise), computed here
     /// so the serial intern path never hashes.
@@ -834,22 +834,22 @@ pub struct StagedObject {
     pub loh: Vec<(u8, Vec<u64>)>,
 }
 
-/// The object's nlist_64 array as a slice of the mapped file, or None
+/// The object's MachSym array as a slice of the mapped file, or None
 /// if it is unaligned or truncated (then the caller copies it).
-fn nlists_slice(data: &'static [u8], off: usize, n: usize) -> Option<&'static [NList]> {
-    let bytes = n.checked_mul(size_of::<NList>())?;
+fn mach_syms_slice(data: &'static [u8], off: usize, n: usize) -> Option<&'static [MachSym]> {
+    let bytes = n.checked_mul(size_of::<MachSym>())?;
     if off.checked_add(bytes)? > data.len()
-        || !(data.as_ptr() as usize + off).is_multiple_of(std::mem::align_of::<NList>())
+        || !(data.as_ptr() as usize + off).is_multiple_of(std::mem::align_of::<MachSym>())
     {
         return None;
     }
-    // SAFETY: in bounds and aligned (checked above); NList is a
+    // SAFETY: in bounds and aligned (checked above); MachSym is a
     // #[repr(C)] struct of plain integers, valid for every bit pattern;
     // the mapping lives for the whole link.
-    Some(unsafe { std::slice::from_raw_parts(data.as_ptr().add(off).cast::<NList>(), n) })
+    Some(unsafe { std::slice::from_raw_parts(data.as_ptr().add(off).cast::<MachSym>(), n) })
 }
 
-/// The nlist index ranges of an object's local (with stab) and external
+/// The MachSym index ranges of an object's local (with stab) and external
 /// (defined and undefined) symbols. With a partitioned table these are
 /// the two halves; without one, both are the whole table and callers'
 /// per-entry filters still decide.
@@ -857,18 +857,18 @@ macro_rules! symbol_ranges {
     () => {
         #[inline]
         pub fn local_range(&self) -> std::ops::Range<usize> {
-            0..self.first_global.map_or(self.nlists.len(), |g| g as usize)
+            0..self.first_global.map_or(self.mach_syms.len(), |g| g as usize)
         }
         #[inline]
         pub fn global_range(&self) -> std::ops::Range<usize> {
-            self.first_global.map_or(0, |g| g as usize)..self.nlists.len()
+            self.first_global.map_or(0, |g| g as usize)..self.mach_syms.len()
         }
     };
 }
 impl ObjectFile {
     symbol_ranges!();
 
-    /// The subsection nlist `i` is defined in, and its offset there,
+    /// The subsection MachSym `i` is defined in, and its offset there,
     /// as find_symbol_subsec finds them: None for a symbol not defined
     /// in a section, or in one that has no subsections (debug info).
     #[inline]
@@ -876,7 +876,7 @@ impl ObjectFile {
         let id = self.sym_subsecs[i];
         (id != crate::symbol::NONE).then(|| {
             let id = id as usize;
-            (id, self.nlists[i].n_value - isecs[id].input_addr as u64)
+            (id, self.mach_syms[i].value - isecs[id].input_addr as u64)
         })
     }
 }
@@ -884,7 +884,7 @@ impl StagedObject {
     symbol_ranges!();
 }
 
-/// Where the object's external symbols start in its nlist array, or
+/// Where the object's external symbols start in its MachSym array, or
 /// None if the table is not partitioned locals-then-externals.
 ///
 /// An object's LC_DYSYMTAB names the local, external-defined and
@@ -895,8 +895,8 @@ impl StagedObject {
 /// symtab - walk their half instead of testing every entry: mold's
 /// first_global. Without a usable LC_DYSYMTAB the table is scanned once
 /// and the split is used only if it really is partitioned.
-fn first_global_of(nlists: &[NList], dysym: Option<&DysymtabCommand>) -> Option<u32> {
-    let n = nlists.len() as u32;
+fn first_global_of(mach_syms: &[MachSym], dysym: Option<&DysymtabCommand>) -> Option<u32> {
+    let n = mach_syms.len() as u32;
     if let Some(d) = dysym
         && d.ilocalsym == 0
         && d.iextdefsym == d.nlocalsym
@@ -905,9 +905,9 @@ fn first_global_of(nlists: &[NList], dysym: Option<&DysymtabCommand>) -> Option<
     {
         return Some(d.iextdefsym);
     }
-    let is_local = |nl: &NList| nl.is_stab() || !nl.is_extern();
-    let first = nlists.iter().position(|nl| !is_local(nl)).unwrap_or(nlists.len());
-    nlists[first..].iter().all(|nl| !is_local(nl)).then_some(first as u32)
+    let is_local = |msym: &MachSym| msym.is_stab() || !msym.is_extern();
+    let first = mach_syms.iter().position(|msym| !is_local(msym)).unwrap_or(mach_syms.len());
+    mach_syms[first..].iter().all(|msym| !is_local(msym)).then_some(first as u32)
 }
 
 /// Which of an object's sections are left out: those with no bytes in
@@ -918,16 +918,16 @@ fn first_global_of(nlists: &[NList], dysym: Option<&DysymtabCommand>) -> Option<
 /// subsections, so it keeps an empty section there and nowhere else.
 fn bare_sections(
     sect_hdrs: &[MachSection],
-    nlists: &[NList],
+    mach_syms: &[MachSym],
     strtab: &'static [u8],
     split_ok: bool,
 ) -> Vec<bool> {
     let mut bare: Vec<bool> = sect_hdrs.iter().map(|s| s.size == 0).collect();
-    for nlist in nlists {
-        if !nlist.is_stab()
-            && nlist.n_type() == N_SECT
-            && let Some(b) = bare.get_mut((nlist.n_sect as usize).wrapping_sub(1))
-            && !(split_ok && symbol_name(strtab, nlist).starts_with(b"ltmp"))
+    for msym in mach_syms {
+        if !msym.is_stab()
+            && msym.ty() == N_SECT
+            && let Some(b) = bare.get_mut((msym.sect as usize).wrapping_sub(1))
+            && !(split_ok && symbol_name(strtab, msym).starts_with(b"ltmp"))
         {
             *b = false;
         }
@@ -937,7 +937,7 @@ fn bare_sections(
 
 /// The load commands of an object that staging reads: its section
 /// headers (every segment's sections in load command order, the ordinal
-/// order nlists and relocations number them by), where its symbol table
+/// order MachSyms and relocations number them by), where its symbol table
 /// is, and the per-object records the link carries along.
 #[derive(Default)]
 struct LoadCommands {
@@ -1026,26 +1026,26 @@ impl LoadCommands {
     }
 }
 
-/// Reads an object's symbol table: its nlists and string table. The
-/// nlist_64 array is used straight from the mmap when it is 8-aligned
-/// (ld64 aligns it; NList is #[repr(C)] nlist_64, all integer fields,
+/// Reads an object's symbol table: its MachSyms and string table. The
+/// MachSym array is used straight from the mmap when it is 8-aligned
+/// (ld64 aligns it; MachSym is #[repr(C)], all integer fields,
 /// so any bytes are a valid value) - no copy of 16 bytes per symbol.
 /// mold borrows its ElfSym array the same way (Cow, Owned only for
 /// synthesized symbols).
 fn read_symtab(
     data: &'static [u8],
     cmd: Option<&SymtabCommand>,
-) -> (std::borrow::Cow<'static, [NList]>, &'static [u8]) {
+) -> (std::borrow::Cow<'static, [MachSym]>, &'static [u8]) {
     let Some(cmd) = cmd else {
         return (std::borrow::Cow::Borrowed(&[]), &[]);
     };
     let (off, n) = (cmd.symoff as usize, cmd.nsyms as usize);
-    let nlists = match nlists_slice(data, off, n) {
+    let mach_syms = match mach_syms_slice(data, off, n) {
         Some(s) => std::borrow::Cow::Borrowed(s),
         None => std::borrow::Cow::Owned(read_array(data, off, n)),
     };
     let strtab = &data[cmd.stroff as usize..(cmd.stroff + cmd.strsize) as usize];
-    (nlists, strtab)
+    (mach_syms, strtab)
 }
 
 /// Which FDEs of an object's __eh_frame the link keeps.
@@ -1097,8 +1097,8 @@ pub fn stage_object<E: Target>(
     // the object's section count and lives for the whole link.
     let sect_hdrs: &'static [MachSection] = Vec::leak(cmds.sect_hdrs);
 
-    let (nlists, strtab) = read_symtab(data, cmds.symtab.as_ref());
-    let first_global = first_global_of(&nlists, cmds.dysymtab.as_ref());
+    let (mach_syms, strtab) = read_symtab(data, cmds.symtab.as_ref());
+    let first_global = first_global_of(&mach_syms, cmds.dysymtab.as_ref());
     let nindirect = cmds.dysymtab.as_ref().map_or(0, |d| d.nindirectsyms);
     check_sections(sect_hdrs, nindirect, &mf.name);
 
@@ -1131,7 +1131,7 @@ pub fn stage_object<E: Target>(
         relocs: Vec::new(),
         subsecs: Vec::new(),
         sym_subsecs: Vec::new(),
-        nlists,
+        mach_syms,
         first_global,
         sym_names: Vec::new(),
         sym_hashes: Vec::new(),
@@ -1144,7 +1144,7 @@ pub fn stage_object<E: Target>(
         loh: cmds.loh,
     };
 
-    let bare = bare_sections(sect_hdrs, &obj.nlists, strtab, obj.subsections_via_symbols);
+    let bare = bare_sections(sect_hdrs, &obj.mach_syms, strtab, obj.subsections_via_symbols);
     obj.demote_unnamed_subsec_names();
     obj.demote_thread_local_zerofill_names();
     let sect_isecs = obj.initialize_sections(&bare, relocatable);
@@ -1171,8 +1171,8 @@ impl StagedObject {
             .iter()
             .map(|h| is_unnamed_objc_list(h) || has_unnamed_subsecs(h, split))
             .collect();
-        for nlist in self.demote_externals_in(&unnamed) {
-            nlist.n_type = nlist.n_type & !N_EXT | N_PEXT;
+        for msym in self.demote_externals_in(&unnamed) {
+            msym.n_type = msym.n_type & !N_EXT | N_PEXT;
         }
     }
 
@@ -1186,31 +1186,31 @@ impl StagedObject {
     fn demote_thread_local_zerofill_names(&mut self) {
         let zerofill: Vec<bool> =
             self.sect_hdrs.iter().map(|h| h.section_type() == S_THREAD_LOCAL_ZEROFILL).collect();
-        for nlist in self.demote_externals_in(&zerofill) {
-            nlist.n_type &= !(N_EXT | N_PEXT);
-            nlist.n_desc &= !(N_WEAK_DEF | N_WEAK_REF);
+        for msym in self.demote_externals_in(&zerofill) {
+            msym.n_type &= !(N_EXT | N_PEXT);
+            msym.desc &= !(N_WEAK_DEF | N_WEAK_REF);
         }
     }
 
     /// The external symbols defined in the sections `demoted` marks (by
     /// ordinal), for the caller to make local. The table then no longer
     /// runs locals, then externals.
-    fn demote_externals_in(&mut self, demoted: &[bool]) -> Vec<&mut NList> {
+    fn demote_externals_in(&mut self, demoted: &[bool]) -> Vec<&mut MachSym> {
         if !demoted.contains(&true) {
             return Vec::new();
         }
-        let is_demoted = |nlist: &NList| {
-            !nlist.is_stab()
-                && nlist.is_extern()
-                && nlist.n_type() == N_SECT
-                && nlist.n_sect != 0
-                && demoted[nlist.n_sect as usize - 1]
+        let is_demoted = |msym: &MachSym| {
+            !msym.is_stab()
+                && msym.is_extern()
+                && msym.ty() == N_SECT
+                && msym.sect != 0
+                && demoted[msym.sect as usize - 1]
         };
-        if !self.nlists.iter().any(is_demoted) {
+        if !self.mach_syms.iter().any(is_demoted) {
             return Vec::new();
         }
         self.first_global = None;
-        self.nlists.to_mut().iter_mut().filter(|nlist| is_demoted(nlist)).collect()
+        self.mach_syms.to_mut().iter_mut().filter(|msym| is_demoted(msym)).collect()
     }
 
     /// Splits each section into subsections, the Mach-O linking
@@ -1307,14 +1307,14 @@ impl StagedObject {
         if !self.subsections_via_symbols {
             return points;
         }
-        for nlist in self.nlists.iter() {
-            if !nlist.is_stab()
-                && nlist.n_type() == N_SECT
-                && nlist.n_desc & N_ALT_ENTRY == 0
-                && nlist.n_sect >= 1
-                && let Some(points) = points.get_mut(nlist.n_sect as usize - 1)
+        for msym in self.mach_syms.iter() {
+            if !msym.is_stab()
+                && msym.ty() == N_SECT
+                && msym.desc & N_ALT_ENTRY == 0
+                && msym.sect >= 1
+                && let Some(points) = points.get_mut(msym.sect as usize - 1)
             {
-                points.push(nlist.n_value);
+                points.push(msym.value);
             }
         }
         points
@@ -1396,8 +1396,8 @@ impl StagedObject {
 
         let sect = match rel.target() {
             RelocTarget::Section(sect) => sect as usize,
-            RelocTarget::Sym(idx) => match &self.nlists[idx as usize] {
-                n if n.n_type() == N_SECT => (n.n_sect as usize).wrapping_sub(1),
+            RelocTarget::Sym(idx) => match &self.mach_syms[idx as usize] {
+                n if n.ty() == N_SECT => (n.sect as usize).wrapping_sub(1),
                 _ => return,
             },
         };
@@ -1445,14 +1445,14 @@ impl StagedObject {
         // searches go through rather than the subsections themselves.
         let addrs: Vec<u32> =
             self.subsecs.iter().map(|&id| self.isecs[id as usize].input_addr).collect();
-        self.sym_subsecs = (self.nlists.iter())
-            .map(|nlist| {
-                if nlist.is_stab() || nlist.n_type() != N_SECT {
+        self.sym_subsecs = (self.mach_syms.iter())
+            .map(|msym| {
+                if msym.is_stab() || msym.ty() != N_SECT {
                     return crate::symbol::NONE;
                 }
-                let end = addrs.partition_point(|&a| a as u64 <= nlist.n_value);
+                let end = addrs.partition_point(|&a| a as u64 <= msym.value);
                 let before = &self.subsecs[..end];
-                symbol_subsec_before(&self.isecs, before, nlist.n_sect, nlist.n_value)
+                symbol_subsec_before(&self.isecs, before, msym.sect, msym.value)
                     .map_or(crate::symbol::NONE, |(id, _)| id as u32)
             })
             .collect();
@@ -1462,17 +1462,13 @@ impl StagedObject {
     /// its name is interned by; the interning itself happens at
     /// integration, in one batch for all objects.
     fn read_symbol_names(&mut self, strtab: &'static [u8]) {
-        self.sym_names = self.nlists.iter().map(|nlist| symbol_name(strtab, nlist)).collect();
+        self.sym_names = self.mach_syms.iter().map(|msym| symbol_name(strtab, msym)).collect();
         self.sym_hashes = self
-            .nlists
+            .mach_syms
             .iter()
             .zip(&self.sym_names)
-            .map(|(nlist, name)| {
-                if !nlist.is_stab() && nlist.is_extern() {
-                    crate::symbol::hash_key(name)
-                } else {
-                    0
-                }
+            .map(|(msym, name)| {
+                if !msym.is_stab() && msym.is_extern() { crate::symbol::hash_key(name) } else { 0 }
             })
             .collect();
     }
@@ -1548,8 +1544,8 @@ fn literal_split_points(sect: &MachSection, data: &[u8]) -> Vec<u64> {
 impl StagedObject {
     /// Rebases the object's local indices to the global arenas, where
     /// it is object `obj_idx` and its subsections, CIEs and FDEs start at
-    /// the given bases. `syms` maps its nlists to symbols, for the
-    /// personality functions its unwind info names by nlist index.
+    /// the given bases. `syms` maps its MachSyms to symbols, for the
+    /// personality functions its unwind info names by MachSym index.
     fn rebase(
         &mut self,
         obj_idx: usize,
@@ -1624,7 +1620,7 @@ impl StagedObject {
             sym_subsecs: self.sym_subsecs,
             objc_image_info: self.objc_image_info,
             has_debug_info: self.has_debug_info,
-            nlists: self.nlists,
+            mach_syms: self.mach_syms,
             first_global: self.first_global,
             symbols,
             lto_module: None,
@@ -1653,20 +1649,20 @@ impl StagedObject {
     /// How many local symbols (stabs included) the object has.
     fn num_locals(&self) -> usize {
         self.first_global.map_or_else(
-            || self.nlists.iter().filter(|n| n.is_stab() || !n.is_extern()).count(),
+            || self.mach_syms.iter().filter(|n| n.is_stab() || !n.is_extern()).count(),
             |g| g as usize,
         )
     }
 
-    /// The symbol of each of the object's nlists: its locals' are the
+    /// The symbol of each of the object's MachSyms: its locals' are the
     /// slots from `first_local` on, its globals' the `ids` interned for
     /// them, in order.
     fn symbol_ids(&self, first_local: usize, ids: &[SymbolId]) -> Vec<SymbolId> {
-        let mut syms = Vec::with_capacity(self.nlists.len());
+        let mut syms = Vec::with_capacity(self.mach_syms.len());
         let mut next_local = first_local as u32;
         let mut ids = ids.iter();
-        for nlist in self.nlists.iter() {
-            if nlist.is_stab() || !nlist.is_extern() {
+        for msym in self.mach_syms.iter() {
+            if msym.is_stab() || !msym.is_extern() {
                 syms.push(next_local);
                 next_local += 1;
             } else {
@@ -1733,14 +1729,14 @@ pub fn integrate_objects<E: Target>(
     ids: Vec<SymbolId>,
     counts: Vec<usize>,
 ) {
-    // Counting an object's locals scans its nlists, so on a debug link
-    // (millions of nlists) it runs in parallel; the prefix sums
+    // Counting an object's locals scans its MachSyms, so on a debug link
+    // (millions of MachSyms) it runs in parallel; the prefix sums
     // themselves are a cheap serial walk.
     let num_locals: Vec<usize> = staged.par_iter().map(StagedObject::num_locals).collect();
     let bases = arena_bases(ctx, &staged, &num_locals, &counts);
     let obj_base = ctx.objs.len();
 
-    // The rebasing, in parallel. Each object's nlists map to symbols
+    // The rebasing, in parallel. Each object's MachSyms map to symbols
     // first: its locals to the slots its prefix sum reserved (they are
     // initialized below), its globals to the ids interned for the batch.
     let syms_of: Vec<Vec<SymbolId>> = (staged.par_iter_mut().zip(&bases).enumerate())
@@ -1761,8 +1757,8 @@ pub fn integrate_objects<E: Target>(
     let slots = spare_ranges(syms, &num_locals);
     staged.par_iter().zip(slots).for_each(|(st, slots)| {
         let r = st.local_range();
-        let locals = (st.nlists[r.clone()].iter().zip(&st.sym_names[r]))
-            .filter(|(nlist, _)| nlist.is_stab() || !nlist.is_extern());
+        let locals = (st.mach_syms[r.clone()].iter().zip(&st.sym_names[r]))
+            .filter(|(msym, _)| msym.is_stab() || !msym.is_extern());
         for (slot, (_, name)) in slots.iter_mut().zip(locals) {
             slot.write(crate::symbol::Symbol::new(name));
         }
@@ -1822,9 +1818,9 @@ fn append_in_parallel<T: Send>(v: &mut Vec<T>, parts: impl Iterator<Item = Vec<T
 /// batch of one, done serially.
 fn integrate_object<E: Target>(ctx: &mut Context<E>, mut staged: StagedObject) -> usize {
     let obj_idx = ctx.objs.len();
-    let syms: Vec<SymbolId> = (staged.nlists.iter().zip(&staged.sym_names))
-        .map(|(nlist, name)| {
-            if nlist.is_stab() || !nlist.is_extern() {
+    let syms: Vec<SymbolId> = (staged.mach_syms.iter().zip(&staged.sym_names))
+        .map(|(msym, name)| {
+            if msym.is_stab() || !msym.is_extern() {
                 ctx.symbols.add_local(name)
             } else {
                 ctx.symbols.intern(name)
@@ -1893,10 +1889,10 @@ pub fn parse_bitcode<E: Target>(
     let triple = crate::lto::module_triple(&plugin, module);
     let platform_versions = PlatformVersion::of_triple(&triple).into_iter().collect();
 
-    // The module's symbols become nlists, so that resolution handles
+    // The module's symbols become MachSyms, so that resolution handles
     // bitcode like any object; its internal definitions are left out.
     let mut defined = Vec::new();
-    let mut nlists = Vec::new();
+    let mut mach_syms = Vec::new();
     let mut syms = Vec::new();
     for ls in lsyms {
         if ls.is_defined {
@@ -1904,7 +1900,7 @@ pub fn parse_bitcode<E: Target>(
         }
         if ls.is_extern || !ls.is_defined {
             syms.push(ctx.symbols.intern(ls.name));
-            nlists.push(bitcode_nlist(&ls));
+            mach_syms.push(bitcode_msym(&ls));
         }
     }
 
@@ -1914,8 +1910,8 @@ pub fn parse_bitcode<E: Target>(
         is_alive: alive,
         priority,
         platform_versions,
-        sym_subsecs: vec![crate::symbol::NONE; nlists.len()],
-        nlists: std::borrow::Cow::Owned(nlists),
+        sym_subsecs: vec![crate::symbol::NONE; mach_syms.len()],
+        mach_syms: std::borrow::Cow::Owned(mach_syms),
         symbols: syms,
         lto_module: Some(module),
         ..ObjectFile::new(mf)
@@ -1930,22 +1926,22 @@ pub fn parse_bitcode<E: Target>(
     Some(obj_idx)
 }
 
-/// The nlist an external symbol of a bitcode module stands for: an
+/// The MachSym an external symbol of a bitcode module stands for: an
 /// absolute definition, or an undefined reference.
-fn bitcode_nlist(ls: &crate::lto::LtoSymbol) -> NList {
-    let mut nlist = NList::default();
+fn bitcode_msym(ls: &crate::lto::LtoSymbol) -> MachSym {
+    let mut msym = MachSym::default();
     if !ls.is_defined {
-        nlist.n_type = N_UNDF | N_EXT;
-        return nlist;
+        msym.n_type = N_UNDF | N_EXT;
+        return msym;
     }
-    nlist.n_type = N_ABS | N_EXT | if ls.is_private_extern { N_PEXT } else { 0 };
+    msym.n_type = N_ABS | N_EXT | if ls.is_private_extern { N_PEXT } else { 0 };
     if ls.is_weak_def {
-        nlist.n_desc |= N_WEAK_DEF;
+        msym.desc |= N_WEAK_DEF;
     }
     if ls.is_weak_def && ls.can_be_hidden {
-        nlist.n_desc |= N_WEAK_REF;
+        msym.desc |= N_WEAK_REF;
     }
-    nlist
+    msym
 }
 
 /// The architecture a bitcode module was compiled for, from its target
@@ -1976,8 +1972,8 @@ fn is_bitcode_subtype_mismatch<E: Target>(arch: &str) -> bool {
 /// Extracts one NUL-terminated name from a string table: its bytes, any
 /// but NUL, as ld-prime takes a symbol name, UTF-8 or not. The NUL scan
 /// goes through memchr, which is vectorized.
-fn symbol_name(strtab: &'static [u8], nlist: &NList) -> &'static [u8] {
-    let rest = strtab.get(nlist.n_strx as usize..).unwrap_or_default();
+fn symbol_name(strtab: &'static [u8], msym: &MachSym) -> &'static [u8] {
+    let rest = strtab.get(msym.stroff as usize..).unwrap_or_default();
     memchr::memchr(0, rest).map_or(rest, |len| &rest[..len])
 }
 
@@ -2107,14 +2103,14 @@ impl StagedObject {
             let field = r.offset as usize % ENTRY_SIZE;
             let rec = &mut records[r.offset as usize / ENTRY_SIZE];
             // The address a pointer field refers to, and the section
-            // (1-based, as nlists count) it is in. For an extern
+            // (1-based, as MachSyms count) it is in. For an extern
             // reference the target is this object's own definition,
-            // located by its nlist.
-            let (n_sect, addr) = match r.target() {
+            // located by its MachSym.
+            let (sect_idx, addr) = match r.target() {
                 RelocTarget::Sym(sym) => {
-                    let nlist = &self.nlists[sym as usize];
-                    let n_sect = if nlist.n_type() == N_SECT { nlist.n_sect } else { 0 };
-                    (n_sect, nlist.n_value.wrapping_add_signed(r.addend))
+                    let msym = &self.mach_syms[sym as usize];
+                    let sect_idx = if msym.ty() == N_SECT { msym.sect } else { 0 };
+                    (sect_idx, msym.value.wrapping_add_signed(r.addend))
                 }
                 RelocTarget::Section(sect) => {
                     let addr = self.sect_hdrs[sect as usize].addr;
@@ -2128,7 +2124,7 @@ impl StagedObject {
                 // last subsection's, not the next section's first one's.
                 0 => {
                     let Some((isec, off)) =
-                        find_symbol_subsec(&self.isecs, &self.subsecs, n_sect, addr)
+                        find_symbol_subsec(&self.isecs, &self.subsecs, sect_idx, addr)
                     else {
                         fatal!("{file_name}: __compact_unwind: bad function reference");
                     };
@@ -2143,7 +2139,7 @@ impl StagedObject {
                         // Resolve a section-relative reference back to
                         // the symbol at that address.
                         RelocTarget::Section(_) => {
-                            self.nlists.iter().position(|n| n.is_extern() && n.n_value == addr)
+                            self.mach_syms.iter().position(|n| n.is_extern() && n.value == addr)
                         }
                     };
                     let Some(sym) = sym else {
@@ -2295,7 +2291,7 @@ impl StagedObject {
         // relocations.
         let mut contents =
             data[hdr.offset as usize..(hdr.offset as u64 + hdr.size) as usize].to_vec();
-        apply_eh_frame_relocs::<E>(&mut contents, &rels, &self.nlists, &mf.name);
+        apply_eh_frame_relocs::<E>(&mut contents, &rels, &self.mach_syms, &mf.name);
         let contents: &'static [u8] = Vec::leak(contents);
 
         // Split the section into records: a zero ID marks a CIE, anything
@@ -2338,7 +2334,7 @@ impl StagedObject {
         // into the output's GOT (see chunks::eh_frame). It would write
         // any other wrong, as `.cfi_personality 0x10, sym` makes one.
         for r in &rels {
-            let addr = hdr.addr as u32 + r.r_address;
+            let addr = hdr.addr as u32 + r.offset;
             let i = self.cies.partition_point(|c| c.input_addr <= addr);
             let Some(i) = i.checked_sub(1) else { continue };
             let cie = &mut self.cies[i];
@@ -2346,14 +2342,14 @@ impl StagedObject {
                 continue;
             }
             const GOT_PCREL_SDATA4: u8 = DW_EH_PE_INDIRECT | DW_EH_PE_PCREL | DW_EH_PE_SDATA4;
-            if r.r_type() != E::RELOC_GOTPC
-                || r.r_length() != 2
+            if r.ty() != E::RELOC_GOTPC
+                || r.p2size() != 2
                 || personality_encs[i] != Some(GOT_PCREL_SDATA4)
             {
                 fatal!("{}: __eh_frame: unsupported personality reference", mf.name.raw());
             }
             // A local symbol index, mapped to a symbol at integration.
-            cie.personality = Some(r.r_symbolnum());
+            cie.personality = Some(r.idx());
             cie.personality_offset = addr - cie.input_addr;
         }
 
@@ -2544,16 +2540,16 @@ fn is_code_section(hdr: &MachSection) -> bool {
 fn apply_eh_frame_relocs<E: Target>(
     contents: &mut [u8],
     rels: &[MachRel],
-    nlists: &[NList],
+    mach_syms: &[MachSym],
     file_name: &Path,
 ) {
     let target = |r: MachRel| {
-        if r.is_extern() { nlists[r.r_symbolnum() as usize].n_value } else { 0 }
+        if r.is_extern() { mach_syms[r.idx() as usize].value } else { 0 }
     };
     let mut i = 0;
     while i < rels.len() {
         let r = rels[i];
-        let ty = r.r_type();
+        let ty = r.ty();
         i += 1;
         let val = if ty == E::RELOC_SUBTRACTOR {
             i += 1;
@@ -2563,10 +2559,10 @@ fn apply_eh_frame_relocs<E: Target>(
         } else if ty == E::RELOC_GOTPC {
             continue;
         } else {
-            fatal!("{}: unsupported relocation in __eh_frame: r_type={ty}", file_name.raw());
+            fatal!("{}: unsupported relocation in __eh_frame: type={ty}", file_name.raw());
         };
-        let loc = &mut contents[r.r_address as usize..];
-        if r.r_length() == 2 {
+        let loc = &mut contents[r.offset as usize..];
+        if r.p2size() == 2 {
             let old = u32::from_le_bytes(loc[..4].try_into().unwrap());
             loc[..4].copy_from_slice(&old.wrapping_add(val as u32).to_le_bytes());
         } else {
@@ -3331,16 +3327,16 @@ fn defined_externals(data: &'static [u8]) -> Vec<(&'static [u8], bool, bool)> {
     let (Some(symtab), Some(dysym)) = (symtab, dysymtab) else {
         return Vec::new();
     };
-    let (nlists, strtab) = read_symtab(data, Some(&symtab));
+    let (mach_syms, strtab) = read_symtab(data, Some(&symtab));
     let tlv_sects: Vec<u8> = section_headers(data)
         .enumerate()
         .filter(|(_, sect)| sect.section_type() == S_THREAD_LOCAL_VARIABLES)
         .map(|(i, _)| (i + 1) as u8)
         .collect();
     let range = dysym.iextdefsym as usize..(dysym.iextdefsym + dysym.nextdefsym) as usize;
-    let defs = nlists[range].iter().map(|nlist| {
-        let weak = nlist.n_desc & N_WEAK_DEF != 0;
-        (symbol_name(strtab, nlist), weak, tlv_sects.contains(&nlist.n_sect))
+    let defs = mach_syms[range].iter().map(|msym| {
+        let weak = msym.desc & N_WEAK_DEF != 0;
+        (symbol_name(strtab, msym), weak, tlv_sects.contains(&msym.sect))
     });
     defs.collect()
 }

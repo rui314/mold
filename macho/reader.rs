@@ -1315,7 +1315,7 @@ fn load_pending<E: Target>(ctx: &mut Context<E>, pending: Vec<PendingObject>) {
     // below does no hashing. Names carry the xxh3 hashes staging
     // computed alongside them, so nothing here touches their bytes.
     // Each object's extern (name, hash) list is filtered in parallel -
-    // a debug link scans millions of nlists here - then concatenated in
+    // a debug link scans millions of MachSyms here - then concatenated in
     // object order into the batch the sharded intern resolves at once.
     let per_obj: Vec<Vec<(&'static [u8], u64)>> = staged
         .par_iter()
@@ -1324,8 +1324,8 @@ fn load_pending<E: Target>(ctx: &mut Context<E>, pending: Vec<PendingObject>) {
             st.sym_names[r.clone()]
                 .iter()
                 .zip(&st.sym_hashes[r.clone()])
-                .zip(st.nlists[r].iter())
-                .filter(|((_, _), nlist)| !nlist.is_stab() && nlist.is_extern())
+                .zip(st.mach_syms[r].iter())
+                .filter(|((_, _), msym)| !msym.is_stab() && msym.is_extern())
                 .map(|((&name, &hash), _)| (name, hash))
                 .collect()
         })

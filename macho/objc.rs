@@ -209,7 +209,7 @@ fn objc_pointer_reloc<E: Target>(ctx: &Context<E>, isec: u32, off: u64) -> Optio
 fn objc_pointer_at<E: Target>(ctx: &Context<E>, isec: u32, off: u64) -> Option<ObjcRef> {
     let (obj, k) = objc_pointer_reloc(ctx, isec, off)?;
     let rel = &ctx.objs[obj].relocs[k];
-    if E::classify_reloc(rel.r_type) != RelocClass::Plain {
+    if E::classify_reloc(rel.ty) != RelocClass::Plain {
         return None;
     }
     Some(match rel.target() {
@@ -394,7 +394,7 @@ fn ref_key<E: Target>(ctx: &Context<E>, i: usize) -> Option<RefKey> {
     let obj = isec.file as usize;
     let rels = ctx.isec_relocs(i);
     let plain_ptr = |rel: &Reloc| {
-        E::classify_reloc(rel.r_type) == RelocClass::Plain
+        E::classify_reloc(rel.ty) == RelocClass::Plain
             && rel.size == 8
             && !rel.is_pcrel
             && !rel.is_subtracted
@@ -589,13 +589,13 @@ pub fn fold_objc_classrefs<E: Target>(ctx: &mut Context<E>) {
             let relocs = &ctx.objs[obj_idx].relocs;
             let decider = offset_half[obj_idx].get(&u.k).copied().unwrap_or(u.k);
             let (rel, decider) = (relocs[u.k], relocs[decider]);
-            match E::got_load_form(rel.r_type, data, rel.offset) {
+            match E::got_load_form(rel.ty, data, rel.offset) {
                 Some(form)
                     if !unpaired.contains(&u.class)
-                        && E::got_load_form(decider.r_type, data, decider.offset).is_some() =>
+                        && E::got_load_form(decider.ty, data, decider.offset).is_some() =>
                 {
                     let r = &mut ctx.objs[obj_idx].relocs[u.k];
-                    r.r_type = form;
+                    r.ty = form;
                     r.set_target(RelocTarget::Sym(slots[obj_idx][&u.slot].0));
                 }
                 _ => {
@@ -649,7 +649,7 @@ fn folds_objc_classrefs<E: Target>(ctx: &Context<E>) -> bool {
 fn pointer_target<E: Target>(ctx: &Context<E>, i: usize) -> Option<u32> {
     let [rel] = ctx.isec_relocs(i) else { return None };
     let RelocTarget::Sym(idx) = rel.target() else { return None };
-    let plain = E::classify_reloc(rel.r_type) == RelocClass::Plain
+    let plain = E::classify_reloc(rel.ty) == RelocClass::Plain
         && ctx.isecs[i].size == 8
         && rel.size == 8
         && !rel.is_pcrel
@@ -745,7 +745,7 @@ fn pair_classref_uses<E: Target>(
     let mut offset_half = hashbrown::HashMap::new();
     let mut open: hashbrown::HashMap<crate::symbol::SymbolId, usize> = hashbrown::HashMap::new();
     for (n, u) in uses.iter().enumerate() {
-        match E::page_pair_half(ctx.objs[obj_idx].relocs[u.k].r_type) {
+        match E::page_pair_half(ctx.objs[obj_idx].relocs[u.k].ty) {
             Some(true) => {
                 if open.insert(u.class, u.k).is_some() {
                     unpaired.insert(u.class);

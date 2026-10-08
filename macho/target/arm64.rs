@@ -249,12 +249,12 @@ impl LoadStore {
     }
 }
 
-/// Whether a record's pcrel, length and extern fields are ones its type
+/// Whether a record's pcrel, p2size and extern fields are ones its type
 /// takes. Only an UNSIGNED may be section-relative. An assembler writes
 /// other forms for `.short sym` or `.quad sym@GOT`.
 #[inline]
 fn is_supported(r: &MachRel) -> bool {
-    let forms = match r.r_type() {
+    let forms = match r.ty() {
         ARM64_RELOC_UNSIGNED => {
             reloc_form(false, 2, true)
                 | reloc_form(false, 3, true)
@@ -288,14 +288,14 @@ fn is_supported(r: &MachRel) -> bool {
 #[inline]
 fn check_reloc(file: &Path, hdr: &MachSection, rels: &[MachRel], i: usize, loc: &[u8]) {
     let r = &rels[i];
-    let pointer32 = r.r_type() == ARM64_RELOC_UNSIGNED
-        && r.r_length() == 2
-        && (i == 0 || rels[i - 1].r_type() != ARM64_RELOC_SUBTRACTOR);
+    let pointer32 = r.ty() == ARM64_RELOC_UNSIGNED
+        && r.p2size() == 2
+        && (i == 0 || rels[i - 1].ty() != ARM64_RELOC_SUBTRACTOR);
     if !is_supported(r) || pointer32 {
         crate::target::bad_reloc(file, hdr, r, "unsupported relocation");
     }
     let load = || parse_ldst(read32(loc)).filter(|ls| !ls.is_store);
-    let ok = match r.r_type() {
+    let ok = match r.ty() {
         ARM64_RELOC_GOT_LOAD_PAGEOFF12 => {
             // "add Wd|Xd, Wn|Xn, #imm" with an unshifted immediate
             read32(loc) & 0x7fc0_0000 == 0x1100_0000 || load().is_some_and(|ls| ls.size == 8)
@@ -311,7 +311,7 @@ fn check_reloc(file: &Path, hdr: &MachSection, rels: &[MachRel], i: usize, loc: 
 /// Whether a relocation is the page half of a reference: of a GOT
 /// slot's, or one relaxed from it, if `got`.
 fn is_page_rel(rel: Option<&Reloc>, got: bool) -> bool {
-    match rel.map(|r| r.r_type) {
+    match rel.map(|r| r.ty) {
         Some(ARM64_RELOC_PAGE21) => !got,
         Some(ARM64_RELOC_GOT_LOAD_PAGE21 | ARM64_RELOC_TLVP_LOAD_PAGE21) => true,
         _ => false,
@@ -319,7 +319,7 @@ fn is_page_rel(rel: Option<&Reloc>, got: bool) -> bool {
 }
 
 fn is_pageoff_rel(rel: Option<&Reloc>, got: bool) -> bool {
-    match rel.map(|r| r.r_type) {
+    match rel.map(|r| r.ty) {
         Some(ARM64_RELOC_PAGEOFF12) => !got,
         Some(ARM64_RELOC_GOT_LOAD_PAGEOFF12 | ARM64_RELOC_TLVP_LOAD_PAGEOFF12) => true,
         _ => false,
@@ -775,10 +775,10 @@ impl Target for Arm64 {
     const THREAD_STATE_SP_OFFSET: usize = 31 * 8;
     const THREAD_STATE_PC_OFFSET: usize = 32 * 8;
 
-    fn relocatable_needs_addend(r_type: u8) -> bool {
+    fn relocatable_needs_addend(ty: u8) -> bool {
         // Instruction-patching relocations can't embed an addend; data
         // relocations keep it in the relocated bytes.
-        !matches!(r_type, ARM64_RELOC_UNSIGNED | ARM64_RELOC_SUBTRACTOR)
+        !matches!(ty, ARM64_RELOC_UNSIGNED | ARM64_RELOC_SUBTRACTOR)
     }
 
     // ld64 applies no hints to an image bound for the dyld shared cache
@@ -791,9 +791,9 @@ impl Target for Arm64 {
         }
     }
 
-    fn classify_reloc(r_type: u8) -> crate::target::RelocClass {
+    fn classify_reloc(ty: u8) -> crate::target::RelocClass {
         use crate::target::RelocClass;
-        match r_type {
+        match ty {
             ARM64_RELOC_BRANCH26 => RelocClass::Branch,
             ARM64_RELOC_GOT_LOAD_PAGE21 | ARM64_RELOC_GOT_LOAD_PAGEOFF12 => RelocClass::GotLoad,
             ARM64_RELOC_POINTER_TO_GOT => RelocClass::Got,
@@ -802,8 +802,8 @@ impl Target for Arm64 {
         }
     }
 
-    fn split_ref(r_type: u8) -> SplitRef {
-        match r_type {
+    fn split_ref(ty: u8) -> SplitRef {
+        match ty {
             ARM64_RELOC_SUBTRACTOR => SplitRef::Subtractor,
             ARM64_RELOC_PAGE21 | ARM64_RELOC_GOT_LOAD_PAGE21 | ARM64_RELOC_TLVP_LOAD_PAGE21 => {
                 SplitRef::Page
@@ -821,8 +821,8 @@ impl Target for Arm64 {
     // the ldr (of 64 or 32 bits) becomes an add. So an adrp of a slot
     // is a GOT load's if the ldr under it is (see fold_objc_classrefs);
     // an add under it takes the slot's address.
-    fn got_load_form(r_type: u8, data: &[u8], offset: u32) -> Option<u8> {
-        match r_type {
+    fn got_load_form(ty: u8, data: &[u8], offset: u32) -> Option<u8> {
+        match ty {
             ARM64_RELOC_PAGE21 => Some(ARM64_RELOC_GOT_LOAD_PAGE21),
             ARM64_RELOC_PAGEOFF12 if is_ldr_imm(read32(&data[offset as usize..])) => {
                 Some(ARM64_RELOC_GOT_LOAD_PAGEOFF12)
@@ -831,8 +831,8 @@ impl Target for Arm64 {
         }
     }
 
-    fn page_pair_half(r_type: u8) -> Option<bool> {
-        match r_type {
+    fn page_pair_half(ty: u8) -> Option<bool> {
+        match ty {
             ARM64_RELOC_PAGE21 | ARM64_RELOC_GOT_LOAD_PAGE21 => Some(true),
             ARM64_RELOC_PAGEOFF12 | ARM64_RELOC_GOT_LOAD_PAGEOFF12 => Some(false),
             _ => None,
@@ -1149,7 +1149,7 @@ impl Target for Arm64 {
 
     fn lazy_ref(r: &Reloc, _data: &[u8]) -> crate::target::LazyRef {
         use crate::target::LazyRef;
-        match r.r_type {
+        match r.ty {
             ARM64_RELOC_BRANCH26 => LazyRef::Call,
             ARM64_RELOC_GOT_LOAD_PAGE21 => LazyRef::Load,
             ARM64_RELOC_GOT_LOAD_PAGEOFF12 => LazyRef::Slot,
@@ -1206,37 +1206,37 @@ impl Target for Arm64 {
             // relocs have addends in the relocated field. Addends for
             // other types of relocations are specified by prepending an
             // ADDEND reloc, whose address ld-prime takes for the pair's.
-            let offset = rels[i].r_address;
+            let offset = rels[i].offset;
             let loc = &contents[offset as usize..];
             let mut addend = 0;
-            if rels[i].r_type() == ARM64_RELOC_ADDEND {
-                addend = sign_extend(rels[i].r_symbolnum() as u64, 24);
+            if rels[i].ty() == ARM64_RELOC_ADDEND {
+                addend = sign_extend(rels[i].idx() as u64, 24);
                 i += 1;
             }
 
             let r = &rels[i];
             check_reloc(file_name, hdr, rels, i, loc);
-            if r.r_type() == ARM64_RELOC_UNSIGNED {
-                addend = match r.r_length() {
+            if r.ty() == ARM64_RELOC_UNSIGNED {
+                addend = match r.p2size() {
                     2 => i32::from_le_bytes(loc[..4].try_into().unwrap()) as i64,
                     _ => i64::from_le_bytes(loc[..8].try_into().unwrap()),
                 };
             }
-            let is_subtracted = i > 0 && rels[i - 1].r_type() == ARM64_RELOC_SUBTRACTOR;
+            let is_subtracted = i > 0 && rels[i - 1].ty() == ARM64_RELOC_SUBTRACTOR;
 
             // A relocation refers to either a symbol or a section. Only
             // an UNSIGNED can be section-relative, and it holds the
             // target's address.
             let (target, addend) = if r.is_extern() {
-                (RelocTarget::Sym(r.r_symbolnum()), addend)
+                (RelocTarget::Sym(r.idx()), addend)
             } else {
                 section_target(file_name, sections, r, addend as u64)
             };
 
             vec.push(Reloc {
                 offset,
-                r_type: r.r_type(),
-                size: 1 << r.r_length(),
+                ty: r.ty(),
+                size: 1 << r.p2size(),
                 is_pcrel: r.is_pcrel(),
                 is_subtracted,
                 target: target.pack(),
@@ -1257,13 +1257,11 @@ impl Target for Arm64 {
             if ctx.is_lazy_import(id) {
                 continue;
             }
-            let is_tlv = matches!(
-                rel.r_type,
-                ARM64_RELOC_TLVP_LOAD_PAGE21 | ARM64_RELOC_TLVP_LOAD_PAGEOFF12
-            );
+            let is_tlv =
+                matches!(rel.ty, ARM64_RELOC_TLVP_LOAD_PAGE21 | ARM64_RELOC_TLVP_LOAD_PAGEOFF12);
             check_tlv(ctx, id, is_tlv);
 
-            match rel.r_type {
+            match rel.ty {
                 ARM64_RELOC_BRANCH26 => scan_branch(ctx, id),
                 ARM64_RELOC_GOT_LOAD_PAGE21
                 | ARM64_RELOC_GOT_LOAD_PAGEOFF12
@@ -1291,7 +1289,7 @@ impl Target for Arm64 {
             let a = r.addend;
             let p = base + r.offset as u64;
 
-            match r.r_type {
+            match r.ty {
                 ARM64_RELOC_UNSIGNED => {
                     ctx.check_text_reloc(isec_id, rels, i, p);
                     // An imported symbol's address is written by dyld,
@@ -1421,7 +1419,7 @@ impl Target for Arm64 {
                         }
                     } else {
                         let insn = read32(loc);
-                        let is_add = r.r_type == ARM64_RELOC_GOT_LOAD_PAGEOFF12
+                        let is_add = r.ty == ARM64_RELOC_GOT_LOAD_PAGEOFF12
                             && insn & 0xffc0_0000 == 0x9100_0000;
                         if is_ldr_imm(insn) || is_add {
                             let target = s.wrapping_add_signed(a);
@@ -1437,7 +1435,7 @@ impl Target for Arm64 {
                     let g = ctx.sym_got_addr(ctx.reloc_target_sym(obj, r).unwrap());
                     write32(loc, g.wrapping_add_signed(a).wrapping_sub(p) as u32);
                 }
-                _ => fatal!("unsupported relocation type: {}", r.r_type),
+                _ => fatal!("unsupported relocation type: {}", r.ty),
             }
             i += 1;
         }

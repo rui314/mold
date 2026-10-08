@@ -174,7 +174,7 @@ fn collect_sites<E: Target>(ctx: &Context<E>) -> Vec<Site> {
         .flat_map_iter(|i| {
             let file = ctx.isecs[i].file as usize;
             ctx.isec_relocs(i).iter().filter_map(move |r| {
-                if E::classify_reloc(r.r_type) != RelocClass::Branch || r.size != 4 {
+                if E::classify_reloc(r.ty) != RelocClass::Branch || r.size != 4 {
                     return None;
                 }
                 let sym = ctx.reloc_target_sym(file, r)?;
@@ -246,9 +246,9 @@ fn add_dof_section<E: Target>(ctx: &mut Context<E>, name: &[u8], dof: Dof, sites
     let relocs = &mut ctx.objs[file as usize].relocs;
     let rel_offset = relocs.len() as u32;
     for (&slot, site) in dof.slots.iter().zip(sites) {
-        let pair = |r_type, target: RelocTarget, addend, is_subtracted| Reloc {
+        let pair = |ty, target: RelocTarget, addend, is_subtracted| Reloc {
             offset: slot,
-            r_type,
+            ty,
             size: 4,
             is_pcrel: false,
             is_subtracted,

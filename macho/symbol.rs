@@ -5,7 +5,7 @@ use rayon::prelude::*;
 use crate::input_files::FileId;
 
 /// A symbol index, u32 as in mold: every per-symbol and
-/// per-nlist vector of ids is half the size of a usize one.
+/// per-MachSym vector of ids is half the size of a usize one.
 pub type SymbolId = u32;
 
 /// A symbol's owning file in one u32 - none, an object index, or a

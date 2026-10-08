@@ -66,7 +66,7 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<(u64, SymbolId, bool)> {
                 continue;
             }
             let pointer = rebase_info::is_pointer_reloc::<E>(rel);
-            let call = E::classify_reloc(rel.r_type) == RelocClass::Branch
+            let call = E::classify_reloc(rel.ty) == RelocClass::Branch
                 && ctx.sym_aux(id).stub_idx == crate::symbol::NO_IDX;
             if pointer || call {
                 vec.push((base + rel.offset as u64, id, call));
@@ -98,7 +98,7 @@ pub fn write<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
         } else {
             sym | (3 << 25) | (1 << 27) | (u32::from(E::RELOC_UNSIGNED) << 28)
         };
-        let rel = MachRel { r_address: addr.wrapping_sub(base) as u32, bits };
+        let rel = MachRel { offset: addr.wrapping_sub(base) as u32, bits };
         rel.write_to(&mut buf[off..]);
         off += size_of::<MachRel>();
     }

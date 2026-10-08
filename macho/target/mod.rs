@@ -77,12 +77,12 @@ pub enum LazyRef {
     Unsupported,
 }
 
-/// One form of a relocation record - its pcrel, length (log2 of the
+/// One form of a relocation record - its pcrel, p2size (log2 of the
 /// field's size) and extern fields - as a bit in a set of the forms a
 /// type takes. The fields are bits 24 to 27 of the record's second
 /// word, which select the bit.
-pub const fn reloc_form(pcrel: bool, length: u32, ext: bool) -> u16 {
-    1 << (pcrel as u32 | length << 1 | (ext as u32) << 3)
+pub const fn reloc_form(pcrel: bool, p2size: u32, ext: bool) -> u16 {
+    1 << (pcrel as u32 | p2size << 1 | (ext as u32) << 3)
 }
 
 /// Whether a record's form is one of `forms`, a set of reloc_form bits.
@@ -113,13 +113,13 @@ fn write64(loc: &mut [u8], val: u64) {
 #[inline(never)]
 pub fn bad_reloc(file: &Path, hdr: &MachSection, r: &MachRel, what: &str) -> ! {
     crate::fatal!(
-        "{}:({},{}): {what} at 0x{:x}: r_type={}, r_length={}, r_pcrel={}, r_extern={}",
+        "{}:({},{}): {what} at 0x{:x}: type={}, p2size={}, pcrel={}, extern={}",
         file.raw(),
         crate::error::raw(hdr.segname()),
         crate::error::raw(hdr.sectname()),
-        r.r_address,
-        r.r_type(),
-        r.r_length(),
+        r.offset,
+        r.ty(),
+        r.p2size(),
         r.is_pcrel() as u8,
         r.is_extern() as u8
     )
@@ -186,36 +186,36 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
 
     /// Whether re-emitting this relocation type in a relocatable output
     /// needs an explicit addend record when its addend is nonzero.
-    fn relocatable_needs_addend(r_type: u8) -> bool;
+    fn relocatable_needs_addend(ty: u8) -> bool;
 
     /// The distance folded into a pcrel relocation's embedded addend
     /// beyond the field itself (x86-64's SIGNED_1/2/4), which a field
     /// written back for a relocatable output must leave out again.
-    fn reloc_bias(_r_type: u8) -> i64 {
+    fn reloc_bias(_ty: u8) -> i64 {
         0
     }
 
     /// Classifies a relocation type by how it uses its target.
-    fn classify_reloc(r_type: u8) -> RelocClass;
+    fn classify_reloc(ty: u8) -> RelocClass;
 
     /// How LC_SEGMENT_SPLIT_INFO records a relocation type's reference.
-    fn split_ref(r_type: u8) -> SplitRef;
+    fn split_ref(ty: u8) -> SplitRef;
 
     /// The GOT-load type objc::fold_objc_classrefs rewrites a reference
-    /// to an __objc_classrefs slot into - a relocation of type `r_type`
+    /// to an __objc_classrefs slot into - a relocation of type `ty`
     /// at `offset` of a subsection whose contents are `data` - if the
     /// reference loads the slot's pointer (arm64's adrp, or the ldr
     /// under it; x86-64's RIP-relative mov): the ordinary GOT-load
     /// handling then loads the class from its GOT entry, or relaxes the
     /// load of a class the image defines. None for a reference that
     /// takes the slot's address.
-    fn got_load_form(r_type: u8, data: &[u8], offset: u32) -> Option<u8>;
+    fn got_load_form(ty: u8, data: &[u8], offset: u32) -> Option<u8>;
 
     /// Which half of a two-instruction address or load a relocation
     /// type is: Some(true) for the page (arm64's adrp), Some(false) for
     /// the offset into it (the ldr or add that follows); None for one
     /// that stands alone (x86-64's RIP-relative references).
-    fn page_pair_half(_r_type: u8) -> Option<bool> {
+    fn page_pair_half(_ty: u8) -> Option<bool> {
         None
     }
 
@@ -322,7 +322,7 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
 
 /// The section a non-extern record `r` of object `file` refers to, and
 /// the offset in it of `addr`, the address the record points at. The
-/// section is the one r_symbolnum names (a 1-based ordinal), wherever
+/// section is the one its sect names (a 1-based ordinal), wherever
 /// `addr` lies: only the ordinal tells apart sections that share an
 /// address - an empty one and its successor, or one section's end and
 /// the next one's start.
@@ -332,9 +332,9 @@ pub fn section_target(
     r: &MachRel,
     addr: u64,
 ) -> (RelocTarget, i64) {
-    let i = (r.r_section() as usize).wrapping_sub(1);
+    let i = (r.sect() as usize).wrapping_sub(1);
     let Some(sec) = sections.get(i) else {
-        crate::fatal!("{}: bad relocation: {}", file.raw(), r.r_address);
+        crate::fatal!("{}: bad relocation: {}", file.raw(), r.offset);
     };
     (RelocTarget::Section(i as u32), addr.wrapping_sub(sec.addr) as i64)
 }

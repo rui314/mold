@@ -49,11 +49,11 @@ impl SectCreateInput {
     pub fn place<E: Target>(&self, ctx: &Context<E>) -> (u64, u8) {
         match self.place {
             InputPlace::Isec(id) => {
-                (ctx.isec_addr(id as usize), ctx.isec_n_sect(&ctx.isecs[id as usize]))
+                (ctx.isec_addr(id as usize), ctx.isec_sect_idx(&ctx.isecs[id as usize]))
             }
             InputPlace::Section { section, offset } => {
                 let hdr = &ctx.sectcreate_sections[section as usize].hdr;
-                (hdr.addr + offset, hdr.n_sect)
+                (hdr.addr + offset, hdr.sect_idx)
             }
         }
     }

@@ -198,11 +198,11 @@ fn insignificant_sections<E: Target>(ctx: &Context<E>) -> Vec<bool> {
 /// folded as any other hidden function.
 fn mark_auto_hidden<E: Target>(ctx: &Context<E>, i: usize, obj: &ObjectFile, flags: &[AtomicBool]) {
     let r = obj.global_range();
-    for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
+    for (msym, &sym_id) in obj.mach_syms[r.clone()].iter().zip(&obj.symbols[r]) {
         let sym = &ctx.symbols[sym_id];
-        if !nlist.is_stab()
-            && nlist.n_type & N_PEXT == 0
-            && nlist.n_desc & (N_WEAK_DEF | N_WEAK_REF) == N_WEAK_DEF | N_WEAK_REF
+        if !msym.is_stab()
+            && msym.n_type & N_PEXT == 0
+            && msym.desc & (N_WEAK_DEF | N_WEAK_REF) == N_WEAK_DEF | N_WEAK_REF
             && sym.is_private_extern()
             && sym.file() == Some(FileId::Obj(i as u32))
             && let Some(isec) = sym.input_section()
@@ -245,7 +245,7 @@ fn mark_swift_functions<E: Target>(
 /// (subsection, rank of the label as ld-prime picks the one naming the
 /// subsection, name, symbol). An alternate entry point (N_ALT_ENTRY)
 /// names no subsection but where no other label does. (An object's
-/// nlists are mostly of undefined symbols, which are passed over
+/// mach_syms are mostly of undefined symbols, which are passed over
 /// before their symbols are looked at.)
 fn start_labels<'a, E: Target>(
     ctx: &'a Context<E>,
@@ -253,8 +253,8 @@ fn start_labels<'a, E: Target>(
     obj: &'a ObjectFile,
     wanted: impl Fn(usize) -> bool + 'a,
 ) -> impl Iterator<Item = (u32, u8, &'static [u8], SymbolId)> + 'a {
-    obj.nlists.iter().zip(&obj.symbols).filter_map(move |(nlist, &id)| {
-        if nlist.is_stab() || nlist.n_type() != N_SECT {
+    obj.mach_syms.iter().zip(&obj.symbols).filter_map(move |(msym, &id)| {
+        if msym.is_stab() || msym.ty() != N_SECT {
             return None;
         }
         let sym = &ctx.symbols[id];
@@ -262,8 +262,8 @@ fn start_labels<'a, E: Target>(
         if sym.value != 0 || sym.file() != Some(FileId::Obj(i as u32)) || !wanted(isec as usize) {
             return None;
         }
-        let entry = (nlist.n_desc & N_ALT_ENTRY == 0) as u8;
-        Some((isec, entry << 4 | subsec_name_rank(nlist, sym.name()), sym.name(), id))
+        let entry = (msym.desc & N_ALT_ENTRY == 0) as u8;
+        Some((isec, entry << 4 | subsec_name_rank(msym, sym.name()), sym.name(), id))
     })
 }
 
@@ -421,7 +421,7 @@ fn compute_digest<E: Target>(ctx: &Context<E>, cand_index: &[usize], id: usize) 
     h.update(isec.data());
     for rel in ctx.isec_relocs(id) {
         h.update(&rel.offset.to_ne_bytes());
-        h.update(&rel.r_type.to_ne_bytes());
+        h.update(&rel.ty.to_ne_bytes());
         h.update(&[rel.size, rel.is_pcrel as u8, rel.is_subtracted as u8]);
         let (edge, addend) = edge_of(ctx, cand_index, isec.file as usize, rel);
         h.update(&addend.to_ne_bytes());
@@ -614,7 +614,7 @@ fn verify_leaders<E: Target>(
             && xr.len() == yr.len()
             && xr.iter().zip(yr).all(|(r, s)| {
                 r.offset == s.offset
-                    && r.r_type == s.r_type
+                    && r.ty == s.ty
                     && r.size == s.size
                     && r.is_pcrel == s.is_pcrel
                     && edge(x.file as usize, r) == edge(y.file as usize, s)

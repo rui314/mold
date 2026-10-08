@@ -357,19 +357,20 @@ pub struct DyldInfoCommand {
 
 unsafe impl FileRecord for DyldInfoCommand {}
 
+/// A symbol table entry, which Apple calls `nlist_64`.
 #[derive(Clone, Copy, Default, Debug)]
 #[repr(C)]
-pub struct NList {
-    pub n_strx: u32,
+pub struct MachSym {
+    pub stroff: u32,
     pub n_type: u8,
-    pub n_sect: u8,
-    pub n_desc: u16,
-    pub n_value: u64,
+    pub sect: u8,
+    pub desc: u16,
+    pub value: u64,
 }
 
-unsafe impl FileRecord for NList {}
+unsafe impl FileRecord for MachSym {}
 
-impl NList {
+impl MachSym {
     pub fn is_stab(&self) -> bool {
         self.n_type & N_STAB != 0
     }
@@ -378,36 +379,36 @@ impl NList {
         self.n_type & N_EXT != 0
     }
 
-    pub fn n_type(&self) -> u8 {
+    pub fn ty(&self) -> u8 {
         self.n_type & N_TYPE
     }
 
     pub fn is_common(&self) -> bool {
-        !self.is_stab() && self.n_type() == N_UNDF && self.is_extern() && self.n_value != 0
+        !self.is_stab() && self.ty() == N_UNDF && self.is_extern() && self.value != 0
     }
 }
 
-/// A relocation record. `r_address` is followed by a bitfield laid out,
-/// from the least significant bit, as symbolnum:24, pcrel:1, length:2,
-/// extern:1, type:4.
+/// A relocation record, which Apple calls `relocation_info`. `offset`
+/// is followed by a bitfield laid out, from the least significant bit,
+/// as idx:24, pcrel:1, p2size:2, extern:1, type:4.
 #[derive(Clone, Copy, Default, Debug)]
 #[repr(C)]
 pub struct MachRel {
-    pub r_address: u32,
+    pub offset: u32,
     pub bits: u32,
 }
 
 unsafe impl FileRecord for MachRel {}
 
 impl MachRel {
-    pub fn r_symbolnum(&self) -> u32 {
+    pub fn idx(&self) -> u32 {
         self.bits & 0xff_ffff
     }
 
     /// The 1-based ordinal of the section a non-extern record refers
-    /// to: r_symbolnum's low byte, as an nlist's n_sect is one byte.
+    /// to: idx's low byte, as a MachSym's sect is one byte.
     /// ld-prime ignores the rest of the field.
-    pub fn r_section(&self) -> u32 {
+    pub fn sect(&self) -> u32 {
         self.bits & 0xff
     }
 
@@ -416,7 +417,7 @@ impl MachRel {
     }
 
     /// log2 of the size of the relocated field: 0, 1, 2 or 3.
-    pub fn r_length(&self) -> u32 {
+    pub fn p2size(&self) -> u32 {
         (self.bits >> 25) & 3
     }
 
@@ -424,7 +425,7 @@ impl MachRel {
         self.bits & (1 << 27) != 0
     }
 
-    pub fn r_type(&self) -> u8 {
+    pub fn ty(&self) -> u8 {
         (self.bits >> 28) as u8
     }
 }

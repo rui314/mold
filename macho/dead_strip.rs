@@ -257,8 +257,8 @@ pub fn native_refs_before_lto<E: Target>(
         if !obj.is_alive {
             continue;
         }
-        for (nlist, &id) in obj.nlists.iter().zip(&obj.symbols) {
-            if nlist.n_type() == N_UNDF
+        for (msym, &id) in obj.mach_syms.iter().zip(&obj.symbols) {
+            if msym.ty() == N_UNDF
                 && let Some(isec) = ctx.symbols[id].input_section()
                 && ctx.isecs[redirects[isec as usize]].mark_visited()
             {

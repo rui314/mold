@@ -222,7 +222,7 @@ fn write_object<E: Target>(
     }
     let symtab = &targets.symtab.table;
     let (syms, strtab) =
-        buf[layout.symoff as usize..].split_at_mut(symtab.len() * size_of::<NList>());
+        buf[layout.symoff as usize..].split_at_mut(symtab.len() * size_of::<MachSym>());
     let strtab = &mut strtab[..symtab.strtab_size];
     crate::chunks::symtab::write_symtab(ctx, symtab, syms, strtab);
     buf
@@ -236,18 +236,12 @@ fn write_object<E: Target>(
 fn sectcreate_locals<E: Target>(ctx: &Context<E>) -> Vec<Local> {
     (ctx.sectcreate_inputs.iter().zip(&ctx.args.sectcreate))
         .map(|(input, sc)| {
-            let (n_value, n_sect) = input.place(ctx);
+            let (value, sect) = input.place(ctx);
             Local {
                 name: leak_bytes(
                     [b"l<sect-create>", &sc.segname[..], b",", &sc.sectname[..]].concat(),
                 ),
-                nlist: NList {
-                    n_strx: 0,
-                    n_type: N_SECT,
-                    n_sect,
-                    n_desc: N_NO_DEAD_STRIP,
-                    n_value,
-                },
+                msym: MachSym { stroff: 0, n_type: N_SECT, sect, desc: N_NO_DEAD_STRIP, value },
                 hidden: false,
                 sym: None,
             }
@@ -313,7 +307,7 @@ fn assign_addresses<E: Target>(
         let hdr = sect_hdr_mut(ctx, synthetic, s);
         addr = align_to(addr, 1 << hdr.p2align);
         hdr.addr = addr;
-        hdr.n_sect = i as u8 + 1;
+        hdr.sect_idx = i as u8 + 1;
         addr += hdr.size;
     }
     addr
@@ -610,15 +604,15 @@ fn compact_unwind_contents<E: Target>(
             entry[..8].copy_from_slice(&func.to_le_bytes());
             entry[8..12].copy_from_slice(&rec.code_len.to_le_bytes());
             entry[12..16].copy_from_slice(&rec.encoding.to_le_bytes());
-            let func = MachRel { r_address: at, bits };
+            let func = MachRel { offset: at, bits };
             let personality = rec.personality().map(|p| MachRel {
-                r_address: at + 16,
+                offset: at + 16,
                 bits: targets.personality(p) | len | (1 << 27),
             });
             let lsda = rec.lsda().map(|(lsda, off)| {
                 let (lsda, bits) = targets.pointer_to(ctx.resolve_isec(lsda), off as u64, len);
                 entry[24..].copy_from_slice(&lsda.to_le_bytes());
-                MachRel { r_address: at + 24, bits }
+                MachRel { offset: at + 24, bits }
             });
             [Some(func), personality, lsda].into_iter().flatten()
         })
@@ -657,7 +651,7 @@ fn eh_frame_contents<E: Target>(
                 let cie = &ctx.cies[c];
                 if let Some(p) = cie.personality {
                     relocs.push(MachRel {
-                        r_address: off + cie.personality_offset,
+                        offset: off + cie.personality_offset,
                         bits: targets.personality(p)
                             | (1 << 24)
                             | (2 << 25)
@@ -717,30 +711,30 @@ fn push_reloc<E: Target>(
     out: &mut Vec<MachRel>,
 ) {
     let ctx = targets.ctx;
-    let r_address = (isec.offset as u64 + rel.offset as u64) as u32;
-    let (symnum, is_extern) = match targets.out_target(isec, rel) {
-        OutTarget::Sym(symnum) => {
+    let offset = (isec.offset as u64 + rel.offset as u64) as u32;
+    let (idx, is_extern) = match targets.out_target(isec, rel) {
+        OutTarget::Sym(idx) => {
             // An explicit addend record precedes relocations whose
             // instruction can't hold one.
-            if rel.addend != 0 && E::relocatable_needs_addend(rel.r_type) {
+            if rel.addend != 0 && E::relocatable_needs_addend(rel.ty) {
                 out.push(MachRel {
-                    r_address,
+                    offset,
                     bits: (rel.addend as u32 & 0xff_ffff)
                         | (2 << 25)
                         | ((E::RELOC_ADDEND as u32) << 28),
                 });
             }
-            (symnum, true)
+            (idx, true)
         }
-        OutTarget::Section(target, _) => (ctx.isec_n_sect(&ctx.isecs[target]) as u32, false),
+        OutTarget::Section(target, _) => (ctx.isec_sect_idx(&ctx.isecs[target]) as u32, false),
     };
     out.push(MachRel {
-        r_address,
-        bits: symnum
+        offset,
+        bits: idx
             | ((rel.is_pcrel as u32) << 24)
             | (rel.size.trailing_zeros() << 25)
             | ((is_extern as u32) << 27)
-            | ((rel.r_type as u32) << 28),
+            | ((rel.ty as u32) << 28),
     });
 }
 
@@ -772,8 +766,8 @@ impl<'a, E: Target> RelocTargets<'a, E> {
         match rel.target() {
             RelocTarget::Sym(idx) => {
                 let sym_id = ctx.objs[isec.file as usize].symbols[idx as usize];
-                if let Some(symnum) = self.symtab.index_of(sym_id) {
-                    return OutTarget::Sym(symnum);
+                if let Some(i) = self.symtab.index_of(sym_id) {
+                    return OutTarget::Sym(i);
                 }
                 let sym = &ctx.symbols[sym_id];
                 let Some(t) = sym.input_section() else {
@@ -786,22 +780,22 @@ impl<'a, E: Target> RelocTargets<'a, E> {
     }
 
     /// A pointer field to offset `off` of subsection `t`: its contents,
-    /// the target's address, and its relocation's section and length
+    /// the target's address, and its relocation's section and p2size
     /// (`len`) bits. It is section-relative, as clang writes the
     /// function and LSDA fields of __compact_unwind.
     fn pointer_to(&self, t: usize, off: u64, len: u32) -> (u64, u32) {
         let ctx = self.ctx;
-        (ctx.isec_addr(t) + off, ctx.isec_n_sect(&ctx.isecs[t]) as u32 | len)
+        (ctx.isec_addr(t) + off, ctx.isec_sect_idx(&ctx.isecs[t]) as u32 | len)
     }
 
     /// The symbol index of an unwind record's or a CIE's personality
     /// routine, which the output's symbol table names: its object lists
     /// it (see undefined_symbols).
     fn personality(&self, p: SymbolId) -> u32 {
-        let Some(symnum) = self.symtab.index_of(p) else {
+        let Some(idx) = self.symtab.index_of(p) else {
             fatal!("-r: unwind personality lost: {}", self.ctx.symbols[p]);
         };
-        symnum
+        idx
     }
 }
 
@@ -840,7 +834,7 @@ impl FileLayout {
         let reloffs = relocs.iter().map(|rels| place(size_of_val(*rels))).collect();
         let diceoff = place(cmds.dice.len() * 8);
         let lohoff = place(cmds.loh.as_ref().map_or(0, Vec::len));
-        let symoff = place(symtab.table.len() * size_of::<NList>());
+        let symoff = place(symtab.table.len() * size_of::<MachSym>());
         let stroff = place(symtab.table.strtab_size);
         Self {
             vmsize,
@@ -1014,7 +1008,7 @@ fn rewrite_field<E: Target>(
     };
     // The addend is negative for a target before its section's start.
     let target_addr = ctx.isec_addr(target).wrapping_add_signed(addend);
-    if rel.r_type == E::RELOC_UNSIGNED && !rel.is_pcrel {
+    if rel.ty == E::RELOC_UNSIGNED && !rel.is_pcrel {
         match rel.size {
             8 => field[..8].copy_from_slice(&target_addr.to_le_bytes()),
             4 => field[..4].copy_from_slice(&(target_addr as u32).to_le_bytes()),
@@ -1022,8 +1016,8 @@ fn rewrite_field<E: Target>(
         }
     } else if rel.is_pcrel {
         // Pcrel non-external fields embed target - (P + 4).
-        let val = target_addr.wrapping_sub(here + 4).wrapping_sub(E::reloc_bias(rel.r_type) as u64)
-            as u32;
+        let val =
+            target_addr.wrapping_sub(here + 4).wrapping_sub(E::reloc_bias(rel.ty) as u64) as u32;
         if rel.size == 4 {
             field[..4].copy_from_slice(&val.to_le_bytes());
         }
@@ -1035,7 +1029,7 @@ fn rewrite_field<E: Target>(
 /// A -r output's symbol and string tables.
 struct RSymtab {
     /// The tables, laid out as a final image's are and written by the
-    /// same writer (see write_symtab), but with every entry's n_value
+    /// same writer (see write_symtab), but with every entry's value
     /// set already.
     table: SymtabSection,
     /// Each symbol's index in the table, or u32::MAX if it has none.
@@ -1055,7 +1049,7 @@ impl RSymtab {
 struct Local {
     name: &'static [u8],
     /// Its entry, but for the name.
-    nlist: NList,
+    msym: MachSym,
     /// Whether the name is hidden, the symbol taking a name made up for
     /// it (see local_symbols).
     hidden: bool,
@@ -1108,7 +1102,7 @@ fn build_symtab<E: Target>(ctx: &Context<E>) -> RSymtab {
     let total = locals.len() + nasts + externals.len();
     let mut names: Vec<&'static [u8]> = Vec::with_capacity(total);
     table.entries.reserve_exact(total);
-    par_push_entries(&mut names, &mut table.entries, &locals, |l| (l.name, l.nlist, None));
+    par_push_entries(&mut names, &mut table.entries, &locals, |l| (l.name, l.msym, None));
     crate::chunks::symtab::push_ast_paths(ctx, &mut names, &mut table.entries);
     let stabs_start = table.entries.len();
     par_push_entries(&mut names, &mut table.entries, &externals, |&(ent, id)| {
@@ -1130,14 +1124,14 @@ fn build_symtab<E: Target>(ctx: &Context<E>) -> RSymtab {
         if let Some(id) = l.sym {
             index_of_sym[id as usize].store(i as u32, Ordering::Relaxed);
             if !l.hidden {
-                strx_of[id as usize].store(entries[i].0.n_strx, Ordering::Relaxed);
+                strx_of[id as usize].store(entries[i].0.stroff, Ordering::Relaxed);
             }
         }
     });
     externals.par_iter().enumerate().for_each(|(k, &(_, id))| {
         let i = stabs_start + k;
         index_of_sym[id as usize].store((i + nstabs) as u32, Ordering::Relaxed);
-        strx_of[id as usize].store(entries[i].0.n_strx, Ordering::Relaxed);
+        strx_of[id as usize].store(entries[i].0.stroff, Ordering::Relaxed);
     });
     table.strx_of = strx_of.into_iter().map(AtomicU32::into_inner).collect();
     table.set_stabs(ctx, stabs, stabs_start, strtab_end);
@@ -1154,8 +1148,8 @@ fn symbols_where<E: Target>(ctx: &Context<E>, pred: impl Fn(usize) -> bool + Syn
 }
 
 /// A -r output's defined externals, with their entries.
-fn defined_externals<E: Target>(ctx: &Context<E>) -> Vec<(NList, SymbolId)> {
-    // The n_desc flags a defined global carries in its object, which the
+fn defined_externals<E: Target>(ctx: &Context<E>) -> Vec<(MachSym, SymbolId)> {
+    // The desc flags a defined global carries in its object, which the
     // next link needs as much as this one did. N_ALT_ENTRY is the
     // critical one: it marks a symbol that does not begin a new
     // subsection (Swift's class metadata symbol $s..CN is an alt entry
@@ -1166,13 +1160,13 @@ fn defined_externals<E: Target>(ctx: &Context<E>) -> Vec<(NList, SymbolId)> {
     let desc_of: Vec<AtomicU16> = (0..nsyms).into_par_iter().map(|_| AtomicU16::new(0)).collect();
     ctx.objs.par_iter().enumerate().filter(|(_, obj)| obj.is_alive).for_each(|(obj_idx, obj)| {
         let r = obj.global_range();
-        for (nlist, &sym_id) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
-            if !nlist.is_stab()
-                && nlist.is_extern()
-                && nlist.n_type() != N_UNDF
+        for (msym, &sym_id) in obj.mach_syms[r.clone()].iter().zip(&obj.symbols[r]) {
+            if !msym.is_stab()
+                && msym.is_extern()
+                && msym.ty() != N_UNDF
                 && matches!(ctx.symbols[sym_id].file(), Some(FileId::Obj(o)) if o as usize == obj_idx)
             {
-                desc_of[sym_id as usize].store(nlist.n_desc, Ordering::Relaxed);
+                desc_of[sym_id as usize].store(msym.desc, Ordering::Relaxed);
             }
         }
     });
@@ -1193,18 +1187,21 @@ fn defined_externals<E: Target>(ctx: &Context<E>) -> Vec<(NList, SymbolId)> {
             let sym = &ctx.symbols[i];
             let pext = if sym.is_private_extern() { N_PEXT } else { 0 };
             // An absolute symbol names no subsection, and ld-prime gives
-            // it no n_desc flags (the assembler marks one N_NO_DEAD_STRIP).
+            // it no desc flags (the assembler marks one N_NO_DEAD_STRIP).
             let Some(input) = sym.input_section() else {
-                let ent =
-                    NList { n_type: N_ABS | N_EXT | pext, n_value: sym.value, ..NList::default() };
+                let ent = MachSym {
+                    n_type: N_ABS | N_EXT | pext,
+                    value: sym.value,
+                    ..MachSym::default()
+                };
                 return (ent, i as u32);
             };
             let n_type = N_SECT | N_EXT | pext;
-            let n_sect = ctx.isec_n_sect(&ctx.isecs[ctx.resolve_isec(input as usize)]);
+            let sect = ctx.isec_sect_idx(&ctx.isecs[ctx.resolve_isec(input as usize)]);
             // N_WEAK_REF on a definition is .weak_def_can_be_hidden: with
             // N_WEAK_DEF it lets a final link auto-hide the symbol, which
             // the -r output must leave it free to do.
-            let mut n_desc = desc_of[i].load(Ordering::Relaxed)
+            let mut desc = desc_of[i].load(Ordering::Relaxed)
                 & (N_WEAK_DEF
                     | N_WEAK_REF
                     | N_ALT_ENTRY
@@ -1213,11 +1210,11 @@ fn defined_externals<E: Target>(ctx: &Context<E>) -> Vec<(NList, SymbolId)> {
                     | N_COLD_FUNC
                     | REFERENCED_DYNAMICALLY);
             if sym.is_weak_def() {
-                n_desc |= N_WEAK_DEF;
+                desc |= N_WEAK_DEF;
             }
-            n_desc |= section_desc(ctx, input as usize);
-            let n_value = sym_addr(ctx, i as u32);
-            (NList { n_strx: 0, n_type, n_sect, n_desc, n_value }, i as u32)
+            desc |= section_desc(ctx, input as usize);
+            let value = sym_addr(ctx, i as u32);
+            (MachSym { stroff: 0, n_type, sect, desc, value }, i as u32)
         })
         .collect()
 }
@@ -1229,7 +1226,7 @@ fn defined_externals<E: Target>(ctx: &Context<E>) -> Vec<(NList, SymbolId)> {
 /// the others.) A tentative definition that is a private external stays
 /// one (N_PEXT), -keep_private_externs or not: a -r link allocates no
 /// commons, and so has none to demote.
-fn undefined_symbols<E: Target>(ctx: &Context<E>) -> Vec<(NList, SymbolId)> {
+fn undefined_symbols<E: Target>(ctx: &Context<E>) -> Vec<(MachSym, SymbolId)> {
     let undefs = symbols_where(ctx, |i| {
         let sym = &ctx.symbols[i];
         sym.is_used() && (sym.is_common() || !sym.is_defined())
@@ -1239,18 +1236,18 @@ fn undefined_symbols<E: Target>(ctx: &Context<E>) -> Vec<(NList, SymbolId)> {
         .map(|&i| {
             let sym = &ctx.symbols[i];
             let mut n_type = N_UNDF | N_EXT;
-            let mut n_desc = 0;
-            let mut n_value = 0;
+            let mut desc = 0;
+            let mut value = 0;
             if sym.is_common() {
-                n_value = sym.value;
-                n_desc |= (sym.common_p2align as u16) << 8;
+                value = sym.value;
+                desc |= (sym.common_p2align as u16) << 8;
                 if sym.is_private_extern() {
                     n_type |= N_PEXT;
                 }
             } else if sym.is_weak_ref() {
-                n_desc |= N_WEAK_REF;
+                desc |= N_WEAK_REF;
             }
-            (NList { n_strx: 0, n_type, n_sect: 0, n_desc, n_value }, i as u32)
+            (MachSym { stroff: 0, n_type, sect: 0, desc, value }, i as u32)
         })
         .collect()
 }
@@ -1287,36 +1284,36 @@ fn object_locals<E: Target>(ctx: &Context<E>, obj_idx: usize) -> Vec<Local> {
     if !obj.is_alive {
         return out;
     }
-    for (nlist, &sym_id) in obj.nlists.iter().zip(&obj.symbols) {
+    for (msym, &sym_id) in obj.mach_syms.iter().zip(&obj.symbols) {
         let sym = &ctx.symbols[sym_id];
-        let (n_type, mut n_desc) = if nlist.is_stab() {
+        let (n_type, mut desc) = if msym.is_stab() {
             continue;
-        } else if !nlist.is_extern() {
-            (nlist.n_type, nlist.n_desc)
+        } else if !msym.is_extern() {
+            (msym.n_type, msym.desc)
         } else if !ctx.args.keep_private_externs
             && sym.is_private_extern()
             && matches!(sym.file(), Some(FileId::Obj(o)) if o as usize == obj_idx)
         {
-            let n_desc = nlist.n_desc & (N_ALT_ENTRY | N_NO_DEAD_STRIP | N_WEAK_DEF);
-            (N_PEXT | nlist.n_type(), n_desc)
+            let desc = msym.desc & (N_ALT_ENTRY | N_NO_DEAD_STRIP | N_WEAK_DEF);
+            (N_PEXT | msym.ty(), desc)
         } else {
             continue;
         };
-        let (n_sect, n_value) = match sym.input_section() {
+        let (sect, value) = match sym.input_section() {
             Some(input) => {
                 let isec = ctx.resolve_isec(input as usize);
                 if !ctx.isecs[isec].is_alive() {
                     continue;
                 }
-                n_desc |= section_desc(ctx, input as usize);
-                (ctx.isec_n_sect(&ctx.isecs[isec]), sym_addr(ctx, sym_id))
+                desc |= section_desc(ctx, input as usize);
+                (ctx.isec_sect_idx(&ctx.isecs[isec]), sym_addr(ctx, sym_id))
             }
-            None if nlist.n_type() == N_ABS => (0, sym.value),
+            None if msym.ty() == N_ABS => (0, sym.value),
             None => continue,
         };
         out.push(Local {
             name: local_symbol_name(sym.name()),
-            nlist: NList { n_strx: 0, n_type, n_sect, n_desc, n_value },
+            msym: MachSym { stroff: 0, n_type, sect, desc, value },
             hidden: ctx.args.strip_locals || crate::chunks::symtab::is_listed_out(ctx, sym.name()),
             sym: Some(sym_id),
         });

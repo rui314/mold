@@ -352,7 +352,7 @@ fn scan_batch<E: Target>(
             let obj = isec.file as usize;
             let rels = &ctx.objs[obj].relocs[isec.rel_offset as usize..][..isec.nrels as usize];
             for rel in rels {
-                if E::classify_reloc(rel.r_type) != RelocClass::Branch || rel.addend != 0 {
+                if E::classify_reloc(rel.ty) != RelocClass::Branch || rel.addend != 0 {
                     continue;
                 }
                 let Some(sym) = ctx.reloc_target_sym(obj, rel) else {
@@ -472,7 +472,7 @@ pub fn island_symbols<E: Target>(ctx: &Context<E>) -> Vec<(u64, u8, &'static [u8
             ends.into_iter().enumerate().map(move |(i, end)| {
                 let name = &buf[start..end];
                 start = end;
-                (addr(i), hdr.n_sect, name)
+                (addr(i), hdr.sect_idx, name)
             })
         }));
     }

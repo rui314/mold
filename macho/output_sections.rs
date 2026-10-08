@@ -1243,8 +1243,8 @@ fn sort_section_members<E: Target>(ctx: &mut Context<E>) {
         if !obj.is_alive {
             continue;
         }
-        for (nlist, &sym_id) in obj.nlists.iter().zip(&obj.symbols) {
-            if nlist.is_stab() || nlist.n_type() != N_SECT || nlist.n_desc & N_COLD_FUNC == 0 {
+        for (msym, &sym_id) in obj.mach_syms.iter().zip(&obj.symbols) {
+            if msym.is_stab() || msym.ty() != N_SECT || msym.desc & N_COLD_FUNC == 0 {
                 continue;
             }
             if let Some(isec) = ctx.symbols[sym_id].input_section() {
@@ -1660,14 +1660,14 @@ fn section_rank<E: Target>(ctx: &Context<E>, id: ChunkId) -> u32 {
 }
 
 /// Groups the chunks, in file order, into segments, and numbers the
-/// sections: an nlist's n_sect is the 1-based ordinal of its section in
+/// sections: a MachSym's sect is the 1-based ordinal of its section in
 /// the load commands.
 fn create_segments<E: Target>(ctx: &mut Context<E>) {
     let mut segments = Vec::new();
     if ctx.args.pagezero_size > 0 {
         segments.push(OutputSegment::new(b"__PAGEZERO"));
     }
-    let mut n_sect = 1u8;
+    let mut sect_idx = 1u8;
     for i in 0..ctx.chunks.len() {
         let id = ctx.chunks[i];
         if id == ChunkId::MachHeader && ctx.args.preload {
@@ -1680,8 +1680,8 @@ fn create_segments<E: Target>(ctx: &mut Context<E>) {
         segments.last_mut().unwrap().chunks.push(id);
         let hdr = ctx.chunk_header_mut(id);
         if hdr.is_sect {
-            hdr.n_sect = n_sect;
-            n_sect = n_sect.wrapping_add(1);
+            hdr.sect_idx = sect_idx;
+            sect_idx = sect_idx.wrapping_add(1);
         }
     }
     ctx.segments = segments;
@@ -2076,11 +2076,11 @@ pub(crate) fn common_owners<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u
         hashbrown::HashMap::new();
     for (i, obj) in ctx.objs.iter().enumerate().filter(|(_, obj)| obj.is_alive) {
         let r = obj.global_range();
-        for (nlist, &sym) in obj.nlists[r.clone()].iter().zip(&obj.symbols[r]) {
-            if !nlist.is_stab() && nlist.n_type() == N_UNDF && nlist.is_common() {
-                let decl = decls.entry(sym).or_insert((nlist.n_value, i as u32));
-                if nlist.n_value > decl.0 {
-                    *decl = (nlist.n_value, i as u32);
+        for (msym, &sym) in obj.mach_syms[r.clone()].iter().zip(&obj.symbols[r]) {
+            if !msym.is_stab() && msym.ty() == N_UNDF && msym.is_common() {
+                let decl = decls.entry(sym).or_insert((msym.value, i as u32));
+                if msym.value > decl.0 {
+                    *decl = (msym.value, i as u32);
                 }
             }
         }

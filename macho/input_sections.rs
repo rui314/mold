@@ -69,7 +69,7 @@ pub enum RelocTarget {
 pub struct Reloc {
     /// Offset within the containing section.
     pub offset: u32,
-    pub r_type: u8,
+    pub ty: u8,
     /// Size in bytes of the relocated field.
     pub size: u8,
     pub is_pcrel: bool,

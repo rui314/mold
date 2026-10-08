@@ -155,12 +155,12 @@ impl<'a, E: Target> Places<'a, E> {
             .iter()
             .map(|&id| ctx.chunk_header(id))
             .filter(|h| h.is_sect && h.size > 0)
-            .map(|h| (h.addr, h.addr + h.size, h.n_sect))
+            .map(|h| (h.addr, h.addr + h.size, h.sect_idx))
             .collect();
         sects.sort_unstable();
         let mut starts = vec![0; 256];
         for hdr in ctx.chunks.iter().map(|&id| ctx.chunk_header(id)).filter(|h| h.is_sect) {
-            starts[hdr.n_sect as usize] = hdr.addr;
+            starts[hdr.sect_idx as usize] = hdr.addr;
         }
         let mut places = Self {
             ctx,
@@ -194,13 +194,13 @@ impl<'a, E: Target> Places<'a, E> {
                 seg.cmd.vmaddr + seg.cmd.vmsize
             }
         };
-        Some((hdr.n_sect, if is_start { 0 } else { end - hdr.addr }))
+        Some((hdr.sect_idx, if is_start { 0 } else { end - hdr.addr }))
     }
 
     /// Where offset `off` of chunk `id` lies.
     fn chunk(&self, id: ChunkId, off: u64) -> Place {
         let hdr = self.ctx.chunk_header(id);
-        (hdr.n_sect, hdr.addr - self.starts[hdr.n_sect as usize] + off)
+        (hdr.sect_idx, hdr.addr - self.starts[hdr.sect_idx as usize] + off)
     }
 
     /// Where a subsection lies, if it is laid out.
@@ -298,7 +298,7 @@ impl<'a, E: Target> Places<'a, E> {
             }
             RelocTarget::Sym(idx) => ctx.objs[isec.file as usize].symbols[idx as usize],
         };
-        match E::classify_reloc(r.r_type) {
+        match E::classify_reloc(r.ty) {
             RelocClass::Got => return Some(self.got_slot(id)),
             RelocClass::GotLoad | RelocClass::Tlv if !ctx.can_relax_got(id) => {
                 return Some(self.got_slot(id));
@@ -329,13 +329,13 @@ impl<'a, E: Target> Places<'a, E> {
         let mut i = 0;
         while i < rels.len() {
             let r = &rels[i];
-            let from = (hdr.n_sect, isec.offset as u64 + r.offset as u64);
+            let from = (hdr.sect_idx, isec.offset as u64 + r.offset as u64);
             let pointer = if r.size == 8 {
                 DYLD_CACHE_ADJ_V2_POINTER_64
             } else {
                 DYLD_CACHE_ADJ_V2_POINTER_32
             };
-            match E::split_ref(r.r_type) {
+            match E::split_ref(r.ty) {
                 // The UNSIGNED record that follows names the target.
                 SplitRef::Subtractor => {
                     i += 1;
@@ -434,7 +434,7 @@ impl<'a, E: Target> Places<'a, E> {
         for osec in &ctx.output_sections {
             for thunk in &osec.thunks {
                 for (i, &id) in thunk.syms.iter().enumerate() {
-                    let from = (osec.hdr.n_sect, thunk.offset + i as u64 * E::THUNK_SIZE);
+                    let from = (osec.hdr.sect_idx, thunk.offset + i as u64 * E::THUNK_SIZE);
                     self.pcrel(out, from, self.sym(id));
                 }
             }
@@ -546,7 +546,7 @@ impl<'a, E: Target> Places<'a, E> {
     /// Slot `i` of the synthesized selector references.
     fn selref(&self, i: usize) -> Place {
         let osec = self.ctx.output_section(self.ctx.objc_stubs.selrefs.unwrap());
-        (osec.hdr.n_sect, osec.tail_off + i as u64 * 8)
+        (osec.hdr.sect_idx, osec.tail_off + i as u64 * 8)
     }
 
     /// __objc_stubs, the selector references synthesized for them and
@@ -568,7 +568,7 @@ impl<'a, E: Target> Places<'a, E> {
             let n = stubs.symbols.len();
             for (i, &off) in stubs.methname_offs.iter().enumerate() {
                 let methname = ctx.output_section(stubs.methname.unwrap());
-                let name = (methname.hdr.n_sect, methname.tail_off + off);
+                let name = (methname.hdr.sect_idx, methname.tail_off + off);
                 push(out, self.selref(i), DYLD_CACHE_ADJ_V2_POINTER_64, Some(name));
             }
             for (j, &name) in stubs.extra_selrefs.iter().enumerate() {

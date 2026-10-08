@@ -375,10 +375,10 @@ impl<E: Target> Context<E> {
         &mut self.output_sections[id.index()]
     }
 
-    /// The section ordinal (nlist n_sect) of the chunk a subsection is
-    /// laid out in; 0 when it has none.
-    pub fn isec_n_sect(&self, isec: &InputSection) -> u8 {
-        isec.output_section().map_or(0, |id| self.chunk_header(id).n_sect)
+    /// The section ordinal (a MachSym's sect) of the chunk a subsection
+    /// is laid out in; 0 when it has none.
+    pub fn isec_sect_idx(&self, isec: &InputSection) -> u8 {
+        isec.output_section().map_or(0, |id| self.chunk_header(id).sect_idx)
     }
 
     /// Address of the selector reference slot `i` in the tail of the
@@ -409,13 +409,13 @@ impl<E: Target> Context<E> {
         (ordinal as u64) & ((1u64 << bits) - 1)
     }
 
-    /// The library ordinal in an undefined symbol's n_desc, which only
+    /// The library ordinal in an undefined symbol's desc, which only
     /// a two-level namespace image has: EXECUTABLE_ORDINAL (0xff) for
     /// the -bundle_loader executable, DYNAMIC_LOOKUP_ORDINAL (0xfe) for
     /// a symbol left to dynamic lookup, else the dylib's. ld-prime
     /// writes 0 in a -flat_namespace image, where every import is a
     /// flat lookup.
-    pub fn nlist_library_ordinal(&self, dylib: u32) -> u8 {
+    pub fn msym_library_ordinal(&self, dylib: u32) -> u8 {
         if self.args.flat_namespace {
             return 0;
         }
@@ -975,9 +975,9 @@ impl<E: Target> Context<E> {
         let isec = &self.isecs[id];
         let obj = &self.objs[isec.file as usize];
         let key = Some(label_key(isec));
-        let labels = (0..obj.nlists.len())
-            .filter(|&i| nlist_label_key(&obj.nlists[i]) == key)
-            .map(|i| (i, &obj.nlists[i], self.symbols[obj.symbols[i]].name()));
+        let labels = (0..obj.mach_syms.len())
+            .filter(|&i| msym_label_key(&obj.mach_syms[i]) == key)
+            .map(|i| (i, &obj.mach_syms[i], self.symbols[obj.symbols[i]].name()));
         let merged = has_merged_subsecs(self.hdr_of(isec));
         if merged
             && labels
@@ -1086,13 +1086,12 @@ impl<E: Target> Context<E> {
 }
 
 /// Where the labels at the start of a subsection sit: its section,
-/// counted from 1 as nlists count them, and its address.
+/// counted from 1 as MachSyms count them, and its address.
 fn label_key(isec: &InputSection) -> (u32, u64) {
     (isec.shndx + 1, isec.input_addr as u64)
 }
 
 /// Where a symbol labels a subsection's start, if it is a label at all.
-fn nlist_label_key(nlist: &crate::macho::NList) -> Option<(u32, u64)> {
-    (!nlist.is_stab() && nlist.n_type() == crate::macho::N_SECT)
-        .then_some((nlist.n_sect as u32, nlist.n_value))
+fn msym_label_key(msym: &crate::macho::MachSym) -> Option<(u32, u64)> {
+    (!msym.is_stab() && msym.ty() == crate::macho::N_SECT).then_some((msym.sect as u32, msym.value))
 }

@@ -311,9 +311,8 @@ impl<'a> TraceInputs<'a> {
                 continue;
             }
             entry.0 = true;
-            for (nlist, &sym) in obj.nlists.iter().zip(&obj.symbols) {
-                if nlist.is_extern() && !nlist.is_stab() && matches!(nlist.n_type(), N_SECT | N_ABS)
-                {
+            for (msym, &sym) in obj.mach_syms.iter().zip(&obj.symbols) {
+                if msym.is_extern() && !msym.is_stab() && matches!(msym.ty(), N_SECT | N_ABS) {
                     entry.2.push(ctx.symbols[sym].name());
                 }
             }
