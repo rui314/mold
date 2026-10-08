@@ -48,7 +48,7 @@ pub fn build<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<u32>) {
         let flags = if sym.is_weak_ref() { BIND_SYMBOL_FLAGS_WEAK_IMPORT } else { 0 };
         let ops = [
             Op::SegOffset(seg, off),
-            Op::Dylib(ctx.sym_bind_ordinal(id)),
+            Op::Dylib(sym.bind_ordinal(ctx)),
             Op::Symbol(sym.name(), flags),
             Op::Bind,
         ];

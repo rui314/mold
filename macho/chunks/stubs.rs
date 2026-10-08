@@ -49,7 +49,7 @@ pub fn add_symbol<E: Target>(ctx: &mut Context<E>, id: SymbolId) {
     }
     ctx.symbols.aux_mut(id).stub_idx = ctx.stubs.symbols.len() as u32;
     ctx.stubs.symbols.push(id);
-    if ctx.args.lazy_binding && !ctx.binds_weak_lookup(id) {
+    if ctx.args.lazy_binding && !ctx.symbols[id].binds_weak_lookup(ctx) {
         crate::chunks::stub_helper::ensure_stub_binder(ctx);
     } else {
         crate::chunks::got::add_got_symbol(ctx, id);

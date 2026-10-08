@@ -1250,13 +1250,13 @@ impl Target for Arm64 {
         let file = isec.file as usize;
         for rel in isec_relocs_of(&ctx.objs, isec) {
             let Some(id) = ctx.reloc_target_sym(file, rel) else { continue };
+            let sym = &ctx.symbols[id];
             // A lazy dylib's symbols take no stub or GOT slot; the image
             // reaches them through the helpers of
             // lazy_load::create_lazy_loads.
-            if ctx.is_lazy_import(id) {
+            if sym.is_lazy_import(ctx) {
                 continue;
             }
-            let sym = &ctx.symbols[id];
 
             // Thread-locals live behind __thread_vars descriptors, so the
             // reference kind must agree with the symbol: a TLV load of
@@ -1265,7 +1265,7 @@ impl Target for Arm64 {
             // descriptor as data. ld64 rejects both directions.
             let is_tlv_reloc =
                 matches!(rel.ty, ARM64_RELOC_TLVP_LOAD_PAGE21 | ARM64_RELOC_TLVP_LOAD_PAGEOFF12);
-            if is_tlv_reloc != ctx.is_tlv(id) {
+            if is_tlv_reloc != sym.is_tlv(ctx) {
                 error!("illegal thread local variable reference to regular symbol `{sym}`");
             }
 
@@ -1275,8 +1275,8 @@ impl Target for Arm64 {
                 // through its stub; a delay-init dylib's, through its
                 // stub of delay_init::create_delay_init instead.
                 ARM64_RELOC_BRANCH26 => {
-                    if !ctx.is_delay_import(id)
-                        && (ctx.binds_as_import(id) || ctx.binds_weak_lookup(id))
+                    if !sym.is_delay_import(ctx)
+                        && (sym.binds_as_import(ctx) || sym.binds_weak_lookup(ctx))
                     {
                         sym.add_flags(NEEDS_STUB);
                     }
@@ -1291,7 +1291,7 @@ impl Target for Arm64 {
                 | ARM64_RELOC_GOT_LOAD_PAGEOFF12
                 | ARM64_RELOC_TLVP_LOAD_PAGE21
                 | ARM64_RELOC_TLVP_LOAD_PAGEOFF12 => {
-                    if !ctx.can_relax_got(id) {
+                    if !sym.can_relax_got(ctx) {
                         sym.add_flags(NEEDS_GOT);
                     }
                 }
@@ -1322,8 +1322,9 @@ impl Target for Arm64 {
                     ctx.check_text_reloc(isec_id, rels, i, p);
                     // An imported symbol's address is written by dyld,
                     // via a bind record (an interposable export's too).
-                    let imported =
-                        ctx.reloc_target_sym(obj, r).is_some_and(|id| ctx.binds_as_import(id));
+                    let imported = ctx
+                        .reloc_target_sym(obj, r)
+                        .is_some_and(|id| ctx.symbols[id].binds_as_import(ctx));
                     if imported {
                         // The slot is filled by dyld.
                     } else if ctx.reloc_target_is_tls(obj, r) {
@@ -1431,7 +1432,8 @@ impl Target for Arm64 {
                 // address from __got.
                 ARM64_RELOC_GOT_LOAD_PAGE21 | ARM64_RELOC_TLVP_LOAD_PAGE21 => {
                     let id = ctx.reloc_target_sym(obj, r).unwrap();
-                    let t = if ctx.can_relax_got(id) { s } else { ctx.sym_got_addr(id) };
+                    let t =
+                        if ctx.symbols[id].can_relax_got(ctx) { s } else { ctx.sym_got_addr(id) };
                     check_adrp(ctx, isec_id, r, p, t.wrapping_add_signed(a));
                     write_adrp(loc, t.wrapping_add_signed(a), p);
                 }
@@ -1440,7 +1442,7 @@ impl Target for Arm64 {
                 // any other instruction.
                 ARM64_RELOC_GOT_LOAD_PAGEOFF12 | ARM64_RELOC_TLVP_LOAD_PAGEOFF12 => {
                     let id = ctx.reloc_target_sym(obj, r).unwrap();
-                    if !ctx.can_relax_got(id) {
+                    if !ctx.symbols[id].can_relax_got(ctx) {
                         let g = ctx.sym_got_addr(id);
                         if let Err(size) = write_add_ldst(loc, g.wrapping_add_signed(a)) {
                             report_ldst_alignment(ctx, isec_id, r, size);

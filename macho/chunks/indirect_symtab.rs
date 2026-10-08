@@ -52,7 +52,9 @@ pub fn sections<E: Target>(ctx: &Context<E>) -> impl Iterator<Item = ChunkId> + 
 fn entries<E: Target>(ctx: &Context<E>, id: ChunkId) -> Vec<Option<SymbolId>> {
     let got = &ctx.got;
     let got_slots = |syms: &[SymbolId]| -> Vec<Option<SymbolId>> {
-        syms.iter().map(|&id| Some(id).filter(|&id| ctx.binds_at_runtime(id))).collect()
+        syms.iter()
+            .map(|&id| Some(id).filter(|&id| ctx.symbols[id].binds_at_runtime(ctx)))
+            .collect()
     };
     match id {
         ChunkId::Stubs => ctx.stubs.symbols.iter().map(|&id| Some(id)).collect(),
@@ -84,7 +86,8 @@ fn input_slots<E: Target>(ctx: &Context<E>, isec: usize) -> Vec<Option<SymbolId>
     (slots.into_iter())
         .map(|rel| {
             let RelocTarget::Sym(idx) = rel?.target() else { return None };
-            Some(ctx.objs[obj].symbols[idx as usize]).filter(|&id| ctx.binds_at_runtime(id))
+            Some(ctx.objs[obj].symbols[idx as usize])
+                .filter(|&id| ctx.symbols[id].binds_at_runtime(ctx))
         })
         .collect()
 }

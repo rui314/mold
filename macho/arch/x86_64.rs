@@ -570,17 +570,17 @@ impl Target for X86_64 {
         let file = isec.file as usize;
         for rel in isec_relocs_of(&ctx.objs, isec) {
             let Some(id) = ctx.reloc_target_sym(file, rel) else { continue };
+            let sym = &ctx.symbols[id];
             // A lazy dylib's symbols take no stub or GOT slot; the image
             // reaches them through the helpers of
             // lazy_load::create_lazy_loads.
-            if ctx.is_lazy_import(id) {
+            if sym.is_lazy_import(ctx) {
                 continue;
             }
-            let sym = &ctx.symbols[id];
 
             // A TLV load must load a thread-local, and only a TLV load
             // may, as on arm64.
-            if (rel.ty == X86_64_RELOC_TLV) != ctx.is_tlv(id) {
+            if (rel.ty == X86_64_RELOC_TLV) != sym.is_tlv(ctx) {
                 error!("illegal thread local variable reference to regular symbol `{sym}`");
             }
 
@@ -597,17 +597,17 @@ impl Target for X86_64 {
                 X86_64_RELOC_BRANCH
                     if ctx.args.is_kext()
                         && !ctx.args.kexts_use_stubs
-                        && !ctx.binds_weak_lookup(id) => {}
+                        && !sym.binds_weak_lookup(ctx) => {}
                 // Otherwise, as on arm64.
                 X86_64_RELOC_BRANCH => {
-                    if !ctx.is_delay_import(id)
-                        && (ctx.binds_as_import(id) || ctx.binds_weak_lookup(id))
+                    if !sym.is_delay_import(ctx)
+                        && (sym.binds_as_import(ctx) || sym.binds_weak_lookup(ctx))
                     {
                         sym.add_flags(NEEDS_STUB);
                     }
                 }
                 X86_64_RELOC_GOT_LOAD | X86_64_RELOC_TLV => {
-                    if !ctx.can_relax_got(id) {
+                    if !sym.can_relax_got(ctx) {
                         sym.add_flags(NEEDS_GOT);
                     }
                 }
@@ -635,7 +635,9 @@ impl Target for X86_64 {
             // before the fixup, so it is rewritten before the slice
             // below is taken.
             let relaxed_got_load = matches!(r.ty, X86_64_RELOC_GOT_LOAD | X86_64_RELOC_TLV)
-                && ctx.reloc_target_sym(obj, r).is_some_and(|id| ctx.can_relax_got(id));
+                && ctx
+                    .reloc_target_sym(obj, r)
+                    .is_some_and(|id| ctx.symbols[id].can_relax_got(ctx));
             if relaxed_got_load {
                 match r.offset.checked_sub(2).map(|i| &mut buf[i as usize]) {
                     Some(op) if *op == 0x8b => *op = 0x8d,
@@ -703,8 +705,9 @@ impl Target for X86_64 {
                 }
                 X86_64_RELOC_UNSIGNED => {
                     ctx.check_text_reloc(isec_id, rels, i, p);
-                    let imported =
-                        ctx.reloc_target_sym(obj, r).is_some_and(|id| ctx.binds_pointer(id));
+                    let imported = ctx
+                        .reloc_target_sym(obj, r)
+                        .is_some_and(|id| ctx.symbols[id].binds_pointer(ctx));
                     if imported {
                         // The slot is filled by dyld. It keeps the
                         // addend, to which a legacy LINKEDIT external

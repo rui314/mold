@@ -174,10 +174,10 @@ fn exports<E: Target>(
             if sym.is_weak_def() {
                 flags |= EXPORT_SYMBOL_FLAGS_WEAK_DEFINITION;
             }
-            if ctx.is_tlv(id) {
+            if sym.is_tlv(ctx) {
                 flags |= EXPORT_SYMBOL_FLAGS_KIND_THREAD_LOCAL;
             }
-            let addr = if ctx.is_absolute_symbol(id) {
+            let addr = if sym.is_absolute(ctx) {
                 flags |= EXPORT_SYMBOL_FLAGS_KIND_ABSOLUTE;
                 ctx.sym_addr(id)
             } else {

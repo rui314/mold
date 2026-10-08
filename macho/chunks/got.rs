@@ -73,7 +73,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     // address all the same, as ld-prime writes it.
     let binds = |id: crate::symbol::SymbolId| match ctx.args.legacy_linkedit {
         true => ctx.symbols[id].is_imported(),
-        false => ctx.binds_as_import(id),
+        false => ctx.symbols[id].binds_as_import(ctx),
     };
     for (i, &id) in ctx.got.got_syms.iter().enumerate() {
         if !binds(id) {

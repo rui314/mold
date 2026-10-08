@@ -25,9 +25,8 @@ pub fn bind_dyld_lazy_load<E: Target>(ctx: &mut Context<E>) {
         return;
     }
     let ctx_ref: &Context<E> = ctx;
-    let uses_lazy = (0..ctx.symbols.syms.len() as SymbolId)
-        .into_par_iter()
-        .any(|id| ctx_ref.symbols[id].is_used() && ctx_ref.is_lazy_import(id));
+    let uses_lazy =
+        ctx_ref.symbols.syms.par_iter().any(|sym| sym.is_used() && sym.is_lazy_import(ctx_ref));
     if uses_lazy && let Some(id) = ctx.bind_linker_import(b"__dyld_lazy_load") {
         ctx.symbols[id].set_is_used(true);
     }
@@ -102,7 +101,7 @@ pub(crate) fn import_uses<E: Target>(
 /// The references to lazy dylibs' symbols from live subsections, in
 /// input order, once the ones ld-prime refuses are reported.
 fn lazy_uses<E: Target>(ctx: &Context<E>) -> Vec<LazyUseSite> {
-    let uses = import_uses(ctx, |id| ctx.is_lazy_import(id));
+    let uses = import_uses(ctx, |id| ctx.symbols[id].is_lazy_import(ctx));
     for &(isec, _, id, how) in &uses {
         if how == LazyRef::Unsupported {
             let sym = &ctx.symbols[id];
@@ -123,8 +122,8 @@ fn lazy_uses<E: Target>(ctx: &Context<E>) -> Vec<LazyUseSite> {
     // launch, and is refused alike. (ld-prime leaves a personality's
     // slot zero.)
     for &id in ctx.stubs.symbols.iter().chain(&ctx.got.got_syms) {
-        if ctx.is_lazy_import(id) {
-            let sym = &ctx.symbols[id];
+        let sym = &ctx.symbols[id];
+        if sym.is_lazy_import(ctx) {
             crate::error!("use of '{sym}' in 'anon' cannot be lazy loaded.");
         }
     }

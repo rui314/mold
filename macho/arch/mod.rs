@@ -152,7 +152,7 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
     /// The relocation types that load a symbol's address from its GOT
     /// slot, or a thread-local's descriptor's from its slot, and that
     /// relax to the address itself when dyld fills no slot (see
-    /// Context::can_relax_got).
+    /// Symbol::can_relax_got).
     const RELOC_GOT_LOADS: &'static [u8];
     /// The explicit-addend relocation type, for targets that have one.
     const RELOC_ADDEND: u8;

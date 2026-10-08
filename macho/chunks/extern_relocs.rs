@@ -37,7 +37,7 @@ impl Default for ExternRelocsSection {
 /// Collects the GOT slots and data pointers that hold an import's
 /// address, and the calls to one (on x86-64, which has no stubs for a
 /// kext), and sizes the table. In legacy LINKEDIT, the data pointers
-/// dyld binds (see Context::binds_pointer).
+/// dyld binds (see Symbol::binds_pointer).
 pub fn build<E: Target>(ctx: &mut Context<E>) {
     let got = &ctx.got;
     let mut vec: Vec<(u64, SymbolId, bool)> = Vec::new();
@@ -48,8 +48,8 @@ pub fn build<E: Target>(ctx: &mut Context<E>) {
                 .map(|(i, &id)| (got.slot_addr(i), id, false)),
         );
     }
-    let binds = |id| match ctx.args.legacy_linkedit {
-        true => ctx.binds_pointer(id),
+    let binds = |id: SymbolId| match ctx.args.legacy_linkedit {
+        true => ctx.symbols[id].binds_pointer(ctx),
         false => ctx.symbols[id].is_imported(),
     };
     for isec in ctx.isecs.iter() {

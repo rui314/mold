@@ -1856,11 +1856,12 @@ pub fn check_weak_exports<E: Target>(ctx: &Context<E>) {
     let mut found: Vec<(&[u8], bool)> = (0..ctx.symbols.syms.len() as u32)
         .into_par_iter()
         .filter_map(|id| {
-            let defined_here = matches!(ctx.symbols[id].file(), Some(FileId::Obj(_)));
-            if defined_here && ctx.exports_weak_def(id) {
-                Some((ctx.symbols[id].name(), false))
-            } else if ctx.overrides_weak_export(id) {
-                Some((ctx.symbols[id].name(), true))
+            let sym = &ctx.symbols[id];
+            let defined_here = matches!(sym.file(), Some(FileId::Obj(_)));
+            if defined_here && sym.exports_weak_def(ctx) {
+                Some((sym.name(), false))
+            } else if sym.overrides_weak_export(ctx) {
+                Some((sym.name(), true))
             } else {
                 None
             }
@@ -2675,7 +2676,7 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
 /// after it make.
 pub fn finish_stubs<E: Target>(ctx: &mut Context<E>) {
     let stubs = &ctx.stubs.symbols;
-    let lazy = |id| !ctx.binds_weak_lookup(id);
+    let lazy = |id: SymbolId| !ctx.symbols[id].binds_weak_lookup(ctx);
     let lazy_stubs: Vec<u32> = match ctx.args.lazy_binding {
         true => (0..stubs.len() as u32).filter(|&i| lazy(stubs[i as usize])).collect(),
         false => Vec::new(),

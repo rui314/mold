@@ -1006,10 +1006,10 @@ fn mach_header_flags<E: Target>(ctx: &Context<E>) -> u32 {
     // ld-prime's eyes, referenced from within the image or not (a
     // dylib whose only weak definition nothing calls still gets
     // 0x118085), since another image's copy may replace it.
-    if (0..ctx.symbols.syms.len()).into_par_iter().any(|i| ctx.exports_weak_def(i as u32)) {
+    if ctx.symbols.syms.par_iter().any(|sym| sym.exports_weak_def(ctx)) {
         flags |= MH_WEAK_DEFINES | MH_BINDS_TO_WEAK;
     }
-    if (0..ctx.symbols.syms.len()).into_par_iter().any(|i| ctx.overrides_weak_export(i as u32)) {
+    if ctx.symbols.syms.par_iter().any(|sym| sym.overrides_weak_export(ctx)) {
         flags |= MH_WEAK_DEFINES;
     }
     // -bind_at_load makes the stubs bind through the GOT instead of
@@ -1048,7 +1048,7 @@ fn binds_to_weak<E: Target>(ctx: &Context<E>) -> bool {
         _ => false,
     });
     uses_weak_export
-        || ctx.chained_fixups.imports.iter().any(|&(id, _)| ctx.binds_weak_lookup(id))
+        || ctx.chained_fixups.imports.iter().any(|&(id, _)| ctx.symbols[id].binds_weak_lookup(ctx))
         || !ctx.weak_bind_info.contents.is_empty()
 }
 

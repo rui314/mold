@@ -35,7 +35,7 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
 
     // GOT slots for imported symbols.
     for (i, &id) in ctx.got.got_syms.iter().enumerate() {
-        if ctx.binds_as_import(id) {
+        if ctx.symbols[id].binds_as_import(ctx) {
             binds.push((ctx.got.slot_addr(i), id, 0));
         }
     }
@@ -48,7 +48,8 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
         }
         for (addr, rel) in rebase_info::pointer_relocs(ctx, isec) {
             if let Some(id) = ctx.reloc_target_sym(isec.file as usize, rel)
-                && (ctx.binds_as_import(id) || ctx.is_dtrace_pointer_target(id))
+                && (ctx.symbols[id].binds_as_import(ctx)
+                    || ctx.symbols[id].is_dtrace_pointer_target())
             {
                 binds.push((addr, id, rel.addend));
             }
@@ -63,7 +64,7 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     }
     // ld64 lists the binds by library, symbol, addend, then address, so
     // each library and symbol is set once.
-    let ordinal = |id| ctx.sym_bind_ordinal(id);
+    let ordinal = |id: crate::symbol::SymbolId| ctx.symbols[id].bind_ordinal(ctx);
     binds.sort_by(|a, b| {
         (ordinal(a.1), ctx.symbols[a.1].name(), a.2, a.0).cmp(&(
             ordinal(b.1),

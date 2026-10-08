@@ -57,10 +57,10 @@ pub fn rebase_locations<E: Target>(ctx: &Context<E>) -> Vec<u64> {
         for (addr, rel) in pointer_relocs(ctx, isec) {
             // Pointers to thread-local data are thread-pointer-relative
             // offsets, not addresses, so they are not rebased.
-            let target = ctx.reloc_target_sym(isec.file as usize, rel);
+            let target = ctx.reloc_target_sym(isec.file as usize, rel).map(|id| &ctx.symbols[id]);
             let imported =
-                target.is_some_and(|id| ctx.binds_pointer(id) || ctx.is_dtrace_pointer_target(id));
-            let absolute = target.is_some_and(|id| ctx.is_absolute_symbol(id));
+                target.is_some_and(|sym| sym.binds_pointer(ctx) || sym.is_dtrace_pointer_target());
+            let absolute = target.is_some_and(|sym| sym.is_absolute(ctx));
             if !imported && !absolute && !ctx.reloc_target_is_tls(isec.file as usize, rel) {
                 locs.push(addr);
             }
@@ -88,7 +88,8 @@ pub fn rebase_locations<E: Target>(ctx: &Context<E>) -> Vec<u64> {
     // binds the others by name.)
     if !ctx.args.legacy_linkedit {
         for (i, &id) in ctx.got.got_syms.iter().enumerate() {
-            if !ctx.binds_as_import(id) && !ctx.is_absolute_symbol(id) {
+            let sym = &ctx.symbols[id];
+            if !sym.binds_as_import(ctx) && !sym.is_absolute(ctx) {
                 locs.push(ctx.got.slot_addr(i));
             }
         }

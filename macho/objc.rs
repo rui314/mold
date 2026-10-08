@@ -508,10 +508,11 @@ pub fn drop_dead_objc_stubs<E: Target>(ctx: &mut Context<E>) {
 /// (passes::scan_relocations makes the slot or the stub.)
 pub fn scan_objc_stubs<E: Target>(ctx: &mut Context<E>) {
     if let Some(id) = ctx.objc_stubs.msgsend_sym {
+        let sym = &ctx.symbols[id];
         if !ctx.args.objc_stubs_small {
-            ctx.symbols[id].add_flags(NEEDS_GOT);
-        } else if ctx.binds_as_import(id) || ctx.binds_weak_lookup(id) {
-            ctx.symbols[id].add_flags(NEEDS_STUB);
+            sym.add_flags(NEEDS_GOT);
+        } else if sym.binds_as_import(ctx) || sym.binds_weak_lookup(ctx) {
+            sym.add_flags(NEEDS_STUB);
         }
     }
 

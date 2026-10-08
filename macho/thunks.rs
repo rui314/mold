@@ -392,7 +392,7 @@ fn needs_thunk<E: Target>(ctx: &Context<E>, reach: &Reach, p: u64, id: SymbolId)
     let sym = &ctx.symbols[id];
     let stub = sym.stub_idx(&ctx.symbols).is_some();
     let side = match sym.file() {
-        _ if stub && ctx.is_interposable(id) => reach.stubs,
+        _ if stub && sym.is_interposable(ctx) => reach.stubs,
         Some(FileId::Dylib(_)) if stub => reach.stubs,
         Some(FileId::Obj(_)) => match sym.input_section() {
             Some(target) => {

@@ -53,7 +53,7 @@ pub fn create_delay_init<E: Target>(ctx: &mut Context<E>) {
 /// among them an __objc_classrefs slot of a class, which only a link
 /// below macOS 15 keeps (see objc::fold_objc_classrefs).
 fn delay_uses<E: Target>(ctx: &Context<E>) -> Vec<LazyUseSite> {
-    let uses = import_uses(ctx, |id| ctx.is_delay_import(id));
+    let uses = import_uses(ctx, |id| ctx.symbols[id].is_delay_import(ctx));
     for &(isec, _, id, how) in &uses {
         if how == LazyRef::Unsupported {
             let (sym, subsec) = (&ctx.symbols[id], ctx.subsec_name(isec as usize));

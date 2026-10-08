@@ -42,7 +42,10 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     // A -static image calls its weak definitions directly, but under
     // -no_fixup_chains ld-prime still lists the slots holding their
     // addresses, as the chains do.
-    let binds_weak = |id| ctx.binds_weak_lookup(id) || ctx.is_weak_coalesced(id);
+    let binds_weak = |id: crate::symbol::SymbolId| {
+        let sym = &ctx.symbols[id];
+        sym.binds_weak_lookup(ctx) || sym.is_weak_coalesced(ctx)
+    };
 
     let mut binds: Vec<(crate::symbol::SymbolId, u64)> = Vec::new();
     for (i, &id) in ctx.got.got_syms.iter().enumerate() {
@@ -65,8 +68,9 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     // Strong definitions overriding a dylib's weak export are listed
     // first, by name, flagged non-weak, with no location: dyld then
     // knows this image's copy wins coalescing.
-    let mut overrides: Vec<crate::symbol::SymbolId> =
-        (0..ctx.symbols.syms.len() as u32).filter(|&i| ctx.overrides_weak_export(i)).collect();
+    let mut overrides: Vec<crate::symbol::SymbolId> = (0..ctx.symbols.syms.len() as u32)
+        .filter(|&i| ctx.symbols[i].overrides_weak_export(ctx))
+        .collect();
     if binds.is_empty() && overrides.is_empty() {
         return Vec::new();
     }

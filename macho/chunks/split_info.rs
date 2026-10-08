@@ -307,12 +307,13 @@ impl<'a, E: Target> Places<'a, E> {
             }
             RelocTarget::Sym(idx) => ctx.objs[isec.file as usize].symbols[idx as usize],
         };
-        if r.ty == E::RELOC_GOTPC || E::RELOC_GOT_LOADS.contains(&r.ty) && !ctx.can_relax_got(id) {
+        let sym = &ctx.symbols[id];
+        if r.ty == E::RELOC_GOTPC || E::RELOC_GOT_LOADS.contains(&r.ty) && !sym.can_relax_got(ctx) {
             return Some(self.got_slot(id));
         }
         if r.is_func_call::<E>() {
-            if ctx.is_interposable(id)
-                && let Some(stub) = ctx.symbols[id].stub_idx(&ctx.symbols)
+            if sym.is_interposable(ctx)
+                && let Some(stub) = sym.stub_idx(&ctx.symbols)
             {
                 return Some(self.chunk(ChunkId::Stubs, stubs::entry_offset::<E>(stub)));
             }
@@ -404,7 +405,7 @@ impl<'a, E: Target> Places<'a, E> {
         let has = |id| ctx.chunks.contains(&id);
         if has(ChunkId::Stubs) {
             for (i, &id) in ctx.stubs.symbols.iter().enumerate() {
-                let slot = if ctx.args.lazy_binding && !ctx.binds_weak_lookup(id) {
+                let slot = if ctx.args.lazy_binding && !ctx.symbols[id].binds_weak_lookup(ctx) {
                     let lazy = ctx.stubs.lazy.binary_search(&(i as u32)).unwrap();
                     self.chunk_addr(ChunkId::LazyPtrs, ctx.lazy_ptrs.slot_addr(lazy))
                 } else {

@@ -348,6 +348,229 @@ impl Symbol {
         self.got_idx(symbols).is_some()
     }
 
+    /// True for a symbol of a dylib whose initializers wait for the
+    /// image's first use of it (see delay_init::create_delay_init).
+    pub fn is_delay_import<E: Target>(&self, ctx: &Context<E>) -> bool {
+        match self.file() {
+            Some(FileId::Dylib(d)) => d != u32::MAX && ctx.dylibs[d as usize].delay_init.is_some(),
+            _ => false,
+        }
+    }
+
+    /// True for a symbol of a dylib dyld loads lazily (see
+    /// lazy_load::create_lazy_loads).
+    pub fn is_lazy_import<E: Target>(&self, ctx: &Context<E>) -> bool {
+        match self.file() {
+            Some(FileId::Dylib(d)) => d != u32::MAX && ctx.dylibs[d as usize].is_lazy,
+            _ => false,
+        }
+    }
+
+    /// True if the symbol resolves to a TLV descriptor: a definition in a
+    /// S_THREAD_LOCAL_VARIABLES section, or a dylib export listed as
+    /// thread-local - sold's Symbol::is_tlv. Symbols left to runtime
+    /// lookup pass as either.
+    pub fn is_tlv<E: Target>(&self, ctx: &Context<E>) -> bool {
+        match self.file() {
+            Some(FileId::Obj(_)) => self.input_section().is_some_and(|isec| {
+                ctx.hdr_of(&ctx.isecs[isec as usize]).section_type()
+                    == crate::macho::S_THREAD_LOCAL_VARIABLES
+            }),
+            Some(FileId::Dylib(d)) => {
+                d != u32::MAX && ctx.dylibs[d as usize].tlv_exports.contains(self.name())
+            }
+            _ => false,
+        }
+    }
+
+    /// True for a weak definition of this image that dyld may replace
+    /// with another image's copy at load time: an exported (neither
+    /// private nor auto-hidden) weak definition from an object. ld64
+    /// routes every reference to such a symbol through a slot dyld
+    /// binds by weak lookup - a GOT entry, a stub, a data pointer -
+    /// so that C++'s one-definition rule holds across images (an
+    /// inline function's static local is one variable, not one per
+    /// dylib). In a relocatable output the references stay relocations.
+    /// Nor does another image's copy replace one of dyld's own: dyld
+    /// fixes itself up before it loads any image, and by rebases alone.
+    /// (ld-prime reaches them directly from code too, but binds a
+    /// pointer to one in data by weak lookup, a bind dyld could not
+    /// carry out.)
+    pub fn is_weak_coalesced<E: Target>(&self, ctx: &Context<E>) -> bool {
+        if ctx.args.relocatable || ctx.args.is_dylinker() {
+            return false;
+        }
+        matches!(self.file(), Some(FileId::Obj(_)))
+            && self.is_weak_def()
+            && self.is_extern()
+            && !self.is_private_extern()
+    }
+
+    /// True for a live weak definition the image exports, which another
+    /// image's copy may replace at load time (and so for which ld-prime
+    /// sets MH_WEAK_DEFINES): not an auto-hidden or private extern one,
+    /// nor one -dead_strip removed.
+    pub fn exports_weak_def<E: Target>(&self, ctx: &Context<E>) -> bool {
+        self.is_weak_def()
+            && self.is_extern()
+            && !self.is_private_extern()
+            && self.input_section().is_some_and(|isec| ctx.isecs[isec as usize].is_alive())
+    }
+
+    /// True for a definition the image exports that dyld binds the
+    /// image's own references to by name, as it binds imports, so that
+    /// another image can interpose it: each export of a -flat_namespace
+    /// dylib or bundle, by flat lookup (an image loaded before it may),
+    /// and one -interposable or -interposable_list names in any image
+    /// dyld loads (but dyld), to the image itself. ld64 calls it through
+    /// a stub, loads it from a GOT slot and binds the pointers to it in
+    /// data (initializer and Objective-C metadata pointers too) instead
+    /// of rebasing them. ld-prime binds a weak definition so too,
+    /// besides by weak lookup (with chained fixups by weak lookup
+    /// alone). A -flat_namespace executable's references to its own
+    /// definitions stay direct - it comes first in the flat search
+    /// order anyway - as do dyld's (ld-prime crashes linking one) and
+    /// those to a sectionless symbol: an absolute one, or one that marks
+    /// the image's layout.
+    pub fn is_interposable_export<E: Target>(&self, ctx: &Context<E>) -> bool {
+        let args = &ctx.args;
+        let flat = args.flat_namespace
+            && matches!(args.output_type, crate::macho::MH_DYLIB | crate::macho::MH_BUNDLE);
+        let listed = !args.relocatable
+            && !args.without_dyld()
+            && !args.is_dylinker()
+            && args.interposable.as_ref().is_some_and(|g| g.find(self.name()) != -1);
+        (flat || listed)
+            && matches!(self.file(), Some(FileId::Obj(_)))
+            && self.input_section().is_some()
+            && self.is_extern()
+            && !self.is_private_extern()
+    }
+
+    /// True if dyld binds the slots referring to this symbol as it
+    /// binds an import's, by name from the bind stream: an import, or an
+    /// interposable export.
+    pub fn binds_as_import<E: Target>(&self, ctx: &Context<E>) -> bool {
+        self.is_imported() || self.is_interposable_export(ctx)
+    }
+
+    /// True if dyld binds a pointer in data to this symbol rather than
+    /// sliding it: one to an import's (see binds_as_import), or, in
+    /// legacy LINKEDIT (Args::legacy_linkedit), to one of the image's
+    /// coalescable weak definitions, which an external relocation
+    /// binds by name. LC_DYLD_INFO slides that one and weak-binds it.
+    pub fn binds_pointer<E: Target>(&self, ctx: &Context<E>) -> bool {
+        self.binds_as_import(ctx) || (ctx.args.legacy_linkedit && self.is_weak_coalesced(ctx))
+    }
+
+    /// The library ordinal a bind of this symbol names: its dylib's, or
+    /// for an interposable export, the flat lookup under
+    /// -flat_namespace, else the image itself.
+    pub fn bind_ordinal<E: Target>(&self, ctx: &Context<E>) -> i32 {
+        match self.file() {
+            Some(FileId::Dylib(dylib)) => ctx.bind_ordinal(dylib),
+            _ if self.is_dtrace_pointer_target() => crate::macho::BIND_SPECIAL_DYLIB_FLAT_LOOKUP,
+            _ => ctx.export_bind_ordinal(),
+        }
+    }
+
+    /// True for a definition of this image that dyld may replace with
+    /// another image's at load time, so that its references go through
+    /// slots dyld binds and its calls through its stub: a weak
+    /// definition subject to coalescing, or an interposable export.
+    pub fn is_interposable<E: Target>(&self, ctx: &Context<E>) -> bool {
+        self.is_weak_coalesced(ctx) || self.is_interposable_export(ctx)
+    }
+
+    /// True for a DTrace symbol (see dtrace), never defined, which a
+    /// pointer in data binds by flat lookup, as ld-prime has it: no
+    /// import, it takes no stub, GOT slot or symbol table entry.
+    pub fn is_dtrace_pointer_target(&self) -> bool {
+        self.file().is_none() && crate::dtrace::is_dtrace_symbol(self.name())
+    }
+
+    /// True if dyld fills the references to this symbol: an import, or
+    /// a definition it may interpose.
+    pub fn binds_at_runtime<E: Target>(&self, ctx: &Context<E>) -> bool {
+        self.is_imported() || self.is_interposable(ctx)
+    }
+
+    /// An input's N_ABS definition has no section and never slides.
+    /// Sectionless symbols in the internal object instead describe the
+    /// image (its header and layout boundaries), so their values slide.
+    pub fn is_absolute<E: Target>(&self, ctx: &Context<E>) -> bool {
+        self.input_section().is_none()
+            && matches!(self.file(), Some(FileId::Obj(obj)) if !ctx.is_internal(obj as usize))
+    }
+
+    /// A GOT load relaxes to a PC-relative address computation unless
+    /// dyld fills the slot - an import or an interposable export, or a
+    /// weak definition it binds by weak lookup, which a -static image's
+    /// code never is - or the target is an absolute constant: the
+    /// instruction slides but the value does not.
+    pub fn can_relax_got<E: Target>(&self, ctx: &Context<E>) -> bool {
+        !self.binds_as_import(ctx) && !self.binds_weak_lookup(ctx) && !self.is_absolute(ctx)
+    }
+
+    /// True for a definition this image exports that some dylib in the
+    /// link exports as a weak definition: the program's own operator
+    /// new overriding libc++'s. dyld must let it win coalescing, so
+    /// the image is marked WEAK_DEFINES and, with classic dyld info,
+    /// the symbol is listed in the weak_bind stream as a non-weak
+    /// definition (ld64 does both).
+    pub fn overrides_weak_export<E: Target>(&self, ctx: &Context<E>) -> bool {
+        matches!(self.file(), Some(FileId::Obj(_)))
+            && self.is_extern()
+            && !self.is_private_extern()
+            && !self.is_weak_def()
+            && ctx.dylibs.iter().any(|d| d.weak_exports.contains(self.name()))
+    }
+
+    /// True if dyld resolves this symbol by weak lookup - searching
+    /// every loaded image for the coalesced definition - rather than
+    /// in one dylib: a coalescable weak definition of this image, or
+    /// an import that its dylib exports as a weak definition (libc++'s
+    /// operator new and delete, which a program may override). ld64
+    /// binds both with library ordinal -3, never lazily, and lists
+    /// them in the classic weak_bind stream.
+    pub fn binds_weak_lookup<E: Target>(&self, ctx: &Context<E>) -> bool {
+        // A static image has no dyld to perform runtime weak lookup, so a
+        // call to a weakly-defined symbol in the image binds directly.
+        // ld64 emits neither a stub nor a weak bind for it (the stock
+        // XNU kernel has no stubs and an empty weak bind table). Nor
+        // does a kext's but in the shared region, where it calls and
+        // takes its weak definitions through the GOT as ld-prime links
+        // an arm64 kext.
+        if ctx.args.static_link || (ctx.args.is_kext() && !ctx.args.shared_region) {
+            return false;
+        }
+        if self.is_weak_coalesced(ctx) {
+            return true;
+        }
+        match self.file() {
+            Some(FileId::Dylib(d)) if d != u32::MAX => {
+                ctx.dylibs[d as usize].weak_exports.contains(self.name())
+            }
+            _ => false,
+        }
+    }
+
+    /// True for an exported Objective-C class (or metaclass) of a dylib
+    /// bound for the shared region, whose pointers ld-prime writes as
+    /// binds to the image itself rather than rebases, with chained
+    /// fixups: the cache builder may redirect them to a class that
+    /// replaces this one.
+    pub fn binds_to_self<E: Target>(&self, ctx: &Context<E>) -> bool {
+        ctx.args.shared_region
+            && ctx.args.output_type == crate::macho::MH_DYLIB
+            && ctx.use_chained_fixups()
+            && matches!(self.file(), Some(FileId::Obj(_)))
+            && self.is_extern()
+            && !self.is_private_extern()
+            && (self.name().starts_with(b"_OBJC_CLASS_$_")
+                || self.name().starts_with(b"_OBJC_METACLASS_$_"))
+    }
+
     /// The address of a thunk entry for the symbol that a branch at `pc`
     /// can reach, if it has one - mold's thunk_addr.
     #[inline]

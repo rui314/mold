@@ -284,15 +284,16 @@ fn write_imports<E: Target>(
 /// under -flat_namespace and the image itself (0) otherwise.
 fn import_ordinal<E: Target>(ctx: &Context<E>, sym: SymbolId, bits: u32) -> u64 {
     let special = |ordinal: i32| (ordinal as i64 as u64) & ((1u64 << bits) - 1);
-    match ctx.symbols[sym].file() {
-        Some(FileId::Dylib(dylib)) if !ctx.binds_weak_lookup(sym) => {
+    let sym = &ctx.symbols[sym];
+    match sym.file() {
+        Some(FileId::Dylib(dylib)) if !sym.binds_weak_lookup(ctx) => {
             chained_import_ordinal(ctx, dylib, bits)
         }
-        _ if ctx.binds_to_self(sym) => BIND_SPECIAL_DYLIB_SELF as u64,
-        _ if ctx.is_interposable_export(sym) && !ctx.binds_weak_lookup(sym) => {
+        _ if sym.binds_to_self(ctx) => BIND_SPECIAL_DYLIB_SELF as u64,
+        _ if sym.is_interposable_export(ctx) && !sym.binds_weak_lookup(ctx) => {
             special(ctx.export_bind_ordinal())
         }
-        _ if ctx.is_dtrace_pointer_target(sym) => special(BIND_SPECIAL_DYLIB_FLAT_LOOKUP),
+        _ if sym.is_dtrace_pointer_target() => special(BIND_SPECIAL_DYLIB_FLAT_LOOKUP),
         _ => special(BIND_SPECIAL_DYLIB_WEAK_LOOKUP),
     }
 }
@@ -445,11 +446,16 @@ fn collect_fixups<E: Target>(ctx: &Context<E>) -> (Vec<Fixup>, Vec<(u32, u64)>) 
             let unaligned = &unaligned;
             rebase_info::pointer_relocs(ctx, isec).filter_map(move |(addr, rel)| {
                 let fixup = match ctx.reloc_target_sym(isec.file as usize, rel) {
-                    Some(id) if ctx.is_absolute_symbol(id) && !ctx.binds_at_runtime(id) => None,
                     Some(id)
-                        if ctx.binds_at_runtime(id)
-                            || ctx.binds_to_self(id)
-                            || ctx.is_dtrace_pointer_target(id) =>
+                        if ctx.symbols[id].is_absolute(ctx)
+                            && !ctx.symbols[id].binds_at_runtime(ctx) =>
+                    {
+                        None
+                    }
+                    Some(id)
+                        if ctx.symbols[id].binds_at_runtime(ctx)
+                            || ctx.symbols[id].binds_to_self(ctx)
+                            || ctx.symbols[id].is_dtrace_pointer_target() =>
                     {
                         Some((addr, Some(id), rel.addend as u64))
                     }
@@ -465,10 +471,10 @@ fn collect_fixups<E: Target>(ctx: &Context<E>) -> (Vec<Fixup>, Vec<(u32, u64)>) 
         .collect();
 
     for (i, &id) in ctx.got.got_syms.iter().enumerate() {
-        if ctx.is_absolute_symbol(id) && !ctx.binds_at_runtime(id) {
+        if ctx.symbols[id].is_absolute(ctx) && !ctx.symbols[id].binds_at_runtime(ctx) {
             continue;
         }
-        let sym = Some(id).filter(|&id| ctx.binds_at_runtime(id));
+        let sym = Some(id).filter(|&id| ctx.symbols[id].binds_at_runtime(ctx));
         let slot = ctx.got.slot_addr(i);
         fixups.push((slot, sym, 0));
     }
