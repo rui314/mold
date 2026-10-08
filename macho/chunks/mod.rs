@@ -695,6 +695,23 @@ fn create_string_cmd(kind: u32, path: &[u8]) -> Vec<u8> {
     append_string(to_vec(&cmd), path)
 }
 
+/// An LC_LINKER_OPTION command, which a -r output carries: cmd,
+/// cmdsize, count, then the NUL-terminated strings, padded to 8 bytes.
+pub fn create_linker_option_cmd(opt: &[Vec<u8>]) -> Vec<u8> {
+    let mut cmd = Vec::new();
+    cmd.extend_from_slice(&LC_LINKER_OPTION.to_le_bytes());
+    cmd.extend_from_slice(&0u32.to_le_bytes());
+    cmd.extend_from_slice(&(opt.len() as u32).to_le_bytes());
+    for s in opt {
+        cmd.extend_from_slice(s);
+        cmd.push(0);
+    }
+    cmd.resize(crate::util::align_to(cmd.len() as u64, 8) as usize, 0);
+    let cmdsize = cmd.len() as u32;
+    cmd[4..8].copy_from_slice(&cmdsize.to_le_bytes());
+    cmd
+}
+
 /// The address of the entry point symbol, or 0 for an image without
 /// one, or for one that is undefined (see passes::check_entry_point).
 fn entry_addr<E: Target>(ctx: &Context<E>) -> u64 {

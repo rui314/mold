@@ -352,7 +352,7 @@ impl LoadCommands {
             version,
             linker_options: relocatable_linker_options(ctx)
                 .iter()
-                .map(|opt| linker_option_command(opt))
+                .map(|opt| crate::chunks::create_linker_option_cmd(opt))
                 .collect(),
             dice: crate::chunks::data_in_code::construct(ctx, |hdr| hdr.addr),
             loh: optimization_hints(ctx),
@@ -374,23 +374,6 @@ impl LoadCommands {
             + self.linker_options.iter().map(Vec::len).sum::<usize>()
             + if self.loh.is_some() { size_of::<LinkEditDataCommand>() } else { 0 }
     }
-}
-
-/// An LC_LINKER_OPTION command: cmd, cmdsize, count, then the
-/// NUL-terminated strings, padded to 8 bytes.
-fn linker_option_command(opt: &[Vec<u8>]) -> Vec<u8> {
-    let mut cmd = Vec::new();
-    cmd.extend_from_slice(&LC_LINKER_OPTION.to_le_bytes());
-    cmd.extend_from_slice(&0u32.to_le_bytes());
-    cmd.extend_from_slice(&(opt.len() as u32).to_le_bytes());
-    for s in opt {
-        cmd.extend_from_slice(s);
-        cmd.push(0);
-    }
-    cmd.resize(align_to(cmd.len() as u64, 8) as usize, 0);
-    let cmdsize = cmd.len() as u32;
-    cmd[4..8].copy_from_slice(&cmdsize.to_le_bytes());
-    cmd
 }
 
 /// Places the sections' contents in the file past the load commands,
