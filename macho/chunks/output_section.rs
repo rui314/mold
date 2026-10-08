@@ -5,6 +5,7 @@
 use rayon::prelude::*;
 
 use crate::arch::Target;
+use crate::chunks::symtab::{NamedEntry, is_listed_out, local_msym};
 use crate::chunks::{ChunkHeader, ChunkId, OutputSectionId};
 use crate::context::Context;
 use crate::input_files::DataField;
@@ -217,4 +218,61 @@ fn write_data_blobs<E: Target>(ctx: &Context<E>, id: OutputSectionId, buf: &mut 
             }
         }
     }
+}
+
+/// The local symbols of an output section's range-extension thunks'
+/// entries, named as ld-prime names its branch islands (see
+/// island_symbols).
+pub fn populate_symtab<E: Target>(
+    ctx: &Context<E>,
+    id: OutputSectionId,
+    out: &mut Vec<NamedEntry>,
+) {
+    let osec = ctx.output_section(id);
+    for (addr, name) in island_symbols(ctx, osec) {
+        if !is_listed_out(ctx, name) {
+            out.push((name, local_msym(osec.hdr.sect_idx, addr), None));
+        }
+    }
+}
+
+/// The local symbols naming an output section's thunk entries, as
+/// (address, name). ld-prime lists each branch island among the locals,
+/// named after its target: "<target>.island" for the target's first
+/// and "<target>.island<n>" for its n-th, in address order, which is
+/// the order gather_thunk_addresses recorded them in.
+pub fn island_symbols<E: Target>(
+    ctx: &Context<E>,
+    osec: &OutputSection,
+) -> Vec<(u64, &'static [u8])> {
+    use std::io::Write;
+
+    let hdr = &osec.hdr;
+    osec.thunks
+        .par_iter()
+        .flat_map_iter(|thunk| {
+            let addr = |i: usize| hdr.addr + thunk.offset + i as u64 * E::THUNK_SIZE;
+            // A thunk can have many thousands of entries; their names
+            // share one allocation.
+            let mut buf = Vec::new();
+            let mut ends = Vec::with_capacity(thunk.syms.len());
+            for (i, &sym) in thunk.syms.iter().enumerate() {
+                let addrs = &ctx.symbols[sym].aux(&ctx.symbols).unwrap().thunk_addrs;
+                let n = addrs.iter().position(|&a| a == addr(i)).unwrap() + 1;
+                buf.extend_from_slice(ctx.symbols[sym].name());
+                buf.extend_from_slice(b".island");
+                if n > 1 {
+                    write!(buf, "{n}").unwrap();
+                }
+                ends.push(buf.len());
+            }
+            let buf = crate::util::leak_bytes(buf);
+            let mut start = 0;
+            ends.into_iter().enumerate().map(move |(i, end)| {
+                let name = &buf[start..end];
+                start = end;
+                (addr(i), name)
+            })
+        })
+        .collect()
 }

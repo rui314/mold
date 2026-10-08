@@ -46,6 +46,7 @@ use rayon::prelude::*;
 use std::num::NonZeroU32;
 
 use crate::arch::Target;
+use crate::chunks::symtab::NamedEntry;
 use crate::context::Context;
 use crate::input_files::FileId;
 use crate::macho::*;
@@ -316,6 +317,20 @@ pub fn segment_and_offset<E: Target>(ctx: &Context<E>, addr: u64) -> (usize, u64
         }
     }
     unreachable!("no segment contains address {addr:#x}");
+}
+
+/// Lists the local symbols a chunk synthesizes, with their final
+/// addresses, in the order the chunk lays them out.
+pub fn populate_symtab<E: Target>(ctx: &Context<E>, id: ChunkId, out: &mut Vec<NamedEntry>) {
+    match id {
+        ChunkId::Output(id) => output_section::populate_symtab(ctx, id, out),
+        ChunkId::ObjcStubs => objc_stubs::populate_symtab(ctx, out),
+        ChunkId::LazyHelpers => lazy_helpers::populate_symtab(ctx, out),
+        ChunkId::LazyLoadGot => lazy_load_got::populate_symtab(ctx, out),
+        ChunkId::DelayStubs => delay_init::populate_stubs_symtab(ctx, out),
+        ChunkId::DelayHelper => delay_init::populate_helper_symtab(ctx, out),
+        _ => {}
+    }
 }
 
 /// Writes a chunk's bytes into its own slice of the output. The mach

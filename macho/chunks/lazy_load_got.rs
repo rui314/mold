@@ -3,6 +3,7 @@
 
 use crate::arch::Target;
 use crate::chunks::ChunkHeader;
+use crate::chunks::symtab::{NamedEntry, local_msym};
 use crate::context::Context;
 use crate::symbol::SymbolId;
 
@@ -47,6 +48,15 @@ pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
         ctx.lazy_load_got.hdr.segname = crate::chunks::data_seg(ctx);
     }
     ctx.lazy_load_got.hdr.size = ctx.lazy_load_got.slots.len() as u64 * 8;
+}
+
+/// The slots' local symbols.
+pub fn populate_symtab<E: Target>(ctx: &Context<E>, out: &mut Vec<NamedEntry>) {
+    let hdr = &ctx.lazy_load_got.hdr;
+    for (i, &(_, name)) in ctx.lazy_load_got.slots.iter().enumerate() {
+        let addr = ctx.lazy_load_got.slot_addr(i as u32);
+        out.push((name, local_msym(hdr.sect_idx, addr), None));
+    }
 }
 
 /// Writes each dylib's chain: a bind of the symbol at its index in the

@@ -9,6 +9,7 @@
 
 use crate::arch::Target;
 use crate::chunks::ChunkHeader;
+use crate::chunks::symtab::{NamedEntry, local_msym};
 use crate::context::Context;
 use crate::macho::*;
 use crate::symbol::SymbolId;
@@ -174,6 +175,31 @@ pub fn update_helper_shdr<E: Target>(ctx: &mut Context<E>) {
     delay.helper_hdr.segname = ctx.stubs.hdr.segname;
     delay.helper_hdr.p2align = E::DELAY_P2ALIGN;
     delay.helper_hdr.size = (last.offset + E::DLOPEN_HELPER_SIZE) as u64;
+}
+
+/// The stubs' local symbols, like selector stubs' with N_PEXT set.
+pub fn populate_stubs_symtab<E: Target>(ctx: &Context<E>, out: &mut Vec<NamedEntry>) {
+    let delay = &ctx.delay_init;
+    for (i, stub) in delay.stubs.iter().enumerate() {
+        let addr = delay.stub_addr::<E>(i);
+        let ent = MachSym { n_type: N_PEXT | N_SECT, ..local_msym(delay.stubs_hdr.sect_idx, addr) };
+        out.push((stub.name, ent, None));
+    }
+}
+
+/// The helpers' local symbols, the dlopen helpers' last. (Their flags'
+/// are Context::extra_local_syms.)
+pub fn populate_helper_symtab<E: Target>(ctx: &Context<E>, out: &mut Vec<NamedEntry>) {
+    let delay = &ctx.delay_init;
+    let sect = delay.helper_hdr.sect_idx;
+    for (i, h) in delay.helpers.iter().enumerate() {
+        let addr = delay.helper_addr(i);
+        out.push((h.name, local_msym(sect, addr), None));
+    }
+    for (i, d) in delay.dlopens.iter().enumerate() {
+        let addr = delay.dlopen_helper_addr(i);
+        out.push((d.name, local_msym(sect, addr), None));
+    }
 }
 
 pub fn copy_stubs<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {

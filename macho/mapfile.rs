@@ -638,8 +638,10 @@ pub fn print_map_of<E: Target>(ctx: &Context<E>, sections: &[MapSection]) {
             rows.push(Row { addr, size, file: 0, name: section_name(hdr) });
         }
     }
-    for (addr, _, name) in crate::thunks::island_symbols(ctx) {
-        rows.push(Row { addr, size: E::THUNK_SIZE, file: 0, name: Cow::Borrowed(name) });
+    for osec in &ctx.output_sections {
+        for (addr, name) in crate::chunks::output_section::island_symbols(ctx, osec) {
+            rows.push(Row { addr, size: E::THUNK_SIZE, file: 0, name: Cow::Borrowed(name) });
+        }
     }
     rows.par_sort_by_key(|row| row.addr);
     let dead = dead_rows(ctx, &files, &labels);

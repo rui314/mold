@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::arch::Target;
-use crate::chunks::ChunkHeader;
+use crate::chunks::{ChunkHeader, ChunkId, OutputSectionId};
 use crate::context::Context;
 use crate::input_files::{FileId, ObjectFile};
 use crate::macho::*;
@@ -690,8 +690,10 @@ fn plan_local_symbols<E: Target>(ctx: &Context<E>, pexts: &[usize]) -> Vec<Named
 }
 
 /// The local names the linker gives its own code and data: on
-/// synthesized data, the objc_msgSend$ stubs, the lazy-load helpers and
-/// slots, and the range-extension thunks' entries.
+/// synthesized data, then those each chunk of the linker's own lists
+/// (see chunks::populate_symtab): the objc_msgSend$ stubs, the
+/// lazy-load helpers and slots, the delay-init stubs and helpers, and
+/// the range-extension thunks' entries.
 fn linker_locals<E: Target>(ctx: &Context<E>) -> Vec<NamedEntry> {
     let mut ents = Vec::new();
     // Locals the linker named itself, on synthesized data whose
@@ -703,61 +705,23 @@ fn linker_locals<E: Target>(ctx: &Context<E>) -> Vec<NamedEntry> {
             ents.push((name, ent, None));
         }
     }
-    // The selector stubs, each a non-external symbol with N_PEXT
-    // set (nm: "was a private external"), as ld64 lists them -
-    // NetNewsWire's debug dylib has 851 _objc_msgSend$... entries.
-    let hdr = &ctx.objc_stubs.hdr;
-    for (i, &(sym, _)) in ctx.objc_stubs.symbols.iter().enumerate() {
-        let addr = hdr.addr + crate::chunks::objc_stubs::entry_offset(ctx, i as u32);
-        let ent = MachSym { n_type: N_PEXT | N_SECT, ..local_msym(hdr.sect_idx, addr) };
-        ents.push((ctx.symbols[sym].name(), ent, None));
-    }
-    // The lazy-load helpers - a call helper, like a selector stub,
-    // with N_PEXT set - and slots.
-    let hdr = &ctx.lazy_helpers.hdr;
-    for (i, h) in ctx.lazy_helpers.helpers.iter().enumerate() {
-        let addr = ctx.lazy_helpers.helper_addr(i);
-        let n_type = match h.kind {
-            crate::chunks::lazy_helpers::LazyUse::Call => N_PEXT | N_SECT,
-            _ => N_SECT,
-        };
-        let ent = MachSym { n_type, ..local_msym(hdr.sect_idx, addr) };
-        ents.push((h.name, ent, None));
-    }
-    let hdr = &ctx.lazy_load_got.hdr;
-    for (i, &(_, name)) in ctx.lazy_load_got.slots.iter().enumerate() {
-        let addr = ctx.lazy_load_got.slot_addr(i as u32);
-        ents.push((name, local_msym(hdr.sect_idx, addr), None));
-    }
-    // The delay-init stubs, like selector stubs with N_PEXT set, and
-    // the helpers. (The dlopen helpers' flags are extra_local_syms.)
-    let delay = &ctx.delay_init;
-    for (i, stub) in delay.stubs.iter().enumerate() {
-        let addr = delay.stub_addr::<E>(i);
-        let ent = MachSym { n_type: N_PEXT | N_SECT, ..local_msym(delay.stubs_hdr.sect_idx, addr) };
-        ents.push((stub.name, ent, None));
-    }
-    let sect = delay.helper_hdr.sect_idx;
-    for (i, h) in delay.helpers.iter().enumerate() {
-        let addr = delay.helper_addr(i);
-        ents.push((h.name, local_msym(sect, addr), None));
-    }
-    for (i, d) in delay.dlopens.iter().enumerate() {
-        let addr = delay.dlopen_helper_addr(i);
-        ents.push((d.name, local_msym(sect, addr), None));
-    }
-    // The range-extension thunks' entries, named as ld-prime names
-    // its branch islands.
-    for (addr, sect, name) in crate::thunks::island_symbols(ctx) {
-        if !is_listed_out(ctx, name) {
-            ents.push((name, local_msym(sect, addr), None));
-        }
+    let chunks = [
+        ChunkId::ObjcStubs,
+        ChunkId::LazyHelpers,
+        ChunkId::LazyLoadGot,
+        ChunkId::DelayStubs,
+        ChunkId::DelayHelper,
+    ];
+    let osecs =
+        (0..ctx.output_sections.len() as u32).map(|i| ChunkId::Output(OutputSectionId::new(i)));
+    for id in chunks.into_iter().chain(osecs) {
+        crate::chunks::populate_symtab(ctx, id, &mut ents);
     }
     ents
 }
 
 /// A local symbol's entry, in section `sect`.
-fn local_msym(sect: u8, value: u64) -> MachSym {
+pub fn local_msym(sect: u8, value: u64) -> MachSym {
     MachSym { stroff: 0, n_type: N_SECT, sect, desc: 0, value }
 }
 
@@ -808,7 +772,7 @@ fn object_locals<E: Target>(ctx: &Context<E>, obj: &ObjectFile) -> Vec<NamedEntr
 
 /// A symbol table entry with its name, and the symbol whose address
 /// fills `value`.
-type NamedEntry = (&'static [u8], MachSym, Option<SymbolId>);
+pub type NamedEntry = (&'static [u8], MachSym, Option<SymbolId>);
 
 /// Appends an entry and its name for each item, made by `f` on all cores
 /// straight into the arrays' spare capacity, which the caller reserved.

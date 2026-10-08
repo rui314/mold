@@ -2,6 +2,7 @@
 //! stubs, with the selector strings and references they load.
 
 use crate::arch::Target;
+use crate::chunks::symtab::{NamedEntry, local_msym};
 use crate::chunks::{ChunkHeader, OutputSectionId};
 use crate::context::Context;
 use crate::macho::*;
@@ -85,6 +86,18 @@ pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
     // 32-byte aligned, but arm64's small stubs word-aligned.
     if ctx.args.objc_stubs_small {
         ctx.objc_stubs.hdr.p2align = 2;
+    }
+}
+
+/// The selector stubs' local symbols, each a non-external symbol with
+/// N_PEXT set (nm: "was a private external"), as ld64 lists them -
+/// NetNewsWire's debug dylib has 851 _objc_msgSend$... entries.
+pub fn populate_symtab<E: Target>(ctx: &Context<E>, out: &mut Vec<NamedEntry>) {
+    let hdr = &ctx.objc_stubs.hdr;
+    for (i, &(sym, _)) in ctx.objc_stubs.symbols.iter().enumerate() {
+        let addr = hdr.addr + entry_offset(ctx, i as u32);
+        let ent = MachSym { n_type: N_PEXT | N_SECT, ..local_msym(hdr.sect_idx, addr) };
+        out.push((ctx.symbols[sym].name(), ent, None));
     }
 }
 

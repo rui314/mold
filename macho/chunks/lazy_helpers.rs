@@ -7,6 +7,7 @@
 
 use crate::arch::Target;
 use crate::chunks::ChunkHeader;
+use crate::chunks::symtab::{NamedEntry, local_msym};
 use crate::context::Context;
 use crate::macho::*;
 use crate::symbol::SymbolId;
@@ -99,6 +100,21 @@ pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
     hdr.segname = ctx.stubs.hdr.segname;
     hdr.p2align = E::LAZY_HELPERS_P2ALIGN;
     hdr.size = size as u64;
+}
+
+/// The helpers' local symbols: a call helper's, like a selector stub's,
+/// with N_PEXT set.
+pub fn populate_symtab<E: Target>(ctx: &Context<E>, out: &mut Vec<NamedEntry>) {
+    let hdr = &ctx.lazy_helpers.hdr;
+    for (i, h) in ctx.lazy_helpers.helpers.iter().enumerate() {
+        let addr = ctx.lazy_helpers.helper_addr(i);
+        let n_type = match h.kind {
+            LazyUse::Call => N_PEXT | N_SECT,
+            _ => N_SECT,
+        };
+        let ent = MachSym { n_type, ..local_msym(hdr.sect_idx, addr) };
+        out.push((h.name, ent, None));
+    }
 }
 
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {

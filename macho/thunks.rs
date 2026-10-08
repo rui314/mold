@@ -448,45 +448,6 @@ pub fn gather_thunk_addresses<E: Target>(ctx: &mut Context<E>) {
     }
 }
 
-/// The local symbols naming the thunk entries, as (address, section
-/// ordinal, name). ld-prime lists each branch island among the locals,
-/// named after its target: "<target>.island" for the target's first
-/// and "<target>.island<n>" for its n-th, in address order, which is
-/// the order gather_thunk_addresses recorded them in.
-pub fn island_symbols<E: Target>(ctx: &Context<E>) -> Vec<(u64, u8, &'static [u8])> {
-    use std::io::Write;
-
-    let mut syms = Vec::new();
-    for osec in &ctx.output_sections {
-        let hdr = &osec.hdr;
-        syms.par_extend(osec.thunks.par_iter().flat_map_iter(|thunk| {
-            let addr = |i: usize| hdr.addr + thunk.offset + i as u64 * E::THUNK_SIZE;
-            // A thunk can have many thousands of entries; their names
-            // share one allocation.
-            let mut buf = Vec::new();
-            let mut ends = Vec::with_capacity(thunk.syms.len());
-            for (i, &sym) in thunk.syms.iter().enumerate() {
-                let addrs = &ctx.symbols[sym].aux(&ctx.symbols).unwrap().thunk_addrs;
-                let n = addrs.iter().position(|&a| a == addr(i)).unwrap() + 1;
-                buf.extend_from_slice(ctx.symbols[sym].name());
-                buf.extend_from_slice(b".island");
-                if n > 1 {
-                    write!(buf, "{n}").unwrap();
-                }
-                ends.push(buf.len());
-            }
-            let buf = crate::util::leak_bytes(buf);
-            let mut start = 0;
-            ends.into_iter().enumerate().map(move |(i, end)| {
-                let name = &buf[start..end];
-                start = end;
-                (addr(i), hdr.sect_idx, name)
-            })
-        }));
-    }
-    syms
-}
-
 /// Writes an output section's range-extension thunks, between its
 /// members, to `buf`, its contents.
 pub fn copy_buf<E: Target>(ctx: &Context<E>, osec: &OutputSection, buf: &mut [u8]) {
