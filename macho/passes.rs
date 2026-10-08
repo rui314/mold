@@ -1667,56 +1667,6 @@ pub fn check_common_conflicts<E: Target>(ctx: &Context<E>) {
     }
 }
 
-/// -no_weak_imports and -weak_reference_mismatches error go through each
-/// object's imports (see ObjectFile::import_references): -no_weak_imports
-/// names each one an object references weakly, and
-/// -weak_reference_mismatches error names the object that references
-/// one otherwise than the objects before it did (where any strong
-/// reference makes a strong one).
-pub fn check_weak_imports<E: Target>(ctx: &Context<E>) {
-    use crate::cmdline::WeakRefMismatches;
-    let mismatches = ctx.args.weak_reference_mismatches == WeakRefMismatches::Error;
-    if (!ctx.args.no_weak_imports && !mismatches) || ctx.args.relocatable {
-        return;
-    }
-    let refs: Vec<Vec<(SymbolId, bool)>> = ctx
-        .objs
-        .par_iter()
-        .map(|obj| match obj.is_reachable {
-            true => obj.import_references(ctx),
-            false => Vec::new(),
-        })
-        .collect();
-    let mut weak_so_far: hashbrown::HashMap<SymbolId, bool> = hashbrown::HashMap::new();
-    let (mut weak_found, mut mismatch_found) = (false, false);
-    for (obj, refs) in ctx.objs.iter().zip(refs) {
-        for (id, weak) in refs {
-            let name = raw(ctx.symbols[id].name());
-            if weak && ctx.args.no_weak_imports {
-                crate::error::notice(format_args!(
-                    "weak import of symbol '{name}' not supported because of option: -no_weak_imports"
-                ));
-                weak_found = true;
-            }
-            let all_weak = weak_so_far.entry(id).or_insert(weak);
-            if mismatches && *all_weak != weak {
-                let kind = if weak { "weak" } else { "non-weak" };
-                crate::error::notice(format_args!(
-                    "mismatching weak references for symbol: {name}, found {kind} import in {}",
-                    obj.mf.name.raw()
-                ));
-                mismatch_found = true;
-            }
-            *all_weak &= weak;
-        }
-    }
-    if weak_found {
-        error!("weak imports not allowed");
-    } else if mismatch_found {
-        error!("weak import mismatches found");
-    }
-}
-
 /// -warn_weak_exports names, by name, each weak definition the output
 /// exports and each definition that overrides a dylib's weak one -
 /// what makes dyld coalesce symbols at launch (MH_WEAK_DEFINES) - and
@@ -1915,6 +1865,56 @@ fn referenced_symbols<E: Target>(ctx: &Context<E>) -> Vec<std::sync::atomic::Ato
         referenced[id as usize].store(true, Ordering::Relaxed);
     }
     referenced
+}
+
+/// -no_weak_imports and -weak_reference_mismatches error go through each
+/// object's imports (see ObjectFile::import_references): -no_weak_imports
+/// names each one an object references weakly, and
+/// -weak_reference_mismatches error names the object that references
+/// one otherwise than the objects before it did (where any strong
+/// reference makes a strong one).
+pub fn check_weak_imports<E: Target>(ctx: &Context<E>) {
+    use crate::cmdline::WeakRefMismatches;
+    let mismatches = ctx.args.weak_reference_mismatches == WeakRefMismatches::Error;
+    if (!ctx.args.no_weak_imports && !mismatches) || ctx.args.relocatable {
+        return;
+    }
+    let refs: Vec<Vec<(SymbolId, bool)>> = ctx
+        .objs
+        .par_iter()
+        .map(|obj| match obj.is_reachable {
+            true => obj.import_references(ctx),
+            false => Vec::new(),
+        })
+        .collect();
+    let mut weak_so_far: hashbrown::HashMap<SymbolId, bool> = hashbrown::HashMap::new();
+    let (mut weak_found, mut mismatch_found) = (false, false);
+    for (obj, refs) in ctx.objs.iter().zip(refs) {
+        for (id, weak) in refs {
+            let name = raw(ctx.symbols[id].name());
+            if weak && ctx.args.no_weak_imports {
+                crate::error::notice(format_args!(
+                    "weak import of symbol '{name}' not supported because of option: -no_weak_imports"
+                ));
+                weak_found = true;
+            }
+            let all_weak = weak_so_far.entry(id).or_insert(weak);
+            if mismatches && *all_weak != weak {
+                let kind = if weak { "weak" } else { "non-weak" };
+                crate::error::notice(format_args!(
+                    "mismatching weak references for symbol: {name}, found {kind} import in {}",
+                    obj.mf.name.raw()
+                ));
+                mismatch_found = true;
+            }
+            *all_weak &= weak;
+        }
+    }
+    if weak_found {
+        error!("weak imports not allowed");
+    } else if mismatch_found {
+        error!("weak import mismatches found");
+    }
 }
 
 /// --print-dependencies prints, for every undefined symbol of every
