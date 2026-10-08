@@ -211,6 +211,15 @@ pub struct SectCreate {
     pub path: Option<PathBuf>,
 }
 
+/// The API list -sdk_imports_api_list names: its version goes into the
+/// -sdk_imports report, and its "apis" are the only imports the report
+/// lists.
+#[derive(Clone, Debug, Default)]
+pub struct ApiList {
+    pub version: i32,
+    pub apis: hashbrown::HashSet<Vec<u8>>,
+}
+
 /// A -rename_section: (old_seg, old_sect, new_seg, new_sect).
 pub type SectionRename = (Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>);
 
@@ -290,7 +299,7 @@ pub struct Args {
     pub sdk_imports: Option<PathBuf>,
     /// -sdk_imports_api_list: the APIs the report lists, of all the
     /// imports, and the list's version, which it records.
-    pub sdk_imports_api_list: Option<crate::mapfile::ApiList>,
+    pub sdk_imports_api_list: Option<ApiList>,
     /// Whether the image is laid out for chained fixups rather than
     /// classic dyld info (its imports bound by no lazy pointer):
     /// -fixup_chains / -no_fixup_chains, resolved for the deployment
@@ -1773,6 +1782,35 @@ fn read_alias_list(list: &Path, aliases: &mut Vec<(Vec<u8>, Vec<u8>)>) {
     }
 }
 
+/// Reads an API list, a JSON object: its "version", an integer (or a
+/// string of one), and the strings of its "apis" array, of which there
+/// must be one at least.
+fn read_api_list(path: &Path) -> ApiList {
+    use serde_json::Value;
+    let fail = |what: &dyn std::fmt::Display| -> ! {
+        crate::fatal!("-sdk_imports_api_list invalid list at {}: {what}", path.raw());
+    };
+    let data = std::fs::read(path).unwrap_or_else(|e| fail(&crate::error::strerror(&e)));
+    let root: Value = serde_json::from_slice(&data).unwrap_or_else(|e| fail(&e));
+    let version = match &root["version"] {
+        Value::Number(n) => n.as_i64(),
+        Value::String(s) => s.parse().ok(),
+        _ => None,
+    };
+    let Some(version) = version.and_then(|v| i32::try_from(v).ok()) else {
+        fail(&"no version");
+    };
+    let apis: hashbrown::HashSet<Vec<u8>> = (root["apis"].as_array().into_iter().flatten())
+        .filter_map(Value::as_str)
+        .filter(|name| !name.is_empty())
+        .map(|name| name.as_bytes().to_vec())
+        .collect();
+    if apis.is_empty() {
+        fail(&"no APIs listed");
+    }
+    ApiList { version, apis }
+}
+
 /// An option no other arm of parse_args names: one with its argument
 /// joined to its name (-lfoo, -weak-lfoo, -L<dir>, -F<dir>),
 /// -debug_snapshot with its mode, an optimization level, or an unknown
@@ -2033,7 +2071,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-sdk_imports" => args.sdk_imports = Some(cur.next_path(name)),
             // ld-prime reads the list as it reads the option.
             b"-sdk_imports_api_list" => {
-                let list = crate::mapfile::read_api_list(&cur.next_path(name));
+                let list = read_api_list(&cur.next_path(name));
                 args.sdk_imports_api_list = Some(list);
             }
 

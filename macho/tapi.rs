@@ -15,6 +15,7 @@ use std::path::Path;
 
 use serde_json::Value;
 
+use crate::context::Context;
 use crate::error::RawPath;
 use crate::fatal;
 use crate::macho::*;
@@ -280,10 +281,255 @@ pub fn parse(mf: &MappedFile, arch: &'static str, platform: u32) -> Option<TbdFi
 
 /// Notes a library's linker directives among its exports, which the
 /// link reads before it takes the library (see
-/// input_files::interpret_ld_symbols): an SDK framework's stub has tens
+/// interpret_ld_symbols): an SDK framework's stub has tens
 /// of thousands of exports, few or none of them directives.
 fn find_ld_symbols(tbd: &mut TbdFile) {
     tbd.ld_symbols = tbd.exports.iter().copied().filter(|n| n.starts_with(b"$ld$")).collect();
+}
+
+/// An export that a per-symbol $ld$previous directive moves to an older
+/// library for the link's target: it binds to the library with that
+/// install name, at the directive's version or else the defining
+/// library's.
+#[derive(Clone)]
+pub struct MovedExport {
+    pub name: &'static [u8],
+    pub install_name: &'static [u8],
+    pub current_version: u32,
+    pub compatibility_version: u32,
+}
+
+/// What a library's "$ld$..." names say for the link's target beyond its
+/// exports: whether its install name is an older library's, and the
+/// exports that move to one.
+#[derive(Clone)]
+pub struct LdDirectives {
+    pub renamed: bool,
+    pub moved: Vec<MovedExport>,
+}
+
+/// A library's "$ld$..." names, read for the link's target. These are
+/// not symbols but directives to the linker, invented so a library could
+/// change shape per deployment target without a file format change:
+/// $ld$add$os<ver>$<sym> exports <sym> only when the target equals
+/// <ver>, $ld$hide$os<ver>$<sym> hides one, $ld$install_name$os<ver>$
+/// <name> substitutes the recorded install name,
+/// $ld$compatibility_version$os<ver>$<version> the compatibility
+/// version, and $ld$previous$<name>$<compat>$<platform>$<lo>$<hi>$<sym>$
+/// applies <name> (at version <compat>, if given) when the target
+/// platform matches and lo <= minos < hi: to the whole library if <sym>
+/// is empty, else to that export alone. Apple uses these when symbols
+/// move between libraries: old targets keep binding them where they
+/// used to live (AppKit's Swift overlay functions in libswiftAppKit
+/// before macOS 14). A stub lists them among its exports, and a binary
+/// dylib exports them as absolute symbols; ld-prime obeys both, and
+/// passes over one it can't read without a word. Of several directives
+/// of a kind that apply, it takes the one with the first $ld$previous
+/// install name, the last $ld$install_name one and the first
+/// $ld$compatibility_version directive by name; a library's
+/// $ld$previous beats its $ld$install_name.
+pub struct LdSymbols {
+    pub added: Vec<&'static [u8]>,
+    hidden: hashbrown::HashSet<&'static [u8]>,
+    /// The install name an $ld$install_name directive gives.
+    install_name: Option<&'static [u8]>,
+    /// The install name a whole-library $ld$previous directive gives,
+    /// with the version it gives, if any.
+    previous: Option<(&'static [u8], Option<u32>)>,
+    /// The $ld$compatibility_version directive that applies: its name
+    /// and version.
+    compatibility_version: Option<(&'static [u8], u32)>,
+    /// The exports that move: each with the install name it moves to
+    /// and the version the directive gives, if any.
+    moved: Vec<(&'static [u8], &'static [u8], Option<u32>)>,
+}
+
+impl LdSymbols {
+    /// Reads the directives among `names`, which may hold other names.
+    pub fn read<E: crate::arch::Target>(ctx: &Context<E>, names: &[&'static [u8]]) -> Self {
+        use hashbrown::hash_map::Entry;
+        let minos = ctx.args.platform_minos;
+        let mut ld = Self {
+            added: Vec::new(),
+            hidden: hashbrown::HashSet::new(),
+            install_name: None,
+            previous: None,
+            compatibility_version: None,
+            moved: Vec::new(),
+        };
+        // Where each moved export is in `ld.moved`: SwiftUICore moves
+        // some 15,000 for a macOS 13 target.
+        let mut moved_at: hashbrown::HashMap<&[u8], usize> = hashbrown::HashMap::new();
+        for &name in names {
+            let Some(rest) = name.strip_prefix(b"$ld$") else { continue };
+            if let Some(rest) = rest.strip_prefix(b"previous$") {
+                let Some(p) = PreviousDirective::parse(rest, ctx.args.platform) else { continue };
+                if minos < p.lo || p.hi <= minos {
+                    continue;
+                }
+                if p.sym.is_empty() {
+                    if ld.previous.is_none_or(|(first, _)| p.install_name < first) {
+                        ld.previous = Some((p.install_name, p.version));
+                    }
+                    continue;
+                }
+                let moved = (p.sym, p.install_name, p.version);
+                match moved_at.entry(p.sym) {
+                    Entry::Occupied(e) if p.install_name < ld.moved[*e.get()].1 => {
+                        ld.moved[*e.get()] = moved;
+                    }
+                    Entry::Occupied(_) => {}
+                    Entry::Vacant(e) => {
+                        e.insert(ld.moved.len());
+                        ld.moved.push(moved);
+                    }
+                }
+                continue;
+            }
+            // $ld$<action>$os<version>$<arg>, for the target's version.
+            let Some((action, rest)) = crate::util::split_once(rest, b'$') else { continue };
+            let Some((version, arg)) =
+                rest.strip_prefix(b"os").and_then(|r| crate::util::split_once(r, b'$'))
+            else {
+                continue;
+            };
+            if arg.is_empty() || directive_version(version) != Some(minos) {
+                continue;
+            }
+            match action {
+                b"add" => ld.added.push(arg),
+                b"hide" => _ = ld.hidden.insert(arg),
+                b"install_name" if ld.install_name.is_none_or(|last| last < arg) => {
+                    ld.install_name = Some(arg);
+                }
+                b"compatibility_version"
+                    if ld.compatibility_version.is_none_or(|(first, _)| name < first) =>
+                {
+                    if let Some(version) = directive_version(arg) {
+                        ld.compatibility_version = Some((name, version));
+                    }
+                }
+                _ => {}
+            }
+        }
+        ld
+    }
+
+    /// Whether the library keeps an export: it is no directive and not
+    /// hidden.
+    pub fn keeps(&self, name: &[u8]) -> bool {
+        !name.starts_with(b"$ld$") && !self.hidden.contains(name)
+    }
+
+    /// The install name the library takes from a directive, if any.
+    pub fn renamed_install_name(&self) -> Option<&'static [u8]> {
+        self.previous.map(|(name, _)| name).or(self.install_name)
+    }
+
+    /// The version the library takes with an older one's install name,
+    /// if the directive gives one.
+    pub fn renamed_version(&self) -> Option<u32> {
+        self.previous.and_then(|(_, version)| version)
+    }
+
+    /// The directives' effect beyond the exports, for a library at
+    /// `current_version` and `compatibility_version` (after renaming).
+    pub fn finish(self, current_version: u32, compatibility_version: u32) -> LdDirectives {
+        let renamed = self.renamed_install_name().is_some();
+        let moved = self
+            .moved
+            .into_iter()
+            .map(|(name, install_name, version)| MovedExport {
+                name,
+                install_name,
+                current_version: version.unwrap_or(current_version),
+                compatibility_version: version.unwrap_or(compatibility_version),
+            })
+            .collect();
+        LdDirectives { renamed, moved }
+    }
+}
+
+/// Applies a .tbd's "$ld$..." export names (see LdSymbols) to it.
+pub fn interpret_ld_symbols<E: crate::arch::Target>(
+    ctx: &Context<E>,
+    tbd: &mut TbdFile,
+) -> LdDirectives {
+    let directives = std::mem::take(&mut tbd.ld_symbols);
+    let ld = LdSymbols::read(ctx, &directives);
+    // Without a directive among the exports there is none to drop and
+    // none that hides one (see LdSymbols::keeps).
+    let is_directive = |n: &&[u8]| n.starts_with(b"$ld$");
+    if !directives.is_empty() || tbd.weak_exports.iter().any(is_directive) {
+        tbd.exports.retain(|n| ld.keeps(n));
+        tbd.weak_exports.retain(|n| ld.keeps(n));
+    }
+    tbd.exports.extend(&ld.added);
+    if let Some(name) = ld.renamed_install_name() {
+        tbd.install_name = name;
+    }
+    if let Some((_, version)) = ld.compatibility_version {
+        tbd.compatibility_version = version;
+    }
+    if let Some(version) = ld.renamed_version() {
+        tbd.current_version = version;
+        tbd.compatibility_version = version;
+    }
+    ld.finish(tbd.current_version, tbd.compatibility_version)
+}
+
+/// An $ld$previous directive:
+/// <install name>$<compat>$<platform>$<lo>$<hi>[$[<sym>[$]]], the
+/// symbol - which may itself contain '$', as Swift's do - less a final
+/// '$'.
+struct PreviousDirective {
+    install_name: &'static [u8],
+    version: Option<u32>,
+    lo: u32,
+    hi: u32,
+    sym: &'static [u8],
+}
+
+impl PreviousDirective {
+    /// Reads a directive for `platform`; None for one for another
+    /// platform (half of SwiftUICore's 30,000 are for Mac Catalyst), or
+    /// one with a field that doesn't parse.
+    fn parse(rest: &'static [u8], platform: u32) -> Option<Self> {
+        use crate::util::split_once;
+        let (install_name, rest) = split_once(rest, b'$')?;
+        let (compat, rest) = split_once(rest, b'$')?;
+        let (for_platform, rest) = split_once(rest, b'$')?;
+        let (lo, rest) = split_once(rest, b'$')?;
+        let (hi, sym) = split_once(rest, b'$').unwrap_or((rest, b""));
+        if install_name.is_empty()
+            || std::str::from_utf8(for_platform).ok()?.parse::<u32>().ok()? != platform
+        {
+            return None;
+        }
+        Some(Self {
+            install_name,
+            version: if compat.is_empty() { None } else { Some(directive_version(compat)?) },
+            lo: directive_version(lo)?,
+            hi: directive_version(hi)?,
+            sym: sym.strip_suffix(b"$").unwrap_or(sym),
+        })
+    }
+}
+
+/// A version in a directive, X[.Y[.Z]], packed as a Mach-O version in
+/// 16, 8 and 8 bits.
+fn directive_version(s: &[u8]) -> Option<u32> {
+    let mut parts = s.split(|&c| c == b'.');
+    let mut version = 0;
+    for (shift, max) in [(16, 0xffff), (8, 0xff), (0, 0xff)] {
+        let Some(part) = parts.next() else { break };
+        let n: u32 = std::str::from_utf8(part).ok()?.parse().ok()?;
+        if n > max {
+            return None;
+        }
+        version |= n << shift;
+    }
+    parts.next().is_none().then_some(version)
 }
 
 /// Parses a TBD v1-4 file: YAML documents, the first the library itself
