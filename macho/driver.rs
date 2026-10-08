@@ -195,6 +195,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
 
     // Report the errors resolution and dead stripping leave.
     passes::check_removed_swift_metadata_refs(&ctx);
+    passes::claim_unresolved_symbols(&mut ctx);
     timed!("report_undef_errors", passes::report_undef_errors(&mut ctx));
     crate::error::checkpoint();
     passes::check_weak_imports(&ctx);

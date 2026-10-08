@@ -2480,26 +2480,30 @@ pub fn check_weak_exports<E: Target>(ctx: &Context<E>) {
     }
 }
 
-/// Reports references to symbols that are still unresolved; with
-/// `-undefined dynamic_lookup` (or -U naming one) they become
-/// flat-namespace imports that dyld resolves against any loaded image
-/// at run time.
-pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
-    use std::sync::atomic::Ordering;
-    // An alive object may name a symbol undefined that nothing refers
-    // to - a .globl with neither a definition nor a relocation, as XNU
-    // declares `SleepToken` under !WITH_CLASSIC_S2R. ld-prime drops
-    // such a name without a word: no error, and no import under
-    // -undefined dynamic_lookup. Most links have no undefined symbol at
-    // all, so the relocations are looked at only when there is one.
-    // A DTrace symbol is never defined (see dtrace).
-    let undef: Vec<SymbolId> = (0..ctx.symbols.syms.len() as SymbolId)
+/// The symbols the output refers to that nothing defines. A DTrace
+/// symbol is never defined (see dtrace).
+fn unresolved_symbols<E: Target>(ctx: &Context<E>) -> Vec<SymbolId> {
+    (0..ctx.symbols.syms.len() as SymbolId)
         .into_par_iter()
         .filter(|&id| {
             let sym = &ctx.symbols[id];
             sym.is_used() && !sym.is_defined() && !crate::dtrace::is_dtrace_symbol(sym.name())
         })
-        .collect();
+        .collect()
+}
+
+/// With `-undefined dynamic_lookup` (or -U naming one), references to
+/// symbols that are still unresolved become flat-namespace imports that
+/// dyld resolves against any loaded image at run time.
+///
+/// An alive object may name a symbol undefined that nothing refers to -
+/// a .globl with neither a definition nor a relocation, as XNU declares
+/// `SleepToken` under !WITH_CLASSIC_S2R. ld-prime drops such a name
+/// without a word: no error (see report_undef_errors), and no import
+/// under -undefined dynamic_lookup. Most links have no undefined symbol
+/// at all, so the relocations are looked at only when there is one.
+pub fn claim_unresolved_symbols<E: Target>(ctx: &mut Context<E>) {
+    let undef = unresolved_symbols(ctx);
     if undef.is_empty() {
         return;
     }
@@ -2509,8 +2513,7 @@ pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
     // export list gives without wildcards, an -alias base. The alias
     // itself counts as defined.
     let initial: hashbrown::HashSet<SymbolId> = crate::dead_strip::initial_undefines(ctx).collect();
-    let aliases: hashbrown::HashSet<SymbolId> =
-        ctx.args.aliases.iter().filter_map(|(_, alias)| ctx.symbols.get(alias)).collect();
+    let aliases = alias_symbols(ctx);
 
     // A -static image has no dyld to look a symbol up at run time, so
     // ld-prime lets none stay undefined, whatever -undefined or -U say.
@@ -2521,15 +2524,43 @@ pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
                 || args.allowed_undefined.iter().any(|n| n.as_slice() == ctx.symbols[id].name()))
             && !initial.contains(&id)
     };
-    let (imports, mut errors): (Vec<SymbolId>, Vec<SymbolId>) = (undef.into_iter())
-        .filter(|&id| referenced[id as usize].load(Ordering::Relaxed) && !aliases.contains(&id))
-        .partition(|&id| may_look_up(id));
+    let imports: Vec<SymbolId> = (undef.into_iter())
+        .filter(|&id| {
+            referenced[id as usize].load(std::sync::atomic::Ordering::Relaxed)
+                && !aliases.contains(&id)
+                && may_look_up(id)
+        })
+        .collect();
     for id in imports {
         let sym = &mut ctx.symbols[id];
         sym.set_file(FileId::Dylib(u32::MAX));
         sym.set_is_imported(true);
         sym.set_is_extern(true);
     }
+}
+
+/// The symbols -alias names, which count as defined.
+fn alias_symbols<E: Target>(ctx: &Context<E>) -> hashbrown::HashSet<SymbolId> {
+    ctx.args.aliases.iter().filter_map(|(_, alias)| ctx.symbols.get(alias)).collect()
+}
+
+/// Reports references to symbols that are still unresolved, those
+/// claim_unresolved_symbols left. ld-prime reports them before
+/// duplicate definitions, which it then leaves unreported.
+pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
+    let undef = unresolved_symbols(ctx);
+    if undef.is_empty() {
+        return;
+    }
+    let referenced = referenced_symbols(ctx);
+    let initial: hashbrown::HashSet<SymbolId> = crate::dead_strip::initial_undefines(ctx).collect();
+    let aliases = alias_symbols(ctx);
+    let mut errors: Vec<SymbolId> = (undef.into_iter())
+        .filter(|&id| {
+            referenced[id as usize].load(std::sync::atomic::Ordering::Relaxed)
+                && !aliases.contains(&id)
+        })
+        .collect();
     if errors.is_empty() {
         return;
     }
