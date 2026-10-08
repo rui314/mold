@@ -763,6 +763,13 @@ impl Target for Arm64 {
     const RELOC_UNSIGNED: u8 = ARM64_RELOC_UNSIGNED;
     const RELOC_SUBTRACTOR: u8 = ARM64_RELOC_SUBTRACTOR;
     const RELOC_GOTPC: u8 = ARM64_RELOC_POINTER_TO_GOT;
+    const RELOC_BRANCH: u8 = ARM64_RELOC_BRANCH26;
+    const RELOC_GOT_LOADS: &'static [u8] = &[
+        ARM64_RELOC_GOT_LOAD_PAGE21,
+        ARM64_RELOC_GOT_LOAD_PAGEOFF12,
+        ARM64_RELOC_TLVP_LOAD_PAGE21,
+        ARM64_RELOC_TLVP_LOAD_PAGEOFF12,
+    ];
     const RELOC_ADDEND: u8 = ARM64_RELOC_ADDEND;
     const SPLIT_PCREL_KINDS: &'static [u8] =
         &[DYLD_CACHE_ADJ_V2_ARM64_ADRP, DYLD_CACHE_ADJ_V2_ARM64_OFF12];
@@ -788,17 +795,6 @@ impl Target for Arm64 {
     fn apply_optimization_hints(ctx: &Context<Self>, buf: &mut [u8]) {
         if !ctx.args.ignore_optimization_hints {
             apply_hints(ctx, buf);
-        }
-    }
-
-    fn classify_reloc(ty: u8) -> crate::target::RelocClass {
-        use crate::target::RelocClass;
-        match ty {
-            ARM64_RELOC_BRANCH26 => RelocClass::Branch,
-            ARM64_RELOC_GOT_LOAD_PAGE21 | ARM64_RELOC_GOT_LOAD_PAGEOFF12 => RelocClass::GotLoad,
-            ARM64_RELOC_POINTER_TO_GOT => RelocClass::Got,
-            ARM64_RELOC_TLVP_LOAD_PAGE21 | ARM64_RELOC_TLVP_LOAD_PAGEOFF12 => RelocClass::Tlv,
-            _ => RelocClass::Plain,
         }
     }
 

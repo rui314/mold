@@ -22,7 +22,6 @@ use crate::mapped_file::MappedFile;
 use crate::objc::{DataBlob, DataField};
 use crate::output_sections::header_segment;
 use crate::symbol::{NEEDS_GOT, NEEDS_STUB, NO_IDX, Symbol, SymbolId};
-use crate::target::RelocClass;
 use crate::target::Target;
 use crate::util::{align_to, path_bytes, split_once};
 
@@ -3142,7 +3141,7 @@ pub fn compute_address_significance<E: Target>(ctx: &mut Context<E>) {
     let ctx_ref: &Context<E> = ctx;
     ctx_ref.isecs.par_iter().filter(|isec| isec.is_emitted()).for_each(|isec| {
         for r in input_files::isec_relocs_of(&ctx_ref.objs, isec) {
-            if E::classify_reloc(r.ty) != RelocClass::Branch
+            if !r.is_func_call::<E>()
                 && let Some(dst) = ctx_ref.reloc_target_isec(isec.file as usize, r)
             {
                 ctx_ref.isecs[ctx_ref.resolve_isec(dst)].set_address_taken();

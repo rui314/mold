@@ -27,7 +27,6 @@ use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
 use crate::passes::redirect_symbols_to_replacements;
 use crate::symbol::{NEEDS_GOT, NEEDS_STUB};
-use crate::target::RelocClass;
 use crate::target::Target;
 use crate::util::align_to;
 
@@ -209,7 +208,7 @@ fn objc_pointer_reloc<E: Target>(ctx: &Context<E>, isec: u32, off: u64) -> Optio
 fn objc_pointer_at<E: Target>(ctx: &Context<E>, isec: u32, off: u64) -> Option<ObjcRef> {
     let (obj, k) = objc_pointer_reloc(ctx, isec, off)?;
     let rel = &ctx.objs[obj].relocs[k];
-    if E::classify_reloc(rel.ty) != RelocClass::Plain {
+    if rel.ty != E::RELOC_UNSIGNED {
         return None;
     }
     Some(match rel.target() {
@@ -394,10 +393,7 @@ fn ref_key<E: Target>(ctx: &Context<E>, i: usize) -> Option<RefKey> {
     let obj = isec.file as usize;
     let rels = ctx.isec_relocs(i);
     let plain_ptr = |rel: &Reloc| {
-        E::classify_reloc(rel.ty) == RelocClass::Plain
-            && rel.size == 8
-            && !rel.is_pcrel
-            && !rel.is_subtracted
+        rel.ty == E::RELOC_UNSIGNED && rel.size == 8 && !rel.is_pcrel && !rel.is_subtracted
     };
     match h.sectname() {
         b"__objc_selrefs" if h.section_type() != S_LITERAL_POINTERS => None,
@@ -649,7 +645,7 @@ fn folds_objc_classrefs<E: Target>(ctx: &Context<E>) -> bool {
 fn pointer_target<E: Target>(ctx: &Context<E>, i: usize) -> Option<u32> {
     let [rel] = ctx.isec_relocs(i) else { return None };
     let RelocTarget::Sym(idx) = rel.target() else { return None };
-    let plain = E::classify_reloc(rel.ty) == RelocClass::Plain
+    let plain = rel.ty == E::RELOC_UNSIGNED
         && ctx.isecs[i].size == 8
         && rel.size == 8
         && !rel.is_pcrel

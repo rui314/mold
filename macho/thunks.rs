@@ -41,7 +41,7 @@ use crate::input_files::FileId;
 use crate::input_sections::InputSectionId;
 use crate::macho::{S_ATTR_PURE_INSTRUCTIONS, S_ATTR_SOME_INSTRUCTIONS};
 use crate::symbol::{NO_IDX, SymbolId};
-use crate::target::{RelocClass, Target};
+use crate::target::Target;
 use crate::util::align_to;
 
 /// We create a thunk for each 10 MiB batch of code (mold: 32 MiB).
@@ -352,7 +352,7 @@ fn scan_batch<E: Target>(
             let obj = isec.file as usize;
             let rels = &ctx.objs[obj].relocs[isec.rel_offset as usize..][..isec.nrels as usize];
             for rel in rels {
-                if E::classify_reloc(rel.ty) != RelocClass::Branch || rel.addend != 0 {
+                if !rel.is_func_call::<E>() || rel.addend != 0 {
                     continue;
                 }
                 let Some(sym) = ctx.reloc_target_sym(obj, rel) else {

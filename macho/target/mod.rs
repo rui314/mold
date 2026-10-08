@@ -19,22 +19,6 @@ use crate::error::RawPath;
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::{MachRel, MachSection};
 
-/// How a relocation type uses its target symbol.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RelocClass {
-    /// A branch, which needs a stub if the target is imported.
-    Branch,
-    /// A reference through the GOT.
-    Got,
-    /// A load through the GOT that can relax to a direct address
-    /// computation when the target is local.
-    GotLoad,
-    /// A reference to a thread-local variable pointer.
-    Tlv,
-    /// A direct reference.
-    Plain,
-}
-
 /// How LC_SEGMENT_SPLIT_INFO records a reference a relocation type
 /// makes, when it crosses sections.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -162,6 +146,14 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
     const RELOC_UNSIGNED: u8;
     const RELOC_SUBTRACTOR: u8;
     const RELOC_GOTPC: u8;
+    /// The branch relocation type: a call or a jump, which goes through
+    /// the target's stub if it has one - mold's R_FUNCALL.
+    const RELOC_BRANCH: u8;
+    /// The relocation types that load a symbol's address from its GOT
+    /// slot, or a thread-local's descriptor's from its slot, and that
+    /// relax to the address itself when dyld fills no slot (see
+    /// Context::can_relax_got).
+    const RELOC_GOT_LOADS: &'static [u8];
     /// The explicit-addend relocation type, for targets that have one.
     const RELOC_ADDEND: u8;
     /// Where the linker's own code materializes an address
@@ -194,9 +186,6 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
     fn reloc_bias(_ty: u8) -> i64 {
         0
     }
-
-    /// Classifies a relocation type by how it uses its target.
-    fn classify_reloc(ty: u8) -> RelocClass;
 
     /// How LC_SEGMENT_SPLIT_INFO records a relocation type's reference.
     fn split_ref(ty: u8) -> SplitRef;

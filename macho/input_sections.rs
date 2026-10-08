@@ -122,6 +122,12 @@ impl Reloc {
     pub fn set_target(&mut self, t: RelocTarget) {
         self.target = t.pack();
     }
+
+    /// Whether the relocation is a branch: a direct call or jump.
+    #[inline]
+    pub fn is_func_call<E: crate::target::Target>(&self) -> bool {
+        self.ty == E::RELOC_BRANCH
+    }
 }
 
 /// Sentinel for `InputSection::replacement`: no surviving copy.

@@ -32,7 +32,7 @@ use crate::error::raw;
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
 use crate::symbol::SymbolId;
-use crate::target::{RelocClass, Target};
+use crate::target::Target;
 use crate::util::split_once;
 
 /// The prefix of the names of the symbols a `dtrace -h` header makes
@@ -174,7 +174,7 @@ fn collect_sites<E: Target>(ctx: &Context<E>) -> Vec<Site> {
         .flat_map_iter(|i| {
             let file = ctx.isecs[i].file as usize;
             ctx.isec_relocs(i).iter().filter_map(move |r| {
-                if E::classify_reloc(r.ty) != RelocClass::Branch || r.size != 4 {
+                if !r.is_func_call::<E>() || r.size != 4 {
                     return None;
                 }
                 let sym = ctx.reloc_target_sym(file, r)?;

@@ -7,7 +7,7 @@ use crate::input_sections::{InputSection, Reloc};
 use crate::macho::*;
 use crate::objc::{DataField, ObjcRef, objc_ref_addr};
 use crate::symbol::SymbolId;
-use crate::target::{RelocClass, Target};
+use crate::target::Target;
 use crate::util::encode_uleb;
 
 /// The rebase opcode stream: every pointer dyld slides.
@@ -34,11 +34,7 @@ impl Default for RebaseInfoSection {
 /// slide or bind: an 8-byte absolute address, not a term of a
 /// SUBTRACTOR pair's difference.
 pub(crate) fn is_pointer_reloc<E: Target>(rel: &Reloc) -> bool {
-    E::classify_reloc(rel.ty) == RelocClass::Plain
-        && rel.size == 8
-        && !rel.is_pcrel
-        && !rel.is_subtracted
-        && rel.ty != E::RELOC_SUBTRACTOR
+    rel.ty == E::RELOC_UNSIGNED && rel.size == 8 && !rel.is_pcrel && !rel.is_subtracted
 }
 
 /// The pointers (see is_pointer_reloc) the relocations of a live

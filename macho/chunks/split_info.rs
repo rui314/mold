@@ -27,7 +27,7 @@ use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho_consts::*;
 use crate::objc::{DataField, ObjcRef};
 use crate::symbol::{NO_IDX, SymbolId};
-use crate::target::{RelocClass, SplitRef, Target};
+use crate::target::{SplitRef, Target};
 use crate::util::encode_uleb;
 
 #[derive(Debug)]
@@ -298,20 +298,16 @@ impl<'a, E: Target> Places<'a, E> {
             }
             RelocTarget::Sym(idx) => ctx.objs[isec.file as usize].symbols[idx as usize],
         };
-        match E::classify_reloc(r.ty) {
-            RelocClass::Got => return Some(self.got_slot(id)),
-            RelocClass::GotLoad | RelocClass::Tlv if !ctx.can_relax_got(id) => {
-                return Some(self.got_slot(id));
+        if r.ty == E::RELOC_GOTPC || E::RELOC_GOT_LOADS.contains(&r.ty) && !ctx.can_relax_got(id) {
+            return Some(self.got_slot(id));
+        }
+        if r.is_func_call::<E>() {
+            let stub = ctx.sym_aux(id).stub_idx;
+            if ctx.is_interposable(id) && stub != NO_IDX {
+                return Some(self.chunk(ChunkId::Stubs, stub as u64 * E::STUB_SIZE));
             }
-            RelocClass::Branch => {
-                let stub = ctx.sym_aux(id).stub_idx;
-                if ctx.is_interposable(id) && stub != NO_IDX {
-                    return Some(self.chunk(ChunkId::Stubs, stub as u64 * E::STUB_SIZE));
-                }
-                let (n, off) = self.sym(id)?;
-                return Some((n, off.wrapping_add_signed(addend)));
-            }
-            _ => {}
+            let (n, off) = self.sym(id)?;
+            return Some((n, off.wrapping_add_signed(addend)));
         }
         let (n, off) = self.own_sym(id)?;
         Some((n, off.wrapping_add_signed(addend)))

@@ -212,6 +212,8 @@ impl Target for X86_64 {
     const RELOC_UNSIGNED: u8 = X86_64_RELOC_UNSIGNED;
     const RELOC_SUBTRACTOR: u8 = X86_64_RELOC_SUBTRACTOR;
     const RELOC_GOTPC: u8 = X86_64_RELOC_GOT;
+    const RELOC_BRANCH: u8 = X86_64_RELOC_BRANCH;
+    const RELOC_GOT_LOADS: &'static [u8] = &[X86_64_RELOC_GOT_LOAD, X86_64_RELOC_TLV];
     // x86-64 embeds every addend in the relocated field.
     const RELOC_ADDEND: u8 = 0xff;
     const SPLIT_PCREL_KINDS: &'static [u8] = &[DYLD_CACHE_ADJ_V2_DELTA_32];
@@ -230,17 +232,6 @@ impl Target for X86_64 {
 
     fn reloc_bias(ty: u8) -> i64 {
         reloc_bias(ty)
-    }
-
-    fn classify_reloc(ty: u8) -> crate::target::RelocClass {
-        use crate::target::RelocClass;
-        match ty {
-            X86_64_RELOC_BRANCH => RelocClass::Branch,
-            X86_64_RELOC_GOT_LOAD => RelocClass::GotLoad,
-            X86_64_RELOC_GOT => RelocClass::Got,
-            X86_64_RELOC_TLV => RelocClass::Tlv,
-            _ => RelocClass::Plain,
-        }
     }
 
     fn split_ref(ty: u8) -> SplitRef {

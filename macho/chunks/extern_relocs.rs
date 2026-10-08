@@ -10,7 +10,7 @@ use crate::chunks::{ChunkHeader, rebase_info};
 use crate::context::Context;
 use crate::macho::*;
 use crate::symbol::SymbolId;
-use crate::target::{RelocClass, Target};
+use crate::target::Target;
 
 #[derive(Debug)]
 pub struct ExternRelocsSection {
@@ -66,8 +66,7 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<(u64, SymbolId, bool)> {
                 continue;
             }
             let pointer = rebase_info::is_pointer_reloc::<E>(rel);
-            let call = E::classify_reloc(rel.ty) == RelocClass::Branch
-                && ctx.sym_aux(id).stub_idx == crate::symbol::NO_IDX;
+            let call = rel.is_func_call::<E>() && ctx.sym_aux(id).stub_idx == crate::symbol::NO_IDX;
             if pointer || call {
                 vec.push((base + rel.offset as u64, id, call));
             }
