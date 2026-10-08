@@ -781,13 +781,13 @@ pub struct ObjcImageInfo {
     /// Whether the object has a __DATA,__objc_classlist section, empty
     /// or not, which ld-prime takes for one that defines classes: the
     /// flag of signed class_ro_t pointers speaks for theirs (see
-    /// passes::merge_objc_info).
+    /// chunks::objc_imageinfo::merge_objc_info).
     pub classes: bool,
 }
 
 /// Whether a section is an object's Objective-C image info, the record
 /// whose flags the link merges into the image's own (see
-/// output_sections::merge_objc_image_info): ld-prime knows it in
+/// chunks::objc_imageinfo::create): ld-prime knows it in
 /// __DATA alone, and links an __objc_imageinfo of another segment as
 /// any other section.
 pub fn is_objc_image_info(hdr: &MachSection) -> bool {

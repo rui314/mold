@@ -324,3 +324,12 @@ pub const DYLD_CHAINED_IMPORT_ADDEND64: u32 = 3;
 // Magic values in the indirect symbol table
 pub const INDIRECT_SYMBOL_LOCAL: u32 = 0x8000_0000;
 pub const INDIRECT_SYMBOL_ABS: u32 = 0x4000_0000;
+
+/// __objc_imageinfo's flag of an image whose categories may have class
+/// properties: every object's record has it, or the image's has not.
+pub const OBJC_HAS_CATEGORY_CLASS_PROPERTIES: u32 = 0x40;
+
+/// __objc_imageinfo's flag of an image whose class_ro_t pointers are
+/// signed (arm64e's), which speaks for an object's classes (see
+/// chunks::objc_imageinfo::merge_objc_info).
+pub const OBJC_SIGNED_CLASS_RO: u32 = 0x10;

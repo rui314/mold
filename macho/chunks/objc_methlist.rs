@@ -2,9 +2,12 @@
 //! relative (12-byte entry) form, which needs no fixups.
 
 use crate::arch::Target;
-use crate::chunks::{ChunkHeader, ChunkId};
+use crate::chunks::{ChunkHeader, ChunkId, OutputSectionId, Tail};
 use crate::context::Context;
 use crate::objc::ObjcMethList;
+use crate::output_sections::{SectionName, append_tail, record_section};
+use crate::symbol_moves::{Move, MoveOption};
+use crate::util::align_to;
 
 /// __TEXT,__objc_methlist: the Objective-C method lists rewritten in
 /// the relative (12-byte entry) form, which needs no fixups.
@@ -31,13 +34,69 @@ impl Default for ObjcMethlistSection {
     }
 }
 
+/// Lays out __objc_methlist, the method lists rewritten in the relative
+/// form (see convert_objc_method_lists), in the order they were made,
+/// each 8-byte aligned (the class records point at them); category
+/// merging also retires some after their first placement. The lists
+/// -move_to_ro_segment takes to another segment (see symbol_moves) go
+/// alike to an __objc_methlist there.
+pub fn lay_out_objc_method_lists<E: Target>(
+    ctx: &mut Context<E>,
+    text: SectionName,
+    moves: &hashbrown::HashMap<u32, Move>,
+) {
+    if ctx.objc_methlist.lists.is_empty() {
+        return;
+    }
+    let order: Vec<u32> = ctx.objc_methlist.lists.iter().map(|l| l.isec).collect();
+
+    // The lists of each section, by the section: None for
+    // __TEXT,__objc_methlist. (Of the symbol moves, only
+    // -move_to_ro_segment's takes code.)
+    let mut groups: Vec<(Option<OutputSectionId>, Vec<u32>)> = Vec::new();
+    for isec in order {
+        let hdr = *ctx.hdr_of(&ctx.isecs[isec as usize]);
+        let m = moves.get(&isec).filter(|m| m.option == MoveOption::Ro);
+        let dest = m.and_then(|&m| record_section(ctx, &hdr, text, Some(m)));
+        match groups.iter_mut().find(|(d, _)| *d == dest) {
+            Some((_, lists)) => lists.push(isec),
+            None => groups.push((dest, vec![isec])),
+        }
+    }
+    for (dest, lists) in groups {
+        let mut off = 0u64;
+        for &isec in &lists {
+            off = align_to(off, 8);
+            ctx.isecs[isec as usize].offset = off as u32;
+            off += ctx.isecs[isec as usize].size as u64;
+        }
+        let (chunk, base) = match dest {
+            None => {
+                ctx.objc_methlist.hdr.size = off;
+                ctx.chunks.push(ChunkId::ObjcMethlist);
+                (ChunkId::ObjcMethlist, 0)
+            }
+            Some(id) => {
+                let osec = ctx.output_section_mut(id);
+                append_tail(osec, 3, Tail::ObjcMethlists, off);
+                (ChunkId::Output(id), osec.tail_off)
+            }
+        };
+        for isec in lists {
+            let isec = &mut ctx.isecs[isec as usize];
+            isec.offset += base as u32;
+            isec.set_output_section(chunk);
+        }
+    }
+}
+
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     write_lists(ctx, ChunkId::ObjcMethlist, ctx.objc_methlist.hdr.addr, buf);
 }
 
 /// Writes the lists laid out in the chunk `chunk` at `chunk_addr` - this
 /// section, or another segment's __objc_methlist a symbol move took
-/// some to (see output_sections::lay_out_objc_method_lists) - each at
+/// some to (see lay_out_objc_method_lists) - each at
 /// its offset in `buf`, the chunk's contents.
 pub fn write_lists<E: Target>(ctx: &Context<E>, chunk: ChunkId, chunk_addr: u64, buf: &mut [u8]) {
     let lists = ctx.objc_methlist.lists.iter();

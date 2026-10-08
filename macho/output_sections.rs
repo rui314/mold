@@ -18,7 +18,7 @@ use crate::error;
 use crate::error::RawPath;
 use crate::error::raw;
 use crate::fatal;
-use crate::input_files::{FileId, ObjcImageInfo};
+use crate::input_files::FileId;
 use crate::input_files::{is_class_or_protocol_ref_name, standard_section_flags};
 use crate::input_sections::{InputSection, InputSectionId};
 use crate::macho::*;
@@ -85,7 +85,7 @@ fn interpose_is_const<E: Target>(ctx: &Context<E>) -> bool {
 }
 
 /// An output section's name: (segment, section).
-type SectionName = (&'static [u8], &'static [u8]);
+pub(crate) type SectionName = (&'static [u8], &'static [u8]);
 
 /// The output section an input section with `flags` lands in, and the
 /// name its flags follow; None for one the link consumes or drops.
@@ -451,7 +451,7 @@ fn tail_section<E: Target>(
 
 /// Appends a synthesized `tail` of `tail_size` bytes aligned to
 /// 2^`p2align` to an output section, after its input subsections.
-fn append_tail(osec: &mut OutputSection, p2align: u32, tail: Tail, tail_size: u64) {
+pub(crate) fn append_tail(osec: &mut OutputSection, p2align: u32, tail: Tail, tail_size: u64) {
     osec.hdr.p2align = osec.hdr.p2align.max(p2align);
     osec.tail = tail;
     osec.tail_off = align_to(osec.hdr.size, 1 << p2align);
@@ -506,7 +506,7 @@ fn add_output_section_for<E: Target>(
 /// subsection of the input section `hdr`, as the input's would go (see
 /// destination), under the symbol move `m`. The section is made here
 /// if no input subsection went there, or every one was replaced.
-fn record_section<E: Target>(
+pub(crate) fn record_section<E: Target>(
     ctx: &mut Context<E>,
     hdr: &MachSection,
     text: SectionName,
@@ -617,9 +617,9 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
     }
     add_objc_stubs(ctx);
     place_tail_blobs(ctx);
-    lay_out_objc_method_lists(ctx, text, &moves);
+    chunks::objc_methlist::lay_out_objc_method_lists(ctx, text, &moves);
     add_sectcreate_sections(ctx);
-    merge_objc_image_info(ctx);
+    chunks::objc_imageinfo::create(ctx);
     if ctx.args.fixup_chains_section {
         ctx.chain_starts.hdr.reserved1 = ctx.args.chain_starts_kind;
         ctx.chunks.push(ChunkId::ChainStarts);
@@ -1221,62 +1221,6 @@ fn add_objc_stubs<E: Target>(ctx: &mut Context<E>) {
     }
 }
 
-/// Lays out __objc_methlist, the method lists rewritten in the relative
-/// form (see convert_objc_method_lists), in the order they were made,
-/// each 8-byte aligned (the class records point at them); category
-/// merging also retires some after their first placement. The lists
-/// -move_to_ro_segment takes to another segment (see symbol_moves) go
-/// alike to an __objc_methlist there.
-fn lay_out_objc_method_lists<E: Target>(
-    ctx: &mut Context<E>,
-    text: SectionName,
-    moves: &hashbrown::HashMap<u32, Move>,
-) {
-    if ctx.objc_methlist.lists.is_empty() {
-        return;
-    }
-    let order: Vec<u32> = ctx.objc_methlist.lists.iter().map(|l| l.isec).collect();
-
-    // The lists of each section, by the section: None for
-    // __TEXT,__objc_methlist. (Of the symbol moves, only
-    // -move_to_ro_segment's takes code.)
-    let mut groups: Vec<(Option<OutputSectionId>, Vec<u32>)> = Vec::new();
-    for isec in order {
-        let hdr = *ctx.hdr_of(&ctx.isecs[isec as usize]);
-        let m = moves.get(&isec).filter(|m| m.option == MoveOption::Ro);
-        let dest = m.and_then(|&m| record_section(ctx, &hdr, text, Some(m)));
-        match groups.iter_mut().find(|(d, _)| *d == dest) {
-            Some((_, lists)) => lists.push(isec),
-            None => groups.push((dest, vec![isec])),
-        }
-    }
-    for (dest, lists) in groups {
-        let mut off = 0u64;
-        for &isec in &lists {
-            off = align_to(off, 8);
-            ctx.isecs[isec as usize].offset = off as u32;
-            off += ctx.isecs[isec as usize].size as u64;
-        }
-        let (chunk, base) = match dest {
-            None => {
-                ctx.objc_methlist.hdr.size = off;
-                ctx.chunks.push(ChunkId::ObjcMethlist);
-                (ChunkId::ObjcMethlist, 0)
-            }
-            Some(id) => {
-                let osec = ctx.output_section_mut(id);
-                append_tail(osec, 3, Tail::ObjcMethlists, off);
-                (ChunkId::Output(id), osec.tail_off)
-            }
-        };
-        for isec in lists {
-            let isec = &mut ctx.isecs[isec as usize];
-            isec.offset += base as u32;
-            isec.set_output_section(chunk);
-        }
-    }
-}
-
 /// Lays out the input sections of -sectcreate, of a file's contents,
 /// and of -add_empty_section, empty, which gives tools a named anchor
 /// (its section$start/end addresses), in command-line order. One that
@@ -1354,32 +1298,6 @@ fn add_sectcreate_sections<E: Target>(ctx: &mut Context<E>) {
     for i in 0..ctx.sectcreate_sections.len() {
         ctx.chunks.push(ChunkId::SectCreate(i as u32));
     }
-}
-
-/// Merges the objects' __objc_imageinfo records into the image's, cut
-/// to the flags an image keeps, a lone record's too (see
-/// passes::objc_image_flags and merge_objc_info), in the order
-/// ld-prime checks the objects in (see passes::check_objc_flags, which
-/// gave the diagnostics). An image no dyld loads (-static, -preload, a
-/// kext), whose Objective-C no runtime sets up, gets none from
-/// ld-prime.
-fn merge_objc_image_info<E: Target>(ctx: &mut Context<E>) {
-    let mut objs: Vec<&crate::input_files::ObjectFile> =
-        ctx.objs.iter().filter(|o| o.is_alive && o.objc_image_info.is_some()).collect();
-    objs.sort_by_key(|o| o.priority);
-    let info = objs
-        .iter()
-        .filter_map(|o| o.objc_image_info)
-        .map(|info| ObjcImageInfo { flags: crate::passes::objc_image_flags(info.flags), ..info })
-        .reduce(crate::passes::merge_objc_info);
-    let Some(ObjcImageInfo { flags, .. }) = info else { return };
-    if ctx.args.without_dyld() {
-        return;
-    }
-    ctx.objc_imageinfo.flags = flags;
-    ctx.objc_imageinfo.hdr.segname = data_seg(ctx);
-    ctx.objc_imageinfo.hdr.size = 8;
-    ctx.chunks.push(ChunkId::ObjcImageInfo);
 }
 
 /// Lays out __eh_frame, the surviving DWARF unwind records: the CIEs

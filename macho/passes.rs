@@ -800,15 +800,6 @@ fn check_object_version<E: Target>(ctx: &Context<E>, i: usize) {
     }
 }
 
-/// __objc_imageinfo's flag of an image whose categories may have class
-/// properties: every object's record has it, or the image's has not.
-const OBJC_HAS_CATEGORY_CLASS_PROPERTIES: u32 = 0x40;
-
-/// __objc_imageinfo's flag of an image whose class_ro_t pointers are
-/// signed (arm64e's), which speaks for an object's classes (see
-/// merge_objc_info).
-const OBJC_SIGNED_CLASS_RO: u32 = 0x10;
-
 /// Merges the Objective-C image info of an object, `info`, into that of
 /// the objects checked before it, `merged`, with ld-prime's
 /// diagnostics. The first Swift ABI version stays: another one
@@ -868,48 +859,7 @@ fn check_objc_flags<E: Target>(
             _ => crate::warn!("{msg}"),
         }
     }
-    merge_objc_info(merged, info)
-}
-
-/// The Objective-C image info of objects whose info so far is `merged`,
-/// and of an object with `info`, as ld-prime merges them: the first
-/// Swift ABI version given stays, the Swift language version is the
-/// oldest given, and the image's categories may have class properties
-/// if every object's may (see objc_image_flags). Its class_ro_t
-/// pointers are signed if those of every object with classes are; an
-/// object without classes has none to sign, and its flag counts only
-/// until one with classes comes, and only if it is set.
-pub(crate) fn merge_objc_info(merged: ObjcImageInfo, info: ObjcImageInfo) -> ObjcImageInfo {
-    let (a, b) = (merged.flags, info.flags);
-    let abi = if a & 0xff00 != 0 { a & 0xff00 } else { b & 0xff00 };
-    let lang = match (a >> 16, b >> 16) {
-        (0, lang) | (lang, 0) => lang,
-        (a, b) => a.min(b),
-    };
-    let signed = match (merged.classes, info.classes) {
-        (false, false) => a | b,
-        (false, true) => b,
-        (true, false) => a,
-        (true, true) => a & b,
-    };
-    ObjcImageInfo {
-        flags: (lang << 16)
-            | abi
-            | (a & b & OBJC_HAS_CATEGORY_CLASS_PROPERTIES)
-            | (signed & OBJC_SIGNED_CLASS_RO),
-        classes: merged.classes || info.classes,
-    }
-}
-
-/// The Objective-C image info flags of an object as the image keeps
-/// them, alone or to merge with others' (see merge_objc_info): the
-/// Swift versions, category class properties and signed class_ro_t
-/// pointers, which describe the code. ld-prime drops the rest: the
-/// simulator bit (0x20) clang sets in a simulator's objects, the bits
-/// of the garbage collector the runtime no longer has, and those of
-/// dyld's optimizations (0x08 and 0x80), which dyld sets itself.
-pub(crate) fn objc_image_flags(flags: u32) -> u32 {
-    flags & (0xffff_ff00 | OBJC_HAS_CATEGORY_CLASS_PROPERTIES | OBJC_SIGNED_CLASS_RO)
+    chunks::objc_imageinfo::merge_objc_info(merged, info)
 }
 
 /// A Swift ABI version, the byte of __objc_imageinfo's flags that holds
