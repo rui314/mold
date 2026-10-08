@@ -9,6 +9,7 @@ use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::chunks::symtab::{NamedEntry, local_msym};
 use crate::context::Context;
+use crate::input_sections::Reloc;
 use crate::macho::*;
 use crate::symbol::SymbolId;
 
@@ -90,6 +91,21 @@ impl Default for LazyHelpersSection {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// The helper that relocation `r` of subsection `isec` calls in place
+/// of a GOT load (or x86-64's compare), if it reaches a symbol of a
+/// dylib dyld loads lazily (see LazyUse): its address, and whether it
+/// is the site's own, which branches back to the site rather than
+/// returning.
+pub fn load_helper<E: Target>(ctx: &Context<E>, isec: usize, r: &Reloc) -> Option<(u64, bool)> {
+    let lazy = &ctx.lazy_helpers;
+    if lazy.sites.is_empty() {
+        return None;
+    }
+    let &i = lazy.sites.get(&(isec as u32, r.offset))?;
+    let own = matches!(lazy.helpers[i as usize].kind, LazyUse::Load { site: Some(_), .. });
+    Some((lazy.helper_addr(i as usize), own))
 }
 
 /// Sizes the helpers, which go where the stubs do.

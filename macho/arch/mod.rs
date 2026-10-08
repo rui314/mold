@@ -308,33 +308,6 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
     fn apply_optimization_hints(_ctx: &Context<Self>, _buf: &mut [u8]) {}
 }
 
-/// The helper that relocation `r` of subsection `isec` calls in place
-/// of a GOT load (or x86-64's compare), if it reaches a symbol of a
-/// dylib dyld loads lazily (see LazyUse) or of a delay-init dylib (see
-/// DelayUse): its address, and whether it is the site's own, which
-/// branches back to the site rather than returning.
-pub fn load_helper<E: Target>(ctx: &Context<E>, isec: usize, r: &Reloc) -> Option<(u64, bool)> {
-    use crate::chunks::delay_init::DelayUse;
-    use crate::chunks::lazy_helpers::LazyUse;
-
-    let site = (isec as u32, r.offset);
-    let lazy = &ctx.lazy_helpers;
-    if !lazy.sites.is_empty()
-        && let Some(&i) = lazy.sites.get(&site)
-    {
-        let own = matches!(lazy.helpers[i as usize].kind, LazyUse::Load { site: Some(_), .. });
-        return Some((lazy.helper_addr(i as usize), own));
-    }
-    let delay = &ctx.delay_init;
-    if !delay.sites.is_empty()
-        && let Some(&i) = delay.sites.get(&site)
-    {
-        let own = matches!(delay.helpers[i as usize].kind, DelayUse::Load { site: Some(_), .. });
-        return Some((delay.helper_addr(i as usize), own));
-    }
-    None
-}
-
 /// The canonical name of a target named on the command line, borrowed
 /// from static storage so that a restart for that target can carry it.
 pub fn canonical_name(name: &str) -> Option<&'static str> {

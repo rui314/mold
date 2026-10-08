@@ -2,10 +2,10 @@
 
 use std::path::Path;
 
-use crate::arch::{SplitRef, Target, has_reloc_form, load_helper, reloc_form};
+use crate::arch::{SplitRef, Target, has_reloc_form, reloc_form};
 use crate::chunks::delay_init::{DelayCode, DelayTarget, DelayUse};
 use crate::chunks::lazy_helpers::{LazyTarget, LazyUse};
-use crate::chunks::{delay_init, objc_stubs, stub_helper, stubs};
+use crate::chunks::{delay_init, lazy_helpers, objc_stubs, stub_helper, stubs};
 use crate::context::Context;
 use crate::dtrace::SiteKind;
 use crate::input_files::{ObjectFile, section_target};
@@ -662,7 +662,8 @@ impl Target for X86_64 {
             // symbol becomes a call of its helper, nops filling the rest
             // of the movq or cmpq (see LazyUse and DelayUse).
             if matches!(r.ty, X86_64_RELOC_GOT_LOAD | X86_64_RELOC_GOT)
-                && let Some((helper, _)) = load_helper(ctx, isec_id, r)
+                && let Some((helper, _)) = lazy_helpers::load_helper(ctx, isec_id, r)
+                    .or_else(|| delay_init::load_helper(ctx, isec_id, r))
             {
                 let at = r.offset as usize - 3;
                 let disp = helper.wrapping_sub(base + at as u64 + 5);

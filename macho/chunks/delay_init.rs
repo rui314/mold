@@ -11,6 +11,7 @@ use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::chunks::symtab::{NamedEntry, local_msym};
 use crate::context::Context;
+use crate::input_sections::Reloc;
 use crate::macho::*;
 use crate::symbol::SymbolId;
 
@@ -152,6 +153,20 @@ impl Default for DelayInit {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// The helper that relocation `r` of subsection `isec` calls in place
+/// of a GOT load (or x86-64's compare), if it reaches a symbol of a
+/// delay-init dylib (see DelayUse): its address, and whether it is the
+/// site's own, which branches back to the site rather than returning.
+pub fn load_helper<E: Target>(ctx: &Context<E>, isec: usize, r: &Reloc) -> Option<(u64, bool)> {
+    let delay = &ctx.delay_init;
+    if delay.sites.is_empty() {
+        return None;
+    }
+    let &i = delay.sites.get(&(isec as u32, r.offset))?;
+    let own = matches!(delay.helpers[i as usize].kind, DelayUse::Load { site: Some(_), .. });
+    Some((delay.helper_addr(i as usize), own))
 }
 
 /// The offset of stub `idx` in __delay_stubs.

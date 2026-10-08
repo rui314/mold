@@ -4,10 +4,10 @@ use std::path::Path;
 
 use rayon::prelude::*;
 
-use crate::arch::{SplitRef, Target, has_reloc_form, load_helper, reloc_form};
+use crate::arch::{SplitRef, Target, has_reloc_form, reloc_form};
 use crate::chunks::delay_init::{DelayCode, DelayTarget, DelayUse};
 use crate::chunks::lazy_helpers::{LazyTarget, LazyUse};
-use crate::chunks::{delay_init, objc_stubs, stub_helper, stubs};
+use crate::chunks::{delay_init, lazy_helpers, objc_stubs, stub_helper, stubs};
 use crate::context::Context;
 use crate::dtrace::SiteKind;
 use crate::input_files::{ObjectFile, section_target};
@@ -1414,7 +1414,8 @@ impl Target for Arm64 {
                 // DelayUse::Load). The ldr then loads from the lazy
                 // helper's slot, or the symbol's __got slot.
                 ARM64_RELOC_GOT_LOAD_PAGE21
-                    if let Some((helper, own)) = load_helper(ctx, isec_id, r) =>
+                    if let Some((helper, own)) = lazy_helpers::load_helper(ctx, isec_id, r)
+                        .or_else(|| delay_init::load_helper(ctx, isec_id, r)) =>
                 {
                     let op = if own { 0x1400_0000 } else { 0x9400_0000 };
                     write32(loc, op | bits(helper.wrapping_sub(p), 27, 2) as u32);
