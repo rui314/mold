@@ -6,13 +6,20 @@ resolver = "3"
 members = ["cli", "macho", "arch/*", "tests"]
 
 [workspace.package]
-version = "0.1.0"
+version = "3.0.0"
 edition = "2024"
+rust-version = "1.95"
 license = "MIT"
+repository = "https://github.com/rui314/mold-macho"
 
+# The workspace crates depend on each other's internals, so each one
+# requires the exact version of the others, as in mold. Keep these
+# versions equal to the workspace version above.
 [workspace.dependencies]
 libc = "0.2"
-mold-macho = { path = "macho" }
+mold-macho = { path = "macho", version = "=3.0.0" }
+mold-macho-arm64 = { path = "arch/macho-arm64", version = "=3.0.0" }
+mold-macho-x86_64 = { path = "arch/macho-x86_64", version = "=3.0.0" }
 
 [profile.release]
 panic = "abort"

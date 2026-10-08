@@ -2,8 +2,10 @@
 name = "mold-macho-cli"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "The mold Mach-O linker executable"
 license.workspace = true
+repository.workspace = true
 
 [[bin]]
 name = "mold"
@@ -17,8 +19,8 @@ harness = false
 [dependencies]
 mimalloc = { package = "mold-mimalloc", version = "0.1.52" }
 mold-macho.workspace = true
-mold-macho-arm64 = { path = "../arch/macho-arm64", optional = true }
-mold-macho-x86_64 = { path = "../arch/macho-x86_64", optional = true }
+mold-macho-arm64 = { workspace = true, optional = true }
+mold-macho-x86_64 = { workspace = true, optional = true }
 
 [dev-dependencies]
 mold-macho-tests = { path = "../tests" }

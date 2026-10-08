@@ -2,8 +2,10 @@
 name = "mold-macho"
 version.workspace = true
 edition.workspace = true
-description = "A high-performance Mach-O linker, a port of mold to macOS"
+rust-version.workspace = true
+description = "An internal crate of the mold linker, which implements its Mach-O linker"
 license.workspace = true
+repository.workspace = true
 
 [lib]
 path = "lib.rs"

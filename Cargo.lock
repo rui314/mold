@@ -186,7 +186,7 @@ dependencies = [
 
 [[package]]
 name = "mold-macho"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "cpp_demangle",
  "getrandom",
@@ -204,14 +204,14 @@ dependencies = [
 
 [[package]]
 name = "mold-macho-arm64"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "mold-macho",
 ]
 
 [[package]]
 name = "mold-macho-cli"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "mold-macho",
  "mold-macho-arm64",
@@ -222,7 +222,7 @@ dependencies = [
 
 [[package]]
 name = "mold-macho-tests"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "libc",
  "serde_json",
@@ -230,7 +230,7 @@ dependencies = [
 
 [[package]]
 name = "mold-macho-x86_64"
-version = "0.1.0"
+version = "3.0.0"
 dependencies = [
  "mold-macho",
 ]
