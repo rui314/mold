@@ -81,7 +81,7 @@ pub fn ensure_stub_binder<E: Target>(ctx: &mut Context<E>) {
 
 pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
     ctx.stub_helper.hdr.size =
-        ctx.stub_helper_header_size() + ctx.stubs.lazy.len() as u64 * E::STUB_HELPER_ENTRY_SIZE;
+        header_size(ctx) + ctx.stubs.lazy.len() as u64 * E::STUB_HELPER_ENTRY_SIZE;
 }
 
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {

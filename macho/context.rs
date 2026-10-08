@@ -624,12 +624,6 @@ impl<E: Target> Context<E> {
         }
     }
 
-    /// The size of one __objc_stubs entry: see
-    /// chunks::objc_stubs::entry_size.
-    pub fn objc_stub_size(&self) -> u64 {
-        crate::chunks::objc_stubs::entry_size(self)
-    }
-
     /// Returns the address of a symbol's __stubs entry.
     pub fn sym_stub_addr(&self, id: SymbolId) -> u64 {
         self.stubs.hdr.addr + crate::chunks::stubs::entry_offset::<E>(self.sym_aux(id).stub_idx)
@@ -669,12 +663,6 @@ impl<E: Target> Context<E> {
             }
             _ => false,
         }
-    }
-
-    /// The size of __stub_helper's header: see
-    /// chunks::stub_helper::header_size.
-    pub fn stub_helper_header_size(&self) -> u64 {
-        crate::chunks::stub_helper::header_size(self)
     }
 
     /// The address of the pointer slot stub `i` (for symbol `id`)
