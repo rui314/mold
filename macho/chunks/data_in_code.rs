@@ -58,8 +58,7 @@ fn live_entries<E: Target>(
 ) -> impl Iterator<Item = (&InputSection, u64, u16, u16)> {
     ctx.objs.iter().filter(|obj| obj.is_alive).flat_map(move |obj| {
         obj.dice.iter().filter_map(move |&(off, len, kind)| {
-            let (isec, off_in) =
-                crate::input_files::find_subsec(&ctx.isecs, &obj.subsecs, off as u64)?;
+            let (isec, off_in) = obj.find_subsec(&ctx.isecs, off as u64)?;
             let isec = &ctx.isecs[isec];
             isec.is_emitted().then_some((isec, off_in, len, kind))
         })

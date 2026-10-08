@@ -500,8 +500,7 @@ fn noted_subsec<E: Target>(
     sect: u8,
     value: u64,
 ) -> Option<(usize, u64)> {
-    let (isec, off) =
-        crate::input_files::find_symbol_subsec(&ctx.isecs, &obj.subsecs, sect, value)?;
+    let (isec, off) = obj.find_symbol_subsec(&ctx.isecs, sect, value)?;
     if is_coalesced_away(ctx, isec) {
         return None;
     }

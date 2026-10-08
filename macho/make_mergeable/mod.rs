@@ -725,8 +725,7 @@ impl<'a, E: Target> Builder<'a, E> {
             return None;
         }
         let addr = u64::try_from(slot.input_addr as i64 + off).ok()?;
-        let subsecs = &ctx.objs[obj as usize].subsecs;
-        let (other, other_off) = crate::input_files::find_subsec(&ctx.isecs, subsecs, addr)?;
+        let (other, other_off) = ctx.objs[obj as usize].find_subsec(&ctx.isecs, addr)?;
         if ctx.isecs[other].shndx != slot.shndx {
             return None;
         }
@@ -950,7 +949,7 @@ impl<'a, E: Target> Builder<'a, E> {
     fn unwind_target(&self, obj: &ObjectFile, r: &Reloc) -> Option<(To, i64)> {
         let ctx = self.ctx;
         let local = |addr: u64| {
-            let (isec, off) = crate::input_files::find_subsec(&ctx.isecs, &obj.subsecs, addr)?;
+            let (isec, off) = obj.find_subsec(&ctx.isecs, addr)?;
             let entry = self.isec_entry.get(&(isec as u32))?;
             Some((*entry, off as i64))
         };

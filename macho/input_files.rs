@@ -272,7 +272,7 @@ impl ObjectFile {
     pub fn hint_subsec(&self, isecs: &[InputSection], addrs: &[u64]) -> Option<usize> {
         let lo = *addrs.iter().min()?;
         let hi = *addrs.iter().max()?;
-        let (id, _) = find_subsec(isecs, &self.subsecs, lo)?;
+        let (id, _) = self.find_subsec(isecs, lo)?;
         let isec = &isecs[id];
         let is_code = self.sect_hdrs[isec.shndx as usize].flags & S_ATTR_PURE_INSTRUCTIONS != 0;
         let spans_symbol = || {
@@ -420,42 +420,50 @@ pub fn isec_relocs_of<'a>(
     &objs[isec.file as usize].relocs[off..off + isec.nrels as usize]
 }
 
-/// Finds the subsection containing `addr` among `subsecs` (sorted by
-/// input address), returning it with the offset within it.
-pub fn find_subsec(
-    isecs: &[InputSection],
-    subsecs: &[crate::input_sections::InputSectionId],
-    addr: u64,
-) -> Option<(usize, u64)> {
-    let i = subsecs.partition_point(|&id| isecs[id as usize].input_addr as u64 <= addr);
-    if i == 0 {
-        return None;
-    }
-    let id = subsecs[i - 1] as usize;
-    let isec = &isecs[id];
-    if addr < isec.input_addr as u64 + isec.size as u64
-        || (isec.size as u64 == 0 && addr == isec.input_addr as u64)
-    {
-        Some((id, addr - isec.input_addr as u64))
-    } else {
-        None
-    }
-}
+/// An object's lookups of its subsections by address, as sold's
+/// ObjectFile::find_subsection, for ObjectFile and StagedObject alike:
+/// `isecs` is where the object's `subsecs` point, the link's
+/// subsections for an ObjectFile and its own for a StagedObject.
+macro_rules! subsec_lookups {
+    () => {
+        /// Finds the subsection containing `addr` among the object's
+        /// `subsecs` (sorted by input address), returning it with the
+        /// offset within it.
+        pub fn find_subsec(&self, isecs: &[InputSection], addr: u64) -> Option<(usize, u64)> {
+            let subsecs = &self.subsecs;
+            let i = subsecs.partition_point(|&id| isecs[id as usize].input_addr as u64 <= addr);
+            if i == 0 {
+                return None;
+            }
+            let id = subsecs[i - 1] as usize;
+            let isec = &isecs[id];
+            if addr < isec.input_addr as u64 + isec.size as u64
+                || (isec.size as u64 == 0 && addr == isec.input_addr as u64)
+            {
+                Some((id, addr - isec.input_addr as u64))
+            } else {
+                None
+            }
+        }
 
-/// Finds the subsection a symbol at `addr` in section `sect` (1-based,
-/// as MachSyms count) belongs to, returning it with the offset within it.
-/// The section decides where addresses alone can't: a label on an empty
-/// section starts where the next section does, and one past a section's
-/// last byte (an array's `_end`) ends where the next one starts; both
-/// belong to their own section, as in ld-prime.
-pub fn find_symbol_subsec(
-    isecs: &[InputSection],
-    subsecs: &[crate::input_sections::InputSectionId],
-    sect: u8,
-    addr: u64,
-) -> Option<(usize, u64)> {
-    let end = subsecs.partition_point(|&id| isecs[id as usize].input_addr as u64 <= addr);
-    symbol_subsec_before(isecs, &subsecs[..end], sect, addr)
+        /// Finds the subsection a symbol at `addr` in section `sect`
+        /// (1-based, as MachSyms count) belongs to, returning it with
+        /// the offset within it. The section decides where addresses
+        /// alone can't: a label on an empty section starts where the
+        /// next section does, and one past a section's last byte (an
+        /// array's `_end`) ends where the next one starts; both belong
+        /// to their own section, as in ld-prime.
+        pub fn find_symbol_subsec(
+            &self,
+            isecs: &[InputSection],
+            sect: u8,
+            addr: u64,
+        ) -> Option<(usize, u64)> {
+            let subsecs = &self.subsecs;
+            let end = subsecs.partition_point(|&id| isecs[id as usize].input_addr as u64 <= addr);
+            symbol_subsec_before(isecs, &subsecs[..end], sect, addr)
+        }
+    };
 }
 
 /// find_symbol_subsec's answer from `before`, the object's subsections
@@ -997,6 +1005,7 @@ macro_rules! symbol_ranges {
 }
 impl ObjectFile {
     symbol_ranges!();
+    subsec_lookups!();
 
     /// The subsection MachSym `i` is defined in, and its offset there,
     /// as find_symbol_subsec finds them: None for a symbol not defined
@@ -1012,6 +1021,7 @@ impl ObjectFile {
 }
 impl StagedObject {
     symbol_ranges!();
+    subsec_lookups!();
 }
 
 /// Where the object's external symbols start in its MachSym array, or
@@ -2199,7 +2209,7 @@ impl StagedObject {
             })
             .collect();
 
-        let subsec_at = |addr: u64| find_subsec(&self.isecs, &self.subsecs, addr);
+        let subsec_at = |addr: u64| self.find_subsec(&self.isecs, addr);
 
         // Only the pointer fields take relocations (on x86-64 a 4-byte
         // one as well as an 8-byte one).
@@ -2227,8 +2237,7 @@ impl StagedObject {
                 // section as a label's place is: the section's end is its
                 // last subsection's, not the next section's first one's.
                 0 => {
-                    let Some((isec, off)) =
-                        find_symbol_subsec(&self.isecs, &self.subsecs, sect_idx, addr)
+                    let Some((isec, off)) = self.find_symbol_subsec(&self.isecs, sect_idx, addr)
                     else {
                         fatal!("{file_name}: __compact_unwind: bad function reference");
                     };
@@ -2498,8 +2507,7 @@ impl StagedObject {
             let func_addr = read_pcrel(rec, 8, size, input_addr);
             // The size is in the same format, but absolute.
             let code_len = read_value(rec, 8 + size, size) as u32;
-            let Some((isec, func_offset)) = find_subsec(&self.isecs, &self.subsecs, func_addr)
-            else {
+            let Some((isec, func_offset)) = self.find_subsec(&self.isecs, func_addr) else {
                 fatal!("{}: __eh_frame: FDE for no function", self.mf.name.raw());
             };
             let func_offset = func_offset as u32;
@@ -2573,7 +2581,7 @@ impl StagedObject {
         }
         check_pointer_encoding(enc, &self.mf.name);
         let addr = read_pcrel(rec, pos, size, input_addr);
-        let Some((isec, off)) = find_subsec(&self.isecs, &self.subsecs, addr) else {
+        let Some((isec, off)) = self.find_subsec(&self.isecs, addr) else {
             fatal!("{}: __eh_frame: FDE for no LSDA", self.mf.name.raw());
         };
         Some((isec as u32, off as u32))
