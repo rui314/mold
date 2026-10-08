@@ -6,8 +6,10 @@ source "$(dirname "$0")"/common.inc
 # list typed as C strings is pointers still, __objc_const typed as
 # literals is data not to merge, a regular __objc_methname is C strings
 # to merge, and __objc_selrefs typed as C strings is selector
-# references, in a final image and a -r output alike.
-cat <<EOF | $CC -o $t/a.o -c -xobjective-c -
+# references, in a final image and a -r output alike. (An arm64 object
+# calls through selector stubs, and has no __objc_selrefs, unless
+# -fno-objc-msgsend-selector-stubs.)
+cat <<EOF | $CC -o $t/a.o -c -xobjective-c - -fno-objc-msgsend-selector-stubs
 #import <Foundation/Foundation.h>
 @interface Foo : NSObject
 - (int)bar;
