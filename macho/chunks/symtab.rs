@@ -240,7 +240,7 @@ impl StabPlan {
             let mut ent = stab.ent;
             if let Some(id) = stab.value_of {
                 if addr.0 != id {
-                    addr = (id, ctx.sym_addr(id));
+                    addr = (id, ctx.symbols[id].addr(ctx));
                 }
                 ent.value = addr.1;
             }
@@ -1163,7 +1163,7 @@ pub fn write_symtab<E: Target>(
     let strtab = BufPtr(strtab.as_mut_ptr());
     let strtab = &strtab;
 
-    // Millions of entries, each wanting a sym_addr lookup for its
+    // Millions of entries, each wanting an addr lookup for its
     // value: emit them in parallel blocks.
     const BLOCK: usize = 4096;
     let (locals, externs) = symtab.entries.split_at(start);
@@ -1176,7 +1176,7 @@ pub fn write_symtab<E: Target>(
                 for (i, ((msym, sym), name)) in ents.iter().zip(names).enumerate() {
                     let mut msym = *msym;
                     if let Some(id) = sym {
-                        msym.value = ctx.sym_addr(*id);
+                        msym.value = ctx.symbols[*id].addr(ctx);
                     }
                     msym.write_to(&mut out[i * size_of::<MachSym>()..]);
                     // SAFETY: layout_strings gave each name a range of

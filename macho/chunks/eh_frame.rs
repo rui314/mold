@@ -42,7 +42,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 
         if let Some(personality) = cie.personality {
             let cell_addr = base_addr + cie.output_offset as u64 + cie.personality_offset as u64;
-            let val = ctx.sym_got_addr(personality).wrapping_sub(cell_addr) as u32;
+            let val = ctx.symbols[personality].got_addr(ctx).wrapping_sub(cell_addr) as u32;
             let cell = off + cie.personality_offset as usize;
             buf[cell..cell + 4].copy_from_slice(&val.to_le_bytes());
         }

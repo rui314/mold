@@ -571,6 +571,84 @@ impl Symbol {
                 || self.name().starts_with(b"_OBJC_METACLASS_$_"))
     }
 
+    /// Returns the output address of the symbol.
+    pub fn addr<E: Target>(&self, ctx: &Context<E>) -> u64 {
+        match self.file() {
+            // A DTrace symbol, never defined, is at address 0 for
+            // ld-prime: where a branch that is no probe site goes.
+            None => {
+                if !crate::dtrace::is_dtrace_symbol(self.name()) {
+                    crate::error!("undefined symbol: {self}");
+                }
+                0
+            }
+            Some(FileId::Obj(_)) => {
+                if let Some(isec) = self.input_section().map(|i| i as usize) {
+                    ctx.isec_addr(isec) + self.value
+                } else if let Some(idx) = self.objc_stub_idx(&ctx.symbols) {
+                    ctx.objc_stubs.hdr.addr + crate::chunks::objc_stubs::entry_offset(ctx, idx)
+                } else {
+                    self.value
+                }
+            }
+            // A branch to a dylib symbol goes through its stub, or for
+            // a lazily loaded dylib's, its call helper. Other
+            // references to dylib symbols are filled in by dyld; the
+            // relocation scan has already validated them.
+            Some(FileId::Dylib(_)) => {
+                if self.stub_idx(&ctx.symbols).is_some() {
+                    self.stub_addr(ctx)
+                } else if let Some(idx) = self.lazy_stub_idx(&ctx.symbols) {
+                    ctx.lazy_helpers.helper_addr(idx as usize)
+                } else if let Some(idx) = self.delay_stub_idx(&ctx.symbols) {
+                    ctx.delay_init.stub_addr::<E>(idx as usize)
+                } else {
+                    0
+                }
+            }
+        }
+    }
+
+    /// Returns the address of the symbol's __got slot, or for a lazily
+    /// loaded dylib's symbol, its __lazy_load_got slot.
+    pub fn got_addr<E: Target>(&self, ctx: &Context<E>) -> u64 {
+        match self.got_idx(&ctx.symbols) {
+            Some(idx) => ctx.got.slot_addr(idx as usize),
+            None => ctx.lazy_load_got.slot_addr(self.lazy_got_idx(&ctx.symbols).unwrap()),
+        }
+    }
+
+    /// The address of the pointer slot the symbol's stub, stub `i`,
+    /// jumps through: its lazy pointer, or its GOT slot - mold's
+    /// gotplt_addr. A weak definition of this image always goes
+    /// through its GOT slot (the lazy binder cannot do weak lookup), as
+    /// in ld64.
+    pub fn stub_ptr_addr<E: Target>(&self, ctx: &Context<E>, i: usize) -> u64 {
+        if ctx.args.lazy_binding && !self.binds_weak_lookup(ctx) {
+            let slot = ctx.stubs.lazy.binary_search(&(i as u32)).unwrap();
+            ctx.lazy_ptrs.slot_addr(slot)
+        } else {
+            self.got_addr(ctx)
+        }
+    }
+
+    /// Returns the address of the symbol's __stubs entry - mold's
+    /// plt_addr.
+    pub fn stub_addr<E: Target>(&self, ctx: &Context<E>) -> u64 {
+        let idx = self.stub_idx(&ctx.symbols).unwrap();
+        ctx.stubs.hdr.addr + crate::chunks::stubs::entry_offset::<E>(idx)
+    }
+
+    /// The address a branch to the symbol targets: its stub when it
+    /// has one and dyld may redirect it, else the symbol itself.
+    pub fn branch_target_addr<E: Target>(&self, ctx: &Context<E>) -> u64 {
+        if self.is_interposable(ctx) && self.stub_idx(&ctx.symbols).is_some() {
+            self.stub_addr(ctx)
+        } else {
+            self.addr(ctx)
+        }
+    }
+
     /// The address of a thunk entry for the symbol that a branch at `pc`
     /// can reach, if it has one - mold's thunk_addr.
     #[inline]

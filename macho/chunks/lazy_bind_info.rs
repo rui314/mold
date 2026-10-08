@@ -41,10 +41,9 @@ pub fn build<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<u32>) {
     let mut buf = Vec::new();
     let mut offsets = Vec::with_capacity(ctx.stubs.lazy.len());
     for &i in &ctx.stubs.lazy {
-        let id = ctx.stubs.symbols[i as usize];
+        let sym = &ctx.symbols[ctx.stubs.symbols[i as usize]];
         offsets.push(buf.len() as u32);
-        let (seg, off) = segment_and_offset(ctx, ctx.stub_ptr_addr(i as usize, id));
-        let sym = &ctx.symbols[id];
+        let (seg, off) = segment_and_offset(ctx, sym.stub_ptr_addr(ctx, i as usize));
         let flags = if sym.is_weak_ref() { BIND_SYMBOL_FLAGS_WEAK_IMPORT } else { 0 };
         let ops = [
             Op::SegOffset(seg, off),

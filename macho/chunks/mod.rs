@@ -695,7 +695,7 @@ fn create_routines_cmd<E: Target>(ctx: &Context<E>, id: SymbolId) -> Vec<u8> {
     let cmd = RoutinesCommand64 {
         cmd: LC_ROUTINES_64,
         cmdsize: size_of::<RoutinesCommand64>() as u32,
-        init_address: ctx.sym_addr(id),
+        init_address: ctx.symbols[id].addr(ctx),
         ..Default::default()
     };
     to_vec(&cmd)

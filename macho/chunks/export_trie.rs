@@ -179,9 +179,9 @@ fn exports<E: Target>(
             }
             let addr = if sym.is_absolute(ctx) {
                 flags |= EXPORT_SYMBOL_FLAGS_KIND_ABSOLUTE;
-                ctx.sym_addr(id)
+                sym.addr(ctx)
             } else {
-                ctx.sym_addr(id) - base
+                sym.addr(ctx) - base
             };
             Some((sym.name(), Export::Addr { flags, addr }))
         })

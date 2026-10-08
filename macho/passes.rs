@@ -3666,8 +3666,10 @@ pub fn resolve_entry<E: Target>(ctx: &mut Context<E>) {
         // An entry point in a dylib (an app extension's
         // _NSExtensionMain): LC_MAIN must point into __TEXT, so it
         // names the symbol's stub, as ld64 does.
-        Some(id) if ctx.symbols[id].is_imported() => ctx.entry_addr = ctx.sym_stub_addr(id),
-        Some(id) if ctx.symbols[id].is_defined() => ctx.entry_addr = ctx.sym_addr(id),
+        Some(id) if ctx.symbols[id].is_imported() => {
+            ctx.entry_addr = ctx.symbols[id].stub_addr(ctx)
+        }
+        Some(id) if ctx.symbols[id].is_defined() => ctx.entry_addr = ctx.symbols[id].addr(ctx),
         _ => {
             error!(
                 "undefined symbol for entry point: {}",

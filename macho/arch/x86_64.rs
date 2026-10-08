@@ -171,7 +171,7 @@ fn write_branch8(
 ///   lea  lazy_ptr(%rip), %r11
 ///   jmp  dyld_stub_binding_helper
 fn write_legacy_stub_helper(ctx: &Context<X86_64>, addr: u64, buf: &mut [u8]) {
-    let helper = ctx.stub_helper.binding_helper.map(|id| ctx.sym_addr(id));
+    let helper = ctx.stub_helper.binding_helper.map(|id| ctx.symbols[id].addr(ctx));
     if helper.is_none() {
         crate::error!("stub helper: target 'dyld_stub_binding_helper' does not have address");
     }
@@ -256,7 +256,7 @@ impl Target for X86_64 {
             let off = stubs::entry_offset::<Self>(i as u32);
             let ent = &mut buf[off as usize..];
             let ent_addr = addr + off;
-            let ptr_addr = ctx.stub_ptr_addr(i, sym);
+            let ptr_addr = ctx.symbols[sym].stub_ptr_addr(ctx, i);
             let disp = ptr_addr.wrapping_sub(ent_addr + 6) as i64;
             if i32::try_from(disp).is_err() {
                 let p = ent_addr + 2;
@@ -285,7 +285,7 @@ impl Target for X86_64 {
         //   jmp  *dyld_stub_binder@GOTPCREL(%rip)
         //   nop
         let private = ctx.isec_addr(ctx.stub_helper.dyld_private_isec as usize);
-        let binder = ctx.sym_got_addr(ctx.stub_helper.dyld_stub_binder.unwrap());
+        let binder = ctx.symbols[ctx.stub_helper.dyld_stub_binder.unwrap()].got_addr(ctx);
         buf[0..3].copy_from_slice(&[0x4c, 0x8d, 0x1d]);
         write32(&mut buf[3..], private.wrapping_sub(addr + 7) as u32);
         buf[7..9].copy_from_slice(&[0x41, 0x53]);
@@ -323,7 +323,7 @@ impl Target for X86_64 {
     }
 
     fn write_lazy_helpers(ctx: &Context<Self>, addr: u64, buf: &mut [u8]) {
-        let lazy_load = ctx.sym_stub_addr(ctx.lazy_helpers.dyld_lazy_load.unwrap());
+        let lazy_load = ctx.symbols[ctx.lazy_helpers.dyld_lazy_load.unwrap()].stub_addr(ctx);
         let header = ctx.mach_header.hdr.addr;
         for h in &ctx.lazy_helpers.helpers {
             let size = Self::lazy_helper_size(h.kind) as usize;
@@ -411,7 +411,7 @@ impl Target for X86_64 {
             let ent = &mut buf[h.offset as usize..h.offset as usize + size];
             let base = addr + h.offset as u64;
             write_delay_check(ctx, ent, base, h.dlopen);
-            let slot = ctx.sym_got_addr(h.sym);
+            let slot = ctx.symbols[h.sym].got_addr(ctx);
             match h.kind {
                 DelayUse::Load { reg, .. } => {
                     ent[19..22].copy_from_slice(&movq_rip(reg));
@@ -425,7 +425,7 @@ impl Target for X86_64 {
                 }
             }
         }
-        let dlopen = ctx.sym_stub_addr(delay.dlopen_sym.unwrap());
+        let dlopen = ctx.symbols[delay.dlopen_sym.unwrap()].stub_addr(ctx);
         for d in &delay.dlopens {
             let size = Self::DLOPEN_HELPER_SIZE as usize;
             let ent = &mut buf[d.offset as usize..d.offset as usize + size];
@@ -748,7 +748,7 @@ impl Target for X86_64 {
                 // A pc-relative fixup that can't reach is an error.
                 X86_64_RELOC_BRANCH => {
                     let s = match ctx.reloc_target_sym(obj, r) {
-                        Some(id) => ctx.branch_target_addr(id),
+                        Some(id) => ctx.symbols[id].branch_target_addr(ctx),
                         None => s,
                     };
                     let t = s.wrapping_add_signed(a);
@@ -771,7 +771,7 @@ impl Target for X86_64 {
                     write32(loc, rip32_displacement(ctx, isec_id, r, p, t));
                 }
                 X86_64_RELOC_GOT_LOAD | X86_64_RELOC_GOT | X86_64_RELOC_TLV => {
-                    let g = ctx.sym_got_addr(ctx.reloc_target_sym(obj, r).unwrap());
+                    let g = ctx.symbols[ctx.reloc_target_sym(obj, r).unwrap()].got_addr(ctx);
                     let t = g.wrapping_add_signed(a);
                     write32(loc, rip32_displacement(ctx, isec_id, r, p, t));
                 }

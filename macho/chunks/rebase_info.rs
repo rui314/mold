@@ -80,7 +80,7 @@ pub fn rebase_locations<E: Target>(ctx: &Context<E>) -> Vec<u64> {
     // weak-lookup stub's GOT slot is rebased with the GOT).
     for &i in &ctx.stubs.lazy {
         let i = i as usize;
-        locs.push(ctx.stub_ptr_addr(i, ctx.stubs.symbols[i]));
+        locs.push(ctx.symbols[ctx.stubs.symbols[i]].stub_ptr_addr(ctx, i));
     }
 
     // GOT slots that hold local addresses. (Legacy LINKEDIT's dyld

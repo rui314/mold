@@ -39,7 +39,6 @@ use crate::chunks::{
     ChunkHeader, ChunkId, OutputMachHeader, OutputSection, OutputSectionId, OutputSegment,
 };
 use crate::cmdline::Args;
-use crate::error;
 use crate::input_files::{DylibFile, FileId, ObjectFile};
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::{MachSection, S_THREAD_LOCAL_REGULAR, S_THREAD_LOCAL_ZEROFILL, bytes_to_name};
@@ -544,64 +543,6 @@ impl<E: Target> Context<E> {
         self.chunk_header(chunk).addr + isec.offset as u64
     }
 
-    /// Returns the output address of a symbol.
-    pub fn sym_addr(&self, id: SymbolId) -> u64 {
-        let sym = &self.symbols[id];
-        match sym.file() {
-            // A DTrace symbol, never defined, is at address 0 for
-            // ld-prime: where a branch that is no probe site goes.
-            None => {
-                if !crate::dtrace::is_dtrace_symbol(sym.name()) {
-                    error!("undefined symbol: {sym}");
-                }
-                0
-            }
-            Some(FileId::Obj(_)) => {
-                if let Some(isec) = sym.input_section().map(|i| i as usize) {
-                    self.isec_addr(isec) + sym.value
-                } else if let Some(idx) = sym.objc_stub_idx(&self.symbols) {
-                    self.objc_stubs.hdr.addr + crate::chunks::objc_stubs::entry_offset(self, idx)
-                } else {
-                    sym.value
-                }
-            }
-            // A branch to a dylib symbol goes through its stub, or for
-            // a lazily loaded dylib's, its call helper. Other
-            // references to dylib symbols are filled in by dyld; the
-            // relocation scan has already validated them.
-            Some(FileId::Dylib(_)) => {
-                if sym.stub_idx(&self.symbols).is_some() {
-                    self.sym_stub_addr(id)
-                } else if let Some(idx) = sym.lazy_stub_idx(&self.symbols) {
-                    self.lazy_helpers.helper_addr(idx as usize)
-                } else if let Some(idx) = sym.delay_stub_idx(&self.symbols) {
-                    self.delay_init.stub_addr::<E>(idx as usize)
-                } else {
-                    0
-                }
-            }
-        }
-    }
-
-    /// Returns the address of a symbol's __stubs entry.
-    pub fn sym_stub_addr(&self, id: SymbolId) -> u64 {
-        let idx = self.symbols[id].stub_idx(&self.symbols).unwrap();
-        self.stubs.hdr.addr + crate::chunks::stubs::entry_offset::<E>(idx)
-    }
-
-    /// The address of the pointer slot stub `i` (for symbol `id`)
-    /// jumps through: its lazy pointer, or its GOT slot. A weak
-    /// definition of this image always goes through its GOT slot (the
-    /// lazy binder cannot do weak lookup), as in ld64.
-    pub fn stub_ptr_addr(&self, i: usize, id: SymbolId) -> u64 {
-        if self.args.lazy_binding && !self.symbols[id].binds_weak_lookup(self) {
-            let slot = self.stubs.lazy.binary_search(&(i as u32)).unwrap();
-            self.lazy_ptrs.slot_addr(slot)
-        } else {
-            self.sym_got_addr(id)
-        }
-    }
-
     /// The library ordinal an interposable export binds with.
     pub fn export_bind_ordinal(&self) -> i32 {
         match self.args.flat_namespace {
@@ -610,32 +551,10 @@ impl<E: Target> Context<E> {
         }
     }
 
-    /// The address a branch to `id` targets: the symbol's stub when it
-    /// has one and dyld may redirect it, else the symbol itself.
-    pub fn branch_target_addr(&self, id: SymbolId) -> u64 {
-        if self.symbols[id].is_interposable(self)
-            && self.symbols[id].stub_idx(&self.symbols).is_some()
-        {
-            self.sym_stub_addr(id)
-        } else {
-            self.sym_addr(id)
-        }
-    }
-
-    /// Returns the address of a symbol's __got slot, or for a lazily
-    /// loaded dylib's symbol, its __lazy_load_got slot.
-    pub fn sym_got_addr(&self, id: SymbolId) -> u64 {
-        let sym = &self.symbols[id];
-        match sym.got_idx(&self.symbols) {
-            Some(idx) => self.got.slot_addr(idx as usize),
-            None => self.lazy_load_got.slot_addr(sym.lazy_got_idx(&self.symbols).unwrap()),
-        }
-    }
-
     /// Returns the address of the __got slot the objc stubs load
     /// _objc_msgSend from.
     pub fn objc_msgsend_got_addr(&self) -> u64 {
-        self.sym_got_addr(self.objc_stubs.msgsend_sym.unwrap())
+        self.symbols[self.objc_stubs.msgsend_sym.unwrap()].got_addr(self)
     }
 
     /// Returns the symbol a relocation refers to, if it refers to one.
@@ -669,7 +588,7 @@ impl<E: Target> Context<E> {
     /// Resolves a relocation target to its output address.
     pub fn reloc_target_addr(&self, obj: usize, rel: &Reloc) -> u64 {
         match rel.target() {
-            RelocTarget::Sym(idx) => self.sym_addr(self.objs[obj].symbols[idx as usize]),
+            RelocTarget::Sym(idx) => self.symbols[self.objs[obj].symbols[idx as usize]].addr(self),
             RelocTarget::Section(idx) => self.isec_addr(idx as usize),
         }
     }

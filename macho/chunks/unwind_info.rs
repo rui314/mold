@@ -67,7 +67,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let personality_off = u32::from_le_bytes(sec.contents[12..16].try_into().unwrap()) as usize;
     for (i, &sym) in sec.personalities.iter().enumerate() {
         let off = personality_off + i * 4;
-        let val = ctx.sym_got_addr(sym).wrapping_sub(base) as u32;
+        let val = ctx.symbols[sym].got_addr(ctx).wrapping_sub(base) as u32;
         buf[off..off + 4].copy_from_slice(&val.to_le_bytes());
     }
 }

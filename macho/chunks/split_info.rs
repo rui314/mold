@@ -218,7 +218,7 @@ impl<'a, E: Target> Places<'a, E> {
         (isec.offset != u32::MAX).then(|| self.chunk(chunk, isec.offset as u64))
     }
 
-    /// Where a symbol's address lies, as Context::sym_addr resolves it
+    /// Where a symbol's address lies, as Symbol::addr resolves it
     /// (a dylib symbol at its stub); None for an absolute symbol. The
     /// linker's own sectionless symbols are the layout boundaries and
     /// the mach header's names (___dso_handle, __mh_*_header).

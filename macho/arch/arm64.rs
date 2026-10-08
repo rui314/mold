@@ -840,7 +840,7 @@ impl Target for Arm64 {
             let off = stubs::entry_offset::<Self>(i as u32);
             let ent = &mut buf[off as usize..];
             let ent_addr = addr + off;
-            let ptr_addr = ctx.stub_ptr_addr(i, sym);
+            let ptr_addr = ctx.symbols[sym].stub_ptr_addr(ctx, i);
             if !adrp_reaches(ptr_addr, ent_addr) {
                 crate::error!(
                     "stub for {}: ADRP out of range, from 0x{ent_addr:08X} to its pointer at 0x{ptr_addr:08X}",
@@ -864,7 +864,7 @@ impl Target for Arm64 {
         //   ldr  x16, [x16, dyld_stub_binder@GOTPAGEOFF]
         //   br   x16
         let private = ctx.isec_addr(ctx.stub_helper.dyld_private_isec as usize);
-        let binder = ctx.sym_got_addr(ctx.stub_helper.dyld_stub_binder.unwrap());
+        let binder = ctx.symbols[ctx.stub_helper.dyld_stub_binder.unwrap()].got_addr(ctx);
         write32(&mut buf[0..], 0x9000_0011 | page_offset(private, addr));
         write32(&mut buf[4..], 0x9100_0231 | ((private as u32 & 0xfff) << 10));
         write32(&mut buf[8..], 0xa9bf_47f0);
@@ -886,7 +886,7 @@ impl Target for Arm64 {
 
     fn write_objc_stubs(ctx: &Context<Self>, addr: u64, buf: &mut [u8]) {
         if ctx.args.objc_stubs_small {
-            let msgsend = ctx.branch_target_addr(ctx.objc_stubs.msgsend_sym.unwrap());
+            let msgsend = ctx.symbols[ctx.objc_stubs.msgsend_sym.unwrap()].branch_target_addr(ctx);
             for i in 0..ctx.objc_stubs.symbols.len() {
                 let off = objc_stubs::entry_offset(ctx, i as u32);
                 let ent = &mut buf[off as usize..];
@@ -924,7 +924,7 @@ impl Target for Arm64 {
     }
 
     fn write_lazy_helpers(ctx: &Context<Self>, addr: u64, buf: &mut [u8]) {
-        let lazy_load = ctx.sym_stub_addr(ctx.lazy_helpers.dyld_lazy_load.unwrap());
+        let lazy_load = ctx.symbols[ctx.lazy_helpers.dyld_lazy_load.unwrap()].stub_addr(ctx);
         let header = ctx.mach_header.hdr.addr;
         for h in &ctx.lazy_helpers.helpers {
             let insn = HelperInsn { base: addr + h.offset as u64 };
@@ -1051,7 +1051,7 @@ impl Target for Arm64 {
             let (insn, rd) = (HelperInsn { base: addr + h.offset as u64 }, reg as u32);
             let flag = ctx.isec_addr(delay.dlopens[h.dlopen as usize].flag as usize);
             let helper = delay.dlopen_helper_addr(h.dlopen as usize);
-            let slot = ctx.sym_got_addr(h.sym);
+            let slot = ctx.symbols[h.sym].got_addr(ctx);
             let code = [
                 insn.adrp(0, rd, flag),
                 insn.add(rd, flag),
@@ -1068,7 +1068,7 @@ impl Target for Arm64 {
         for d in &delay.dlopens {
             let insn = HelperInsn { base: addr + d.offset as u64 };
             let (name, flag) = (ctx.isec_addr(d.string as usize), ctx.isec_addr(d.flag as usize));
-            let dlopen = ctx.sym_stub_addr(delay.dlopen_sym.unwrap());
+            let dlopen = ctx.symbols[delay.dlopen_sym.unwrap()].stub_addr(ctx);
             let mut code = DLOPEN_HELPER;
             code[16] = insn.adrp(16, 0, name);
             code[17] = insn.add(0, name);
@@ -1181,7 +1181,7 @@ impl Target for Arm64 {
         for (i, &sym) in syms.iter().enumerate() {
             let ent = &mut buf[i * 12..];
             let ent_addr = addr + i as u64 * 12;
-            let target = ctx.branch_target_addr(sym);
+            let target = ctx.symbols[sym].branch_target_addr(ctx);
 
             // adrp x16, target@PAGE; add x16, x16, target@PAGEOFF; br x16
             write32(&mut ent[0..], 0x9000_0010 | page_offset(target, ent_addr));
@@ -1361,7 +1361,7 @@ impl Target for Arm64 {
                     }
                     let sym = ctx.reloc_target_sym(obj, r);
                     let s = match sym {
-                        Some(id) => ctx.branch_target_addr(id),
+                        Some(id) => ctx.symbols[id].branch_target_addr(ctx),
                         None => s,
                     };
                     let t = s.wrapping_add_signed(a);
@@ -1431,9 +1431,8 @@ impl Target for Arm64 {
                 // __thread_vars descriptor. Other loads keep loading the
                 // address from __got.
                 ARM64_RELOC_GOT_LOAD_PAGE21 | ARM64_RELOC_TLVP_LOAD_PAGE21 => {
-                    let id = ctx.reloc_target_sym(obj, r).unwrap();
-                    let t =
-                        if ctx.symbols[id].can_relax_got(ctx) { s } else { ctx.sym_got_addr(id) };
+                    let sym = &ctx.symbols[ctx.reloc_target_sym(obj, r).unwrap()];
+                    let t = if sym.can_relax_got(ctx) { s } else { sym.got_addr(ctx) };
                     check_adrp(ctx, isec_id, r, p, t.wrapping_add_signed(a));
                     write_adrp(loc, t.wrapping_add_signed(a), p);
                 }
@@ -1441,9 +1440,9 @@ impl Target for Arm64 {
                 // load's 64-bit add as one relaxed already, and refuses
                 // any other instruction.
                 ARM64_RELOC_GOT_LOAD_PAGEOFF12 | ARM64_RELOC_TLVP_LOAD_PAGEOFF12 => {
-                    let id = ctx.reloc_target_sym(obj, r).unwrap();
-                    if !ctx.symbols[id].can_relax_got(ctx) {
-                        let g = ctx.sym_got_addr(id);
+                    let sym = &ctx.symbols[ctx.reloc_target_sym(obj, r).unwrap()];
+                    if !sym.can_relax_got(ctx) {
+                        let g = sym.got_addr(ctx);
                         if let Err(size) = write_add_ldst(loc, g.wrapping_add_signed(a)) {
                             report_ldst_alignment(ctx, isec_id, r, size);
                         }
@@ -1462,7 +1461,7 @@ impl Target for Arm64 {
                     }
                 }
                 ARM64_RELOC_POINTER_TO_GOT => {
-                    let g = ctx.sym_got_addr(ctx.reloc_target_sym(obj, r).unwrap());
+                    let g = ctx.symbols[ctx.reloc_target_sym(obj, r).unwrap()].got_addr(ctx);
                     write32(loc, g.wrapping_add_signed(a).wrapping_sub(p) as u32);
                 }
                 _ => fatal!("unsupported relocation type: {}", r.ty),

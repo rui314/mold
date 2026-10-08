@@ -77,7 +77,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     };
     for (i, &id) in ctx.got.got_syms.iter().enumerate() {
         if !binds(id) {
-            buf[i * 8..i * 8 + 8].copy_from_slice(&ctx.sym_addr(id).to_le_bytes());
+            buf[i * 8..i * 8 + 8].copy_from_slice(&ctx.symbols[id].addr(ctx).to_le_bytes());
         }
     }
 }
