@@ -4,7 +4,8 @@
 //! with the pointer's address.
 
 use crate::arch::Target;
-use crate::chunks::ChunkHeader;
+use crate::chunks::split_info::{Entry, Places};
+use crate::chunks::{ChunkHeader, ChunkId};
 use crate::context::Context;
 use crate::input_files::add_data_word;
 use crate::macho::*;
@@ -100,4 +101,19 @@ pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
 
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     E::write_stub_helper(ctx, ctx.stub_helper.hdr.addr, buf);
+}
+
+/// The header's references to __dyld_private and dyld_stub_binder's GOT
+/// slot, for LC_SEGMENT_SPLIT_INFO.
+pub(crate) fn split_info_entries<E: Target>(p: &Places<'_, E>, out: &mut Vec<Entry>) {
+    let ctx = p.ctx;
+    if !ctx.chunks.contains(&ChunkId::StubHelper) {
+        return;
+    }
+    let helper = &ctx.stub_helper;
+    let [private, binder] = E::STUB_HELPER_REF_OFFS;
+    let to = p.isec(helper.dyld_private_isec as usize);
+    p.pcrel(out, p.chunk(ChunkId::StubHelper, private), to);
+    let to = helper.dyld_stub_binder.map(|id| p.got_slot(id));
+    p.pcrel(out, p.chunk(ChunkId::StubHelper, binder), to);
 }

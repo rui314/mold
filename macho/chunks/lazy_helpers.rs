@@ -6,8 +6,9 @@
 //! load the dylib.
 
 use crate::arch::Target;
-use crate::chunks::ChunkHeader;
+use crate::chunks::split_info::{Entry, Places, push};
 use crate::chunks::symtab::{NamedEntry, local_msym};
+use crate::chunks::{ChunkHeader, ChunkId, stubs};
 use crate::context::Context;
 use crate::input_sections::Reloc;
 use crate::macho::*;
@@ -135,4 +136,39 @@ pub fn populate_symtab<E: Target>(ctx: &Context<E>, out: &mut Vec<NamedEntry>) {
 
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     E::write_lazy_helpers(ctx, ctx.lazy_helpers.hdr.addr, buf);
+}
+
+/// The helpers' references, for LC_SEGMENT_SPLIT_INFO: to the flag word
+/// and slot they check and load, to the arguments and the stub of the
+/// call of __dyld_lazy_load, and to the code after the site they return
+/// to (see LazyTarget).
+pub(crate) fn split_info_entries<E: Target>(p: &Places<'_, E>, out: &mut Vec<Entry>) {
+    let ctx = p.ctx;
+    let lazy = &ctx.lazy_helpers;
+    let Some(lazy_load) = lazy.dyld_lazy_load else { return };
+    let stub = p.chunk(
+        ChunkId::Stubs,
+        stubs::entry_offset::<E>(ctx.symbols[lazy_load].stub_idx(&ctx.symbols).unwrap()),
+    );
+    for (i, h) in lazy.helpers.iter().enumerate() {
+        let (n, at) = p.lazy_helper(i as u32);
+        for (off, kind, to) in E::lazy_helper_refs(h.kind) {
+            let to = match to {
+                LazyTarget::Flag => p.isec(h.flag as usize),
+                LazyTarget::Slot => {
+                    let slot = ctx.lazy_load_got.slot_addr(h.slot);
+                    Some(p.chunk_addr(ChunkId::LazyLoadGot, slot))
+                }
+                LazyTarget::Header => Some((0, 0)),
+                LazyTarget::LazyLoad => Some(stub),
+                LazyTarget::Site => match h.kind {
+                    LazyUse::Load { site: Some((isec, off)), .. } => {
+                        p.isec(isec as usize).map(|(n, o)| (n, o + off as u64 + 4))
+                    }
+                    _ => None,
+                },
+            };
+            push(out, (n, at + off as u64), kind, to);
+        }
+    }
 }

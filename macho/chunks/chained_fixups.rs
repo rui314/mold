@@ -5,11 +5,11 @@
 use rayon::prelude::*;
 
 use crate::arch::Target;
-use crate::chunks::{ChunkHeader, OutputSegment, rebase_info};
+use crate::chunks::{ChunkHeader, OutputSegment, output_section, rebase_info};
 use crate::cmdline::Treatment;
 use crate::context::Context;
 use crate::fatal;
-use crate::input_files::FileId;
+use crate::input_files::{FileId, data_blob_binds, data_blob_pointers};
 use crate::macho::*;
 use crate::symbol::{Symbol, SymbolId};
 
@@ -445,7 +445,7 @@ fn collect_fixups<E: Target>(ctx: &Context<E>) -> (Vec<Fixup>, Vec<(u32, u64)>) 
         .flat_map_iter(|(id, isec)| {
             let unaligned = &unaligned;
             let file = &ctx.objs[isec.file as usize];
-            rebase_info::pointer_relocs(ctx, isec).filter_map(move |(addr, rel)| {
+            output_section::pointer_relocs(ctx, isec).filter_map(move |(addr, rel)| {
                 let fixup = match rel.sym(file) {
                     Some(id)
                         if ctx.symbols[id].is_absolute(ctx)
@@ -489,10 +489,10 @@ fn collect_fixups<E: Target>(ctx: &Context<E>) -> (Vec<Fixup>, Vec<(u32, u64)>) 
         let slot = ctx.objc_stubs.selref_addr(ctx, i);
         fixups.push((slot, None, 0));
     }
-    for (addr, _) in rebase_info::data_blob_pointers(ctx) {
+    for (addr, _) in data_blob_pointers(ctx) {
         fixups.push((addr, None, 0));
     }
-    for (addr, id) in rebase_info::data_blob_binds(ctx) {
+    for (addr, id) in data_blob_binds(ctx) {
         fixups.push((addr, Some(id), 0));
     }
     // The pointers of an image nothing slides keep their addresses:

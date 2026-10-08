@@ -2,8 +2,9 @@
 //! import.
 
 use crate::arch::Target;
-use crate::chunks::{ChunkHeader, rebase_info, segment_and_offset};
+use crate::chunks::{ChunkHeader, output_section, segment_and_offset};
 use crate::context::Context;
+use crate::input_files::data_blob_binds;
 use crate::macho::*;
 use crate::util::encode_uleb;
 
@@ -47,7 +48,7 @@ pub fn construct<E: Target>(ctx: &Context<E>) -> Vec<u8> {
             continue;
         }
         let file = &ctx.objs[isec.file as usize];
-        for (addr, rel) in rebase_info::pointer_relocs(ctx, isec) {
+        for (addr, rel) in output_section::pointer_relocs(ctx, isec) {
             if let Some(id) = rel.sym(file)
                 && (ctx.symbols[id].binds_as_import(ctx)
                     || ctx.symbols[id].is_dtrace_pointer_target())
@@ -56,7 +57,7 @@ pub fn construct<E: Target>(ctx: &Context<E>) -> Vec<u8> {
             }
         }
     }
-    for (addr, id) in rebase_info::data_blob_binds(ctx) {
+    for (addr, id) in data_blob_binds(ctx) {
         binds.push((addr, id, 0));
     }
 

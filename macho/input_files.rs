@@ -517,6 +517,38 @@ impl DataBlob {
     }
 }
 
+/// The (address, target) of every pointer field of the synthesized
+/// records (see DataBlob).
+fn data_blob_fields<E: Target>(ctx: &Context<E>) -> Vec<(u64, ObjcRef)> {
+    let mut out = Vec::new();
+    for b in &ctx.data_blobs {
+        let mut at = ctx.isecs[b.isec as usize].addr(ctx);
+        for f in &b.fields {
+            match f {
+                DataField::Bytes(bytes) => at += bytes.len() as u64,
+                DataField::Ptr(r) => {
+                    out.push((at, *r));
+                    at += 8;
+                }
+            }
+        }
+    }
+    out
+}
+
+/// The (address, target) of every non-null pointer field of the
+/// synthesized records into the image: each is a rebase.
+pub fn data_blob_pointers<E: Target>(ctx: &Context<E>) -> Vec<(u64, u64)> {
+    let fields = data_blob_fields(ctx).into_iter().filter(|(_, r)| r.import(ctx).is_none());
+    fields.map(|(at, r)| (at, r.addr(ctx))).filter(|&(_, target)| target != 0).collect()
+}
+
+/// The (address, symbol) of every pointer field of the synthesized
+/// records to an import: each is a bind.
+pub fn data_blob_binds<E: Target>(ctx: &Context<E>) -> Vec<(u64, SymbolId)> {
+    data_blob_fields(ctx).into_iter().filter_map(|(at, r)| Some((at, r.import(ctx)?))).collect()
+}
+
 /// Appends a synthesized record to the tail of __DATA,`sect` (a section
 /// with the given flags) and returns its subsection.
 pub(crate) fn add_data_blob<E: Target>(

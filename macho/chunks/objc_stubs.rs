@@ -2,8 +2,9 @@
 //! stubs, with the selector strings and references they load.
 
 use crate::arch::Target;
+use crate::chunks::split_info::{Entry, Places, push};
 use crate::chunks::symtab::{NamedEntry, local_msym};
-use crate::chunks::{ChunkHeader, OutputSectionId};
+use crate::chunks::{ChunkHeader, ChunkId, OutputSectionId};
 use crate::context::Context;
 use crate::macho::*;
 use crate::symbol::SymbolId;
@@ -127,5 +128,43 @@ pub fn write_selrefs<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     for (j, &name) in stubs.extra_selrefs.iter().enumerate() {
         let val = ctx.isecs[name as usize].addr(ctx);
         buf[(n + j) * 8..(n + j) * 8 + 8].copy_from_slice(&val.to_le_bytes());
+    }
+}
+
+/// The synthesized selector reference slots, which hold pointers into
+/// __objc_methname, for the loader to slide (see
+/// rebase_info::rebase_locations).
+pub fn rebase_locations<E: Target>(ctx: &Context<E>, locs: &mut Vec<u64>) {
+    for i in 0..ctx.objc_stubs.symbols.len() + ctx.objc_stubs.extra_selrefs.len() {
+        locs.push(ctx.objc_stubs.selref_addr(ctx, i));
+    }
+}
+
+/// The references of the stubs, to their selector references and
+/// _objc_msgSend's GOT slot, and of the synthesized selector
+/// references, to their selectors' names, for LC_SEGMENT_SPLIT_INFO.
+pub(crate) fn split_info_entries<E: Target>(p: &Places<'_, E>, out: &mut Vec<Entry>) {
+    let ctx = p.ctx;
+    let stubs = &ctx.objc_stubs;
+    if ctx.chunks.contains(&ChunkId::ObjcStubs) {
+        let [sel, msgsend] = E::OBJC_STUB_REF_OFFS;
+        let msgsend_slot = p.got_slot(stubs.msgsend_sym.unwrap());
+        for i in 0..stubs.symbols.len() {
+            let at = entry_offset(ctx, i as u32);
+            p.pcrel(out, p.chunk(ChunkId::ObjcStubs, at + sel), Some(p.selref(i)));
+            p.pcrel(out, p.chunk(ChunkId::ObjcStubs, at + msgsend), Some(msgsend_slot));
+        }
+    }
+    if stubs.selrefs.is_some() {
+        let n = stubs.symbols.len();
+        for (i, &off) in stubs.methname_offs.iter().enumerate() {
+            let methname = ctx.output_section(stubs.methname.unwrap());
+            let name = (methname.hdr.sect_idx, methname.tail_off + off);
+            push(out, p.selref(i), DYLD_CACHE_ADJ_V2_POINTER_64, Some(name));
+        }
+        for (j, &name) in stubs.extra_selrefs.iter().enumerate() {
+            let to = p.isec(name as usize);
+            push(out, p.selref(n + j), DYLD_CACHE_ADJ_V2_POINTER_64, to);
+        }
     }
 }

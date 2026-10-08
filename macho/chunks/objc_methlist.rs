@@ -3,9 +3,11 @@
 
 use crate::arch::Target;
 use crate::chunks::output_section::append_tail;
+use crate::chunks::split_info::{Entry, Places, push};
 use crate::chunks::{ChunkHeader, ChunkId, OutputSectionId, Tail};
 use crate::context::Context;
 use crate::input_files::add_placed_isec;
+use crate::macho::DYLD_CACHE_ADJ_V2_DELTA_32;
 use crate::objc::{ObjcMethList, ObjcMethod};
 use crate::passes::{SectionName, record_section};
 use crate::symbol_moves::{Move, MoveOption};
@@ -138,6 +140,22 @@ pub fn write_lists<E: Target>(ctx: &Context<E>, chunk: ChunkId, chunk_addr: u64,
                     crate::fatal!("relative method list entry out of range");
                 }
                 buf[at + 4 * k..at + 4 * k + 4].copy_from_slice(&(rel as i32).to_le_bytes());
+            }
+        }
+    }
+}
+
+/// The lists' entries' references, self-relative offsets, wherever the
+/// lists went, for LC_SEGMENT_SPLIT_INFO.
+pub(crate) fn split_info_entries<E: Target>(p: &Places<'_, E>, out: &mut Vec<Entry>) {
+    for list in &p.ctx.objc_methlist.lists {
+        let Some((n, base)) = p.isec(list.isec as usize) else {
+            continue;
+        };
+        for (i, m) in list.methods.iter().enumerate() {
+            for (k, r) in [m.name, m.types, m.imp].into_iter().enumerate() {
+                let from = (n, base + 8 + 12 * i as u64 + 4 * k as u64);
+                push(out, from, DYLD_CACHE_ADJ_V2_DELTA_32, p.objc_ref(r));
             }
         }
     }

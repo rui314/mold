@@ -2,13 +2,9 @@
 //! mold's reldyn.rs holds the ELF relative relocations it stands in for.
 
 use crate::arch::Target;
-use crate::chunks::{ChunkHeader, segment_and_offset};
+use crate::chunks::{ChunkHeader, got, lazy_ptrs, objc_stubs, output_section, segment_and_offset};
 use crate::context::Context;
-use crate::input_files::DataField;
-use crate::input_sections::{InputSection, Reloc};
 use crate::macho::*;
-use crate::objc::ObjcRef;
-use crate::symbol::SymbolId;
 use crate::util::encode_uleb;
 
 /// The rebase opcode stream: every pointer dyld slides.
@@ -31,72 +27,19 @@ impl Default for RebaseInfoSection {
     }
 }
 
-/// The pointers (see Target::is_absrel) the relocations of a live
-/// subsection write, each with its address.
-pub(crate) fn pointer_relocs<'a, E: Target>(
-    ctx: &'a Context<E>,
-    isec: &'a InputSection,
-) -> impl Iterator<Item = (u64, &'a Reloc)> + 'a {
-    let base = ctx.chunk_header(isec.output_section().unwrap()).addr + isec.offset as u64;
-    let rels = isec.rels(&ctx.objs[isec.file as usize]).iter();
-    rels.filter(|rel| E::is_absrel(rel)).map(move |rel| (base + rel.offset as u64, rel))
-}
-
 /// Every pointer a loader must slide when the image lands at another
-/// address than its own: the pointers written for absolute relocations
-/// to local targets, then the synthesized ones. Unsorted. The rebase
-/// stream describes them to dyld, a -static -pie image's local
-/// relocations to whatever loads it, and legacy LINKEDIT's to dyld.
+/// address than its own: those each chunk writes - the output sections'
+/// (for absolute relocations to local targets, and in the synthesized
+/// records), the synthesized selector references, the lazy pointers
+/// and the GOT slots. Unsorted. The rebase stream describes them to
+/// dyld, a -static -pie image's local relocations to whatever loads it,
+/// and legacy LINKEDIT's to dyld.
 pub fn rebase_locations<E: Target>(ctx: &Context<E>) -> Vec<u64> {
     let mut locs: Vec<u64> = Vec::new();
-
-    // Pointers written for UNSIGNED relocations to local targets.
-    for isec in ctx.isecs.iter() {
-        if !isec.is_emitted() {
-            continue;
-        }
-        let file = &ctx.objs[isec.file as usize];
-        for (addr, rel) in pointer_relocs(ctx, isec) {
-            // Pointers to thread-local data are thread-pointer-relative
-            // offsets, not addresses, so they are not rebased.
-            let target = rel.sym(file);
-            let imported = target.is_some_and(|id| {
-                ctx.symbols[id].binds_pointer(ctx) || ctx.symbols[id].is_dtrace_pointer_target()
-            });
-            let absolute = target.is_some_and(|id| ctx.symbols[id].is_absolute(ctx));
-            if !imported && !absolute && !rel.refers_to_tls(ctx, file) {
-                locs.push(addr);
-            }
-        }
-    }
-
-    // Synthesized selector reference slots hold pointers into
-    // __objc_methname.
-    for i in 0..ctx.objc_stubs.symbols.len() + ctx.objc_stubs.extra_selrefs.len() {
-        locs.push(ctx.objc_stubs.selref_addr(ctx, i));
-    }
-    // Pointer fields of the synthesized Objective-C records.
-    for (addr, _) in data_blob_pointers(ctx) {
-        locs.push(addr);
-    }
-    // Lazy pointers start out pointing at their stub helper entries (a
-    // weak-lookup stub's GOT slot is rebased with the GOT).
-    for &i in &ctx.stubs.lazy {
-        let i = i as usize;
-        locs.push(ctx.symbols[ctx.stubs.symbols[i]].stub_ptr_addr(ctx, i));
-    }
-
-    // GOT slots that hold local addresses. (Legacy LINKEDIT's dyld
-    // slides those the indirect symbol table marks local itself, and
-    // binds the others by name.)
-    if !ctx.args.legacy_linkedit {
-        for (i, &id) in ctx.got.got_syms.iter().enumerate() {
-            let sym = &ctx.symbols[id];
-            if !sym.binds_as_import(ctx) && !sym.is_absolute(ctx) {
-                locs.push(ctx.got.slot_addr(i));
-            }
-        }
-    }
+    output_section::rebase_locations(ctx, &mut locs);
+    objc_stubs::rebase_locations(ctx, &mut locs);
+    lazy_ptrs::rebase_locations(ctx, &mut locs);
+    got::rebase_locations(ctx, &mut locs);
     locs
 }
 
@@ -192,36 +135,4 @@ fn rebase_ops<E: Target>(ctx: &Context<E>, locs: &[u64]) -> Vec<Op> {
         i += n;
     }
     ops
-}
-
-/// The (address, target) of every pointer field of the synthesized
-/// records (see input_files::DataBlob).
-fn data_blob_fields<E: Target>(ctx: &Context<E>) -> Vec<(u64, ObjcRef)> {
-    let mut out = Vec::new();
-    for b in &ctx.data_blobs {
-        let mut at = ctx.isecs[b.isec as usize].addr(ctx);
-        for f in &b.fields {
-            match f {
-                DataField::Bytes(bytes) => at += bytes.len() as u64,
-                DataField::Ptr(r) => {
-                    out.push((at, *r));
-                    at += 8;
-                }
-            }
-        }
-    }
-    out
-}
-
-/// The (address, target) of every non-null pointer field of the
-/// synthesized records into the image: each is a rebase.
-pub fn data_blob_pointers<E: Target>(ctx: &Context<E>) -> Vec<(u64, u64)> {
-    let fields = data_blob_fields(ctx).into_iter().filter(|(_, r)| r.import(ctx).is_none());
-    fields.map(|(at, r)| (at, r.addr(ctx))).filter(|&(_, target)| target != 0).collect()
-}
-
-/// The (address, symbol) of every pointer field of the synthesized
-/// records to an import: each is a bind.
-pub fn data_blob_binds<E: Target>(ctx: &Context<E>) -> Vec<(u64, SymbolId)> {
-    data_blob_fields(ctx).into_iter().filter_map(|(at, r)| Some((at, r.import(ctx)?))).collect()
 }

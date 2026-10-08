@@ -4,7 +4,7 @@
 
 use crate::arch::Target;
 use crate::chunks::bind_info::{self, Op};
-use crate::chunks::{ChunkHeader, rebase_info};
+use crate::chunks::{ChunkHeader, output_section};
 use crate::context::Context;
 use crate::macho::*;
 
@@ -58,7 +58,7 @@ pub fn construct<E: Target>(ctx: &Context<E>) -> Vec<u8> {
             continue;
         }
         let file = &ctx.objs[isec.file as usize];
-        for (addr, rel) in rebase_info::pointer_relocs(ctx, isec) {
+        for (addr, rel) in output_section::pointer_relocs(ctx, isec) {
             if let Some(id) = rel.sym(file)
                 && binds_weak(id)
             {

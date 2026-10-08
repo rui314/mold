@@ -5,11 +5,13 @@
 use rayon::prelude::*;
 
 use crate::arch::Target;
+use crate::chunks::split_info::{Entry, Places, push};
 use crate::chunks::symtab::{NamedEntry, local_msym};
 use crate::chunks::{ChunkHeader, ChunkId, OutputSectionId};
 use crate::context::Context;
-use crate::input_files::{DataField, is_listed_out};
-use crate::input_sections::InputSectionId;
+use crate::input_files::{DataField, data_blob_pointers, is_listed_out};
+use crate::input_sections::{InputSection, InputSectionId, Reloc};
+use crate::macho::DYLD_CACHE_ADJ_V2_POINTER_64;
 use crate::symbol_moves::MoveOption;
 use crate::thunks::Thunk;
 use crate::util::align_to;
@@ -197,6 +199,77 @@ fn write_data_blobs<E: Target>(ctx: &Context<E>, id: OutputSectionId, buf: &mut 
                     // dyld fills in a pointer to an import.
                     let addr = if r.import(ctx).is_some() { 0 } else { r.addr(ctx) };
                     buf[at..at + 8].copy_from_slice(&addr.to_le_bytes());
+                    at += 8;
+                }
+            }
+        }
+    }
+}
+
+/// The pointers (see Target::is_absrel) the relocations of a live
+/// subsection write, each with its address.
+pub(crate) fn pointer_relocs<'a, E: Target>(
+    ctx: &'a Context<E>,
+    isec: &'a InputSection,
+) -> impl Iterator<Item = (u64, &'a Reloc)> + 'a {
+    let base = ctx.chunk_header(isec.output_section().unwrap()).addr + isec.offset as u64;
+    let rels = isec.rels(&ctx.objs[isec.file as usize]).iter();
+    rels.filter(|rel| E::is_absrel(rel)).map(move |rel| (base + rel.offset as u64, rel))
+}
+
+/// The pointers of the output sections a loader must slide (see
+/// rebase_info::rebase_locations): those written for absolute
+/// relocations to local targets, and the synthesized records' pointer
+/// fields into the image.
+pub fn rebase_locations<E: Target>(ctx: &Context<E>, locs: &mut Vec<u64>) {
+    // Pointers written for UNSIGNED relocations to local targets.
+    for isec in ctx.isecs.iter() {
+        if !isec.is_emitted() {
+            continue;
+        }
+        let file = &ctx.objs[isec.file as usize];
+        for (addr, rel) in pointer_relocs(ctx, isec) {
+            // Pointers to thread-local data are thread-pointer-relative
+            // offsets, not addresses, so they are not rebased.
+            let target = rel.sym(file);
+            let imported = target.is_some_and(|id| {
+                ctx.symbols[id].binds_pointer(ctx) || ctx.symbols[id].is_dtrace_pointer_target()
+            });
+            let absolute = target.is_some_and(|id| ctx.symbols[id].is_absolute(ctx));
+            if !imported && !absolute && !rel.refers_to_tls(ctx, file) {
+                locs.push(addr);
+            }
+        }
+    }
+
+    // Pointer fields of the synthesized Objective-C records.
+    for (addr, _) in data_blob_pointers(ctx) {
+        locs.push(addr);
+    }
+}
+
+/// The output sections' references for LC_SEGMENT_SPLIT_INFO but their
+/// inputs' (see split_info::construct): the range-extension thunks' to
+/// their targets, and the synthesized records' pointer fields.
+pub(crate) fn split_info_entries<E: Target>(p: &Places<'_, E>, out: &mut Vec<Entry>) {
+    let ctx = p.ctx;
+    for osec in &ctx.output_sections {
+        for thunk in &osec.thunks {
+            for (i, &id) in thunk.syms.iter().enumerate() {
+                let from = (osec.hdr.sect_idx, thunk.offset + i as u64 * E::THUNK_SIZE);
+                p.pcrel(out, from, p.sym(id));
+            }
+        }
+    }
+    for blob in &ctx.data_blobs {
+        let Some((n, mut at)) = p.isec(blob.isec as usize) else {
+            continue;
+        };
+        for field in &blob.fields {
+            match field {
+                DataField::Bytes(bytes) => at += bytes.len() as u64,
+                DataField::Ptr(r) => {
+                    push(out, (n, at), DYLD_CACHE_ADJ_V2_POINTER_64, p.objc_ref(*r));
                     at += 8;
                 }
             }

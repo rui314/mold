@@ -2,6 +2,7 @@
 //! ones. mold's got.rs holds the ELF counterpart.
 
 use crate::arch::Target;
+use crate::chunks::split_info::{Entry, Places, push};
 use crate::chunks::{ChunkHeader, ChunkId};
 use crate::context::Context;
 use crate::input_files::add_synthetic_section;
@@ -112,5 +113,28 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
         if !binds(id) {
             buf[i * 8..i * 8 + 8].copy_from_slice(&ctx.symbols[id].addr(ctx).to_le_bytes());
         }
+    }
+}
+
+/// The GOT slots that hold local addresses, for the loader to slide
+/// (see rebase_info::rebase_locations). (Legacy LINKEDIT's dyld slides
+/// those the indirect symbol table marks local itself, and binds the
+/// others by name.)
+pub fn rebase_locations<E: Target>(ctx: &Context<E>, locs: &mut Vec<u64>) {
+    if !ctx.args.legacy_linkedit {
+        for (i, &id) in ctx.got.got_syms.iter().enumerate() {
+            let sym = &ctx.symbols[id];
+            if !sym.binds_as_import(ctx) && !sym.is_absolute(ctx) {
+                locs.push(ctx.got.slot_addr(i));
+            }
+        }
+    }
+}
+
+/// The GOT slots' references to the symbols of this image they hold,
+/// for LC_SEGMENT_SPLIT_INFO.
+pub(crate) fn split_info_entries<E: Target>(p: &Places<'_, E>, out: &mut Vec<Entry>) {
+    for (i, &id) in p.ctx.got.got_syms.iter().enumerate() {
+        push(out, p.got_index(i), DYLD_CACHE_ADJ_V2_POINTER_64, p.own_sym(id));
     }
 }

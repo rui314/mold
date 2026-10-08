@@ -1,7 +1,8 @@
 //! __TEXT,__stubs: jump stubs for calls to imported functions.
 
 use crate::arch::Target;
-use crate::chunks::ChunkHeader;
+use crate::chunks::split_info::{Entry, Places};
+use crate::chunks::{ChunkHeader, ChunkId};
 use crate::context::Context;
 use crate::macho::*;
 use crate::symbol::SymbolId;
@@ -66,4 +67,23 @@ pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
 
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     E::write_stubs(ctx, ctx.stubs.hdr.addr, buf);
+}
+
+/// The stubs' references to the pointers they jump through, for
+/// LC_SEGMENT_SPLIT_INFO: lazy pointers, or GOT slots.
+pub(crate) fn split_info_entries<E: Target>(p: &Places<'_, E>, out: &mut Vec<Entry>) {
+    let ctx = p.ctx;
+    if !ctx.chunks.contains(&ChunkId::Stubs) {
+        return;
+    }
+    for (i, &id) in ctx.stubs.symbols.iter().enumerate() {
+        let slot = if ctx.args.lazy_binding && !ctx.symbols[id].binds_weak_lookup(ctx) {
+            let lazy = ctx.stubs.lazy.binary_search(&(i as u32)).unwrap();
+            p.chunk_addr(ChunkId::LazyPtrs, ctx.lazy_ptrs.slot_addr(lazy))
+        } else {
+            p.got_slot(id)
+        };
+        let off = entry_offset::<E>(i as u32) + E::STUB_REF_OFF;
+        p.pcrel(out, p.chunk(ChunkId::Stubs, off), Some(slot));
+    }
 }

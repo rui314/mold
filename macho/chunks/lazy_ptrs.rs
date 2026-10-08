@@ -2,7 +2,8 @@
 //! by dyld on first call.
 
 use crate::arch::Target;
-use crate::chunks::ChunkHeader;
+use crate::chunks::split_info::{Entry, Places, push};
+use crate::chunks::{ChunkHeader, ChunkId, stub_helper};
 use crate::context::Context;
 use crate::macho::*;
 
@@ -47,5 +48,34 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     for i in 0..ctx.stubs.lazy.len() {
         let val = helper + crate::chunks::stub_helper::entry_offset(ctx, i as u32);
         buf[i * 8..i * 8 + 8].copy_from_slice(&val.to_le_bytes());
+    }
+}
+
+/// The lazy pointers, for the loader to slide (see
+/// rebase_info::rebase_locations): they start out pointing at their
+/// stub helper entries. (A weak-lookup stub's GOT slot is rebased with
+/// the GOT.)
+pub fn rebase_locations<E: Target>(ctx: &Context<E>, locs: &mut Vec<u64>) {
+    for &i in &ctx.stubs.lazy {
+        let i = i as usize;
+        locs.push(ctx.symbols[ctx.stubs.symbols[i]].stub_ptr_addr(ctx, i));
+    }
+}
+
+/// The lazy pointers' references to their stub helper entries, for
+/// LC_SEGMENT_SPLIT_INFO.
+pub(crate) fn split_info_entries<E: Target>(p: &Places<'_, E>, out: &mut Vec<Entry>) {
+    let ctx = p.ctx;
+    if !ctx.chunks.contains(&ChunkId::LazyPtrs) {
+        return;
+    }
+    for i in 0..ctx.stubs.lazy.len() {
+        let to = p.chunk(ChunkId::StubHelper, stub_helper::entry_offset(ctx, i as u32));
+        push(
+            out,
+            p.chunk_addr(ChunkId::LazyPtrs, ctx.lazy_ptrs.slot_addr(i)),
+            DYLD_CACHE_ADJ_V2_POINTER_64,
+            Some(to),
+        );
     }
 }

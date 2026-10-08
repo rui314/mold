@@ -8,8 +8,9 @@
 //! symbol's __got slot.
 
 use crate::arch::Target;
-use crate::chunks::ChunkHeader;
+use crate::chunks::split_info::{Entry, Place, Places, push};
 use crate::chunks::symtab::{NamedEntry, local_msym};
+use crate::chunks::{ChunkHeader, ChunkId, stubs};
 use crate::context::Context;
 use crate::input_sections::Reloc;
 use crate::macho::*;
@@ -223,4 +224,57 @@ pub fn copy_stubs<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 
 pub fn copy_helper<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     E::write_delay_helper(ctx, ctx.delay_init.helper_hdr.addr, buf);
+}
+
+/// The stubs' and helpers' references to other sections, for
+/// LC_SEGMENT_SPLIT_INFO (see DelayTarget).
+pub(crate) fn split_info_entries<E: Target>(p: &Places<'_, E>, out: &mut Vec<Entry>) {
+    let ctx = p.ctx;
+    let delay = &ctx.delay_init;
+    let Some(dlopen) = delay.dlopen_sym else { return };
+    let dlopen_stub = stubs::entry_offset::<E>(ctx.symbols[dlopen].stub_idx(&ctx.symbols).unwrap());
+    let dlopen_helper =
+        |i: u32| p.chunk_addr(ChunkId::DelayHelper, delay.dlopen_helper_addr(i as usize));
+    let mut push_refs = |from: Place, code: DelayCode, resolve: &dyn Fn(DelayTarget) -> _| {
+        for (off, kind, to) in E::delay_refs(code) {
+            let from = (from.0, from.1 + off as u64);
+            let to: Option<Place> = resolve(to);
+            if to.is_some_and(|to| to.0 != from.0) {
+                push(out, from, kind, to);
+            }
+        }
+    };
+    for (i, stub) in delay.stubs.iter().enumerate() {
+        let from = p.chunk(ChunkId::DelayStubs, stub_offset::<E>(i as u32));
+        let flag = delay.dlopens[stub.dlopen as usize].flag;
+        push_refs(from, DelayCode::Stub, &|to| match to {
+            DelayTarget::Flag => p.isec(flag as usize),
+            DelayTarget::Slot => Some(p.got_index(stub.got as usize)),
+            DelayTarget::DlopenHelper => Some(dlopen_helper(stub.dlopen)),
+            _ => None,
+        });
+    }
+    for (i, h) in delay.helpers.iter().enumerate() {
+        let flag = delay.dlopens[h.dlopen as usize].flag;
+        push_refs(p.delay_helper(i), DelayCode::Helper(h.kind), &|to| match to {
+            DelayTarget::Flag => p.isec(flag as usize),
+            DelayTarget::Slot => Some(p.got_slot(h.sym)),
+            DelayTarget::DlopenHelper => Some(dlopen_helper(h.dlopen)),
+            DelayTarget::Site => match h.kind {
+                DelayUse::Load { site: Some((isec, off)), .. } => {
+                    p.isec(isec as usize).map(|(n, o)| (n, o + off as u64 + 4))
+                }
+                _ => None,
+            },
+            _ => None,
+        });
+    }
+    for (i, d) in delay.dlopens.iter().enumerate() {
+        push_refs(dlopen_helper(i as u32), DelayCode::Dlopen, &|to| match to {
+            DelayTarget::Flag => p.isec(d.flag as usize),
+            DelayTarget::Name => p.isec(d.string as usize),
+            DelayTarget::Dlopen => Some(p.chunk(ChunkId::Stubs, dlopen_stub)),
+            _ => None,
+        });
+    }
 }

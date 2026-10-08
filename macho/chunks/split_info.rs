@@ -21,9 +21,12 @@ use rayon::prelude::*;
 
 use crate::arch::{SplitRef, Target};
 use crate::chunks::init_offsets::InitFunc;
-use crate::chunks::{ChunkHeader, ChunkId, delay_init, objc_stubs, stub_helper, stubs};
+use crate::chunks::{
+    ChunkHeader, ChunkId, delay_init, got, lazy_helpers, lazy_ptrs, objc_methlist, objc_stubs,
+    output_section, stub_helper, stubs,
+};
 use crate::context::Context;
-use crate::input_files::{DataField, FileId};
+use crate::input_files::FileId;
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho_consts::*;
 use crate::objc::ObjcRef;
@@ -54,7 +57,7 @@ impl Default for SplitInfoSection {
 /// order the format groups references by: (from, to) section, then
 /// target offset, then kind.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-struct Entry {
+pub(crate) struct Entry {
     from_sect: u8,
     to_sect: u8,
     to_off: u64,
@@ -64,9 +67,9 @@ struct Entry {
 
 /// A place in the image: a section's ordinal (0 for the mach header)
 /// and an offset in it.
-type Place = (u8, u64);
+pub(crate) type Place = (u8, u64);
 
-fn push(out: &mut Vec<Entry>, from: Place, kind: u8, to: Option<Place>) {
+pub(crate) fn push(out: &mut Vec<Entry>, from: Place, kind: u8, to: Option<Place>) {
     if let Some((to_sect, to_off)) = to {
         out.push(Entry { from_sect: from.0, to_sect, to_off, kind, from_off: from.1 });
     }
@@ -88,10 +91,17 @@ pub fn construct<E: Target>(ctx: &Context<E>) -> Vec<u8> {
             })
         })
         .collect();
-    places.stub_entries(&mut entries);
-    places.lazy_entries(&mut entries);
-    places.delay_entries(&mut entries);
-    places.objc_entries(&mut entries);
+    // The references of the linker's own chunks, each of which lists
+    // its own.
+    stubs::split_info_entries(&places, &mut entries);
+    lazy_ptrs::split_info_entries(&places, &mut entries);
+    stub_helper::split_info_entries(&places, &mut entries);
+    got::split_info_entries(&places, &mut entries);
+    output_section::split_info_entries(&places, &mut entries);
+    lazy_helpers::split_info_entries(&places, &mut entries);
+    delay_init::split_info_entries(&places, &mut entries);
+    objc_stubs::split_info_entries(&places, &mut entries);
+    objc_methlist::split_info_entries(&places, &mut entries);
     places.table_entries(&mut entries);
     places.unwind_entries(&mut entries);
     places.eh_frame_entries(&mut entries);
@@ -138,8 +148,8 @@ fn encode(entries: &[Entry]) -> Vec<u8> {
 
 /// Resolves what the image refers to into places, as the output's
 /// writers resolve them into addresses.
-struct Places<'a, E: Target> {
-    ctx: &'a Context<E>,
+pub(crate) struct Places<'a, E: Target> {
+    pub(crate) ctx: &'a Context<E>,
     header_addr: u64,
     /// The sections with contents, by address: (start, end, ordinal).
     sects: Vec<(u64, u64, u8)>,
@@ -200,19 +210,19 @@ impl<'a, E: Target> Places<'a, E> {
     }
 
     /// Where offset `off` of chunk `id` lies.
-    fn chunk(&self, id: ChunkId, off: u64) -> Place {
+    pub(crate) fn chunk(&self, id: ChunkId, off: u64) -> Place {
         let hdr = self.ctx.chunk_header(id);
         (hdr.sect_idx, hdr.addr - self.starts[hdr.sect_idx as usize] + off)
     }
 
     /// Where address `addr`, in chunk `id`, lies.
-    fn chunk_addr(&self, id: ChunkId, addr: u64) -> Place {
+    pub(crate) fn chunk_addr(&self, id: ChunkId, addr: u64) -> Place {
         let hdr = self.ctx.chunk_header(id);
         (hdr.sect_idx, addr - self.starts[hdr.sect_idx as usize])
     }
 
     /// Where a subsection lies, if it is laid out.
-    fn isec(&self, id: usize) -> Option<Place> {
+    pub(crate) fn isec(&self, id: usize) -> Option<Place> {
         let isec = &self.ctx.isecs[self.ctx.isecs.resolve(id)];
         let chunk = isec.output_section()?;
         (isec.offset != u32::MAX).then(|| self.chunk(chunk, isec.offset as u64))
@@ -222,7 +232,7 @@ impl<'a, E: Target> Places<'a, E> {
     /// (a dylib symbol at its stub); None for an absolute symbol. The
     /// linker's own sectionless symbols are the layout boundaries and
     /// the mach header's names (___dso_handle, __mh_*_header).
-    fn sym(&self, id: SymbolId) -> Option<Place> {
+    pub(crate) fn sym(&self, id: SymbolId) -> Option<Place> {
         let ctx = self.ctx;
         let symbols = &ctx.symbols;
         let sym = &symbols[id];
@@ -255,13 +265,13 @@ impl<'a, E: Target> Places<'a, E> {
     }
 
     /// Where a symbol dyld doesn't bind lies; None for an import.
-    fn own_sym(&self, id: SymbolId) -> Option<Place> {
+    pub(crate) fn own_sym(&self, id: SymbolId) -> Option<Place> {
         if self.ctx.symbols[id].is_imported() { None } else { self.sym(id) }
     }
 
     /// A symbol's GOT slot, or a lazy dylib's symbol's __lazy_load_got
     /// slot.
-    fn got_slot(&self, id: SymbolId) -> Place {
+    pub(crate) fn got_slot(&self, id: SymbolId) -> Place {
         let symbols = &self.ctx.symbols;
         let sym = &symbols[id];
         match sym.got_idx(symbols) {
@@ -274,11 +284,11 @@ impl<'a, E: Target> Places<'a, E> {
     }
 
     /// Where __lazy_helpers entry `i` lies.
-    fn lazy_helper(&self, i: u32) -> Place {
+    pub(crate) fn lazy_helper(&self, i: u32) -> Place {
         self.chunk_addr(ChunkId::LazyHelpers, self.ctx.lazy_helpers.helper_addr(i as usize))
     }
 
-    fn got_index(&self, i: usize) -> Place {
+    pub(crate) fn got_index(&self, i: usize) -> Place {
         self.chunk_addr(ChunkId::Got, self.ctx.got.slot_addr(i))
     }
 
@@ -391,7 +401,7 @@ impl<'a, E: Target> Places<'a, E> {
 
     /// An address the linker's own code materializes PC-relatively at
     /// `from`, when it reaches another section.
-    fn pcrel(&self, out: &mut Vec<Entry>, from: Place, to: Option<Place>) {
+    pub(crate) fn pcrel(&self, out: &mut Vec<Entry>, from: Place, to: Option<Place>) {
         if to.is_some_and(|to| to.0 != from.0) {
             for (i, &kind) in E::SPLIT_PCREL_KINDS.iter().enumerate() {
                 push(out, (from.0, from.1 + 4 * i as u64), kind, to);
@@ -399,152 +409,12 @@ impl<'a, E: Target> Places<'a, E> {
         }
     }
 
-    /// __stubs, the lazy pointers and __stub_helper, the GOT, and the
-    /// range-extension thunks.
-    fn stub_entries(&self, out: &mut Vec<Entry>) {
-        let ctx = self.ctx;
-        let has = |id| ctx.chunks.contains(&id);
-        if has(ChunkId::Stubs) {
-            for (i, &id) in ctx.stubs.symbols.iter().enumerate() {
-                let slot = if ctx.args.lazy_binding && !ctx.symbols[id].binds_weak_lookup(ctx) {
-                    let lazy = ctx.stubs.lazy.binary_search(&(i as u32)).unwrap();
-                    self.chunk_addr(ChunkId::LazyPtrs, ctx.lazy_ptrs.slot_addr(lazy))
-                } else {
-                    self.got_slot(id)
-                };
-                let off = stubs::entry_offset::<E>(i as u32) + E::STUB_REF_OFF;
-                self.pcrel(out, self.chunk(ChunkId::Stubs, off), Some(slot));
-            }
-        }
-        if has(ChunkId::LazyPtrs) {
-            for i in 0..ctx.stubs.lazy.len() {
-                let to = self.chunk(ChunkId::StubHelper, stub_helper::entry_offset(ctx, i as u32));
-                push(
-                    out,
-                    self.chunk_addr(ChunkId::LazyPtrs, ctx.lazy_ptrs.slot_addr(i)),
-                    DYLD_CACHE_ADJ_V2_POINTER_64,
-                    Some(to),
-                );
-            }
-        }
-        if has(ChunkId::StubHelper) {
-            let helper = &ctx.stub_helper;
-            let [private, binder] = E::STUB_HELPER_REF_OFFS;
-            let to = self.isec(helper.dyld_private_isec as usize);
-            self.pcrel(out, self.chunk(ChunkId::StubHelper, private), to);
-            let to = helper.dyld_stub_binder.map(|id| self.got_slot(id));
-            self.pcrel(out, self.chunk(ChunkId::StubHelper, binder), to);
-        }
-        for (i, &id) in ctx.got.got_syms.iter().enumerate() {
-            push(out, self.got_index(i), DYLD_CACHE_ADJ_V2_POINTER_64, self.own_sym(id));
-        }
-        for osec in &ctx.output_sections {
-            for thunk in &osec.thunks {
-                for (i, &id) in thunk.syms.iter().enumerate() {
-                    let from = (osec.hdr.sect_idx, thunk.offset + i as u64 * E::THUNK_SIZE);
-                    self.pcrel(out, from, self.sym(id));
-                }
-            }
-        }
-    }
-
-    /// The lazy-load helpers' references: to the flag word and slot
-    /// they check and load, to the arguments and the stub of the call
-    /// of __dyld_lazy_load, and to the code after the site they return
-    /// to (see LazyTarget).
-    fn lazy_entries(&self, out: &mut Vec<Entry>) {
-        use crate::chunks::lazy_helpers::{LazyTarget, LazyUse};
-        let ctx = self.ctx;
-        let lazy = &ctx.lazy_helpers;
-        let Some(lazy_load) = lazy.dyld_lazy_load else { return };
-        let stub = self.chunk(
-            ChunkId::Stubs,
-            stubs::entry_offset::<E>(ctx.symbols[lazy_load].stub_idx(&ctx.symbols).unwrap()),
-        );
-        for (i, h) in lazy.helpers.iter().enumerate() {
-            let (n, at) = self.lazy_helper(i as u32);
-            for (off, kind, to) in E::lazy_helper_refs(h.kind) {
-                let to = match to {
-                    LazyTarget::Flag => self.isec(h.flag as usize),
-                    LazyTarget::Slot => {
-                        let slot = ctx.lazy_load_got.slot_addr(h.slot);
-                        Some(self.chunk_addr(ChunkId::LazyLoadGot, slot))
-                    }
-                    LazyTarget::Header => Some((0, 0)),
-                    LazyTarget::LazyLoad => Some(stub),
-                    LazyTarget::Site => match h.kind {
-                        LazyUse::Load { site: Some((isec, off)), .. } => {
-                            self.isec(isec as usize).map(|(n, o)| (n, o + off as u64 + 4))
-                        }
-                        _ => None,
-                    },
-                };
-                push(out, (n, at + off as u64), kind, to);
-            }
-        }
-    }
-
     /// Where __delay_helper's load helper `i` lies.
-    fn delay_helper(&self, i: usize) -> Place {
+    pub(crate) fn delay_helper(&self, i: usize) -> Place {
         self.chunk_addr(ChunkId::DelayHelper, self.ctx.delay_init.helper_addr(i))
     }
 
-    /// The delay-init stubs' and helpers' references to other sections
-    /// (see DelayTarget).
-    fn delay_entries(&self, out: &mut Vec<Entry>) {
-        use crate::chunks::delay_init::{DelayCode, DelayTarget, DelayUse};
-        let ctx = self.ctx;
-        let delay = &ctx.delay_init;
-        let Some(dlopen) = delay.dlopen_sym else { return };
-        let dlopen_stub =
-            stubs::entry_offset::<E>(ctx.symbols[dlopen].stub_idx(&ctx.symbols).unwrap());
-        let dlopen_helper =
-            |i: u32| self.chunk_addr(ChunkId::DelayHelper, delay.dlopen_helper_addr(i as usize));
-        let mut push_refs = |from: Place, code: DelayCode, resolve: &dyn Fn(DelayTarget) -> _| {
-            for (off, kind, to) in E::delay_refs(code) {
-                let from = (from.0, from.1 + off as u64);
-                let to: Option<Place> = resolve(to);
-                if to.is_some_and(|to| to.0 != from.0) {
-                    push(out, from, kind, to);
-                }
-            }
-        };
-        for (i, stub) in delay.stubs.iter().enumerate() {
-            let from = self.chunk(ChunkId::DelayStubs, delay_init::stub_offset::<E>(i as u32));
-            let flag = delay.dlopens[stub.dlopen as usize].flag;
-            push_refs(from, DelayCode::Stub, &|to| match to {
-                DelayTarget::Flag => self.isec(flag as usize),
-                DelayTarget::Slot => Some(self.got_index(stub.got as usize)),
-                DelayTarget::DlopenHelper => Some(dlopen_helper(stub.dlopen)),
-                _ => None,
-            });
-        }
-        for (i, h) in delay.helpers.iter().enumerate() {
-            let flag = delay.dlopens[h.dlopen as usize].flag;
-            push_refs(self.delay_helper(i), DelayCode::Helper(h.kind), &|to| match to {
-                DelayTarget::Flag => self.isec(flag as usize),
-                DelayTarget::Slot => Some(self.got_slot(h.sym)),
-                DelayTarget::DlopenHelper => Some(dlopen_helper(h.dlopen)),
-                DelayTarget::Site => match h.kind {
-                    DelayUse::Load { site: Some((isec, off)), .. } => {
-                        self.isec(isec as usize).map(|(n, o)| (n, o + off as u64 + 4))
-                    }
-                    _ => None,
-                },
-                _ => None,
-            });
-        }
-        for (i, d) in delay.dlopens.iter().enumerate() {
-            push_refs(dlopen_helper(i as u32), DelayCode::Dlopen, &|to| match to {
-                DelayTarget::Flag => self.isec(d.flag as usize),
-                DelayTarget::Name => self.isec(d.string as usize),
-                DelayTarget::Dlopen => Some(self.chunk(ChunkId::Stubs, dlopen_stub)),
-                _ => None,
-            });
-        }
-    }
-
-    fn objc_ref(&self, r: ObjcRef) -> Option<Place> {
+    pub(crate) fn objc_ref(&self, r: ObjcRef) -> Option<Place> {
         match r {
             ObjcRef::Isec(isec, off) => self.isec(isec as usize).map(|(n, o)| (n, o + off)),
             ObjcRef::Sym(id, addend) => {
@@ -556,63 +426,9 @@ impl<'a, E: Target> Places<'a, E> {
     }
 
     /// Slot `i` of the synthesized selector references.
-    fn selref(&self, i: usize) -> Place {
+    pub(crate) fn selref(&self, i: usize) -> Place {
         let osec = self.ctx.output_section(self.ctx.objc_stubs.selrefs.unwrap());
         (osec.hdr.sect_idx, osec.tail_off + i as u64 * 8)
-    }
-
-    /// __objc_stubs, the selector references synthesized for them and
-    /// for method lists, the synthesized Objective-C records, and the
-    /// relative method lists.
-    fn objc_entries(&self, out: &mut Vec<Entry>) {
-        let ctx = self.ctx;
-        let stubs = &ctx.objc_stubs;
-        if ctx.chunks.contains(&ChunkId::ObjcStubs) {
-            let [sel, msgsend] = E::OBJC_STUB_REF_OFFS;
-            let msgsend_slot = self.got_slot(stubs.msgsend_sym.unwrap());
-            for i in 0..stubs.symbols.len() {
-                let at = objc_stubs::entry_offset(ctx, i as u32);
-                self.pcrel(out, self.chunk(ChunkId::ObjcStubs, at + sel), Some(self.selref(i)));
-                self.pcrel(out, self.chunk(ChunkId::ObjcStubs, at + msgsend), Some(msgsend_slot));
-            }
-        }
-        if stubs.selrefs.is_some() {
-            let n = stubs.symbols.len();
-            for (i, &off) in stubs.methname_offs.iter().enumerate() {
-                let methname = ctx.output_section(stubs.methname.unwrap());
-                let name = (methname.hdr.sect_idx, methname.tail_off + off);
-                push(out, self.selref(i), DYLD_CACHE_ADJ_V2_POINTER_64, Some(name));
-            }
-            for (j, &name) in stubs.extra_selrefs.iter().enumerate() {
-                let to = self.isec(name as usize);
-                push(out, self.selref(n + j), DYLD_CACHE_ADJ_V2_POINTER_64, to);
-            }
-        }
-        for blob in &ctx.data_blobs {
-            let Some((n, mut at)) = self.isec(blob.isec as usize) else {
-                continue;
-            };
-            for field in &blob.fields {
-                match field {
-                    DataField::Bytes(bytes) => at += bytes.len() as u64,
-                    DataField::Ptr(r) => {
-                        push(out, (n, at), DYLD_CACHE_ADJ_V2_POINTER_64, self.objc_ref(*r));
-                        at += 8;
-                    }
-                }
-            }
-        }
-        for list in &ctx.objc_methlist.lists {
-            let Some((n, base)) = self.isec(list.isec as usize) else {
-                continue;
-            };
-            for (i, m) in list.methods.iter().enumerate() {
-                for (k, r) in [m.name, m.types, m.imp].into_iter().enumerate() {
-                    let from = (n, base + 8 + 12 * i as u64 + 4 * k as u64);
-                    push(out, from, DYLD_CACHE_ADJ_V2_DELTA_32, self.objc_ref(r));
-                }
-            }
-        }
     }
 
     /// __init_offsets: an image offset per initializer.
