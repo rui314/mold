@@ -382,35 +382,6 @@ impl<E: Target> Context<E> {
         isec.output_section().map_or(0, |id| self.chunk_header(id).sect_idx)
     }
 
-    /// The library ordinal as the chained-fixups import formats encode
-    /// it in a `bits`-wide field: dylib ordinals as they are, the
-    /// special ones as negative values in the field's two's complement,
-    /// and, unlike the bind opcodes, the main executable as -1 (0 is
-    /// the image itself there).
-    pub fn chained_import_ordinal(&self, dylib: u32, bits: u32) -> u64 {
-        let ordinal = match self.bind_ordinal(dylib) {
-            crate::macho::BIND_SPECIAL_DYLIB_MAIN_EXECUTABLE => -1i64,
-            n => n as i64,
-        };
-        (ordinal as u64) & ((1u64 << bits) - 1)
-    }
-
-    /// The library ordinal in an undefined symbol's desc, which only
-    /// a two-level namespace image has: EXECUTABLE_ORDINAL (0xff) for
-    /// the -bundle_loader executable, DYNAMIC_LOOKUP_ORDINAL (0xfe) for
-    /// a symbol left to dynamic lookup, else the dylib's. ld-prime
-    /// writes 0 in a -flat_namespace image, where every import is a
-    /// flat lookup.
-    pub fn msym_library_ordinal(&self, dylib: u32) -> u8 {
-        if self.args.flat_namespace {
-            return 0;
-        }
-        match self.bind_ordinal(dylib) {
-            crate::macho::BIND_SPECIAL_DYLIB_MAIN_EXECUTABLE => 0xff,
-            n => n as u8,
-        }
-    }
-
     /// Returns the bind ordinal for a symbol imported from `dylib`:
     /// the dylib's load-command ordinal under two-level namespace (the
     /// image's own for one of its private re-exports; see

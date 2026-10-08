@@ -1044,13 +1044,29 @@ fn import_entry<E: Target>(ctx: &Context<E>, i: usize) -> NamedEntry {
     let Some(FileId::Dylib(dylib)) = sym.file() else { unreachable!() };
     // A dynamic-lookup import records the DYNAMIC_LOOKUP ordinal, a
     // -bundle_loader import the EXECUTABLE ordinal.
-    let ordinal = ctx.msym_library_ordinal(dylib) as u16;
+    let ordinal = msym_library_ordinal(ctx, dylib) as u16;
     let mut desc = ordinal << 8;
     if sym.is_weak_ref() {
         desc |= N_WEAK_REF;
     }
     let ent = MachSym { stroff: 0, n_type: N_UNDF | N_EXT, sect: 0, desc, value: 0 };
     (sym.name(), ent, None)
+}
+
+/// The library ordinal in an undefined symbol's desc, which only
+/// a two-level namespace image has: EXECUTABLE_ORDINAL (0xff) for
+/// the -bundle_loader executable, DYNAMIC_LOOKUP_ORDINAL (0xfe) for
+/// a symbol left to dynamic lookup, else the dylib's. ld-prime
+/// writes 0 in a -flat_namespace image, where every import is a
+/// flat lookup.
+fn msym_library_ordinal<E: Target>(ctx: &Context<E>, dylib: u32) -> u8 {
+    if ctx.args.flat_namespace {
+        return 0;
+    }
+    match ctx.bind_ordinal(dylib) {
+        BIND_SPECIAL_DYLIB_MAIN_EXECUTABLE => 0xff,
+        n => n as u8,
+    }
 }
 
 /// Makes each alias of an imported symbol an N_INDR entry whose value

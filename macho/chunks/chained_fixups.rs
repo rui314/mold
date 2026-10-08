@@ -286,7 +286,7 @@ fn import_ordinal<E: Target>(ctx: &Context<E>, sym: SymbolId, bits: u32) -> u64 
     let special = |ordinal: i32| (ordinal as i64 as u64) & ((1u64 << bits) - 1);
     match ctx.symbols[sym].file() {
         Some(FileId::Dylib(dylib)) if !ctx.binds_weak_lookup(sym) => {
-            ctx.chained_import_ordinal(dylib, bits)
+            chained_import_ordinal(ctx, dylib, bits)
         }
         _ if ctx.binds_to_self(sym) => BIND_SPECIAL_DYLIB_SELF as u64,
         _ if ctx.is_interposable_export(sym) && !ctx.binds_weak_lookup(sym) => {
@@ -295,6 +295,19 @@ fn import_ordinal<E: Target>(ctx: &Context<E>, sym: SymbolId, bits: u32) -> u64 
         _ if ctx.is_dtrace_pointer_target(sym) => special(BIND_SPECIAL_DYLIB_FLAT_LOOKUP),
         _ => special(BIND_SPECIAL_DYLIB_WEAK_LOOKUP),
     }
+}
+
+/// The library ordinal as the chained-fixups import formats encode
+/// it in a `bits`-wide field: dylib ordinals as they are, the
+/// special ones as negative values in the field's two's complement,
+/// and, unlike the bind opcodes, the main executable as -1 (0 is
+/// the image itself there).
+fn chained_import_ordinal<E: Target>(ctx: &Context<E>, dylib: u32, bits: u32) -> u64 {
+    let ordinal = match ctx.bind_ordinal(dylib) {
+        BIND_SPECIAL_DYLIB_MAIN_EXECUTABLE => -1i64,
+        n => n as i64,
+    };
+    (ordinal as u64) & ((1u64 << bits) - 1)
 }
 
 /// The pages the fixup chains of a segment are cut into, from its start:
