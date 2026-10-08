@@ -237,7 +237,7 @@ pub(crate) fn object_aliases<E: Target>(
     ctx: &Context<E>,
 ) -> impl Iterator<Item = (SymbolId, SymbolId)> + '_ {
     ctx.args.aliases.iter().filter_map(|(base, alias)| {
-        let (base, alias) = (ctx.symbols.get(base)?, ctx.symbols.get(alias)?);
+        let (base, alias) = (ctx.symbols.lookup(base)?, ctx.symbols.lookup(alias)?);
         let (b, a) = (&ctx.symbols[base], &ctx.symbols[alias]);
         let defined = matches!(b.file(), Some(FileId::Obj(_)))
             && (a.file(), a.input_section(), a.value) == (b.file(), b.input_section(), b.value);

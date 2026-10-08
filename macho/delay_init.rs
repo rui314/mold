@@ -42,7 +42,7 @@ pub fn create_delay_init<E: Target>(ctx: &mut Context<E>) {
     create_delay_helpers(ctx, &uses, &dlopen_of);
 
     // The dlopen helpers call _dlopen through its stub.
-    if let Some(id) = ctx.symbols.get(b"_dlopen") {
+    if let Some(id) = ctx.symbols.lookup(b"_dlopen") {
         crate::chunks::stubs::add_symbol(ctx, id);
         ctx.delay_init.dlopen_sym = Some(id);
     }

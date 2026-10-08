@@ -465,7 +465,7 @@ pub fn create_objc_msgsend_stubs<E: Target>(ctx: &mut Context<E>) {
 
     if !ctx.objc_stubs.symbols.is_empty() {
         let id = ctx.symbols.intern(b"_objc_msgSend");
-        ctx.symbols[id].set_is_used(true);
+        ctx.symbols[id].set_used(true);
         ctx.objc_stubs.msgsend_sym = Some(id);
 
         // The stub machinery itself references _objc_msgSend; resolve
@@ -476,8 +476,8 @@ pub fn create_objc_msgsend_stubs<E: Target>(ctx: &mut Context<E>) {
         {
             let sym = &mut ctx.symbols[id];
             sym.set_file(FileId::Dylib((dylib) as u32));
-            sym.set_is_imported(true);
-            sym.set_is_extern(true);
+            sym.set_imported(true);
+            sym.set_extern(true);
         }
     }
 }

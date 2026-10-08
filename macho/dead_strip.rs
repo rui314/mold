@@ -119,7 +119,7 @@ pub(crate) fn initial_undefines<E: Target>(ctx: &Context<E>) -> impl Iterator<It
         .iter()
         .chain(entry)
         .chain(aliased)
-        .filter_map(|name| ctx.symbols.get(name))
+        .filter_map(|name| ctx.symbols.lookup(name))
 }
 
 /// Sections the format keeps regardless of references: initializers
@@ -226,7 +226,7 @@ fn collect_root_set<E: Target>(
     // bind lazily, whether any stub needs it or not.
     if ctx.args.legacy_linkedit
         && ctx.args.lazy_binding
-        && let Some(id) = ctx.symbols.get(b"dyld_stub_binding_helper")
+        && let Some(id) = ctx.symbols.lookup(b"dyld_stub_binding_helper")
         && let Some(isec) = ctx.symbols[id].input_section()
     {
         enqueue(isec as usize, Root::Kept);
@@ -519,7 +519,7 @@ fn mark_live_references<E: Target>(ctx: &mut Context<E>) {
         ctx.symbols[id].mark();
     }
     ctx.symbols.syms.par_iter_mut().for_each(|sym| {
-        sym.set_is_used(sym.is_marked());
+        sym.set_used(sym.is_marked());
         sym.unmark();
     });
 }

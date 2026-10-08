@@ -195,35 +195,30 @@ macro_rules! sym_flag {
 }
 
 impl Symbol {
-    sym_flag!(is_extern, set_is_extern, F_EXTERN, "An external (global) symbol.");
-    sym_flag!(is_weak_def, set_is_weak_def, F_WEAK_DEF, "A weak definition.");
+    sym_flag!(is_extern, set_extern, F_EXTERN, "An external (global) symbol.");
+    sym_flag!(is_weak_def, set_weak_def, F_WEAK_DEF, "A weak definition.");
     sym_flag!(
         is_imported,
-        set_is_imported,
+        set_imported,
         F_IMPORTED,
         "The definition is in a dylib, so references need dynamic binding."
     );
     sym_flag!(
         is_used,
-        set_is_used,
+        set_used,
         F_USED,
         "Some relocation refers to this symbol, so an unresolved symbol is an error."
     );
     sym_flag!(
         is_private_extern,
-        set_is_private_extern,
+        set_private_extern,
         F_PRIVATE_EXTERN,
         "A private external symbol (visibility hidden): resolves globally at link time but is neither exported nor kept as an external symbol."
     );
-    sym_flag!(
-        is_strong_ref,
-        set_is_strong_ref,
-        F_STRONG_REF,
-        "Referenced non-weakly by some object."
-    );
+    sym_flag!(is_strong_ref, set_strong_ref, F_STRONG_REF, "Referenced non-weakly by some object.");
     sym_flag!(
         is_weak_ref,
-        set_is_weak_ref,
+        set_weak_ref,
         F_WEAK_REF,
         "References may go unresolved at load time (a weak import)."
     );
@@ -235,19 +230,19 @@ impl Symbol {
     );
     sym_flag!(
         is_referenced_dynamically,
-        set_is_referenced_dynamically,
+        set_referenced_dynamically,
         F_REFERENCED_DYNAMICALLY,
         "Defined with REFERENCED_DYNAMICALLY (see F_REFERENCED_DYNAMICALLY)."
     );
     sym_flag!(
         is_alt_entry,
-        set_is_alt_entry,
+        set_alt_entry,
         F_ALT_ENTRY,
         "Defined as an alternate entry point (see F_ALT_ENTRY)."
     );
     sym_flag!(
         is_common,
-        set_is_common,
+        set_common,
         F_COMMON,
         "A tentative definition (common symbol) not yet converted; `value` holds its size."
     );
@@ -837,7 +832,7 @@ impl SymbolTable {
     }
 
     /// Returns the symbol for a global name if it exists.
-    pub fn get(&self, name: &[u8]) -> Option<SymbolId> {
+    pub fn lookup(&self, name: &[u8]) -> Option<SymbolId> {
         let hash = hash_key(name);
         self.shards[shard_of(hash)].get(&Query { hash, key: name }).copied()
     }

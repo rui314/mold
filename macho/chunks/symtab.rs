@@ -450,7 +450,7 @@ fn copy_object_stabs<E: Target>(ctx: &Context<E>, obj_idx: usize) -> StabPlan {
         }
         let name_of = match msym.n_type {
             N_FUN | N_STSYM | N_LCSYM if !name.is_empty() => {
-                locals.get(name).map(|&(id, _)| id).or_else(|| ctx.symbols.get(name))
+                locals.get(name).map(|&(id, _)| id).or_else(|| ctx.symbols.lookup(name))
             }
             _ => None,
         };
@@ -484,7 +484,7 @@ fn copy_global_stab<E: Target>(
         let ent = MachSym { n_type: N_STSYM, sect, ..ent };
         return Some(Stab { name, ent, value_of: Some(id), name_of: Some(id) });
     }
-    let id = ctx.symbols.get(name)?;
+    let id = ctx.symbols.lookup(name)?;
     let own = matches!(ctx.symbols[id].file(), Some(FileId::Obj(o)) if o as usize == obj_idx);
     (own || is_still_common(ctx, id)).then(|| {
         let ent = MachSym { sect: 0, value: 0, ..ent };

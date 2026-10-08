@@ -81,7 +81,7 @@ fn intern_command_line_symbols<E: Target>(ctx: &mut Context<E>) {
     let new: Vec<&'static [u8]> = ctx
         .args
         .command_line_symbols()
-        .filter(|name| ctx.symbols.get(name).is_none())
+        .filter(|name| ctx.symbols.lookup(name).is_none())
         .map(|name| crate::util::leak_bytes(name.to_vec()))
         .collect();
     for name in new {
@@ -122,7 +122,7 @@ fn claim_locals<E: Target>(ctx: &mut Context<E>) {
                         sym.set_no_dead_strip(
                             msym.desc & (N_NO_DEAD_STRIP | REFERENCED_DYNAMICALLY) != 0,
                         );
-                        sym.set_is_alt_entry(msym.desc & N_ALT_ENTRY != 0);
+                        sym.set_alt_entry(msym.desc & N_ALT_ENTRY != 0);
                     }
                 }
                 _ => {}
@@ -139,20 +139,20 @@ fn claim_locals<E: Target>(ctx: &mut Context<E>) {
 fn clear_symbols<E: Target>(ctx: &mut Context<E>) {
     let _t = ctx.timer("clear_symbols");
     ctx.symbols.syms.par_iter_mut().for_each(|sym| {
-        sym.set_is_weak_ref(false);
-        sym.set_is_strong_ref(false);
+        sym.set_weak_ref(false);
+        sym.set_strong_ref(false);
         if matches!(sym.file(), Some(FileId::Obj(_)) | Some(FileId::Dylib(_))) || sym.is_common() {
             sym.clear_file();
             sym.set_input_section(None);
             sym.value = 0;
-            sym.set_is_weak_def(false);
-            sym.set_is_private_extern(false);
-            sym.set_is_imported(false);
-            sym.set_is_common(false);
+            sym.set_weak_def(false);
+            sym.set_private_extern(false);
+            sym.set_imported(false);
+            sym.set_common(false);
             sym.common_p2align = 0;
             sym.set_no_dead_strip(false);
-            sym.set_is_referenced_dynamically(false);
-            sym.set_is_alt_entry(false);
+            sym.set_referenced_dynamically(false);
+            sym.set_alt_entry(false);
         }
     });
 }
@@ -182,12 +182,12 @@ fn resolve_symbols_pass<E: Target>(ctx: &mut Context<E>, only_alive: bool, ranki
         && !ctx.args.relocatable;
     ctx.symbols.syms.par_iter_mut().enumerate().for_each(|(i, sym)| {
         if weak_wins && refs.weak[i].load(Ordering::Relaxed) {
-            sym.set_is_weak_ref(true);
+            sym.set_weak_ref(true);
         } else if refs.strong[i].load(Ordering::Relaxed) {
-            sym.set_is_strong_ref(true);
-            sym.set_is_weak_ref(false);
+            sym.set_strong_ref(true);
+            sym.set_weak_ref(false);
         } else if refs.weak[i].load(Ordering::Relaxed) && !sym.is_strong_ref() {
-            sym.set_is_weak_ref(true);
+            sym.set_weak_ref(true);
         }
     });
 
@@ -199,7 +199,7 @@ fn resolve_symbols_pass<E: Target>(ctx: &mut Context<E>, only_alive: bool, ranki
 
     // Record the final usage set for downstream passes.
     let used = ctx.symbols.syms.par_iter_mut().zip(&refs.used);
-    used.for_each(|(sym, used)| sym.set_is_used(used.load(Ordering::Relaxed)));
+    used.for_each(|(sym, used)| sym.set_used(used.load(Ordering::Relaxed)));
 }
 
 /// Which symbols the objects considered in a round reference, and how.
@@ -237,7 +237,7 @@ fn collect_references<E: Target>(ctx: &Context<E>, only_alive: bool) -> Referenc
     });
 
     for name in ctx.args.command_line_symbols() {
-        if let Some(id) = ctx.symbols.get(name) {
+        if let Some(id) = ctx.symbols.lookup(name) {
             refs.used[id as usize].store(true, Ordering::Relaxed);
         }
     }
@@ -337,7 +337,7 @@ fn merge_common_symbols<E: Target>(
         sym.value = sym.value.max(size);
         sym.common_p2align = sym.common_p2align.max(p2align);
         if pext {
-            sym.set_is_private_extern(true);
+            sym.set_private_extern(true);
         }
     }
 }
@@ -389,7 +389,7 @@ fn claim_dylib_exports<E: Target>(
             return;
         }
         if sym.is_common() {
-            sym.set_is_common(false);
+            sym.set_common(false);
             sym.value = 0;
             sym.common_p2align = 0;
         }
@@ -398,7 +398,7 @@ fn claim_dylib_exports<E: Target>(
         // the library is a weak import (ld64 binds it weak-import and
         // marks it N_WEAK_REF), whatever the references say.
         if dylibs[owner].is_weak {
-            sym.set_is_weak_ref(true);
+            sym.set_weak_ref(true);
         }
     });
 }
@@ -416,7 +416,7 @@ fn collect_dylib_symbols<E: Target>(ctx: &mut Context<E>) {
     let seen = ctx.dylibs.iter().filter_map(|d| d.symbols_seen).min().unwrap_or(num_syms);
     let interned: Vec<SymbolId> = (seen as SymbolId..num_syms as SymbolId)
         .into_par_iter()
-        .filter(|&id| symbols.get(symbols[id].name()) == Some(id))
+        .filter(|&id| symbols.lookup(symbols[id].name()) == Some(id))
         .collect();
     ctx.dylibs.par_iter_mut().for_each(|dylib| {
         match dylib.symbols_seen {
@@ -424,7 +424,7 @@ fn collect_dylib_symbols<E: Target>(ctx: &mut Context<E>) {
             // names, so they are looked up in parallel too.
             None => {
                 let names: Vec<&[u8]> = dylib.exports.iter().copied().collect();
-                dylib.symbols = names.par_iter().filter_map(|n| symbols.get(n)).collect();
+                dylib.symbols = names.par_iter().filter_map(|n| symbols.lookup(n)).collect();
             }
             Some(seen) => {
                 let new = interned.iter().filter(|&&id| id as usize >= seen);
@@ -530,10 +530,10 @@ fn import_from_dylib(
 ) -> usize {
     let owner = providing_dylib(dylibs, providers, idx, sym.name());
     sym.set_file(FileId::Dylib(owner as u32));
-    sym.set_is_imported(true);
-    sym.set_is_extern(true);
+    sym.set_imported(true);
+    sym.set_extern(true);
     sym.set_input_section(None);
-    sym.set_is_common(false);
+    sym.set_common(false);
     owner
 }
 
@@ -641,7 +641,7 @@ fn mark_live_objects<E: Target>(ctx: &mut Context<E>) {
         ctx.args.has_entry_point().then_some(ctx.args.entry.as_slice()).into_iter().collect();
     root_syms.extend(ctx.args.forced_undefined.iter().map(Vec::as_slice));
     for name in root_syms {
-        if let Some(id) = ctx.symbols.get(name)
+        if let Some(id) = ctx.symbols.lookup(name)
             && let Some(FileId::Obj(owner)) = ctx.symbols[id].file()
         {
             let owner = owner as usize;
@@ -957,7 +957,7 @@ fn retire_bitcode_placeholders<E: Target>(ctx: &mut Context<E>) {
                 sym.clear_file();
                 sym.set_input_section(None);
                 sym.value = 0;
-                sym.set_is_weak_def(false);
+                sym.set_weak_def(false);
             }
         }
         let obj = &mut ctx.objs[obj_idx];
@@ -1087,7 +1087,7 @@ fn init_func<E: Target>(ctx: &Context<E>, id: crate::symbol::SymbolId) -> InitFu
 /// The function -init names, if it is defined. An undefined one is
 /// reported with the other initial undefines.
 fn init_function<E: Target>(ctx: &Context<E>) -> Option<crate::symbol::SymbolId> {
-    let id = ctx.symbols.get(ctx.args.init.as_deref()?)?;
+    let id = ctx.symbols.lookup(ctx.args.init.as_deref()?)?;
     ctx.symbols[id].is_defined().then_some(id)
 }
 
@@ -1215,8 +1215,8 @@ pub fn convert_common_symbols<E: Target>(ctx: &mut Context<E>) {
         sym.set_file(FileId::Obj(internal));
         sym.set_input_section(Some((ctx.isecs.len() - 1) as u32));
         sym.value = 0;
-        sym.set_is_common(false);
-        sym.set_is_extern(true);
+        sym.set_common(false);
+        sym.set_extern(true);
     }
 }
 
@@ -1399,7 +1399,7 @@ pub fn auto_hide_weak_defs<E: Target>(ctx: &mut Context<E>) {
             && matches!(sym.file(), Some(FileId::Obj(_)))
             && !exported.is_some_and(|exported| exported.find(sym.name()) != -1)
         {
-            sym.set_is_private_extern(true);
+            sym.set_private_extern(true);
         }
     });
 }
@@ -1412,7 +1412,7 @@ pub fn hide_all_exports<E: Target>(ctx: &mut Context<E>) {
     }
     ctx.symbols.syms.par_iter_mut().for_each(|sym| {
         if matches!(sym.file(), Some(FileId::Obj(_))) {
-            sym.set_is_private_extern(true);
+            sym.set_private_extern(true);
         }
     });
 }
@@ -1435,7 +1435,7 @@ pub fn handle_exported_symbols_list<E: Target>(ctx: &mut Context<E>) {
             && sym.is_extern()
             && exported.find(sym.name()) == -1
         {
-            sym.set_is_private_extern(true);
+            sym.set_private_extern(true);
         }
     });
 }
@@ -1450,7 +1450,7 @@ pub fn handle_unexported_symbols_list<E: Target>(ctx: &mut Context<E>) {
             && sym.is_extern()
             && unexported.find(sym.name()) != -1
         {
-            sym.set_is_private_extern(true);
+            sym.set_private_extern(true);
         }
     });
 }
@@ -1485,7 +1485,7 @@ pub fn force_symbol_weakness<E: Target>(ctx: &mut Context<E>) {
                 return None;
             }
             if sym.is_extern() && !sym.is_private_extern() {
-                sym.set_is_weak_def(force);
+                sym.set_weak_def(force);
                 return None;
             }
             Some((name, force))
@@ -1936,14 +1936,14 @@ pub fn claim_unresolved_symbols<E: Target>(ctx: &mut Context<E>) {
     for id in imports {
         let sym = &mut ctx.symbols[id];
         sym.set_file(FileId::Dylib(u32::MAX));
-        sym.set_is_imported(true);
-        sym.set_is_extern(true);
+        sym.set_imported(true);
+        sym.set_extern(true);
     }
 }
 
 /// The symbols -alias names, which count as defined.
 fn alias_symbols<E: Target>(ctx: &Context<E>) -> hashbrown::HashSet<SymbolId> {
-    ctx.args.aliases.iter().filter_map(|(_, alias)| ctx.symbols.get(alias)).collect()
+    ctx.args.aliases.iter().filter_map(|(_, alias)| ctx.symbols.lookup(alias)).collect()
 }
 
 /// Reports references to symbols that are still unresolved, those
@@ -2331,10 +2331,10 @@ pub fn warn_unused_dylibs<E: Target>(ctx: &Context<E>) {
 fn weaken_moved_imports<E: Target>(ctx: &mut Context<E>) {
     for dylib in ctx.dylibs.iter().filter(|d| d.is_weak) {
         for (&name, &target) in &dylib.moved_exports {
-            if let Some(id) = ctx.symbols.get(name)
+            if let Some(id) = ctx.symbols.lookup(name)
                 && ctx.symbols[id].file() == Some(FileId::Dylib(target as u32))
             {
-                ctx.symbols[id].set_is_weak_ref(true);
+                ctx.symbols[id].set_weak_ref(true);
             }
         }
     }
@@ -2724,7 +2724,7 @@ pub fn create_symbol_reexports<E: Target>(ctx: &mut Context<E>) {
         let alias = ctx.symbols.add_local(name);
         let sym = &mut ctx.symbols[alias];
         sym.set_file(FileId::Obj(internal));
-        sym.set_is_extern(true);
+        sym.set_extern(true);
         ctx.indirect_aliases.push((alias, target));
         ctx.args.forced_undefined.push(name.to_vec());
     }
@@ -2795,7 +2795,7 @@ fn define_header_symbol<E: Target>(
     if !sym.is_defined() {
         sym.set_file(FileId::Obj(internal));
         sym.value = addr;
-        sym.set_is_extern(is_extern);
+        sym.set_extern(is_extern);
     }
 }
 
@@ -2810,10 +2810,11 @@ fn define_header_symbol<E: Target>(
 fn add_aliases<E: Target>(ctx: &mut Context<E>, internal: u32) {
     let aliases = std::mem::take(&mut ctx.args.aliases);
     for (existing, new) in &aliases {
-        let Some(src) = ctx.symbols.get(existing).filter(|&id| ctx.symbols[id].is_defined()) else {
+        let Some(src) = ctx.symbols.lookup(existing).filter(|&id| ctx.symbols[id].is_defined())
+        else {
             continue;
         };
-        let referenced = ctx.symbols.get(new).is_some_and(|id| ctx.symbols[id].is_used());
+        let referenced = ctx.symbols.lookup(new).is_some_and(|id| ctx.symbols[id].is_used());
         if ctx.strips_dead_code()
             && !referenced
             && !(crate::dead_strip::keeps_export(ctx, new)
@@ -2835,7 +2836,7 @@ fn add_aliases<E: Target>(ctx: &mut Context<E>, internal: u32) {
             sym.set_file(FileId::Obj(internal));
             sym.set_input_section(None);
             sym.value = 0;
-            sym.set_is_extern(true);
+            sym.set_extern(true);
             ctx.indirect_aliases.push((dst, src));
         } else {
             let (file, isec, value) = {
@@ -2846,7 +2847,7 @@ fn add_aliases<E: Target>(ctx: &mut Context<E>, internal: u32) {
             sym.set_file(file.expect("alias of a defined symbol"));
             sym.set_input_section(isec);
             sym.value = value;
-            sym.set_is_extern(true);
+            sym.set_extern(true);
         }
     }
     ctx.args.aliases = aliases;
@@ -2878,7 +2879,7 @@ fn claim_boundary_symbols<E: Target>(ctx: &mut Context<E>, internal: u32) {
         };
         let sym = &mut ctx.symbols[id];
         sym.set_file(FileId::Obj(internal));
-        sym.set_is_extern(false);
+        sym.set_extern(false);
         ctx.boundary_syms.push((id as u32, is_start, seg, sect));
     }
 }
@@ -2915,7 +2916,7 @@ pub fn fix_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
     // ld-prime.
     if ctx.args.preload
         && let Some(text) = ctx.segments.iter().find(|s| s.name == b"__TEXT")
-        && let Some(id) = ctx.symbols.get(b"___dso_handle")
+        && let Some(id) = ctx.symbols.lookup(b"___dso_handle")
         && ctx.symbols[id].input_section().is_none()
     {
         ctx.symbols[id].value = text.cmd.vmaddr;
@@ -3662,7 +3663,7 @@ pub fn resolve_entry<E: Target>(ctx: &mut Context<E>) {
     if !ctx.args.has_entry_point() {
         return;
     }
-    match ctx.symbols.get(&ctx.args.entry) {
+    match ctx.symbols.lookup(&ctx.args.entry) {
         // An entry point in a dylib (an app extension's
         // _NSExtensionMain): LC_MAIN must point into __TEXT, so it
         // names the symbol's stub, as ld64 does.
@@ -3686,7 +3687,7 @@ pub fn add_entry_stub<E: Target>(ctx: &mut Context<E>) {
     if !ctx.args.has_entry_point() {
         return;
     }
-    if let Some(id) = ctx.symbols.get(&ctx.args.entry)
+    if let Some(id) = ctx.symbols.lookup(&ctx.args.entry)
         && ctx.symbols[id].is_imported()
     {
         ctx.symbols[id].add_flags(NEEDS_STUB);
@@ -3700,7 +3701,7 @@ pub fn add_entry_stub<E: Target>(ctx: &mut Context<E>) {
 /// chunks::stub_helper::ensure_stub_binder.)
 pub fn resolve_stub_binder<E: Target>(ctx: &mut Context<E>) {
     if ctx.args.legacy_linkedit {
-        let id = ctx.symbols.get(b"dyld_stub_binding_helper");
+        let id = ctx.symbols.lookup(b"dyld_stub_binding_helper");
         let id = id.filter(|&id| ctx.symbols[id].input_section().is_some());
         ctx.stub_helper.binding_helper = id;
     }

@@ -493,8 +493,8 @@ impl<E: Target> Context<E> {
         let sym = &mut self.symbols[id];
         if !sym.is_defined() {
             sym.set_file(FileId::Dylib(dylib));
-            sym.set_is_imported(true);
-            sym.set_is_extern(true);
+            sym.set_imported(true);
+            sym.set_extern(true);
             sym.set_input_section(None);
         }
         Some(id)

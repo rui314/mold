@@ -134,8 +134,8 @@ pub fn create_class_table<E: Target>(ctx: &mut Context<E>) {
     sym.set_file(FileId::Obj(internal));
     sym.set_input_section(Some(table));
     sym.value = 0;
-    sym.set_is_extern(true);
-    sym.set_is_private_extern(true);
+    sym.set_extern(true);
+    sym.set_private_extern(true);
 }
 
 /// Adds the table to __DATA,__data, after the libraries' names: the

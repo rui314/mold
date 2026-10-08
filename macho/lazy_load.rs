@@ -28,7 +28,7 @@ pub fn bind_dyld_lazy_load<E: Target>(ctx: &mut Context<E>) {
     let uses_lazy =
         ctx_ref.symbols.syms.par_iter().any(|sym| sym.is_used() && sym.is_lazy_import(ctx_ref));
     if uses_lazy && let Some(id) = ctx.bind_linker_import(b"__dyld_lazy_load") {
-        ctx.symbols[id].set_is_used(true);
+        ctx.symbols[id].set_used(true);
     }
 }
 
@@ -60,7 +60,7 @@ pub fn create_lazy_loads<E: Target>(ctx: &mut Context<E>) {
     // The helpers call __dyld_lazy_load through its stub (see
     // bind_dyld_lazy_load).
     if !ctx.lazy_helpers.helpers.is_empty() {
-        let id = ctx.symbols.get(b"__dyld_lazy_load").filter(|&id| ctx.symbols[id].is_defined());
+        let id = ctx.symbols.lookup(b"__dyld_lazy_load").filter(|&id| ctx.symbols[id].is_defined());
         let Some(id) = id else {
             crate::fatal!("lazy-load dylibs need __dyld_lazy_load, which no loaded dylib exports");
         };

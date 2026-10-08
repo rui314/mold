@@ -642,7 +642,7 @@ impl DylibFile {
     /// stay.)
     pub fn exports_moved_away<E: Target>(&self, ctx: &Context<E>) -> bool {
         self.moved_exports.iter().any(|(&name, &target)| {
-            let file = ctx.symbols.get(name).and_then(|id| ctx.symbols[id].file());
+            let file = ctx.symbols.lookup(name).and_then(|id| ctx.symbols[id].file());
             file == Some(FileId::Dylib(target as u32))
         })
     }
@@ -4120,17 +4120,17 @@ impl ObjectFile {
         isecs: &[InputSection],
     ) -> bool {
         let msym = &self.mach_syms[i];
-        sym.set_is_extern(true);
-        sym.set_is_imported(false);
-        sym.set_is_common(false);
-        sym.set_is_weak_def(msym.desc & N_WEAK_DEF != 0);
-        sym.set_is_private_extern(msym.n_type & N_PEXT != 0 || self.hidden);
+        sym.set_extern(true);
+        sym.set_imported(false);
+        sym.set_common(false);
+        sym.set_weak_def(msym.desc & N_WEAK_DEF != 0);
+        sym.set_private_extern(msym.n_type & N_PEXT != 0 || self.hidden);
         sym.set_no_dead_strip(msym.desc & (N_NO_DEAD_STRIP | REFERENCED_DYNAMICALLY) != 0);
-        sym.set_is_referenced_dynamically(
+        sym.set_referenced_dynamically(
             msym.ty() == N_SECT
                 && msym.desc & (REFERENCED_DYNAMICALLY | N_WEAK_DEF) == REFERENCED_DYNAMICALLY,
         );
-        sym.set_is_alt_entry(msym.desc & N_ALT_ENTRY != 0);
+        sym.set_alt_entry(msym.desc & N_ALT_ENTRY != 0);
 
         let file = FileId::Obj(obj_idx as u32);
         match msym.ty() {
@@ -4155,13 +4155,13 @@ impl ObjectFile {
             N_UNDF if !self.is_alive => {
                 sym.set_file(file);
                 sym.set_input_section(None);
-                sym.set_is_common(true);
+                sym.set_common(true);
                 sym.value = 0;
             }
             // A live common symbol takes a tentative claim.
             N_UNDF => {
                 sym.clear_file();
-                sym.set_is_common(true);
+                sym.set_common(true);
                 sym.value = msym.value;
                 sym.common_p2align = msym.common_p2align();
             }
