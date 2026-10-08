@@ -386,6 +386,23 @@ impl MachSym {
     pub fn is_common(&self) -> bool {
         !self.is_stab() && self.ty() == N_UNDF && self.is_extern() && self.value != 0
     }
+
+    /// Whether an external symbol is undefined: a reference, or a
+    /// tentative definition (see is_common), which is N_UNDF too.
+    pub fn is_undef(&self) -> bool {
+        !self.is_stab() && self.is_extern() && self.ty() == N_UNDF
+    }
+
+    /// Whether a MachSym is an external weak definition in a section.
+    pub fn is_weak_def(&self) -> bool {
+        !self.is_stab() && self.is_extern() && self.ty() == N_SECT && self.desc & N_WEAK_DEF != 0
+    }
+
+    /// The log2 of a tentative definition's alignment, which desc
+    /// carries in bits 8 to 11 (Apple's GET_COMM_ALIGN).
+    pub fn common_p2align(&self) -> u8 {
+        ((self.desc >> 8) & 0xf) as u8
+    }
 }
 
 /// A relocation record, which Apple calls `relocation_info`. `offset`

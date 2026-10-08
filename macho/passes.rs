@@ -252,7 +252,7 @@ fn collect_references<E: Target>(ctx: &Context<E>, only_alive: bool) -> Referenc
     ctx.objs.par_iter().filter(|obj| !only_alive || obj.is_alive).for_each(|obj| {
         let r = obj.global_range();
         for (msym, &sym_id) in obj.mach_syms[r.clone()].iter().zip(&obj.symbols[r]) {
-            if !msym.is_stab() && msym.is_extern() && msym.ty() == N_UNDF {
+            if msym.is_undef() {
                 refs.used[sym_id as usize].store(true, Ordering::Relaxed);
                 if msym.desc & N_WEAK_REF != 0 {
                     refs.weak[sym_id as usize].store(true, Ordering::Relaxed);
@@ -448,7 +448,7 @@ fn claim_definition(
             sym.clear_file();
             sym.set_is_common(true);
             sym.value = msym.value;
-            sym.common_p2align = ((msym.desc >> 8) & 0xf) as u8;
+            sym.common_p2align = msym.common_p2align();
         }
         _ => unreachable!(),
     }
@@ -465,7 +465,7 @@ fn live_common_symbols<E: Target>(ctx: &Context<E>) -> Vec<(SymbolId, u64, u8, b
             let r = obj.global_range();
             obj.mach_syms[r.clone()].iter().zip(&obj.symbols[r]).filter_map(|(msym, &sym_id)| {
                 if !msym.is_stab() && msym.is_extern() && msym.ty() == N_UNDF && msym.is_common() {
-                    let p2align = ((msym.desc >> 8) & 0xf) as u8;
+                    let p2align = msym.common_p2align();
                     let pext = msym.n_type & N_PEXT != 0 || obj.hidden;
                     Some((sym_id, msym.value, p2align, pext))
                 } else {
@@ -813,7 +813,7 @@ fn mark_live_objects<E: Target>(ctx: &mut Context<E>) {
     while let Some(obj_idx) = queue.pop() {
         for i in ctx.objs[obj_idx].global_range() {
             let msym = ctx.objs[obj_idx].mach_syms[i];
-            if msym.is_stab() || !msym.is_extern() || msym.ty() != N_UNDF {
+            if !msym.is_undef() {
                 continue;
             }
             let sym_id = ctx.objs[obj_idx].symbols[i];
@@ -1683,7 +1683,7 @@ pub fn auto_hide_weak_defs<E: Target>(ctx: &mut Context<E>) {
         }
         let r = obj.global_range();
         for (msym, &sym_id) in obj.mach_syms[r.clone()].iter().zip(&obj.symbols[r]) {
-            if !is_weak_def(msym) {
+            if !msym.is_weak_def() {
                 continue;
             }
             let bits = if msym.desc & N_WEAK_REF != 0 { SEEN } else { SEEN | NOT_HIDABLE };
@@ -1704,11 +1704,6 @@ pub fn auto_hide_weak_defs<E: Target>(ctx: &mut Context<E>) {
             sym.set_is_private_extern(true);
         }
     });
-}
-
-/// Whether a MachSym is an external weak definition in a section.
-fn is_weak_def(msym: &MachSym) -> bool {
-    !msym.is_stab() && msym.is_extern() && msym.ty() == N_SECT && msym.desc & N_WEAK_DEF != 0
 }
 
 /// Hide definitions before dead stripping and relocation scanning so
@@ -1854,7 +1849,7 @@ fn weak_def_losers<E: Target>(ctx: &Context<E>, obj_idx: usize) -> Vec<(usize, u
     let mut values: Option<Vec<u64>> = None;
     for i in obj.global_range() {
         let (msym, sym_id) = (&obj.mach_syms[i], obj.symbols[i]);
-        if !is_weak_def(msym) {
+        if !msym.is_weak_def() {
             continue;
         }
         let sym = &ctx.symbols[sym_id];
