@@ -9,15 +9,16 @@ use std::io::IsTerminal;
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
 
+use crate::arch::Target;
+use crate::context::Context;
 use crate::error::RawPath;
 use crate::error::{raw, strerror};
 use crate::fatal;
-use crate::filetype::{FileType, get_file_type};
-use crate::input_files::PlatformVersion;
 use crate::macho::*;
 use crate::mapped_file::MappedFile;
+use crate::reader::under_root;
 use crate::util::glob::{Glob, GlobBuilder};
-use crate::util::{is_space, lines, os_str, trim_space};
+use crate::util::{is_space, lines, os_str, path_bytes, trim_space};
 
 /// The Apple ld64 version whose command line this linker implements,
 /// reported by -version_details. Xcode passes flags according to this
@@ -238,13 +239,13 @@ pub struct Args {
     pub entry: Vec<u8>,
     /// The deployment target: -platform_version's platform (PLATFORM_*),
     /// minimum OS and SDK versions, else those of the first object
-    /// file (see infer_platform). The platform is 0 (none) only in a
-    /// -r or -preload link that nothing names one for.
+    /// file (see reader::infer_platform). The platform is 0 (none) only
+    /// in a -r or -preload link that nothing names one for.
     pub platform: u32,
     pub platform_minos: u32,
     pub platform_sdk: u32,
     pub syslibroot: Vec<PathBuf>,
-    /// The -L and -F directories, and once reader::set_search_paths has
+    /// The -L and -F directories, and once set_search_paths has
     /// settled them, the library and framework search paths.
     pub library_paths: Vec<PathBuf>,
     pub framework_paths: Vec<PathBuf>,
@@ -1053,7 +1054,7 @@ const JOINED_LIBRARY_OPTIONS: [(&str, LibraryKind); 13] = [
 ];
 
 /// The target a triple's architecture names.
-fn triple_arch(arch: &str, triple: &str) -> &'static str {
+pub fn triple_arch(arch: &str, triple: &str) -> &'static str {
     crate::arch::canonical_name(arch)
         .unwrap_or_else(|| fatal!("unknown architecture in target triple '{triple}'"))
 }
@@ -1064,7 +1065,7 @@ fn triple_arch(arch: &str, triple: &str) -> &'static str {
 /// of a mobile OS: clang makes x86-64 firmware
 /// x86_64-apple-firmware1.0.0-simulator, which names no OS mold links
 /// for.
-fn parse_triple(triple: &str) -> (&str, u32, u32) {
+pub fn parse_triple(triple: &str) -> (&str, u32, u32) {
     let mut parts = triple.splitn(3, '-');
     let (Some(arch), Some(_vendor), Some(os)) = (parts.next(), parts.next(), parts.next()) else {
         fatal!("missing dashes in target triple '{triple}'");
@@ -2687,18 +2688,20 @@ fn exit_without_inputs(args: &Args) -> ! {
 
 /// Settles what the image is linked for, and returns whether that is
 /// `target`. Without -arch, the first object file names the
-/// architecture (see detect_target); without -platform_version (or the
-/// like), the parse for the target looks for the platform in the
-/// objects too (see infer_platform).
+/// architecture (see reader::detect_machine_type); without
+/// -platform_version (or the like), the parse for the target looks for
+/// the platform in the objects too (see reader::infer_platform). mold's
+/// driver detects the machine type after the parse, but here the
+/// defaults of many options depend on the target and the platform.
 fn resolve_target(target: &TargetTraits, args: &mut Args) -> bool {
     if args.arch.is_none() {
-        args.arch = Some(detect_target(args));
+        args.arch = Some(crate::reader::detect_machine_type(args));
     }
     if args.arch != Some(target.name) {
         return false;
     }
     if args.platform == 0 {
-        infer_platform(args);
+        crate::reader::infer_platform(args);
     }
     check_deployment_target(args);
     true
@@ -2718,88 +2721,6 @@ fn check_deployment_target(args: &Args) {
             "building for iOS with {} minimum deployment target is no longer supported",
             format_version(args.platform_minos)
         );
-    }
-}
-
-/// Without -arch, ld-prime links for the target of the first object
-/// file named on the command line: a Mach-O object's CPU type, or a
-/// bitcode file's target triple. Archives, dylibs and universal files
-/// don't count, and without such an object there is no target.
-fn detect_target(args: &Args) -> &'static str {
-    for input in &args.inputs {
-        let (InputArg::File(path) | InputArg::Listed(path)) = input else { continue };
-        let Some(mf) = open_for_target(path) else { continue };
-        match get_file_type(mf) {
-            FileType::Object => {
-                if let Some(name) = crate::filetype::get_macho_target(mf.data()) {
-                    return name;
-                }
-            }
-            FileType::LlvmBitcode => {
-                let plugin = crate::lto::load_plugin(args.lto_library.as_deref());
-                let triple = crate::lto::target_triple(&plugin, mf.data(), &mf.name);
-                return triple_arch(triple.split('-').next().unwrap_or_default(), &triple);
-            }
-            _ => {}
-        }
-    }
-    fatal!("Missing -arch option");
-}
-
-/// An input file ld-prime reads before the link proper to work out the
-/// target (see detect_target and infer_platform): None for an empty
-/// one, which says nothing. A file it can't map stops it, in words that
-/// name no input.
-fn open_for_target(path: &Path) -> Option<&'static MappedFile> {
-    match MappedFile::try_open(path) {
-        Ok(mf) => (mf.size() > 0).then_some(mf),
-        Err(e) => fatal!("{}", crate::error::raw(&crate::reader::unreadable_file(path, &e))),
-    }
-}
-
-/// Without -platform_version (or -macos_version_min or -target),
-/// ld-prime links for what the first object file named on the command
-/// line that has a platform load command was built for: its platform,
-/// minimum OS and SDK versions, whatever later objects say (one built
-/// for a newer OS draws a warning, one for another platform an error).
-/// Archive members, universal files and dylibs don't count, nor does a
-/// bitcode file unless no Mach-O object does: then the first one's
-/// target triple names the platform and OS version, and no SDK. A final
-/// image must have a platform; a -r or -preload output may be for none.
-fn infer_platform(args: &mut Args) {
-    let mut bitcode = None;
-    for input in &args.inputs {
-        let (InputArg::File(path) | InputArg::Listed(path)) = input else { continue };
-        let Some(mf) = open_for_target(path) else { continue };
-        match get_file_type(mf) {
-            FileType::Object => {
-                let Some(v) = PlatformVersion::of_object(mf.data()) else {
-                    continue;
-                };
-                if !is_supported_platform(v.platform) {
-                    fatal!(
-                        "{}: unsupported platform: {}",
-                        mf.name.raw(),
-                        platform_name(v.platform)
-                    );
-                }
-                args.platform = v.platform;
-                args.platform_minos = v.minos;
-                args.platform_sdk = v.sdk;
-                return;
-            }
-            FileType::LlvmBitcode => {
-                bitcode.get_or_insert(mf);
-            }
-            _ => {}
-        }
-    }
-    if let Some(mf) = bitcode {
-        let plugin = crate::lto::load_plugin(args.lto_library.as_deref());
-        let triple = crate::lto::target_triple(&plugin, mf.data(), &mf.name);
-        (_, args.platform, args.platform_minos) = parse_triple(&triple);
-    } else if !args.relocatable && !args.preload {
-        fatal!("Missing -platform_version option");
     }
 }
 
@@ -3189,6 +3110,25 @@ fn resolve_fixup_chains(target: &TargetTraits, args: &Args, fixup_chains: Option
 fn chained_fixups_by_default(target: &TargetTraits, args: &Args) -> bool {
     (args.pie || args.output_type != MH_EXECUTE)
         && is_new_os(target.name, args.output_type, args.platform, args.platform_minos)
+}
+
+/// Whether ld-prime defaults to chained fixups for an output and its
+/// deployment target, which its diagnostics call the "new OS versions".
+/// That is no version set but each OS's own: macOS 12 (13 for an x86-64
+/// executable), iOS 13.4, whose dyld was the first to read the chains,
+/// tvOS 14, the simulators 15 on either architecture, and every
+/// visionOS; firmware too, whatever its version.
+fn is_new_os(arch: &str, output_type: u32, platform: u32, minos: u32) -> bool {
+    let first = match platform {
+        PLATFORM_MACOS if arch == "x86_64" && output_type == MH_EXECUTE => encode_version(13, 0, 0),
+        PLATFORM_MACOS => encode_version(12, 0, 0),
+        PLATFORM_IOS => encode_version(13, 4, 0),
+        PLATFORM_TVOS => encode_version(14, 0, 0),
+        PLATFORM_IOSSIMULATOR | PLATFORM_TVOSSIMULATOR => encode_version(15, 0, 0),
+        PLATFORM_VISIONOS | PLATFORM_VISIONOSSIMULATOR | PLATFORM_FIRMWARE => 0,
+        _ => return false,
+    };
+    minos >= first
 }
 
 /// Whether an image dyld loads goes without LC_DYLD_INFO, the opcode
@@ -3906,5 +3846,116 @@ fn check_dynamic_lookup(args: &Args) {
              symbols. Remove these options or opt out of the shared cache using the build \
              setting 'LD_SHARED_CACHE_ELIGIBLE=NO' (or linker flag '-not_for_dyld_shared_cache')"
         );
+    }
+}
+
+/// The default library search path: ld64's /usr/lib and /usr/local/lib,
+/// and between them ld-prime's /usr/lib/swift, which it searches for
+/// any library, not only Swift's.
+const STANDARD_LIBRARY_DIRS: &[&str] = &["/usr/lib", "/usr/lib/swift", "/usr/local/lib"];
+
+/// The default framework search path, as ld64's.
+const STANDARD_FRAMEWORK_DIRS: &[&str] = &["/Library/Frameworks", "/System/Library/Frameworks"];
+
+/// Settles the library and framework search paths, once the options
+/// are checked, as ld-prime does: the -L (-F) directories, then, unless
+/// -Z, the default ones (see search_dirs). -v prints the banner here and
+/// -version_details its JSON; then either prints the paths on stderr,
+/// as ld-prime does.
+pub fn set_search_paths<E: Target>(ctx: &mut Context<E>) {
+    let args = &mut ctx.args;
+    if args.verbose {
+        crate::cmdline::print_version();
+    }
+    if args.version_details {
+        crate::cmdline::print_version_details();
+    }
+    args.library_paths = search_dirs(args, &args.library_paths, STANDARD_LIBRARY_DIRS);
+    args.framework_paths = search_dirs(args, &args.framework_paths, STANDARD_FRAMEWORK_DIRS);
+    if args.verbose || args.version_details {
+        let mut out = Vec::new();
+        for (title, dirs) in
+            [("Library", &args.library_paths), ("Framework", &args.framework_paths)]
+        {
+            out.extend_from_slice(format!("{title} search paths:\n").as_bytes());
+            for dir in dirs {
+                out.push(b'\t');
+                out.extend_from_slice(path_bytes(dir));
+                out.push(b'\n');
+            }
+        }
+        let _ = std::io::Write::write_all(&mut std::io::stderr(), &out);
+    }
+}
+
+/// The directories `dirs` given on the command line, then, unless -Z,
+/// the default ones, each looked up under the syslibroots as ld64 does
+/// (see push_search_dir). A directory given again, spelled the same, is
+/// taken the first time only. A -syslibroot of / anywhere, which
+/// configure scripts pass, puts none under a root (ld64 drops the roots
+/// only for a last one); the roots still hold the files the options
+/// naming a library's path look up (reader::find_file) unless it is
+/// last.
+fn search_dirs(args: &Args, dirs: &[PathBuf], standard: &[&str]) -> Vec<PathBuf> {
+    let syslibroot: &[PathBuf] = if args.syslibroot.iter().any(|root| root.as_os_str() == "/") {
+        &[]
+    } else {
+        &args.syslibroot
+    };
+    let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for dir in dirs.iter().filter(|dir| seen.insert(dir.as_os_str())) {
+        push_search_dir(syslibroot, &mut out, dir, true);
+    }
+    if !args.no_standard_dirs {
+        for dir in standard {
+            push_search_dir(syslibroot, &mut out, Path::new(dir), false);
+        }
+    }
+    out
+}
+
+/// Adds a directory to a search path. ld64 looks an absolute directory
+/// up under each syslibroot, keeping those that have it and falling
+/// back to the directory itself - but a default directory missing from
+/// the only SDK is not searched at all; one that climbs with "/.." is
+/// first resolved (symbolic links too) where it can be. A relative
+/// directory is never put under a syslibroot, which the compiler
+/// driver always passes: `-L.` would otherwise search the SDK's root,
+/// not the working directory. What is no directory is left out with a
+/// warning, as is a directory the command line `given` that is not
+/// there; a default directory that is not there goes without a word,
+/// and so does /usr/local/lib, spelled just so, which clang gives every
+/// link.
+fn push_search_dir(syslibroot: &[PathBuf], dirs: &mut Vec<PathBuf>, dir: &Path, given: bool) {
+    let quiet = !given || dir.as_os_str() == "/usr/local/lib";
+    let mut dir = dir.to_path_buf();
+    if dir.is_absolute() {
+        if memchr::memmem::find(path_bytes(&dir), b"/..").is_some()
+            && let Ok(real) = std::fs::canonicalize(&dir)
+        {
+            dir = real;
+        }
+        let len = dirs.len();
+        for root in syslibroot {
+            let path = under_root(root, &dir);
+            match std::fs::metadata(&path) {
+                Ok(md) if md.is_dir() => dirs.push(path),
+                Ok(_) => crate::warn!(
+                    "-syslibroot and combined search path '{}' is not a directory",
+                    path.raw()
+                ),
+                Err(_) => {}
+            }
+        }
+        if dirs.len() > len || (!given && syslibroot.len() == 1) {
+            return;
+        }
+    }
+    match std::fs::metadata(&dir) {
+        Ok(md) if md.is_dir() => dirs.push(dir),
+        Ok(_) => crate::warn!("search path '{}' is not a directory", dir.raw()),
+        Err(_) if !quiet => crate::warn!("search path '{}' not found", dir.raw()),
+        Err(_) => {}
     }
 }

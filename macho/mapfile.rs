@@ -180,7 +180,7 @@ fn dependency_inputs<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
     paths.extend(ctx.reexport_files.iter().map(PathBuf::as_path));
     // A fat file's slice is the file's.
     let mut paths: Vec<Vec<u8>> = (paths.into_iter())
-        .map(|path| crate::input_files::without_fat_arch(&dependency_path(path)))
+        .map(|path| crate::filetype::without_fat_arch(&dependency_path(path)))
         .collect();
     paths.sort_unstable();
     paths.dedup();
@@ -469,7 +469,7 @@ fn output_leaf<E: Target>(ctx: &Context<E>) -> String {
 /// A file's path as the traces give it: its real path, a fat file's
 /// slice by the file's.
 fn trace_path(path: &Path) -> String {
-    let (path, _) = crate::input_files::split_fat_arch(crate::util::path_bytes(path));
+    let (path, _) = crate::filetype::split_fat_arch(crate::util::path_bytes(path));
     let path = Path::new(crate::util::os_str(path));
     let path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     path.to_string_lossy().into_owned()
@@ -741,7 +741,7 @@ fn write_map<E: Target>(
     // path: "libfoo.a(foo.o)".
     for (i, path) in files.paths.iter().enumerate() {
         let _ = write!(out, "[{:3}] ", i + 1);
-        let _ = out.write_all(&crate::input_files::without_fat_arch(path_bytes(path)));
+        let _ = out.write_all(&crate::filetype::without_fat_arch(path_bytes(path)));
         let _ = writeln!(out);
     }
 

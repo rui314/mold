@@ -69,7 +69,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
 
     let mut ctx: Context<E> = Context::new(args);
     crate::error::set_demangle(ctx.args.demangle);
-    reader::set_search_paths(&mut ctx);
+    cmdline::set_search_paths(&mut ctx);
 
     let t_all = ctx.timer("all");
     crate::subprocess::install_signal_handler();

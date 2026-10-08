@@ -14,6 +14,7 @@ use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
+use crate::error;
 use crate::error::RawPath;
 use crate::fatal;
 
@@ -180,5 +181,26 @@ impl MappedFile {
     #[inline]
     pub fn data(&self) -> &'static [u8] {
         self.data
+    }
+}
+
+/// The words for a file MappedFile::try_open failed on with `e`. Every
+/// input is read whole, and an empty one refused, so a file that is
+/// there but no regular one (which MappedFile takes for none) is one
+/// that can't be mapped - a directory - or an empty one.
+pub fn unreadable_file(path: &Path, e: &std::io::Error) -> error::Message {
+    let p = path.raw();
+    let found = std::fs::metadata(path).ok().filter(|_| e.kind() == std::io::ErrorKind::NotFound);
+    match found {
+        Some(md) if md.len() == 0 => b"file is empty".to_vec(),
+        Some(_) => {
+            let e = std::io::Error::from_raw_os_error(libc::EINVAL);
+            let errno = crate::error::strerror(&e);
+            error::render(format_args!("cannot map {p}: {errno}"))
+        }
+        None => {
+            let errno = crate::error::strerror(e);
+            error::render(format_args!("cannot open {p}: {errno}"))
+        }
     }
 }

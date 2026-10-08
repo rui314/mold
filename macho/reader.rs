@@ -6,6 +6,10 @@
 //! decides their load commands; objects and archive members are queued
 //! and parsed in parallel, then added to the link in command line order,
 //! which gives each its priority for symbol resolution.
+//!
+//! Before that, the option parser reads the first objects here for the
+//! target and the platform the options don't name (detect_machine_type,
+//! infer_platform).
 
 use std::ffi::{OsStr, OsString};
 use std::os::unix::ffi::OsStrExt;
@@ -14,126 +18,99 @@ use std::path::{Path, PathBuf};
 use rayon::prelude::*;
 
 use crate::arch::Target;
-use crate::cmdline::{Args, InputArg, LibraryKind, LibraryName};
+use crate::cmdline::{Args, InputArg, LibraryKind, LibraryName, parse_triple, triple_arch};
 use crate::context::Context;
 use crate::error;
 use crate::error::RawPath;
 use crate::error::raw;
 use crate::fatal;
-use crate::filetype::{FileType, get_file_type};
+use crate::filetype::{self, FileType, get_file_type};
 use crate::input_files;
+use crate::input_files::PlatformVersion;
 use crate::macho::*;
-use crate::mapped_file::MappedFile;
+use crate::mapped_file::{MappedFile, unreadable_file};
 use crate::mergeable::MergedLibrary;
 use crate::util::path_bytes;
 
-/// The default library search path: ld64's /usr/lib and /usr/local/lib,
-/// and between them ld-prime's /usr/lib/swift, which it searches for
-/// any library, not only Swift's.
-const STANDARD_LIBRARY_DIRS: &[&str] = &["/usr/lib", "/usr/lib/swift", "/usr/local/lib"];
-
-/// The default framework search path, as ld64's.
-const STANDARD_FRAMEWORK_DIRS: &[&str] = &["/Library/Frameworks", "/System/Library/Frameworks"];
-
-/// Settles the library and framework search paths, once the options
-/// are checked, as ld-prime does: the -L (-F) directories, then, unless
-/// -Z, the default ones (see search_dirs). -v prints the banner here and
-/// -version_details its JSON; then either prints the paths on stderr,
-/// as ld-prime does.
-pub fn set_search_paths<E: Target>(ctx: &mut Context<E>) {
-    let args = &mut ctx.args;
-    if args.verbose {
-        crate::cmdline::print_version();
-    }
-    if args.version_details {
-        crate::cmdline::print_version_details();
-    }
-    args.library_paths = search_dirs(args, &args.library_paths, STANDARD_LIBRARY_DIRS);
-    args.framework_paths = search_dirs(args, &args.framework_paths, STANDARD_FRAMEWORK_DIRS);
-    if args.verbose || args.version_details {
-        let mut out = Vec::new();
-        for (title, dirs) in
-            [("Library", &args.library_paths), ("Framework", &args.framework_paths)]
-        {
-            out.extend_from_slice(format!("{title} search paths:\n").as_bytes());
-            for dir in dirs {
-                out.push(b'\t');
-                out.extend_from_slice(path_bytes(dir));
-                out.push(b'\n');
+/// Without -arch, ld-prime links for the target of the first object
+/// file named on the command line: a Mach-O object's CPU type, or a
+/// bitcode file's target triple. Archives, dylibs and universal files
+/// don't count, and without such an object there is no target.
+pub fn detect_machine_type(args: &Args) -> &'static str {
+    for input in &args.inputs {
+        let (InputArg::File(path) | InputArg::Listed(path)) = input else { continue };
+        let Some(mf) = open_for_target(path) else { continue };
+        match get_file_type(mf) {
+            FileType::Object => {
+                if let Some(name) = crate::filetype::get_macho_target(mf.data()) {
+                    return name;
+                }
             }
+            FileType::LlvmBitcode => {
+                let plugin = crate::lto::load_plugin(args.lto_library.as_deref());
+                let triple = crate::lto::target_triple(&plugin, mf.data(), &mf.name);
+                return triple_arch(triple.split('-').next().unwrap_or_default(), &triple);
+            }
+            _ => {}
         }
-        let _ = std::io::Write::write_all(&mut std::io::stderr(), &out);
+    }
+    fatal!("Missing -arch option");
+}
+
+/// An input file ld-prime reads before the link proper to work out the
+/// target (see detect_machine_type and infer_platform): None for an
+/// empty one, which says nothing. A file it can't map stops it, in
+/// words that name no input.
+fn open_for_target(path: &Path) -> Option<&'static MappedFile> {
+    match MappedFile::try_open(path) {
+        Ok(mf) => (mf.size() > 0).then_some(mf),
+        Err(e) => fatal!("{}", crate::error::raw(&unreadable_file(path, &e))),
     }
 }
 
-/// The directories `dirs` given on the command line, then, unless -Z,
-/// the default ones, each looked up under the syslibroots as ld64 does
-/// (see push_search_dir). A directory given again, spelled the same, is
-/// taken the first time only. A -syslibroot of / anywhere, which
-/// configure scripts pass, puts none under a root (ld64 drops the roots
-/// only for a last one); the roots still hold the files the options
-/// naming a library's path look up (find_file) unless it is last.
-fn search_dirs(args: &Args, dirs: &[PathBuf], standard: &[&str]) -> Vec<PathBuf> {
-    let syslibroot: &[PathBuf] = if args.syslibroot.iter().any(|root| root.as_os_str() == "/") {
-        &[]
-    } else {
-        &args.syslibroot
-    };
-    let mut out = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    for dir in dirs.iter().filter(|dir| seen.insert(dir.as_os_str())) {
-        push_search_dir(syslibroot, &mut out, dir, true);
-    }
-    if !args.no_standard_dirs {
-        for dir in standard {
-            push_search_dir(syslibroot, &mut out, Path::new(dir), false);
-        }
-    }
-    out
-}
-
-/// Adds a directory to a search path. ld64 looks an absolute directory
-/// up under each syslibroot, keeping those that have it and falling
-/// back to the directory itself - but a default directory missing from
-/// the only SDK is not searched at all; one that climbs with "/.." is
-/// first resolved (symbolic links too) where it can be. A relative
-/// directory is never put under a syslibroot, which the compiler
-/// driver always passes: `-L.` would otherwise search the SDK's root,
-/// not the working directory. What is no directory is left out with a
-/// warning, as is a directory the command line `given` that is not
-/// there; a default directory that is not there goes without a word,
-/// and so does /usr/local/lib, spelled just so, which clang gives every
-/// link.
-fn push_search_dir(syslibroot: &[PathBuf], dirs: &mut Vec<PathBuf>, dir: &Path, given: bool) {
-    let quiet = !given || dir.as_os_str() == "/usr/local/lib";
-    let mut dir = dir.to_path_buf();
-    if dir.is_absolute() {
-        if memchr::memmem::find(path_bytes(&dir), b"/..").is_some()
-            && let Ok(real) = std::fs::canonicalize(&dir)
-        {
-            dir = real;
-        }
-        let len = dirs.len();
-        for root in syslibroot {
-            let path = under_root(root, &dir);
-            match std::fs::metadata(&path) {
-                Ok(md) if md.is_dir() => dirs.push(path),
-                Ok(_) => crate::warn!(
-                    "-syslibroot and combined search path '{}' is not a directory",
-                    path.raw()
-                ),
-                Err(_) => {}
+/// Without -platform_version (or -macos_version_min or -target),
+/// ld-prime links for what the first object file named on the command
+/// line that has a platform load command was built for: its platform,
+/// minimum OS and SDK versions, whatever later objects say (one built
+/// for a newer OS draws a warning, one for another platform an error).
+/// Archive members, universal files and dylibs don't count, nor does a
+/// bitcode file unless no Mach-O object does: then the first one's
+/// target triple names the platform and OS version, and no SDK. A final
+/// image must have a platform; a -r or -preload output may be for none.
+pub fn infer_platform(args: &mut Args) {
+    let mut bitcode = None;
+    for input in &args.inputs {
+        let (InputArg::File(path) | InputArg::Listed(path)) = input else { continue };
+        let Some(mf) = open_for_target(path) else { continue };
+        match get_file_type(mf) {
+            FileType::Object => {
+                let Some(v) = PlatformVersion::of_object(mf.data()) else {
+                    continue;
+                };
+                if !is_supported_platform(v.platform) {
+                    fatal!(
+                        "{}: unsupported platform: {}",
+                        mf.name.raw(),
+                        platform_name(v.platform)
+                    );
+                }
+                args.platform = v.platform;
+                args.platform_minos = v.minos;
+                args.platform_sdk = v.sdk;
+                return;
             }
-        }
-        if dirs.len() > len || (!given && syslibroot.len() == 1) {
-            return;
+            FileType::LlvmBitcode => {
+                bitcode.get_or_insert(mf);
+            }
+            _ => {}
         }
     }
-    match std::fs::metadata(&dir) {
-        Ok(md) if md.is_dir() => dirs.push(dir),
-        Ok(_) => crate::warn!("search path '{}' is not a directory", dir.raw()),
-        Err(_) if !quiet => crate::warn!("search path '{}' not found", dir.raw()),
-        Err(_) => {}
+    if let Some(mf) = bitcode {
+        let plugin = crate::lto::load_plugin(args.lto_library.as_deref());
+        let triple = crate::lto::target_triple(&plugin, mf.data(), &mf.name);
+        (_, args.platform, args.platform_minos) = parse_triple(&triple);
+    } else if !args.relocatable && !args.preload {
+        fatal!("Missing -platform_version option");
     }
 }
 
@@ -199,7 +176,7 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
             Ok(mf) if matches!(arg, InputArg::BundleLoader(_)) => {
                 load_bundle_loader(ctx, mf, rc, &mut queue)
             }
-            Ok(mf) => collect_file(ctx, mf, rc, &mut queue),
+            Ok(mf) => read_file(ctx, mf, rc, &mut queue),
             Err(e) => error!("{}", raw(&unreadable_file(&path, &e))),
         }
     }
@@ -528,7 +505,7 @@ fn find_library<E: Target>(ctx: &Context<E>, prober: &Prober, name: &OsStr) -> O
     // anywhere.
     // An image that links no dylib (Args::links_dylibs) looks for
     // archives only. A relocatable output looks for dylibs too, only to
-    // ignore them (collect_file).
+    // ignore them (read_file).
     use LibFile::*;
     let passes: &[&[LibFile]] = if !ctx.args.links_dylibs() {
         &[&[Archive]]
@@ -720,7 +697,7 @@ fn library_option(arg: &InputArg) -> Option<(ReaderContext, bool, &OsStr)> {
 /// libfoo. A file also given by bare path, or named by options that
 /// match no other way (`-upward_library libfoo.dylib`), takes nothing
 /// from the other namings: the first to load the file decides (see
-/// collect_file). The first library or framework not found, -force_load's
+/// read_file). The first library or framework not found, -force_load's
 /// among them, stops the link, as does a naming check_naming refuses.
 fn library_namings(
     args: &Args,
@@ -886,27 +863,6 @@ fn sub_reexport<E: Target>(ctx: &Context<E>, arg: &InputArg, path: &Path) -> boo
     true
 }
 
-/// The words for a file MappedFile::try_open failed on with `e`. Every
-/// input is read whole, and an empty one refused, so a file that is
-/// there but no regular one (which MappedFile takes for none) is one
-/// that can't be mapped - a directory - or an empty one.
-pub fn unreadable_file(path: &Path, e: &std::io::Error) -> error::Message {
-    let p = path.raw();
-    let found = std::fs::metadata(path).ok().filter(|_| e.kind() == std::io::ErrorKind::NotFound);
-    match found {
-        Some(md) if md.len() == 0 => b"file is empty".to_vec(),
-        Some(_) => {
-            let e = std::io::Error::from_raw_os_error(libc::EINVAL);
-            let errno = crate::error::strerror(&e);
-            error::render(format_args!("cannot map {p}: {errno}"))
-        }
-        None => {
-            let errno = crate::error::strerror(e);
-            error::render(format_args!("cannot open {p}: {errno}"))
-        }
-    }
-}
-
 /// -bundle_loader: the executable that will load this bundle. Its
 /// exports resolve the bundle's remaining undefined symbols, bound at
 /// run time to the main executable (XCTest bundles hosted by an app are
@@ -921,7 +877,7 @@ fn load_bundle_loader<E: Target>(
     out: &mut Vec<PendingObject>,
 ) {
     let exe = match get_file_type(mf) {
-        FileType::Fat => input_files::fat_slice::<E>(&ctx.args, mf),
+        FileType::Fat => filetype::fat_slice::<E>(&ctx.args, mf),
         _ => Some(mf),
     };
     match exe.filter(|exe| crate::filetype::get_macho_filetype(exe.data()) == Some(MH_EXECUTE)) {
@@ -932,7 +888,7 @@ fn load_bundle_loader<E: Target>(
                 false => refuse_without_uuid(exe),
             }
         }
-        None => collect_file(ctx, mf, rc, out),
+        None => read_file(ctx, mf, rc, out),
     }
 }
 
@@ -942,7 +898,7 @@ fn load_bundle_loader<E: Target>(
 /// output.
 fn collect_indirect_files<E: Target>(ctx: &mut Context<E>, out: &mut Vec<PendingObject>) {
     for mf in std::mem::take(&mut ctx.indirect_files) {
-        collect_file(ctx, mf, ReaderContext::default(), out);
+        read_file(ctx, mf, ReaderContext::default(), out);
     }
 }
 
@@ -978,7 +934,7 @@ struct PendingObject {
 /// immediately (they are cheap and order-sensitive); objects and
 /// archive members are queued for parallel staging; bitcode is
 /// registered immediately since libLTO calls are kept on one thread.
-fn collect_file<E: Target>(
+fn read_file<E: Target>(
     ctx: &mut Context<E>,
     mf: &'static MappedFile,
     rc: ReaderContext,
@@ -1026,8 +982,8 @@ fn collect_file<E: Target>(
         FileType::Dylib if rc.merge => merge_dylib(ctx, mf, out),
         FileType::Tapi | FileType::Dylib => load_dylib(ctx, mf, rc),
         FileType::Archive => collect_archive_members(ctx, mf, rc, out),
-        FileType::Fat => match input_files::fat_slice::<E>(&ctx.args, mf) {
-            Some(slice) => collect_file(ctx, slice, rc, out),
+        FileType::Fat => match filetype::fat_slice::<E>(&ctx.args, mf) {
+            Some(slice) => read_file(ctx, slice, rc, out),
             None => input_files::warn_fat_missing_arch(ctx, mf),
         },
         FileType::LlvmBitcode => {
@@ -1055,14 +1011,14 @@ fn name_again<E: Target>(
 }
 
 /// Whether an object or dylib is for an architecture the link doesn't
-/// take (see input_files::takes_arch), which ld-prime ignores with a
+/// take (see filetype::takes_arch), which ld-prime ignores with a
 /// warning - an archive member too, whether the link needs it or not.
 /// -allow_sub_type_mismatches has it take one of another subtype with
 /// a warning instead.
 pub(crate) fn is_foreign<E: Target>(ctx: &Context<E>, mf: &MappedFile) -> bool {
-    let Some(arch) = input_files::foreign_arch::<E>(mf) else { return false };
-    if ctx.args.allow_sub_type_mismatches && input_files::is_subtype_mismatch::<E>(mf) {
-        let name = input_files::without_fat_arch(path_bytes(&mf.name));
+    let Some(arch) = filetype::foreign_arch::<E>(mf) else { return false };
+    if ctx.args.allow_sub_type_mismatches && filetype::is_subtype_mismatch::<E>(mf) {
+        let name = filetype::without_fat_arch(path_bytes(&mf.name));
         crate::warn!("linking {arch} file '{}' into {} link", crate::error::raw(&name), E::NAME);
         return false;
     }
@@ -1073,7 +1029,7 @@ pub(crate) fn is_foreign<E: Target>(ctx: &Context<E>, mf: &MappedFile) -> bool {
 
 /// Refuses a file the link can't take, by what it is.
 fn refuse_file(mf: &MappedFile) {
-    let name = input_files::without_fat_arch(path_bytes(&mf.name));
+    let name = filetype::without_fat_arch(path_bytes(&mf.name));
     let name = raw(&name);
     if crate::filetype::get_macho_filetype(mf.data()).is_some() {
         error!(
@@ -1462,7 +1418,7 @@ fn load_autolinked_libraries<E: Target>(ctx: &mut Context<E>) {
         if let Some(path) = path
             && let Some(mf) = MappedFile::open(&path)
         {
-            collect_file(ctx, mf, rc, &mut queue);
+            read_file(ctx, mf, rc, &mut queue);
         }
     }
     // The libraries only -possible-l and the like name come next, once,
@@ -1474,7 +1430,7 @@ fn load_autolinked_libraries<E: Target>(ctx: &mut Context<E>) {
             Ok(mf) => {
                 let sdk = searched_in_sdk(&ctx.args, &path);
                 let rc = ReaderContext { autolinked: true, sdk, ..Default::default() };
-                collect_file(ctx, mf, rc, &mut queue);
+                read_file(ctx, mf, rc, &mut queue);
             }
             Err(e) => error!("{}", raw(&unreadable_file(&path, &e))),
         }

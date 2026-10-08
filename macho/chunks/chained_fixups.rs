@@ -87,7 +87,7 @@ fn import_table(fixups: &[Fixup]) -> (Vec<(SymbolId, u64)>, ImportOrdinals) {
 /// macOS 12 and iOS 15 on. ld-prime writes the latter for such a (or a
 /// firmware) target on every architecture and output kind, and for a
 /// -static image, which no dyld reads, whatever its target; the former
-/// where chains came earlier (iOS 13.4, see macho::is_new_os) or when
+/// where chains came earlier (iOS 13.4, see cmdline::is_new_os) or when
 /// -fixup_chains forces them on an older OS.
 pub(crate) fn pointer_format<E: Target>(ctx: &Context<E>) -> u16 {
     if ctx.args.static_link || ctx.args.targets(&crate::macho::VERSION_2021_FALL) {

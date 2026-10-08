@@ -559,7 +559,7 @@ pub(crate) fn object_stabs_opening<E: Target>(
         None if obj.mf.name.as_os_str().is_empty() => std::path::PathBuf::new(),
         _ => cwd.join(&obj.mf.name),
     };
-    let path = crate::input_files::without_fat_arch(path_bytes(&path));
+    let path = crate::filetype::without_fat_arch(path_bytes(&path));
     let mut oso_name = path.clone();
     // -oso_prefix strips a leading path from every N_OSO, so
     // debug builds relocated to another machine (or built in a

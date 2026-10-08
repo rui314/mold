@@ -1,5 +1,7 @@
-//! Input file type detection.
+//! Input file type detection, and the architectures of thin and
+//! universal (fat) files.
 
+use crate::arch::Target;
 use crate::macho::*;
 use crate::mapped_file::MappedFile;
 
@@ -83,4 +85,119 @@ pub fn get_file_type(mf: &MappedFile) -> FileType {
         return FileType::Fat;
     }
     FileType::Unknown
+}
+
+/// An architecture's name, from a Mach-O CPU type and subtype: one of
+/// the subtypes of the CPU types mold links for, or "unknown".
+fn arch_name(cputype: u32, cpusubtype: u32) -> &'static str {
+    match (cputype, cpusubtype & !CPU_SUBTYPE_MASK) {
+        (CPU_TYPE_X86_64, CPU_SUBTYPE_X86_64_H) => "x86_64h",
+        (CPU_TYPE_X86_64, _) => "x86_64",
+        (CPU_TYPE_ARM64, CPU_SUBTYPE_ARM64E) => "arm64e",
+        (CPU_TYPE_ARM64, _) => "arm64",
+        _ => "unknown",
+    }
+}
+
+/// Whether a Mach-O file of `filetype` built for `cputype` and
+/// `cpusubtype` is one the link takes: an object must be for exactly its
+/// architecture, while a dylib serves every link of its CPU type (an
+/// arm64e one an arm64 link too).
+fn takes_arch<E: Target>(filetype: u32, cputype: u32, cpusubtype: u32) -> bool {
+    match filetype {
+        MH_DYLIB => cputype == E::CPUTYPE,
+        _ => arch_name(cputype, cpusubtype) == E::NAME,
+    }
+}
+
+/// The architecture of a thin object or dylib the link doesn't take
+/// (see takes_arch), which ld-prime ignores with a warning.
+pub fn foreign_arch<E: Target>(mf: &MappedFile) -> Option<&'static str> {
+    let hdr = MachHeader::read_from(mf.data());
+    let takes = takes_arch::<E>(hdr.filetype, hdr.cputype, hdr.cpusubtype);
+    (!takes).then(|| arch_name(hdr.cputype, hdr.cpusubtype))
+}
+
+/// Whether a thin file the link doesn't take is of its CPU type all the
+/// same, an x86_64h object in an x86_64 link: -allow_sub_type_mismatches
+/// has ld-prime take it, but for arm64e, whose pointers are signed.
+pub fn is_subtype_mismatch<E: Target>(mf: &MappedFile) -> bool {
+    let hdr = MachHeader::read_from(mf.data());
+    hdr.cputype == E::CPUTYPE && arch_name(hdr.cputype, hdr.cpusubtype) != "arm64e"
+}
+
+/// A fat (universal) file's slices: each one's CPU type, subtype, file
+/// offset and size. Fat headers are big-endian.
+fn fat_arches(mf: &MappedFile) -> impl Iterator<Item = (u32, u32, usize, usize)> + '_ {
+    let data = mf.data();
+    let read_be32 = |off: usize| u32::from_be_bytes(data[off..off + 4].try_into().unwrap());
+    (0..read_be32(4) as usize).map(move |i| {
+        let off = 8 + i * 20;
+        (
+            read_be32(off),
+            read_be32(off + 4),
+            read_be32(off + 8) as usize,
+            read_be32(off + 12) as usize,
+        )
+    })
+}
+
+/// The architectures a fat file has slices for.
+pub fn fat_arch_names(mf: &MappedFile) -> Vec<&'static str> {
+    fat_arches(mf).map(|(cputype, cpusubtype, _, _)| arch_name(cputype, cpusubtype)).collect()
+}
+
+/// The slice of a fat file the link takes (see takes_arch), if any: the
+/// one for exactly its architecture first, but for a dylib whose subtype
+/// must match (Args::dylib_subtypes_must_match). With
+/// -allow_sub_type_mismatches, one of another subtype of its CPU type
+/// will do too, as for a thin file (see is_subtype_mismatch).
+pub fn fat_slice<E: Target>(
+    args: &crate::cmdline::Args,
+    mf: &'static MappedFile,
+) -> Option<&'static MappedFile> {
+    let slices: Vec<_> = fat_arches(mf).collect();
+    let (_, _, off, size) = slices
+        .iter()
+        .find(|&&(cputype, cpusubtype, _, _)| arch_name(cputype, cpusubtype) == E::NAME)
+        .or_else(|| {
+            slices.iter().find(|&&(cputype, cpusubtype, off, _)| {
+                let filetype = MachHeader::read_from(&mf.data()[off..]).filetype;
+                !args.dylib_subtypes_must_match && takes_arch::<E>(filetype, cputype, cpusubtype)
+            })
+        })
+        .or_else(|| {
+            slices.iter().find(|&&(cputype, cpusubtype, _, _)| {
+                args.allow_sub_type_mismatches
+                    && cputype == E::CPUTYPE
+                    && arch_name(cputype, cpusubtype) != "arm64e"
+            })
+        })
+        .copied()?;
+    let mut name = std::ffi::OsString::from(&mf.name);
+    name.push(format!("(for architecture {})", E::NAME));
+    Some(mf.slice(name.into(), off, size))
+}
+
+/// Splits the name fat_slice gives a fat file's slice into the file's
+/// path and the slice's architecture.
+pub fn split_fat_arch(name: &[u8]) -> (&[u8], Option<&[u8]>) {
+    const TAG: &[u8] = b"(for architecture ";
+    match memchr::memmem::find(name, TAG) {
+        Some(i) if name.ends_with(b")") => (&name[..i], Some(&name[i + TAG.len()..name.len() - 1])),
+        _ => (name, None),
+    }
+}
+
+/// A file's name without the "(for architecture ...)" that fat_slice
+/// gives a fat file's slice, which ld-prime never shows: it names the
+/// slice, and the members of a fat archive, by the file's own path.
+pub fn without_fat_arch(name: &[u8]) -> Vec<u8> {
+    let mut name = name.to_vec();
+    if let Some(i) = memchr::memmem::find(&name, b"(for architecture")
+        && let Some(len) = name[i..].iter().position(|&c| c == b')')
+    {
+        name.drain(i..=i + len);
+    }
+    name
 }
