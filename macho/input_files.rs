@@ -15,7 +15,7 @@ use crate::filetype::{
     fat_arch_names, fat_slice, foreign_arch, is_subtype_mismatch, without_fat_arch,
 };
 use crate::input_sections::{
-    CieRecord, FdeRecord, InputSection, NO_REPLACEMENT, UNWIND_NONE, UnwindRecord,
+    CieRecord, FdeRecord, InputSection, NO_REPLACEMENT, RelocTarget, UNWIND_NONE, UnwindRecord,
 };
 use crate::macho::*;
 use crate::mapped_file::{MappedFile, unreadable_file};
@@ -1590,8 +1590,6 @@ impl StagedObject {
         bare: &[bool],
         sect_isecs: &[std::ops::Range<usize>],
     ) {
-        use crate::input_sections::RelocTarget;
-
         let sect_hdrs = self.sect_hdrs;
         for (i, sect) in sect_hdrs.iter().enumerate() {
             if sect_isecs[i].is_empty() || sect.nreloc == 0 {
@@ -1648,8 +1646,6 @@ impl StagedObject {
     /// assembler's ltmpN label, as a reference to a label in an empty
     /// section is made. The target would have no address.
     fn check_reloc_target(&self, rel: &crate::input_sections::Reloc, bare: &[bool]) {
-        use crate::input_sections::RelocTarget;
-
         let sect = match rel.target() {
             RelocTarget::Section(sect) => sect as usize,
             RelocTarget::Sym(idx) => match &self.mach_syms[idx as usize] {
@@ -1728,6 +1724,25 @@ impl StagedObject {
             })
             .collect();
     }
+}
+
+/// The section a non-extern record `r` of object `file` refers to, and
+/// the offset in it of `addr`, the address the record points at. The
+/// section is the one its sect names (a 1-based ordinal), wherever
+/// `addr` lies: only the ordinal tells apart sections that share an
+/// address - an empty one and its successor, or one section's end and
+/// the next one's start.
+pub fn section_target(
+    file: &Path,
+    sections: &[MachSection],
+    r: &MachRel,
+    addr: u64,
+) -> (RelocTarget, i64) {
+    let i = (r.sect() as usize).wrapping_sub(1);
+    let Some(sec) = sections.get(i) else {
+        crate::fatal!("{}: bad relocation: {}", file.raw(), r.offset);
+    };
+    (RelocTarget::Section(i as u32), addr.wrapping_sub(sec.addr) as i64)
 }
 
 /// Whether a section's contents are fixed-shape records the linker
@@ -1839,8 +1854,6 @@ impl StagedObject {
         fde_base: usize,
         syms: &[crate::symbol::SymbolId],
     ) {
-        use crate::input_sections::RelocTarget;
-
         for isec in &mut self.isecs {
             isec.file = obj_idx as u32;
         }
@@ -2251,8 +2264,6 @@ impl StagedObject {
     /// as it came, like ld64). Object files usually don't contain such
     /// records, but `ld -r` output does.
     fn parse_compact_unwind(&mut self, sect: usize, rels: &[crate::input_sections::Reloc]) {
-        use crate::input_sections::RelocTarget;
-
         const ENTRY_SIZE: usize = 32;
         let mf = self.mf;
         let hdr = &self.sect_hdrs[sect];

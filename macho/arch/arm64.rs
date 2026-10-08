@@ -4,20 +4,17 @@ use std::path::Path;
 
 use rayon::prelude::*;
 
-use crate::arch::{
-    SplitRef, Target, has_reloc_form, load_helper, read32, reloc_form, section_target, write32,
-    write64,
-};
+use crate::arch::{SplitRef, Target, has_reloc_form, load_helper, reloc_form};
 use crate::chunks::delay_init::{DelayCode, DelayTarget, DelayUse};
 use crate::chunks::lazy_helpers::{LazyTarget, LazyUse};
 use crate::chunks::{delay_init, objc_stubs, stub_helper, stubs};
 use crate::context::Context;
 use crate::dtrace::SiteKind;
-use crate::input_files::ObjectFile;
+use crate::input_files::{ObjectFile, section_target};
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
 use crate::symbol::{NEEDS_GOT, NEEDS_STUB};
-use crate::util::{bits, sign_extend};
+use crate::util::{bits, read32, sign_extend, write32, write64};
 use crate::{error, fatal};
 
 #[derive(Clone, Copy, Default)]

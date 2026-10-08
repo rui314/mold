@@ -16,7 +16,7 @@ use std::path::Path;
 
 use crate::context::Context;
 use crate::error::RawPath;
-use crate::input_sections::{InputSection, Reloc, RelocTarget};
+use crate::input_sections::{InputSection, Reloc};
 use crate::macho::{MachRel, MachSection};
 
 /// How LC_SEGMENT_SPLIT_INFO records a reference a relocation type
@@ -75,20 +75,6 @@ pub const fn reloc_form(pcrel: bool, p2size: u32, ext: bool) -> u16 {
 #[inline]
 pub fn has_reloc_form(r: &MachRel, forms: u16) -> bool {
     forms >> ((r.bits >> 24) & 0xf) & 1 != 0
-}
-
-// The targets' little-endian reads and writes of instructions and
-// relocated fields.
-fn read32(loc: &[u8]) -> u32 {
-    u32::from_le_bytes(loc[..4].try_into().unwrap())
-}
-
-fn write32(loc: &mut [u8], val: u32) {
-    loc[..4].copy_from_slice(&val.to_le_bytes());
-}
-
-fn write64(loc: &mut [u8], val: u64) {
-    loc[..8].copy_from_slice(&val.to_le_bytes());
 }
 
 /// Reports relocation record `r` of section `hdr` of object `file`,
@@ -320,25 +306,6 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
     /// Applies LC_LINKER_OPTIMIZATION_HINT rewrites after relocation.
     /// Only arm64 defines hints; the default does nothing.
     fn apply_optimization_hints(_ctx: &Context<Self>, _buf: &mut [u8]) {}
-}
-
-/// The section a non-extern record `r` of object `file` refers to, and
-/// the offset in it of `addr`, the address the record points at. The
-/// section is the one its sect names (a 1-based ordinal), wherever
-/// `addr` lies: only the ordinal tells apart sections that share an
-/// address - an empty one and its successor, or one section's end and
-/// the next one's start.
-pub fn section_target(
-    file: &Path,
-    sections: &[MachSection],
-    r: &MachRel,
-    addr: u64,
-) -> (RelocTarget, i64) {
-    let i = (r.sect() as usize).wrapping_sub(1);
-    let Some(sec) = sections.get(i) else {
-        crate::fatal!("{}: bad relocation: {}", file.raw(), r.offset);
-    };
-    (RelocTarget::Section(i as u32), addr.wrapping_sub(sec.addr) as i64)
 }
 
 /// The helper that relocation `r` of subsection `isec` calls in place

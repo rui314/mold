@@ -27,7 +27,7 @@ use std::path::Path;
 use crate::input_files::load_commands;
 use crate::macho::*;
 use crate::mapped_file::MappedFile;
-use crate::util::sign_extend;
+use crate::util::{read16, read32, read64, sign_extend};
 
 mod object;
 
@@ -316,7 +316,7 @@ impl Fixup {
     /// the addend, for the entry subtracted, or for the second
     /// instruction's distance (byte 0) and the access size (byte 1).
     fn read(c: &[u8], large_addends: &[i64]) -> Self {
-        let (w2, w3) = (read32(c, 8), read32(c, 12));
+        let (w2, w3) = (read32(&c[8..]), read32(&c[12..]));
         let kind = (w2 & 0x3ff) as u16;
         let usage = extras_usage(kind);
         let addend = if w2 & LARGE_ADDEND != 0 {
@@ -331,8 +331,8 @@ impl Fixup {
         };
         let arm64 = (4..=8).contains(&usage);
         Self {
-            offset: read32(c, 0),
-            target: read32(c, 4),
+            offset: read32(c),
+            target: read32(&c[4..]),
             kind,
             addend,
             from: (usage == 1).then_some(w3),
@@ -445,18 +445,6 @@ pub(crate) const FLAG_HAS_OBJC_INFO: u64 = 1 << 26;
 pub(crate) const FLAG_SIGNED_CLASS_RO: u64 = 1 << 28;
 pub(crate) const FLAG_CATEGORY_CLASS_PROPERTIES: u64 = 1 << 29;
 
-fn read16(data: &[u8], off: usize) -> u16 {
-    u16::from_le_bytes(data[off..off + 2].try_into().unwrap())
-}
-
-fn read32(data: &[u8], off: usize) -> u32 {
-    u32::from_le_bytes(data[off..off + 4].try_into().unwrap())
-}
-
-fn read64(data: &[u8], off: usize) -> u64 {
-    u64::from_le_bytes(data[off..off + 8].try_into().unwrap())
-}
-
 /// Where a dylib's LC_ATOM_INFO data is in its file, if it has one.
 fn record_range(data: &[u8]) -> Option<(usize, usize)> {
     let (_, cmd) = load_commands(data).find(|&(cmd, _)| cmd == LC_ATOM_INFO)?;
@@ -482,7 +470,7 @@ impl MergeableRecord {
             .map(|c| CustomSection {
                 segname: c[8..24].try_into().unwrap(),
                 sectname: c[26..42].try_into().unwrap(),
-                flags: read32(c, 4),
+                flags: read32(&c[4..]),
             })
             .collect();
         let (own, _) = r.dylib_info(r.table(header::OWN_DYLIB).0);
@@ -491,12 +479,12 @@ impl MergeableRecord {
         let debug_infos = r.debug_infos();
         let entries = r.entries(&symbols);
         Self {
-            cputype: read32(blob, header::CPUTYPE),
-            cpusubtype: read32(blob, header::CPUSUBTYPE),
-            platform: read32(blob, header::PLATFORM),
-            minos: read32(blob, header::MINOS),
-            sdk: read32(blob, header::SDK),
-            flags: read64(blob, header::FLAGS),
+            cputype: read32(&blob[header::CPUTYPE..]),
+            cpusubtype: read32(&blob[header::CPUSUBTYPE..]),
+            platform: read32(&blob[header::PLATFORM..]),
+            minos: read32(&blob[header::MINOS..]),
+            sdk: read32(&blob[header::SDK..]),
+            flags: read64(&blob[header::FLAGS..]),
             entries,
             fixups,
             sections,
@@ -548,7 +536,7 @@ impl Reader<'_> {
     /// A table's offset in the record and its count (or a pool's
     /// size), which the header has at `field`.
     fn table(&self, field: usize) -> (usize, usize) {
-        (read32(self.blob, field) as usize, read32(self.blob, field + 4) as usize)
+        (read32(&self.blob[field..]) as usize, read32(&self.blob[field + 4..]) as usize)
     }
 
     /// The bytes of a table of `elem`-byte elements (see table).
@@ -566,11 +554,11 @@ impl Reader<'_> {
 
     /// A CStringRO_1: an offset from the record, then a length.
     fn cstring(&self, at: usize) -> Vec<u8> {
-        let len = read64(self.blob, at + 8) as usize;
+        let len = read64(&self.blob[at + 8..]) as usize;
         if len == 0 {
             return Vec::new();
         }
-        self.string_at(at, read64(self.blob, at) as i64, len).to_vec()
+        self.string_at(at, read64(&self.blob[at..]) as i64, len).to_vec()
     }
 
     fn symbol_names(&self) -> Vec<&'static [u8]> {
@@ -578,8 +566,8 @@ impl Reader<'_> {
         (0..count)
             .map(|i| {
                 let at = first + i * 16;
-                let len = (read64(self.blob, at + 8) >> 44) as usize;
-                self.string_at(at, read64(self.blob, at) as i64, len)
+                let len = (read64(&self.blob[at + 8..]) >> 44) as usize;
+                self.string_at(at, read64(&self.blob[at..]) as i64, len)
             })
             .collect()
     }
@@ -587,7 +575,7 @@ impl Reader<'_> {
     /// The fixups, and the addends too large for theirs.
     fn fixups(&self) -> Vec<Fixup> {
         let large: Vec<i64> =
-            self.array(header::LARGE_ADDENDS, 8).chunks(8).map(|c| read64(c, 0) as i64).collect();
+            self.array(header::LARGE_ADDENDS, 8).chunks(8).map(|c| read64(c) as i64).collect();
         let table = self.array(header::FIXUPS, FIXUP_SIZE);
         table.chunks(FIXUP_SIZE).map(|c| Fixup::read(c, &large)).collect()
     }
@@ -596,12 +584,12 @@ impl Reader<'_> {
     fn dylib_info(&self, at: usize) -> (DylibInfo, usize) {
         let info = DylibInfo {
             install_name: self.cstring(at + 8),
-            current_version: read32(self.blob, at),
-            compatibility_version: read32(self.blob, at + 4),
+            current_version: read32(&self.blob[at..]),
+            compatibility_version: read32(&self.blob[at + 4..]),
         };
-        let nplatforms = read32(self.blob, at + 0x2c) as usize;
+        let nplatforms = read32(&self.blob[at + 0x2c..]) as usize;
         let lists: usize =
-            [0x34, 0x3c, 0x44].iter().map(|&f| read32(self.blob, at + f) as usize).sum();
+            [0x34, 0x3c, 0x44].iter().map(|&f| read32(&self.blob[at + f..]) as usize).sum();
         (info, DYLIB_INFO_SIZE + (4 * nplatforms).next_multiple_of(8) + 16 * lists)
     }
 
@@ -623,7 +611,7 @@ impl Reader<'_> {
             .map(|i| {
                 let at = first + i * DEBUG_INFO_SIZE;
                 DebugInfo {
-                    mtime: read32(self.blob, at),
+                    mtime: read32(&self.blob[at..]),
                     source_dir: self.cstring(at + 8),
                     source_name: self.cstring(at + 0x18),
                     object_path: self.cstring(at + 0x28),
@@ -640,15 +628,15 @@ impl Reader<'_> {
     /// Reads an entry's 40 bytes (see Entry::write), its name by its
     /// index into `symbols`, its bytes from the content pool.
     fn entry(&self, c: &[u8], symbols: &[&'static [u8]]) -> Entry {
-        let (nfixups, first_fixup) = (read32(c, 4) as usize, read32(c, 8) as usize);
-        let name = match read32(c, 12) {
+        let (nfixups, first_fixup) = (read32(&c[4..]) as usize, read32(&c[8..]) as usize);
+        let name = match read32(&c[12..]) {
             NO_NAME => None,
             n => Some(symbols[n as usize]),
         };
-        let flags = read32(c, 16);
-        let size = read32(c, 20);
+        let flags = read32(&c[16..]);
+        let size = read32(&c[20..]);
         let (pool, _) = self.table(header::CONTENT_POOL);
-        let content = match read32(c, 24) as i32 {
+        let content = match read32(&c[24..]) as i32 {
             -1 => None,
             off => Some(self.string_at(pool, off as i64, size as usize)),
         };
@@ -667,8 +655,8 @@ impl Reader<'_> {
             content,
             dylib: (c[0x1c] != 0xff).then_some(c[0x1c]),
             p2align: c[0x1d],
-            modulus: read16(c, 0x1e),
-            debug: read16(c, 0x20),
+            modulus: read16(&c[0x1e..]),
+            debug: read16(&c[0x20..]),
             fixups: first_fixup..first_fixup + nfixups,
         }
     }

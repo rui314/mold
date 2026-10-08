@@ -40,6 +40,29 @@ pub fn sign_extend(value: u64, n: u32) -> i64 {
     ((value << (64 - n)) as i64) >> (64 - n)
 }
 
+// Little-endian reads and writes of the integer at the start of a
+// slice: the targets' instructions and relocated fields, and the
+// fields of a mergeable dylib's record.
+pub fn read16(loc: &[u8]) -> u16 {
+    u16::from_le_bytes(loc[..2].try_into().unwrap())
+}
+
+pub fn read32(loc: &[u8]) -> u32 {
+    u32::from_le_bytes(loc[..4].try_into().unwrap())
+}
+
+pub fn read64(loc: &[u8]) -> u64 {
+    u64::from_le_bytes(loc[..8].try_into().unwrap())
+}
+
+pub fn write32(loc: &mut [u8], val: u32) {
+    loc[..4].copy_from_slice(&val.to_le_bytes());
+}
+
+pub fn write64(loc: &mut [u8], val: u64) {
+    loc[..8].copy_from_slice(&val.to_le_bytes());
+}
+
 /// A sort key that orders byte strings like the strings themselves but
 /// settles most comparisons on one integer: the first eight bytes,
 /// big-endian, zero-padded. Symbol names cannot contain NULs, so
