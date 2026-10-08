@@ -29,8 +29,8 @@ use rayon::prelude::*;
 
 use crate::arch::Target;
 use crate::context::Context;
-use crate::input_files::{FileId, ObjectFile, subsec_name_rank};
-use crate::input_sections::{FdeRecord, InputSection, Reloc, RelocTarget};
+use crate::input_files::{FileId, ObjectFile};
+use crate::input_sections::{FdeRecord, InputSection, Reloc, RelocTarget, subsec_name_rank};
 use crate::macho::*;
 use crate::symbol::SymbolId;
 use crate::util::siphash::SipHash13_128;

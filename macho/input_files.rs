@@ -425,14 +425,6 @@ pub(crate) fn add_cstring<E: Target>(ctx: &mut Context<E>, s: &[u8]) -> u32 {
     (ctx.isecs.len() - 1) as u32
 }
 
-/// Whether a label is one a compiler or assembler makes for itself: an
-/// assembler temporary (L...) or a linker-private label (l...) - the
-/// compiler's lCPI0_0 constant-pool and l_.str string labels, the arm64
-/// assembler's ltmpN.
-pub fn is_private_label(name: &[u8]) -> bool {
-    name.starts_with(b"L") || name.starts_with(b"l")
-}
-
 /// Whether a section is one ld-prime reads as a list of records -
 /// CFStrings, UTF-16 strings, selector and class references, Objective-C
 /// class and category lists - whose subsections no local symbol names:
@@ -520,24 +512,6 @@ pub(crate) fn is_class_or_protocol_ref(hdr: &MachSection) -> bool {
 
 pub(crate) fn is_class_or_protocol_ref_name(sectname: &[u8]) -> bool {
     matches!(sectname, b"__objc_superrefs" | b"__objc_protorefs")
-}
-
-/// How ld-prime prefers a symbol at a subsection's start to name the
-/// subsection in a diagnostic: an exported one before a private extern,
-/// a local, a weak definition and an ltmpN label; among equals, the
-/// greatest name.
-pub fn subsec_name_rank(msym: &MachSym, name: &[u8]) -> u8 {
-    if name.starts_with(b"ltmp") {
-        0
-    } else if msym.desc & N_WEAK_DEF != 0 {
-        1
-    } else if !msym.is_extern() {
-        2
-    } else if msym.n_type & N_PEXT != 0 {
-        3
-    } else {
-        4
-    }
 }
 
 /// An object's lookups of its subsections by address, as sold's

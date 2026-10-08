@@ -524,10 +524,10 @@ pub fn trace_symbol_layout<E: Target>(ctx: &Context<E>) {
 
 /// Whether a symbol names a row of the map: any named one but a local
 /// label a compiler or assembler makes for itself (see
-/// input_files::is_private_label).
+/// input_sections::is_private_label).
 pub(crate) fn is_map_symbol(sym: &crate::symbol::Symbol) -> bool {
     let name = sym.name();
-    !name.is_empty() && (sym.is_extern() || !crate::input_files::is_private_label(name))
+    !name.is_empty() && (sym.is_extern() || !crate::input_sections::is_private_label(name))
 }
 
 /// A row of the map's symbol list: the address and size of a

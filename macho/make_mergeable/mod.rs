@@ -452,7 +452,7 @@ impl<'a, E: Target> Builder<'a, E> {
                 && n.ty() == N_SECT
                 && n.sect as u32 == isec.shndx + 1
                 && (start..end.max(start + 1)).contains(&n.value)
-                && !crate::input_files::is_private_label(ctx.symbols[obj.symbols[i]].name())
+                && !crate::input_sections::is_private_label(ctx.symbols[obj.symbols[i]].name())
         });
         for i in syms {
             let sym_id = obj.symbols[i];
@@ -1148,7 +1148,7 @@ fn named_entry<E: Target>(
     entry.name = Some(name);
     entry.cold = obj.mach_syms[i].desc & N_COLD_FUNC != 0;
     entry.no_dead_strip = obj.mach_syms[i].desc & N_NO_DEAD_STRIP != 0;
-    if !crate::input_files::is_private_label(name) {
+    if !crate::input_sections::is_private_label(name) {
         entry.debug = debug;
     }
     entry

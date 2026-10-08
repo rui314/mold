@@ -4,7 +4,9 @@ use crate::arch::Target;
 use crate::chunks::ChunkId;
 use crate::context::Context;
 use crate::input_files::{DW_EH_PE_SDATA4, ObjectFile};
-use crate::macho::{MachSection, S_THREAD_LOCAL_REGULAR, S_THREAD_LOCAL_ZEROFILL};
+use crate::macho::{
+    MachSection, MachSym, N_PEXT, N_WEAK_DEF, S_THREAD_LOCAL_REGULAR, S_THREAD_LOCAL_ZEROFILL,
+};
 use crate::symbol::SymbolId;
 
 /// A subsection index, u32 as in mold.
@@ -519,12 +521,12 @@ impl InputSection {
     }
 
     /// The symbol that names this subsection: of those at its start, the
-    /// one input_files::subsec_name_rank ranks first. A literal merged by
-    /// its content (see input_files::has_merged_subsecs) is named by none
-    /// of the labels a compiler or assembler makes for itself (see
-    /// input_files::is_private_label), and by nothing at all if one but
-    /// an ltmpN is among them, as ld-prime has it (mergeable records name
-    /// their entries so).
+    /// one subsec_name_rank ranks first. A literal merged by its content
+    /// (see input_files::has_merged_subsecs) is named by none of the
+    /// labels a compiler or assembler makes for itself (see
+    /// is_private_label), and by nothing at all if one but an ltmpN is
+    /// among them, as ld-prime has it (mergeable records name their
+    /// entries so).
     pub fn label<E: Target>(&self, ctx: &Context<E>) -> Option<&'static [u8]> {
         let obj = &ctx.objs[self.file as usize];
         self.label_index(ctx).map(|i| ctx.symbols[obj.symbols[i]].name())
@@ -533,7 +535,7 @@ impl InputSection {
     /// The index in its object's symbol table of the symbol that names
     /// this subsection (see label).
     pub fn label_index<E: Target>(&self, ctx: &Context<E>) -> Option<usize> {
-        use crate::input_files::{has_merged_subsecs, is_private_label, subsec_name_rank};
+        use crate::input_files::has_merged_subsecs;
         let obj = &ctx.objs[self.file as usize];
         let key = Some(self.label_key());
         let labels = (0..obj.mach_syms.len())
@@ -658,6 +660,32 @@ impl InputSection {
 /// Where a symbol labels a subsection's start, if it is a label at all.
 fn msym_label_key(msym: &crate::macho::MachSym) -> Option<(u32, u64)> {
     (!msym.is_stab() && msym.ty() == crate::macho::N_SECT).then_some((msym.sect as u32, msym.value))
+}
+
+/// Whether a label is one a compiler or assembler makes for itself: an
+/// assembler temporary (L...) or a linker-private label (l...) - the
+/// compiler's lCPI0_0 constant-pool and l_.str string labels, the arm64
+/// assembler's ltmpN.
+pub fn is_private_label(name: &[u8]) -> bool {
+    name.starts_with(b"L") || name.starts_with(b"l")
+}
+
+/// How ld-prime prefers a symbol at a subsection's start to name the
+/// subsection in a diagnostic: an exported one before a private extern,
+/// a local, a weak definition and an ltmpN label; among equals, the
+/// greatest name.
+pub fn subsec_name_rank(msym: &MachSym, name: &[u8]) -> u8 {
+    if name.starts_with(b"ltmp") {
+        0
+    } else if msym.desc & N_WEAK_DEF != 0 {
+        1
+    } else if !msym.is_extern() {
+        2
+    } else if msym.n_type & N_PEXT != 0 {
+        3
+    } else {
+        4
+    }
 }
 
 /// Sentinel for an absent index in `UnwindRecord` (no personality, no

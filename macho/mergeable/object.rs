@@ -854,7 +854,7 @@ impl<E: Target> Synth<'_, E> {
     /// last.
     fn symbol_stabs(&self, i: usize, strtab: &mut Strtab) -> Option<(u64, Vec<MachSym>)> {
         let sym = &self.symbols[self.sym_of[i]?];
-        if crate::input_files::is_private_label(&sym.name) {
+        if crate::input_sections::is_private_label(&sym.name) {
             return None;
         }
         let entry = |n_type, stroff, sect, value| MachSym { stroff, n_type, sect, desc: 0, value };
