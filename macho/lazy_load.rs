@@ -114,7 +114,7 @@ fn lazy_uses<E: Target>(ctx: &Context<E>) -> Vec<LazyUseSite> {
             ) {
                 b"anon"[..].into()
             } else {
-                ctx.subsec_name(isec as usize)
+                ctx.isecs[isec as usize].name(ctx)
             };
             let subsec = raw(&subsec);
             crate::error!("use of '{sym}' in '{subsec}' cannot be lazy loaded.");
@@ -260,7 +260,7 @@ pub(crate) fn load_helper_name<E: Target>(
     let mut name = [sym, infix, b"loadHelper_", E::lazy_register_name(reg).as_bytes()].concat();
     if let Some((isec, offset)) = site {
         name.extend_from_slice(b"$for$");
-        name.extend_from_slice(&ctx.subsec_name(isec as usize));
+        name.extend_from_slice(&ctx.isecs[isec as usize].name(ctx));
         name.extend_from_slice(format!("+{offset}").as_bytes());
     }
     name

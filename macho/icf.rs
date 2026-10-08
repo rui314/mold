@@ -211,7 +211,7 @@ fn mark_auto_hidden<E: Target>(ctx: &Context<E>, i: usize, obj: &ObjectFile, fla
 }
 
 /// Marks the Swift functions of object `i`: those whose subsection
-/// ld-prime names (see Context::subsec_label) by a symbol Swift mangled,
+/// ld-prime names (see InputSection::label) by a symbol Swift mangled,
 /// "_$s...". Swift promises no function an address of its own, so
 /// ld-prime folds one even where its address is taken (a coroutine's
 /// resume function, a value witness) or it is exported; it goes by the
@@ -266,7 +266,7 @@ fn start_labels<'a, E: Target>(
 }
 
 /// The symbol naming each of object `i`'s subsections that a label
-/// starts (see Context::subsec_label) and `wanted` takes, by
+/// starts (see InputSection::label) and `wanted` takes, by
 /// subsection.
 fn subsec_names<E: Target>(
     ctx: &Context<E>,

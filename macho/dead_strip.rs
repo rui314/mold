@@ -543,7 +543,7 @@ fn print_why_live<E: Target>(ctx: &Context<E>, redirects: &[usize], why: &[Why])
             match step {
                 Why::From(id) => {
                     let isec = &ctx.isecs[id as usize];
-                    let name = ctx.subsec_name(id as usize);
+                    let name = isec.name(ctx);
                     let file = ctx.objs[isec.file as usize].mf.name.raw();
                     notice(format_args!("{:indent$}{} from {file}", "", raw(&name)));
                     step = why[id as usize];

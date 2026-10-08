@@ -1015,7 +1015,7 @@ pub fn check_removed_swift_metadata_refs<E: Target>(ctx: &Context<E>) {
         !isec.is_alive()
             && input_files::is_swift_reflection_section(isec.hdr(&ctx.objs[isec.file as usize]))
     };
-    for (i, isec) in ctx.isecs.iter().enumerate().filter(|(_, isec)| isec.is_emitted()) {
+    for isec in ctx.isecs.iter().filter(|isec| isec.is_emitted()) {
         let file = &ctx.objs[isec.file as usize];
         for rel in isec.rels(file) {
             let target = match rel.sym(file) {
@@ -1025,7 +1025,7 @@ pub fn check_removed_swift_metadata_refs<E: Target>(ctx: &Context<E>) {
             if target.is_some_and(removed) {
                 let target = rel.target_name(ctx, file);
                 let msg = format_args!("target '{}' does not have address", raw(&target));
-                ctx.fixup_error(i, rel.offset, msg);
+                isec.fixup_error(ctx, rel.offset, msg);
             }
         }
     }
@@ -1729,8 +1729,9 @@ pub fn check_poisoned_symbols<E: Target>(ctx: &Context<E>) {
         let sym = &ctx.symbols[group[0].0];
         msg.extend(error::render(format_args!("  {sym}, referenced from:\n")));
         for &(_, isec) in group {
-            let file = ctx.objs[ctx.isecs[isec].file as usize].mf.name.raw();
-            let subsec = ctx.subsec_name(isec);
+            let isec = &ctx.isecs[isec];
+            let file = ctx.objs[isec.file as usize].mf.name.raw();
+            let subsec = isec.name(ctx);
             let subsec = crate::util::demangle::display_name(&subsec);
             msg.extend(error::render(format_args!("      {subsec} in {file}\n")));
         }
@@ -3033,7 +3034,7 @@ pub fn report_text_relocs<E: Target>(ctx: &Context<E>) {
         let target = rel.target_name(ctx, file);
         crate::error::notice(format_args!(
             "  text-relocation in {} to '{}'",
-            raw(&ctx.subsec_ref(id as usize, rel.offset)),
+            raw(&isec.location(ctx, rel.offset)),
             raw(&target)
         ));
     }
@@ -3046,7 +3047,7 @@ pub fn report_text_relocs<E: Target>(ctx: &Context<E>) {
     for (isec, off) in pointers32 {
         error!(
             "32-bit pointer used in 64-bit code in {}",
-            raw(&ctx.subsec_ref(isec as usize, off))
+            raw(&ctx.isecs[isec as usize].location(ctx, off))
         );
     }
 }

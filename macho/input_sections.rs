@@ -194,7 +194,7 @@ impl Reloc {
     ) -> std::borrow::Cow<'static, [u8]> {
         match self.target() {
             RelocTarget::Sym(idx) => ctx.symbols[file.symbols[idx as usize]].name().into(),
-            RelocTarget::Section(idx) => ctx.subsec_name(idx as usize),
+            RelocTarget::Section(idx) => ctx.isecs[idx as usize].name(ctx),
         }
     }
 }
@@ -512,4 +512,145 @@ impl InputSection {
         let off = self.rel_offset as usize;
         &file.relocs[off..off + self.nrels as usize]
     }
+
+    /// The symbol that names this subsection: of those at its start, the
+    /// one input_files::subsec_name_rank ranks first. A literal merged by
+    /// its content (see input_files::has_merged_subsecs) is named by none
+    /// of the labels a compiler or assembler makes for itself (see
+    /// input_files::is_private_label), and by nothing at all if one but
+    /// an ltmpN is among them, as ld-prime has it (mergeable records name
+    /// their entries so).
+    pub fn label<E: Target>(&self, ctx: &Context<E>) -> Option<&'static [u8]> {
+        let obj = &ctx.objs[self.file as usize];
+        self.label_index(ctx).map(|i| ctx.symbols[obj.symbols[i]].name())
+    }
+
+    /// The index in its object's symbol table of the symbol that names
+    /// this subsection (see label).
+    pub fn label_index<E: Target>(&self, ctx: &Context<E>) -> Option<usize> {
+        use crate::input_files::{has_merged_subsecs, is_private_label, subsec_name_rank};
+        let obj = &ctx.objs[self.file as usize];
+        let key = Some(self.label_key());
+        let labels = (0..obj.mach_syms.len())
+            .filter(|&i| msym_label_key(&obj.mach_syms[i]) == key)
+            .map(|i| (i, &obj.mach_syms[i], ctx.symbols[obj.symbols[i]].name()));
+        let merged = has_merged_subsecs(self.hdr(obj));
+        if merged
+            && labels
+                .clone()
+                .any(|(_, _, name)| is_private_label(name) && !name.starts_with(b"ltmp"))
+        {
+            return None;
+        }
+        labels
+            .filter(|(_, _, name)| !(merged && is_private_label(name)))
+            .max_by_key(|&(i, n, name)| (subsec_name_rank(n, name), name, i))
+            .map(|(i, _, _)| i)
+    }
+
+    /// Where the labels at the start of this subsection sit: its
+    /// section, counted from 1 as MachSyms count them, and its address.
+    fn label_key(&self) -> (u32, u64) {
+        (self.shndx + 1, self.input_addr as u64)
+    }
+
+    /// The name of this subsection in a diagnostic: its label (see
+    /// label), or else its section and its offset there,
+    /// "__TEXT,__cstring+0x10".
+    pub fn name<E: Target>(&self, ctx: &Context<E>) -> std::borrow::Cow<'static, [u8]> {
+        if let Some(name) = self.label(ctx) {
+            return name.into();
+        }
+        let hdr = self.hdr(&ctx.objs[self.file as usize]);
+        let (seg, sect) = (crate::error::raw(hdr.segname()), crate::error::raw(hdr.sectname()));
+        let off = self.input_addr as u64 - hdr.addr;
+        crate::error::render(format_args!("{seg},{sect}+0x{off:x}")).into()
+    }
+
+    /// Names the place `offset` bytes into this subsection:
+    /// "'NAME'+0xOFF (path)".
+    pub fn location<E: Target>(&self, ctx: &Context<E>, offset: u32) -> crate::error::Message {
+        let path = crate::error::RawPath::raw(ctx.objs[self.file as usize].mf.name.as_path());
+        let name = self.name(ctx);
+        let name = crate::error::raw(&name);
+        if offset == 0 {
+            crate::error::render(format_args!("'{name}' ({path})"))
+        } else {
+            crate::error::render(format_args!("'{name}'+0x{offset:X} ({path})"))
+        }
+    }
+
+    /// Reports a relocation that can't be applied where it is, `offset`
+    /// bytes into this subsection.
+    pub fn fixup_error<E: Target>(&self, ctx: &Context<E>, offset: u32, msg: std::fmt::Arguments) {
+        let file = crate::error::RawPath::raw(ctx.objs[self.file as usize].mf.name.as_path());
+        let name = self.name(ctx);
+        let name = crate::error::raw(&name);
+        crate::error!("{file}: {name}+0x{offset:x}: {msg}");
+    }
+
+    /// Whether the target of relocation `r` of this subsection has an
+    /// address in the image, as a PC-relative reference that goes
+    /// through no stub or GOT slot needs (an x86-64 RIP-relative one, an
+    /// arm64 adrp or the offset into its page): an import has none,
+    /// which is an error.
+    pub fn target_has_address<E: Target>(&self, ctx: &Context<E>, r: &Reloc) -> bool {
+        let file = &ctx.objs[self.file as usize];
+        let Some(id) = r.sym(file).filter(|&id| ctx.symbols[id].is_imported()) else {
+            return true;
+        };
+        let msg = format_args!("target '{}' does not have address", ctx.symbols[id]);
+        self.fixup_error(ctx, r.offset, msg);
+        false
+    }
+
+    /// Notes relocation `i` of `rels`, this subsection's (subsection
+    /// `isec_id`), whose pointer is at `addr`, if it is a text
+    /// relocation: in a range of text_reloc_ranges, and needing a fixup.
+    #[inline]
+    pub fn check_text_reloc<E: Target>(
+        &self,
+        ctx: &Context<E>,
+        isec_id: usize,
+        rels: &[Reloc],
+        i: usize,
+        addr: u64,
+    ) {
+        if ctx.text_reloc_ranges.iter().any(|range| range.contains(&addr)) {
+            self.note_text_reloc(ctx, isec_id, rels, i);
+        }
+    }
+
+    /// Records a pointer in a read-only segment if dyld (or whatever
+    /// loads the image) has to bind or slide it, as the fixup builders
+    /// decide.
+    #[cold]
+    fn note_text_reloc<E: Target>(
+        &self,
+        ctx: &Context<E>,
+        isec_id: usize,
+        rels: &[Reloc],
+        i: usize,
+    ) {
+        let file = &ctx.objs[self.file as usize];
+        let rel = &rels[i];
+        let slides = ctx.args.pie || ctx.args.output_type != crate::macho::MH_EXECUTE;
+        let needs_fixup = match rel.sym(file) {
+            Some(id)
+                if ctx.symbols[id].binds_at_runtime(ctx) || ctx.symbols[id].binds_to_self(ctx) =>
+            {
+                true
+            }
+            Some(id) if ctx.symbols[id].is_absolute(ctx) => false,
+            _ => slides && !rel.refers_to_tls(ctx, file),
+        };
+        if needs_fixup {
+            ctx.text_relocs.lock().unwrap().push((isec_id as u32, i as u32));
+        }
+    }
+}
+
+/// Where a symbol labels a subsection's start, if it is a label at all.
+fn msym_label_key(msym: &crate::macho::MachSym) -> Option<(u32, u64)> {
+    (!msym.is_stab() && msym.ty() == crate::macho::N_SECT).then_some((msym.sect as u32, msym.value))
 }

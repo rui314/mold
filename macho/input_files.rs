@@ -1622,7 +1622,7 @@ pub fn is_literal_section(sect: &MachSection) -> bool {
 /// Whether ld-prime merges a section's subsections by their content - the
 /// literal pools, C strings, selector references and CFStrings, not the
 /// pointer lists it takes one by one - which the labels an assembler
-/// makes for itself name none of (see Context::subsec_label).
+/// makes for itself name none of (see InputSection::label).
 pub fn has_merged_subsecs(sect: &MachSection) -> bool {
     is_literal_section(sect) && !(sect.segname() == b"__DATA" && is_pointer_list(sect))
 }

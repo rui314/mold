@@ -345,11 +345,11 @@ impl<'a, E: Target> Builder<'a, E> {
             return;
         }
         // A list record's labels name nothing, nor do a literal's but a
-        // symbol's of its own (see Context::subsec_label); neither has
+        // symbol's of its own (see InputSection::label); neither has
         // aliases.
         let literal = merges_by_content(hdr);
         let record = crate::input_files::is_record_list(hdr, obj.subsections_via_symbols);
-        let label = if record { None } else { ctx.subsec_label_index(id as usize) };
+        let label = if record { None } else { isec.label_index(ctx) };
         let (content_type, custom) = self.content_type(hdr);
         let mut entry = match label {
             Some(i) => named_entry(ctx, obj, i, content_type, debug),
@@ -392,7 +392,7 @@ impl<'a, E: Target> Builder<'a, E> {
     /// is made.
     fn add_folded_function(&mut self, obj: &ObjectFile, id: u32, debug: u16) {
         let ctx = self.ctx;
-        let Some(label) = ctx.subsec_label_index(id as usize) else { return };
+        let Some(label) = ctx.isecs[id as usize].label_index(ctx) else { return };
         let sym_id = obj.symbols[label];
         // (A losing copy of a weak definition, whose symbol is the
         // winner's, which may be the folded one, has no entry at all.)

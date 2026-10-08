@@ -133,8 +133,10 @@ pub fn create_dof_sections<E: Target>(ctx: &mut Context<E>) {
         let (stability, typedefs) = (info(b"___dtrace_stability$"), info(b"___dtrace_typedefs$"));
         let probes: Vec<&[u8]> = sites.iter().map(|s| ctx.symbols[s.sym].name()).collect();
         // A site goes by the function it is in, its subsection's label.
-        let functions: Vec<&[u8]> =
-            sites.iter().map(|s| ctx.subsec_label(s.isec as usize).unwrap_or_default()).collect();
+        let functions: Vec<&[u8]> = sites
+            .iter()
+            .map(|s| ctx.isecs[s.isec as usize].label(ctx).unwrap_or_default())
+            .collect();
         let dof = match build_dof(provider, stability, typedefs, &probes, &functions) {
             Ok(dof) => dof,
             Err(name) => {

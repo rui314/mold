@@ -55,14 +55,14 @@ fn adrp_reaches(hi: u64, lo: u64) -> bool {
 
 /// Checks that the ADRP of relocation `r` of subsection `isec`, at `p`,
 /// reaches the page of `t`, its target or the GOT slot it loads.
-fn check_adrp(ctx: &Context<Arm64>, isec: usize, r: &Reloc, p: u64, t: u64) {
+fn check_adrp(ctx: &Context<Arm64>, isec: &InputSection, r: &Reloc, p: u64, t: u64) {
     if adrp_reaches(t, p) {
         return;
     }
-    let name = r.target_name(ctx, &ctx.objs[ctx.isecs[isec].file as usize]);
+    let name = r.target_name(ctx, &ctx.objs[isec.file as usize]);
     let name = crate::error::raw(&name);
     let msg = format_args!("ADRP out of range, from 0x{p:08X} to 0x{t:08X} ('{name}')");
-    ctx.fixup_error(isec, r.offset, msg);
+    isec.fixup_error(ctx, r.offset, msg);
 }
 
 /// Whether an instruction is "ldr Xt|Wt, [Xn, #imm]".
@@ -109,13 +109,13 @@ fn write_add_ldst(loc: &mut [u8], val: u64) -> Result<(), u32> {
 
 /// Reports an LDR or STR, relocation `r` of subsection `isec`, whose
 /// target (or the GOT slot it loads) its access size doesn't divide.
-fn report_ldst_alignment(ctx: &Context<Arm64>, isec: usize, r: &Reloc, size: u32) {
-    let target = r.target_name(ctx, &ctx.objs[ctx.isecs[isec].file as usize]);
+fn report_ldst_alignment(ctx: &Context<Arm64>, isec: &InputSection, r: &Reloc, size: u32) {
+    let target = r.target_name(ctx, &ctx.objs[isec.file as usize]);
     let target = crate::error::raw(&target);
     let msg = format_args!(
         "target '{target}' not {size}-byte aligned, which is required by LDR/STR instruction"
     );
-    ctx.fixup_error(isec, r.offset, msg);
+    isec.fixup_error(ctx, r.offset, msg);
 }
 
 // Linker optimization hints (LC_LINKER_OPTIMIZATION_HINT). A compiler
@@ -1310,8 +1310,8 @@ impl Target for Arm64 {
         base: u64,
         buf: &mut [u8],
     ) {
-        let obj = ctx.isecs[isec_id].file as usize;
-        let file = &ctx.objs[obj];
+        let isec = &ctx.isecs[isec_id];
+        let file = &ctx.objs[isec.file as usize];
         let mut i = 0;
         while i < rels.len() {
             let r = &rels[i];
@@ -1322,7 +1322,7 @@ impl Target for Arm64 {
 
             match r.ty {
                 ARM64_RELOC_UNSIGNED => {
-                    ctx.check_text_reloc(isec_id, rels, i, p);
+                    isec.check_text_reloc(ctx, isec_id, rels, i, p);
                     // An imported symbol's address is written by dyld,
                     // via a bind record (an interposable export's too).
                     let imported =
@@ -1389,15 +1389,15 @@ impl Target for Arm64 {
                                     "B/BL out of range (displacement={val}, max is +/-128MB), \
                                      from 0x{p:08X} to 0x{t:08X} ('{name}')"
                                 );
-                                ctx.fixup_error(isec_id, r.offset, msg);
+                                isec.fixup_error(ctx, r.offset, msg);
                             }
                         }
                     }
                     write32(loc, (read32(loc) & !B_IMM) | bits(val as u64, 27, 2) as u32);
                 }
                 ARM64_RELOC_PAGE21 => {
-                    if ctx.target_has_address(obj, isec_id, r) {
-                        check_adrp(ctx, isec_id, r, p, s.wrapping_add_signed(a));
+                    if isec.target_has_address(ctx, r) {
+                        check_adrp(ctx, isec, r, p, s.wrapping_add_signed(a));
                         write_adrp(loc, s.wrapping_add_signed(a), p);
                     }
                 }
@@ -1405,10 +1405,10 @@ impl Target for Arm64 {
                 // whose adrp it hasn't paired with it, and truncates
                 // the others.)
                 ARM64_RELOC_PAGEOFF12 => {
-                    if ctx.target_has_address(obj, isec_id, r)
+                    if isec.target_has_address(ctx, r)
                         && let Err(size) = write_add_ldst(loc, s.wrapping_add_signed(a))
                     {
-                        report_ldst_alignment(ctx, isec_id, r, size);
+                        report_ldst_alignment(ctx, isec, r, size);
                     }
                 }
                 // A GOT load of a lazy or delay-init dylib's symbol calls
@@ -1437,7 +1437,7 @@ impl Target for Arm64 {
                     } else {
                         ctx.symbols[id].got_addr(ctx)
                     };
-                    check_adrp(ctx, isec_id, r, p, t.wrapping_add_signed(a));
+                    check_adrp(ctx, isec, r, p, t.wrapping_add_signed(a));
                     write_adrp(loc, t.wrapping_add_signed(a), p);
                 }
                 // ld-prime relaxes an ldr of either width, takes a GOT
@@ -1448,7 +1448,7 @@ impl Target for Arm64 {
                     if !ctx.symbols[id].can_relax_got(ctx) {
                         let g = ctx.symbols[id].got_addr(ctx);
                         if let Err(size) = write_add_ldst(loc, g.wrapping_add_signed(a)) {
-                            report_ldst_alignment(ctx, isec_id, r, size);
+                            report_ldst_alignment(ctx, isec, r, size);
                         }
                     } else {
                         let insn = read32(loc);
@@ -1460,7 +1460,7 @@ impl Target for Arm64 {
                                 0x9100_0000 | (insn & 0x3ff) | ((target as u32 & 0xfff) << 10);
                             write32(loc, add);
                         } else {
-                            ctx.fixup_error(isec_id, r.offset, format_args!("non-LDR instruction"));
+                            isec.fixup_error(ctx, r.offset, format_args!("non-LDR instruction"));
                         }
                     }
                 }

@@ -56,7 +56,7 @@ fn delay_uses<E: Target>(ctx: &Context<E>) -> Vec<LazyUseSite> {
     let uses = import_uses(ctx, |id| ctx.symbols[id].is_delay_import(ctx));
     for &(isec, _, id, how) in &uses {
         if how == LazyRef::Unsupported {
-            let (sym, subsec) = (&ctx.symbols[id], ctx.subsec_name(isec as usize));
+            let (sym, subsec) = (&ctx.symbols[id], ctx.isecs[isec as usize].name(ctx));
             let subsec = crate::error::raw(&subsec);
             crate::error!("use of '{sym}' in '{subsec}' cannot be delayed");
         }

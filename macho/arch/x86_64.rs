@@ -127,16 +127,22 @@ fn is_supported(r: &MachRel) -> bool {
 /// target's stub or GOT slot): from the end of the instruction, past the
 /// field and the immediate after it a SIGNED_1/2/4 counts. One that
 /// doesn't fit is an error.
-fn rip32_displacement(ctx: &Context<X86_64>, isec: usize, r: &Reloc, p: u64, t: u64) -> u32 {
+fn rip32_displacement(
+    ctx: &Context<X86_64>,
+    isec: &InputSection,
+    r: &Reloc,
+    p: u64,
+    t: u64,
+) -> u32 {
     let disp = t.wrapping_sub(p + 4).wrapping_sub(reloc_bias(r.ty) as u64) as i64;
     if i32::try_from(disp).is_err() {
-        let name = r.target_name(ctx, &ctx.objs[ctx.isecs[isec].file as usize]);
+        let name = r.target_name(ctx, &ctx.objs[isec.file as usize]);
         let name = crate::error::raw(&name);
         let msg = format_args!(
             "32-bit RIP-relative reference out of range (displacement={disp}, max is +/-2GB), \
              from 0x{p:08X} to 0x{t:08X} ('{name}')"
         );
-        ctx.fixup_error(isec, r.offset, msg);
+        isec.fixup_error(ctx, r.offset, msg);
     }
     disp as u32
 }
@@ -147,7 +153,7 @@ fn rip32_displacement(ctx: &Context<X86_64>, isec: usize, r: &Reloc, p: u64, t: 
 /// gives it no stub.
 fn write_branch8(
     ctx: &Context<X86_64>,
-    isec: usize,
+    isec: &InputSection,
     r: &Reloc,
     sym: SymbolId,
     t: u64,
@@ -157,13 +163,13 @@ fn write_branch8(
     let sym = &ctx.symbols[sym];
     let val = t.wrapping_sub(p + 1) as i64;
     if sym.is_imported() {
-        ctx.fixup_error(isec, r.offset, format_args!("target '{sym}' does not have address"));
+        isec.fixup_error(ctx, r.offset, format_args!("target '{sym}' does not have address"));
     } else if !(-128..128).contains(&val) {
         let msg = format_args!(
             "8-bit branch out of range (displacement={val}, max is +/-127), \
              from 0x{p:X} to 0x{t:X} ('{sym}')"
         );
-        ctx.fixup_error(isec, r.offset, msg);
+        isec.fixup_error(ctx, r.offset, msg);
     }
     loc[0] = val as u8;
 }
@@ -629,8 +635,8 @@ impl Target for X86_64 {
         base: u64,
         buf: &mut [u8],
     ) {
-        let obj = ctx.isecs[isec_id].file as usize;
-        let file = &ctx.objs[obj];
+        let isec = &ctx.isecs[isec_id];
+        let file = &ctx.objs[isec.file as usize];
         let mut i = 0;
         while i < rels.len() {
             let r = &rels[i];
@@ -649,7 +655,7 @@ impl Target for X86_64 {
                     _ => {
                         let msg =
                             format_args!("GOT load fixup does not point to a movq instruction");
-                        ctx.fixup_error(isec_id, r.offset, msg);
+                        isec.fixup_error(ctx, r.offset, msg);
                     }
                 }
             }
@@ -694,21 +700,21 @@ impl Target for X86_64 {
                     let val = s.wrapping_add_signed(a);
                     if ctx.args.static_link {
                         if val > u32::MAX as u64 {
-                            ctx.fixup_error(
-                                isec_id,
+                            isec.fixup_error(
+                                ctx,
                                 r.offset,
                                 format_args!("32-bit pointer overflow"),
                             );
                         }
                     } else if ctx.text_reloc_ranges.iter().any(|range| range.contains(&p)) {
-                        ctx.check_text_reloc(isec_id, rels, i, p);
+                        isec.check_text_reloc(ctx, isec_id, rels, i, p);
                     } else {
                         ctx.pointers32.lock().unwrap().push((isec_id as u32, r.offset));
                     }
                     write32(loc, val as u32);
                 }
                 X86_64_RELOC_UNSIGNED => {
-                    ctx.check_text_reloc(isec_id, rels, i, p);
+                    isec.check_text_reloc(ctx, isec_id, rels, i, p);
                     let imported = r.sym(file).is_some_and(|id| ctx.symbols[id].binds_pointer(ctx));
                     if imported {
                         // The slot is filled by dyld. It keeps the
@@ -733,7 +739,7 @@ impl Target for X86_64 {
                 }
                 X86_64_RELOC_BRANCH if r.size == 1 => {
                     let sym = r.sym(file).unwrap();
-                    write_branch8(ctx, isec_id, r, sym, s.wrapping_add_signed(a), p, loc);
+                    write_branch8(ctx, isec, r, sym, s.wrapping_add_signed(a), p, loc);
                 }
                 // A kext's call to an import, without a stub, keeps
                 // its addend for kmutil's external relocation.
@@ -752,15 +758,15 @@ impl Target for X86_64 {
                         None => s,
                     };
                     let t = s.wrapping_add_signed(a);
-                    write32(loc, rip32_displacement(ctx, isec_id, r, p, t));
+                    write32(loc, rip32_displacement(ctx, isec, r, p, t));
                 }
                 X86_64_RELOC_SIGNED
                 | X86_64_RELOC_SIGNED_1
                 | X86_64_RELOC_SIGNED_2
                 | X86_64_RELOC_SIGNED_4 => {
-                    if ctx.target_has_address(obj, isec_id, r) {
+                    if isec.target_has_address(ctx, r) {
                         let t = s.wrapping_add_signed(a);
-                        write32(loc, rip32_displacement(ctx, isec_id, r, p, t));
+                        write32(loc, rip32_displacement(ctx, isec, r, p, t));
                     }
                 }
                 // A local thread-local's TLV load relaxes just like a
@@ -768,12 +774,12 @@ impl Target for X86_64 {
                 // becomes a leaq of the __thread_vars descriptor itself.
                 X86_64_RELOC_GOT_LOAD | X86_64_RELOC_TLV if relaxed_got_load => {
                     let t = s.wrapping_add_signed(a);
-                    write32(loc, rip32_displacement(ctx, isec_id, r, p, t));
+                    write32(loc, rip32_displacement(ctx, isec, r, p, t));
                 }
                 X86_64_RELOC_GOT_LOAD | X86_64_RELOC_GOT | X86_64_RELOC_TLV => {
                     let g = ctx.symbols[r.sym(file).unwrap()].got_addr(ctx);
                     let t = g.wrapping_add_signed(a);
-                    write32(loc, rip32_displacement(ctx, isec_id, r, p, t));
+                    write32(loc, rip32_displacement(ctx, isec, r, p, t));
                 }
                 _ => fatal!("unsupported relocation type: {}", r.ty),
             }
