@@ -539,7 +539,8 @@ fn place_replacing_blobs<E: Target>(
     // Last first: a blob inserted (with its high index) then only ever
     // sits after the members the next, lower anchor is searched among.
     for (replaced, blob) in anchors.into_iter().rev() {
-        let hdr = *ctx.hdr_of(&ctx.isecs[replaced as usize]);
+        let isec = &ctx.isecs[replaced as usize];
+        let hdr = *isec.hdr(&ctx.objs[isec.file as usize]);
         let Some(id) = record_section(ctx, &hdr, text, moves.get(&blob).copied()) else {
             continue;
         };
@@ -692,7 +693,8 @@ fn assign_input_sections<E: Target>(
     let mut ids = vec![OutputSectionId::new(0); grouped.len()];
     for section in order {
         let first = grouped[section][0];
-        let hdr = *ctx.hdr_of(&ctx.isecs[first.members[0]]);
+        let isec = &ctx.isecs[first.members[0]];
+        let hdr = *isec.hdr(&ctx.objs[isec.file as usize]);
         ids[section] = add_output_section_for(ctx, &hdr, text, first.dest);
         ctx.output_section_mut(ids[section]).has_tlv_data = table.has_tlv_data[section];
     }
@@ -963,7 +965,7 @@ fn trace_symbol_layout<E: Target>(ctx: &Context<E>) {
         if !crate::mapfile::is_map_symbol(sym) {
             continue;
         }
-        let Some(chunk) = ctx.isecs[ctx.resolve_isec(isec as usize)].output_section() else {
+        let Some(chunk) = ctx.isecs[ctx.isecs.resolve(isec as usize)].output_section() else {
             continue;
         };
         let hdr = ctx.chunk_header(chunk);
@@ -1969,7 +1971,7 @@ fn order_file_ranks<E: Target>(ctx: &Context<E>) -> Option<Vec<u64>> {
         let Some(lines) = rank_of.get(sym.name()) else {
             continue;
         };
-        let isec = ctx.resolve_isec(isec as usize);
+        let isec = ctx.isecs.resolve(isec as usize);
         if !ctx.isecs[isec].is_alive() {
             continue;
         }

@@ -197,7 +197,7 @@ fn listed_classes<E: Target>(ctx: &Context<E>, of: impl Fn(usize) -> bool) -> Ve
         of(file)
             && ctx.objs[file].is_alive
             && isec.is_alive()
-            && ctx.hdr_of(isec).sectname() == b"__objc_classlist"
+            && isec.hdr(&ctx.objs[file]).sectname() == b"__objc_classlist"
     });
     lists.flat_map(|i| crate::objc::list_entries(ctx, i).flatten()).collect()
 }

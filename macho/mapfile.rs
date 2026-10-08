@@ -452,7 +452,7 @@ fn own_exports<E: Target>(ctx: &Context<E>) -> Vec<&'static [u8]> {
                 && !sym.is_private_extern()
                 && sym
                     .input_section()
-                    .is_none_or(|isec| ctx.isecs[ctx.resolve_isec(isec as usize)].is_alive())
+                    .is_none_or(|isec| ctx.isecs[ctx.isecs.resolve(isec as usize)].is_alive())
                 && !ctx.indirect_aliases.iter().any(|&(alias, _)| alias == id)
         })
         .map(|id| ctx.symbols[id].name())
@@ -584,7 +584,7 @@ pub fn print_map_of<E: Target>(ctx: &Context<E>, sections: &[MapSection]) {
         let osec = ctx.output_section(osec);
         let members: Vec<Vec<Row>> = (osec.members.par_iter())
             .fold(Vec::new, |mut rows, &id| {
-                let addr = ctx.isec_addr(id as usize);
+                let addr = ctx.isecs[id as usize].addr(ctx);
                 subsec_rows(ctx, &files, &labels, id as usize, addr, &mut rows);
                 rows
             })
@@ -611,7 +611,7 @@ fn subsec_labels<E: Target>(ctx: &Context<E>) -> Vec<Label> {
     let mut labels: Vec<_> = (ctx.symbols.syms.par_iter())
         .filter_map(|sym| {
             let own = sym.input_section()? as usize;
-            let isec = ctx.resolve_isec(own);
+            let isec = ctx.isecs.resolve(own);
             is_map_symbol(sym).then_some(((isec as u32, sym.value, isec != own), sym.name()))
         })
         .collect();

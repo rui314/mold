@@ -74,11 +74,12 @@ fn entries<E: Target>(ctx: &Context<E>, id: ChunkId) -> Vec<Option<SymbolId>> {
 /// the symbol each relocation points one at, if dyld binds it - a
 /// pointer to anything else is one filled in here.
 fn input_slots<E: Target>(ctx: &Context<E>, isec: usize) -> Vec<Option<SymbolId>> {
-    let obj = ctx.isecs[isec].file as usize;
-    let size = ctx.isecs[isec].size;
+    let isec = &ctx.isecs[isec];
+    let obj = isec.file as usize;
+    let size = isec.size;
     // Each slot's relocation, the first at its offset, found in one pass.
     let mut slots = vec![None; size.div_ceil(8) as usize];
-    for rel in ctx.isec_relocs(isec).iter().rev() {
+    for rel in isec.rels(&ctx.objs[obj]).iter().rev() {
         if rel.offset % 8 == 0 && rel.offset < size && rel.ty != E::RELOC_SUBTRACTOR {
             slots[(rel.offset / 8) as usize] = Some(rel);
         }

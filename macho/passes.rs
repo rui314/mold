@@ -990,7 +990,10 @@ pub fn remove_swift_reflection_metadata<E: Target>(ctx: &mut Context<E>) {
         return;
     }
     let removed: Vec<usize> = (0..ctx.isecs.len())
-        .filter(|&i| input_files::is_swift_reflection_section(ctx.hdr_of(&ctx.isecs[i])))
+        .filter(|&i| {
+            let isec = &ctx.isecs[i];
+            input_files::is_swift_reflection_section(isec.hdr(&ctx.objs[isec.file as usize]))
+        })
         .collect();
     for i in removed {
         ctx.isecs[i].set_alive(false);
@@ -1008,11 +1011,12 @@ pub fn check_removed_swift_metadata_refs<E: Target>(ctx: &Context<E>) {
         return;
     }
     let removed = |isec: usize| {
-        let isec = &ctx.isecs[ctx.resolve_isec(isec)];
-        !isec.is_alive() && input_files::is_swift_reflection_section(ctx.hdr_of(isec))
+        let isec = &ctx.isecs[ctx.isecs.resolve(isec)];
+        !isec.is_alive()
+            && input_files::is_swift_reflection_section(isec.hdr(&ctx.objs[isec.file as usize]))
     };
     for (i, isec) in ctx.isecs.iter().enumerate().filter(|(_, isec)| isec.is_emitted()) {
-        for rel in ctx.isec_relocs(i) {
+        for rel in isec.rels(&ctx.objs[isec.file as usize]) {
             let file = isec.file as usize;
             let target = match ctx.reloc_target_sym(file, rel) {
                 Some(id) => ctx.symbols[id].input_section().map(|t| t as usize),
@@ -1053,8 +1057,9 @@ pub fn convert_init_offsets<E: Target>(ctx: &mut Context<E>) {
     // bundle_hook) last, though its object comes first.
     let mut pointers: Vec<usize> = (0..ctx.isecs.len())
         .filter(|&i| {
-            ctx.hdr_of(&ctx.isecs[i]).section_type() == S_MOD_INIT_FUNC_POINTERS
-                && ctx.isecs[i].is_alive()
+            let isec = &ctx.isecs[i];
+            isec.hdr(&ctx.objs[isec.file as usize]).section_type() == S_MOD_INIT_FUNC_POINTERS
+                && isec.is_alive()
         })
         .collect();
     pointers.sort_by_key(|&i| ctx.is_bundle_hook(ctx.isecs[i].file as usize));
@@ -1064,7 +1069,7 @@ pub fn convert_init_offsets<E: Target>(ctx: &mut Context<E>) {
             let func = match rel.target() {
                 RelocTarget::Sym(idx) => init_func(ctx, ctx.objs[obj].symbols[idx as usize]),
                 RelocTarget::Section(isec) => {
-                    InitFunc::Local(ctx.resolve_isec(isec as usize), rel.addend as u64)
+                    InitFunc::Local(ctx.isecs.resolve(isec as usize), rel.addend as u64)
                 }
             };
             ctx.init_offsets.init_funcs.push(func);
@@ -1079,7 +1084,7 @@ pub fn convert_init_offsets<E: Target>(ctx: &mut Context<E>) {
 fn init_func<E: Target>(ctx: &Context<E>, id: crate::symbol::SymbolId) -> InitFunc {
     let sym = &ctx.symbols[id];
     match sym.input_section() {
-        Some(isec) => InitFunc::Local(ctx.resolve_isec(isec as usize), sym.value),
+        Some(isec) => InitFunc::Local(ctx.isecs.resolve(isec as usize), sym.value),
         None => InitFunc::Imported(id),
     }
 }
@@ -1096,8 +1101,9 @@ fn init_function<E: Target>(ctx: &Context<E>) -> Option<crate::symbol::SymbolId>
 /// symbols makes (a SUBTRACTOR and an UNSIGNED relocation) names the
 /// function it adds, as in ld-prime, not the one it subtracts too.
 fn initializer_relocs<E: Target>(ctx: &Context<E>, i: usize) -> Vec<crate::input_sections::Reloc> {
-    let mut relocs: Vec<_> =
-        ctx.isec_relocs(i).iter().filter(|r| r.ty != E::RELOC_SUBTRACTOR).copied().collect();
+    let isec = &ctx.isecs[i];
+    let rels = isec.rels(&ctx.objs[isec.file as usize]);
+    let mut relocs: Vec<_> = rels.iter().filter(|r| r.ty != E::RELOC_SUBTRACTOR).copied().collect();
     relocs.sort_by_key(|r| r.offset);
     relocs
 }
@@ -1144,15 +1150,15 @@ pub fn check_initializers<E: Target>(ctx: &Context<E>) {
 fn initializers<E: Target>(ctx: &Context<E>) -> Vec<(&[u8], error::Raw<'_>)> {
     let mut vec = Vec::new();
     for (i, isec) in ctx.isecs.iter().enumerate() {
-        if !isec.is_alive() || ctx.hdr_of(isec).section_type() != S_MOD_INIT_FUNC_POINTERS {
+        let obj = &ctx.objs[isec.file as usize];
+        if !isec.is_alive() || isec.hdr(obj).section_type() != S_MOD_INIT_FUNC_POINTERS {
             continue;
         }
-        let obj = &ctx.objs[isec.file as usize];
         for rel in initializer_relocs(ctx, i) {
             let name = match rel.target() {
                 RelocTarget::Sym(idx) => ctx.symbols[obj.symbols[idx as usize]].name(),
                 RelocTarget::Section(target) => {
-                    let target = ctx.resolve_isec(target as usize) as u32;
+                    let target = ctx.isecs.resolve(target as usize) as u32;
                     obj.symbols
                         .iter()
                         .map(|&id| &ctx.symbols[id])
@@ -1234,7 +1240,7 @@ fn mark_labeled_literals<E: Target>(ctx: &Context<E>) {
             && !sym.name().is_empty()
         {
             let isec = &ctx.isecs[i as usize];
-            let hdr = ctx.hdr_of(isec);
+            let hdr = isec.hdr(&ctx.objs[isec.file as usize]);
             let labeled = match hdr.section_type() {
                 S_CSTRING_LITERALS | S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS => {
                     !sym.name().starts_with(b"l") && !sym.name().starts_with(b"L")
@@ -1277,7 +1283,7 @@ pub fn merge_literals<E: Target>(ctx: &mut Context<E>) {
             if !isec.is_emitted() || isec.is_labeled() {
                 return None;
             }
-            let hdr = ctx.hdr_of(isec);
+            let hdr = isec.hdr(&ctx.objs[isec.file as usize]);
             if !input_files::is_mergeable_literal(hdr, isec) {
                 return None;
             }
@@ -1521,8 +1527,8 @@ pub fn coalesce_weak_defs<E: Target>(ctx: &mut Context<E>) {
     let losers: Vec<Vec<(usize, usize)>> =
         (0..ctx.objs.len()).into_par_iter().map(|i| weak_def_losers(ctx, i)).collect();
     for (loser, winner) in losers.into_iter().flatten() {
-        let winner = ctx.resolve_isec(winner);
-        let loser = ctx.resolve_isec(loser);
+        let winner = ctx.isecs.resolve(winner);
+        let loser = ctx.isecs.resolve(loser);
         if loser != winner && ctx.isecs[loser].replacement == NO_REPLACEMENT {
             ctx.isecs[loser].replacement = winner as u32;
         }
@@ -1705,7 +1711,7 @@ pub fn check_poisoned_symbols<E: Target>(ctx: &Context<E>) {
         .filter(|&isec| ctx.isecs[isec].is_alive())
         .flat_map_iter(|isec| {
             let file = ctx.isecs[isec].file as usize;
-            let rels = input_files::isec_relocs_of(&ctx.objs, &ctx.isecs[isec]);
+            let rels = ctx.isecs[isec].rels(&ctx.objs[file]);
             (rels.iter())
                 .filter(|rel| rel.ty != E::RELOC_SUBTRACTOR)
                 .filter_map(move |rel| ctx.reloc_target_sym(file, rel))
@@ -1784,7 +1790,7 @@ fn import_references<E: Target>(ctx: &Context<E>, obj_idx: usize) -> Vec<(Symbol
     let mut seen = hashbrown::HashSet::new();
     let mut out = Vec::new();
     for &id in &obj.subsecs {
-        for rel in input_files::isec_relocs_of(&ctx.objs, &ctx.isecs[id as usize]) {
+        for rel in ctx.isecs[id].rels(obj) {
             let RelocTarget::Sym(idx) = rel.target() else { continue };
             let sym_id = obj.symbols[idx as usize];
             if ctx.symbols[sym_id].is_imported() && seen.insert(sym_id) {
@@ -2008,7 +2014,7 @@ fn referenced_symbols<E: Target>(ctx: &Context<E>) -> Vec<std::sync::atomic::Ato
     let referenced: Vec<AtomicBool> =
         (0..ctx.symbols.syms.len()).map(|_| AtomicBool::new(false)).collect();
     ctx.isecs.par_iter().filter(|isec| isec.is_alive()).for_each(|isec| {
-        for rel in input_files::isec_relocs_of(&ctx.objs, isec) {
+        for rel in isec.rels(&ctx.objs[isec.file as usize]) {
             if let Some(id) = ctx.reloc_target_sym(isec.file as usize, rel) {
                 referenced[id as usize].store(true, Ordering::Relaxed);
             }
@@ -2210,7 +2216,7 @@ pub fn check_weak_assertions<E: Target>(ctx: &Context<E>) {
         .flat_map_iter(|i| {
             let file = ctx.isecs[i].file;
             let obj = &ctx.objs[file as usize];
-            ctx.isec_relocs(i).iter().filter_map(move |r| {
+            ctx.isecs[i].rels(obj).iter().filter_map(move |r| {
                 let RelocTarget::Sym(idx) = r.target() else {
                     return None;
                 };
@@ -2560,11 +2566,11 @@ fn check_libsystem_linked<E: Target>(ctx: &Context<E>) {
 pub fn compute_address_significance<E: Target>(ctx: &mut Context<E>) {
     let ctx_ref: &Context<E> = ctx;
     ctx_ref.isecs.par_iter().filter(|isec| isec.is_emitted()).for_each(|isec| {
-        for r in input_files::isec_relocs_of(&ctx_ref.objs, isec) {
+        for r in isec.rels(&ctx_ref.objs[isec.file as usize]) {
             if !r.is_func_call::<E>()
                 && let Some(dst) = ctx_ref.reloc_target_isec(isec.file as usize, r)
             {
-                ctx_ref.isecs[ctx_ref.resolve_isec(dst)].set_address_taken();
+                ctx_ref.isecs[ctx_ref.isecs.resolve(dst)].set_address_taken();
             }
         }
     });
@@ -2575,7 +2581,7 @@ pub fn compute_address_significance<E: Target>(ctx: &mut Context<E>) {
             && !sym.is_private_extern()
             && let Some(isec) = sym.input_section()
         {
-            ctx_ref.isecs[ctx_ref.resolve_isec(isec as usize)].set_address_taken();
+            ctx_ref.isecs[ctx_ref.isecs.resolve(isec as usize)].set_address_taken();
         }
     });
 }
@@ -3011,16 +3017,17 @@ fn text_reloc_ranges<E: Target>(ctx: &Context<E>) -> Vec<Range<u64>> {
 /// dyld loads, which it could neither slide nor bind.
 pub fn report_text_relocs<E: Target>(ctx: &Context<E>) {
     let mut found = std::mem::take(&mut *ctx.text_relocs.lock().unwrap());
-    let addr = |isec: u32, off: u32| ctx.isec_addr(isec as usize) + off as u64;
+    let addr = |isec: u32, off: u32| ctx.isecs[isec as usize].addr(ctx) + off as u64;
     found.sort_unstable_by_key(|&(isec, i)| {
-        addr(isec, ctx.isec_relocs(isec as usize)[i as usize].offset)
+        let sec = &ctx.isecs[isec];
+        addr(isec, sec.rels(&ctx.objs[sec.file as usize])[i as usize].offset)
     });
     if !found.is_empty() {
         crate::error::notice(format_args!("Illegal text-relocations:"));
     }
     for &(id, i) in &found {
         let isec = &ctx.isecs[id as usize];
-        let rel = &ctx.isec_relocs(id as usize)[i as usize];
+        let rel = &isec.rels(&ctx.objs[isec.file as usize])[i as usize];
         let target = ctx.reloc_target_name(isec.file as usize, rel);
         crate::error::notice(format_args!(
             "  text-relocation in {} to '{}'",
@@ -3611,7 +3618,7 @@ fn sorted_globals<E: Target>(ctx: &Context<E>) -> Vec<SymbolId> {
                 && !sym.is_private_extern()
                 && matches!(sym.file(), Some(FileId::Obj(_)))
                 && (sym.input_section())
-                    .is_none_or(|isec| ctx.isecs[ctx.resolve_isec(isec as usize)].is_alive())
+                    .is_none_or(|isec| ctx.isecs[ctx.isecs.resolve(isec as usize)].is_alive())
         })
         .collect();
     globals.par_sort_unstable_by_key(|&id| crate::util::name_sort_key(ctx.symbols[id].name()));

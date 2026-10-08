@@ -38,7 +38,7 @@ fn dead_strip<E: Target>(ctx: &mut Context<E>) {
     // subsections they replaced; roots and edges are marked through to
     // the replacement.
     let redirects: Vec<usize> =
-        (0..ctx.isecs.len()).into_par_iter().map(|i| ctx.resolve_isec(i)).collect();
+        (0..ctx.isecs.len()).into_par_iter().map(|i| ctx.isecs.resolve(i)).collect();
     let redirects = &redirects;
 
     // The set of live sections is order-independent, which lets the
@@ -136,7 +136,7 @@ pub(crate) fn initial_undefines<E: Target>(ctx: &Context<E>) -> impl Iterator<It
 /// __objc_classrefs no-dead-strip (it keeps unused selector
 /// references).
 fn should_keep<E: Target>(ctx: &Context<E>, isec: &InputSection) -> bool {
-    let hdr = ctx.hdr_of(isec);
+    let hdr = isec.hdr(&ctx.objs[isec.file as usize]);
     matches!(hdr.section_type(), S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS)
         || hdr.section_type() == S_INIT_FUNC_OFFSETS
         || (hdr.flags & S_ATTR_NO_DEAD_STRIP != 0
@@ -249,7 +249,7 @@ pub fn native_refs_before_lto<E: Target>(
     exported: impl Fn(SymbolId) -> bool + Sync,
 ) -> Vec<AtomicBool> {
     let redirects: Vec<usize> =
-        (0..ctx.isecs.len()).into_par_iter().map(|i| ctx.resolve_isec(i)).collect();
+        (0..ctx.isecs.len()).into_par_iter().map(|i| ctx.isecs.resolve(i)).collect();
     let is_root = |id: SymbolId, sym: &Symbol| sym.no_dead_strip() || exported(id);
     let mut roots = collect_root_set(ctx, &redirects, is_root, None);
     for module in &ctx.lto_modules {
@@ -277,7 +277,7 @@ pub fn native_refs_before_lto<E: Target>(
         }
         isec.unmark_visited();
         let file = &ctx.objs[isec.file as usize];
-        for rel in ctx.isec_relocs(id) {
+        for rel in isec.rels(file) {
             if let RelocTarget::Sym(idx) = rel.target() {
                 refs[file.symbols[idx as usize] as usize].store(true, Ordering::Relaxed);
             }
@@ -309,7 +309,7 @@ pub fn keeps_export<E: Target>(ctx: &Context<E>, name: &[u8]) -> bool {
 fn for_each_edge<E: Target>(ctx: &Context<E>, id: usize, mut f: impl FnMut(usize)) {
     let isec = &ctx.isecs[id];
     let file = &ctx.objs[isec.file as usize];
-    for rel in ctx.isec_relocs(id) {
+    for rel in isec.rels(file) {
         match rel.target() {
             RelocTarget::Sym(idx) => {
                 if let Some(target) = ctx.symbols[file.symbols[idx as usize]].input_section() {
@@ -453,7 +453,10 @@ fn mark_live_support<E: Target>(
         .isecs
         .par_iter()
         .enumerate()
-        .filter(|(_, isec)| isec.is_alive() && ctx.hdr_of(isec).flags & S_ATTR_LIVE_SUPPORT != 0)
+        .filter(|(_, isec)| {
+            isec.is_alive()
+                && isec.hdr(&ctx.objs[isec.file as usize]).flags & S_ATTR_LIVE_SUPPORT != 0
+        })
         .map(|(id, _)| id)
         .collect();
 
@@ -490,7 +493,7 @@ fn sweep<E: Target>(ctx: &mut Context<E>) {
 fn mark_live_references<E: Target>(ctx: &mut Context<E>) {
     ctx.symbols.syms.par_iter().for_each(|sym| sym.unmark());
     ctx.isecs.par_iter().filter(|isec| isec.is_emitted()).for_each(|isec| {
-        for rel in crate::input_files::isec_relocs_of(&ctx.objs, isec) {
+        for rel in isec.rels(&ctx.objs[isec.file as usize]) {
             if let Some(id) = ctx.reloc_target_sym(isec.file as usize, rel) {
                 ctx.symbols[id].mark();
             }
@@ -571,7 +574,7 @@ fn print_why_live<E: Target>(ctx: &Context<E>, redirects: &[usize], why: &[Why])
 
     let mut seen = HashSet::new();
     for (id, isec) in ctx.isecs.iter().enumerate().filter(|(_, isec)| isec.is_alive()) {
-        for rel in ctx.isec_relocs(id) {
+        for rel in isec.rels(&ctx.objs[isec.file as usize]) {
             let Some(sym_id) = ctx.reloc_target_sym(isec.file as usize, rel) else { continue };
             let sym = &ctx.symbols[sym_id];
             let Some(FileId::Dylib(dylib)) = sym.file() else { continue };

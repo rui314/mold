@@ -74,7 +74,7 @@ pub fn relocate_fde<E: Target>(
     let cie = &ctx.cies[fde.cie as usize];
     buf[4..8].copy_from_slice(&cie_ptr.to_le_bytes());
 
-    let func_addr = ctx.isec_addr(fde.isec as usize) + fde.func_offset as u64;
+    let func_addr = ctx.isecs[fde.isec as usize].addr(ctx) + fde.func_offset as u64;
     let pc_begin = func_addr.wrapping_sub(fde_addr + 8);
     match cie.pc_size() {
         4 => buf[8..12].copy_from_slice(&(pc_begin as u32).to_le_bytes()),
@@ -84,7 +84,8 @@ pub fn relocate_fde<E: Target>(
     if let Some((lsda_isec, lsda_off)) = fde.lsda {
         let pos = fde.lsda_pos(cie.pc_size());
         let cell_addr = fde_addr + pos as u64;
-        let val = (ctx.isec_addr(lsda_isec as usize) + lsda_off as u64).wrapping_sub(cell_addr);
+        let val =
+            (ctx.isecs[lsda_isec as usize].addr(ctx) + lsda_off as u64).wrapping_sub(cell_addr);
         match cie.lsda_size() {
             4 => buf[pos..pos + 4].copy_from_slice(&(val as u32).to_le_bytes()),
             _ => buf[pos..pos + 8].copy_from_slice(&val.to_le_bytes()),

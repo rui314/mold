@@ -73,7 +73,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
         let got = ctx.lazy_load_got.slot_addr(d.got_start);
         let header = [
             strs as u32,
-            (ctx.isec_addr(d.flag as usize) - base) as u32,
+            (ctx.isecs[d.flag as usize].addr(ctx) - base) as u32,
             format,
             (got - base) as u32,
             nsyms as u32,

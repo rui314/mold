@@ -56,7 +56,7 @@ enum Content {
 /// The subsection a symbol names (an absolute symbol is one of its
 /// own): the subsection to move, the segment it is in and what it holds.
 struct Subsec<'a> {
-    /// The subsection the link kept (see Context::resolve_isec) - a
+    /// The subsection the link kept (see InputSections::resolve) - a
     /// record the linker rewrote in place of the input's too (see
     /// rewritten_records); none for an absolute symbol, or for a
     /// subsection the linker places itself (an input class reference
@@ -289,11 +289,12 @@ fn subsec_named<'a, E: Target>(
         let content = Content::Data;
         return Some(Subsec { isec: None, segment: b"", content, tlv_template: false });
     };
-    let kept = ctx.resolve_isec(isec as usize);
+    let kept = ctx.isecs.resolve(isec as usize);
     if !ctx.isecs[kept].is_alive() {
         return None;
     }
-    let hdr = ctx.hdr_of(&ctx.isecs[isec as usize]);
+    let isec = &ctx.isecs[isec as usize];
+    let hdr = isec.hdr(&ctx.objs[isec.file as usize]);
     let flags = canonical_section_flags(hdr.segname(), hdr.sectname(), hdr.flags);
     let rewritten = rewritten.get(&(kept as u32));
     let content = match rewritten {

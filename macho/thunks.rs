@@ -396,7 +396,7 @@ fn needs_thunk<E: Target>(ctx: &Context<E>, reach: &Reach, p: u64, id: SymbolId)
         Some(FileId::Dylib(_)) if stub => reach.stubs,
         Some(FileId::Obj(_)) => match sym.input_section() {
             Some(target) => {
-                let target = &ctx.isecs[ctx.resolve_isec(target as usize)];
+                let target = &ctx.isecs[ctx.isecs.resolve(target as usize)];
                 match target.output_section() {
                     Some(ChunkId::Output(osec)) if osec == reach.osec => {
                         if target.offset == UNPLACED {

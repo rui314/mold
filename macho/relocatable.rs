@@ -38,7 +38,8 @@ use crate::util::{align_to, encode_uleb, leak_bytes};
 /// the next link keeps it even when the output section takes another
 /// member's attributes - but none of __objc_classrefs.
 fn section_desc<E: Target>(ctx: &Context<E>, isec: usize) -> u16 {
-    let h = ctx.hdr_of(&ctx.isecs[isec]);
+    let isec = &ctx.isecs[isec];
+    let h = isec.hdr(&ctx.objs[isec.file as usize]);
     if h.flags & S_ATTR_NO_DEAD_STRIP != 0
         && !(h.segname() == b"__DATA" && h.sectname() == b"__objc_classrefs")
     {
@@ -66,7 +67,7 @@ fn optimization_hints<E: Target>(ctx: &Context<E>) -> Option<Vec<u8>> {
             };
             let isec = &ctx.isecs[id];
             if isec.is_emitted() {
-                hints.push((ctx.isec_addr(id), isec.input_addr as u64, hint));
+                hints.push((isec.addr(ctx), isec.input_addr as u64, hint));
             }
         }
     }
@@ -610,7 +611,7 @@ fn compact_unwind_contents<E: Target>(
                 bits: targets.personality(p) | len | (1 << 27),
             });
             let lsda = rec.lsda().map(|(lsda, off)| {
-                let (lsda, bits) = targets.pointer_to(ctx.resolve_isec(lsda), off as u64, len);
+                let (lsda, bits) = targets.pointer_to(ctx.isecs.resolve(lsda), off as u64, len);
                 entry[24..].copy_from_slice(&lsda.to_le_bytes());
                 MachRel { offset: at + 24, bits }
             });
@@ -695,7 +696,7 @@ fn section_relocs<E: Target>(
         .flat_map_iter(|&id| {
             let isec = &ctx.isecs[id];
             let mut rels: Vec<MachRel> = Vec::new();
-            for rel in crate::input_files::isec_relocs_of(&ctx.objs, isec) {
+            for rel in isec.rels(&ctx.objs[isec.file as usize]) {
                 push_reloc(targets, isec, rel, &mut rels);
             }
             rels
@@ -726,7 +727,7 @@ fn push_reloc<E: Target>(
             }
             (idx, true)
         }
-        OutTarget::Section(target, _) => (ctx.isec_sect_idx(&ctx.isecs[target]) as u32, false),
+        OutTarget::Section(target, _) => (ctx.isecs[target].sect_idx(ctx) as u32, false),
     };
     out.push(MachRel {
         offset,
@@ -773,9 +774,11 @@ impl<'a, E: Target> RelocTargets<'a, E> {
                 let Some(t) = sym.input_section() else {
                     fatal!("-r: cannot re-emit relocation against {}", error::raw(sym.name()));
                 };
-                OutTarget::Section(ctx.resolve_isec(t as usize), sym.value as i64 + rel.addend)
+                OutTarget::Section(ctx.isecs.resolve(t as usize), sym.value as i64 + rel.addend)
             }
-            RelocTarget::Section(t) => OutTarget::Section(ctx.resolve_isec(t as usize), rel.addend),
+            RelocTarget::Section(t) => {
+                OutTarget::Section(ctx.isecs.resolve(t as usize), rel.addend)
+            }
         }
     }
 
@@ -785,7 +788,8 @@ impl<'a, E: Target> RelocTargets<'a, E> {
     /// function and LSDA fields of __compact_unwind.
     fn pointer_to(&self, t: usize, off: u64, len: u32) -> (u64, u32) {
         let ctx = self.ctx;
-        (ctx.isec_addr(t) + off, ctx.isec_sect_idx(&ctx.isecs[t]) as u32 | len)
+        let isec = &ctx.isecs[t];
+        (isec.addr(ctx) + off, isec.sect_idx(ctx) as u32 | len)
     }
 
     /// The symbol index of an unwind record's or a CIE's personality
@@ -984,7 +988,7 @@ fn copy_section_contents<E: Target>(
     let slices = output_file::split_ranges(buf, &ranges);
     jobs.into_par_iter().zip(slices).for_each(|((hdr, isec), out)| {
         out.copy_from_slice(isec.data());
-        for rel in crate::input_files::isec_relocs_of(&ctx.objs, isec) {
+        for rel in isec.rels(&ctx.objs[isec.file as usize]) {
             let here = hdr.addr + isec.offset as u64 + rel.offset as u64;
             rewrite_field(targets, isec, rel, here, &mut out[rel.offset as usize..]);
         }
@@ -1007,7 +1011,7 @@ fn rewrite_field<E: Target>(
         return;
     };
     // The addend is negative for a target before its section's start.
-    let target_addr = ctx.isec_addr(target).wrapping_add_signed(addend);
+    let target_addr = ctx.isecs[target].addr(ctx).wrapping_add_signed(addend);
     if rel.ty == E::RELOC_UNSIGNED && !rel.is_pcrel {
         match rel.size {
             8 => field[..8].copy_from_slice(&target_addr.to_le_bytes()),
@@ -1061,7 +1065,7 @@ struct Local {
 fn sym_addr<E: Target>(ctx: &Context<E>, id: SymbolId) -> u64 {
     let sym = &ctx.symbols[id];
     match sym.input_section() {
-        Some(isec) => ctx.isec_addr(isec as usize) + sym.value,
+        Some(isec) => ctx.isecs[isec as usize].addr(ctx) + sym.value,
         None => sym.value,
     }
 }
@@ -1179,7 +1183,7 @@ fn defined_externals<E: Target>(ctx: &Context<E>) -> Vec<(MachSym, SymbolId)> {
             && matches!(sym.file(), Some(FileId::Obj(_)))
             && sym
                 .input_section()
-                .is_none_or(|isec| ctx.isecs[ctx.resolve_isec(isec as usize)].is_alive())
+                .is_none_or(|isec| ctx.isecs[ctx.isecs.resolve(isec as usize)].is_alive())
     });
     globals
         .par_iter()
@@ -1197,7 +1201,7 @@ fn defined_externals<E: Target>(ctx: &Context<E>) -> Vec<(MachSym, SymbolId)> {
                 return (ent, i as u32);
             };
             let n_type = N_SECT | N_EXT | pext;
-            let sect = ctx.isec_sect_idx(&ctx.isecs[ctx.resolve_isec(input as usize)]);
+            let sect = ctx.isecs[ctx.isecs.resolve(input as usize)].sect_idx(ctx);
             // N_WEAK_REF on a definition is .weak_def_can_be_hidden: with
             // N_WEAK_DEF it lets a final link auto-hide the symbol, which
             // the -r output must leave it free to do.
@@ -1301,12 +1305,12 @@ fn object_locals<E: Target>(ctx: &Context<E>, obj_idx: usize) -> Vec<Local> {
         };
         let (sect, value) = match sym.input_section() {
             Some(input) => {
-                let isec = ctx.resolve_isec(input as usize);
+                let isec = ctx.isecs.resolve(input as usize);
                 if !ctx.isecs[isec].is_alive() {
                     continue;
                 }
                 desc |= section_desc(ctx, input as usize);
-                (ctx.isec_sect_idx(&ctx.isecs[isec]), sym_addr(ctx, sym_id))
+                (ctx.isecs[isec].sect_idx(ctx), sym_addr(ctx, sym_id))
             }
             None if msym.ty() == N_ABS => (0, sym.value),
             None => continue,

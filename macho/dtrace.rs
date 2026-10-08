@@ -173,7 +173,7 @@ fn collect_sites<E: Target>(ctx: &Context<E>) -> Vec<Site> {
         })
         .flat_map_iter(|i| {
             let file = ctx.isecs[i].file as usize;
-            ctx.isec_relocs(i).iter().filter_map(move |r| {
+            ctx.isecs[i].rels(&ctx.objs[file]).iter().filter_map(move |r| {
                 if !r.is_func_call::<E>() || r.size != 4 {
                     return None;
                 }

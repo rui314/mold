@@ -55,7 +55,8 @@ pub fn lay_out_objc_method_lists<E: Target>(
     // -move_to_ro_segment's takes code.)
     let mut groups: Vec<(Option<OutputSectionId>, Vec<u32>)> = Vec::new();
     for isec in order {
-        let hdr = *ctx.hdr_of(&ctx.isecs[isec as usize]);
+        let sec = &ctx.isecs[isec as usize];
+        let hdr = *sec.hdr(&ctx.objs[sec.file as usize]);
         let m = moves.get(&isec).filter(|m| m.option == MoveOption::Ro);
         let dest = m.and_then(|&m| record_section(ctx, &hdr, text, Some(m)));
         match groups.iter_mut().find(|(d, _)| *d == dest) {

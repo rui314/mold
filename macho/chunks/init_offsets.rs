@@ -49,7 +49,9 @@ pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     for (i, &func) in ctx.init_offsets.init_funcs.iter().enumerate() {
         let val = match func {
-            InitFunc::Local(isec, off) => ctx.isec_addr(isec) + off - ctx.mach_header.hdr.addr,
+            InitFunc::Local(isec, off) => {
+                ctx.isecs[isec].addr(ctx) + off - ctx.mach_header.hdr.addr
+            }
             InitFunc::Imported(id) => {
                 crate::error!(
                     "__init_offsets entry {i}: target '{}' does not have address",

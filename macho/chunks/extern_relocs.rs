@@ -60,7 +60,7 @@ pub fn build<E: Target>(ctx: &mut Context<E>) {
             continue;
         };
         let base = ctx.chunk_header(chunk).addr + isec.offset as u64;
-        for rel in crate::input_files::isec_relocs_of(&ctx.objs, isec) {
+        for rel in isec.rels(&ctx.objs[isec.file as usize]) {
             let Some(id) = ctx.reloc_target_sym(isec.file as usize, rel) else {
                 continue;
             };

@@ -213,7 +213,7 @@ impl<'a, E: Target> Places<'a, E> {
 
     /// Where a subsection lies, if it is laid out.
     fn isec(&self, id: usize) -> Option<Place> {
-        let isec = &self.ctx.isecs[self.ctx.resolve_isec(id)];
+        let isec = &self.ctx.isecs[self.ctx.isecs.resolve(id)];
         let chunk = isec.output_section()?;
         (isec.offset != u32::MAX).then(|| self.chunk(chunk, isec.offset as u64))
     }
@@ -332,7 +332,7 @@ impl<'a, E: Target> Places<'a, E> {
             return;
         };
         let hdr = ctx.chunk_header(chunk);
-        let rels = ctx.isec_relocs(id);
+        let rels = isec.rels(&ctx.objs[isec.file as usize]);
         let mut i = 0;
         while i < rels.len() {
             let r = &rels[i];

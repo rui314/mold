@@ -371,12 +371,6 @@ impl<E: Target> Context<E> {
         &mut self.output_sections[id.index()]
     }
 
-    /// The section ordinal (a MachSym's sect) of the chunk a subsection
-    /// is laid out in; 0 when it has none.
-    pub fn isec_sect_idx(&self, isec: &InputSection) -> u8 {
-        isec.output_section().map_or(0, |id| self.chunk_header(id).sect_idx)
-    }
-
     /// Returns the bind ordinal for a symbol imported from `dylib`:
     /// the dylib's load-command ordinal under two-level namespace (the
     /// image's own for one of its private re-exports; see
@@ -500,49 +494,6 @@ impl<E: Target> Context<E> {
         Some(id)
     }
 
-    /// The parent section header of a subsection, through its object's
-    /// section list - mold resolves a section's shdr through its
-    /// file the same way.
-    #[inline]
-    pub fn hdr_of(&self, isec: &InputSection) -> &crate::macho::MachSection {
-        &self.objs[isec.file as usize].sect_hdrs[isec.shndx as usize]
-    }
-
-    /// Follows literal-merge redirects to the surviving subsection.
-    pub fn resolve_isec(&self, mut id: usize) -> usize {
-        while self.isecs[id].replacement != crate::input_sections::NO_REPLACEMENT {
-            id = self.isecs[id].replacement as usize;
-        }
-        id
-    }
-
-    /// A subsection's relocations, sliced from its object's reloc arena
-    /// (subsections keep only a rel_offset/nrels range, sold-style).
-    pub fn isec_relocs(&self, id: usize) -> &[crate::input_sections::Reloc] {
-        let isec = &self.isecs[id];
-        let off = isec.rel_offset as usize;
-        &self.objs[isec.file as usize].relocs[off..off + isec.nrels as usize]
-    }
-
-    /// A subsection's output address: its output section's address plus
-    /// its offset there, as mold's isec.addr(ctx) derives it. A
-    /// literal-merge loser reports its surviving copy's address; an
-    /// unplaced subsection reports 0.
-    #[inline]
-    pub fn isec_addr(&self, id: usize) -> u64 {
-        let mut isec = &self.isecs[id];
-        if isec.replacement != crate::input_sections::NO_REPLACEMENT {
-            isec = &self.isecs[self.resolve_isec(id)];
-        }
-        let Some(chunk) = isec.output_section() else {
-            return 0;
-        };
-        if isec.offset == u32::MAX {
-            return 0;
-        }
-        self.chunk_header(chunk).addr + isec.offset as u64
-    }
-
     /// The library ordinal an interposable export binds with.
     pub fn export_bind_ordinal(&self) -> i32 {
         match self.args.flat_namespace {
@@ -578,8 +529,9 @@ impl<E: Target> Context<E> {
     /// Returns true if a relocation's target is thread-local data.
     pub fn reloc_target_is_tls(&self, obj: usize, rel: &Reloc) -> bool {
         self.reloc_target_isec(obj, rel).is_some_and(|isec| {
+            let isec = &self.isecs[isec];
             matches!(
-                self.hdr_of(&self.isecs[isec]).section_type(),
+                isec.hdr(&self.objs[isec.file as usize]).section_type(),
                 S_THREAD_LOCAL_REGULAR | S_THREAD_LOCAL_ZEROFILL
             )
         })
@@ -589,7 +541,7 @@ impl<E: Target> Context<E> {
     pub fn reloc_target_addr(&self, obj: usize, rel: &Reloc) -> u64 {
         match rel.target() {
             RelocTarget::Sym(idx) => self.symbols[self.objs[obj].symbols[idx as usize]].addr(self),
-            RelocTarget::Section(idx) => self.isec_addr(idx as usize),
+            RelocTarget::Section(idx) => self.isecs[idx as usize].addr(self),
         }
     }
 
@@ -616,7 +568,7 @@ impl<E: Target> Context<E> {
         let labels = (0..obj.mach_syms.len())
             .filter(|&i| msym_label_key(&obj.mach_syms[i]) == key)
             .map(|i| (i, &obj.mach_syms[i], self.symbols[obj.symbols[i]].name()));
-        let merged = has_merged_subsecs(self.hdr_of(isec));
+        let merged = has_merged_subsecs(isec.hdr(obj));
         if merged
             && labels
                 .clone()
@@ -638,7 +590,7 @@ impl<E: Target> Context<E> {
             return name.into();
         }
         let isec = &self.isecs[id];
-        let hdr = self.hdr_of(isec);
+        let hdr = isec.hdr(&self.objs[isec.file as usize]);
         let (seg, sect) = (crate::error::raw(hdr.segname()), crate::error::raw(hdr.sectname()));
         let off = isec.input_addr as u64 - hdr.addr;
         crate::error::render(format_args!("{seg},{sect}+0x{off:x}")).into()

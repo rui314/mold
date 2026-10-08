@@ -337,7 +337,7 @@ impl<'a, E: Target> Builder<'a, E> {
         if !isec.is_alive() {
             return;
         }
-        let hdr = ctx.hdr_of(isec);
+        let hdr = isec.hdr(obj);
         if isec.replacement != NO_REPLACEMENT {
             return self.add_folded_function(obj, id, debug);
         }
@@ -580,13 +580,13 @@ impl<'a, E: Target> Builder<'a, E> {
 
     /// The entry of a subsection, or of the one that replaced it.
     fn isec_target(&self, isec: u32) -> Option<To> {
-        self.isec_entry.get(&(self.ctx.resolve_isec(isec as usize) as u32)).copied()
+        self.isec_entry.get(&(self.ctx.isecs.resolve(isec as usize) as u32)).copied()
     }
 
     /// The entry holding offset `off` of a subsection (of the one that
     /// replaced it), and the offset there.
     fn isec_target_at(&self, isec: u32, off: i64) -> Option<(To, i64)> {
-        let isec = self.ctx.resolve_isec(isec as usize) as u32;
+        let isec = self.ctx.isecs.resolve(isec as usize) as u32;
         let to = *self.isec_entry.get(&isec)?;
         let Some(&size) = self.isec_split.get(&isec) else { return Some((to, off)) };
         let k = off.max(0) / size as i64;
@@ -613,7 +613,7 @@ impl<'a, E: Target> Builder<'a, E> {
             }
             RelocTarget::Section(slot) => (slot, r.addend),
         };
-        let stand_in = ctx.resolve_isec(slot as usize) as u32;
+        let stand_in = ctx.isecs.resolve(slot as usize) as u32;
         self.stand_ins.contains_key(&stand_in).then_some((stand_in, off))
     }
 
@@ -637,7 +637,7 @@ impl<'a, E: Target> Builder<'a, E> {
         let obj = isec.file as usize;
         let r = &rels[i];
         let arm64 = E::CPUTYPE == CPU_TYPE_ARM64;
-        let code = ctx.hdr_of(isec).flags & S_ATTR_SOME_INSTRUCTIONS != 0;
+        let code = isec.hdr(&ctx.objs[obj]).flags & S_ATTR_SOME_INSTRUCTIONS != 0;
         let insn = |r: &Reloc| {
             u32::from_le_bytes(isec.data()[r.offset as usize..][..4].try_into().unwrap())
         };
@@ -717,7 +717,9 @@ impl<'a, E: Target> Builder<'a, E> {
         };
         let slot = &ctx.isecs[isec as usize];
         let off = sym.value as i64 + addend;
-        if !is_input_got(ctx.hdr_of(slot)) || (0..slot.size as i64).contains(&off) {
+        if !is_input_got(slot.hdr(&ctx.objs[slot.file as usize]))
+            || (0..slot.size as i64).contains(&off)
+        {
             return None;
         }
         let addr = u64::try_from(slot.input_addr as i64 + off).ok()?;
@@ -733,8 +735,8 @@ impl<'a, E: Target> Builder<'a, E> {
         let ctx = self.ctx;
         let isec = &ctx.isecs[id];
         let obj = isec.file as usize;
-        let rels = ctx.isec_relocs(id);
-        let hdr = ctx.hdr_of(isec);
+        let rels = isec.rels(&ctx.objs[obj]);
+        let hdr = isec.hdr(&ctx.objs[obj]);
         let mut out = Vec::with_capacity(rels.len());
         let mut i = 0;
         while i < rels.len() {

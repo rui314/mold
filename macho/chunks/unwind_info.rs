@@ -97,8 +97,8 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
 
     // The table ends where the last function does, as in ld64, however
     // much of it its unwind record covers.
-    let last = records.last().unwrap();
-    let end = ctx.isec_addr(last.isec as usize) + ctx.isecs[last.isec as usize].size as u64;
+    let last = &ctx.isecs[records.last().unwrap().isec as usize];
+    let end = last.addr(ctx) + last.size as u64;
 
     merge_records::<E>(&mut records);
     let pages = split_pages(ctx, &records);
@@ -107,7 +107,7 @@ pub fn encode_unwind_info<E: Target>(ctx: &Context<E>) -> (Vec<u8>, Vec<SymbolId
 
 /// The address of a record's function.
 fn func_addr<E: Target>(ctx: &Context<E>, rec: &UnwindRecord) -> u64 {
-    ctx.isec_addr(rec.isec as usize) + rec.input_offset as u64
+    ctx.isecs[rec.isec as usize].addr(ctx) + rec.input_offset as u64
 }
 
 /// The records the table lists, sorted by address: those of the live
@@ -315,7 +315,7 @@ fn encode_page<E: Target>(ctx: &Context<E>, records: &[UnwindRecord], page: &Pag
     for rec in span {
         if let Some((isec, off)) = rec.lsda() {
             push32(&mut lsda, func_addr(ctx, rec).wrapping_sub(base) as u32);
-            push32(&mut lsda, (ctx.isec_addr(isec) + off as u64).wrapping_sub(base) as u32);
+            push32(&mut lsda, (ctx.isecs[isec].addr(ctx) + off as u64).wrapping_sub(base) as u32);
         }
     }
 

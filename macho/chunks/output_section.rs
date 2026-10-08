@@ -140,7 +140,8 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]
         let own = &mut slice[..data.len()];
         own.copy_from_slice(data);
         let base = osec.hdr.addr + isec.offset as u64;
-        E::apply_relocs(ctx, ctx.isec_relocs(m as usize), m as usize, base, own);
+        let rels = isec.rels(&ctx.objs[isec.file as usize]);
+        E::apply_relocs(ctx, rels, m as usize, base, own);
     });
 
     // The range-extension thunks, between the members.
@@ -175,7 +176,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]
             }
             let n = stubs.symbols.len();
             for (j, &name) in stubs.extra_selrefs.iter().enumerate() {
-                let val = ctx.isec_addr(name as usize);
+                let val = ctx.isecs[name as usize].addr(ctx);
                 tail[(n + j) * 8..(n + j) * 8 + 8].copy_from_slice(&val.to_le_bytes());
             }
         }

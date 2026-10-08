@@ -13,7 +13,7 @@ use crate::chunks::lazy_helpers::{LazyTarget, LazyUse};
 use crate::chunks::{delay_init, objc_stubs, stub_helper, stubs};
 use crate::context::Context;
 use crate::dtrace::SiteKind;
-use crate::input_files::{ObjectFile, isec_relocs_of};
+use crate::input_files::ObjectFile;
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
 use crate::symbol::{NEEDS_GOT, NEEDS_STUB};
@@ -581,7 +581,7 @@ fn hint_insns<'a>(
     }
 
     let hdr = ctx.chunk_header(isec.output_section()?);
-    let rels = ctx.isec_relocs(id);
+    let rels = isec.rels(&ctx.objs[isec.file as usize]);
     let mut insns = [HintInsn::default(); 3];
     for (insn, &addr) in insns.iter_mut().zip(addrs) {
         let off = addr - isec.input_addr as u64;
@@ -685,7 +685,7 @@ impl HelperInsn {
     fn ret_or_back(&self, ctx: &Context<Arm64>, k: usize, site: Option<(u32, u32)>) -> u32 {
         match site {
             None => 0xd65f_03c0,
-            Some((isec, off)) => self.b(k, ctx.isec_addr(isec as usize) + off as u64 + 4),
+            Some((isec, off)) => self.b(k, ctx.isecs[isec as usize].addr(ctx) + off as u64 + 4),
         }
     }
 }
@@ -863,7 +863,7 @@ impl Target for Arm64 {
         //   adrp x16, dyld_stub_binder@GOTPAGE
         //   ldr  x16, [x16, dyld_stub_binder@GOTPAGEOFF]
         //   br   x16
-        let private = ctx.isec_addr(ctx.stub_helper.dyld_private_isec as usize);
+        let private = ctx.isecs[ctx.stub_helper.dyld_private_isec as usize].addr(ctx);
         let binder = ctx.symbols[ctx.stub_helper.dyld_stub_binder.unwrap()].got_addr(ctx);
         write32(&mut buf[0..], 0x9000_0011 | page_offset(private, addr));
         write32(&mut buf[4..], 0x9100_0231 | ((private as u32 & 0xfff) << 10));
@@ -928,7 +928,7 @@ impl Target for Arm64 {
         let header = ctx.mach_header.hdr.addr;
         for h in &ctx.lazy_helpers.helpers {
             let insn = HelperInsn { base: addr + h.offset as u64 };
-            let flag = ctx.isec_addr(h.flag as usize);
+            let flag = ctx.isecs[h.flag as usize].addr(ctx);
             let slot = ctx.lazy_load_got.slot_addr(h.slot);
             // From instruction k: __dyld_lazy_load(&flag, mach header),
             // by which dyld finds the dylib's record.
@@ -1017,7 +1017,8 @@ impl Target for Arm64 {
         for (i, stub) in ctx.delay_init.stubs.iter().enumerate() {
             let off = delay_init::stub_offset::<Self>(i as u32) as usize;
             let insn = HelperInsn { base: addr + off as u64 };
-            let flag = ctx.isec_addr(ctx.delay_init.dlopens[stub.dlopen as usize].flag as usize);
+            let flag =
+                ctx.isecs[ctx.delay_init.dlopens[stub.dlopen as usize].flag as usize].addr(ctx);
             let helper = ctx.delay_init.dlopen_helper_addr(stub.dlopen as usize);
             let slot = ctx.got.slot_addr(stub.got as usize);
             let code = [
@@ -1049,7 +1050,7 @@ impl Target for Arm64 {
         for h in &delay.helpers {
             let DelayUse::Load { reg, site } = h.kind else { unreachable!() };
             let (insn, rd) = (HelperInsn { base: addr + h.offset as u64 }, reg as u32);
-            let flag = ctx.isec_addr(delay.dlopens[h.dlopen as usize].flag as usize);
+            let flag = ctx.isecs[delay.dlopens[h.dlopen as usize].flag as usize].addr(ctx);
             let helper = delay.dlopen_helper_addr(h.dlopen as usize);
             let slot = ctx.symbols[h.sym].got_addr(ctx);
             let code = [
@@ -1067,7 +1068,8 @@ impl Target for Arm64 {
         }
         for d in &delay.dlopens {
             let insn = HelperInsn { base: addr + d.offset as u64 };
-            let (name, flag) = (ctx.isec_addr(d.string as usize), ctx.isec_addr(d.flag as usize));
+            let (name, flag) =
+                (ctx.isecs[d.string as usize].addr(ctx), ctx.isecs[d.flag as usize].addr(ctx));
             let dlopen = ctx.symbols[delay.dlopen_sym.unwrap()].stub_addr(ctx);
             let mut code = DLOPEN_HELPER;
             code[16] = insn.adrp(16, 0, name);
@@ -1248,7 +1250,7 @@ impl Target for Arm64 {
 
     fn scan_relocations(ctx: &Context<Self>, isec: &InputSection) {
         let file = isec.file as usize;
-        for rel in isec_relocs_of(&ctx.objs, isec) {
+        for rel in isec.rels(&ctx.objs[file]) {
             let Some(id) = ctx.reloc_target_sym(file, rel) else { continue };
             let sym = &ctx.symbols[id];
             // A lazy dylib's symbols take no stub or GOT slot; the image

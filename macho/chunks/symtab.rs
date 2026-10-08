@@ -442,8 +442,9 @@ fn copy_object_stabs<E: Target>(ctx: &Context<E>, obj_idx: usize) -> StabPlan {
                 skip_size = msym.n_type == N_FUN;
                 continue;
             };
-            ent.value = ctx.isec_addr(isec) + off;
-            ent.sect = ctx.isec_sect_idx(&ctx.isecs[isec]);
+            let isec = &ctx.isecs[isec];
+            ent.value = isec.addr(ctx) + off;
+            ent.sect = isec.sect_idx(ctx);
         } else if msym.n_type == N_FUN && skip_size {
             skip_size = false;
             continue;
@@ -479,7 +480,7 @@ fn copy_global_stab<E: Target>(
             0
         } else {
             let (isec, _) = noted_subsec(ctx, obj, msym.sect, msym.value)?;
-            ctx.isec_sect_idx(&ctx.isecs[isec])
+            ctx.isecs[isec].sect_idx(ctx)
         };
         let ent = MachSym { n_type: N_STSYM, sect, ..ent };
         return Some(Stab { name, ent, value_of: Some(id), name_of: Some(id) });
@@ -506,7 +507,7 @@ fn noted_subsec<E: Target>(
     if is_coalesced_away(ctx, isec) {
         return None;
     }
-    let isec = ctx.resolve_isec(isec);
+    let isec = ctx.isecs.resolve(isec);
     ctx.isecs[isec].is_alive().then_some((isec, off))
 }
 
@@ -620,12 +621,12 @@ fn symbol_stabs<E: Target>(
     if msym.ty() == N_SECT && noted_subsec(ctx, obj, msym.sect, msym.value).is_none() {
         return None;
     }
-    let isec = &ctx.isecs[ctx.resolve_isec(isec)];
-    let hdr = ctx.hdr_of(isec);
+    let isec = &ctx.isecs[ctx.isecs.resolve(isec)];
+    let hdr = isec.hdr(&ctx.objs[isec.file as usize]);
     if !isec.is_alive() {
         return None;
     }
-    let sect = ctx.isec_sect_idx(isec);
+    let sect = isec.sect_idx(ctx);
     let is_text = hdr.segname_is(b"__TEXT")
         && hdr.flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0;
     Some(if is_text {
@@ -669,8 +670,8 @@ fn plan_local_symbols<E: Target>(ctx: &Context<E>, pexts: &[usize]) -> Vec<Named
         let id = Some(i as SymbolId);
         let (ent, id) = match (sym.file(), sym.input_section()) {
             (_, Some(isec)) => {
-                let isec = &ctx.isecs[ctx.resolve_isec(isec as usize)];
-                (MachSym { n_type: N_SECT | N_PEXT, ..local_msym(ctx.isec_sect_idx(isec), 0) }, id)
+                let isec = &ctx.isecs[ctx.isecs.resolve(isec as usize)];
+                (MachSym { n_type: N_SECT | N_PEXT, ..local_msym(isec.sect_idx(ctx), 0) }, id)
             }
             // A hidden __mh_execute_header (an export list that omits
             // it, or -no_exported_symbols) sits in the first section,
@@ -698,8 +699,7 @@ fn linker_locals<E: Target>(ctx: &Context<E>) -> Vec<NamedEntry> {
     for &(name, isec) in &ctx.extra_local_syms {
         let sec = &ctx.isecs[isec as usize];
         if sec.is_alive() && sec.output_section().is_some() {
-            let addr = ctx.isec_addr(isec as usize);
-            let ent = local_msym(ctx.isec_sect_idx(sec), addr);
+            let ent = local_msym(sec.sect_idx(ctx), sec.addr(ctx));
             ents.push((name, ent, None));
         }
     }
@@ -795,11 +795,11 @@ fn object_locals<E: Target>(ctx: &Context<E>, obj: &ObjectFile) -> Vec<NamedEntr
             continue;
         };
         // A folded function's name names the function it folded into.
-        let kept = ctx.resolve_isec(isec);
+        let kept = ctx.isecs.resolve(isec);
         if !matches!(sym.file(), Some(FileId::Obj(_))) || !ctx.isecs[kept].is_alive() {
             continue;
         }
-        let ent = local_msym(ctx.isec_sect_idx(&ctx.isecs[kept]), 0);
+        let ent = local_msym(ctx.isecs[kept].sect_idx(ctx), 0);
         let name = local_symbol_name(sym.name());
         out.push((name, ent, Some(sym_id)));
     }
@@ -991,7 +991,7 @@ fn classify_symbols<E: Target>(ctx: &Context<E>, indexed: &[bool]) -> Vec<Symbol
                 && sym.is_private_extern()
                 && matches!(sym.file(), Some(FileId::Obj(o)) if ctx.objs[o as usize].is_alive)
                 && match sym.input_section() {
-                    Some(isec) => ctx.isecs[ctx.resolve_isec(isec as usize)].is_alive(),
+                    Some(isec) => ctx.isecs[ctx.isecs.resolve(isec as usize)].is_alive(),
                     None => !ctx.indirect_aliases.iter().any(|&(a, _)| a == i as u32),
                 }
             {
@@ -1014,7 +1014,7 @@ fn global_entry<E: Target>(ctx: &Context<E>, i: SymbolId) -> NamedEntry {
     let sym = &ctx.symbols[i];
     let (n_type, sect, mut desc) = match (sym.file(), sym.input_section()) {
         (_, Some(isec)) => {
-            (N_SECT | N_EXT, ctx.isec_sect_idx(&ctx.isecs[ctx.resolve_isec(isec as usize)]), 0)
+            (N_SECT | N_EXT, ctx.isecs[ctx.isecs.resolve(isec as usize)].sect_idx(ctx), 0)
         }
         // A synthesized symbol with no section (__mh_execute_header)
         // sits in the first section: the mach header. Nothing slides

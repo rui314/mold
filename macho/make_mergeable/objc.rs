@@ -29,7 +29,7 @@ impl<E: Target> Builder<'_, E> {
             let mut entry = OutEntry::new(scope::LOCAL, kind::ANON, ctype::METHOD_LIST);
             entry.size = isec.size;
             entry.p2align = 3;
-            entry.content = self.isec_content(isec, ctx.hdr_of(isec));
+            entry.content = self.isec_content(isec, isec.hdr(&ctx.objs[isec.file as usize]));
             self.add_linker_isec_entry(list.isec, entry, None);
         }
         for blob in &ctx.data_blobs {
@@ -67,7 +67,8 @@ impl<E: Target> Builder<'_, E> {
     /// records, if it is a list).
     fn add_data_blob_entry(&mut self, isec: u32) {
         let ctx = self.ctx;
-        let hdr = ctx.hdr_of(&ctx.isecs[isec]);
+        let sec = &ctx.isecs[isec];
+        let hdr = sec.hdr(&ctx.objs[sec.file as usize]);
         let content_type = standard_content_type(hdr).unwrap_or(ctype::DATA);
         let mut entry = OutEntry::new(scope::LOCAL, kind::ANON, content_type);
         entry.no_dead_strip = hdr.flags & crate::macho::S_ATTR_NO_DEAD_STRIP != 0;

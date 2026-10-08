@@ -10,7 +10,6 @@ use crate::chunks::lazy_helpers::{LazyTarget, LazyUse};
 use crate::chunks::{delay_init, objc_stubs, stub_helper, stubs};
 use crate::context::Context;
 use crate::dtrace::SiteKind;
-use crate::input_files::isec_relocs_of;
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
 use crate::symbol::{NEEDS_GOT, NEEDS_STUB, SymbolId};
@@ -24,7 +23,7 @@ pub struct X86_64;
 /// cmpl $0, flag(%rip); jne 1f; push %rbp; mov %rsp, %rbp; call the
 /// dlopen helper; pop %rbp; 1:
 fn write_delay_check(ctx: &Context<X86_64>, ent: &mut [u8], base: u64, dlopen: u32) {
-    let flag = ctx.isec_addr(ctx.delay_init.dlopens[dlopen as usize].flag as usize);
+    let flag = ctx.isecs[ctx.delay_init.dlopens[dlopen as usize].flag as usize].addr(ctx);
     let helper = ctx.delay_init.dlopen_helper_addr(dlopen as usize);
     ent[..19].copy_from_slice(&[
         0x83, 0x3d, 0, 0, 0, 0, 0, 0x75, 0x0a, 0x55, 0x48, 0x89, 0xe5, 0xe8, 0, 0, 0, 0, 0x5d,
@@ -284,7 +283,7 @@ impl Target for X86_64 {
         //   push %r11
         //   jmp  *dyld_stub_binder@GOTPCREL(%rip)
         //   nop
-        let private = ctx.isec_addr(ctx.stub_helper.dyld_private_isec as usize);
+        let private = ctx.isecs[ctx.stub_helper.dyld_private_isec as usize].addr(ctx);
         let binder = ctx.symbols[ctx.stub_helper.dyld_stub_binder.unwrap()].got_addr(ctx);
         buf[0..3].copy_from_slice(&[0x4c, 0x8d, 0x1d]);
         write32(&mut buf[3..], private.wrapping_sub(addr + 7) as u32);
@@ -329,7 +328,7 @@ impl Target for X86_64 {
             let size = Self::lazy_helper_size(h.kind) as usize;
             let ent = &mut buf[h.offset as usize..h.offset as usize + size];
             let base = addr + h.offset as u64;
-            let flag = ctx.isec_addr(h.flag as usize);
+            let flag = ctx.isecs[h.flag as usize].addr(ctx);
             let slot = ctx.lazy_load_got.slot_addr(h.slot);
             // The call of __dyld_lazy_load(&flag, mach header), by which
             // dyld finds the dylib's record, with the argument registers
@@ -431,7 +430,8 @@ impl Target for X86_64 {
             let ent = &mut buf[d.offset as usize..d.offset as usize + size];
             let base = addr + d.offset as u64;
             ent.copy_from_slice(&DLOPEN_HELPER);
-            let (name, flag) = (ctx.isec_addr(d.string as usize), ctx.isec_addr(d.flag as usize));
+            let (name, flag) =
+                (ctx.isecs[d.string as usize].addr(ctx), ctx.isecs[d.flag as usize].addr(ctx));
             write32(&mut ent[68..], name.wrapping_sub(base + 72) as u32);
             write32(&mut ent[75..], dlopen.wrapping_sub(base + 79) as u32);
             write32(&mut ent[86..], flag.wrapping_sub(base + 90) as u32);
@@ -568,7 +568,7 @@ impl Target for X86_64 {
 
     fn scan_relocations(ctx: &Context<Self>, isec: &InputSection) {
         let file = isec.file as usize;
-        for rel in isec_relocs_of(&ctx.objs, isec) {
+        for rel in isec.rels(&ctx.objs[file]) {
             let Some(id) = ctx.reloc_target_sym(file, rel) else { continue };
             let sym = &ctx.symbols[id];
             // A lazy dylib's symbols take no stub or GOT slot; the image

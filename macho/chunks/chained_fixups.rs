@@ -535,7 +535,7 @@ fn check_pointer_alignment<E: Target>(
         crate::warn!("disabling chained fixups because of unaligned pointers");
     }
     for (id, addr) in unaligned {
-        let place = ctx.subsec_ref(id as usize, (addr - ctx.isec_addr(id as usize)) as u32);
+        let place = ctx.subsec_ref(id as usize, (addr - ctx.isecs[id as usize].addr(ctx)) as u32);
         let place = crate::error::raw(&place);
         match ctx.args.unaligned_pointers {
             Treatment::Error => {

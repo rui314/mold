@@ -305,7 +305,7 @@ fn folded_subsec_names<E: Target>(
 /// Whether a subsection is a function of __TEXT,__text (ld64 folds no
 /// other section) in the output.
 fn is_text_function<E: Target>(ctx: &Context<E>, isec: &InputSection) -> bool {
-    let hdr = ctx.hdr_of(isec);
+    let hdr = isec.hdr(&ctx.objs[isec.file as usize]);
     isec.is_emitted() && hdr.segname_is(b"__TEXT") && hdr.sectname_is(b"__text")
 }
 
@@ -383,7 +383,7 @@ fn edge_of<E: Target>(
             let sym_id = ctx.objs[obj].symbols[idx as usize];
             let sym = &ctx.symbols[sym_id];
             if let (Some(FileId::Obj(_)), Some(isec)) = (sym.file(), sym.input_section()) {
-                let isec = ctx.resolve_isec(isec as usize);
+                let isec = ctx.isecs.resolve(isec as usize);
                 if cand_index[isec] != usize::MAX {
                     return (Edge::Candidate(cand_index[isec]), rel.addend + sym.value as i64);
                 }
@@ -392,7 +392,7 @@ fn edge_of<E: Target>(
             (Edge::Sym(sym_id as usize), rel.addend)
         }
         RelocTarget::Section(isec) => {
-            let isec = ctx.resolve_isec(isec as usize);
+            let isec = ctx.isecs.resolve(isec as usize);
             if cand_index[isec] != usize::MAX {
                 return (Edge::Candidate(cand_index[isec]), rel.addend);
             }
@@ -417,7 +417,7 @@ fn compute_digest<E: Target>(ctx: &Context<E>, cand_index: &[usize], id: usize) 
     h.update(&isec.size.to_ne_bytes());
     h.update(&isec.data().len().to_ne_bytes());
     h.update(isec.data());
-    for rel in ctx.isec_relocs(id) {
+    for rel in isec.rels(&ctx.objs[isec.file as usize]) {
         h.update(&rel.offset.to_ne_bytes());
         h.update(&rel.ty.to_ne_bytes());
         h.update(&[rel.size, rel.is_pcrel as u8, rel.is_subtracted as u8]);
@@ -457,7 +457,7 @@ fn compute_digest<E: Target>(ctx: &Context<E>, cand_index: &[usize], id: usize) 
         h.update(&personality.map_or(u64::MAX, |p| p as u64).to_ne_bytes());
         let (lsda, off) = rec
             .function_lsda(ctx)
-            .map_or((usize::MAX, 0), |(lsda, off)| (ctx.resolve_isec(lsda), off));
+            .map_or((usize::MAX, 0), |(lsda, off)| (ctx.isecs.resolve(lsda), off));
         h.update(&lsda.to_ne_bytes());
         h.update(&off.to_ne_bytes());
         if let Some(fde) = rec.fde() {
@@ -506,7 +506,7 @@ fn for_each_edge<E: Target>(
     mut f: impl FnMut(u32),
 ) {
     let obj = ctx.isecs[id].file as usize;
-    for rel in ctx.isec_relocs(id) {
+    for rel in ctx.isecs[id].rels(&ctx.objs[obj]) {
         if let Edge::Candidate(c) = edge_of(ctx, cand_index, obj, rel).0 {
             f(c as u32);
         }
@@ -608,7 +608,7 @@ fn verify_leaders<E: Target>(
     };
     let equal = |a: usize, b: usize| -> bool {
         let (x, y) = (&ctx.isecs[a], &ctx.isecs[b]);
-        let (xr, yr) = (ctx.isec_relocs(a), ctx.isec_relocs(b));
+        let (xr, yr) = (x.rels(&ctx.objs[x.file as usize]), y.rels(&ctx.objs[y.file as usize]));
         x.data() == y.data()
             && xr.len() == yr.len()
             && xr.iter().zip(yr).all(|(r, s)| {

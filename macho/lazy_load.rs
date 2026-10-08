@@ -90,7 +90,7 @@ pub(crate) fn import_uses<E: Target>(
         .filter(|&i| ctx.isecs[i].is_emitted())
         .flat_map_iter(|i| {
             let (file, data) = (ctx.isecs[i].file as usize, ctx.isecs[i].data());
-            ctx.isec_relocs(i).iter().filter_map(move |r| {
+            ctx.isecs[i].rels(&ctx.objs[file]).iter().filter_map(move |r| {
                 let id = ctx.reloc_target_sym(file, r)?;
                 is_import(id).then(|| (i as u32, r.offset, id, E::lazy_ref(r, data)))
             })
@@ -106,8 +106,11 @@ fn lazy_uses<E: Target>(ctx: &Context<E>) -> Vec<LazyUseSite> {
         if how == LazyRef::Unsupported {
             let sym = &ctx.symbols[id];
             let sec = &ctx.isecs[isec as usize];
-            let split = ctx.objs[sec.file as usize].subsections_via_symbols;
-            let subsec = if crate::input_files::is_record_list(ctx.hdr_of(sec), split) {
+            let file = &ctx.objs[sec.file as usize];
+            let subsec = if crate::input_files::is_record_list(
+                sec.hdr(file),
+                file.subsections_via_symbols,
+            ) {
                 b"anon"[..].into()
             } else {
                 ctx.subsec_name(isec as usize)

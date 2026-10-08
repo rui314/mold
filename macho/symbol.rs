@@ -368,7 +368,8 @@ impl Symbol {
     pub fn is_tlv<E: Target>(&self, ctx: &Context<E>) -> bool {
         match self.file() {
             Some(FileId::Obj(_)) => self.input_section().is_some_and(|isec| {
-                ctx.hdr_of(&ctx.isecs[isec as usize]).section_type()
+                let isec = &ctx.isecs[isec as usize];
+                isec.hdr(&ctx.objs[isec.file as usize]).section_type()
                     == crate::macho::S_THREAD_LOCAL_VARIABLES
             }),
             Some(FileId::Dylib(d)) => {
@@ -579,7 +580,7 @@ impl Symbol {
             }
             Some(FileId::Obj(_)) => {
                 if let Some(isec) = self.input_section().map(|i| i as usize) {
-                    ctx.isec_addr(isec) + self.value
+                    ctx.isecs[isec].addr(ctx) + self.value
                 } else if let Some(idx) = self.objc_stub_idx(&ctx.symbols) {
                     ctx.objc_stubs.hdr.addr + crate::chunks::objc_stubs::entry_offset(ctx, idx)
                 } else {

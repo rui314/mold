@@ -82,7 +82,7 @@ impl ObjcRef {
     /// method list resolves to, once the output is laid out.
     pub fn addr<E: Target>(self, ctx: &Context<E>) -> u64 {
         match self {
-            ObjcRef::Isec(isec, off) => ctx.isec_addr(isec as usize) + off,
+            ObjcRef::Isec(isec, off) => ctx.isecs[isec as usize].addr(ctx) + off,
             ObjcRef::Sym(id, addend) => (ctx.symbols[id].addr(ctx) as i64 + addend) as u64,
             ObjcRef::TailSelref(n) => ctx.objc_stubs.selref_addr(ctx, n),
             ObjcRef::Null => 0,
@@ -193,7 +193,7 @@ fn objc_pointer_reloc<E: Target>(ctx: &Context<E>, isec: u32, off: u64) -> Optio
     if ctx.is_internal(sec.file as usize) {
         return None;
     }
-    let rels = ctx.isec_relocs(isec as usize);
+    let rels = sec.rels(&ctx.objs[sec.file as usize]);
     let start = rels.partition_point(|r| (r.offset as u64) < off);
     let k = rels[start..]
         .iter()
@@ -228,7 +228,7 @@ fn objc_ref_location<E: Target>(ctx: &Context<E>, r: ObjcRef) -> Option<(u32, u6
         }
         _ => return None,
     };
-    let isec = ctx.resolve_isec(isec as usize) as u32;
+    let isec = ctx.isecs.resolve(isec as usize) as u32;
     if !ctx.isecs[isec as usize].is_alive() {
         return None;
     }
@@ -364,13 +364,13 @@ enum RefKey {
 /// What relocation `rel` of object `obj` refers to (see RefTarget).
 fn ref_target<E: Target>(ctx: &Context<E>, obj: usize, rel: &Reloc) -> RefTarget {
     match rel.target() {
-        RelocTarget::Section(t) => RefTarget::At(ctx.resolve_isec(t as usize), rel.addend),
+        RelocTarget::Section(t) => RefTarget::At(ctx.isecs.resolve(t as usize), rel.addend),
         RelocTarget::Sym(idx) => {
             let sym_id = ctx.objs[obj].symbols[idx as usize];
             let sym = &ctx.symbols[sym_id];
             match sym.input_section() {
                 Some(isec) => {
-                    RefTarget::At(ctx.resolve_isec(isec as usize), sym.value as i64 + rel.addend)
+                    RefTarget::At(ctx.isecs.resolve(isec as usize), sym.value as i64 + rel.addend)
                 }
                 None => RefTarget::Sym(sym_id, rel.addend),
             }
@@ -385,12 +385,12 @@ fn ref_key<E: Target>(ctx: &Context<E>, i: usize) -> Option<RefKey> {
     if !isec.is_emitted() || ctx.is_internal(isec.file as usize) {
         return None;
     }
-    let h = ctx.hdr_of(isec);
+    let obj = isec.file as usize;
+    let h = isec.hdr(&ctx.objs[obj]);
     if h.segname() != b"__DATA" {
         return None;
     }
-    let obj = isec.file as usize;
-    let rels = ctx.isec_relocs(i);
+    let rels = isec.rels(&ctx.objs[obj]);
     let plain_ptr = |rel: &Reloc| {
         rel.ty == E::RELOC_UNSIGNED && rel.size == 8 && !rel.is_pcrel && !rel.is_subtracted
     };
@@ -643,7 +643,8 @@ fn folds_objc_classrefs<E: Target>(ctx: &Context<E>) -> bool {
 /// plain pointer to: 8 bytes an 8-byte absolute relocation of the
 /// symbol fills, with no addend.
 fn pointer_target<E: Target>(ctx: &Context<E>, i: usize) -> Option<u32> {
-    let [rel] = ctx.isec_relocs(i) else { return None };
+    let isec = &ctx.isecs[i];
+    let [rel] = isec.rels(&ctx.objs[isec.file as usize]) else { return None };
     let RelocTarget::Sym(idx) = rel.target() else { return None };
     let plain = rel.ty == E::RELOC_UNSIGNED
         && ctx.isecs[i].size == 8
@@ -669,7 +670,7 @@ fn classref_slots<E: Target>(
         .iter()
         .filter_map(|&i| {
             let isec = &ctx.isecs[i];
-            let h = ctx.hdr_of(isec);
+            let h = isec.hdr(obj);
             if !isec.is_emitted() || h.segname() != b"__DATA" || h.sectname() != b"__objc_classrefs"
             {
                 return None;
@@ -706,7 +707,7 @@ fn classref_uses<E: Target>(
         if !isec.is_alive() || slots.contains_key(&i) {
             continue;
         }
-        for (k, rel) in ctx.isec_relocs(i as usize).iter().enumerate() {
+        for (k, rel) in isec.rels(obj).iter().enumerate() {
             let slot = match rel.target() {
                 RelocTarget::Section(t) => t,
                 RelocTarget::Sym(idx) => {
@@ -896,7 +897,7 @@ impl MethodListFinder {
         if !isec.is_alive() || ctx.is_internal(isec.file as usize) {
             return;
         }
-        let h = ctx.hdr_of(isec);
+        let h = isec.hdr(&ctx.objs[isec.file as usize]);
         if !h.segname().starts_with(b"__DATA") {
             return;
         }
@@ -982,11 +983,13 @@ impl SelrefFinder {
         let refs: Vec<(u32, u32)> = (subsecs_of_sections(ctx, &[b"__objc_selrefs"]).par_iter())
             .filter_map(|&(i, _)| {
                 let isec = &ctx.isecs[i as usize];
-                if isec.size != 8 || ctx.hdr_of(isec).section_type() != S_LITERAL_POINTERS {
+                if isec.size != 8
+                    || isec.hdr(&ctx.objs[isec.file as usize]).section_type() != S_LITERAL_POINTERS
+                {
                     return None;
                 }
                 match objc_ref_location(ctx, objc_pointer_at(ctx, i, 0)?) {
-                    Some((name, 0)) => Some((name, ctx.resolve_isec(i as usize) as u32)),
+                    Some((name, 0)) => Some((name, ctx.isecs.resolve(i as usize) as u32)),
                     _ => None,
                 }
             })
@@ -1650,7 +1653,8 @@ fn rewrite_ro<E: Target>(
     // The new record goes where the old one was: Swift puts a class's
     // ro data in __objc_data (ld64's output keeps __DATA__TtC...
     // there), clang's in __objc_const.
-    let sect: &[u8] = match ctx.hdr_of(&ctx.isecs[ro.0 as usize]).sectname() {
+    let isec = &ctx.isecs[ro.0 as usize];
+    let sect: &[u8] = match isec.hdr(&ctx.objs[isec.file as usize]).sectname() {
         b"__objc_data" => b"__objc_data",
         _ => b"__objc_const",
     };

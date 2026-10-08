@@ -410,17 +410,6 @@ pub fn subsec_name_rank(msym: &MachSym, name: &[u8]) -> u8 {
     }
 }
 
-/// A subsection's relocations, sliced from its object's reloc arena.
-/// A free function (not a Context method) so callers already holding a
-/// borrow of `ctx.isecs` can pass `&ctx.objs` alongside an `&isec`.
-pub fn isec_relocs_of<'a>(
-    objs: &'a [ObjectFile],
-    isec: &InputSection,
-) -> &'a [crate::input_sections::Reloc] {
-    let off = isec.rel_offset as usize;
-    &objs[isec.file as usize].relocs[off..off + isec.nrels as usize]
-}
-
 /// An object's lookups of its subsections by address, as sold's
 /// ObjectFile::find_subsection, for ObjectFile and StagedObject alike:
 /// `isecs` is where the object's `subsecs` point, the link's
@@ -1904,7 +1893,7 @@ pub fn remove_dead_unwind_info<E: Target>(ctx: &mut Context<E>) {
 /// symbol's origin - so a symbol's address never follows a replacement
 /// chain. The copies are identical, so the symbol's offset is
 /// unchanged. (Section-relative relocations still resolve through the
-/// chain in isec_addr.)
+/// chain in InputSection::addr.)
 pub(crate) fn redirect_symbols_to_replacements<E: Target>(ctx: &mut Context<E>) {
     let isecs = &ctx.isecs;
     ctx.symbols.syms.par_iter_mut().for_each(|sym| {

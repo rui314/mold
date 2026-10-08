@@ -37,7 +37,7 @@ pub(crate) fn pointer_relocs<'a, E: Target>(
     isec: &'a InputSection,
 ) -> impl Iterator<Item = (u64, &'a Reloc)> + 'a {
     let base = ctx.chunk_header(isec.output_section().unwrap()).addr + isec.offset as u64;
-    let rels = crate::input_files::isec_relocs_of(&ctx.objs, isec).iter();
+    let rels = isec.rels(&ctx.objs[isec.file as usize]).iter();
     rels.filter(|rel| E::is_absrel(rel)).map(move |rel| (base + rel.offset as u64, rel))
 }
 
@@ -196,7 +196,7 @@ fn rebase_ops<E: Target>(ctx: &Context<E>, locs: &[u64]) -> Vec<Op> {
 fn data_blob_fields<E: Target>(ctx: &Context<E>) -> Vec<(u64, ObjcRef)> {
     let mut out = Vec::new();
     for b in &ctx.data_blobs {
-        let mut at = ctx.isec_addr(b.isec as usize);
+        let mut at = ctx.isecs[b.isec as usize].addr(ctx);
         for f in &b.fields {
             match f {
                 DataField::Bytes(bytes) => at += bytes.len() as u64,

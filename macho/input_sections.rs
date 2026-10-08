@@ -1,6 +1,10 @@
 //! Input sections.
 
+use crate::arch::Target;
 use crate::chunks::ChunkId;
+use crate::context::Context;
+use crate::input_files::ObjectFile;
+use crate::macho::MachSection;
 
 /// A subsection index, u32 as in mold.
 pub type InputSectionId = u32;
@@ -48,6 +52,16 @@ impl std::ops::IndexMut<usize> for InputSections {
     #[inline]
     fn index_mut(&mut self, id: usize) -> &mut InputSection {
         &mut self.0[id]
+    }
+}
+
+impl InputSections {
+    /// Follows literal-merge redirects to the surviving subsection.
+    pub fn resolve(&self, mut id: usize) -> usize {
+        while self[id].replacement != NO_REPLACEMENT {
+            id = self[id].replacement as usize;
+        }
+        id
     }
 }
 
@@ -147,7 +161,7 @@ pub struct InputSection {
     pub file: u32,
     /// Index of the parent section's header in the owning object's
     /// section list (the internal object's, for a synthesized one):
-    /// mold's shndx. Resolved through Context::hdr_of; a u32 index
+    /// mold's shndx. Resolved through `hdr`; a u32 index
     /// instead of an 8-byte header pointer. `p2align` is held inline
     /// because it is the one header field the linker raises per
     /// subsection.
@@ -400,5 +414,47 @@ impl InputSection {
             // `size` valid bytes in the leaked/mmap'd input.
             unsafe { std::slice::from_raw_parts(self.contents as *const u8, self.size as usize) }
         }
+    }
+
+    /// The parent section header, through the owning object's section
+    /// list - mold resolves a section's shdr through its file the same
+    /// way.
+    #[inline]
+    pub fn hdr<'a>(&self, file: &'a ObjectFile) -> &'a MachSection {
+        &file.sect_hdrs[self.shndx as usize]
+    }
+
+    /// This subsection's output address: its output section's address
+    /// plus its offset there, as mold's isec.addr(ctx) derives it. A
+    /// literal-merge loser reports its surviving copy's address; an
+    /// unplaced subsection reports 0.
+    #[inline]
+    pub fn addr<E: Target>(&self, ctx: &Context<E>) -> u64 {
+        let mut isec = self;
+        if isec.replacement != NO_REPLACEMENT {
+            isec = &ctx.isecs[ctx.isecs.resolve(isec.replacement as usize)];
+        }
+        let Some(chunk) = isec.output_section() else {
+            return 0;
+        };
+        if isec.offset == u32::MAX {
+            return 0;
+        }
+        ctx.chunk_header(chunk).addr + isec.offset as u64
+    }
+
+    /// The section ordinal (a MachSym's sect) of the chunk this
+    /// subsection is laid out in; 0 when it has none.
+    pub fn sect_idx<E: Target>(&self, ctx: &Context<E>) -> u8 {
+        self.output_section().map_or(0, |id| ctx.chunk_header(id).sect_idx)
+    }
+
+    /// This subsection's relocations, sliced from its object's reloc
+    /// arena (subsections keep only a rel_offset/nrels range,
+    /// sold-style).
+    #[inline]
+    pub fn rels<'a>(&self, file: &'a ObjectFile) -> &'a [Reloc] {
+        let off = self.rel_offset as usize;
+        &file.relocs[off..off + self.nrels as usize]
     }
 }

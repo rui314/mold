@@ -63,7 +63,7 @@ pub fn build<E: Target>(ctx: &Context<E>) -> Vec<u8> {
         if sym.value == 0 || !matches!(sym.file(), Some(FileId::Obj(_))) {
             return None;
         }
-        let isec = &ctx.isecs[ctx.resolve_isec(sym.input_section()? as usize)];
+        let isec = &ctx.isecs[ctx.isecs.resolve(sym.input_section()? as usize)];
         let osec = ctx.chunk_header(isec.output_section()?);
         (isec.is_alive() && is_code(osec) && sym.value < isec.size as u64)
             .then(|| osec.addr + isec.offset as u64 + sym.value)
