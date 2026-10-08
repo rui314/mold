@@ -20,7 +20,6 @@ use crate::input_files::{FileId, ObjcImageInfo, SymbolSlots};
 use crate::input_sections::{InputSection, NO_REPLACEMENT, RelocTarget};
 use crate::macho::*;
 use crate::mapped_file::MappedFile;
-use crate::objc::{DataBlob, DataField};
 use crate::output_sections::header_segment;
 use crate::symbol::{NEEDS_GOT, NEEDS_STUB, Symbol, SymbolId};
 use crate::util::{align_to, path_bytes, split_once};
@@ -3801,55 +3800,6 @@ pub fn add_entry_stub<E: Target>(ctx: &mut Context<E>) {
     {
         ctx.symbols[id].add_flags(NEEDS_STUB);
     }
-}
-
-/// Synthesizes a zero word of `size` bytes, aligned to its size, in
-/// __DATA,__data (after the inputs'), and returns its subsection.
-pub(crate) fn add_data_word<E: Target>(ctx: &mut Context<E>, size: u32) -> u32 {
-    let p2align = size.trailing_zeros() as u8;
-    let (file, shndx) = ctx.add_synthetic_section(MachSection {
-        sectname: bytes_to_name(b"__data"),
-        segname: bytes_to_name(b"__DATA"),
-        p2align: p2align as u32,
-        flags: 0,
-        ..Default::default()
-    });
-    ctx.isecs.push(InputSection {
-        flags: InputSection::flags_placed(),
-        ..InputSection::new(file, shndx, p2align, size, &[])
-    });
-    let isec = (ctx.isecs.len() - 1) as u32;
-    let fields = vec![DataField::Bytes(vec![0; size as usize])];
-    ctx.data_blobs.push(DataBlob { sect: b"__data", isec, fields });
-    isec
-}
-
-/// Binds a symbol the linker's own code calls (dyld_stub_binder,
-/// __dyld_lazy_load), unless something in the link defines it, to the
-/// first loaded dylib that exports it - or, if none does and the image
-/// may look the symbol up dynamically (-undefined dynamic_lookup, -U),
-/// to whatever image dyld finds it in. None if neither.
-pub(crate) fn bind_linker_import<E: Target>(
-    ctx: &mut Context<E>,
-    name: &'static [u8],
-) -> Option<SymbolId> {
-    let args = &ctx.args;
-    let looked_up =
-        args.undefined_dynamic_lookup || args.allowed_undefined.iter().any(|n| n == name);
-    let dylib = match ctx.dylibs.iter().position(|d| d.exports.contains(name)) {
-        Some(i) => i as u32,
-        None if looked_up => u32::MAX,
-        None => return None,
-    };
-    let id = ctx.symbols.intern(name);
-    let sym = &mut ctx.symbols[id];
-    if !sym.is_defined() {
-        sym.set_file(FileId::Dylib(dylib));
-        sym.set_is_imported(true);
-        sym.set_is_extern(true);
-        sym.set_input_section(None);
-    }
-    Some(id)
 }
 
 /// Finds the helper legacy LINKEDIT's stub helper entries jump to. It

@@ -96,7 +96,7 @@ fn create_dlopen_helpers<E: Target>(
         let leaf = install_name.rsplit(|&c| c == b'/').next().unwrap_or(&install_name);
         let name = leak_bytes([b"_dlopenHelper$", leaf].concat());
         let flag_name = leak_bytes([b"_dlopenHelperFlag$", leaf].concat());
-        let flag = crate::passes::add_data_word(ctx, 4);
+        let flag = ctx.add_data_word(4);
         ctx.extra_local_syms.push((flag_name, flag));
         let string = add_cstring(ctx, &install_name);
         dlopen_of.insert(install_name.clone(), i as u32);

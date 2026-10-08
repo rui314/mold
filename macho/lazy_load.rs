@@ -14,7 +14,6 @@ use crate::chunks::lazy_load_info::{LazyDylib, record_size};
 use crate::context::Context;
 use crate::error::raw;
 use crate::input_files::FileId;
-use crate::passes::{add_data_word, bind_linker_import};
 use crate::symbol::SymbolId;
 use crate::util::leak_bytes;
 
@@ -29,7 +28,7 @@ pub fn bind_dyld_lazy_load<E: Target>(ctx: &mut Context<E>) {
     let uses_lazy = (0..ctx.symbols.syms.len() as SymbolId)
         .into_par_iter()
         .any(|id| ctx_ref.symbols[id].is_used() && ctx_ref.is_lazy_import(id));
-    if uses_lazy && let Some(id) = bind_linker_import(ctx, b"__dyld_lazy_load") {
+    if uses_lazy && let Some(id) = ctx.bind_linker_import(b"__dyld_lazy_load") {
         ctx.symbols[id].set_is_used(true);
     }
 }
@@ -166,7 +165,7 @@ fn create_lazy_load_slots<E: Target>(
     let mut slots = Vec::new();
     let mut offset = 0;
     for d in used {
-        let flag = add_data_word(ctx, 4);
+        let flag = ctx.add_data_word(4);
         let install_name = &ctx.dylibs[d].install_name;
         let leaf = install_name.rsplit(|&c| c == b'/').next().unwrap_or(install_name);
         let name = leak_bytes([b"_lazyLoadFlag$", leaf].concat());

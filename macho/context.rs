@@ -42,7 +42,8 @@ use crate::cmdline::Args;
 use crate::error;
 use crate::input_files::{DylibFile, FileId, ObjectFile};
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
-use crate::macho::{S_THREAD_LOCAL_REGULAR, S_THREAD_LOCAL_ZEROFILL};
+use crate::macho::{MachSection, S_THREAD_LOCAL_REGULAR, S_THREAD_LOCAL_ZEROFILL, bytes_to_name};
+use crate::objc::{DataBlob, DataField};
 use crate::symbol::{SymbolId, SymbolTable};
 use crate::util::perf::Timers;
 
@@ -499,6 +500,53 @@ impl<E: Target> Context<E> {
         let hdrs = self.objs[file].sect_hdrs.to_mut();
         hdrs.push(hdr);
         (file as u32, (hdrs.len() - 1) as u32)
+    }
+
+    /// Synthesizes a zero word of `size` bytes, aligned to its size, in
+    /// __DATA,__data (after the inputs'), and returns its subsection.
+    pub fn add_data_word(&mut self, size: u32) -> u32 {
+        let p2align = size.trailing_zeros() as u8;
+        let (file, shndx) = self.add_synthetic_section(MachSection {
+            sectname: bytes_to_name(b"__data"),
+            segname: bytes_to_name(b"__DATA"),
+            p2align: p2align as u32,
+            flags: 0,
+            ..Default::default()
+        });
+        self.isecs.push(InputSection {
+            flags: InputSection::flags_placed(),
+            ..InputSection::new(file, shndx, p2align, size, &[])
+        });
+        let isec = (self.isecs.len() - 1) as u32;
+        let fields = vec![DataField::Bytes(vec![0; size as usize])];
+        self.data_blobs.push(DataBlob { sect: b"__data", isec, fields });
+        isec
+    }
+
+    /// Binds a symbol the linker's own code calls (dyld_stub_binder,
+    /// __dyld_lazy_load), unless something in the link defines it, to
+    /// the first loaded dylib that exports it - or, if none does and
+    /// the image may look the symbol up dynamically (-undefined
+    /// dynamic_lookup, -U), to whatever image dyld finds it in. None if
+    /// neither.
+    pub fn bind_linker_import(&mut self, name: &'static [u8]) -> Option<SymbolId> {
+        let args = &self.args;
+        let looked_up =
+            args.undefined_dynamic_lookup || args.allowed_undefined.iter().any(|n| n == name);
+        let dylib = match self.dylibs.iter().position(|d| d.exports.contains(name)) {
+            Some(i) => i as u32,
+            None if looked_up => u32::MAX,
+            None => return None,
+        };
+        let id = self.symbols.intern(name);
+        let sym = &mut self.symbols[id];
+        if !sym.is_defined() {
+            sym.set_file(FileId::Dylib(dylib));
+            sym.set_is_imported(true);
+            sym.set_is_extern(true);
+            sym.set_input_section(None);
+        }
+        Some(id)
     }
 
     /// The parent section header of a subsection, through its object's

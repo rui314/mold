@@ -54,13 +54,13 @@ pub fn ensure_stub_binder<E: Target>(ctx: &mut Context<E>) {
     if ctx.stub_helper.dyld_stub_binder.is_some() || ctx.args.legacy_linkedit {
         return;
     }
-    let Some(id) = crate::passes::bind_linker_import(ctx, b"dyld_stub_binder") else {
+    let Some(id) = ctx.bind_linker_import(b"dyld_stub_binder") else {
         crate::fatal!("lazy binding needs dyld_stub_binder, which no loaded dylib exports");
     };
     ctx.symbols[id].set_is_used(true);
     crate::chunks::got::add_got_symbol(ctx, id);
     ctx.stub_helper.dyld_stub_binder = Some(id);
-    let isec = crate::passes::add_data_word(ctx, 8);
+    let isec = ctx.add_data_word(8);
     ctx.stub_helper.dyld_private_isec = isec;
     ctx.extra_local_syms.push((b"__dyld_private", isec));
 }
