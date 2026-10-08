@@ -17,7 +17,7 @@ use crate::filetype::{
 use crate::input_sections::InputSection;
 use crate::macho::*;
 use crate::mapped_file::{MappedFile, unreadable_file};
-use crate::symbol::SymbolId;
+use crate::symbol::{Symbol, SymbolId};
 use crate::tapi;
 
 /// A file a symbol is owned by: an object or a dylib, by index in
@@ -622,6 +622,20 @@ impl DylibFile {
             moved_exports: hashbrown::HashMap::new(),
             name_source: NameSource::Own,
         }
+    }
+
+    /// True if a dylib's exports bound here moved to older libraries
+    /// ($ld$previous): ld-prime lists a library under the install names
+    /// bound to it, so one all of whose bound exports moved loses its
+    /// load command, named or not; libc++ does to libc++abi for macOS
+    /// 13 if only char8_t's type_info binds. (It drops a -needed_* or
+    /// -reexport_* library alike, not what the option asks for; those
+    /// stay.)
+    pub fn exports_moved_away<E: Target>(&self, ctx: &Context<E>) -> bool {
+        self.moved_exports.iter().any(|(&name, &target)| {
+            let file = ctx.symbols.get(name).and_then(|id| ctx.symbols[id].file());
+            file == Some(FileId::Dylib(target as u32))
+        })
     }
 }
 
@@ -4003,4 +4017,165 @@ fn add_dylib<E: Target>(ctx: &mut Context<E>, dylib: DylibFile) -> usize {
     }
     ctx.dylibs.push(dylib);
     ctx.dylibs.len() - 1
+}
+
+/// The symbol table's slots, for a parallel loop that writes each symbol
+/// from one thread at most. (mold's SymbolEditor locks each symbol
+/// instead, for loops in which files race to write one.)
+pub struct SymbolSlots<'a> {
+    ptr: *mut Symbol,
+    _marker: std::marker::PhantomData<&'a mut [Symbol]>,
+}
+
+unsafe impl Sync for SymbolSlots<'_> {}
+
+impl<'a> SymbolSlots<'a> {
+    pub fn new(syms: &'a mut [Symbol]) -> Self {
+        Self { ptr: syms.as_mut_ptr(), _marker: std::marker::PhantomData }
+    }
+
+    /// Symbol `id`.
+    ///
+    /// # Safety
+    ///
+    /// No other thread may access the symbol while the result lives.
+    #[allow(clippy::mut_from_ref)]
+    pub unsafe fn get(&self, id: SymbolId) -> &mut Symbol {
+        // SAFETY: the caller has the symbol to itself.
+        unsafe { &mut *self.ptr.add(id as usize) }
+    }
+}
+
+impl ObjectFile {
+    /// The rank of a definition: (class << 40) | (weak term << 32) |
+    /// priority, lower is better. The classes are mold's
+    /// (symbol_rank_from_fields):
+    ///
+    ///   0. a live file's strong definition
+    ///   1. a live file's weak definition
+    ///   2. a lazy archive member's or a dylib's strong definition
+    ///   3. a lazy archive member's or a dylib's weak definition
+    ///   4. a live file's tentative definition (a common symbol)
+    ///   5. a lazy archive member's tentative definition
+    ///
+    /// so a strong definition in an archive or a dylib beats a weak one
+    /// whatever their order, which only breaks ties, and a tentative
+    /// definition loses to every real one: a live file's loads the
+    /// member with a real definition (see passes::mark_live_objects),
+    /// but no member for that member's own tentative definition. A live
+    /// weak definition's rank carries the order in which ld-prime, like
+    /// ld64, prefers the copies of one (see weak_definition_rank); the
+    /// first copy wins only among equals. A lazy archive member from an
+    /// archive that an auto-link option named, one of
+    /// `autolink_priority` or later, comes after the libraries the
+    /// command line's dylibs re-export (see passes::dylib_ranks).
+    pub fn definition_rank(
+        &self,
+        isecs: &[InputSection],
+        i: usize,
+        autolink_priority: u32,
+    ) -> Option<u64> {
+        let msym = &self.mach_syms[i];
+        if msym.is_stab() || !msym.is_extern() {
+            return None;
+        }
+        let is_weak = msym.desc & N_WEAK_DEF != 0;
+        let class: u64 = match msym.ty() {
+            N_SECT | N_ABS if self.is_alive && !is_weak => 0,
+            N_SECT | N_ABS if self.is_alive => 1,
+            N_SECT | N_ABS if !is_weak => 2,
+            N_SECT | N_ABS => 3,
+            N_UNDF if msym.is_common() && self.is_alive => 4,
+            N_UNDF if msym.is_common() => 5,
+            _ => return None,
+        };
+        let mut weak_term = 0u64;
+        if class == 1
+            && msym.ty() == N_SECT
+            && let Some((isec, _)) = self.symbol_subsec(isecs, i)
+        {
+            weak_term = self.weak_definition_rank(&isecs[isec], msym);
+        }
+        let lazy = class == 2 || class == 3;
+        let phase = if lazy && self.priority >= autolink_priority { 2 } else { 0 };
+        Some((class << 40) | ((weak_term | phase) << 32) | self.priority as u64)
+    }
+
+    /// How ld-prime, like ld64, orders the copies of a weak definition,
+    /// lower first: a copy that can't be auto-hidden before one that
+    /// can (.weak_def_can_be_hidden, a global's N_WEAK_DEF |
+    /// N_WEAK_REF), then a global before a private extern (unless both
+    /// can be hidden), then the more aligned. A subsection's alignment
+    /// is its section's with the subsection's address as the modulus,
+    /// so a copy at 8 mod 16 is 8-aligned: a Swift metadata record
+    /// comes at 16 from one object and at 8 from another, and the first
+    /// copy wins only if equally aligned.
+    fn weak_definition_rank(&self, isec: &InputSection, msym: &MachSym) -> u64 {
+        let private = msym.n_type & N_PEXT != 0 || self.hidden;
+        let auto_hide = !private && msym.desc & N_WEAK_REF != 0;
+        let p2align = isec.p2align_at(msym.value) as u64;
+        ((auto_hide as u64) << 7) | ((private as u64) << 6) | (63 - p2align)
+    }
+
+    /// Makes `sym` what MachSym `i` of this object, object `obj_idx`,
+    /// the definition that won the race for it, defines. Returns false
+    /// for a symbol in a section that was discarded (debug info), which
+    /// resolves as if undefined.
+    pub fn claim_definition(
+        &self,
+        sym: &mut Symbol,
+        obj_idx: usize,
+        i: usize,
+        isecs: &[InputSection],
+    ) -> bool {
+        let msym = &self.mach_syms[i];
+        sym.set_is_extern(true);
+        sym.set_is_imported(false);
+        sym.set_is_common(false);
+        sym.set_is_weak_def(msym.desc & N_WEAK_DEF != 0);
+        sym.set_is_private_extern(msym.n_type & N_PEXT != 0 || self.hidden);
+        sym.set_no_dead_strip(msym.desc & (N_NO_DEAD_STRIP | REFERENCED_DYNAMICALLY) != 0);
+        sym.set_is_referenced_dynamically(
+            msym.ty() == N_SECT
+                && msym.desc & (REFERENCED_DYNAMICALLY | N_WEAK_DEF) == REFERENCED_DYNAMICALLY,
+        );
+        sym.set_is_alt_entry(msym.desc & N_ALT_ENTRY != 0);
+
+        let file = FileId::Obj(obj_idx as u32);
+        match msym.ty() {
+            N_ABS => {
+                sym.set_file(file);
+                sym.set_input_section(None);
+                sym.value = msym.value;
+            }
+            N_SECT => {
+                let Some((isec, off)) = self.symbol_subsec(isecs, i) else {
+                    sym.clear_file();
+                    return false;
+                };
+                sym.set_file(file);
+                sym.set_input_section(Some(isec as u32));
+                sym.value = off;
+            }
+            // A lazy member's tentative definition claims the symbol
+            // for the member, for the liveness walk to load it for a
+            // reference, but not for a live file's tentative definition
+            // (see passes::mark_live_objects).
+            N_UNDF if !self.is_alive => {
+                sym.set_file(file);
+                sym.set_input_section(None);
+                sym.set_is_common(true);
+                sym.value = 0;
+            }
+            // A live common symbol takes a tentative claim.
+            N_UNDF => {
+                sym.clear_file();
+                sym.set_is_common(true);
+                sym.value = msym.value;
+                sym.common_p2align = msym.common_p2align();
+            }
+            _ => unreachable!(),
+        }
+        true
+    }
 }

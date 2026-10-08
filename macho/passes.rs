@@ -16,7 +16,7 @@ use crate::error::RawPath;
 use crate::error::raw;
 use crate::fatal;
 use crate::input_files;
-use crate::input_files::{FileId, ObjcImageInfo};
+use crate::input_files::{FileId, ObjcImageInfo, SymbolSlots};
 use crate::input_sections::{InputSection, NO_REPLACEMENT, RelocTarget};
 use crate::macho::*;
 use crate::mapped_file::MappedFile;
@@ -41,8 +41,8 @@ pub fn create_internal_file<E: Target>(ctx: &mut Context<E>) {
 /// each archive member has been parsed already, and resolution ranks
 /// competing definitions (strong > weak > a lazy archive member's or a
 /// dylib's strong > their weak > common), breaking ties by input order
-/// (see definition_rank). A liveness walk then marks the archive
-/// members whose definitions are actually referenced (see
+/// (see ObjectFile::definition_rank). A liveness walk then marks the
+/// archive members whose definitions are actually referenced (see
 /// mark_live_objects), and the live objects' auto-link options load the
 /// libraries they name; objects among those, or a library that changes
 /// what an earlier one stands for, have resolution and the walk start
@@ -130,32 +130,6 @@ fn claim_locals<E: Target>(ctx: &mut Context<E>) {
             }
         }
     });
-}
-
-/// The symbol table's slots, for a parallel loop that writes each symbol
-/// from one thread at most.
-struct SymbolSlots<'a> {
-    ptr: *mut Symbol,
-    _marker: std::marker::PhantomData<&'a mut [Symbol]>,
-}
-
-unsafe impl Sync for SymbolSlots<'_> {}
-
-impl<'a> SymbolSlots<'a> {
-    fn new(syms: &'a mut [Symbol]) -> Self {
-        Self { ptr: syms.as_mut_ptr(), _marker: std::marker::PhantomData }
-    }
-
-    /// Symbol `id`.
-    ///
-    /// # Safety
-    ///
-    /// No other thread may access the symbol while the result lives.
-    #[allow(clippy::mut_from_ref)]
-    unsafe fn get(&self, id: SymbolId) -> &mut Symbol {
-        // SAFETY: the caller has the symbol to itself.
-        unsafe { &mut *self.ptr.add(id as usize) }
-    }
 }
 
 /// Resets the resolution of every symbol a file claimed, and of every
@@ -277,75 +251,6 @@ fn collect_references<E: Target>(ctx: &Context<E>, only_alive: bool) -> Referenc
     refs
 }
 
-/// The rank of a definition: (class << 40) | (weak term << 32) |
-/// priority, lower is better. The classes are mold's
-/// (symbol_rank_from_fields):
-///
-///   0. a live file's strong definition
-///   1. a live file's weak definition
-///   2. a lazy archive member's or a dylib's strong definition
-///   3. a lazy archive member's or a dylib's weak definition
-///   4. a live file's tentative definition (a common symbol)
-///   5. a lazy archive member's tentative definition
-///
-/// so a strong definition in an archive or a dylib beats a weak one
-/// whatever their order, which only breaks ties, and a tentative
-/// definition loses to every real one: a live file's loads the member
-/// with a real definition (see mark_live_objects), but no member for
-/// that member's own tentative definition. A live weak definition's
-/// rank carries the order in which ld-prime, like ld64, prefers the
-/// copies of one (see weak_definition_rank); the first copy wins only
-/// among equals. A lazy archive member from an archive that an
-/// auto-link option named, one of `autolink_priority` or later, comes
-/// after the libraries the command line's dylibs re-export (see
-/// dylib_ranks).
-fn definition_rank(
-    isecs: &[InputSection],
-    obj: &crate::input_files::ObjectFile,
-    i: usize,
-    autolink_priority: u32,
-) -> Option<u64> {
-    let msym = &obj.mach_syms[i];
-    if msym.is_stab() || !msym.is_extern() {
-        return None;
-    }
-    let is_weak = msym.desc & N_WEAK_DEF != 0;
-    let class: u64 = match msym.ty() {
-        N_SECT | N_ABS if obj.is_alive && !is_weak => 0,
-        N_SECT | N_ABS if obj.is_alive => 1,
-        N_SECT | N_ABS if !is_weak => 2,
-        N_SECT | N_ABS => 3,
-        N_UNDF if msym.is_common() && obj.is_alive => 4,
-        N_UNDF if msym.is_common() => 5,
-        _ => return None,
-    };
-    let mut weak_term = 0u64;
-    if class == 1
-        && msym.ty() == N_SECT
-        && let Some((isec, _)) = obj.symbol_subsec(isecs, i)
-    {
-        weak_term = weak_definition_rank(&isecs[isec], msym, obj.hidden);
-    }
-    let lazy = class == 2 || class == 3;
-    let phase = if lazy && obj.priority >= autolink_priority { 2 } else { 0 };
-    Some((class << 40) | ((weak_term | phase) << 32) | obj.priority as u64)
-}
-
-/// How ld-prime, like ld64, orders the copies of a weak definition,
-/// lower first: a copy that can't be auto-hidden before one that can
-/// (.weak_def_can_be_hidden, a global's N_WEAK_DEF | N_WEAK_REF), then
-/// a global before a private extern (unless both can be hidden), then
-/// the more aligned. A subsection's alignment is its section's with
-/// the subsection's address as the modulus, so a copy at 8 mod 16 is
-/// 8-aligned: a Swift metadata record comes at 16 from one object and
-/// at 8 from another, and the first copy wins only if equally aligned.
-fn weak_definition_rank(isec: &InputSection, msym: &MachSym, hidden: bool) -> u64 {
-    let private = msym.n_type & N_PEXT != 0 || hidden;
-    let auto_hide = !private && msym.desc & N_WEAK_REF != 0;
-    let p2align = isec.p2align_at(msym.value) as u64;
-    ((auto_hide as u64) << 7) | ((private as u64) << 6) | (63 - p2align)
-}
-
 /// The best definition rank of each symbol. Ranks race into it with an
 /// atomic minimum, as in mold: the race is order-free because the
 /// winner is the same whatever the interleaving, and since each object
@@ -358,7 +263,7 @@ fn race_definitions<E: Target>(ctx: &Context<E>, only_alive: bool) -> Vec<Atomic
     ctx.objs.par_iter().filter(|obj| !only_alive || obj.is_alive).for_each(|obj| {
         for i in obj.global_range() {
             let sym_id = obj.symbols[i];
-            let rank = definition_rank(&ctx.isecs, obj, i, ctx.autolink_priority);
+            let rank = obj.definition_rank(&ctx.isecs, i, ctx.autolink_priority);
             if let Some(rank) = rank {
                 best[sym_id as usize].fetch_min(rank, Ordering::Relaxed);
             }
@@ -379,7 +284,7 @@ fn claim_definitions<E: Target>(ctx: &mut Context<E>, only_alive: bool, best: &[
     objs.for_each(|(obj_idx, obj)| {
         for i in obj.global_range() {
             let sym_id = obj.symbols[i];
-            let rank = definition_rank(isecs, obj, i, autolink_priority);
+            let rank = obj.definition_rank(isecs, i, autolink_priority);
             let Some(rank) = rank else { continue };
             if best[sym_id as usize].load(Ordering::Relaxed) != rank {
                 continue;
@@ -387,72 +292,11 @@ fn claim_definitions<E: Target>(ctx: &mut Context<E>, only_alive: bool, best: &[
             // SAFETY: this object holds the unique minimum rank for
             // sym_id, so no other thread writes this slot.
             let sym = unsafe { syms.get(sym_id) };
-            if !claim_definition(sym, obj_idx, obj, i, isecs) {
+            if !obj.claim_definition(sym, obj_idx, i, isecs) {
                 best[sym_id as usize].store(u64::MAX, Ordering::Relaxed);
             }
         }
     });
-}
-
-/// Makes `sym` what MachSym `i` of object `obj_idx`, the definition that
-/// won the race for it, defines. Returns false for a symbol in a section
-/// that was discarded (debug info), which resolves as if undefined.
-fn claim_definition(
-    sym: &mut Symbol,
-    obj_idx: usize,
-    obj: &input_files::ObjectFile,
-    i: usize,
-    isecs: &[InputSection],
-) -> bool {
-    let msym = &obj.mach_syms[i];
-    sym.set_is_extern(true);
-    sym.set_is_imported(false);
-    sym.set_is_common(false);
-    sym.set_is_weak_def(msym.desc & N_WEAK_DEF != 0);
-    sym.set_is_private_extern(msym.n_type & N_PEXT != 0 || obj.hidden);
-    sym.set_no_dead_strip(msym.desc & (N_NO_DEAD_STRIP | REFERENCED_DYNAMICALLY) != 0);
-    sym.set_is_referenced_dynamically(
-        msym.ty() == N_SECT
-            && msym.desc & (REFERENCED_DYNAMICALLY | N_WEAK_DEF) == REFERENCED_DYNAMICALLY,
-    );
-    sym.set_is_alt_entry(msym.desc & N_ALT_ENTRY != 0);
-
-    let file = FileId::Obj(obj_idx as u32);
-    match msym.ty() {
-        N_ABS => {
-            sym.set_file(file);
-            sym.set_input_section(None);
-            sym.value = msym.value;
-        }
-        N_SECT => {
-            let Some((isec, off)) = obj.symbol_subsec(isecs, i) else {
-                sym.clear_file();
-                return false;
-            };
-            sym.set_file(file);
-            sym.set_input_section(Some(isec as u32));
-            sym.value = off;
-        }
-        // A lazy member's tentative definition claims the symbol for the
-        // member, for the liveness walk to load it for a reference, but
-        // not for a live file's tentative definition (see
-        // mark_live_objects).
-        N_UNDF if !obj.is_alive => {
-            sym.set_file(file);
-            sym.set_input_section(None);
-            sym.set_is_common(true);
-            sym.value = 0;
-        }
-        // A live common symbol takes a tentative claim.
-        N_UNDF => {
-            sym.clear_file();
-            sym.set_is_common(true);
-            sym.value = msym.value;
-            sym.common_p2align = msym.common_p2align();
-        }
-        _ => unreachable!(),
-    }
-    true
 }
 
 /// The tentative definitions of live objects, in input order: (symbol,
@@ -715,20 +559,20 @@ fn claim_new_dylibs<E: Target>(ctx: &mut Context<E>, first: usize) {
 }
 
 /// The rank with which each dylib's strong exports claim a symbol,
-/// comparable with a lazy archive member's (see definition_rank), lower
-/// first; its weak exports rank one class lower, as a member's weak
-/// definitions do. A dylib that stands for a library exports moved to
-/// has none. ld-prime looks a symbol up in the libraries the command
-/// line names, in their order among the other inputs, and only then,
-/// after every archive, in the public libraries they re-export: nearest
-/// first, a private library in between counting as a step, and among
-/// the equally near by the install name of the library that re-exports
-/// them, then by their own (a breadth-first walk of each level sorted
-/// by name). Then come the libraries auto-link options name, and the
-/// ones they re-export likewise. So a symbol of both Foundation and
-/// CFNetwork that `-framework Carbon -framework Foundation` finds binds
-/// to Foundation, though Carbon re-exports CoreServices, which
-/// re-exports CFNetwork.
+/// comparable with a lazy archive member's (see
+/// ObjectFile::definition_rank), lower first; its weak exports rank one
+/// class lower, as a member's weak definitions do. A dylib that stands
+/// for a library exports moved to has none. ld-prime looks a symbol up
+/// in the libraries the command line names, in their order among the
+/// other inputs, and only then, after every archive, in the public
+/// libraries they re-export: nearest first, a private library in
+/// between counting as a step, and among the equally near by the
+/// install name of the library that re-exports them, then by their own
+/// (a breadth-first walk of each level sorted by name). Then come the
+/// libraries auto-link options name, and the ones they re-export
+/// likewise. So a symbol of both Foundation and CFNetwork that
+/// `-framework Carbon -framework Foundation` finds binds to Foundation,
+/// though Carbon re-exports CoreServices, which re-exports CFNetwork.
 pub fn dylib_ranks(dylibs: &[input_files::DylibFile]) -> Vec<u64> {
     let phase = |phase: u64| (2 << 40) | (phase << 32);
     let mut ranks = vec![u64::MAX; dylibs.len()];
@@ -2624,19 +2468,6 @@ pub fn warn_unused_dylibs<E: Target>(ctx: &Context<E>) {
     }
 }
 
-/// True if a dylib's exports bound here moved to older libraries
-/// ($ld$previous): ld-prime lists a library under the install names
-/// bound to it, so one all of whose bound exports moved loses its load
-/// command, named or not; libc++ does to libc++abi for macOS 13 if only
-/// char8_t's type_info binds. (It drops a -needed_* or -reexport_*
-/// library alike, not what the option asks for; those stay.)
-fn exports_moved_away<E: Target>(ctx: &Context<E>, dylib: &input_files::DylibFile) -> bool {
-    dylib.moved_exports.iter().any(|(&name, &target)| {
-        let file = ctx.symbols.get(name).and_then(|id| ctx.symbols[id].file());
-        file == Some(FileId::Dylib(target as u32))
-    })
-}
-
 /// Makes the exports that moved from a weakly loaded dylib to an older
 /// library weak imports, though the older one loads as its own imports
 /// say: ld-prime weak-imports the 39 symbols iTerm2 binds to
@@ -2728,7 +2559,7 @@ pub fn dead_strip_dylibs<E: Target>(ctx: &mut Context<E>) {
     for (i, dylib) in ctx.dylibs.iter().enumerate() {
         used[i] = dylib.is_needed
             || dylib.install_name == b"/usr/lib/libSystem.B.dylib"
-            || !strippable(dylib) && (dylib.is_reexported || !exports_moved_away(ctx, dylib));
+            || !strippable(dylib) && (dylib.is_reexported || !dylib.exports_moved_away(ctx));
     }
     // A dylib every reference to which is a weak import loads weakly
     // (LC_LOAD_WEAK_DYLIB), as ld64 does: the Swift overlays a program
