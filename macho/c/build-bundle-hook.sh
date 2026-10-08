@@ -1,6 +1,6 @@
 #!/bin/sh
 # Builds the objects of the hook for the classes of mergeable libraries
-# that mold embeds (see bundle-hook.c and src/bundle_hook.rs), so that
+# that mold embeds (see bundle-hook.c and ../bundle_hook.rs), so that
 # building mold needs no C compiler, and notes the hash of the source
 # they come from, which mold's unit tests check. Run it on macOS after
 # changing bundle-hook.c, and commit what it writes.

@@ -42,11 +42,11 @@ Build with `cargo build --release`. The binary is `target/release/mold`;
 
 ## Architecture
 
-The code mirrors mold's layout: `src/driver.rs` runs the passes in
-order, `src/passes.rs` implements them, `src/target/` isolates the
+The code mirrors mold's layout: `macho/driver.rs` runs the passes in
+order, `macho/passes.rs` implements them, `macho/target/` isolates the
 target-dependent relocation handling (arm64 and x86-64 are each
 instantiated in a crate under `arch/` and dispatched by the
-executable in `cli/`), and `src/chunks/` builds every piece of
+executable in `cli/`), and `macho/chunks/` builds every piece of
 the output file. Parsing is decoupled from resolution: all inputs,
 including every archive member, are parsed in parallel, and symbol
 resolution ranks competing definitions with a liveness walk deciding

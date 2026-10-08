@@ -30,8 +30,8 @@ use crate::symbol::SymbolId;
 use crate::target::Target;
 
 /// The hook, built by c/build-bundle-hook.sh.
-static ARM64_OBJECT: &[u8] = include_bytes!("../c/bundle-hook-arm64.o");
-static X86_64_OBJECT: &[u8] = include_bytes!("../c/bundle-hook-x86_64.o");
+static ARM64_OBJECT: &[u8] = include_bytes!("c/bundle-hook-arm64.o");
+static X86_64_OBJECT: &[u8] = include_bytes!("c/bundle-hook-x86_64.o");
 
 /// The table the hook reads, which mold defines.
 const TABLE_SYMBOL: &[u8] = b"___mold_bundle_hook_table";
@@ -224,8 +224,8 @@ mod tests {
     /// hash build-bundle-hook.sh notes is the source's.
     #[test]
     fn objects_are_up_to_date() {
-        let source = include_bytes!("../c/bundle-hook.c");
-        let noted = include_str!("../c/bundle-hook.c.sha256");
+        let source = include_bytes!("c/bundle-hook.c");
+        let noted = include_str!("c/bundle-hook.c.sha256");
         let hash: String =
             sha2::Sha256::digest(source).iter().map(|b| format!("{b:02x}")).collect();
         assert_eq!(noted.split_whitespace().next(), Some(hash.as_str()));

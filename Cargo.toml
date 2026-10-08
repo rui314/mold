@@ -1,18 +1,9 @@
-[package]
-name = "mold-macho"
-version.workspace = true
-edition.workspace = true
-description = "A high-performance Mach-O linker, a port of mold to macOS"
-license.workspace = true
-# tests/lib.rs belongs to the mold-macho-tests workspace crate.
-autotests = false
-
-# The linker is generic over the target. Each target is instantiated in a
-# crate of its own under arch/, and the executable in cli/ dispatches to
-# them, mirroring mold's ELF port.
+# The Mach-O linker in macho/ is generic over the target. Each target is
+# instantiated in a crate of its own under arch/, and the executable in
+# cli/ dispatches to them, mirroring mold's ELF port.
 [workspace]
-members = ["cli", "arch/*", "tests"]
-default-members = [".", "cli", "arch/*", "tests"]
+resolver = "3"
+members = ["cli", "macho", "arch/*", "tests"]
 
 [workspace.package]
 version = "0.1.0"
@@ -21,20 +12,7 @@ license = "MIT"
 
 [workspace.dependencies]
 libc = "0.2"
-mold-macho = { path = "." }
-
-[dependencies]
-cpp_demangle = "0.4"
-getrandom = "0.4.3"
-hashbrown = "0.17"
-libc.workspace = true
-memchr = "2.8.3"
-memmap2 = "0.9"
-rayon = "1.12.0"
-serde_json = "1.0.151"
-sha1 = "0.11"
-sha2 = "0.11"
-xxhash-rust = { version = "0.8", features = ["xxh3"] }
+mold-macho = { path = "macho" }
 
 [profile.release]
 panic = "abort"
