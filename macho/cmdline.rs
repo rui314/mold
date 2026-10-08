@@ -824,6 +824,18 @@ impl Args {
         (self.output_type == MH_EXECUTE && !self.relocatable) || self.is_dylinker()
     }
 
+    /// The symbols the command line names, which count as referenced:
+    /// the -u ones, the entry point of an image that has one (not of a
+    /// -r output, whose output type is still the executable default: it
+    /// would carry a spurious undefined _main), and the -alias bases
+    /// (Xcode aliases an app extension's debug dylib entry point to
+    /// Foundation's _NSExtensionMain).
+    pub fn command_line_symbols(&self) -> impl Iterator<Item = &[u8]> {
+        let entry = self.has_entry_point().then_some(self.entry.as_slice());
+        let aliased = self.aliases.iter().map(|(existing, _)| existing.as_slice());
+        self.forced_undefined.iter().map(Vec::as_slice).chain(entry).chain(aliased)
+    }
+
     /// Whether the image may link dylibs: not an image no dyld loads,
     /// with nothing to load them, nor dyld, which is what loads them.
     /// ld-prime searches -l for archives alone in either, and ignores a

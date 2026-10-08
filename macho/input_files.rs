@@ -73,7 +73,7 @@ impl PlatformVersion {
     /// The deployment target a bitcode file's target triple names, such
     /// as arm64-apple-macosx13.0.0 or arm64-apple-ios17.0.0-simulator,
     /// if it names an Apple platform. The SDK is not part of it.
-    fn of_triple(triple: &str) -> Option<Self> {
+    pub(crate) fn of_triple(triple: &str) -> Option<Self> {
         let os = triple.splitn(3, '-').nth(2)?;
         let (os, env) = os.split_once('-').unwrap_or((os, ""));
         let (name, version) =
@@ -237,7 +237,7 @@ impl ObjectFile {
 
     /// A live object of the file `mf` with no sections or symbols, for
     /// the callers to fill in.
-    fn new(mf: &'static MappedFile) -> Self {
+    pub(crate) fn new(mf: &'static MappedFile) -> Self {
         Self {
             mf,
             is_alive: true,
@@ -1850,126 +1850,6 @@ pub fn parse_object<E: Target>(
     let kept_fdes = KeptFdes::of(&ctx.args);
     let staged = stage_object::<E>(mf, alive, false, priority, ctx.args.relocatable, kept_fdes);
     integrate_object(ctx, staged)
-}
-
-/// Loads the LTO plugin on first use.
-fn ensure_lto_plugin<E: Target>(ctx: &mut Context<E>) -> crate::lto::Plugin {
-    if ctx.lto_plugin.is_none() {
-        ctx.lto_plugin = Some(crate::lto::load_plugin(ctx.args.lto_library.as_deref()));
-    }
-    ctx.lto_plugin.unwrap()
-}
-
-/// Registers a bitcode input: a placeholder object that claims the
-/// module's symbols so resolution works, compiled for real by LTO once
-/// all inputs are known. One for another architecture than the link's
-/// is ignored, as ld-prime ignores a Mach-O object (see
-/// reader::is_foreign): None.
-pub fn parse_bitcode<E: Target>(
-    ctx: &mut Context<E>,
-    mf: &'static MappedFile,
-    alive: bool,
-) -> Option<usize> {
-    let plugin = ensure_lto_plugin(ctx);
-    let (module, lsyms) = crate::lto::parse_module(&plugin, mf.data(), &mf.name);
-    if let Some(arch) = foreign_bitcode_arch::<E>(&plugin, module) {
-        if ctx.args.allow_sub_type_mismatches && is_bitcode_subtype_mismatch::<E>(&arch) {
-            let name = without_fat_arch(crate::util::path_bytes(&mf.name));
-            crate::warn!(
-                "linking {arch} file '{}' into {} link",
-                crate::error::raw(&name),
-                E::NAME
-            );
-        } else {
-            let why = format!("found architecture '{arch}', required architecture '{}'", E::NAME);
-            ignore_foreign_file(ctx, mf, &why);
-            crate::lto::dispose_module(&plugin, module);
-            return None;
-        }
-    }
-    // ld-prime checks the target triple's OS and version as it checks
-    // a Mach-O object's platform load command.
-    let triple = crate::lto::module_triple(&plugin, module);
-    let platform_versions = PlatformVersion::of_triple(&triple).into_iter().collect();
-
-    // The module's symbols become MachSyms, so that resolution handles
-    // bitcode like any object; its internal definitions are left out.
-    let mut defined = Vec::new();
-    let mut mach_syms = Vec::new();
-    let mut syms = Vec::new();
-    for ls in lsyms {
-        if ls.is_defined {
-            defined.push(ls.name);
-        }
-        if ls.is_extern || !ls.is_defined {
-            syms.push(ctx.symbols.intern(ls.name));
-            mach_syms.push(bitcode_msym(&ls));
-        }
-    }
-
-    let obj_idx = ctx.objs.len();
-    let priority = ctx.next_priority();
-    ctx.objs.push(ObjectFile {
-        is_alive: alive,
-        priority,
-        platform_versions,
-        sym_subsecs: vec![crate::symbol::NONE; mach_syms.len()],
-        mach_syms: std::borrow::Cow::Owned(mach_syms),
-        symbols: syms,
-        lto_module: Some(module),
-        ..ObjectFile::new(mf)
-    });
-    let is_thin = crate::lto::module_is_thin(&plugin, module);
-    ctx.lto_modules.push(crate::lto::BitcodeModule {
-        obj: obj_idx,
-        handle: module,
-        defined,
-        is_thin,
-    });
-    Some(obj_idx)
-}
-
-/// The MachSym an external symbol of a bitcode module stands for: an
-/// absolute definition, or an undefined reference.
-fn bitcode_msym(ls: &crate::lto::LtoSymbol) -> MachSym {
-    let mut msym = MachSym::default();
-    if !ls.is_defined {
-        msym.n_type = N_UNDF | N_EXT;
-        return msym;
-    }
-    msym.n_type = N_ABS | N_EXT | if ls.is_private_extern { N_PEXT } else { 0 };
-    if ls.is_weak_def {
-        msym.desc |= N_WEAK_DEF;
-    }
-    if ls.is_weak_def && ls.can_be_hidden {
-        msym.desc |= N_WEAK_REF;
-    }
-    msym
-}
-
-/// The architecture a bitcode module was compiled for, from its target
-/// triple (x86_64h-apple-macosx14.0.0), if the link doesn't take it -
-/// named as for a Mach-O file, a Thumb one (thumbv7-apple-ios9.0.0) by
-/// its ARM architecture.
-fn foreign_bitcode_arch<E: Target>(plugin: &crate::lto::Plugin, module: usize) -> Option<String> {
-    let triple = crate::lto::module_triple(plugin, module);
-    let arch = match triple.split('-').next().unwrap_or_default() {
-        "aarch64" => "arm64".to_string(),
-        arch => match arch.strip_prefix("thumb") {
-            Some(version) => format!("arm{version}"),
-            None => arch.to_string(),
-        },
-    };
-    (arch != E::NAME).then_some(arch)
-}
-
-/// Whether a bitcode module of architecture `arch` is of the link's CPU
-/// type all the same (see filetype::is_subtype_mismatch).
-fn is_bitcode_subtype_mismatch<E: Target>(arch: &str) -> bool {
-    match E::NAME {
-        "x86_64" => arch == "x86_64h",
-        _ => false,
-    }
 }
 
 /// Extracts one NUL-terminated name from a string table: its bytes, any

@@ -243,7 +243,7 @@ fn collect_root_set<E: Target>(
 /// one. So native code that only bitcode, a root or another such
 /// function reaches counts, and code nothing does (a hidden helper no
 /// one calls) doesn't. The export lists have hidden nothing yet; the
-/// roots go by them, as `exported` says (see exported_before_lto).
+/// roots go by them, as `exported` says (see lto::exported_before_lto).
 pub fn native_refs_before_lto<E: Target>(
     ctx: &Context<E>,
     exported: impl Fn(SymbolId) -> bool + Sync,
@@ -289,27 +289,6 @@ pub fn native_refs_before_lto<E: Target>(
         });
     });
     refs
-}
-
-/// Whether a definition is exported before LTO, as ld-prime's walk
-/// before it and libLTO's preserve set see it: under an export list if
-/// the list names it, hidden or not; otherwise, unless
-/// -unexported_symbols_list names it, any external definition in -r,
-/// and a visible one in an image that exports any (see keeps_export) -
-/// but not one every copy of which can be hidden, which the image
-/// auto-hides (see passes::auto_hide_weak_defs).
-pub fn exported_before_lto<E: Target>(ctx: &Context<E>, sym: &Symbol, hidable: bool) -> bool {
-    if !sym.is_extern() || !matches!(sym.file(), Some(FileId::Obj(_))) {
-        return false;
-    }
-    let name = sym.name();
-    if let Some(exported) = &ctx.args.exported_symbols {
-        return exported.find(name) != -1;
-    }
-    if ctx.args.unexported_symbols.find(name) != -1 {
-        return false;
-    }
-    ctx.args.relocatable || (!sym.is_private_extern() && !hidable && keeps_export(ctx, sym.name()))
 }
 
 /// Whether dead stripping keeps an export named `name`: every one of a

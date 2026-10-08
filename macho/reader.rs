@@ -987,7 +987,7 @@ fn read_file<E: Target>(
             None => input_files::warn_fat_missing_arch(ctx, mf),
         },
         FileType::LlvmBitcode => {
-            input_files::parse_bitcode(ctx, mf, true);
+            crate::lto::read_lto_object(ctx, mf, true);
         }
         FileType::Empty => {}
         _ => refuse_file(mf),
@@ -1233,7 +1233,7 @@ fn collect_archive_members<E: Target>(
             || (ctx.args.load_objc && !rc.autolinked && input_files::has_objc_sections(member));
         match get_file_type(member) {
             FileType::LlvmBitcode => {
-                input_files::parse_bitcode(ctx, member, alive);
+                crate::lto::read_lto_object(ctx, member, alive);
             }
             FileType::Object if is_foreign(ctx, member) => {}
             _ => {

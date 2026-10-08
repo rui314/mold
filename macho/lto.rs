@@ -11,10 +11,21 @@
 
 use std::ffi::{CStr, CString, c_char, c_int, c_void};
 use std::os::unix::ffi::OsStrExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
+use rayon::prelude::*;
+
+use crate::arch::Target;
+use crate::context::Context;
+use crate::dead_strip::keeps_export;
 use crate::error::{RawBuf, RawPath};
 use crate::fatal;
+use crate::filetype::without_fat_arch;
+use crate::input_files::{FileId, ObjectFile, PlatformVersion, ignore_foreign_file};
+use crate::macho::*;
+use crate::mapped_file::MappedFile;
+use crate::symbol::{Symbol, SymbolId};
+use crate::util::path_bytes;
 
 // Symbol attribute bits from llvm-c/lto.h
 const LTO_SYMBOL_DEFINITION_MASK: u32 = 0x700;
@@ -706,4 +717,433 @@ pub fn parse_module(plugin: &Plugin, data: &[u8], name: &Path) -> (usize, Vec<Lt
         }
     }
     (module as usize, syms)
+}
+
+/// Loads the LTO plugin on first use.
+fn ensure_lto_plugin<E: Target>(ctx: &mut Context<E>) -> Plugin {
+    if ctx.lto_plugin.is_none() {
+        ctx.lto_plugin = Some(load_plugin(ctx.args.lto_library.as_deref()));
+    }
+    ctx.lto_plugin.unwrap()
+}
+
+/// Registers a bitcode input: a placeholder object that claims the
+/// module's symbols so resolution works, compiled for real by LTO once
+/// all inputs are known. One for another architecture than the link's
+/// is ignored, as ld-prime ignores a Mach-O object (see
+/// reader::is_foreign): None.
+pub fn read_lto_object<E: Target>(
+    ctx: &mut Context<E>,
+    mf: &'static MappedFile,
+    alive: bool,
+) -> Option<usize> {
+    let plugin = ensure_lto_plugin(ctx);
+    let (module, lsyms) = parse_module(&plugin, mf.data(), &mf.name);
+    if let Some(arch) = foreign_bitcode_arch::<E>(&plugin, module) {
+        if ctx.args.allow_sub_type_mismatches && is_bitcode_subtype_mismatch::<E>(&arch) {
+            let name = without_fat_arch(crate::util::path_bytes(&mf.name));
+            crate::warn!(
+                "linking {arch} file '{}' into {} link",
+                crate::error::raw(&name),
+                E::NAME
+            );
+        } else {
+            let why = format!("found architecture '{arch}', required architecture '{}'", E::NAME);
+            ignore_foreign_file(ctx, mf, &why);
+            dispose_module(&plugin, module);
+            return None;
+        }
+    }
+    // ld-prime checks the target triple's OS and version as it checks
+    // a Mach-O object's platform load command.
+    let triple = module_triple(&plugin, module);
+    let platform_versions = PlatformVersion::of_triple(&triple).into_iter().collect();
+
+    // The module's symbols become MachSyms, so that resolution handles
+    // bitcode like any object; its internal definitions are left out.
+    let mut defined = Vec::new();
+    let mut mach_syms = Vec::new();
+    let mut syms = Vec::new();
+    for ls in lsyms {
+        if ls.is_defined {
+            defined.push(ls.name);
+        }
+        if ls.is_extern || !ls.is_defined {
+            syms.push(ctx.symbols.intern(ls.name));
+            mach_syms.push(bitcode_msym(&ls));
+        }
+    }
+
+    let obj_idx = ctx.objs.len();
+    let priority = ctx.next_priority();
+    ctx.objs.push(ObjectFile {
+        is_alive: alive,
+        priority,
+        platform_versions,
+        sym_subsecs: vec![crate::symbol::NONE; mach_syms.len()],
+        mach_syms: std::borrow::Cow::Owned(mach_syms),
+        symbols: syms,
+        lto_module: Some(module),
+        ..ObjectFile::new(mf)
+    });
+    let is_thin = module_is_thin(&plugin, module);
+    ctx.lto_modules.push(BitcodeModule { obj: obj_idx, handle: module, defined, is_thin });
+    Some(obj_idx)
+}
+
+/// The MachSym an external symbol of a bitcode module stands for: an
+/// absolute definition, or an undefined reference.
+fn bitcode_msym(ls: &LtoSymbol) -> MachSym {
+    let mut msym = MachSym::default();
+    if !ls.is_defined {
+        msym.n_type = N_UNDF | N_EXT;
+        return msym;
+    }
+    msym.n_type = N_ABS | N_EXT | if ls.is_private_extern { N_PEXT } else { 0 };
+    if ls.is_weak_def {
+        msym.desc |= N_WEAK_DEF;
+    }
+    if ls.is_weak_def && ls.can_be_hidden {
+        msym.desc |= N_WEAK_REF;
+    }
+    msym
+}
+
+/// The architecture a bitcode module was compiled for, from its target
+/// triple (x86_64h-apple-macosx14.0.0), if the link doesn't take it -
+/// named as for a Mach-O file, a Thumb one (thumbv7-apple-ios9.0.0) by
+/// its ARM architecture.
+fn foreign_bitcode_arch<E: Target>(plugin: &Plugin, module: usize) -> Option<String> {
+    let triple = module_triple(plugin, module);
+    let arch = match triple.split('-').next().unwrap_or_default() {
+        "aarch64" => "arm64".to_string(),
+        arch => match arch.strip_prefix("thumb") {
+            Some(version) => format!("arm{version}"),
+            None => arch.to_string(),
+        },
+    };
+    (arch != E::NAME).then_some(arch)
+}
+
+/// Whether a bitcode module of architecture `arch` is of the link's CPU
+/// type all the same (see filetype::is_subtype_mismatch).
+fn is_bitcode_subtype_mismatch<E: Target>(arch: &str) -> bool {
+    match E::NAME {
+        "x86_64" => arch == "x86_64h",
+        _ => false,
+    }
+}
+
+/// The bitcode modules of live files, in input order.
+pub fn live_bitcode_modules<E: Target>(ctx: &Context<E>) -> impl Iterator<Item = &BitcodeModule> {
+    ctx.lto_modules.iter().filter(|module| ctx.objs[module.obj].is_alive)
+}
+
+/// Writes a -r link of bitcode alone as one merged bitcode file (see
+/// passes::links_only_bitcode). ld-prime warns, then fails, if libLTO
+/// can't.
+pub fn write_merged_bitcode<E: Target>(ctx: &Context<E>) {
+    let plugin = ctx.lto_plugin.unwrap();
+    let modules: Vec<_> = live_bitcode_modules(ctx).collect();
+    let roots = lto_roots(ctx);
+    // SAFETY: libLTO calls with handles created by the same library.
+    unsafe {
+        let cg = create_lto_codegen(ctx, &plugin, &modules, &roots);
+        if let Err(msg) = write_merged_modules(&plugin, cg, &ctx.args.output) {
+            crate::warn!("could not produce merged bitcode file");
+            fatal!("LTO codegen error: {msg}");
+        }
+    }
+}
+
+/// Creates libLTO's code generator for the modules to merge, added in
+/// input order, with the symbols that must survive LTO.
+///
+/// # Safety
+///
+/// The plugin must be the library the modules were created by.
+unsafe fn create_lto_codegen<E: Target>(
+    ctx: &Context<E>,
+    plugin: &Plugin,
+    modules: &[&BitcodeModule],
+    roots: &[&[u8]],
+) -> *mut std::ffi::c_void {
+    // SAFETY: libLTO calls with handles created by the same library.
+    unsafe {
+        let cg = (plugin.codegen_create)();
+        if cg.is_null() {
+            fatal!("lto_codegen_create failed: {}", plugin.error_message());
+        }
+        (plugin.codegen_set_pic_model)(cg, LTO_CODEGEN_PIC_MODEL_DYNAMIC);
+        set_debug_options(plugin, cg, &ctx.args.mllvm);
+        for module in modules {
+            if (plugin.codegen_add_module)(cg, module.handle as *mut _) {
+                fatal!("lto_codegen_add_module failed: {}", plugin.error_message());
+            }
+        }
+        for name in roots {
+            if let Ok(name) = std::ffi::CString::new(*name) {
+                (plugin.codegen_add_must_preserve_symbol)(cg, name.as_ptr());
+            }
+        }
+        cg
+    }
+}
+
+/// The symbols of the bitcode modules that must survive the LTO
+/// internalizer, as ld-prime picks them - the same set for ThinLTO and
+/// the merged module: the definitions the output exports (see
+/// exported_before_lto), the entry point, -u symbols, -alias bases
+/// (which the linker itself references), and those some code outside
+/// the module defining them references: live Mach-O code (see
+/// dead_strip::native_refs_before_lto), or a bitcode module that
+/// libLTO compiles apart from it. A reference between two modules it
+/// merges does not count, as libLTO resolves it itself (_times2,
+/// called only from a bitcode main, goes local and is not exported),
+/// but a ThinLTO module is compiled on its own, so a reference to or
+/// from one does. A native common counts: when a bitcode definition
+/// wins, the common's code addresses that definition's storage.
+fn lto_roots<E: Target>(ctx: &Context<E>) -> Vec<&[u8]> {
+    use std::sync::atomic::{AtomicU8, Ordering};
+
+    // Who refers to each symbol: a ThinLTO module or a module to merge
+    // (one whose copy of a weak definition another's replaced counts,
+    // as mold's LTO plugin calls such a copy preempted: its code has to
+    // reach the copy that won, or a C++ inline function's static local
+    // would split in two); whether a Mach-O object defines it; and
+    // whether it has a weak definition and one that can't be hidden.
+    const THIN_REF: u8 = 1;
+    const MERGED_REF: u8 = 2;
+    const NATIVE_DEF: u8 = 4;
+    const WEAK: u8 = 8;
+    const NOT_HIDABLE: u8 = 16;
+    let mut thin = vec![None; ctx.objs.len()];
+    for module in &ctx.lto_modules {
+        thin[module.obj] = Some(module.is_thin);
+    }
+    let flags: Vec<AtomicU8> = (0..ctx.symbols.syms.len()).map(|_| AtomicU8::new(0)).collect();
+    ctx.objs.par_iter().enumerate().filter(|(_, obj)| obj.is_alive).for_each(|(i, obj)| {
+        let r = obj.global_range();
+        for (msym, &sym_id) in obj.mach_syms[r.clone()].iter().zip(&obj.symbols[r]) {
+            if msym.is_stab() || !msym.is_extern() {
+                continue;
+            }
+            let defined = matches!(msym.ty(), N_SECT | N_ABS);
+            let lost = || ctx.symbols[sym_id].file() != Some(FileId::Obj(i as u32));
+            let mut flag = match (msym.ty(), thin[i]) {
+                (N_UNDF, Some(true)) => THIN_REF,
+                (N_UNDF, Some(false)) => MERGED_REF,
+                (N_SECT | N_ABS, None) => NATIVE_DEF,
+                (N_ABS, Some(true)) if lost() => THIN_REF,
+                (N_ABS, Some(false)) if lost() => MERGED_REF,
+                _ => 0,
+            };
+            if defined && msym.desc & N_WEAK_DEF != 0 {
+                flag |= if msym.desc & N_WEAK_REF != 0 { WEAK } else { WEAK | NOT_HIDABLE };
+            } else if defined {
+                flag |= NOT_HIDABLE;
+            }
+            flags[sym_id as usize].fetch_or(flag, Ordering::Relaxed);
+        }
+    });
+    let exported = |id: SymbolId| {
+        let f = flags[id as usize].load(Ordering::Relaxed);
+        let hidable = f & (WEAK | NOT_HIDABLE) == WEAK;
+        exported_before_lto(ctx, &ctx.symbols[id], hidable)
+    };
+    let native_refs = crate::dead_strip::native_refs_before_lto(ctx, exported);
+
+    let mut roots = Vec::new();
+    for (i, sym) in ctx.symbols.syms.iter().enumerate() {
+        let Some(FileId::Obj(obj)) = sym.file() else { continue };
+        let Some(is_thin) = thin[obj as usize] else { continue };
+        if !ctx.objs[obj as usize].is_alive || !sym.is_extern() {
+            continue;
+        }
+        let outside = THIN_REF | if is_thin { MERGED_REF } else { 0 };
+        let name = sym.name();
+        if native_refs[i].load(Ordering::Relaxed)
+            || flags[i].load(Ordering::Relaxed) & outside != 0
+            || exported(i as SymbolId)
+            || ctx.args.command_line_symbols().any(|named| named == name)
+        {
+            roots.push(name);
+        }
+    }
+
+    // A bitcode definition a native object has one of too survives, as
+    // ld64 keeps the LLVM definitions it coalesced away in favor of
+    // Mach-O ones: left to libLTO, a weak one would be inlined into the
+    // module's callers in place of the strong native definition that
+    // wins, and a strong one would vanish rather than be reported as a
+    // duplicate (ld-prime lists it in the compiled object).
+    for module in live_bitcode_modules(ctx) {
+        let obj = &ctx.objs[module.obj];
+        for (msym, &id) in obj.mach_syms.iter().zip(&obj.symbols) {
+            if msym.ty() == N_ABS && flags[id as usize].load(Ordering::Relaxed) & NATIVE_DEF != 0 {
+                roots.push(ctx.symbols[id].name());
+            }
+        }
+    }
+    roots
+}
+
+/// Whether a definition is exported before LTO, as ld-prime's walk
+/// before it and libLTO's preserve set see it: under an export list if
+/// the list names it, hidden or not; otherwise, unless
+/// -unexported_symbols_list names it, any external definition in -r,
+/// and a visible one in an image that exports any (see
+/// dead_strip::keeps_export) - but not one every copy of which can be
+/// hidden, which the image auto-hides (see
+/// passes::auto_hide_weak_defs).
+fn exported_before_lto<E: Target>(ctx: &Context<E>, sym: &Symbol, hidable: bool) -> bool {
+    if !sym.is_extern() || !matches!(sym.file(), Some(FileId::Obj(_))) {
+        return false;
+    }
+    let name = sym.name();
+    if let Some(exported) = &ctx.args.exported_symbols {
+        return exported.find(name) != -1;
+    }
+    if ctx.args.unexported_symbols.find(name) != -1 {
+        return false;
+    }
+    ctx.args.relocatable || (!sym.is_private_extern() && !hidable && keeps_export(ctx, sym.name()))
+}
+
+/// An object LTO compiled, under the name ld-prime gives it (see
+/// thin_lto and merged_lto) and the modification time its debug stab
+/// gets if not the named file's.
+pub struct LtoObject {
+    pub name: PathBuf,
+    pub mtime: Option<u64>,
+    pub data: Vec<u8>,
+}
+
+/// Compiles the live bitcode modules to Mach-O objects as ld-prime
+/// does - first the modules built for ThinLTO, an object each, then the
+/// rest merged into one - for passes::do_lto to put in place of the
+/// bitcode files. Both compilations see the same symbols to preserve.
+/// -flto-codegen-only has ThinLTO compile every module, unoptimized.
+pub fn run_plugin<E: Target>(ctx: &Context<E>) -> Vec<LtoObject> {
+    let plugin = ctx.lto_plugin.unwrap();
+
+    let mut objects = Vec::new();
+    let roots = lto_roots(ctx);
+    let (thin, merged): (Vec<_>, Vec<_>) =
+        live_bitcode_modules(ctx).partition(|module| module.is_thin || ctx.args.lto_codegen_only);
+    if !thin.is_empty() {
+        objects.extend(thin_lto(ctx, &plugin, &thin, &roots));
+    }
+    if !merged.is_empty() {
+        objects.push(merged_lto(ctx, &plugin, &merged, &roots));
+    }
+    objects
+}
+
+/// Compiles the ThinLTO modules to an object each. libLTO tells the
+/// modules apart by name: ld-prime gives each its file's real path -
+/// an archive member's as archive[index](member) - followed by its
+/// index among them. It names the objects after the files libLTO wrote
+/// to the -object_path_lto directory, or else not at all: an empty
+/// name in diagnostics, the map and the debug stab (whose modification
+/// time is then 0).
+fn thin_lto<E: Target>(
+    ctx: &Context<E>,
+    plugin: &Plugin,
+    modules: &[&BitcodeModule],
+    roots: &[&[u8]],
+) -> Vec<LtoObject> {
+    let thin_modules: Vec<ThinModule> = modules
+        .iter()
+        .enumerate()
+        .map(|(i, module)| {
+            let mf = ctx.objs[module.obj].mf;
+            let mut id = path_bytes(&mf.name).to_vec();
+            id.extend_from_slice(i.to_string().as_bytes());
+            let id = std::ffi::CString::new(id).unwrap_or_default();
+            ThinModule { id, data: mf.data() }
+        })
+        .collect();
+
+    // What the modules refer to, defined anywhere, ThinLTO keeps too.
+    let mut cross = Vec::new();
+    for module in modules {
+        let obj = &ctx.objs[module.obj];
+        for (msym, &id) in obj.mach_syms.iter().zip(&obj.symbols) {
+            if msym.ty() == N_UNDF {
+                cross.push(ctx.symbols[id].name());
+            }
+        }
+    }
+
+    let opts = ThinOptions {
+        debug_options: &ctx.args.mllvm,
+        cpu: ctx.args.lto_cpu.as_deref(),
+        objects_dir: ctx.args.object_path_lto.as_deref(),
+        cache: ctx.args.lto_cache_dir.as_deref().map(|dir| CacheOptions {
+            dir,
+            prune_interval: ctx.args.lto_cache_prune_interval,
+            expiration: ctx.args.lto_cache_expiration,
+            max_size: ctx.args.lto_cache_max_size,
+        }),
+        save_temps: ctx.args.save_temps.then_some(ctx.args.output.as_path()),
+        codegen_only: ctx.args.lto_codegen_only,
+    };
+    // SAFETY: the plugin is the library that parsed the modules.
+    let objects = unsafe { compile_thin(plugin, &thin_modules, roots, &cross, &opts) };
+    objects
+        .into_iter()
+        .map(|obj| match obj.path {
+            Some(name) => LtoObject { name, mtime: None, data: obj.data },
+            None => LtoObject { name: PathBuf::new(), mtime: Some(0), data: obj.data },
+        })
+        .collect()
+}
+
+/// Merges the other modules into one and compiles it to one object.
+/// -object_path_lto keeps that object: debug info stays in object files
+/// on Mach-O (the executable only gets stabs pointing at them), and for
+/// LTO code the object exists only inside the linker - Xcode passes a
+/// path under the dSYM staging directory so dsymutil can find it
+/// afterwards. ld-prime names the object after that file, or else after
+/// a temporary file it never writes, in its diagnostics, the map and
+/// the debug stabs - which give the latter modification time 0.
+fn merged_lto<E: Target>(
+    ctx: &Context<E>,
+    plugin: &Plugin,
+    modules: &[&BitcodeModule],
+    roots: &[&[u8]],
+) -> LtoObject {
+    // SAFETY: libLTO calls with handles created by the same library.
+    let data = unsafe {
+        let cg = create_lto_codegen(ctx, plugin, modules, roots);
+        let opts = CodegenOptions {
+            cpu: ctx.args.lto_cpu.as_deref(),
+            save_temps: ctx.args.save_temps.then_some(ctx.args.output.as_path()),
+        };
+        compile(plugin, cg, &opts)
+    };
+    match &ctx.args.object_path_lto {
+        Some(path) => {
+            let path = lto_object_path(path);
+            // ld-prime keeps the object if it can, saying nothing
+            // otherwise.
+            let _ = std::fs::write(&path, &data);
+            LtoObject { name: path, mtime: None, data }
+        }
+        None => LtoObject { name: PathBuf::from("/tmp/lto.o"), mtime: Some(0), data },
+    }
+}
+
+/// Where -object_path_lto has the merged LTO object written: the path
+/// itself, or lto.o in it if it names a directory - as it does when
+/// ThinLTO objects share it (ld-prime appends "/lto.o" to the path as
+/// given, trailing slash or not).
+fn lto_object_path(path: &Path) -> PathBuf {
+    if !path.is_dir() {
+        return path.to_path_buf();
+    }
+    let mut path = path.as_os_str().to_owned();
+    path.push("/lto.o");
+    PathBuf::from(path)
 }
