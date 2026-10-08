@@ -58,28 +58,7 @@ extern long gb;
 int main() { return gb != 0; }
 EOF
 
-# Rewrites the flags of sections: arguments are FILE, then SEG SECT
-# FLAGS for each section.
-set_flags() {
-  python3 - "$@" <<'EOF'
-import struct, sys
-path, args = sys.argv[1], sys.argv[2:]
-want = {(args[i], args[i + 1]): int(args[i + 2], 0) for i in range(0, len(args), 3)}
-d = bytearray(open(path, 'rb').read())
-off = 32
-for _ in range(struct.unpack_from('<I', d, 16)[0]):
-    cmd, size = struct.unpack_from('<II', d, off)
-    for i in range(struct.unpack_from('<I', d, off + 64)[0] if cmd == 0x19 else 0):
-        s = off + 72 + i * 80
-        name = (d[s + 16:s + 32].rstrip(b'\0').decode(), d[s:s + 16].rstrip(b'\0').decode())
-        if name in want:
-            struct.pack_into('<I', d, s + 64, want[name])
-    off += size
-open(path, 'wb').write(d)
-EOF
-}
-
-set_flags $t/a.o __TEXT __const 0x2 __TEXT __str 0x80000002 \
+set_section_flags $t/a.o __TEXT __const 0x2 __TEXT __str 0x80000002 \
   __DATA __lp 0x5 __DATA __lazy 0x7 __DATA __stb 0x8 __DATA __ip 0xd \
   __DATA __dof 0xf __DATA __dof2 0x0400000f __DATA __tlvp 0x14 \
   __DATA __io 0x16 __DATA __code 0x8000000b __DATA __gbz 0xc

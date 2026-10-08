@@ -49,19 +49,7 @@ int main() { printf("%d %d\n", get_a(), get_b()); }
 EOF
 
 # Makes b.o's __literal4 an 8-byte literal pool.
-python3 - $t/b.o <<'EOF'
-import struct, sys
-d = bytearray(open(sys.argv[1], 'rb').read())
-off = 32
-for _ in range(struct.unpack_from('<I', d, 16)[0]):
-    cmd, size = struct.unpack_from('<II', d, off)
-    for i in range(struct.unpack_from('<I', d, off + 64)[0] if cmd == 0x19 else 0):
-        s = off + 72 + i * 80
-        if d[s:s + 16].rstrip(b'\0') == b'__literal4':
-            struct.pack_into('<I', d, s + 64, 4)
-    off += size
-open(sys.argv[1], 'wb').write(d)
-EOF
+set_section_flags $t/b.o __TEXT __literal4 4
 
 sect() {
   otool -l $1 | awk -v g=$2 -v s=$3 '$1 == "sectname" { n = $2 }

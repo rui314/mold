@@ -35,27 +35,10 @@ cat <<EOF | $CC -o $t/std.o -c -xassembler -
 EOF
 echo 'int main() { return 0; }' | $CC -o $t/main.o -c -xc -
 
-# Rewrites the flags of the sections named SEG,SECT in FILE.
-set_flags() {
-  python3 - "$@" <<'EOF'
-import struct, sys
-path, seg, sect, flags = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4], 0)
-d = bytearray(open(path, 'rb').read())
-off = 32
-for _ in range(struct.unpack_from('<I', d, 16)[0]):
-    cmd, size = struct.unpack_from('<II', d, off)
-    for i in range(struct.unpack_from('<I', d, off + 64)[0] if cmd == 0x19 else 0):
-        s = off + 72 + i * 80
-        if d[s:s + 16].rstrip(b'\0') == sect.encode() and d[s + 16:s + 32].rstrip(b'\0') == seg.encode():
-            struct.pack_into('<I', d, s + 64, flags)
-    off += size
-open(path, 'wb').write(d)
-EOF
-}
-set_flags $t/std.o __TEXT __text 0
-set_flags $t/std.o __TEXT __const 0x80000400
-set_flags $t/std.o __DATA __data 0x80000400
-set_flags $t/std.o __TEXT __cstring 0x80000400
+set_section_flags $t/std.o __TEXT __text 0
+set_section_flags $t/std.o __TEXT __const 0x80000400
+set_section_flags $t/std.o __DATA __data 0x80000400
+set_section_flags $t/std.o __TEXT __cstring 0x80000400
 
 flags() {
   otool -l $1 | awk -v g=$2 -v s=$3 '$1 == "sectname" { n = $2 }

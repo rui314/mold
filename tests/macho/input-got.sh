@@ -69,26 +69,8 @@ int main() {
 }
 EOF
 
-# Rewrites the flags of the sections named SEG,SECT in FILE.
-set_flags() {
-  python3 - "$@" <<'EOF'
-import struct, sys
-path, seg, sect, flags = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4], 0)
-d = bytearray(open(path, 'rb').read())
-off = 32
-for _ in range(struct.unpack_from('<I', d, 16)[0]):
-    cmd, size = struct.unpack_from('<II', d, off)
-    for i in range(struct.unpack_from('<I', d, off + 64)[0] if cmd == 0x19 else 0):
-        s = off + 72 + i * 80
-        if d[s:s + 16].rstrip(b'\0') == sect.encode() and d[s + 16:s + 32].rstrip(b'\0') == seg.encode():
-            struct.pack_into('<I', d, s + 64, flags)
-    off += size
-open(path, 'wb').write(d)
-EOF
-}
-
 cp $t/a.o $t/c.o
-set_flags $t/c.o __DATA __got 2
+set_section_flags $t/c.o __DATA __got 2
 
 # ld-prime fails an assertion on a slot a symbol names, as arm64 code
 # names the slots it loads.

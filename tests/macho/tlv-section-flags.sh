@@ -25,28 +25,10 @@ cat <<EOF | $CC -o $t/c.o -c -xassembler -
 .quad 0
 EOF
 
-# Rewrites the flags of the sections named SEG,SECT in FILE.
-set_flags() {
-  python3 - "$@" <<'EOF'
-import struct, sys
-path, seg, sect, flags = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4], 0)
-d = bytearray(open(path, 'rb').read())
-off = 32
-for _ in range(struct.unpack_from('<I', d, 16)[0]):
-    cmd, size = struct.unpack_from('<II', d, off)
-    for i in range(struct.unpack_from('<I', d, off + 64)[0] if cmd == 0x19 else 0):
-        s = off + 72 + i * 80
-        if d[s:s + 16].rstrip(b'\0') == sect.encode() and d[s + 16:s + 32].rstrip(b'\0') == seg.encode():
-            struct.pack_into('<I', d, s + 64, flags)
-    off += size
-open(path, 'wb').write(d)
-EOF
-}
-
 cp $t/b.o $t/data.o
-set_flags $t/data.o __DATA __thread_data 0
+set_section_flags $t/data.o __DATA __thread_data 0
 cp $t/b.o $t/bss.o
-set_flags $t/bss.o __DATA __thread_bss 1
+set_section_flags $t/bss.o __DATA __thread_bss 1
 
 $CC --ld-path=$mold -o $t/exe $t/a.o $t/data.o
 $RUN $t/exe | grep -q '^5 0$'

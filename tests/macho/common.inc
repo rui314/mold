@@ -3,6 +3,11 @@
 # Make sure all commands print out messages in English
 export LC_ALL=C
 
+# The tests' Python, inline or in a script here, imports macho.py from
+# this directory, without writing its bytecode there.
+export PYTHONPATH="$(cd "$(dirname "$0")" && pwd)${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONDONTWRITEBYTECODE=1
+
 if [ -z "$TRIPLE" ]; then
   ARCH="${ARCH:-$(uname -m)}"
   TESTDIR=out/test/$ARCH
@@ -196,19 +201,19 @@ split_has() {
 # older clang knows no firmware and makes an ELF object for it, so
 # tests build a macOS object and mark it.
 mark_firmware() {
-  python3 - "$1" <<'EOF'
-import struct, sys
-d = bytearray(open(sys.argv[1], 'rb').read())
-off, found = 32, False
-for _ in range(struct.unpack_from('<I', d, 16)[0]):
-    cmd, size = struct.unpack_from('<II', d, off)
-    if cmd == 0x32:  # LC_BUILD_VERSION
-        struct.pack_into('<III', d, off + 8, 13, 0x10000, 0)
-        found = True
-    off += size
-open(sys.argv[1], 'wb').write(d)
-sys.exit(not found)
-EOF
+  python3 -m macho set-build-version "$1" 13 1.0 0
+}
+
+# set_section_flags FILE SEG SECT FLAGS [SEG SECT FLAGS...]: rewrites the
+# flags of the sections named SEG,SECT in FILE.
+set_section_flags() {
+  python3 -m macho set-section-flags "$@"
+}
+
+# set_section_align FILE SEG SECT P2ALIGN: rewrites the alignment of the
+# sections named SEG,SECT in FILE.
+set_section_align() {
+  python3 -m macho set-section-align "$@"
 }
 
 # dtrace_header NAME: makes $t/NAME.h from the D script $t/NAME.d, with

@@ -34,30 +34,9 @@ cat <<EOF | $CC -o $t/b.o -c -xassembler -
 .asciz "bar"
 EOF
 
-# Rewrites the flags of sections: arguments are FILE, then SEG SECT
-# FLAGS for each section.
-set_flags() {
-  python3 - "$@" <<'EOF'
-import struct, sys
-path, args = sys.argv[1], sys.argv[2:]
-want = {(args[i], args[i + 1]): int(args[i + 2], 0) for i in range(0, len(args), 3)}
-d = bytearray(open(path, 'rb').read())
-off = 32
-for _ in range(struct.unpack_from('<I', d, 16)[0]):
-    cmd, size = struct.unpack_from('<II', d, off)
-    for i in range(struct.unpack_from('<I', d, off + 64)[0] if cmd == 0x19 else 0):
-        s = off + 72 + i * 80
-        name = (d[s + 16:s + 32].rstrip(b'\0').decode(), d[s:s + 16].rstrip(b'\0').decode())
-        if name in want:
-            struct.pack_into('<I', d, s + 64, want[name])
-    off += size
-open(path, 'wb').write(d)
-EOF
-}
-
-set_flags $t/a.o __DATA __objc_classlist 0x2 __DATA __objc_catlist 0x2 \
+set_section_flags $t/a.o __DATA __objc_classlist 0x2 __DATA __objc_catlist 0x2 \
   __DATA __objc_selrefs 0x2 __DATA __objc_const 0x4 __TEXT __objc_methname 0
-set_flags $t/b.o __TEXT __objc_methname 0
+set_section_flags $t/b.o __TEXT __objc_methname 0
 
 sect() {
   otool -l $1 | awk -v s=$2 '$1 == "sectname" && $2 == s { f = 1; next }
