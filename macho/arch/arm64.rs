@@ -1376,7 +1376,7 @@ impl Target for Arm64 {
                         // its island plus the addend, past the island).
                         let thunk = sym
                             .filter(|_| a == 0)
-                            .and_then(|sym| ctx.sym_aux(sym).thunk_addr::<Self>(p));
+                            .and_then(|sym| ctx.symbols[sym].thunk_addr(ctx, p));
                         match thunk {
                             Some(thunk) if adrp_reaches(t, thunk) => {
                                 val = thunk.wrapping_sub(p) as i64

@@ -4,7 +4,7 @@ use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::macho::*;
-use crate::symbol::{NO_IDX, SymbolId};
+use crate::symbol::SymbolId;
 
 /// __TEXT,__stubs: jump stubs for calls to imported functions.
 #[derive(Debug)]
@@ -44,10 +44,10 @@ pub fn entry_offset<E: Target>(idx: u32) -> u64 {
 /// weak lookup goes through its GOT slot either way, never a lazy
 /// pointer, as ld64 has it.
 pub fn add_symbol<E: Target>(ctx: &mut Context<E>, id: SymbolId) {
-    if ctx.sym_aux(id).stub_idx != NO_IDX {
+    if ctx.symbols[id].stub_idx(&ctx.symbols).is_some() {
         return;
     }
-    ctx.sym_aux_mut(id).stub_idx = ctx.stubs.symbols.len() as u32;
+    ctx.symbols.aux_mut(id).stub_idx = ctx.stubs.symbols.len() as u32;
     ctx.stubs.symbols.push(id);
     if ctx.args.lazy_binding && !ctx.binds_weak_lookup(id) {
         crate::chunks::stub_helper::ensure_stub_binder(ctx);

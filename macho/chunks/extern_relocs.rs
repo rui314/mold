@@ -68,7 +68,7 @@ pub fn build<E: Target>(ctx: &mut Context<E>) {
                 continue;
             }
             let pointer = E::is_absrel(rel);
-            let call = rel.is_func_call::<E>() && ctx.sym_aux(id).stub_idx == crate::symbol::NO_IDX;
+            let call = rel.is_func_call::<E>() && ctx.symbols[id].stub_idx(&ctx.symbols).is_none();
             if pointer || call {
                 vec.push((base + rel.offset as u64, id, call));
             }

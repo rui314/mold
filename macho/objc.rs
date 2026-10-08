@@ -459,7 +459,7 @@ pub fn create_objc_msgsend_stubs<E: Target>(ctx: &mut Context<E>) {
     stubs.sort_by(|a, b| a.1.cmp(b.1));
     for (idx, &(i, _)) in stubs.iter().enumerate() {
         ctx.symbols[i].set_file(FileId::Obj(internal));
-        ctx.sym_aux_mut(i).objc_stub_idx = idx as u32;
+        ctx.symbols.aux_mut(i).objc_stub_idx = idx as u32;
     }
     ctx.objc_stubs.symbols = stubs;
 
@@ -494,7 +494,7 @@ pub fn drop_dead_objc_stubs<E: Target>(ctx: &mut Context<E>) {
         ctx.symbols[id].clear_file();
     }
     for (idx, &(id, _)) in live.iter().enumerate() {
-        ctx.sym_aux_mut(id).objc_stub_idx = idx as u32;
+        ctx.symbols.aux_mut(id).objc_stub_idx = idx as u32;
     }
     if live.is_empty() {
         ctx.objc_stubs.msgsend_sym = None;

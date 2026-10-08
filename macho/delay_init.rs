@@ -140,8 +140,8 @@ fn create_delay_stubs<E: Target>(
     called.dedup();
     for (i, &id) in called.iter().enumerate() {
         crate::chunks::got::add_got_symbol(ctx, id);
-        let got = ctx.sym_aux(id).got_idx;
-        ctx.sym_aux_mut(id).delay_stub_idx = i as u32;
+        let got = ctx.symbols[id].got_idx(&ctx.symbols).unwrap();
+        ctx.symbols.aux_mut(id).delay_stub_idx = i as u32;
         let dlopen = dlopen_of[dlopen_name(ctx, id)];
         let name = leak_bytes([ctx.symbols[id].name(), b"$delayInitStub"].concat());
         ctx.delay_init.stubs.push(DelayStub { sym: id, name, dlopen, got });

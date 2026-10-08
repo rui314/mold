@@ -27,7 +27,7 @@ use crate::input_files::FileId;
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho_consts::*;
 use crate::objc::{DataField, ObjcRef};
-use crate::symbol::{NO_IDX, SymbolId};
+use crate::symbol::SymbolId;
 use crate::util::encode_uleb;
 
 #[derive(Debug)]
@@ -224,23 +224,25 @@ impl<'a, E: Target> Places<'a, E> {
     /// the mach header's names (___dso_handle, __mh_*_header).
     fn sym(&self, id: SymbolId) -> Option<Place> {
         let ctx = self.ctx;
-        let sym = &ctx.symbols[id];
-        let aux = ctx.sym_aux(id);
+        let symbols = &ctx.symbols;
+        let sym = &symbols[id];
         match sym.file()? {
-            FileId::Dylib(_) if aux.lazy_stub_idx != NO_IDX => {
-                Some(self.lazy_helper(aux.lazy_stub_idx))
+            FileId::Dylib(_) => {
+                if let Some(idx) = sym.lazy_stub_idx(symbols) {
+                    Some(self.lazy_helper(idx))
+                } else if let Some(idx) = sym.delay_stub_idx(symbols) {
+                    Some(self.chunk(ChunkId::DelayStubs, delay_init::stub_offset::<E>(idx)))
+                } else {
+                    let idx = sym.stub_idx(symbols)?;
+                    Some(self.chunk(ChunkId::Stubs, stubs::entry_offset::<E>(idx)))
+                }
             }
-            FileId::Dylib(_) if aux.delay_stub_idx != NO_IDX => Some(
-                self.chunk(ChunkId::DelayStubs, delay_init::stub_offset::<E>(aux.delay_stub_idx)),
-            ),
-            FileId::Dylib(_) => (aux.stub_idx != NO_IDX)
-                .then(|| self.chunk(ChunkId::Stubs, stubs::entry_offset::<E>(aux.stub_idx))),
             FileId::Obj(obj) => {
                 if let Some(isec) = sym.input_section() {
                     let (n, off) = self.isec(isec as usize)?;
                     Some((n, off + sym.value))
-                } else if aux.objc_stub_idx != NO_IDX {
-                    let off = objc_stubs::entry_offset(ctx, aux.objc_stub_idx);
+                } else if let Some(idx) = sym.objc_stub_idx(symbols) {
+                    let off = objc_stubs::entry_offset(ctx, idx);
                     Some(self.chunk(ChunkId::ObjcStubs, off))
                 } else if ctx.is_internal(obj as usize) {
                     let header = (0, sym.value.wrapping_sub(self.header_addr));
@@ -260,12 +262,15 @@ impl<'a, E: Target> Places<'a, E> {
     /// A symbol's GOT slot, or a lazy dylib's symbol's __lazy_load_got
     /// slot.
     fn got_slot(&self, id: SymbolId) -> Place {
-        let aux = self.ctx.sym_aux(id);
-        if aux.got_idx == NO_IDX && aux.lazy_got_idx != NO_IDX {
-            let addr = self.ctx.lazy_load_got.slot_addr(aux.lazy_got_idx);
-            return self.chunk_addr(ChunkId::LazyLoadGot, addr);
+        let symbols = &self.ctx.symbols;
+        let sym = &symbols[id];
+        match sym.got_idx(symbols) {
+            Some(idx) => self.got_index(idx as usize),
+            None => {
+                let addr = self.ctx.lazy_load_got.slot_addr(sym.lazy_got_idx(symbols).unwrap());
+                self.chunk_addr(ChunkId::LazyLoadGot, addr)
+            }
         }
-        self.got_index(aux.got_idx as usize)
     }
 
     /// Where __lazy_helpers entry `i` lies.
@@ -306,8 +311,9 @@ impl<'a, E: Target> Places<'a, E> {
             return Some(self.got_slot(id));
         }
         if r.is_func_call::<E>() {
-            let stub = ctx.sym_aux(id).stub_idx;
-            if ctx.is_interposable(id) && stub != NO_IDX {
+            if ctx.is_interposable(id)
+                && let Some(stub) = ctx.symbols[id].stub_idx(&ctx.symbols)
+            {
                 return Some(self.chunk(ChunkId::Stubs, stubs::entry_offset::<E>(stub)));
             }
             let (n, off) = self.sym(id)?;
@@ -449,8 +455,10 @@ impl<'a, E: Target> Places<'a, E> {
         let ctx = self.ctx;
         let lazy = &ctx.lazy_helpers;
         let Some(lazy_load) = lazy.dyld_lazy_load else { return };
-        let stub =
-            self.chunk(ChunkId::Stubs, stubs::entry_offset::<E>(ctx.sym_aux(lazy_load).stub_idx));
+        let stub = self.chunk(
+            ChunkId::Stubs,
+            stubs::entry_offset::<E>(ctx.symbols[lazy_load].stub_idx(&ctx.symbols).unwrap()),
+        );
         for (i, h) in lazy.helpers.iter().enumerate() {
             let (n, at) = self.lazy_helper(i as u32);
             for (off, kind, to) in E::lazy_helper_refs(h.kind) {
@@ -486,7 +494,8 @@ impl<'a, E: Target> Places<'a, E> {
         let ctx = self.ctx;
         let delay = &ctx.delay_init;
         let Some(dlopen) = delay.dlopen_sym else { return };
-        let dlopen_stub = stubs::entry_offset::<E>(ctx.sym_aux(dlopen).stub_idx);
+        let dlopen_stub =
+            stubs::entry_offset::<E>(ctx.symbols[dlopen].stub_idx(&ctx.symbols).unwrap());
         let dlopen_helper =
             |i: u32| self.chunk_addr(ChunkId::DelayHelper, delay.dlopen_helper_addr(i as usize));
         let mut push_refs = |from: Place, code: DelayCode, resolve: &dyn Fn(DelayTarget) -> _| {

@@ -3,6 +3,7 @@
 use rayon::prelude::*;
 
 use crate::arch::Target;
+use crate::context::Context;
 use crate::input_files::FileId;
 
 /// A symbol index, u32 as in mold: every per-symbol and
@@ -67,10 +68,11 @@ pub struct Symbol {
     /// Offset from the start of `isec`, or the absolute value for `N_ABS`
     /// symbols.
     pub value: u64,
-    /// Index into the sparse SymAux table (ctx.sym_aux), or NONE: only
-    /// symbols with a stub/GOT/TLV/objc slot have an entry - mold's
-    /// aux_idx - instead of 16 bytes per symbol whether needed or not.
-    pub aux_idx: u32,
+    /// Index into the sparse SymbolAux table (SymbolTable's aux), or
+    /// NONE: only symbols with a stub/GOT/TLV/objc slot have an entry -
+    /// mold's aux_idx - instead of 16 bytes per symbol whether needed or
+    /// not. Read through aux().
+    aux_idx: u32,
     /// The NEEDS_* flags scan_relocations sets, in parallel, and then
     /// turns into stubs and GOT slots - mold's flags.
     flags: std::sync::atomic::AtomicU8,
@@ -286,6 +288,77 @@ impl Symbol {
     pub fn is_marked(&self) -> bool {
         self.bits.load(std::sync::atomic::Ordering::Relaxed) & F_MARK != 0
     }
+
+    /// The symbol's synthetic-slot indices, from the side table; None
+    /// for the vast majority of symbols, which take no slot (the entry
+    /// is made by the first SymbolTable::aux_mut).
+    #[inline]
+    pub fn aux<'a>(&self, symbols: &'a SymbolTable) -> Option<&'a SymbolAux> {
+        (self.aux_idx != NONE).then(|| &symbols.aux[self.aux_idx as usize])
+    }
+
+    #[inline]
+    pub fn stub_idx(&self, symbols: &SymbolTable) -> Option<u32> {
+        let idx = self.aux(symbols)?.stub_idx;
+        (idx != NO_IDX).then_some(idx)
+    }
+
+    #[inline]
+    pub fn got_idx(&self, symbols: &SymbolTable) -> Option<u32> {
+        let idx = self.aux(symbols)?.got_idx;
+        (idx != NO_IDX).then_some(idx)
+    }
+
+    #[inline]
+    pub fn objc_stub_idx(&self, symbols: &SymbolTable) -> Option<u32> {
+        let idx = self.aux(symbols)?.objc_stub_idx;
+        (idx != NO_IDX).then_some(idx)
+    }
+
+    #[inline]
+    pub fn lazy_stub_idx(&self, symbols: &SymbolTable) -> Option<u32> {
+        let idx = self.aux(symbols)?.lazy_stub_idx;
+        (idx != NO_IDX).then_some(idx)
+    }
+
+    #[inline]
+    pub fn lazy_got_idx(&self, symbols: &SymbolTable) -> Option<u32> {
+        let idx = self.aux(symbols)?.lazy_got_idx;
+        (idx != NO_IDX).then_some(idx)
+    }
+
+    #[inline]
+    pub fn delay_stub_idx(&self, symbols: &SymbolTable) -> Option<u32> {
+        let idx = self.aux(symbols)?.delay_stub_idx;
+        (idx != NO_IDX).then_some(idx)
+    }
+
+    /// Whether calls to the symbol go through a stub of any kind: its
+    /// __stubs entry, or for a lazily loaded or delay-init import, its
+    /// call helper or delay-init stub - mold's has_plt.
+    #[inline]
+    pub fn has_stub(&self, symbols: &SymbolTable) -> bool {
+        self.aux(symbols).is_some_and(|a| {
+            a.stub_idx != NO_IDX || a.lazy_stub_idx != NO_IDX || a.delay_stub_idx != NO_IDX
+        })
+    }
+
+    #[inline]
+    pub fn has_got(&self, symbols: &SymbolTable) -> bool {
+        self.got_idx(symbols).is_some()
+    }
+
+    /// The address of a thunk entry for the symbol that a branch at `pc`
+    /// can reach, if it has one - mold's thunk_addr.
+    #[inline]
+    pub fn thunk_addr<E: Target>(&self, ctx: &Context<E>, pc: u64) -> Option<u64> {
+        let range = (E::BRANCH_RANGE / 2) as i64;
+        let addrs: &[u64] = self.aux(&ctx.symbols).map_or(&[], |a| &a.thunk_addrs);
+        addrs.iter().copied().find(|&t| {
+            let d = t.wrapping_sub(pc) as i64;
+            (-range..range).contains(&d)
+        })
+    }
 }
 
 impl Clone for Symbol {
@@ -320,11 +393,11 @@ pub const NO_IDX: u32 = u32::MAX;
 /// A symbol's synthetic-slot indices (__stubs, __got, __objc_stubs,
 /// and for a lazily loaded import __lazy_helpers and __lazy_load_got),
 /// each `NO_IDX` when absent. Only the few symbols that take a slot
-/// ever have one, so these live in a side table indexed by
-/// SymbolId - mold's SymbolAux - keeping Symbol itself small, as
-/// it is loaded in every symbol scan.
+/// ever have one, so these live in a side table of SymbolTable -
+/// mold's SymbolAux - keeping Symbol itself small, as it is loaded in
+/// every symbol scan.
 #[derive(Clone, Debug)]
-pub struct SymAux {
+pub struct SymbolAux {
     pub stub_idx: u32,
     pub got_idx: u32,
     pub objc_stub_idx: u32,
@@ -340,44 +413,17 @@ pub struct SymAux {
     pub thunk_addrs: Vec<u64>,
 }
 
-impl SymAux {
-    pub const NONE: Self = Self {
-        stub_idx: NO_IDX,
-        got_idx: NO_IDX,
-        objc_stub_idx: NO_IDX,
-        lazy_stub_idx: NO_IDX,
-        lazy_got_idx: NO_IDX,
-        delay_stub_idx: NO_IDX,
-        thunk_addrs: Vec::new(),
-    };
-
-    /// Whether calls to the symbol go through a stub of any kind: its
-    /// __stubs entry, or for a lazily loaded or delay-init import, its
-    /// call helper or delay-init stub - mold's Symbol::has_plt.
-    #[inline]
-    pub fn has_stub(&self) -> bool {
-        self.stub_idx != NO_IDX || self.lazy_stub_idx != NO_IDX || self.delay_stub_idx != NO_IDX
-    }
-
-    /// The address of a thunk entry for the symbol that a branch at `pc`
-    /// can reach, if it has one - mold's Symbol::thunk_addr.
-    #[inline]
-    pub fn thunk_addr<E: Target>(&self, pc: u64) -> Option<u64> {
-        let range = (E::BRANCH_RANGE / 2) as i64;
-        self.thunk_addrs.iter().copied().find(|&t| {
-            let d = t.wrapping_sub(pc) as i64;
-            (-range..range).contains(&d)
-        })
-    }
-}
-
-/// The shared "no slots" entry that sym_aux() returns for symbols
-/// without an aux entry.
-pub static NONE_AUX: SymAux = SymAux::NONE;
-
-impl Default for SymAux {
+impl Default for SymbolAux {
     fn default() -> Self {
-        Self::NONE
+        Self {
+            stub_idx: NO_IDX,
+            got_idx: NO_IDX,
+            objc_stub_idx: NO_IDX,
+            lazy_stub_idx: NO_IDX,
+            lazy_got_idx: NO_IDX,
+            delay_stub_idx: NO_IDX,
+            thunk_addrs: Vec::new(),
+        }
     }
 }
 
@@ -394,6 +440,10 @@ impl Default for SymAux {
 pub struct SymbolTable {
     shards: Vec<ShardMap>,
     pub syms: Vec<Symbol>,
+    /// The symbols' synthetic-slot indices, for only those that take a
+    /// slot (see Symbol::aux), grown by aux_mut - mold's sparse
+    /// SymbolAux side table.
+    aux: Vec<SymbolAux>,
 }
 
 pub const NUM_SHARDS: usize = 64;
@@ -467,7 +517,11 @@ type ShardMap = hashbrown::HashMap<Key, SymbolId, std::hash::BuildHasherDefault<
 
 impl Default for SymbolTable {
     fn default() -> Self {
-        Self { shards: (0..NUM_SHARDS).map(|_| ShardMap::default()).collect(), syms: Vec::new() }
+        Self {
+            shards: (0..NUM_SHARDS).map(|_| ShardMap::default()).collect(),
+            syms: Vec::new(),
+            aux: Vec::new(),
+        }
     }
 }
 
@@ -491,6 +545,18 @@ impl SymbolTable {
     pub fn add_local(&mut self, name: &'static [u8]) -> SymbolId {
         self.syms.push(Symbol::new(name));
         (self.syms.len() - 1) as u32
+    }
+
+    /// Mutable access to a symbol's slot indices, allocating its entry
+    /// in the side table on first use. Called only from the serial
+    /// slot-assignment passes.
+    pub fn aux_mut(&mut self, id: SymbolId) -> &mut SymbolAux {
+        let aux_idx = &mut self.syms[id as usize].aux_idx;
+        if *aux_idx == NONE {
+            *aux_idx = self.aux.len() as u32;
+            self.aux.push(SymbolAux::default());
+        }
+        &mut self.aux[*aux_idx as usize]
     }
 
     /// Interns every (name, precomputed-hash) pair at once, returning

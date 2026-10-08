@@ -178,7 +178,7 @@ fn create_lazy_load_slots<E: Target>(
             index.insert((id, own), slots.len() as u32);
             // The slot an arm64 ldr loads (see LazyRef::Slot).
             if !own {
-                ctx.sym_aux_mut(id).lazy_got_idx = slots.len() as u32;
+                ctx.symbols.aux_mut(id).lazy_got_idx = slots.len() as u32;
             }
             let name = leak_bytes([ctx.symbols[id].name(), b"$lazyGOT"].concat());
             slots.push((id, name));
@@ -237,7 +237,7 @@ fn create_lazy_helpers<E: Target>(
     }
 
     for (i, h) in helpers.iter().enumerate().filter(|(_, h)| h.kind == LazyUse::Call) {
-        ctx.sym_aux_mut(h.sym).lazy_stub_idx = i as u32;
+        ctx.symbols.aux_mut(h.sym).lazy_stub_idx = i as u32;
     }
     ctx.lazy_helpers.sites = sites;
     ctx.lazy_helpers.helpers = helpers;

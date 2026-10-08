@@ -41,7 +41,7 @@ use crate::context::Context;
 use crate::input_files::FileId;
 use crate::input_sections::InputSectionId;
 use crate::macho::{S_ATTR_PURE_INSTRUCTIONS, S_ATTR_SOME_INSTRUCTIONS};
-use crate::symbol::{NO_IDX, SymbolId};
+use crate::symbol::SymbolId;
 use crate::util::align_to;
 
 /// We create a thunk for each 10 MiB batch of code (mold: 32 MiB).
@@ -390,10 +390,10 @@ fn scan_batch<E: Target>(
 /// weak definition that may be interposed) or its _objc_msgSend stub.
 fn needs_thunk<E: Target>(ctx: &Context<E>, reach: &Reach, p: u64, id: SymbolId) -> bool {
     let sym = &ctx.symbols[id];
-    let aux = ctx.sym_aux(id);
+    let stub = sym.stub_idx(&ctx.symbols).is_some();
     let side = match sym.file() {
-        _ if aux.stub_idx != NO_IDX && ctx.is_interposable(id) => reach.stubs,
-        Some(FileId::Dylib(_)) if aux.stub_idx != NO_IDX => reach.stubs,
+        _ if stub && ctx.is_interposable(id) => reach.stubs,
+        Some(FileId::Dylib(_)) if stub => reach.stubs,
         Some(FileId::Obj(_)) => match sym.input_section() {
             Some(target) => {
                 let target = &ctx.isecs[ctx.resolve_isec(target as usize)];
@@ -411,7 +411,7 @@ fn needs_thunk<E: Target>(ctx: &Context<E>, reach: &Reach, p: u64, id: SymbolId)
                     _ => Side::Outside,
                 }
             }
-            None if aux.objc_stub_idx != NO_IDX => reach.objc_stubs,
+            None if sym.objc_stub_idx(&ctx.symbols).is_some() => reach.objc_stubs,
             None => Side::Outside,
         },
         // A DTrace symbol, at address 0: a probe site needs no thunk,
@@ -426,7 +426,7 @@ fn needs_thunk<E: Target>(ctx: &Context<E>, reach: &Reach, p: u64, id: SymbolId)
     }
 }
 
-/// Records every thunk entry's address on its symbol (SymAux::
+/// Records every thunk entry's address on its symbol (SymbolAux::
 /// thunk_addrs), in address order, so that applying an out-of-range
 /// branch can pick the entry within reach. mold's
 /// gather_thunk_addresses.
@@ -435,8 +435,7 @@ pub fn gather_thunk_addresses<E: Target>(ctx: &mut Context<E>) {
     // the borrows are split.
     let chunks = &ctx.chunks;
     let output_sections = &ctx.output_sections;
-    let symtab = &mut ctx.symbols;
-    let sym_aux = &mut ctx.sym_aux;
+    let symbols = &mut ctx.symbols;
     for &id in chunks {
         let ChunkId::Output(id) = id else { continue };
         let osec = &output_sections[id.index()];
@@ -444,7 +443,7 @@ pub fn gather_thunk_addresses<E: Target>(ctx: &mut Context<E>) {
         for thunk in &osec.thunks {
             for (i, &sym) in thunk.syms.iter().enumerate() {
                 let addr = base + thunk.offset + i as u64 * E::THUNK_SIZE;
-                Context::<E>::sym_aux_mut_in(symtab, sym_aux, sym).thunk_addrs.push(addr);
+                symbols.aux_mut(sym).thunk_addrs.push(addr);
             }
         }
     }
@@ -468,7 +467,7 @@ pub fn island_symbols<E: Target>(ctx: &Context<E>) -> Vec<(u64, u8, &'static [u8
             let mut buf = Vec::new();
             let mut ends = Vec::with_capacity(thunk.syms.len());
             for (i, &sym) in thunk.syms.iter().enumerate() {
-                let addrs = &ctx.sym_aux(sym).thunk_addrs;
+                let addrs = &ctx.symbols[sym].aux(&ctx.symbols).unwrap().thunk_addrs;
                 let n = addrs.iter().position(|&a| a == addr(i)).unwrap() + 1;
                 buf.extend_from_slice(ctx.symbols[sym].name());
                 buf.extend_from_slice(b".island");

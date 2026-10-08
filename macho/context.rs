@@ -105,9 +105,6 @@ pub struct Context<E: Target> {
     /// The object that owns the linker-synthesized sections and
     /// symbols, once created; mold's internal_obj.
     pub internal_obj: Option<usize>,
-    /// Per-symbol synthetic-slot indices (SymbolId-indexed), grown
-    /// lazily; mold's SymbolAux side table.
-    pub sym_aux: Vec<crate::symbol::SymAux>,
     /// Input-order counter for resolution tie-breaking.
     pub priority_counter: u32,
     /// The first priority of the files auto-link options brought in,
@@ -273,7 +270,6 @@ impl<E: Target> Context<E> {
             symbols: SymbolTable::default(),
             isecs: Default::default(),
             internal_obj: None,
-            sym_aux: Vec::new(),
             priority_counter: 0,
             autolink_priority: u32::MAX,
             lto_plugin: None,
@@ -521,41 +517,6 @@ impl<E: Target> Context<E> {
         id
     }
 
-    /// A symbol's synthetic-slot indices, from the side table. Returns
-    /// the all-absent default for symbols with no slots (the table is
-    /// grown lazily by the first setter).
-    pub fn sym_aux(&self, id: SymbolId) -> &crate::symbol::SymAux {
-        // Sparse, as mold's SymbolAux: the symbol carries an index
-        // into the table, NONE for the vast majority that have no slot.
-        match self.symbols[id].aux_idx {
-            crate::symbol::NONE => &crate::symbol::NONE_AUX,
-            i => &self.sym_aux[i as usize],
-        }
-    }
-
-    /// Mutable access to a symbol's slot indices, growing the side table
-    /// to cover it. Called only from the serial slot-assignment passes.
-    pub fn sym_aux_mut(&mut self, id: SymbolId) -> &mut crate::symbol::SymAux {
-        Self::sym_aux_mut_in(&mut self.symbols, &mut self.sym_aux, id)
-    }
-
-    /// `sym_aux_mut` over the two tables it touches, for callers that
-    /// hold another part of the context borrowed at the same time.
-    pub fn sym_aux_mut_in<'a>(
-        symtab: &mut crate::symbol::SymbolTable,
-        sym_aux: &'a mut Vec<crate::symbol::SymAux>,
-        id: SymbolId,
-    ) -> &'a mut crate::symbol::SymAux {
-        // Allocate the symbol's entry on first use; the table holds only
-        // the symbols that take a slot (mold's sparse SymbolAux).
-        if symtab[id].aux_idx == crate::symbol::NONE {
-            symtab[id].aux_idx = sym_aux.len() as u32;
-            sym_aux.push(Default::default());
-        }
-        let i = symtab[id].aux_idx as usize;
-        &mut sym_aux[i]
-    }
-
     /// A subsection's relocations, sliced from its object's reloc arena
     /// (subsections keep only a rel_offset/nrels range, sold-style).
     pub fn isec_relocs(&self, id: usize) -> &[crate::input_sections::Reloc] {
@@ -598,8 +559,7 @@ impl<E: Target> Context<E> {
             Some(FileId::Obj(_)) => {
                 if let Some(isec) = sym.input_section().map(|i| i as usize) {
                     self.isec_addr(isec) + sym.value
-                } else if self.sym_aux(id).objc_stub_idx != crate::symbol::NO_IDX {
-                    let idx = self.sym_aux(id).objc_stub_idx;
+                } else if let Some(idx) = sym.objc_stub_idx(&self.symbols) {
                     self.objc_stubs.hdr.addr + crate::chunks::objc_stubs::entry_offset(self, idx)
                 } else {
                     sym.value
@@ -610,13 +570,12 @@ impl<E: Target> Context<E> {
             // references to dylib symbols are filled in by dyld; the
             // relocation scan has already validated them.
             Some(FileId::Dylib(_)) => {
-                let aux = self.sym_aux(id);
-                if aux.stub_idx != crate::symbol::NO_IDX {
+                if sym.stub_idx(&self.symbols).is_some() {
                     self.sym_stub_addr(id)
-                } else if aux.lazy_stub_idx != crate::symbol::NO_IDX {
-                    self.lazy_helpers.helper_addr(aux.lazy_stub_idx as usize)
-                } else if aux.delay_stub_idx != crate::symbol::NO_IDX {
-                    self.delay_init.stub_addr::<E>(aux.delay_stub_idx as usize)
+                } else if let Some(idx) = sym.lazy_stub_idx(&self.symbols) {
+                    self.lazy_helpers.helper_addr(idx as usize)
+                } else if let Some(idx) = sym.delay_stub_idx(&self.symbols) {
+                    self.delay_init.stub_addr::<E>(idx as usize)
                 } else {
                     0
                 }
@@ -626,7 +585,8 @@ impl<E: Target> Context<E> {
 
     /// Returns the address of a symbol's __stubs entry.
     pub fn sym_stub_addr(&self, id: SymbolId) -> u64 {
-        self.stubs.hdr.addr + crate::chunks::stubs::entry_offset::<E>(self.sym_aux(id).stub_idx)
+        let idx = self.symbols[id].stub_idx(&self.symbols).unwrap();
+        self.stubs.hdr.addr + crate::chunks::stubs::entry_offset::<E>(idx)
     }
 
     /// True for a symbol of a dylib whose initializers wait for the
@@ -885,7 +845,7 @@ impl<E: Target> Context<E> {
     /// The address a branch to `id` targets: the symbol's stub when it
     /// has one and dyld may redirect it, else the symbol itself.
     pub fn branch_target_addr(&self, id: SymbolId) -> u64 {
-        if self.is_interposable(id) && self.sym_aux(id).stub_idx != crate::symbol::NO_IDX {
+        if self.is_interposable(id) && self.symbols[id].stub_idx(&self.symbols).is_some() {
             self.sym_stub_addr(id)
         } else {
             self.sym_addr(id)
@@ -895,11 +855,11 @@ impl<E: Target> Context<E> {
     /// Returns the address of a symbol's __got slot, or for a lazily
     /// loaded dylib's symbol, its __lazy_load_got slot.
     pub fn sym_got_addr(&self, id: SymbolId) -> u64 {
-        let aux = self.sym_aux(id);
-        if aux.got_idx == crate::symbol::NO_IDX && aux.lazy_got_idx != crate::symbol::NO_IDX {
-            return self.lazy_load_got.slot_addr(aux.lazy_got_idx);
+        let sym = &self.symbols[id];
+        match sym.got_idx(&self.symbols) {
+            Some(idx) => self.got.slot_addr(idx as usize),
+            None => self.lazy_load_got.slot_addr(sym.lazy_got_idx(&self.symbols).unwrap()),
         }
-        self.got.slot_addr(aux.got_idx as usize)
     }
 
     /// Returns the address of the __got slot the objc stubs load
