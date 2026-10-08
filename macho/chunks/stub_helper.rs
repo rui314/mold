@@ -100,7 +100,12 @@ pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
 }
 
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
-    E::write_stub_helper(ctx, ctx.stub_helper.hdr.addr, buf);
+    let addr = ctx.stub_helper.hdr.addr;
+    if ctx.args.legacy_linkedit {
+        E::write_legacy_stub_helper(ctx, addr, buf);
+    } else {
+        E::write_stub_helper(ctx, addr, buf);
+    }
 }
 
 /// The header's references to __dyld_private and dyld_stub_binder's GOT

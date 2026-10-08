@@ -206,6 +206,15 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
     /// address and `buf` its bytes.
     fn write_stub_helper(ctx: &Context<Self>, addr: u64, buf: &mut [u8]);
 
+    /// Writes legacy LINKEDIT's __stub_helper section (see
+    /// Args::legacy_linkedit) instead, which has no header: one entry
+    /// per stub that enters crt1.o's dyld_stub_binding_helper with the
+    /// address of the stub's lazy pointer. Only an x86-64 image has
+    /// legacy LINKEDIT.
+    fn write_legacy_stub_helper(_ctx: &Context<Self>, _addr: u64, _buf: &mut [u8]) {
+        unreachable!("legacy LINKEDIT on {}", Self::NAME)
+    }
+
     /// Writes the __objc_stubs section: for each _objc_msgSend$<sel>
     /// symbol, code that loads the selector from its __objc_selrefs
     /// slot and tail-calls _objc_msgSend through the GOT.

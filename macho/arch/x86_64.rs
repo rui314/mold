@@ -173,29 +173,6 @@ fn write_branch8(
     loc[0] = val as u8;
 }
 
-/// Writes legacy LINKEDIT's stub helper (see Args::legacy_linkedit),
-/// which has no header: each entry hands dyld_stub_binding_helper the
-/// address of its lazy pointer, which dyld binds by the indirect symbol
-/// table.
-///   lea  lazy_ptr(%rip), %r11
-///   jmp  dyld_stub_binding_helper
-fn write_legacy_stub_helper(ctx: &Context<X86_64>, addr: u64, buf: &mut [u8]) {
-    let helper = ctx.stub_helper.binding_helper.map(|id| ctx.symbols[id].addr(ctx));
-    if helper.is_none() {
-        crate::error!("stub helper: target 'dyld_stub_binding_helper' does not have address");
-    }
-    for i in 0..ctx.stubs.lazy.len() {
-        let off = stub_helper::entry_offset(ctx, i as u32);
-        let ent = &mut buf[off as usize..];
-        let ent_addr = addr + off;
-        let ptr = ctx.lazy_ptrs.slot_addr(i);
-        ent[0..3].copy_from_slice(&[0x4c, 0x8d, 0x1d]);
-        write32(&mut ent[3..], ptr.wrapping_sub(ent_addr + 7) as u32);
-        ent[7] = 0xe9;
-        write32(&mut ent[8..], helper.unwrap_or(0).wrapping_sub(ent_addr + 12) as u32);
-    }
-}
-
 impl Target for X86_64 {
     const NAME: &'static str = "x86_64";
     const CPUTYPE: u32 = CPU_TYPE_X86_64;
@@ -284,10 +261,6 @@ impl Target for X86_64 {
     }
 
     fn write_stub_helper(ctx: &Context<Self>, addr: u64, buf: &mut [u8]) {
-        if ctx.args.legacy_linkedit {
-            write_legacy_stub_helper(ctx, addr, buf);
-            return;
-        }
         // The header, as ld64 emits it:
         //   lea  __dyld_private(%rip), %r11
         //   push %r11
@@ -311,6 +284,27 @@ impl Target for X86_64 {
             buf[off + 5] = 0xe9;
             write32(&mut buf[off + 6..], addr.wrapping_sub(ent_addr + 10) as u32);
             buf[off + 10..off + 12].fill(0);
+        }
+    }
+
+    /// Each entry hands dyld_stub_binding_helper the address of its lazy
+    /// pointer, which dyld binds by the indirect symbol table.
+    ///   lea  lazy_ptr(%rip), %r11
+    ///   jmp  dyld_stub_binding_helper
+    fn write_legacy_stub_helper(ctx: &Context<Self>, addr: u64, buf: &mut [u8]) {
+        let helper = ctx.stub_helper.binding_helper.map(|id| ctx.symbols[id].addr(ctx));
+        if helper.is_none() {
+            crate::error!("stub helper: target 'dyld_stub_binding_helper' does not have address");
+        }
+        for i in 0..ctx.stubs.lazy.len() {
+            let off = stub_helper::entry_offset(ctx, i as u32);
+            let ent = &mut buf[off as usize..];
+            let ent_addr = addr + off;
+            let ptr = ctx.lazy_ptrs.slot_addr(i);
+            ent[0..3].copy_from_slice(&[0x4c, 0x8d, 0x1d]);
+            write32(&mut ent[3..], ptr.wrapping_sub(ent_addr + 7) as u32);
+            ent[7] = 0xe9;
+            write32(&mut ent[8..], helper.unwrap_or(0).wrapping_sub(ent_addr + 12) as u32);
         }
     }
 
