@@ -133,8 +133,8 @@ fn finish_digest(hasher: SipHash13_128) -> Digest {
 // hash-collision assumption the surrounding algorithm is built on.
 //
 // Of all sections inserted with the same digest in the same round, the
-// slot ends up pointing to the one with the lowest priority, which ICF
-// uses as the leader of the digest's equivalence class.
+// slot ends up pointing to the one with the smallest leader_key, which
+// ICF uses as the leader of the digest's equivalence class.
 struct DigestMap {
     // Time begins in round 1 so that all-zero slots, the initial state
     // of the table, read as vacant.
@@ -217,15 +217,12 @@ impl DigestMap {
             }
 
             // The digest is already in the table; keep the slot pointing to
-            // the lowest-priority section.
-            let candidate_priority = ctx.section(isec).priority(&ctx.objs[isec.file.index()]);
+            // the section with the smallest leader key.
+            let candidate_key = leader_key(ctx, isec);
             let candidate = isec.encode();
             let mut cur = slot.leader.load(Ordering::Relaxed);
             loop {
-                let current = SectionRef::decode(cur);
-                if candidate_priority
-                    >= ctx.section(current).priority(&ctx.objs[current.file.index()])
-                {
+                if candidate_key >= leader_key(ctx, SectionRef::decode(cur)) {
                     break;
                 }
                 match slot.leader.compare_exchange_weak(
@@ -281,19 +278,60 @@ fn is_eligible<E: Target>(ctx: &Context<E>, isec: &InputSection<E>) -> bool {
         return false;
     }
     if isec.sh_flags & SHF_EXECINSTR as u64 != 0 {
-        return (ctx.args.icf_all || !isec.is_address_taken())
-            && name != b".init"
-            && name != b".fini";
+        return name != b".init" && name != b".fini";
+    }
+    let is_readonly = isec.sh_flags & SHF_WRITE as u64 == 0;
+    let is_relro = name.starts_with(b".data.rel.ro");
+    is_readonly || is_relro || is_gcc_except_table(name)
+}
+
+fn is_gcc_except_table(name: &[u8]) -> bool {
+    name == b".gcc_except_table" || name.starts_with(b".gcc_except_table.")
+}
+
+// Returns true if the section's address must differ from those of all
+// other sections, which is the case if a pointer to the section may be
+// compared with another pointer. ICF never merges two such sections, but
+// it may merge any number of sections whose addresses don't matter into
+// one of them, as no one can tell them apart by address.
+fn needs_unique_address<E: Target>(ctx: &Context<E>, isec: &InputSection<E>) -> bool {
+    if !isec.is_address_taken() {
+        return false;
+    }
+    if isec.sh_flags & SHF_EXECINSTR as u64 != 0 {
+        return !ctx.args.icf_all;
     }
     // .gcc_except_table contains a compiler-generated table. Pointer
     // equality for the section is not significant because only the C++
     // exception handling code will use the table at runtime.
-    if name == b".gcc_except_table" || name.starts_with(b".gcc_except_table.") {
-        return true;
-    }
-    let is_readonly = isec.sh_flags & SHF_WRITE as u64 == 0;
-    let is_relro = name.starts_with(b".data.rel.ro");
-    (ctx.args.ignore_data_address_equality || !isec.is_address_taken()) && (is_readonly || is_relro)
+    !ctx.args.ignore_data_address_equality
+        && !is_gcc_except_table(isec.name(&ctx.objs[isec.file.index()]))
+}
+
+// Returns the vertex index of `to` if a reference from section `from` to
+// `to` is an edge of the graph. A reference's hash must identify the
+// section that the reference will point to after ICF. A reference to a
+// section whose address need not be unique will point to the leader of
+// the section's class, so the class identifies it. A section whose
+// address must be unique, on the other hand, stays even if it is not the
+// leader, so a reference to it is hashed by the section's identity.
+// Otherwise, a function returning a pointer to one such section and a
+// function returning a pointer to another would be merged.
+//
+// A reference from a section to itself is an edge in any case: if one
+// section is merged into another, the former's references to itself will
+// point to the latter, just like the latter's references to itself.
+fn edge_target<E: Target>(ctx: &Context<E>, from: SectionRef, to: &InputSection<E>) -> Option<u32> {
+    let index = to.icf_index()?;
+    (to.section_ref() == from || !needs_unique_address(ctx, to)).then_some(index)
+}
+
+// The section with the smallest key in an equivalence class becomes the
+// leader. A section whose address must be unique takes precedence, so
+// that the sections whose addresses don't matter are merged into it.
+fn leader_key<E: Target>(ctx: &Context<E>, r: SectionRef) -> (bool, u64) {
+    let isec = ctx.section(r);
+    (!needs_unique_address(ctx, isec), isec.priority(&ctx.objs[r.file.index()]))
 }
 
 fn compute_digest<E: Target>(ctx: &Context<E>, key: &[u8; 16], r: SectionRef) -> Digest {
@@ -328,7 +366,7 @@ fn compute_digest<E: Target>(ctx: &Context<E>, key: &[u8; 16], r: SectionRef) ->
                 }
                 OriginValue::InputSection(sec) => {
                     let isec = ctx.input_section(sec);
-                    if isec.icf_index().is_some() {
+                    if edge_target(ctx, r, isec).is_some() {
                         h.update(b"4");
                     } else {
                         h.update(b"5");
@@ -461,7 +499,9 @@ fn for_each_edge<E: Target>(ctx: &Context<E>, r: SectionRef, mut f: impl FnMut(u
     let isec = file.section_at(r.shndx);
     let mut add = |sym_idx: u32| {
         let sym = &ctx.symbols[file.base.symbols[sym_idx as usize]];
-        if let Some(target) = sym.input_section_ref(ctx).and_then(InputSection::icf_index) {
+        if let Some(target_isec) = sym.input_section_ref(ctx)
+            && let Some(target) = edge_target(ctx, r, target_isec)
+        {
             f(target);
         }
     };
@@ -485,11 +525,11 @@ struct Edges {
 // We use u32 indices here to improve cache locality.
 //
 // Relocations in a section's FDEs are edges too, because compute_digest
-// hashes eligible relocation targets without identity, and every such
-// target must be represented as an edge to remain distinguishable. In
-// particular, an FDE's reference to an LSDA is an edge; without it, two
-// identical functions whose exception tables catch different types would
-// be folded into one.
+// hashes relocation targets accepted by edge_target without identity, and
+// every such target must be represented as an edge to remain
+// distinguishable. In particular, an FDE's reference to an LSDA is an
+// edge; without it, two identical functions whose exception tables catch
+// different types would be folded into one.
 fn gather_edges<E: Target>(ctx: &Context<E>, sections: &[SectionRef]) -> Edges {
     let _t = ctx.timer("gather_edges");
 
@@ -619,9 +659,9 @@ pub fn icf_sections<E: Target>(ctx: &mut Context<E>) {
     let edges = gather_edges(ctx, &sections);
 
     // The digest map is used to count the number of distinct digests in
-    // the loop below. As a side effect, it records the lowest-priority
-    // section for each digest, which the grouping step after the loop
-    // uses as the leader of each equivalence class.
+    // the loop below. As a side effect, it elects a leader for each
+    // digest's equivalence class, which the grouping step after the loop
+    // uses.
     let mut map = DigestMap::new(digests.len());
 
     // Execute the propagation rounds until convergence is obtained.
@@ -656,13 +696,15 @@ pub fn icf_sections<E: Target>(ctx: &mut Context<E>) {
     }
 
     // Group sections by digest. The final counting round has already
-    // elected a leader for each digest; look it up.
+    // elected a leader for each digest; look it up. A section whose
+    // address must be unique stays even if it is not the leader.
     {
         let _t = ctx.timer("group");
-        sections
-            .par_iter()
-            .zip(&digests)
-            .for_each(|(&r, &digest)| ctx.section(r).set_icf_leader(map.find(digest)));
+        sections.par_iter().zip(&digests).for_each(|(&r, &digest)| {
+            let isec = ctx.section(r);
+            let leader = if needs_unique_address(ctx, isec) { r } else { map.find(digest) };
+            isec.set_icf_leader(leader);
+        });
     }
 
     if let Some(output) = &ctx.args.print_icf_sections {

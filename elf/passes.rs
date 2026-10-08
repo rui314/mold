@@ -3150,7 +3150,7 @@ pub fn compute_import_export<E: Target>(ctx: &mut Context<E>) {
 //
 // In mold, each input section has an "address-taken" bit. If there is a
 // pointer-taking reference to the object, it's set to true. At the ICF
-// stage, we merge only objects whose addresses were not taken.
+// stage, we never merge two objects whose addresses were taken.
 //
 // For functions, address-taking relocations are separated from
 // non-address-taking ones. For example, x86-64 uses R_X86_64_PLT32 for
