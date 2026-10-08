@@ -152,8 +152,8 @@ mod tests {
 
                 let mut mixed = SipHash13_128::new(&key);
                 mixed.update(&data[..prefix]);
-                for word in data[prefix..end].chunks_exact(8) {
-                    mixed.update_u64(u64::from_le_bytes(word.try_into().unwrap()));
+                for word in data[prefix..end].as_chunks::<8>().0 {
+                    mixed.update_u64(u64::from_le_bytes(*word));
                 }
                 mixed.update(&data[end..end + 3]);
                 let (mut expected, mut actual) = ([0; 16], [0; 16]);

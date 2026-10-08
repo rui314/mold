@@ -364,6 +364,10 @@ impl OutputFile {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     // Extend the file so the caller can fill the appended data through the tail
     // of the mapping. This is called at most once per output file, for
     // .gdb_index, whose size is not known until the other sections have been

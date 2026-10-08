@@ -128,6 +128,7 @@ pub unsafe trait FileRecord: Clone + Copy + Default + Send + Sync + 'static {
         }
     }
 
+    #[allow(clippy::chunks_exact_to_as_chunks)]
     fn write_all(records: &[Self], buf: &mut [u8]) {
         for (record, slot) in records.iter().zip(buf.chunks_exact_mut(size_of::<Self>())) {
             record.write(slot);
