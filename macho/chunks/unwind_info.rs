@@ -4,7 +4,7 @@
 use rayon::prelude::*;
 
 use crate::arch::Target;
-use crate::chunks::ChunkHeader;
+use crate::chunks::{ChunkHeader, ChunkId};
 use crate::context::Context;
 use crate::input_sections::{InputSection, UnwindRecord};
 use crate::macho::*;
@@ -54,6 +54,24 @@ pub fn compute_size<E: Target>(ctx: &mut Context<E>) -> u64 {
     ctx.unwind_info.contents = data;
     ctx.unwind_info.personalities = personalities;
     size
+}
+
+/// __unwind_info is encoded as __TEXT is laid out, when only __TEXT's
+/// addresses are final. If it covers code or LSDAs in other segments
+/// too, this encodes it again now every segment has its address.
+/// Returns false if that encoding needs more room than __TEXT left the
+/// section; the layout is then done again with that much room (a
+/// smaller one leaves zeros after it).
+pub fn finish_unwind_info<E: Target>(ctx: &mut Context<E>) -> bool {
+    if !ctx.chunks.contains(&ChunkId::UnwindInfo) || !covers_other_segments(ctx) {
+        return true;
+    }
+    let size = compute_size(ctx);
+    if size > ctx.unwind_info.hdr.size {
+        ctx.unwind_info.min_size = size;
+        return false;
+    }
+    true
 }
 
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {

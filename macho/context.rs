@@ -244,8 +244,6 @@ pub struct Context<E: Target> {
     pub pointers32: std::sync::Mutex<Vec<(u32, u32)>>,
     /// The output's UUID, computed from its contents.
     pub uuid: std::sync::Mutex<[u8; 16]>,
-    /// The resolved address of the entry point symbol.
-    pub entry_addr: u64,
     /// The -init function, when LC_ROUTINES_64 names it (the image has
     /// no __init_offsets to run it first from).
     pub init_routine: Option<SymbolId>,
@@ -338,7 +336,6 @@ impl<E: Target> Context<E> {
             text_relocs: std::sync::Mutex::new(Vec::new()),
             pointers32: std::sync::Mutex::new(Vec::new()),
             uuid: std::sync::Mutex::new([0; 16]),
-            entry_addr: 0,
             init_routine: None,
             output_size: 0,
             timers,

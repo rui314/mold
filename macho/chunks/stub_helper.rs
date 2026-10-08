@@ -65,7 +65,7 @@ pub fn entry_offset<E: Target>(ctx: &Context<E>, idx: u32) -> u64 {
 /// synthesized. Once, on the first stub.
 pub fn ensure_stub_binder<E: Target>(ctx: &mut Context<E>) {
     // Legacy LINKEDIT's helper enters dyld through crt1.o's
-    // dyld_stub_binding_helper instead (see passes::resolve_stub_binder).
+    // dyld_stub_binding_helper instead (see resolve_stub_binder).
     if ctx.stub_helper.dyld_stub_binder.is_some() || ctx.args.legacy_linkedit {
         return;
     }
@@ -78,6 +78,19 @@ pub fn ensure_stub_binder<E: Target>(ctx: &mut Context<E>) {
     let isec = add_data_word(ctx, 8);
     ctx.stub_helper.dyld_private_isec = isec;
     ctx.extra_local_syms.push((b"__dyld_private", isec));
+}
+
+/// Finds the helper legacy LINKEDIT's stub helper entries jump to. It
+/// binds no dyld_stub_binder: its entries go to dyld_stub_binding_helper,
+/// which crt1.o, dylib1.o or bundle1.o defines; no dylib exports it.
+/// (Otherwise dyld_stub_binder is bound once a stub needs it; see
+/// ensure_stub_binder.)
+pub fn resolve_stub_binder<E: Target>(ctx: &mut Context<E>) {
+    if ctx.args.legacy_linkedit {
+        let id = ctx.symbols.lookup(b"dyld_stub_binding_helper");
+        let id = id.filter(|&id| ctx.symbols[id].input_section().is_some());
+        ctx.stub_helper.binding_helper = id;
+    }
 }
 
 pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {

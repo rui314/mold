@@ -247,7 +247,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     objc::merge_objc_categories(&mut ctx);
     // Synthetic stubs and unwind data can introduce library references
     // (notably dyld_stub_binder). Establish them before pruning dylibs.
-    passes::resolve_stub_binder(&mut ctx);
+    chunks::stub_helper::resolve_stub_binder(&mut ctx);
     crate::lazy_load::bind_dyld_lazy_load(&mut ctx);
     timed!("dead_strip_dylibs", passes::dead_strip_dylibs(&mut ctx));
     passes::bind_private_reexports_to_image(&mut ctx);
@@ -301,7 +301,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     // of the parallel __LINKEDIT task group.
     timed!("set_osec_offsets", passes::set_osec_offsets(&mut ctx));
     passes::fix_synthetic_symbols(&mut ctx);
-    passes::resolve_entry(&mut ctx);
+    passes::check_entry_point(&ctx);
     crate::error::checkpoint();
     crate::mapfile::write_dependency_info(&ctx);
     crate::mapfile::print_map(&ctx);

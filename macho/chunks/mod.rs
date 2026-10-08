@@ -679,16 +679,32 @@ fn create_string_cmd(kind: u32, path: &[u8]) -> Vec<u8> {
     append_string(to_vec(&cmd), path)
 }
 
+/// The address of the entry point symbol, or 0 for an image without
+/// one, or for one that is undefined (see passes::check_entry_point).
+fn entry_addr<E: Target>(ctx: &Context<E>) -> u64 {
+    if !ctx.args.has_entry_point() {
+        return 0;
+    }
+    match ctx.symbols.lookup(&ctx.args.entry) {
+        // An entry point in a dylib (an app extension's
+        // _NSExtensionMain): LC_MAIN must point into __TEXT, so it
+        // names the symbol's stub, as ld64 does.
+        Some(id) if ctx.symbols[id].is_imported() => ctx.symbols[id].stub_addr(ctx),
+        Some(id) if ctx.symbols[id].is_defined() => ctx.symbols[id].addr(ctx),
+        _ => 0,
+    }
+}
+
 fn create_main_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     // The entry point is a file offset into __TEXT, whose file offset
     // is zero. The layout sizes the command before the entry point has
-    // an address (0) - also when it lays the segments out again, with
-    // __TEXT placed by the first round.
+    // its final address - also when it lays the segments out again,
+    // with __TEXT placed by the first round.
     let text = ctx.segments.iter().find(|s| s.name == b"__TEXT").unwrap();
     let cmd = EntryPointCommand {
         cmd: LC_MAIN,
         cmdsize: size_of::<EntryPointCommand>() as u32,
-        entryoff: ctx.entry_addr.saturating_sub(text.cmd.vmaddr),
+        entryoff: entry_addr(ctx).saturating_sub(text.cmd.vmaddr),
         stacksize: ctx.args.stack_size,
     };
     to_vec(&cmd)
@@ -721,7 +737,7 @@ fn create_unixthread_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     }
     buf.resize(size, 0);
     let pc = 16 + E::THREAD_STATE_PC_OFFSET;
-    buf[pc..pc + 8].copy_from_slice(&ctx.entry_addr.to_le_bytes());
+    buf[pc..pc + 8].copy_from_slice(&entry_addr(ctx).to_le_bytes());
     if let Some(stack) = ctx.segments.iter().find(|seg| seg.name == b"__UNIXSTACK") {
         let sp = 16 + E::THREAD_STATE_SP_OFFSET;
         buf[sp..sp + 8].copy_from_slice(&(stack.cmd.vmaddr + stack.cmd.vmsize).to_le_bytes());

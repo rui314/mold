@@ -1011,7 +1011,7 @@ pub fn convert_init_offsets<E: Target>(ctx: &mut Context<E>) {
     }
     // ld-prime makes it the first of the initializer offsets.
     if let Some(id) = init {
-        let func = init_func(ctx, id);
+        let func = InitFunc::new(ctx, id);
         ctx.init_offsets.init_funcs.push(func);
     }
     // ld-prime runs the hook for the classes of mergeable libraries (see
@@ -1028,7 +1028,7 @@ pub fn convert_init_offsets<E: Target>(ctx: &mut Context<E>) {
         let obj = ctx.isecs[i].file as usize;
         for rel in initializer_relocs(ctx, i) {
             let func = match rel.target() {
-                RelocTarget::Sym(idx) => init_func(ctx, ctx.objs[obj].symbols[idx as usize]),
+                RelocTarget::Sym(idx) => InitFunc::new(ctx, ctx.objs[obj].symbols[idx as usize]),
                 RelocTarget::Section(isec) => {
                     InitFunc::Local(ctx.isecs.resolve(isec as usize), rel.addend as u64)
                 }
@@ -1036,17 +1036,6 @@ pub fn convert_init_offsets<E: Target>(ctx: &mut Context<E>) {
             ctx.init_offsets.init_funcs.push(func);
         }
         ctx.isecs[i].kill();
-    }
-}
-
-/// The initializer symbol `id` is. One dyld binds, or an absolute
-/// one, has no offset in the image: the link fails as it is written
-/// (see init_offsets::copy_buf).
-fn init_func<E: Target>(ctx: &Context<E>, id: crate::symbol::SymbolId) -> InitFunc {
-    let sym = &ctx.symbols[id];
-    match sym.input_section() {
-        Some(isec) => InitFunc::Local(ctx.isecs.resolve(isec as usize), sym.value),
-        None => InitFunc::Imported(id),
     }
 }
 
@@ -4650,8 +4639,9 @@ fn mach_header_addr<E: Target>(ctx: &Context<E>) -> u64 {
 /// moved once all are sized - all but the mach header's segment
 /// (__TEXT), whose address is known up front (mach_header_addr) and
 /// whose __unwind_info encodes the final addresses of its functions
-/// (and of the others once they are placed: finish_unwind_info).
-/// __LINKEDIT comes last: its tables read every other address.
+/// (and of the others once they are placed: see
+/// unwind_info::finish_unwind_info). __LINKEDIT comes last: its tables
+/// read every other address.
 pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
     let linkedit = ctx.segments.len() - 1;
     debug_assert_eq!(ctx.segments[linkedit].name, b"__LINKEDIT");
@@ -4804,11 +4794,11 @@ fn lay_out_segments<E: Target>(ctx: &mut Context<E>) -> u64 {
 
 /// Lays out every segment but __LINKEDIT as lay_out_segments does, and
 /// again until __unwind_info fits the room __TEXT leaves it (see
-/// finish_unwind_info). Returns the file offset past them.
+/// unwind_info::finish_unwind_info). Returns the file offset past them.
 fn lay_out_segments_with_unwind_info<E: Target>(ctx: &mut Context<E>) -> u64 {
     loop {
         let fileoff = lay_out_segments(ctx);
-        if finish_unwind_info(ctx) {
+        if chunks::unwind_info::finish_unwind_info(ctx) {
             return fileoff;
         }
     }
@@ -4841,26 +4831,6 @@ fn segment_span<E: Target>(ctx: &Context<E>, seg: &OutputSegment) -> u64 {
 fn segment_start_align<E: Target>(ctx: &Context<E>, seg_idx: usize) -> u64 {
     let first = ctx.segments[seg_idx].chunks.first().map_or(0, |&id| ctx.chunk_header(id).p2align);
     ctx.args.segment_align.max(1 << first)
-}
-
-/// __unwind_info is encoded as __TEXT is laid out, when only __TEXT's
-/// addresses are final. If it covers code or LSDAs in other segments
-/// too, this encodes it again now every segment has its address.
-/// Returns false if that encoding needs more room than __TEXT left the
-/// section; the layout is then done again with that much room (a
-/// smaller one leaves zeros after it).
-fn finish_unwind_info<E: Target>(ctx: &mut Context<E>) -> bool {
-    if !ctx.chunks.contains(&ChunkId::UnwindInfo)
-        || !chunks::unwind_info::covers_other_segments(ctx)
-    {
-        return true;
-    }
-    let size = chunks::unwind_info::compute_size(ctx);
-    if size > ctx.unwind_info.hdr.size {
-        ctx.unwind_info.min_size = size;
-        return false;
-    }
-    true
 }
 
 /// Lays out a segment's chunks from file offset `fileoff` and address
@@ -5374,19 +5344,14 @@ fn build_fixups<E: Target>(ctx: &Context<E>) -> Fixups {
     Fixups::Classic { rebase, bind, weak_bind, lazy_bind, lazy_offsets }
 }
 
-/// Resolves the entry point symbol.
-pub fn resolve_entry<E: Target>(ctx: &mut Context<E>) {
+/// Reports an entry point symbol that is undefined (see
+/// chunks::entry_addr).
+pub fn check_entry_point<E: Target>(ctx: &Context<E>) {
     if !ctx.args.has_entry_point() {
         return;
     }
     match ctx.symbols.lookup(&ctx.args.entry) {
-        // An entry point in a dylib (an app extension's
-        // _NSExtensionMain): LC_MAIN must point into __TEXT, so it
-        // names the symbol's stub, as ld64 does.
-        Some(id) if ctx.symbols[id].is_imported() => {
-            ctx.entry_addr = ctx.symbols[id].stub_addr(ctx)
-        }
-        Some(id) if ctx.symbols[id].is_defined() => ctx.entry_addr = ctx.symbols[id].addr(ctx),
+        Some(id) if ctx.symbols[id].is_imported() || ctx.symbols[id].is_defined() => {}
         _ => {
             error!(
                 "undefined symbol for entry point: {}",
@@ -5407,19 +5372,6 @@ pub fn add_entry_stub<E: Target>(ctx: &mut Context<E>) {
         && ctx.symbols[id].is_imported()
     {
         ctx.symbols[id].add_flags(NEEDS_STUB);
-    }
-}
-
-/// Finds the helper legacy LINKEDIT's stub helper entries jump to. It
-/// binds no dyld_stub_binder: its entries go to dyld_stub_binding_helper,
-/// which crt1.o, dylib1.o or bundle1.o defines; no dylib exports it.
-/// (Otherwise dyld_stub_binder is bound once a stub needs it; see
-/// chunks::stub_helper::ensure_stub_binder.)
-pub fn resolve_stub_binder<E: Target>(ctx: &mut Context<E>) {
-    if ctx.args.legacy_linkedit {
-        let id = ctx.symbols.lookup(b"dyld_stub_binding_helper");
-        let id = id.filter(|&id| ctx.symbols[id].input_section().is_some());
-        ctx.stub_helper.binding_helper = id;
     }
 }
 

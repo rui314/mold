@@ -25,6 +25,19 @@ pub enum InitFunc {
     Imported(SymbolId),
 }
 
+impl InitFunc {
+    /// The initializer symbol `id` is. One dyld binds, or an absolute
+    /// one, has no offset in the image: the link fails as it is written
+    /// (see copy_buf).
+    pub fn new<E: Target>(ctx: &Context<E>, id: SymbolId) -> Self {
+        let sym = &ctx.symbols[id];
+        match sym.input_section() {
+            Some(isec) => InitFunc::Local(ctx.isecs.resolve(isec as usize), sym.value),
+            None => InitFunc::Imported(id),
+        }
+    }
+}
+
 impl InitOffsetsSection {
     pub fn new() -> Self {
         let mut hdr = ChunkHeader::new(b"__TEXT", b"__init_offsets");
