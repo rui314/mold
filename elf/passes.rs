@@ -31,8 +31,8 @@ use crate::chunks::{
     self, ChunkHeader, ChunkId, OutputPhdr, OutputSectionId, compressed, copyrel, dynsym, reloc,
 };
 use crate::cmdline::{
-    BsymbolicKind, BuildId, CetReportKind, DebugCompression, DefsymValue, ReportOutput,
-    SectionOrder, SeparateCodeKind, ShuffleSections, UnresolvedKind,
+    BsymbolicKind, BuildId, DebugCompression, DefsymValue, ReportKind, ReportOutput, SectionOrder,
+    SeparateCodeKind, ShuffleSections, UnresolvedKind,
 };
 use crate::context::Context;
 use crate::elf::*;
@@ -1524,7 +1524,7 @@ pub fn apply_section_align<E: Target>(ctx: &mut Context<E>) {
 }
 
 pub fn check_cet_errors<E: Target>(ctx: &Context<E>) {
-    let warning = ctx.args.z_cet_report == CetReportKind::Warning;
+    let warning = ctx.args.z_cet_report == ReportKind::Warning;
     let has_feature = |file: &ObjectFile<E>, feature: u32| {
         file.gnu_properties.get(&GNU_PROPERTY_X86_FEATURE_1_AND).is_some_and(|v| v & feature != 0)
     };
@@ -1541,6 +1541,28 @@ pub fn check_cet_errors<E: Target>(ctx: &Context<E>) {
                 } else {
                     error!("{file}: -cet-report=error: missing GNU_PROPERTY_X86_FEATURE_1_{name}");
                 }
+            }
+        }
+    }
+}
+
+pub fn check_arm64_feature_errors<E: Target>(ctx: &Context<E>) {
+    for file in &ctx.objs {
+        if ctx.is_internal(file.id())
+            || file
+                .gnu_properties
+                .get(&GNU_PROPERTY_AARCH64_FEATURE_1_AND)
+                .is_some_and(|v| v & GNU_PROPERTY_AARCH64_FEATURE_1_BTI != 0)
+        {
+            continue;
+        }
+        match ctx.args.z_bti_report {
+            ReportKind::None => {}
+            ReportKind::Warning => {
+                warn!("{file}: -z bti-report=warning: missing GNU_PROPERTY_AARCH64_FEATURE_1_BTI")
+            }
+            ReportKind::Error => {
+                error!("{file}: -z bti-report=error: missing GNU_PROPERTY_AARCH64_FEATURE_1_BTI")
             }
         }
     }

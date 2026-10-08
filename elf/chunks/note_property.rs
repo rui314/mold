@@ -101,6 +101,13 @@ pub fn construct<E: Target>(ctx: &mut Context<E>) {
         *map.entry(GNU_PROPERTY_X86_ISA_1_NEEDED).or_insert(0) |= ctx.args.z_x86_64_isa_level;
     }
 
+    if E::FAMILY == Family::Arm64 {
+        let features = map.entry(GNU_PROPERTY_AARCH64_FEATURE_1_AND).or_insert(0);
+        if ctx.args.z_force_bti {
+            *features |= GNU_PROPERTY_AARCH64_FEATURE_1_BTI;
+        }
+    }
+
     ctx.note_property.as_mut().unwrap().contents =
         map.into_iter().filter(|&(_, v)| v != 0).collect();
 }

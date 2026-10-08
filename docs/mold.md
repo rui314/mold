@@ -853,6 +853,24 @@ point symbol in a script.
   `GNU_PROPERTY_X86_FEATURE_1_SHSTK` bit in `.note.gnu.property` section to
   determine whether or not an object file was compiled with `-fcf-protection`.
 
+* `-z bti-report`=[ `warning` | `error` | `none` ]:
+  Branch Target Identification (BTI) is an ARM64 feature to protect programs
+  from control hijacking attacks by requiring indirect branches to land on
+  `bti` instructions. You can tell the compiler to use the feature by
+  specifying the `-mbranch-protection=bti` or `-mbranch-protection=standard`
+  flag. An output file is marked as BTI-enabled only if all object files are.
+
+  `-z bti-report` flag is used to make sure that all object files were
+  compiled with BTI. If `warning` or `error` are given, `mold` prints out a
+  warning or an error message if an object file lacks
+  `GNU_PROPERTY_AARCH64_FEATURE_1_BTI` bit in its `.note.gnu.property`
+  section.
+
+* `-z force-bti`:
+  Turn on `GNU_PROPERTY_AARCH64_FEATURE_1_BTI` bit in `.note.gnu.property`
+  section even if some object files were not compiled with BTI, and generate
+  a PLT with BTI landing pads. This option implies `-z bti-report=warning`.
+
 * `-z now`, `-z lazy`:
   By default, functions referring to other ELF modules are resolved by the
   dynamic linker when they are called for the first time. `-z now` marks an
