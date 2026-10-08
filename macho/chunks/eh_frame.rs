@@ -2,7 +2,7 @@
 //! compact unwind can't express.
 
 use crate::arch::Target;
-use crate::chunks::ChunkHeader;
+use crate::chunks::{ChunkHeader, ChunkId};
 use crate::context::Context;
 use crate::input_sections::FdeRecord;
 
@@ -22,6 +22,88 @@ impl EhFrameSection {
 impl Default for EhFrameSection {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Lays out __eh_frame, the surviving DWARF unwind records: the CIEs
+/// the kept FDEs use, then the FDEs, as mold's EhFrameSection does (an
+/// FDE's CIE pointer is a backward offset). Their offsets are needed
+/// before layout, because the __unwind_info encoding embeds each FDE's
+/// offset; an FDE it can't reach draws a warning (see
+/// warn_eh_frame_too_large).
+pub fn construct<E: Target>(ctx: &mut Context<E>) {
+    // FDEs of folded copies duplicate their leader's; drop them, and
+    // remap the unwind records' FDE indices around the removals as the
+    // dead-strip pass does, so that none points past the shortened
+    // table.
+    let mut fde_map = vec![usize::MAX; ctx.fdes.len()];
+    let mut kept_fdes = Vec::new();
+    for (i, fde) in std::mem::take(&mut ctx.fdes).into_iter().enumerate() {
+        if ctx.isecs[fde.isec as usize].replacement == crate::input_sections::NO_REPLACEMENT {
+            fde_map[i] = kept_fdes.len();
+            kept_fdes.push(fde);
+        }
+    }
+    ctx.fdes = kept_fdes;
+    let num_records = ctx.unwind_records.len();
+    ctx.unwind_records.retain_mut(|rec| {
+        if rec.fde_idx == crate::input_sections::UNWIND_NONE {
+            return true;
+        }
+        let mapped = fde_map[rec.fde_idx as usize];
+        if mapped == usize::MAX {
+            // A folded copy's record; its leader has its own.
+            return false;
+        }
+        rec.fde_idx = mapped as u32;
+        true
+    });
+    // The compaction moved the surviving records; refresh the
+    // subsections' ranges, which the __unwind_info encoding reads.
+    if ctx.unwind_records.len() < num_records {
+        crate::input_files::refresh_unwind_ranges(ctx);
+    }
+    if ctx.fdes.is_empty() {
+        return;
+    }
+
+    for fde in &ctx.fdes {
+        ctx.cies[fde.cie as usize].is_alive = true;
+    }
+    let mut off = 0;
+    for cie in ctx.cies.iter_mut().filter(|cie| cie.is_alive) {
+        cie.output_offset = off;
+        off += cie.data.len() as u32;
+    }
+    for fde in &mut ctx.fdes {
+        fde.output_offset = off;
+        off += fde.data.len() as u32;
+    }
+    ctx.eh_frame.hdr.size = off as u64;
+    ctx.chunks.push(ChunkId::EhFrame);
+    warn_eh_frame_too_large(ctx);
+}
+
+/// Warns, as ld-prime does, if __unwind_info points a function at an
+/// FDE beyond the reach of the 24 bits an entry has for its offset
+/// (which it leaves 0 then, see encode_unwind_info).
+fn warn_eh_frame_too_large<E: Target>(ctx: &Context<E>) {
+    use crate::chunks::unwind_info::MAX_FDE_OFFSET;
+    if !ctx.args.warn_eh_frame_too_large
+        || ctx.eh_frame.hdr.size <= MAX_FDE_OFFSET as u64
+        || !ctx.chunks.contains(&ChunkId::UnwindInfo)
+    {
+        return;
+    }
+    let out_of_reach = ctx.unwind_records.iter().any(|rec| {
+        let isec = &ctx.isecs[rec.isec as usize];
+        isec.is_emitted()
+            && rec.fde().is_some_and(|fde| ctx.fdes[fde].output_offset > MAX_FDE_OFFSET)
+    });
+    if out_of_reach {
+        crate::warn!(
+            "__eh_frame section too large (max 16MB) to encode dwarf unwind offsets in compact unwind table, performance of exception handling might be affected"
+        );
     }
 }
 

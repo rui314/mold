@@ -126,8 +126,8 @@ fn table_records<E: Target>(ctx: &Context<E>) -> Vec<UnwindRecord> {
 
     // A DWARF-mode record's encoding holds its FDE's offset in
     // __eh_frame in the low 24 bits, or 0 if they can't hold it, as in
-    // ld-prime (which warns, see lay_out_eh_frame): the unwinder then
-    // looks for the FDE through the whole section. It takes the
+    // ld-prime (which warns, see eh_frame::construct): the unwinder
+    // then looks for the FDE through the whole section. It takes the
     // personality and the LSDA from the FDE.
     for rec in &mut records {
         if let Some(fde) = rec.fde() {
