@@ -139,7 +139,7 @@ fn create_delay_stubs<E: Target>(
     called.sort_unstable_by_key(|&id| ctx.symbols[id].name());
     called.dedup();
     for (i, &id) in called.iter().enumerate() {
-        crate::passes::add_got(ctx, id);
+        crate::chunks::got::add_got_symbol(ctx, id);
         let got = ctx.sym_aux(id).got_idx;
         ctx.sym_aux_mut(id).delay_stub_idx = i as u32;
         let dlopen = dlopen_of[dlopen_name(ctx, id)];

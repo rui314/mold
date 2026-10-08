@@ -4,7 +4,7 @@
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::macho::*;
-use crate::symbol::SymbolId;
+use crate::symbol::{NO_IDX, SymbolId};
 use crate::target::Target;
 
 /// The global offset table: pointers to symbols, bound by dyld for
@@ -36,6 +36,14 @@ impl GotSection {
 impl Default for GotSection {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Gives a symbol a __got slot, unless it has one.
+pub fn add_got_symbol<E: Target>(ctx: &mut Context<E>, id: SymbolId) {
+    if ctx.sym_aux(id).got_idx == NO_IDX {
+        ctx.sym_aux_mut(id).got_idx = ctx.got.got_syms.len() as u32;
+        ctx.got.got_syms.push(id);
     }
 }
 

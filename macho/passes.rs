@@ -3247,7 +3247,7 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
 fn create_slots<E: Target>(ctx: &mut Context<E>, id: SymbolId) {
     let flags = ctx.symbols[id].flags();
     if flags & NEEDS_GOT != 0 {
-        add_got(ctx, id);
+        chunks::got::add_got_symbol(ctx, id);
     }
     if flags & NEEDS_STUB != 0 {
         add_stub(ctx, id);
@@ -3315,19 +3315,11 @@ pub(crate) fn add_stub<E: Target>(ctx: &mut Context<E>, id: SymbolId) {
     if ctx.sym_aux(id).stub_idx != NO_IDX {
         return;
     }
-    ctx.sym_aux_mut(id).stub_idx = ctx.stubs.symbols.len() as u32;
-    ctx.stubs.symbols.push(id);
+    chunks::stubs::add_symbol(ctx, id);
     if ctx.args.lazy_binding && !ctx.binds_weak_lookup(id) {
         ensure_stub_binder(ctx);
     } else {
-        add_got(ctx, id);
-    }
-}
-
-pub(crate) fn add_got<E: Target>(ctx: &mut Context<E>, id: SymbolId) {
-    if ctx.sym_aux(id).got_idx == NO_IDX {
-        ctx.sym_aux_mut(id).got_idx = ctx.got.got_syms.len() as u32;
-        ctx.got.got_syms.push(id);
+        chunks::got::add_got_symbol(ctx, id);
     }
 }
 
@@ -4431,7 +4423,7 @@ fn ensure_stub_binder<E: Target>(ctx: &mut Context<E>) {
         fatal!("lazy binding needs dyld_stub_binder, which no loaded dylib exports");
     };
     ctx.symbols[id].set_is_used(true);
-    add_got(ctx, id);
+    chunks::got::add_got_symbol(ctx, id);
     ctx.stub_helper.dyld_stub_binder = Some(id);
     let isec = add_data_word(ctx, 8);
     ctx.stub_helper.dyld_private_isec = isec;
