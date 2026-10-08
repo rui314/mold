@@ -76,7 +76,7 @@ use crate::arch::Target;
 use crate::cmdline::ReportOutput;
 use crate::context::Context;
 use crate::elf::*;
-use crate::input_files::{ObjId, ObjectFile};
+use crate::input_files::{FileId, ObjId, ObjectFile};
 use crate::input_sections::{InputSection, SectionRef};
 use crate::symbol::{OriginValue, Symbol, SymbolId, is_c_identifier};
 
@@ -335,7 +335,16 @@ fn compute_digest<E: Target>(ctx: &Context<E>, key: &[u8; 16], r: SectionRef) ->
                         hash_u64(h, isec.section_ref().encode());
                     }
                 }
-                _ => h.update(b"3"),
+                _ => {
+                    // The symbol is absolute or linker-synthesized. An
+                    // absolute symbol in an input file already has its final
+                    // value, but one defined by the linker, such as a
+                    // --defsym'd symbol, gets its value after ICF.
+                    h.update(b"3");
+                    if sym.file() == ctx.internal_obj.map(FileId::Obj) {
+                        hash_u64(h, id.0 as u64);
+                    }
+                }
             }
         }
         hash_u64(h, sym.value);
