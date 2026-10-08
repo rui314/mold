@@ -768,6 +768,15 @@ pub fn is_objc_image_info(hdr: &MachSection) -> bool {
     hdr.segname() == b"__DATA" && hdr.sectname() == b"__objc_imageinfo"
 }
 
+/// Whether a section is clang -faddrsig's address-significance table,
+/// which names the symbols whose addresses are significant, for a
+/// linker's safe ICF, by relocations that all point into its eight
+/// placeholder bytes. As mold drops .llvm_addrsig, an image drops it: our
+/// ICF tells a taken address by the type of the relocation that takes it.
+fn is_llvm_addrsig(hdr: &MachSection) -> bool {
+    hdr.segname() == b"__DATA" && hdr.sectname() == b"__llvm_addrsig"
+}
+
 /// Whether a section is one of the __LD segment's that ld-prime doesn't
 /// know. It reads only __LD,__compact_unwind and drops any other with a
 /// warning; a symbol defined in one is gone.
@@ -1225,10 +1234,12 @@ impl StagedObject {
         for (i, sect) in sect_hdrs.iter().enumerate() {
             // __eh_frame is re-synthesized from parsed CIE/FDE records, and
             // the __objc_imageinfo records are merged into one synthesized
-            // record; neither is copied through.
+            // record; neither is copied through. An image drops
+            // __llvm_addrsig, and a -r output keeps it for the next link.
             if is_discarded_section(sect)
                 || (sect.segname() == b"__TEXT" && sect.sectname() == b"__eh_frame")
                 || is_objc_image_info(sect)
+                || (!relocatable && is_llvm_addrsig(sect))
             {
                 continue;
             }
