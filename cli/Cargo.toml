@@ -42,6 +42,9 @@ mold-elf-sh4 = { workspace = true, optional = true }
 mold-elf-sh4be = { workspace = true, optional = true }
 mold-elf-loongarch64 = { workspace = true, optional = true }
 mold-elf-loongarch32 = { workspace = true, optional = true }
+mold-macho.workspace = true
+mold-macho-arm64 = { workspace = true, optional = true }
+mold-macho-x86_64 = { workspace = true, optional = true }
 
 [dev-dependencies]
 mold-elf-tests = { path = "../tests/elf" }
@@ -52,6 +55,7 @@ mold-elf-tests = { path = "../tests/elf" }
 default = [
     "x86_64", "i386", "arm32", "arm32be", "arm64", "arm64be", "riscv64", "riscv64be", "riscv32", "riscv32be",
     "ppc64v2", "ppc32", "ppc64v1", "s390x", "sparc64", "m68k", "sh4", "sh4be", "loongarch64", "loongarch32",
+    "macho-arm64", "macho-x86_64",
 ]
 system-allocator = []
 x86_64 = ["dep:mold-elf-x86_64"]
@@ -74,3 +78,5 @@ sh4 = ["dep:mold-elf-sh4"]
 sh4be = ["dep:mold-elf-sh4be"]
 loongarch64 = ["dep:mold-elf-loongarch64"]
 loongarch32 = ["dep:mold-elf-loongarch32"]
+macho-arm64 = ["dep:mold-macho-arm64"]
+macho-x86_64 = ["dep:mold-macho-x86_64"]

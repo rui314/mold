@@ -285,6 +285,9 @@ dependencies = [
  "mold-elf-sparc64",
  "mold-elf-tests",
  "mold-elf-x86_64",
+ "mold-macho",
+ "mold-macho-arm64",
+ "mold-macho-x86_64",
  "mold-mimalloc",
 ]
 
