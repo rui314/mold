@@ -68,7 +68,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     // parent's return, as in mold; MOLD_NO_FORK=1 keeps one process
     // for debuggers and profilers.
     if std::env::var_os("MOLD_NO_FORK").is_none() {
-        crate::subprocess::fork_child();
+        mold_common::subprocess::fork_child();
     }
 
     let mut ctx: Context<E> = Context::new(args);
@@ -76,7 +76,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     cmdline::set_search_paths(&mut ctx);
 
     let t_all = ctx.timer("all");
-    crate::subprocess::install_signal_handler();
+    mold_common::subprocess::install_signal_handler();
     crate::error::install_panic_hook();
 
     // Runs a pass under a -print_statistics timer.
@@ -115,7 +115,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
         crate::error::checkpoint();
         crate::mapfile::write_dependency_info(&ctx);
         crate::error::checkpoint();
-        crate::subprocess::notify_parent();
+        mold_common::subprocess::notify_parent();
         drop(t_all);
         return Ok(0);
     }
@@ -178,7 +178,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
         passes::check_header_segment(&ctx);
         timed!("relocatable", ctx.output_size = crate::relocatable::combine_objects(&mut ctx));
         crate::error::checkpoint();
-        crate::subprocess::notify_parent();
+        mold_common::subprocess::notify_parent();
         drop(t_all);
         passes::show_stats(&ctx);
         return Ok(0);
@@ -372,7 +372,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     drop(t_copy);
     let _ = std::io::Write::flush(&mut std::io::stdout());
     let _ = std::io::Write::flush(&mut std::io::stderr());
-    crate::subprocess::notify_parent();
+    mold_common::subprocess::notify_parent();
     drop(t_all);
     passes::show_stats(&ctx);
     Ok(0)

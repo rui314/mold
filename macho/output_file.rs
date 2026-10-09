@@ -22,34 +22,19 @@
 //! still being produced on the other cores; finish() waits for the last
 //! block.
 
-use std::ffi::CString;
 use std::io;
 use std::ops::Range;
 use std::os::unix::fs::{FileExt, FileTypeExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicPtr, Ordering};
 use std::sync::mpsc::{Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
+use mold_common::output_file::set_tmpfile;
+
 use crate::error::RawPath;
 use crate::error::strerror;
 use crate::fatal;
-
-/// The output path of the in-progress link, removed on a fatal error or
-/// a crash so that a failed link doesn't leave a partial file behind.
-static OUTPUT_PATH: AtomicPtr<libc::c_char> = AtomicPtr::new(std::ptr::null_mut());
-
-fn set_output_path(path: Option<&Path>) {
-    // Published paths live until process exit: a signal on another thread
-    // may still be using the old pointer when this registration changes.
-    let ptr = path.map_or(std::ptr::null_mut(), |path| {
-        CString::new(path.as_os_str().as_encoded_bytes())
-            .expect("output path contains NUL")
-            .into_raw()
-    });
-    OUTPUT_PATH.store(ptr, Ordering::Release);
-}
 
 /// Opens the output file, returning it and whether this link created
 /// it. An existing file is removed first, so that a fresh file takes
@@ -84,17 +69,6 @@ pub fn buffer_len(path: &Path, size: u64) -> usize {
 
 fn write_error(path: &Path, e: &io::Error) -> ! {
     fatal!("cannot write {}: {}", path.raw(), strerror(e))
-}
-
-/// Removes a partially written output file.
-pub fn cleanup() {
-    let path = OUTPUT_PATH.swap(std::ptr::null_mut(), Ordering::AcqRel);
-    if !path.is_null() {
-        // SAFETY: path is a published, NUL-terminated string that is never
-        // freed. This is also called from a signal handler, so it must not
-        // lock, allocate or drop owned storage. unlink is signal-safe.
-        unsafe { libc::unlink(path) };
-    }
 }
 
 /// The output buffer as the writer threads see it: a bare pointer,
@@ -164,10 +138,10 @@ impl OutputFile {
         // running executable is an error on some systems, and on macOS
         // the kernel caches code signature state per vnode, so a fresh
         // file avoids stale-signature kills. Only a file this link
-        // created is removed again if it fails.
+        // created is removed again if it fails or crashes.
         let (file, created) = open(path, mode);
         if created {
-            set_output_path(Some(path));
+            set_tmpfile(Some(path));
         }
         if let Err(e) = file.set_len(len as u64) {
             fatal!("cannot set the size of {}: {}", path.raw(), strerror(&e));
@@ -250,7 +224,7 @@ impl OutputFile {
                 write_error(&self.path, &e);
             }
         }
-        set_output_path(None);
+        set_tmpfile(None);
     }
 }
 

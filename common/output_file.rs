@@ -26,7 +26,9 @@ static TMPFILE: Mutex<Option<PathBuf>> = Mutex::new(None);
 #[cfg(not(windows))]
 static TMPFILE: AtomicPtr<libc::c_char> = AtomicPtr::new(std::ptr::null_mut());
 
-fn set_tmpfile(path: Option<&Path>) {
+/// Registers the file that cleanup() removes. The Mach-O linker doesn't
+/// use OutputFile but registers its output, which it writes in place.
+pub fn set_tmpfile(path: Option<&Path>) {
     #[cfg(not(windows))]
     {
         // Published paths live until process exit: a signal handler on another

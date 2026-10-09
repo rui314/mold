@@ -166,7 +166,7 @@ pub fn checkpoint() {
 /// lifetime, so there is nothing else to release.
 pub fn exit_after_cleanup(status: i32) -> ! {
     release_parallel();
-    crate::output_file::cleanup();
+    mold_common::output_file::cleanup();
     let _ = io::stdout().flush();
     let _ = io::stderr().flush();
     // SAFETY: `_exit` only terminates the process.
@@ -179,7 +179,7 @@ pub fn exit_after_cleanup(status: i32) -> ! {
 pub fn install_panic_hook() {
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        crate::output_file::cleanup();
+        mold_common::output_file::cleanup();
         default_hook(info);
     }));
 }
