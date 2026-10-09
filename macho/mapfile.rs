@@ -218,7 +218,11 @@ fn trace_symbols_dir_file<E: Target>(dir: &Path) -> Option<PathBuf> {
         return None;
     }
     // SAFETY: getppid has no preconditions.
+    #[cfg(not(windows))]
     let ppid = unsafe { libc::getppid() };
+    // Windows has no getppid; the rest of the name keeps it unique.
+    #[cfg(windows)]
+    let ppid = 0;
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH);
     let usec = now.map_or(0, |d| d.as_micros());
     let mut path = dir.as_os_str().to_os_string();

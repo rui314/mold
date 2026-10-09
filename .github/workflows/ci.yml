@@ -154,7 +154,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
     - uses: dtolnay/rust-toolchain@stable
-    - run: cargo build --locked -p mold --no-default-features --features x86_64
+    - run: cargo build --locked -p mold --no-default-features --features x86_64,macho-x86_64
 
   build-msys:
     runs-on: windows-latest
@@ -170,7 +170,7 @@ jobs:
         install: git
         pacboy: rust:p cc:p dlfcn:p
     - shell: msys2 {0}
-      run: cargo build --locked -p mold --no-default-features --features x86_64
+      run: cargo build --locked -p mold --no-default-features --features x86_64,macho-x86_64
 
   build-freebsd:
     runs-on: ubuntu-latest

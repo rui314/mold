@@ -120,6 +120,7 @@ unsafe fn c_string(f: unsafe extern "C" fn() -> *const c_char) -> Option<RawBuf>
 ///
 /// `handle` must be a live dlopen handle and `T` the C signature of the
 /// named function.
+#[cfg(not(windows))]
 unsafe fn dlsym<T>(handle: *mut c_void, name: &CStr) -> T {
     // SAFETY: dlsym with a valid handle and a NUL-terminated name.
     let sym = unsafe { libc::dlsym(handle, name.as_ptr()) };
@@ -134,6 +135,7 @@ unsafe fn dlsym<T>(handle: *mut c_void, name: &CStr) -> T {
 
 /// The host's name for LLVM's LTO library, when -lto_library does not
 /// say: clang's macOS toolchains ship libLTO.dylib, Linux ones libLTO.so.
+#[cfg(not(windows))]
 const DEFAULT_LTO_LIBRARY: &str =
     if cfg!(target_os = "macos") { "libLTO.dylib" } else { "libLTO.so" };
 
@@ -142,6 +144,7 @@ const DEFAULT_LTO_LIBRARY: &str =
 /// directory (@rpath, which is @executable_path/../lib), as ld64 looked
 /// for it by its own real path, and clang passes -lto_library with the
 /// one beside it in the same way.
+#[cfg(not(windows))]
 fn toolchain_lto_library() -> Option<std::path::PathBuf> {
     let exe = std::env::current_exe().ok()?.canonicalize().ok()?;
     let path = exe.parent()?.parent()?.join("lib").join(DEFAULT_LTO_LIBRARY);
@@ -151,6 +154,7 @@ fn toolchain_lto_library() -> Option<std::path::PathBuf> {
 /// Loads libLTO from the given path (from -lto_library), or else the
 /// linker's toolchain's, or else the one the dynamic loader finds by
 /// name in its search path.
+#[cfg(not(windows))]
 pub fn load_plugin(path: Option<&Path>) -> Plugin {
     let default = path.is_none().then(toolchain_lto_library).flatten();
     let path = path.or(default.as_deref());
@@ -233,6 +237,11 @@ pub fn load_plugin(path: Option<&Path>) -> Plugin {
             thinlto_module_get_object_file: dlsym(handle, c"thinlto_module_get_object_file"),
         }
     }
+}
+
+#[cfg(windows)]
+pub fn load_plugin(_path: Option<&Path>) -> Plugin {
+    fatal!("LTO is not supported on Windows");
 }
 
 /// Hands the code generator the -mllvm options, which libLTO parses as
@@ -365,6 +374,19 @@ pub struct CacheOptions<'a> {
     pub max_size: u32,
 }
 
+/// Creates a directory, as ld-prime does ThinLTO's, owner-only.
+fn create_private_dir(path: &Path) -> std::io::Result<()> {
+    #[cfg(not(windows))]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        std::fs::DirBuilder::new().mode(0o700).create(path)
+    }
+    #[cfg(windows)]
+    {
+        std::fs::create_dir(path)
+    }
+}
+
 /// Hands ThinLTO the cache directory, which ld-prime creates (one level
 /// of it, owner-only) if it is not one yet - or warns and goes without.
 ///
@@ -372,9 +394,8 @@ pub struct CacheOptions<'a> {
 ///
 /// `cg` must be a live ThinLTO code generator.
 unsafe fn set_cache(plugin: &Plugin, cg: *mut c_void, cache: &CacheOptions) {
-    use std::os::unix::fs::DirBuilderExt;
     if !cache.dir.is_dir()
-        && let Err(e) = std::fs::DirBuilder::new().mode(0o700).create(cache.dir)
+        && let Err(e) = create_private_dir(cache.dir)
     {
         let errno = e.raw_os_error().unwrap_or(0);
         crate::warn!("unable to create ThinLTO cache directory: {} ({errno})", cache.dir.raw());
@@ -507,9 +528,8 @@ fn temp_path(output: &Path, suffix: &str) -> std::ffi::OsString {
 /// <output>.thinlto.bcs, which libLTO fills (and which ld-prime makes,
 /// owner-only, if it is not a directory yet).
 fn make_save_temps_dir(output: &Path) {
-    use std::os::unix::fs::DirBuilderExt;
     let dir = temp_path(output, ".thinlto.bcs/");
-    if !Path::new(&dir).is_dir() && std::fs::DirBuilder::new().mode(0o700).create(&dir).is_err() {
+    if !Path::new(&dir).is_dir() && create_private_dir(Path::new(&dir)).is_err() {
         crate::warn!(
             "unable to create ThinLTO output directory for temporary bitcode files: {}",
             dir.raw()

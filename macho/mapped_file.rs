@@ -8,9 +8,8 @@
 //! contents.
 
 use std::collections::HashMap;
-use std::fs::File;
+use std::fs::{File, Metadata};
 use std::io::{self, Read};
-use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
@@ -24,17 +23,37 @@ use crate::fatal;
 /// by data address.
 static FILE_CACHE: Mutex<Option<HashMap<PathBuf, &'static MappedFile>>> = Mutex::new(None);
 
-/// The contents of the files opened so far, by device and inode, size
-/// and modification time (the inode of a file deleted since may be
-/// another's): a file reached by another path shares them, and so do
-/// the caches keyed by data address. An SDK framework's stub is reached
-/// by two: `-framework Foundation` finds Foundation.framework/
-/// Foundation.tbd, a symbolic link to the Versions/C/Foundation.tbd that
-/// a re-exported install name finds, and tapi::parse_cached parses the
-/// 6 MB file once. A file is read by the first to open it while those
-/// opening it by another path wait.
-type Contents = HashMap<(u64, u64, u64, i64, i64), &'static OnceLock<&'static [u8]>>;
+/// The contents of the files opened so far, by file_id: a file reached
+/// by another path shares them, and so do the caches keyed by data
+/// address. An SDK framework's stub is reached by two: `-framework
+/// Foundation` finds Foundation.framework/Foundation.tbd, a symbolic
+/// link to the Versions/C/Foundation.tbd that a re-exported install
+/// name finds, and tapi::parse_cached parses the 6 MB file once. A file
+/// is read by the first to open it while those opening it by another
+/// path wait.
+type Contents = HashMap<FileId, &'static OnceLock<&'static [u8]>>;
 static CONTENTS: Mutex<Option<Contents>> = Mutex::new(None);
+
+/// A file is known by its device and inode, size and modification time
+/// (the inode of a file deleted since may be another's).
+#[cfg(not(windows))]
+type FileId = (u64, u64, u64, i64, i64);
+
+#[cfg(not(windows))]
+fn file_id(_path: &Path, md: &Metadata) -> io::Result<FileId> {
+    use std::os::unix::fs::MetadataExt;
+    Ok((md.dev(), md.ino(), md.size(), md.mtime(), md.mtime_nsec()))
+}
+
+/// std gives no file IDs on Windows, so a file is known by its path with
+/// symbolic links resolved.
+#[cfg(windows)]
+type FileId = PathBuf;
+
+#[cfg(windows)]
+fn file_id(path: &Path, _md: &Metadata) -> io::Result<FileId> {
+    std::fs::canonicalize(path)
+}
 
 // Files up to this size are read into malloc'ed memory rather than
 // mmap'ed. mmap(2) takes the process's address space lock, so with tens
@@ -96,8 +115,7 @@ impl MappedFile {
         if !metadata.is_file() {
             return Err(io::Error::from(io::ErrorKind::NotFound));
         }
-        let md = &metadata;
-        let id = (md.dev(), md.ino(), md.size(), md.mtime(), md.mtime_nsec());
+        let id = file_id(path, &metadata)?;
         let cell: &'static OnceLock<&'static [u8]> = CONTENTS
             .lock()
             .unwrap()

@@ -22,9 +22,9 @@
 //! still being produced on the other cores; finish() waits for the last
 //! block.
 
+use std::fs::{File, OpenOptions};
 use std::io;
 use std::ops::Range;
-use std::os::unix::fs::{FileExt, FileTypeExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Sender, channel};
 use std::sync::{Arc, Mutex};
@@ -42,19 +42,63 @@ use crate::fatal;
 /// a character device (/dev/null), which is written in place, as is a
 /// file that can't be removed (in a directory the link may not write),
 /// which keeps its mode.
-fn open(path: &Path, mode: u32) -> (std::fs::File, bool) {
-    if !std::fs::metadata(path).is_ok_and(|m| m.file_type().is_char_device()) {
+fn open(path: &Path, mode: u32) -> (File, bool) {
+    if !is_char_device(path) {
         let _ = std::fs::remove_file(path);
     }
     let created = std::fs::symlink_metadata(path).is_err();
-    let file = std::fs::OpenOptions::new()
+    let file = open_options(mode)
         .write(true)
         .create(true)
         .truncate(true)
-        .mode(mode)
         .open(path)
         .unwrap_or_else(|e| fatal!("cannot open {}: {}", path.raw(), strerror(&e)));
     (file, created)
+}
+
+#[cfg(not(windows))]
+fn is_char_device(path: &Path) -> bool {
+    use std::os::unix::fs::FileTypeExt;
+    std::fs::metadata(path).is_ok_and(|m| m.file_type().is_char_device())
+}
+
+#[cfg(windows)]
+fn is_char_device(_path: &Path) -> bool {
+    false
+}
+
+#[cfg(not(windows))]
+fn open_options(mode: u32) -> OpenOptions {
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut options = OpenOptions::new();
+    options.mode(mode);
+    options
+}
+
+#[cfg(windows)]
+fn open_options(_mode: u32) -> OpenOptions {
+    OpenOptions::new()
+}
+
+#[cfg(not(windows))]
+fn write_all_at(file: &File, buf: &[u8], off: u64) -> io::Result<()> {
+    std::os::unix::fs::FileExt::write_all_at(file, buf, off)
+}
+
+/// Windows has no positioned write that doesn't move the file's cursor,
+/// but no write here uses the cursor.
+#[cfg(windows)]
+fn write_all_at(file: &File, mut buf: &[u8], mut off: u64) -> io::Result<()> {
+    use std::os::windows::fs::FileExt;
+    while !buf.is_empty() {
+        let n = file.seek_write(buf, off)?;
+        if n == 0 {
+            return Err(io::ErrorKind::WriteZero.into());
+        }
+        buf = &buf[n..];
+        off += n as u64;
+    }
+    Ok(())
 }
 
 /// Returns the length of the buffer that holds a file of the given size.
@@ -119,7 +163,7 @@ const WRITERS: usize = 4;
 /// is finished.
 pub struct OutputFile {
     path: PathBuf,
-    file: Arc<std::fs::File>,
+    file: Arc<File>,
     buf: SharedBuf,
     len: usize,
     tx: Option<Sender<(usize, usize)>>,
@@ -164,7 +208,7 @@ impl OutputFile {
                         // A method call captures the whole SharedBuf
                         // (a field alone would capture the bare pointer,
                         // which is not Send).
-                        file.write_all_at(shared.block(off, n), off as u64)?;
+                        write_all_at(&file, shared.block(off, n), off as u64)?;
                     }
                 })
             })
@@ -220,7 +264,7 @@ impl OutputFile {
             }
         }
         for &(off, n) in self.edges.get_mut().unwrap().iter() {
-            if let Err(e) = self.file.write_all_at(self.buf.block(off, n), off as u64) {
+            if let Err(e) = write_all_at(&self.file, self.buf.block(off, n), off as u64) {
                 write_error(&self.path, &e);
             }
         }
