@@ -1,5 +1,7 @@
 //! Input sections.
 
+use mold_common::bytes::display;
+
 use crate::arch::Target;
 use crate::chunks::ChunkId;
 use crate::context::Context;
@@ -569,31 +571,31 @@ impl InputSection {
             return name.into();
         }
         let hdr = self.hdr(&ctx.objs[self.file as usize]);
-        let (seg, sect) = (crate::error::raw(hdr.segname()), crate::error::raw(hdr.sectname()));
+        let (seg, sect) = (display(hdr.segname()), display(hdr.sectname()));
         let off = self.input_addr as u64 - hdr.addr.get();
-        crate::error::render(format_args!("{seg},{sect}+0x{off:x}")).into()
+        format!("{seg},{sect}+0x{off:x}").into_bytes().into()
     }
 
     /// Names the place `offset` bytes into this subsection:
     /// "'NAME'+0xOFF (path)".
-    pub fn location<E: Target>(&self, ctx: &Context<E>, offset: u32) -> crate::error::Message {
-        let path = crate::error::RawPath::raw(ctx.objs[self.file as usize].mf.name.as_path());
+    pub fn location<E: Target>(&self, ctx: &Context<E>, offset: u32) -> String {
+        let path = ctx.objs[self.file as usize].mf.name.display();
         let name = self.name(ctx);
-        let name = crate::error::raw(&name);
+        let name = display(&name);
         if offset == 0 {
-            crate::error::render(format_args!("'{name}' ({path})"))
+            format!("'{name}' ({path})")
         } else {
-            crate::error::render(format_args!("'{name}'+0x{offset:X} ({path})"))
+            format!("'{name}'+0x{offset:X} ({path})")
         }
     }
 
     /// Reports a relocation that can't be applied where it is, `offset`
     /// bytes into this subsection.
     pub fn fixup_error<E: Target>(&self, ctx: &Context<E>, offset: u32, msg: std::fmt::Arguments) {
-        let file = crate::error::RawPath::raw(ctx.objs[self.file as usize].mf.name.as_path());
+        let file = ctx.objs[self.file as usize].mf.name.display();
         let name = self.name(ctx);
-        let name = crate::error::raw(&name);
-        crate::error!("{file}: {name}+0x{offset:x}: {msg}");
+        let name = display(&name);
+        mold_common::error!("{file}: {name}+0x{offset:x}: {msg}");
     }
 
     /// Whether the target of relocation `r` of this subsection has an

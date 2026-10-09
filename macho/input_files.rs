@@ -4,15 +4,14 @@ use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use mold_common::bytes::display;
+use mold_common::fatal;
 use portable_atomic::AtomicU64;
 use rayon::prelude::*;
 
 use crate::arch::Target;
 use crate::chunks::symtab::{local_msym, local_symbol_name};
 use crate::context::Context;
-use crate::error::RawPath;
-use crate::error::raw;
-use crate::fatal;
 use crate::filetype::{fat_arch_names, fat_slice, without_fat_arch};
 use crate::input_sections::{
     CieRecord, FdeRecord, InputSection, NO_REPLACEMENT, RelocTarget, UNWIND_NONE, UnwindRecord,
@@ -1073,7 +1072,12 @@ fn check_sections(hdrs: &[MachSection], nindirect: u32, file: &Path) {
             } else {
                 "indirect symbol pointers are not supported"
             };
-            fatal!("{}:({},{}): {what}", file.raw(), raw(hdr.segname()), raw(hdr.sectname()));
+            fatal!(
+                "{}:({},{}): {what}",
+                file.display(),
+                display(hdr.segname()),
+                display(hdr.sectname())
+            );
         }
     }
 }
@@ -1410,7 +1414,7 @@ impl LoadCommands {
                     // no more, as ld-prime sees it.
                     let count = u32::from_le_bytes(bytes[8..12].try_into().unwrap());
                     if !(1..=2).contains(&count) {
-                        let file = mf.name.raw();
+                        let file = mf.name.display();
                         fatal!("{file}: LC_LINKER_OPTION has count={count}, only 1 or 2 is valid");
                     }
                     let mut strs = Vec::with_capacity(count as usize);
@@ -1514,7 +1518,7 @@ pub fn stage_object<E: Target>(
     let hdr = MachHeader::parse(data);
 
     if hdr.cputype.get() != E::CPUTYPE {
-        fatal!("{}: incompatible CPU type: expected {}", mf.name.raw(), E::NAME);
+        fatal!("{}: incompatible CPU type: expected {}", mf.name.display(), E::NAME);
     }
 
     let cmds = LoadCommands::read::<E>(mf);
@@ -1827,9 +1831,9 @@ impl StagedObject {
             let hdr = &self.sect_hdrs[sect];
             fatal!(
                 "{}: relocation against empty section {},{}",
-                self.mf.name.raw(),
-                raw(hdr.segname()),
-                raw(hdr.sectname())
+                self.mf.name.display(),
+                display(hdr.segname()),
+                display(hdr.sectname())
             );
         }
     }
@@ -1849,7 +1853,7 @@ impl StagedObject {
         let addr = sect.addr.get().wrapping_add_signed(addend);
         let range = sect_isecs[sect_pos as usize].clone();
         if range.is_empty() {
-            fatal!("{}: relocation against a discarded section", self.mf.name.raw());
+            fatal!("{}: relocation against a discarded section", self.mf.name.display());
         }
         let n = self.isecs[range.clone()].partition_point(|isec| isec.input_addr as u64 <= addr);
         let isec = range.start + n.saturating_sub(1);
@@ -1904,19 +1908,19 @@ impl StagedObject {
     pub fn warn_about_sections(&self) {
         for (i, hdr) in self.sect_hdrs.iter().enumerate() {
             if is_unknown_ld_section(hdr) {
-                crate::warn!(
+                mold_common::warn!(
                     "unknown section: __LD/{} in {}",
-                    raw(hdr.sectname()),
-                    self.mf.name.raw()
+                    display(hdr.sectname()),
+                    self.mf.name.display()
                 );
             } else if hdr.segname() == b"__DATA"
                 && hdr.sectname() == b"__cfstring"
                 && hdr.p2align.get() != 3
                 && self.isecs.iter().any(|isec| isec.shndx == i as u32 && isec.is_alive())
             {
-                crate::warn!(
+                mold_common::warn!(
                     "section __DATA/__cfstring is not pointer aligned in {}",
-                    self.mf.name.raw()
+                    self.mf.name.display()
                 );
             }
         }
@@ -1937,7 +1941,7 @@ pub fn section_target(
 ) -> (RelocTarget, i64) {
     let i = (r.sect() as usize).wrapping_sub(1);
     let Some(sec) = sections.get(i) else {
-        crate::fatal!("{}: bad relocation: {}", file.raw(), r.offset.get());
+        mold_common::fatal!("{}: bad relocation: {}", file.display(), r.offset.get());
     };
     (RelocTarget::Section(i as u32), addr.wrapping_sub(sec.addr.get()) as i64)
 }
@@ -2480,7 +2484,7 @@ impl StagedObject {
         let mf = self.mf;
         let hdr = &self.sect_hdrs[sect];
         // Diagnostics print the path as its bytes are.
-        let file_name = mf.name.raw();
+        let file_name = mf.name.display();
         let data = mf.data();
         let read_u32 = |off: usize| {
             let off = hdr.offset.get() as usize + off;
@@ -2652,7 +2656,7 @@ impl StagedObject {
             } else {
                 let cie_addr = (input_addr + 4).wrapping_sub(id);
                 let Some(cie) = self.cies.iter().position(|c| c.input_addr == cie_addr) else {
-                    fatal!("{}: __eh_frame: bad FDE pointer", mf.name.raw());
+                    fatal!("{}: __eh_frame: bad FDE pointer", mf.name.display());
                 };
                 fdes.push((input_addr, rec, cie as u32));
             }
@@ -2677,7 +2681,7 @@ impl StagedObject {
                 || r.p2size() != 2
                 || personality_encs[i] != Some(GOT_PCREL_SDATA4)
             {
-                fatal!("{}: __eh_frame: unsupported personality reference", mf.name.raw());
+                fatal!("{}: __eh_frame: unsupported personality reference", mf.name.display());
             }
             // A local symbol index, mapped to a symbol at integration.
             cie.personality = Some(r.idx());
@@ -2726,7 +2730,7 @@ impl StagedObject {
             // The size is in the same format, but absolute.
             let code_len = read_value(rec, 8 + size, size) as u32;
             let Some((isec, func_offset)) = self.find_subsec(&self.isecs, func_addr) else {
-                fatal!("{}: __eh_frame: FDE for no function", self.mf.name.raw());
+                fatal!("{}: __eh_frame: FDE for no function", self.mf.name.display());
             };
             let func_offset = func_offset as u32;
             let sect = &self.sect_hdrs[self.isecs[isec].shndx as usize];
@@ -2802,7 +2806,7 @@ impl StagedObject {
         check_pointer_encoding(enc, &self.mf.name);
         let addr = read_pcrel(rec, pos, size, input_addr);
         let Some((isec, off)) = self.find_subsec(&self.isecs, addr) else {
-            fatal!("{}: __eh_frame: FDE for no LSDA", self.mf.name.raw());
+            fatal!("{}: __eh_frame: FDE for no LSDA", self.mf.name.display());
         };
         Some((isec as u32, off as u32))
     }
@@ -2819,11 +2823,11 @@ impl StagedObject {
         sects.dedup();
         for shndx in sects {
             let sect = &self.sect_hdrs[shndx as usize];
-            crate::warn!(
+            mold_common::warn!(
                 "symbols in {},{} ({}) have unwind information, but it's not a code section",
-                raw(sect.segname()),
-                raw(sect.sectname()),
-                self.mf.name.raw()
+                display(sect.segname()),
+                display(sect.sectname()),
+                self.mf.name.display()
             );
         }
     }
@@ -2841,9 +2845,9 @@ impl StagedObject {
             {
                 fatal!(
                     "{}:({},{}): initializer pointer without a relocation",
-                    self.mf.name.raw(),
-                    raw(hdr.segname()),
-                    raw(hdr.sectname())
+                    self.mf.name.display(),
+                    display(hdr.segname()),
+                    display(hdr.sectname())
                 );
             }
         }
@@ -2891,7 +2895,7 @@ fn apply_eh_frame_relocs<E: Target>(
         } else if ty == E::RELOC_GOTPC {
             continue;
         } else {
-            fatal!("{}: unsupported relocation in __eh_frame: type={ty}", file_name.raw());
+            fatal!("{}: unsupported relocation in __eh_frame: type={ty}", file_name.display());
         };
         let loc = &mut contents[r.offset.get() as usize..];
         if r.p2size() == 2 {
@@ -2922,7 +2926,7 @@ fn check_pointer_encoding(enc: u8, file_name: &Path) -> usize {
     } else if enc == DW_EH_PE_PCREL | DW_EH_PE_SDATA4 {
         4
     } else {
-        fatal!("{}: __eh_frame: unsupported pointer encoding: 0x{enc:x}", file_name.raw())
+        fatal!("{}: __eh_frame: unsupported pointer encoding: 0x{enc:x}", file_name.display())
     }
 }
 
@@ -2950,7 +2954,7 @@ fn parse_cie_augmentation(data: &[u8], file_name: &Path) -> (u8, Option<u8>, Opt
     // augmentation string.
     let version = data[8];
     if version != 1 && version != 3 {
-        fatal!("{}: __eh_frame: unsupported CIE version: {version}", file_name.raw());
+        fatal!("{}: __eh_frame: unsupported CIE version: {version}", file_name.display());
     }
     let aug_start = 9;
     if data[aug_start] != b'z' {
@@ -3027,9 +3031,9 @@ pub fn ignore_foreign_file<E: Target>(
     why: &dyn std::fmt::Display,
 ) {
     if ctx.args.arch_errors_fatal {
-        crate::error!("{why} in '{}'", mf.name.raw());
+        mold_common::error!("{why} in '{}'", mf.name.display());
     } else {
-        crate::warn!("ignoring file '{}': {why}", mf.name.raw());
+        mold_common::warn!("ignoring file '{}': {why}", mf.name.display());
     }
 }
 
@@ -3210,9 +3214,9 @@ impl ReexportWalk<'_> {
         match (on_disk, inline) {
             (Some(mf), _) => self.load_file(ctx, mf, r),
             (None, Some(i)) => self.load_inlined(ctx, i, r),
-            (None, None) => crate::warn!(
+            (None, None) => mold_common::warn!(
                 "ignoring missing indirect library: library for install name '{}' not found",
-                crate::error::raw(&r.name)
+                display(&r.name)
             ),
         }
     }
@@ -3493,13 +3497,13 @@ fn check_dylib_platforms<E: Target>(ctx: &Context<E>, mf: &MappedFile, platforms
     let msg = format_args!(
         "building for '{}', but linking in dylib ({}) built for '{}'",
         platform_name(ctx.args.platform),
-        mf.name.raw(),
+        mf.name.display(),
         platforms_name(platforms),
     );
     if ctx.args.platform == PLATFORM_FIRMWARE {
-        crate::warn!("{msg}");
+        mold_common::warn!("{msg}");
     } else {
-        crate::error!("{msg}");
+        mold_common::error!("{msg}");
     }
 }
 
@@ -3508,7 +3512,7 @@ pub fn parse_dylib_binary<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFi
     let minos = check_dylib_platform(ctx, mf);
     let mut binary = read_dylib_binary(mf);
     if binary.install_name.is_empty() {
-        fatal!("{}: dylib has no LC_ID_DYLIB", mf.name.raw());
+        fatal!("{}: dylib has no LC_ID_DYLIB", mf.name.display());
     }
     let directives = interpret_binary_ld_symbols(ctx, &mut binary);
     // Each re-exported library keeps the referencing dylib's directory
@@ -3879,7 +3883,7 @@ pub fn read_stub<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> Option
 pub fn load_tbd<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> Option<Arc<Stub>> {
     let stub = read_stub(ctx, mf);
     if stub.is_none() {
-        let path = mf.name.raw();
+        let path = mf.name.display();
         let why =
             format_args!("tapi error: missing required architecture {} in file {path}", E::NAME);
         ignore_foreign_file(ctx, mf, &why);

@@ -13,11 +13,10 @@
 
 use std::path::Path;
 
+use mold_common::fatal;
 use serde_json::Value;
 
 use crate::context::Context;
-use crate::error::RawPath;
-use crate::fatal;
 use crate::macho::*;
 use crate::mapped_file::MappedFile;
 
@@ -113,14 +112,14 @@ fn parse_json(
     // so that the names in it can be borrowed.
     let root: &'static Value = match serde_json::from_str(text) {
         Ok(root) => Box::leak(Box::new(root)),
-        Err(e) => fatal!("{}: malformed .tbd JSON: {e}", file.raw()),
+        Err(e) => fatal!("{}: malformed .tbd JSON: {e}", file.display()),
     };
     if root["tapi_tbd_version"] != 5 {
-        fatal!("{}: unsupported .tbd version", file.raw());
+        fatal!("{}: unsupported .tbd version", file.display());
     }
 
     let Some(main) = root.get("main_library") else {
-        fatal!("{}: no main_library in .tbd file", file.raw());
+        fatal!("{}: no main_library in .tbd file", file.display());
     };
     let mut tbd = parse_json_library(main, arch, platform)?;
     tbd.platforms = select_target(arch, platform, &json_targets(main)).1;
@@ -130,7 +129,7 @@ fn parse_json(
     tbd.documents = libs.filter_map(|lib| parse_json_library(lib, arch, platform)).collect();
 
     if tbd.install_name.is_empty() {
-        fatal!("{}: no install name in .tbd file", file.raw());
+        fatal!("{}: no install name in .tbd file", file.display());
     }
     Some(tbd)
 }
@@ -264,7 +263,7 @@ pub fn parse_cached(mf: &'static MappedFile, arch: &'static str, platform: u32) 
 /// file.
 pub fn parse(mf: &MappedFile, arch: &'static str, platform: u32) -> Option<TbdFile> {
     let Ok(text): Result<&'static str, _> = std::str::from_utf8(mf.data()) else {
-        fatal!("{}: invalid UTF-8 in .tbd file", mf.name.raw());
+        fatal!("{}: invalid UTF-8 in .tbd file", mf.name.display());
     };
     // TBD version 5 is JSON (tapi's current output, and what Xcode
     // writes for the "eager linking" stubs of frameworks built in the
@@ -557,7 +556,7 @@ fn parse_yaml(
     }
 
     if tbd.install_name.is_empty() {
-        fatal!("{}: no install-name in .tbd file", file.raw());
+        fatal!("{}: no install-name in .tbd file", file.display());
     }
     Some(tbd)
 }

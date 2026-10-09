@@ -3,7 +3,9 @@
 use std::path::Path;
 
 use mold_common::bits::{bits, sign_extend};
+use mold_common::bytes::display;
 use mold_common::endian::{read_ul32, write_ul32, write_ul64};
+use mold_common::{error, fatal};
 use rayon::prelude::*;
 
 use crate::arch::{SplitRef, Target, has_reloc_form, reloc_form};
@@ -16,7 +18,6 @@ use crate::input_files::{ObjectFile, section_target};
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
 use crate::symbol::{NEEDS_GOT, NEEDS_STUB};
-use crate::{error, fatal};
 
 #[derive(Clone, Copy, Default)]
 pub struct Arm64;
@@ -58,7 +59,7 @@ fn check_adrp(ctx: &Context<Arm64>, isec: &InputSection, r: &Reloc, p: u64, t: u
         return;
     }
     let name = r.target_name(ctx, &ctx.objs[isec.file as usize]);
-    let name = crate::error::raw(&name);
+    let name = display(&name);
     let msg = format_args!("ADRP out of range, from 0x{p:08X} to 0x{t:08X} ('{name}')");
     isec.fixup_error(ctx, r.offset, msg);
 }
@@ -109,7 +110,7 @@ fn write_add_ldst(loc: &mut [u8], val: u64) -> Result<(), u32> {
 /// target (or the GOT slot it loads) its access size doesn't divide.
 fn report_ldst_alignment(ctx: &Context<Arm64>, isec: &InputSection, r: &Reloc, size: u32) {
     let target = r.target_name(ctx, &ctx.objs[isec.file as usize]);
-    let target = crate::error::raw(&target);
+    let target = display(&target);
     let msg = format_args!(
         "target '{target}' not {size}-byte aligned, which is required by LDR/STR instruction"
     );
@@ -840,7 +841,7 @@ impl Target for Arm64 {
             let ent_addr = addr + off;
             let ptr_addr = ctx.symbols[sym].stub_ptr_addr(ctx, i);
             if !adrp_reaches(ptr_addr, ent_addr) {
-                crate::error!(
+                mold_common::error!(
                     "stub for {}: ADRP out of range, from 0x{ent_addr:08X} to its pointer at 0x{ptr_addr:08X}",
                     ctx.symbols[sym]
                 );
@@ -1382,7 +1383,7 @@ impl Target for Arm64 {
                             }
                             _ => {
                                 let name = r.target_name(ctx, file);
-                                let name = crate::error::raw(&name);
+                                let name = display(&name);
                                 let msg = format_args!(
                                     "B/BL out of range (displacement={val}, max is +/-128MB), \
                                      from 0x{p:08X} to 0x{t:08X} ('{name}')"

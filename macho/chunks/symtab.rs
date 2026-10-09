@@ -2,12 +2,12 @@
 //! notes (stabs) of each object, and the writer that emits it together
 //! with the string table.
 
-use rayon::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use mold_common::mem::leak_bytes;
 use mold_common::path::path_bytes;
+use rayon::prelude::*;
 
 use crate::arch::Target;
 use crate::chunks::{ChunkHeader, ChunkId, OutputSectionId};

@@ -101,7 +101,7 @@ fn warn_eh_frame_too_large<E: Target>(ctx: &Context<E>) {
             && rec.fde().is_some_and(|fde| ctx.fdes[fde].output_offset > MAX_FDE_OFFSET)
     });
     if out_of_reach {
-        crate::warn!(
+        mold_common::warn!(
             "__eh_frame section too large (max 16MB) to encode dwarf unwind offsets in compact unwind table, performance of exception handling might be affected"
         );
     }

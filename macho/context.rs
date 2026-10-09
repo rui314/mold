@@ -130,7 +130,7 @@ pub struct Context<E: Target> {
     /// The libraries and frameworks auto-link options named that were
     /// not found, or that don't take this link as a client: reported if
     /// symbols stay undefined.
-    pub autolink_misses: Vec<crate::error::Message>,
+    pub autolink_misses: Vec<String>,
     /// The files only -possible-l and the like name, which load with
     /// the auto-linked libraries (see reader::load_autolink_deps).
     pub possible_files: Vec<std::path::PathBuf>,

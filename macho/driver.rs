@@ -72,12 +72,12 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     }
 
     let mut ctx: Context<E> = Context::new(args);
-    crate::error::set_demangle(ctx.args.demangle);
+    mold_common::error::set_demangle(ctx.args.demangle);
     cmdline::set_search_paths(&mut ctx);
 
     let t_all = ctx.timer("all");
     mold_common::subprocess::install_signal_handler();
-    crate::error::install_panic_hook();
+    mold_common::error::install_panic_hook();
 
     // Runs a pass under a -print_statistics timer.
     macro_rules! timed {
@@ -93,7 +93,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
 
     // Create a dummy file containing linker-synthesized symbols.
     passes::create_internal_file(&mut ctx);
-    crate::error::checkpoint();
+    mold_common::error::checkpoint();
 
     // Resolve symbols by choosing the most appropriate file for each
     // symbol, loading the libraries the live objects' auto-link options
@@ -105,16 +105,16 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     passes::check_bitcode_duplicates(&ctx);
     // A link that has failed so far compiles no bitcode: say, one that
     // has a bitcode file built for another platform.
-    crate::error::checkpoint();
+    mold_common::error::checkpoint();
 
     // A -r link of bitcode alone writes the bitcode merged.
     if ctx.args.relocatable && passes::links_only_bitcode(&ctx) {
         t.stop();
         passes::print_why_load(&ctx);
         crate::lto::write_merged_bitcode(&ctx);
-        crate::error::checkpoint();
+        mold_common::error::checkpoint();
         crate::mapfile::write_dependency_info(&ctx);
-        crate::error::checkpoint();
+        mold_common::error::checkpoint();
         mold_common::subprocess::notify_parent();
         drop(t_all);
         return Ok(0);
@@ -127,7 +127,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     }
     passes::print_why_load(&ctx);
     passes::warn_newer_dylibs(&ctx);
-    crate::error::checkpoint();
+    mold_common::error::checkpoint();
     t.stop();
     bundle_hook::create_class_table(&mut ctx);
     passes::check_common_conflicts(&ctx);
@@ -144,9 +144,9 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
         passes::print_implicit_trace(&ctx);
         passes::check_duplicate_symbols(&ctx);
         passes::check_removed_swift_metadata_refs(&ctx);
-        crate::error::checkpoint();
+        mold_common::error::checkpoint();
         passes::check_poisoned_symbols(&ctx);
-        crate::error::checkpoint();
+        mold_common::error::checkpoint();
         passes::hide_all_exports(&mut ctx);
         passes::handle_exported_symbols_list(&mut ctx);
         passes::handle_unexported_symbols_list(&mut ctx);
@@ -177,7 +177,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
         passes::check_interposing(&ctx);
         passes::check_header_segment(&ctx);
         timed!("relocatable", ctx.output_size = crate::relocatable::combine_objects(&mut ctx));
-        crate::error::checkpoint();
+        mold_common::error::checkpoint();
         mold_common::subprocess::notify_parent();
         drop(t_all);
         passes::show_stats(&ctx);
@@ -218,17 +218,17 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     passes::check_removed_swift_metadata_refs(&ctx);
     passes::claim_unresolved_symbols(&mut ctx);
     timed!("report_undef_errors", passes::report_undef_errors(&mut ctx));
-    crate::error::checkpoint();
+    mold_common::error::checkpoint();
     passes::check_weak_imports(&ctx);
-    crate::error::checkpoint();
+    mold_common::error::checkpoint();
     passes::check_duplicate_symbols(&ctx);
-    crate::error::checkpoint();
+    mold_common::error::checkpoint();
     passes::check_poisoned_symbols(&ctx);
-    crate::error::checkpoint();
+    mold_common::error::checkpoint();
     passes::warn_unused_dylibs(&ctx);
     passes::warn_redundant_reexports(&ctx);
     passes::check_weak_exports(&ctx);
-    crate::error::checkpoint();
+    mold_common::error::checkpoint();
 
     // Fold identical functions.
     if ctx.args.deduplicate {
@@ -254,7 +254,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     passes::check_libsystem_linked(&ctx);
     passes::bind_private_reexports_to_image(&mut ctx);
     passes::check_weak_assertions(&ctx);
-    crate::error::checkpoint();
+    mold_common::error::checkpoint();
     crate::lazy_load::create_lazy_loads(&mut ctx);
     crate::delay_init::create_delay_init(&mut ctx);
     passes::finish_stubs(&mut ctx);
@@ -304,7 +304,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     timed!("set_osec_offsets", passes::set_osec_offsets(&mut ctx));
     passes::fix_synthetic_symbols(&mut ctx);
     passes::check_entry_point(&ctx);
-    crate::error::checkpoint();
+    mold_common::error::checkpoint();
     crate::mapfile::write_dependency_info(&ctx);
     crate::mapfile::print_map(&ctx);
     crate::mapfile::write_sdk_imports(&ctx);
@@ -326,7 +326,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     // Relocations that failed to apply fail the link before the fixups
     // are written.
     passes::report_text_relocs(&ctx);
-    crate::error::checkpoint();
+    mold_common::error::checkpoint();
 
     // The fixups, the symbol table (which also fills the string table),
     // the mach header, the UUID and the code signature follow serially,
@@ -363,11 +363,11 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
         timed!("write_code_signature", chunks::code_signature::write(&ctx, &mut buf, &hashes));
     }
     out.queue(sig_start, buf.len() - sig_start);
-    crate::error::checkpoint();
+    mold_common::error::checkpoint();
     // The traces name the output by its UUID; one that can't be written
     // fails the link, which leaves no output.
     crate::mapfile::write_trace_files(&ctx);
-    crate::error::checkpoint();
+    mold_common::error::checkpoint();
     timed!("close_file", out.close());
     drop(t_copy);
     let _ = std::io::Write::flush(&mut std::io::stdout());

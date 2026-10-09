@@ -2,14 +2,15 @@
 //! replacement for the rebase and bind opcode streams, with the fixup
 //! chains it describes threaded through the data sections.
 
+use mold_common::bytes::display;
 use mold_common::endian::{push_ul16, push_ul32, push_ul64};
+use mold_common::fatal;
 use rayon::prelude::*;
 
 use crate::arch::Target;
 use crate::chunks::{ChunkHeader, OutputSegment, output_section, rebase_info};
 use crate::cmdline::Treatment;
 use crate::context::Context;
-use crate::fatal;
 use crate::input_files::{FileId, data_blob_binds, data_blob_pointers};
 use crate::macho::*;
 use crate::symbol::{Symbol, SymbolId};
@@ -201,7 +202,7 @@ fn write_starts_in_image<E: Target>(ctx: &Context<E>, buf: &mut Vec<u8>, fixups:
         // arm64 image's -segalign sets.
         let page_size = chain_page_size(ctx);
         if !matches!(page_size, 0x1000 | 0x4000) {
-            crate::error!(
+            mold_common::error!(
                 "chained fixups need a -segalign of 0x1000 or 0x4000, not {page_size:#x}"
             );
             break;
@@ -416,7 +417,7 @@ fn rebase_word<E: Target>(ctx: &Context<E>, addr: u64, val: u64, target_base: u6
             .unwrap_or_default();
         fatal!(
             "rebase target unencodable at {addr:#x} in {} (value {val:#x}); re-link with -no_fixup_chains",
-            crate::error::raw(&sect)
+            display(&sect)
         );
     }
     target | (high8 << 36)
@@ -531,18 +532,17 @@ fn check_pointer_alignment<E: Target>(
         && !ctx.args.without_dyld()
         && (!unaligned.is_empty() || fixups.iter().any(|&(addr, ..)| !addr.is_multiple_of(8)));
     if fallback {
-        crate::warn!("disabling chained fixups because of unaligned pointers");
+        mold_common::warn!("disabling chained fixups because of unaligned pointers");
     }
     for (id, addr) in unaligned {
         let isec = &ctx.isecs[id as usize];
         let place = isec.location(ctx, (addr - isec.addr(ctx)) as u32);
-        let place = crate::error::raw(&place);
         match ctx.args.unaligned_pointers {
             Treatment::Error => {
-                crate::error!("pointer not aligned at {addr:#x} in {place}");
+                mold_common::error!("pointer not aligned at {addr:#x} in {place}");
                 break;
             }
-            Treatment::Warning => crate::warn!("pointer not aligned at {addr:#x} in {place}"),
+            Treatment::Warning => mold_common::warn!("pointer not aligned at {addr:#x} in {place}"),
             Treatment::Suppress => break,
         }
     }

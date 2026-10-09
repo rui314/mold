@@ -16,10 +16,7 @@ use std::sync::{Mutex, OnceLock};
 
 use mold_common::archive_file::Member;
 use mold_common::bytes::os_str;
-
-use crate::error;
-use crate::error::RawPath;
-use crate::fatal;
+use mold_common::fatal;
 
 /// Opens are memoized by path: a file named twice (a library on the
 /// command line and in an auto-link option, an archive listed
@@ -69,7 +66,7 @@ const READ_THRESHOLD: u64 = 32 * 1024;
 
 /// The `size` bytes of an open file, read or mapped.
 fn read_contents(file: &File, size: u64, path: &Path) -> &'static [u8] {
-    let display = path.raw();
+    let display = path.display();
     if size == 0 {
         &[]
     } else if size <= READ_THRESHOLD {
@@ -142,7 +139,7 @@ impl MappedFile {
         match Self::open_impl(path) {
             Ok(mf) => Some(mf),
             Err(e) if e.kind() == io::ErrorKind::NotFound => None,
-            Err(e) => fatal!("cannot open {}: {e}", path.raw()),
+            Err(e) => fatal!("cannot open {}: {e}", path.display()),
         }
     }
 
@@ -154,7 +151,7 @@ impl MappedFile {
     /// Opens a file that must exist.
     pub fn must_open(path: impl AsRef<Path>) -> &'static Self {
         let path = path.as_ref();
-        Self::open_impl(path).unwrap_or_else(|e| fatal!("cannot open {}: {e}", path.raw()))
+        Self::open_impl(path).unwrap_or_else(|e| fatal!("cannot open {}: {e}", path.display()))
     }
 
     /// Returns a view of a slice of this fat file.
@@ -204,19 +201,19 @@ impl MappedFile {
 /// input is read whole, and an empty one refused, so a file that is
 /// there but no regular one (which MappedFile takes for none) is one
 /// that can't be mapped - a directory - or an empty one.
-pub fn unreadable_file(path: &Path, e: &std::io::Error) -> error::Message {
-    let p = path.raw();
+pub fn unreadable_file(path: &Path, e: &std::io::Error) -> String {
+    let p = path.display();
     let found = std::fs::metadata(path).ok().filter(|_| e.kind() == std::io::ErrorKind::NotFound);
     match found {
-        Some(md) if md.len() == 0 => b"file is empty".to_vec(),
+        Some(md) if md.len() == 0 => "file is empty".to_string(),
         Some(_) => {
             let e = std::io::Error::from_raw_os_error(libc::EINVAL);
-            let errno = crate::error::strerror(&e);
-            error::render(format_args!("cannot map {p}: {errno}"))
+            let errno = mold_common::error::strerror(&e);
+            format!("cannot map {p}: {errno}")
         }
         None => {
-            let errno = crate::error::strerror(e);
-            error::render(format_args!("cannot open {p}: {errno}"))
+            let errno = mold_common::error::strerror(e);
+            format!("cannot open {p}: {errno}")
         }
     }
 }

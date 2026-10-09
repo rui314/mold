@@ -4,7 +4,8 @@ source "$(dirname "$0")"/common.inc
 # The options that name a segment or a section take any bytes, UTF-8
 # or not, as ld-prime does: they reach the output's headers as given
 # (cut to the 16 bytes of a name field, inside a UTF-8 character too),
-# and the diagnostics print them as they are.
+# and the diagnostics print them with a U+FFFD for each byte that isn't
+# UTF-8.
 cat <<EOF | $CC -o $t/a.o -c -xc -
 long x = 42;
 int main() { return x != 42; }
@@ -13,6 +14,8 @@ echo hello > $t/data
 
 seg=$'__D\xffT'
 sect=$'__s\xfeC'
+shown_seg=$'__D\xef\xbf\xbdT'
+shown_sect=$'__s\xef\xbf\xbdC'
 link="$CC --ld-path=$mold $t/a.o"
 
 sects() {
@@ -38,11 +41,12 @@ sects $t/r.o | grep -aqx "$seg,$sect"
 nm -ap $t/r.o | grep -aq " l<sect-create>$seg,$sect$"
 
 # A name longer than 16 bytes is cut, here inside the é, with a warning
-# that prints both names as they are.
+# that prints both names.
 long=$'__AAAAAAAAAAAAA\xc3\xa9X'
 cut=$'__AAAAAAAAAAAAA\xc3'
+shown_cut=$'__AAAAAAAAAAAAA\xef\xbf\xbd'
 $link -o $t/exe3 -Wl,-sectcreate,"$long",__s,$t/data 2> $t/log3
-grep -aqF "-sectcreate segment name too long ('$long'), will be truncated to '$cut'" $t/log3
+grep -aqF "-sectcreate segment name too long ('$long'), will be truncated to '$shown_cut'" $t/log3
 segs $t/exe3 | grep -aqx "$cut"
 
 # -segprot, -segaddr and -sectalign.
@@ -54,8 +58,8 @@ otool -l $t/exe4 | grep -aA8 "sectname $sect" | grep -q 'align 2^8 (256)'
 
 $link -o $t/exe5 -Wl,-sectcreate,"$seg","$sect",$t/data -Wl,-sectalign,"$seg","$sect",0x30 \
   -Wl,-segaddr,"$seg",0x300000000 -Wl,-segaddr,"$seg",0x300000000 2> $t/log5
-grep -aqF "alignment for -sectalign $seg $sect is not a power of two, using 0x10" $t/log5
-grep -aqF -- "-segaddr $seg used more than once" $t/log5
+grep -aqF "alignment for -sectalign $shown_seg $shown_sect is not a power of two, using 0x10" $t/log5
+grep -aqF -- "-segaddr $shown_seg used more than once" $t/log5
 
 # -rename_section and -rename_segment, from and to such names.
 $link -o $t/exe6 -Wl,-rename_section,__DATA,__data,"$seg","$sect"
@@ -72,7 +76,7 @@ $RUN $t/exe8
 sects $t/exe8 | grep -aqx "$seg,__data"
 echo _main > $t/list2
 $link -o $t/exe9 -Wl,-move_to_rw_segment,"$seg",$t/list2 2> $t/log9
-grep -aqF "to segment '$seg' because" $t/log9
+grep -aqF "to segment '$shown_seg' because" $t/log9
 
 # -segment_order, -section_order and -seg_page_size, in a -static
 # image.
@@ -90,4 +94,4 @@ $static -o $t/exe10 -segment_order "$seg:__DATA" -section_order "$seg" "$sect" \
 [ "$(segs $t/exe10 | tr '\n' ' ')" = "__PAGEZERO __TEXT $seg __DATA __LINKEDIT " ]
 not $static -o $t/exe11 -segment_order "$seg" 2> $t/log11
 not $static -o $t/exe12 -section_order "$seg" __a -section_order "$seg" __b 2> $t/log12
-grep -aqF -- "-section_order $seg used more than once" $t/log12
+grep -aqF -- "-section_order $shown_seg used more than once" $t/log12

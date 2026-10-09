@@ -4,7 +4,8 @@ source "$(dirname "$0")"/common.inc
 # The options and the list files that name symbols name them in bytes,
 # UTF-8 or not, as the symbols' names are (see symbol-name-bytes): -e,
 # -u, -U, -alias, the export lists, -alias_list, -order_file and
-# -why_live alike.
+# -why_live alike. A diagnostic prints them with a U+FFFD for each byte
+# that isn't UTF-8.
 
 cat <<'EOF' | $CC -o $t/a.o -c -xc -
 int foo(void) __asm__("_f\377o");
@@ -28,7 +29,7 @@ $CC --ld-path=$mold -o $t/exe $t/entry.o -Wl,-e,$'_st\xffrt'
 $RUN $t/exe || [ $? = 7 ]
 
 not $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/a.o -Wl,-u,$'_x\xff' 2> $t/log2
-grep -q $'_x\xff' $t/log2
+grep -q $'_x\xef\xbf\xbd' $t/log2
 
 $CC --ld-path=$mold -o $t/exe3 $t/main.o -Wl,-U,$'_f\xffo'
 nm -m $t/exe3 > $t/nm3
@@ -61,11 +62,11 @@ grep -q $' T _al\xffias2$' $t/nm7
 printf '_b\377z\n_f\377o\n_bar\n_n\377ne\n' > $t/order
 $CC --ld-path=$mold -o $t/exe8 $t/main.o $t/a.o -Wl,-order_file,$t/order \
   -Wl,-order_file_statistics 2> $t/log8
-grep -q $'order_file entry: _n\xffne$' $t/log8
+grep -q $'order_file entry: _n\xef\xbf\xbdne$' $t/log8
 nm -n $t/exe8 | grep ' T ' > $t/nm8
 grep -A1 $' T _b\xffz$' $t/nm8 | grep -q $' T _f\xffo$'
 grep -A1 $' T _f\xffo$' $t/nm8 | grep -q ' T _bar$'
 
 # -why_live.
 $CC --ld-path=$mold -o $t/exe9 $t/main.o $t/a.o -Wl,-dead_strip -Wl,-why_live,$'_f\xffo' 2> $t/log9
-grep -q $'^_f\xffo from ' $t/log9
+grep -q $'^_f\xef\xbf\xbdo from ' $t/log9

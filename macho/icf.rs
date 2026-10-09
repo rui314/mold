@@ -363,7 +363,7 @@ fn report_folds<E: Target>(
     }
     let size: u64 = folded().map(|i| ctx.isecs[candidates[i]].size as u64).sum();
     let percent = size as f64 * 100.0 / total.1 as f64;
-    crate::error::notice(format_args!(
+    mold_common::error::notice(format_args!(
         "code deduplicated functions {count} (size: {size}) out of total {} (size: {}) ({percent:.2}% size reduction)",
         total.0, total.1
     ));

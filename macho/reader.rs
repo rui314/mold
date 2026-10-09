@@ -15,16 +15,15 @@ use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
 use mold_common::archive_file::members;
+use mold_common::bytes::display;
+use mold_common::error;
+use mold_common::fatal;
 use mold_common::path::path_bytes;
 use rayon::prelude::*;
 
 use crate::arch::Target;
 use crate::cmdline::{Args, InputArg, LibraryKind, LibraryName, parse_triple, triple_arch};
 use crate::context::Context;
-use crate::error;
-use crate::error::RawPath;
-use crate::error::raw;
-use crate::fatal;
 use crate::filetype::{self, FileType, get_file_type};
 use crate::input_files;
 use crate::input_files::PlatformVersion;
@@ -64,7 +63,7 @@ pub fn detect_machine_type(args: &Args) -> &'static str {
 fn open_for_target(path: &Path) -> Option<&'static MappedFile> {
     match MappedFile::try_open(path) {
         Ok(mf) => (mf.size() > 0).then_some(mf),
-        Err(e) => fatal!("{}", crate::error::raw(&unreadable_file(path, &e))),
+        Err(e) => fatal!("{}", unreadable_file(path, &e)),
     }
 }
 
@@ -90,7 +89,7 @@ pub fn infer_platform(args: &mut Args) {
                 if !is_supported_platform(v.platform) {
                     fatal!(
                         "{}: unsupported platform: {}",
-                        mf.name.raw(),
+                        mf.name.display(),
                         platform_name(v.platform)
                     );
                 }
@@ -133,7 +132,7 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
         let words = std::slice::from_ref(&ctx.args.linker_options);
         let (opts, warnings) = read_linker_options(words, || "command line");
         for msg in warnings {
-            crate::warn!("{}", raw(&msg));
+            mold_common::warn!("{msg}");
         }
         ctx.cmdline_linker_options = Some(opts);
     }
@@ -172,12 +171,12 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
         }
         rc.sub_reexport = sub_reexport(ctx, arg, &path);
         match MappedFile::try_open(&path) {
-            Ok(mf) if mf.size() == 0 => error!("file is empty in '{}'", path.raw()),
+            Ok(mf) if mf.size() == 0 => error!("file is empty in '{}'", path.display()),
             Ok(mf) if matches!(arg, InputArg::BundleLoader(_)) => {
                 load_bundle_loader(ctx, mf, rc, &mut queue)
             }
             Ok(mf) => read_file(ctx, mf, rc, &mut queue),
-            Err(e) => error!("{}", raw(&unreadable_file(&path, &e))),
+            Err(e) => error!("{}", unreadable_file(&path, &e)),
         }
     }
     ctx.args.inputs = inputs;
@@ -212,11 +211,11 @@ fn warn_duplicate_libraries<E: Target>(ctx: &Context<E>) {
             }
             _ => continue,
         };
-        dups.insert(error::render(format_args!("'{}'", name.raw())));
+        dups.insert(format!("'{}'", name.display()));
     }
     if !dups.is_empty() {
-        let list: Vec<Vec<u8>> = dups.into_iter().collect();
-        crate::warn!("ignoring duplicate libraries: {}", raw(&list.join(&b", "[..])));
+        let list: Vec<String> = dups.into_iter().collect();
+        mold_common::warn!("ignoring duplicate libraries: {}", list.join(", "));
     }
 }
 
@@ -230,7 +229,7 @@ pub struct Prober<'a> {
     missing: Option<&'a std::sync::Mutex<Vec<PathBuf>>>,
     quiet: bool,
     prefer_stubs: bool,
-    warnings: Option<&'a std::sync::Mutex<Vec<error::Message>>>,
+    warnings: Option<&'a std::sync::Mutex<Vec<String>>>,
 }
 
 impl<'a> Prober<'a> {
@@ -281,12 +280,12 @@ impl<'a> Prober<'a> {
             let msg = format_args!(
                 "text-based stub file {} and library file {} unexpectedly found. Falling back \
                  to library file for linking.",
-                stub.raw(),
-                path.raw()
+                stub.display(),
+                path.display()
             );
             match self.warnings {
-                Some(warnings) => warnings.lock().unwrap().push(error::render(msg)),
-                None => crate::warn!("{msg}"),
+                Some(warnings) => warnings.lock().unwrap().push(msg.to_string()),
+                None => mold_common::warn!("{msg}"),
             }
         }
         Some(path.to_path_buf())
@@ -318,7 +317,7 @@ fn file_exists(path: &Path) -> bool {
 #[derive(Default)]
 struct ProbeLog {
     missing: std::sync::Mutex<Vec<PathBuf>>,
-    warnings: std::sync::Mutex<Vec<error::Message>>,
+    warnings: std::sync::Mutex<Vec<String>>,
 }
 
 impl ProbeLog {
@@ -329,7 +328,7 @@ impl ProbeLog {
             ctx.missing_files.lock().unwrap().extend(self.missing.into_inner().unwrap());
         }
         for msg in self.warnings.into_inner().unwrap() {
-            crate::warn!("{}", raw(&msg));
+            mold_common::warn!("{msg}");
         }
     }
 }
@@ -642,9 +641,9 @@ pub(crate) fn resolve_dylib_ref<E: Target>(
     for (_, file) in dylib_files {
         match MappedFile::try_open(file) {
             Ok(mf) if mf.size() > 0 => return Some(mf),
-            Ok(_) => fatal!("file is empty in '{}'", file.raw()),
+            Ok(_) => fatal!("file is empty in '{}'", file.display()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound && !file.exists() => {}
-            Err(e) => fatal!("{}", crate::error::raw(&unreadable_file(file, &e))),
+            Err(e) => fatal!("{}", unreadable_file(file, &e)),
         }
     }
     let prober = Prober::new(ctx);
@@ -851,11 +850,11 @@ fn library_namings(
         let key = match (library_option(arg), path) {
             // A hint (see missing_hint).
             (Some((rc, _, _)), None) if rc.autolinked => None,
-            (Some((_, true, name)), None) => fatal!("framework '{}' not found", name.raw()),
-            (Some((_, false, name)), None) => fatal!("library '{}' not found", name.raw()),
+            (Some((_, true, name)), None) => fatal!("framework '{}' not found", name.display()),
+            (Some((_, false, name)), None) => fatal!("library '{}' not found", name.display()),
             (None, None) => match arg {
                 InputArg::BundleLoader(path) | InputArg::File(path) => {
-                    fatal!("library '{}' not found", path.raw())
+                    fatal!("library '{}' not found", path.display())
                 }
                 _ => None,
             },
@@ -870,10 +869,10 @@ fn library_namings(
                     && !all.weak
                     && path.extension() == Some(OsStr::new("a"))
                 {
-                    crate::warn!(
+                    mold_common::warn!(
                         "-weak-l{0} resolved to a static library '{1}', but only dynamic libraries can be weak linked. Use -l{0} when linking static libraries, or make sure .dylib/.tbd library is located in -L search paths.",
-                        name.raw(),
-                        path.raw()
+                        name.display(),
+                        path.display()
                     );
                 }
                 *all = all.union(ReaderContext { sdk: found_in_sdk(args, arg, path), ..rc });
@@ -899,8 +898,8 @@ fn library_namings(
 /// option that makes it spells the library (a path as `-weak-l<path>`).
 fn check_naming(rc: ReaderContext, framework: bool, name: &OsStr) {
     let spell = |opt: &str| match framework {
-        true => error::RawBuf(error::render(format_args!("'-{opt}_framework {}'", name.raw()))),
-        false => error::RawBuf(error::render(format_args!("'-{opt}-l{}'", name.raw()))),
+        true => format!("'-{opt}_framework {}'", name.display()),
+        false => format!("'-{opt}-l{}'", name.display()),
     };
     for (on, opt) in [(rc.weak, "weak"), (rc.lazy, "lazy"), (rc.delay, "delay")] {
         if on && rc.reexport {
@@ -997,7 +996,7 @@ fn sub_reexport<E: Target>(ctx: &Context<E>, arg: &InputArg, path: &Path) -> boo
         return false;
     }
     if framework.is_some() {
-        crate::warn!(
+        mold_common::warn!(
             "using -sub_library to re-export a framework is deprecated.  Use -reexport_framework instead"
         );
     }
@@ -1108,7 +1107,10 @@ fn read_file<E: Target>(
         // too. (It takes a stub for one, then binds the stub's symbols
         // to the image itself, which dyld then fails to find.)
         FileType::Tapi | FileType::Dylib if rc.merge && !input_files::is_mergeable(mf) => {
-            error!("dylib cannot be merged, not built with -make_mergeable in '{}'", mf.name.raw());
+            error!(
+                "dylib cannot be merged, not built with -make_mergeable in '{}'",
+                mf.name.display()
+            );
         }
         // A relocatable output keeps every reference undefined for the
         // final link, and the other images that link no dylib have
@@ -1117,7 +1119,7 @@ fn read_file<E: Target>(
         // the architecture as ever), then ignores it with a warning.
         FileType::Tapi | FileType::Dylib if ctx.args.relocatable || !ctx.args.links_dylibs() => {
             if ty == FileType::Dylib || input_files::load_tbd(ctx, mf).is_some() {
-                crate::warn!("ignoring unexpected dylib '{}'", mf.name.raw());
+                mold_common::warn!("ignoring unexpected dylib '{}'", mf.name.display());
             }
         }
         FileType::Dylib if rc.merge => merge_dylib(ctx, mf, out),
@@ -1160,7 +1162,7 @@ pub(crate) fn is_foreign<E: Target>(ctx: &Context<E>, mf: &MappedFile) -> bool {
     let Some(arch) = filetype::foreign_arch::<E>(mf) else { return false };
     if ctx.args.allow_sub_type_mismatches && filetype::is_subtype_mismatch::<E>(mf) {
         let name = filetype::without_fat_arch(path_bytes(&mf.name));
-        crate::warn!("linking {arch} file '{}' into {} link", crate::error::raw(&name), E::NAME);
+        mold_common::warn!("linking {arch} file '{}' into {} link", display(&name), E::NAME);
         return false;
     }
     let why = format!("found architecture '{arch}', required architecture '{}'", E::NAME);
@@ -1171,7 +1173,7 @@ pub(crate) fn is_foreign<E: Target>(ctx: &Context<E>, mf: &MappedFile) -> bool {
 /// Refuses a file the link can't take, by what it is.
 fn refuse_file(mf: &MappedFile) {
     let name = filetype::without_fat_arch(path_bytes(&mf.name));
-    let name = raw(&name);
+    let name = display(&name);
     if crate::filetype::get_macho_filetype(mf.data()).is_some() {
         error!(
             "unsupported mach-o filetype (only MH_OBJECT and MH_DYLIB can be linked) in '{name}'"
@@ -1184,7 +1186,7 @@ fn refuse_file(mf: &MappedFile) {
 /// Refuses an image the link reads that has no LC_UUID (see
 /// input_files::has_uuid).
 fn refuse_without_uuid(mf: &MappedFile) {
-    error!("missing LC_UUID load command in '{}'", mf.name.raw());
+    error!("missing LC_UUID load command in '{}'", mf.name.display());
 }
 
 /// Loads a dylib or its stub, and the public libraries it re-exports,
@@ -1241,13 +1243,14 @@ fn refuses_client<E: Target>(
     let leaf = id.install_name.rsplit(|&b| b == b'/').next().unwrap_or(&[]);
     let msg = format_args!(
         "cannot link directly with '{}' because product being built is not an allowed client of it",
-        raw(leaf)
+        display(leaf)
     );
     if !rc.autolinked {
         error!("{msg}");
     } else {
-        let msg = format_args!("Could not parse or use implicit file '{}': {msg}", mf.name.raw());
-        ctx.autolink_misses.push(error::render(msg));
+        let msg =
+            format_args!("Could not parse or use implicit file '{}': {msg}", mf.name.display());
+        ctx.autolink_misses.push(msg.to_string());
     }
     true
 }
@@ -1282,9 +1285,9 @@ fn name_dylib<E: Target>(ctx: &mut Context<E>, idx: usize, rc: ReaderContext) {
         }
     }
     if rc.delay && dylib.has_weak_defs {
-        crate::warn!(
+        mold_common::warn!(
             "delay-init link with '{}' will be ignored because it has weak-def exports",
-            crate::error::raw(&dylib.install_name)
+            display(&dylib.install_name)
         );
     }
     dylib.is_reexported |= rc.reexport;
@@ -1296,8 +1299,8 @@ fn name_dylib<E: Target>(ctx: &mut Context<E>, idx: usize, rc: ReaderContext) {
     // A library -sub_library or -sub_umbrella re-exports loads strongly.
     if rc.sub_reexport {
         if dylib.is_weak {
-            let name = crate::error::raw(&dylib.install_name);
-            crate::warn!("re-exported dylibs cannot be weak-linked: {name}");
+            let name = display(&dylib.install_name);
+            mold_common::warn!("re-exported dylibs cannot be weak-linked: {name}");
             dylib.is_weak = false;
         }
         dylib.is_reexported = true;
@@ -1458,18 +1461,18 @@ pub fn load_autolink_deps<E: Target>(ctx: &mut Context<E>) -> bool {
     // object has dozens), and warned of in object order.
     let new: Vec<&mut input_files::ObjectFile> =
         ctx.objs.iter_mut().filter(|obj| obj.is_reachable && !obj.linker_options_read).collect();
-    let warnings: Vec<Vec<error::Message>> = new
+    let warnings: Vec<Vec<String>> = new
         .into_par_iter()
         .map(|obj| {
             let mf = obj.mf;
-            let (opts, warnings) = read_linker_options(&obj.linker_options, || mf.name.raw());
+            let (opts, warnings) = read_linker_options(&obj.linker_options, || mf.name.display());
             obj.linker_options = opts;
             obj.linker_options_read = true;
             warnings
         })
         .collect();
     for msg in warnings.iter().flatten() {
-        crate::warn!("{}", raw(msg));
+        mold_common::warn!("{msg}");
     }
     // ld64 does not act on auto-link options in a -r link: the
     // LC_LINKER_OPTION commands are copied into the output object and
@@ -1541,13 +1544,13 @@ fn load_autolinked_libraries<E: Target>(ctx: &mut Context<E>) {
     // auto-linked library define to the auto-linked one.
     for path in std::mem::take(&mut ctx.possible_files) {
         match MappedFile::try_open(&path) {
-            Ok(mf) if mf.size() == 0 => error!("file is empty in '{}'", path.raw()),
+            Ok(mf) if mf.size() == 0 => error!("file is empty in '{}'", path.display()),
             Ok(mf) => {
                 let sdk = searched_in_sdk(&ctx.args, &path);
                 let rc = ReaderContext { autolinked: true, sdk, ..Default::default() };
                 read_file(ctx, mf, rc, &mut queue);
             }
-            Err(e) => error!("{}", raw(&unreadable_file(&path, &e))),
+            Err(e) => error!("{}", unreadable_file(&path, &e)),
         }
     }
     for dylib in &mut ctx.dylibs[dylibs_before..] {
@@ -1598,20 +1601,18 @@ fn prefetch_autolinked_stubs<E: Target>(
 fn read_linker_options<F: std::fmt::Display>(
     opts: &[Vec<Vec<u8>>],
     file: impl Fn() -> F,
-) -> (Vec<Vec<Vec<u8>>>, Vec<error::Message>) {
+) -> (Vec<Vec<Vec<u8>>>, Vec<String>) {
     let words: Vec<&[u8]> = opts.iter().flatten().map(Vec::as_slice).collect();
     let mut warnings = Vec::new();
     let ignored = |kind: &str, what: &[u8]| {
-        let (what, file) = (raw(what), file());
-        error::render(format_args!(
-            "{kind} linker option from object file ignored: '{what}' in {file}"
-        ))
+        let (what, file) = (display(what), file());
+        format!("{kind} linker option from object file ignored: '{what}' in {file}")
     };
     let malformed = |opt: &str| {
         let file = file();
-        error::render(format_args!(
+        format!(
             "malformed linker option from object file ignored: '{opt}' missing argument, in {file}"
-        ))
+        )
     };
     let mut libs: Vec<Vec<Vec<u8>>> = Vec::new();
     let mut i = 0;
@@ -1742,18 +1743,18 @@ fn autolinked_library(lib: &[u8]) -> &[u8] {
 /// framework an auto-link option or a -possible-l and the like names
 /// that it didn't find. (A framework's first name leaves out a
 /// ",suffix".)
-fn missing_hint(framework: bool, name: &[u8]) -> error::Message {
+fn missing_hint(framework: bool, name: &[u8]) -> String {
     if framework {
         let base = name.split(|&c| c == b',').next().unwrap();
-        error::render(format_args!(
+        format!(
             "Could not find or use auto-linked framework '{}': framework '{}' not found",
-            raw(base),
-            raw(name)
-        ))
+            display(base),
+            display(name)
+        )
     } else {
-        error::render(format_args!(
+        format!(
             "Could not find or use auto-linked library '{0}': library '{0}' not found",
-            raw(name)
-        ))
+            display(name)
+        )
     }
 }

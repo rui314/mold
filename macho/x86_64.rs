@@ -2,7 +2,9 @@
 
 use std::path::Path;
 
+use mold_common::bytes::display;
 use mold_common::endian::{write_ul32, write_ul64};
+use mold_common::{error, fatal};
 
 use crate::arch::{SplitRef, Target, has_reloc_form, reloc_form};
 use crate::chunks::delay_init::{DelayCode, DelayTarget, DelayUse};
@@ -14,7 +16,6 @@ use crate::input_files::{ObjectFile, section_target};
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
 use crate::symbol::{NEEDS_GOT, NEEDS_STUB, SymbolId};
-use crate::{error, fatal};
 
 #[derive(Clone, Copy, Default)]
 pub struct X86_64;
@@ -137,7 +138,7 @@ fn rip32_displacement(
     let disp = t.wrapping_sub(p + 4).wrapping_sub(reloc_bias(r.ty) as u64) as i64;
     if i32::try_from(disp).is_err() {
         let name = r.target_name(ctx, &ctx.objs[isec.file as usize]);
-        let name = crate::error::raw(&name);
+        let name = display(&name);
         let msg = format_args!(
             "32-bit RIP-relative reference out of range (displacement={disp}, max is +/-2GB), \
              from 0x{p:08X} to 0x{t:08X} ('{name}')"
@@ -247,7 +248,7 @@ impl Target for X86_64 {
             let disp = ptr_addr.wrapping_sub(ent_addr + 6) as i64;
             if i32::try_from(disp).is_err() {
                 let p = ent_addr + 2;
-                crate::error!(
+                mold_common::error!(
                     "stub for {}: 32-bit RIP-relative reference out of range (displacement={disp}, \
                      max is +/-2GB), from 0x{p:08X} to its pointer at 0x{ptr_addr:08X}",
                     ctx.symbols[sym]
@@ -295,7 +296,9 @@ impl Target for X86_64 {
     fn write_legacy_stub_helper(ctx: &Context<Self>, addr: u64, buf: &mut [u8]) {
         let helper = ctx.stub_helper.binding_helper.map(|id| ctx.symbols[id].addr(ctx));
         if helper.is_none() {
-            crate::error!("stub helper: target 'dyld_stub_binding_helper' does not have address");
+            mold_common::error!(
+                "stub helper: target 'dyld_stub_binding_helper' does not have address"
+            );
         }
         for i in 0..ctx.stubs.lazy.len() {
             let off = stub_helper::entry_offset(ctx, i as u32);

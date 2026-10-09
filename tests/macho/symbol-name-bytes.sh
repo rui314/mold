@@ -3,8 +3,8 @@ source "$(dirname "$0")"/common.inc
 
 # A symbol name is bytes, any but NUL, UTF-8 or not: ld-prime resolves,
 # exports and imports one as it is, writes it to the symbol table, the
-# export trie, the binds and -map as it came, and prints it byte for
-# byte in a diagnostic.
+# export trie, the binds and -map as it came. A diagnostic prints it
+# with a U+FFFD for each byte that isn't UTF-8.
 
 cat <<'EOF' | $CC -o $t/a.o -c -xc -
 int foo(void) __asm__("_f\377o");
@@ -31,8 +31,8 @@ nm -m $t/exe2 > $t/nm3
 grep -q $'(undefined) external _f\xffo (from libfoo)' $t/nm3
 $RUN $t/exe2 || [ $? = 3 ]
 
-# An undefined symbol and a duplicate one are named as they are.
+# An undefined symbol and a duplicate one are named.
 not $CC --ld-path=$mold -o $t/exe3 $t/main.o 2> $t/log3
-grep -q $'_f\xffo' $t/log3
+grep -q $'_f\xef\xbf\xbdo' $t/log3
 not $CC --ld-path=$mold -o $t/exe4 $t/main.o $t/a.o $t/a.o 2> $t/log4
-grep -q $'duplicate symbol.*_f\xffo' $t/log4
+grep -q $'duplicate symbol.*_f\xef\xbf\xbdo' $t/log4

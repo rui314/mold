@@ -21,11 +21,10 @@
 //! Fixups refer to entries by index; their order means nothing else.
 
 use hashbrown::HashMap;
+use mold_common::fatal;
 
 use crate::arch::Target;
 use crate::context::Context;
-use crate::error::RawPath;
-use crate::fatal;
 use crate::input_files::{FileId, ObjectFile};
 use crate::input_sections::{InputSection, NO_REPLACEMENT, Reloc, RelocTarget};
 use crate::macho::*;
@@ -625,7 +624,7 @@ impl<'a, E: Target> Builder<'a, E> {
         if kind == 0 {
             fatal!(
                 "{}: -make_mergeable: unsupported reference to a class reference at 0x{:x}",
-                ctx.objs[obj].mf.name.raw(),
+                ctx.objs[obj].mf.name.display(),
                 r.offset
             );
         }
@@ -649,7 +648,7 @@ impl<'a, E: Target> Builder<'a, E> {
                 Some((to, off)) => (to, off - rel.addend),
                 None => fatal!(
                     "{}: -make_mergeable: a relocation refers to a section with no entry",
-                    self.ctx.objs[obj].mf.name.raw()
+                    self.ctx.objs[obj].mf.name.display()
                 ),
             },
         }
@@ -735,7 +734,7 @@ impl<'a, E: Target> Builder<'a, E> {
             let Some(fixup) = fixup else {
                 fatal!(
                     "{}: -make_mergeable: unsupported relocation type {} at 0x{:x}",
-                    ctx.objs[obj].mf.name.raw(),
+                    ctx.objs[obj].mf.name.display(),
                     r.ty,
                     r.offset
                 );

@@ -32,9 +32,8 @@ use std::thread::JoinHandle;
 
 use mold_common::output_file::set_tmpfile;
 
-use crate::error::RawPath;
-use crate::error::strerror;
-use crate::fatal;
+use mold_common::error::strerror;
+use mold_common::fatal;
 
 /// Opens the output file, returning it and whether this link created
 /// it. An existing file is removed first, so that a fresh file takes
@@ -52,7 +51,7 @@ fn open(path: &Path, mode: u32) -> (File, bool) {
         .create(true)
         .truncate(true)
         .open(path)
-        .unwrap_or_else(|e| fatal!("cannot open {}: {}", path.raw(), strerror(&e)));
+        .unwrap_or_else(|e| fatal!("cannot open {}: {}", path.display(), strerror(&e)));
     (file, created)
 }
 
@@ -106,13 +105,13 @@ fn write_all_at(file: &File, mut buf: &[u8], mut off: u64) -> io::Result<()> {
 /// output to 2 GiB on 32-bit hosts.
 pub fn buffer_len(path: &Path, size: u64) -> usize {
     if isize::try_from(size).is_err() {
-        fatal!("{}: output file is too large for this host: {size} bytes", path.raw());
+        fatal!("{}: output file is too large for this host: {size} bytes", path.display());
     }
     size as usize
 }
 
 fn write_error(path: &Path, e: &io::Error) -> ! {
-    fatal!("cannot write {}: {}", path.raw(), strerror(e))
+    fatal!("cannot write {}: {}", path.display(), strerror(e))
 }
 
 /// The output buffer as the writer threads see it: a bare pointer,
@@ -188,7 +187,7 @@ impl OutputFile {
             set_tmpfile(Some(path));
         }
         if let Err(e) = file.set_len(len as u64) {
-            fatal!("cannot set the size of {}: {}", path.raw(), strerror(&e));
+            fatal!("cannot set the size of {}: {}", path.display(), strerror(&e));
         }
         let file = Arc::new(file);
 
@@ -260,7 +259,7 @@ impl OutputFile {
             match thread.join() {
                 Ok(Ok(())) => {}
                 Ok(Err(e)) => write_error(&self.path, &e),
-                Err(_) => fatal!("cannot write {}: writer thread panicked", self.path.raw()),
+                Err(_) => fatal!("cannot write {}: writer thread panicked", self.path.display()),
             }
         }
         for &(off, n) in self.edges.get_mut().unwrap().iter() {

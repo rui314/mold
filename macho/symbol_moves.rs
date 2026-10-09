@@ -11,12 +11,12 @@
 //! chunks::segment_prots). Fixups, symbols and -order_file treat a moved
 //! subsection as any other.
 
+use mold_common::bytes::display;
 use mold_common::mem::leak_bytes;
 
 use crate::arch::Target;
 use crate::cmdline::SymbolMove;
 use crate::context::Context;
-use crate::error::{RawPath, raw};
 use crate::input_files::{FileId, canonical_section_flags, should_write_to_local_symtab};
 use crate::macho::*;
 use crate::symbol::SymbolId;
@@ -126,14 +126,14 @@ pub(crate) fn find_moves<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32,
     let (rw_segs, ro_segs) = (segments(&args.move_to_rw), segments(&args.move_to_ro));
     let warn = |file: SymbolFile, id: SymbolId, subsec: &Subsec, list: &SymbolMove| {
         let file = match file {
-            SymbolFile::Obj(obj) => ctx.objs[obj].mf.name.raw(),
-            SymbolFile::Aliases(_) => raw(b"-alias"),
+            SymbolFile::Obj(obj) => ctx.objs[obj].mf.name.to_string_lossy(),
+            SymbolFile::Aliases(_) => display(b"-alias"),
         };
         let what = if subsec.content == Content::Code { "code" } else { "data" };
-        crate::warn!(
+        mold_common::warn!(
             "cannot move symbol '{}' ({file}) to segment '{}' because it is {what}",
-            raw(ctx.symbols[id].name()),
-            raw(&list.segment),
+            display(ctx.symbols[id].name()),
+            display(&list.segment),
         );
     };
 

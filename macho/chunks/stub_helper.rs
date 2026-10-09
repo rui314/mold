@@ -71,7 +71,7 @@ pub fn ensure_stub_binder<E: Target>(ctx: &mut Context<E>) {
         return;
     }
     let Some(id) = ctx.bind_linker_import(b"dyld_stub_binder") else {
-        crate::fatal!("lazy binding needs dyld_stub_binder, which no loaded dylib exports");
+        mold_common::fatal!("lazy binding needs dyld_stub_binder, which no loaded dylib exports");
     };
     ctx.symbols[id].set_used(true);
     crate::chunks::got::add_got_symbol(ctx, id);

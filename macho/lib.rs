@@ -11,7 +11,6 @@ pub(crate) mod delay_init;
 pub mod driver;
 pub(crate) mod dtrace;
 pub(crate) mod dwarf;
-pub(crate) mod error;
 pub(crate) mod filetype;
 pub(crate) mod icf;
 pub(crate) mod input_files;

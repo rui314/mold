@@ -588,7 +588,7 @@ impl Symbol {
             // ld-prime: where a branch that is no probe site goes.
             None => {
                 if !crate::dtrace::is_dtrace_symbol(self.name()) {
-                    crate::error!("undefined symbol: {self}");
+                    mold_common::error!("undefined symbol: {self}");
                 }
                 0
             }
@@ -724,7 +724,31 @@ impl Clone for Symbol {
 
 impl std::fmt::Display for Symbol {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        crate::error::display_name(self.name()).fmt(f)
+        display_name(self.name()).fmt(f)
+    }
+}
+
+/// A Mach-O symbol name as diagnostics spell it (see display_name).
+pub struct DisplayName<'a>(&'a [u8]);
+
+/// A Mach-O symbol name as diagnostics spell it: demangled when
+/// -demangle is in effect. Mach-O prefixes every C-level name with an
+/// underscore, so an Itanium name reads `__Z...` here; symbol lookup and
+/// output always use the original spelling. A name that isn't demangled
+/// prints with a U+FFFD for each byte that isn't UTF-8.
+pub fn display_name(name: &[u8]) -> DisplayName<'_> {
+    DisplayName(name)
+}
+
+impl std::fmt::Display for DisplayName<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if mold_common::error::demangle_enabled()
+            && let Some(demangled) =
+                self.0.strip_prefix(b"_").and_then(mold_common::demangle::demangle_cpp)
+        {
+            return f.write_str(&demangled);
+        }
+        f.write_str(&mold_common::bytes::display(self.0))
     }
 }
 

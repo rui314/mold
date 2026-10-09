@@ -43,8 +43,9 @@ pub mod symtab;
 pub mod unwind_info;
 pub mod weak_bind_info;
 
-use rayon::prelude::*;
 use std::num::NonZeroU32;
+
+use rayon::prelude::*;
 
 use crate::arch::Target;
 use crate::chunks::symtab::NamedEntry;

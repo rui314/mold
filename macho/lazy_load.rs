@@ -6,6 +6,7 @@
 //! __lazy_load_got slot, which the image reaches through the helpers of
 //! chunks::lazy_helpers.
 
+use mold_common::bytes::display;
 use mold_common::mem::leak_bytes;
 use rayon::prelude::*;
 
@@ -13,7 +14,6 @@ use crate::arch::{LazyRef, Target};
 use crate::chunks::lazy_helpers::{LazyHelper, LazyUse};
 use crate::chunks::lazy_load_info::{LazyDylib, record_size};
 use crate::context::Context;
-use crate::error::raw;
 use crate::input_files::{FileId, add_data_word};
 use crate::symbol::SymbolId;
 
@@ -52,7 +52,9 @@ pub fn create_lazy_loads<E: Target>(ctx: &mut Context<E>) {
     }
     let uses = lazy_uses(ctx);
     if ctx.args.make_mergeable && !uses.is_empty() {
-        crate::fatal!("-lazy-l/-lazy_library/-lazy_framework cannot be used with -make_mergeable");
+        mold_common::fatal!(
+            "-lazy-l/-lazy_library/-lazy_framework cannot be used with -make_mergeable"
+        );
     }
     let (flags, slots) = create_lazy_load_slots(ctx, &uses);
     create_lazy_helpers(ctx, &uses, &flags, &slots);
@@ -62,7 +64,9 @@ pub fn create_lazy_loads<E: Target>(ctx: &mut Context<E>) {
     if !ctx.lazy_helpers.helpers.is_empty() {
         let id = ctx.symbols.lookup(b"__dyld_lazy_load").filter(|&id| ctx.symbols[id].is_defined());
         let Some(id) = id else {
-            crate::fatal!("lazy-load dylibs need __dyld_lazy_load, which no loaded dylib exports");
+            mold_common::fatal!(
+                "lazy-load dylibs need __dyld_lazy_load, which no loaded dylib exports"
+            );
         };
         crate::chunks::stubs::add_symbol(ctx, id);
         ctx.lazy_helpers.dyld_lazy_load = Some(id);
@@ -116,8 +120,8 @@ fn lazy_uses<E: Target>(ctx: &Context<E>) -> Vec<LazyUseSite> {
             } else {
                 ctx.isecs[isec as usize].name(ctx)
             };
-            let subsec = raw(&subsec);
-            crate::error!("use of '{sym}' in '{subsec}' cannot be lazy loaded.");
+            let subsec = display(&subsec);
+            mold_common::error!("use of '{sym}' in '{subsec}' cannot be lazy loaded.");
         }
     }
     // A stub or GOT slot another pass made for one (an unwind
@@ -128,10 +132,10 @@ fn lazy_uses<E: Target>(ctx: &Context<E>) -> Vec<LazyUseSite> {
     for &id in ctx.stubs.symbols.iter().chain(&ctx.got.got_syms) {
         let sym = &ctx.symbols[id];
         if sym.is_lazy_import(ctx) {
-            crate::error!("use of '{sym}' in 'anon' cannot be lazy loaded.");
+            mold_common::error!("use of '{sym}' in 'anon' cannot be lazy loaded.");
         }
     }
-    crate::error::checkpoint();
+    mold_common::error::checkpoint();
     uses
 }
 

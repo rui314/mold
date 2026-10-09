@@ -138,7 +138,7 @@ pub fn write_lists<E: Target>(ctx: &Context<E>, chunk: ChunkId, chunk_addr: u64,
                 let rel =
                     if target == 0 { 0 } else { target.wrapping_sub(field + 4 * k as u64) as i64 };
                 if rel != rel as i32 as i64 {
-                    crate::fatal!("relative method list entry out of range");
+                    mold_common::fatal!("relative method list entry out of range");
                 }
                 buf[at + 4 * k..at + 4 * k + 4].copy_from_slice(&(rel as i32).to_le_bytes());
             }

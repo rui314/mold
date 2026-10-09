@@ -25,13 +25,13 @@
 //! providers; we make them in the order of their first sites.
 
 use hashbrown::HashMap;
+use mold_common::bytes::display;
 use mold_common::bytes::split_once;
 use mold_common::endian::{push_ul16, push_ul32, push_ul64};
 use rayon::prelude::*;
 
 use crate::arch::Target;
 use crate::context::Context;
-use crate::error::raw;
 use crate::input_files::add_synthetic_section;
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
@@ -142,7 +142,7 @@ pub fn create_dof_sections<E: Target>(ctx: &mut Context<E>) {
         let dof = match build_dof(provider, stability, typedefs, &probes, &functions) {
             Ok(dof) => dof,
             Err(name) => {
-                crate::error!("{}: unsupported DTrace probe encoding", raw(name));
+                mold_common::error!("{}: unsupported DTrace probe encoding", display(name));
                 return;
             }
         };

@@ -11,12 +11,13 @@
 use std::collections::{HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use mold_common::bytes::display;
+use mold_common::error::notice;
 use rayon::prelude::*;
 
 use crate::arch::Target;
 use crate::chunks::init_offsets::InitFunc;
 use crate::context::Context;
-use crate::error::{RawPath, notice, raw};
 use crate::input_files::{FileId, is_literal_section};
 use crate::input_sections::{InputSection, RelocTarget};
 use crate::macho::*;
@@ -554,8 +555,8 @@ fn print_why_live<E: Target>(ctx: &Context<E>, redirects: &[usize], why: &[Why])
                 Why::From(id) => {
                     let isec = &ctx.isecs[id as usize];
                     let name = isec.name(ctx);
-                    let file = ctx.objs[isec.file as usize].mf.name.raw();
-                    notice(format_args!("{:indent$}{} from {file}", "", raw(&name)));
+                    let file = ctx.objs[isec.file as usize].mf.name.display();
+                    notice(format_args!("{:indent$}{} from {file}", "", display(&name)));
                     step = why[id as usize];
                 }
                 Why::Root(root) => {
@@ -577,7 +578,7 @@ fn print_why_live<E: Target>(ctx: &Context<E>, redirects: &[usize], why: &[Why])
                 continue;
             };
             if ctx.isecs[isec].is_alive() {
-                notice(format_args!("{} from {}", raw(sym.name()), obj.mf.name.raw()));
+                notice(format_args!("{} from {}", display(sym.name()), obj.mf.name.display()));
                 print_chain(why[isec]);
             }
         }
@@ -591,8 +592,8 @@ fn print_why_live<E: Target>(ctx: &Context<E>, redirects: &[usize], why: &[Why])
             let sym = &ctx.symbols[sym_id];
             let Some(FileId::Dylib(dylib)) = sym.file() else { continue };
             if dylib != u32::MAX && matches(sym) && seen.insert(sym_id) {
-                let file = ctx.dylibs[dylib as usize].path.raw();
-                notice(format_args!("{} from {file}", raw(sym.name())));
+                let file = ctx.dylibs[dylib as usize].path.display();
+                notice(format_args!("{} from {file}", display(sym.name())));
                 print_chain(Why::From(id as u32));
             }
         }

@@ -16,20 +16,21 @@
 //! carry no relocations); like ld64, the output gets debug-note stabs
 //! naming the input objects, which a later link carries through.
 
-use hashbrown::{HashMap, HashSet};
-use rayon::prelude::*;
 use std::sync::atomic::{AtomicU16, AtomicU32, Ordering};
 
+use hashbrown::{HashMap, HashSet};
 use mold_common::bits::align_to;
+use mold_common::bytes::display;
+use mold_common::error;
+use mold_common::fatal;
 use mold_common::leb128::encode_uleb;
 use mold_common::mem::leak_bytes;
+use rayon::prelude::*;
 
 use crate::arch::Target;
 use crate::chunks::symtab::{SymtabSection, par_push_entries};
 use crate::chunks::{ChunkHeader, OutputSectionId};
 use crate::context::Context;
-use crate::error;
-use crate::fatal;
 use crate::input_files::{FileId, LocalSymbol};
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
@@ -162,7 +163,7 @@ pub fn combine_objects<E: Target>(ctx: &mut Context<E>) -> u64 {
     let buf = write_object(&targets, &synthetic, &sects, &cmds, &relocs, &layout);
     drop(t);
 
-    crate::error::checkpoint();
+    mold_common::error::checkpoint();
     // The reports come before the output, which may not be writable.
     // Xcode asks every link, its single-object prelinks included, for
     // -dependency_info and fails the build if the file is missing.
@@ -176,7 +177,7 @@ pub fn combine_objects<E: Target>(ctx: &mut Context<E>) -> u64 {
             .collect();
         crate::mapfile::print_map_of(ctx, &sections);
     }
-    crate::error::checkpoint();
+    mold_common::error::checkpoint();
     let t = ctx.timer("r-write");
     output_file::write(&ctx.args.output, &buf);
     drop(t);
@@ -769,7 +770,7 @@ impl<'a, E: Target> RelocTargets<'a, E> {
                 }
                 let sym = &ctx.symbols[sym_id];
                 let Some(t) = sym.input_section() else {
-                    fatal!("-r: cannot re-emit relocation against {}", error::raw(sym.name()));
+                    fatal!("-r: cannot re-emit relocation against {}", display(sym.name()));
                 };
                 OutTarget::Section(ctx.isecs.resolve(t as usize), sym.value as i64 + rel.addend)
             }

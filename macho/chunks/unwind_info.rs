@@ -180,7 +180,7 @@ fn assign_personalities(records: &mut [UnwindRecord]) -> Vec<SymbolId> {
                 }
             };
             if idx >= 3 {
-                crate::fatal!("too many personality functions");
+                mold_common::fatal!("too many personality functions");
             }
             rec.encoding |= ((idx + 1) as u32) << UNWIND_PERSONALITY_MASK.trailing_zeros();
         }
