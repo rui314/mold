@@ -124,8 +124,6 @@ impl Target for Ppc32 {
     const FAMILY: Family = Family::Ppc32;
     const PAGE_SIZE: u64 = 65536;
     const E_MACHINE: u32 = EM_PPC;
-    const PLT_HDR_SIZE: u64 = 64;
-    const PLT_SIZE: u64 = 36;
     const PLTGOT_SIZE: u64 = 36;
     const THUNK: Option<ThunkLayout> = Some(ThunkLayout { header_size: 0, entry_size: 36 });
     const TRAP: &'static [u8] = &[0x7f, 0xe0, 0x00, 0x08]; // trap
@@ -143,6 +141,10 @@ impl Target for Ppc32 {
 
     fn rel_to_string(r_type: u32) -> std::borrow::Cow<'static, str> {
         ppc32_rel_to_string(r_type)
+    }
+
+    fn plt_entry_offset(_ctx: &Context<Self>, idx: u32) -> u64 {
+        64 + idx as u64 * 36
     }
 
     fn write_plt_header(ctx: &Context<Self>, buf: &mut [u8]) {

@@ -141,8 +141,6 @@ impl<const LE: bool> Target for Arm64Target<LE> {
     const FAMILY: Family = Family::Arm64;
     const PAGE_SIZE: u64 = 65536;
     const E_MACHINE: u32 = EM_AARCH64;
-    const PLT_HDR_SIZE: u64 = 32;
-    const PLT_SIZE: u64 = 16;
     const PLTGOT_SIZE: u64 = 16;
     const THUNK: Option<ThunkLayout> = Some(ThunkLayout { header_size: 0, entry_size: 24 });
     const SFRAME_ABI: Option<u8> = Some(if Self::IS_LITTLE {
@@ -167,6 +165,10 @@ impl<const LE: bool> Target for Arm64Target<LE> {
 
     fn rel_to_string(r_type: u32) -> std::borrow::Cow<'static, str> {
         arm64_rel_to_string(r_type)
+    }
+
+    fn plt_entry_offset(_ctx: &Context<Self>, idx: u32) -> u64 {
+        32 + idx as u64 * 16
     }
 
     fn write_plt_header(ctx: &Context<Self>, buf: &mut [u8]) {

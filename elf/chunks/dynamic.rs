@@ -244,10 +244,7 @@ fn for_each_entry<E: Target>(ctx: &Context<E>, mut define: impl FnMut(u32, u64))
         // PPC64_GLINK is defined by the psABI to refer to 32 bytes before
         // the first PLT entry. I don't know why it's 32 bytes off, but
         // it's what it is.
-        define(
-            DT_PPC64_GLINK,
-            plt.hdr.shdr.sh_addr.get() + crate::chunks::plt::entry_offset::<E>(0) - 32,
-        );
+        define(DT_PPC64_GLINK, plt.hdr.shdr.sh_addr.get() + E::plt_entry_offset(ctx, 0) - 32);
     }
 
     // GDB needs a DT_DEBUG entry in an executable to store a word-size

@@ -64,7 +64,6 @@ use mold_common::{error, fatal};
 
 use crate::arch::{Family, Target};
 use crate::chunks::eh_frame;
-use crate::chunks::plt::SPARC_NUM_SMALL_PLT;
 use crate::context::Context;
 use crate::elf::*;
 use crate::input_sections::NonAllocReloc;
@@ -97,6 +96,12 @@ fn regs(loc: &[u8]) -> (u32, u32, u32) {
     (insn & (0b11111 << 14), insn & 0b11111, insn & (0b11111 << 25))
 }
 
+// On SPARC, .plt uses 32-byte "small" entries until it grows past 0x100000
+// bytes (the reach of a small entry's branch to the resolver), after which
+// it switches to a "large" entry format. This is how many small entries fit
+// after the 128-byte PLT header.
+pub const SPARC_NUM_SMALL_PLT: u64 = (0x100000 - 128) / 32;
+
 // Returns the byte offset within .plt of the data pointer for a large SPARC
 // PLT entry. See write_plt_entry below for the block layout this assumes.
 pub fn plt_ptr_offset(num_plt_symbols: usize, plt_idx: u64) -> u64 {
@@ -121,8 +126,6 @@ impl Target for Sparc64 {
     const FAMILY: Family = Family::Sparc64;
     const PAGE_SIZE: u64 = 8192;
     const E_MACHINE: u32 = EM_SPARC64;
-    const PLT_HDR_SIZE: u64 = 128;
-    const PLT_SIZE: u64 = 32;
     const PLTGOT_SIZE: u64 = 32;
     const TRAP: &'static [u8] = &[0x91, 0xd0, 0x20, 0x05]; // ta 5
 
@@ -159,7 +162,22 @@ impl Target for Sparc64 {
     // Self-modifying code is nowadays considered really bad from the security
     // point of view, though.
     fn write_plt_header(_ctx: &Context<Self>, buf: &mut [u8]) {
-        buf[..Self::PLT_HDR_SIZE as usize].fill(0);
+        buf[..128].fill(0);
+    }
+
+    // The PLT header is 128 bytes long, and small PLT entries are 32 bytes
+    // long. Large PLT entries are grouped into blocks of 160, each holding
+    // 160 24-byte code stubs followed by 160 8-byte data pointers (so a
+    // stub's `ldx` reaches its pointer within a signed 13-bit offset). For a
+    // large entry, this returns the offset of its code stub.
+    fn plt_entry_offset(_ctx: &Context<Self>, idx: u32) -> u64 {
+        let idx = idx as u64;
+        if idx < SPARC_NUM_SMALL_PLT {
+            128 + idx * 32
+        } else {
+            let i = idx - SPARC_NUM_SMALL_PLT;
+            0x100000 + (i / 160) * 5120 + (i % 160) * 24
+        }
     }
 
     // SPARC uses two PLT entry formats. A "small" entry branches directly to
@@ -176,7 +194,7 @@ impl Target for Sparc64 {
     // own address, and the loader derives which symbol to resolve from that
     // address. Nothing may sit between two stubs, so each stub's pointer lives
     // in the block's pointer region, which it reaches with a signed 13-bit ldx
-    // offset (see plt::entry_offset). This layout is dictated by the loader; we
+    // offset (see plt_entry_offset). This layout is dictated by the loader; we
     // cannot rearrange or simplify it.
     fn write_plt_entry(ctx: &Context<Self>, buf: &mut [u8], sym: &Symbol) {
         let idx = sym.plt_idx(&ctx.symbols).unwrap() as u64;
@@ -197,7 +215,8 @@ impl Target for Sparc64 {
             for (i, &insn) in INSN.iter().enumerate() {
                 write_ub32(&mut buf[i * 4..], insn);
             }
-            let plt1 = plt + Self::PLT_SIZE;
+            // .PLT1 is the second of the four 32-byte slots of the PLT header.
+            let plt1 = plt + 32;
             or32(buf, bits(entry - plt, 21, 0));
             or32(&mut buf[4..], bits(plt1.wrapping_sub(entry).wrapping_sub(4), 20, 2));
         } else {

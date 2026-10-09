@@ -120,8 +120,6 @@ pub trait Target: Copy + Default + fmt::Debug + Send + Sync + 'static {
     const FAMILY: Family;
     const PAGE_SIZE: u64;
     const E_MACHINE: u32;
-    const PLT_HDR_SIZE: u64;
-    const PLT_SIZE: u64;
     const PLTGOT_SIZE: u64;
     const THUNK: Option<ThunkLayout> = None;
     const SFRAME_ABI: Option<u8> = None;
@@ -203,6 +201,10 @@ pub trait Target: Copy + Default + fmt::Debug + Send + Sync + 'static {
     fn eflags(_ctx: &Context<Self>) -> u32 {
         0
     }
+
+    /// The offset of the `idx`th PLT entry from the beginning of `.plt`,
+    /// which starts with the PLT header.
+    fn plt_entry_offset(ctx: &Context<Self>, idx: u32) -> u64;
 
     fn write_plt_header(ctx: &Context<Self>, buf: &mut [u8]);
     fn write_plt_entry(ctx: &Context<Self>, buf: &mut [u8], sym: &Symbol);

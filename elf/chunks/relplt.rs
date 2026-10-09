@@ -1,7 +1,7 @@
 //! `.rel.plt` and `.rela.plt`, relocations for PLT entries.
 
 use crate::arch::Target;
-use crate::chunks::{ChunkHeader, plt};
+use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 
@@ -37,7 +37,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
             // resolution results. That is of course horrible from the security
             // point of view, though.
             let idx = sym.plt_idx(&ctx.symbols).unwrap() as u64;
-            if idx < plt::SPARC_NUM_SMALL_PLT {
+            if idx < crate::arch::sparc64::SPARC_NUM_SMALL_PLT {
                 ElfRel::<E>::new(
                     sym.plt_addr(ctx),
                     E::R_JUMP_SLOT,

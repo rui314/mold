@@ -39,42 +39,6 @@ impl<E: Target> Default for PltSection<E> {
     }
 }
 
-// On SPARC, .plt uses 32-byte "small" entries until it grows past 0x100000
-// bytes (the reach of a small entry's branch to the resolver), after which
-// it switches to a "large" entry format. This is how many small entries fit.
-pub const SPARC_NUM_SMALL_PLT: u64 = (0x100000 - 128) / 32;
-
-/// The offset of a PLT entry within `.plt`.
-pub fn entry_offset<E: Target>(idx: u32) -> u64 {
-    let idx = idx as u64;
-    match E::FAMILY {
-        Family::Ppc64V1 => {
-            // The PPC64 ELFv1 ABI requires PLT entries to vary in size
-            // depending on their indices. For entries whose PLT index is
-            // less than 32768, the entry size is 8 bytes. Other entries are
-            // 12 bytes long.
-            if idx < 0x8000 {
-                E::PLT_HDR_SIZE + idx * 8
-            } else {
-                E::PLT_HDR_SIZE + 0x8000 * 8 + (idx - 0x8000) * 12
-            }
-        }
-        Family::Sparc64 => {
-            // SPARC large PLT entries are grouped into blocks of 160, each holding
-            // 160 24-byte code stubs followed by 160 8-byte data pointers (so a
-            // stub's `ldx` reaches its pointer within a signed 13-bit offset). This
-            // returns the offset of pltidx's code stub.
-            if idx < SPARC_NUM_SMALL_PLT {
-                E::PLT_HDR_SIZE + idx * E::PLT_SIZE
-            } else {
-                let i = idx - SPARC_NUM_SMALL_PLT;
-                0x100000 + (i / 160) * 5120 + (i % 160) * 24
-            }
-        }
-        _ => E::PLT_HDR_SIZE + idx * E::PLT_SIZE,
-    }
-}
-
 #[inline]
 pub fn add_symbol<E: Target>(ctx: &mut Context<E>, sym: SymbolId) {
     debug_assert!(!ctx.symbols[sym].has_plt(&ctx.symbols));
@@ -86,20 +50,22 @@ pub fn add_symbol<E: Target>(ctx: &mut Context<E>, sym: SymbolId) {
 }
 
 pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
-    let n = ctx.plt.symbols.len() as u64;
+    let n = ctx.plt.symbols.len() as u32;
     ctx.plt.hdr.shdr.sh_size.set(if n == 0 {
         0
     } else if E::IS_SPARC {
-        E::PLT_HDR_SIZE + n * E::PLT_SIZE
+        // Large SPARC PLT entries are interleaved with data pointers (see
+        // Sparc64::write_plt_entry), but each entry takes 32 bytes in total.
+        E::plt_entry_offset(ctx, 0) + n as u64 * 32
     } else {
-        entry_offset::<E>(n as u32)
+        E::plt_entry_offset(ctx, n)
     });
 }
 
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     E::write_plt_header(ctx, buf);
     for (i, &id) in ctx.plt.symbols.iter().enumerate() {
-        let off = entry_offset::<E>(i as u32) as usize;
+        let off = E::plt_entry_offset(ctx, i as u32) as usize;
         E::write_plt_entry(ctx, &mut buf[off..], &ctx.symbols[id]);
     }
 }

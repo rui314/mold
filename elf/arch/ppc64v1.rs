@@ -284,8 +284,6 @@ impl Target for Ppc64V1 {
     const FAMILY: Family = Family::Ppc64V1;
     const PAGE_SIZE: u64 = 65536;
     const E_MACHINE: u32 = EM_PPC64;
-    const PLT_HDR_SIZE: u64 = 44;
-    const PLT_SIZE: u64 = 8;
     const PLTGOT_SIZE: u64 = 0;
     const THUNK: Option<ThunkLayout> = Some(ThunkLayout { header_size: 0, entry_size: 28 });
     const TRAP: &'static [u8] = &[0x7f, 0xe0, 0x00, 0x08]; // trap
@@ -311,6 +309,15 @@ impl Target for Ppc64V1 {
 
     fn scan_symbols(ctx: &mut Context<Self>) {
         scan_symbols(ctx);
+    }
+
+    // The PLT header is 44 bytes long. The PPC64 ELFv1 ABI requires PLT
+    // entries to vary in size depending on their indices. For entries whose
+    // PLT index is less than 32768, the entry size is 8 bytes. Other entries
+    // are 12 bytes long.
+    fn plt_entry_offset(_ctx: &Context<Self>, idx: u32) -> u64 {
+        let idx = idx as u64;
+        if idx < 0x8000 { 44 + idx * 8 } else { 44 + 0x8000 * 8 + (idx - 0x8000) * 12 }
     }
 
     // .plt is used only for lazy symbol resolution on PPC64. All PLT

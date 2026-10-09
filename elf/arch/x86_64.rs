@@ -54,8 +54,6 @@ impl Target for X86_64 {
     const FAMILY: Family = Family::X86_64;
     const PAGE_SIZE: u64 = 4096;
     const E_MACHINE: u32 = EM_X86_64;
-    const PLT_HDR_SIZE: u64 = 32;
-    const PLT_SIZE: u64 = 16;
     const PLTGOT_SIZE: u64 = 8;
     const SFRAME_ABI: Option<u8> = Some(SFRAME_ABI_AMD64_ENDIAN_LITTLE);
     const TRAP: &'static [u8] = &[0xcc]; // int3
@@ -75,6 +73,10 @@ impl Target for X86_64 {
 
     fn rel_to_string(r_type: u32) -> std::borrow::Cow<'static, str> {
         x86_64_rel_to_string(r_type)
+    }
+
+    fn plt_entry_offset(_ctx: &Context<Self>, idx: u32) -> u64 {
+        32 + idx as u64 * 16
     }
 
     // This is a security-enhanced version of the regular PLT. The PLT

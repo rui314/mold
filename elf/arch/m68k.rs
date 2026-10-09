@@ -44,8 +44,6 @@ impl Target for M68k {
     const FAMILY: Family = Family::M68k;
     const PAGE_SIZE: u64 = 8192;
     const E_MACHINE: u32 = EM_68K;
-    const PLT_HDR_SIZE: u64 = 18;
-    const PLT_SIZE: u64 = 14;
     const PLTGOT_SIZE: u64 = 8;
     const TRAP: &'static [u8] = &[0x4a, 0xfc]; // illegal
 
@@ -61,6 +59,10 @@ impl Target for M68k {
 
     fn rel_to_string(r_type: u32) -> std::borrow::Cow<'static, str> {
         m68k_rel_to_string(r_type)
+    }
+
+    fn plt_entry_offset(_ctx: &Context<Self>, idx: u32) -> u64 {
+        18 + idx as u64 * 14
     }
 
     fn write_plt_header(ctx: &Context<Self>, buf: &mut [u8]) {

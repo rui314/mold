@@ -173,8 +173,6 @@ impl Target for Ppc64V2 {
     const FAMILY: Family = Family::Ppc64V2;
     const PAGE_SIZE: u64 = 65536;
     const E_MACHINE: u32 = EM_PPC64;
-    const PLT_HDR_SIZE: u64 = 52;
-    const PLT_SIZE: u64 = 4;
     const PLTGOT_SIZE: u64 = 0;
     const THUNK: Option<ThunkLayout> = Some(ThunkLayout { header_size: 0, entry_size: 24 });
     const TRAP: &'static [u8] = &[0x08, 0x00, 0xe0, 0x7f]; // trap
@@ -196,6 +194,10 @@ impl Target for Ppc64V2 {
 
     fn eflags(_ctx: &Context<Self>) -> u32 {
         2
+    }
+
+    fn plt_entry_offset(_ctx: &Context<Self>, idx: u32) -> u64 {
+        52 + idx as u64 * 4
     }
 
     // .plt is used only for lazy symbol resolution on PPC64. All PLT

@@ -124,8 +124,6 @@ impl<const LE: bool> Target for Sh4Target<LE> {
     const FAMILY: Family = Family::Sh4;
     const PAGE_SIZE: u64 = 4096;
     const E_MACHINE: u32 = EM_SH;
-    const PLT_HDR_SIZE: u64 = 20;
-    const PLT_SIZE: u64 = 20;
     const PLTGOT_SIZE: u64 = 12;
     // illegal instruction
     const TRAP: &'static [u8] = if Self::IS_LITTLE { &[0xfd, 0xff] } else { &[0xff, 0xfd] };
@@ -152,6 +150,10 @@ impl<const LE: bool> Target for Sh4Target<LE> {
         if addend_in_place(rel.r_type()) {
             Self::write_u32(loc, val as u32);
         }
+    }
+
+    fn plt_entry_offset(_ctx: &Context<Self>, idx: u32) -> u64 {
+        20 + idx as u64 * 20
     }
 
     // The lazy resolver takes the link map in r0 and the relocation offset

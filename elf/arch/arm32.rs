@@ -326,8 +326,6 @@ impl<const LE: bool> Target for Arm32Target<LE> {
     const FAMILY: Family = Family::Arm32;
     const PAGE_SIZE: u64 = 65536;
     const E_MACHINE: u32 = EM_ARM;
-    const PLT_HDR_SIZE: u64 = 32;
-    const PLT_SIZE: u64 = 16;
     const PLTGOT_SIZE: u64 = 16;
     const THUNK: Option<ThunkLayout> = Some(ThunkLayout { header_size: 16, entry_size: 16 });
     const TRAP: &'static [u8] = &[0xff, 0xde]; // udf
@@ -364,6 +362,10 @@ impl<const LE: bool> Target for Arm32Target<LE> {
         } else {
             EF_ARM_EABI_VER5 | EF_ARM_BE8
         }
+    }
+
+    fn plt_entry_offset(_ctx: &Context<Self>, idx: u32) -> u64 {
+        32 + idx as u64 * 16
     }
 
     fn write_plt_header(ctx: &Context<Self>, buf: &mut [u8]) {

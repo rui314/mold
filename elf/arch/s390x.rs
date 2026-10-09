@@ -94,8 +94,6 @@ impl Target for S390x {
     const FAMILY: Family = Family::S390x;
     const PAGE_SIZE: u64 = 4096;
     const E_MACHINE: u32 = EM_S390X;
-    const PLT_HDR_SIZE: u64 = 48;
-    const PLT_SIZE: u64 = 16;
     const PLTGOT_SIZE: u64 = 16;
     const SFRAME_ABI: Option<u8> = Some(SFRAME_ABI_S390X_ENDIAN_BIG);
     const TRAP: &'static [u8] = &[0x00, 0x00]; // invalid
@@ -114,6 +112,10 @@ impl Target for S390x {
 
     fn rel_to_string(r_type: u32) -> std::borrow::Cow<'static, str> {
         s390x_rel_to_string(r_type)
+    }
+
+    fn plt_entry_offset(_ctx: &Context<Self>, idx: u32) -> u64 {
+        48 + idx as u64 * 16
     }
 
     fn write_plt_header(ctx: &Context<Self>, buf: &mut [u8]) {

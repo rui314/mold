@@ -244,8 +244,6 @@ where
     const FAMILY: Family = Family::RiscV;
     const PAGE_SIZE: u64 = 4096;
     const E_MACHINE: u32 = EM_RISCV;
-    const PLT_HDR_SIZE: u64 = 32;
-    const PLT_SIZE: u64 = 16;
     const PLTGOT_SIZE: u64 = 16;
     const TRAP: &'static [u8] = &[0x02, 0x90]; // c.ebreak
 
@@ -285,6 +283,10 @@ where
             }
         }
         ret
+    }
+
+    fn plt_entry_offset(_ctx: &Context<Self>, idx: u32) -> u64 {
+        32 + idx as u64 * 16
     }
 
     fn write_plt_header(ctx: &Context<Self>, buf: &mut [u8]) {
