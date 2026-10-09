@@ -135,22 +135,7 @@ pub fn notice(msg: fmt::Arguments) {
     emit("", "", msg);
 }
 
-/// Returns the text that C's strerror gives for an I/O error. Unlike
-/// `io::Error`'s `Display`, it doesn't append " (os error N)". An error that
-/// doesn't come from the OS is formatted as usual.
-pub fn strerror(err: &io::Error) -> String {
-    if let Some(errno) = err.raw_os_error() {
-        let mut buf = [0u8; 256];
-        // SAFETY: strerror_r writes at most `buf.len()` bytes to `buf`.
-        let ret = unsafe { libc::strerror_r(errno, buf.as_mut_ptr().cast(), buf.len()) };
-        if ret == 0
-            && let Ok(msg) = std::ffi::CStr::from_bytes_until_nul(&buf)
-        {
-            return msg.to_string_lossy().into_owned();
-        }
-    }
-    err.to_string()
-}
+pub use mold_common::error::strerror;
 
 /// Exits with a failure status if any error has been reported, giving
 /// the messages of the parallel passes before it first.
