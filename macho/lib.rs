@@ -1,7 +1,6 @@
 //! A high-performance Mach-O linker.
 
 pub mod arch;
-pub(crate) mod archive_file;
 mod arm64;
 pub(crate) mod bundle_hook;
 pub(crate) mod chunks;

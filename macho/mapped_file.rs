@@ -8,10 +8,14 @@
 //! contents.
 
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::fs::{File, Metadata};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
+
+use mold_common::archive_file::Member;
+use mold_common::bytes::os_str;
 
 use crate::error;
 use crate::error::RawPath;
@@ -153,35 +157,29 @@ impl MappedFile {
         Self::open_impl(path).unwrap_or_else(|e| fatal!("cannot open {}: {e}", path.raw()))
     }
 
-    /// Returns a view of a member of this archive (or of a fat file).
+    /// Returns a view of a slice of this fat file.
     pub fn slice(&'static self, name: PathBuf, start: usize, size: usize) -> &'static Self {
-        self.part(name, start, size, None)
-    }
-
-    /// An archive member, with the modification time its header records.
-    pub fn member(
-        &'static self,
-        name: PathBuf,
-        start: usize,
-        size: usize,
-        date: u64,
-    ) -> &'static Self {
-        self.part(name, start, size, Some(date))
-    }
-
-    fn part(
-        &'static self,
-        name: PathBuf,
-        start: usize,
-        size: usize,
-        mtime: Option<u64>,
-    ) -> &'static Self {
         assert!(start <= self.size() && size <= self.size() - start);
         Box::leak(Box::new(Self {
             name,
             data: &self.data[start..start + size],
             parent: Some(self),
-            mtime,
+            mtime: None,
+        }))
+    }
+
+    /// Returns a member of this archive, named "archive(member)" as ld64
+    /// reports it, with the modification time its header records.
+    pub fn member(&'static self, member: &Member) -> &'static Self {
+        let mut name = OsString::from(&self.name);
+        name.push("(");
+        name.push(os_str(member.name));
+        name.push(")");
+        Box::leak(Box::new(Self {
+            name: PathBuf::from(name),
+            data: member.data,
+            parent: Some(self),
+            mtime: Some(member.date),
         }))
     }
 

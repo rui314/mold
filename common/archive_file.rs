@@ -22,6 +22,11 @@
 //! usually placed in separate object files in an archive file. You can
 //! see the contents of libc.a by running `ar t
 //! /usr/lib/x86_64-linux-gnu/libc.a`.
+//!
+//! GNU ar stores long member names in a string table member. BSD ar,
+//! which macOS uses, stores a long name right after the member header
+//! instead, and puts a symbol table in a member named __.SYMDEF. Both
+//! forms are read here.
 
 use std::path::{Path, PathBuf};
 
@@ -34,14 +39,16 @@ const HEADER_SIZE: usize = 60;
 /// A parsed archive member header.
 struct ArHeader<'a> {
     name: &'a [u8],
+    date: u64,
     size: usize,
 }
 
 impl<'a> ArHeader<'a> {
     fn parse(bytes: &'a [u8]) -> Option<Self> {
         let bytes = bytes.get(..HEADER_SIZE)?;
+        let date = parse_decimal(&bytes[16..28]) as u64;
         let size = parse_decimal(&bytes[48..58]);
-        Some(ArHeader { name: &bytes[..16], size })
+        Some(ArHeader { name: &bytes[..16], date, size })
     }
 
     fn is_strtab(&self) -> bool {
@@ -54,14 +61,13 @@ impl<'a> ArHeader<'a> {
 
     /// Returns the member's file name. A BSD-style long name is stored
     /// right after the header, so `body` is advanced past it.
-    fn read_name(&self, strtab: &[u8], body: &mut &'a [u8]) -> PathBuf {
+    fn read_name(&self, strtab: &'a [u8], body: &mut &'a [u8]) -> &'a [u8] {
         // BSD-style long filename
         if let Some(rest) = self.name.strip_prefix(b"#1/") {
             let len = parse_decimal(rest);
             let (name, remaining) = body.split_at(len.min(body.len()));
             *body = remaining;
-            let name = cstr_at(name, 0);
-            return PathBuf::from(os_str(name));
+            return cstr_at(name, 0);
         }
 
         // SysV-style long filename
@@ -69,12 +75,12 @@ impl<'a> ArHeader<'a> {
             let offset = parse_decimal(rest);
             let start = strtab.get(offset..).unwrap_or(&[]);
             let end = memchr::memmem::find(start, b"/\n").unwrap_or(start.len());
-            return PathBuf::from(os_str(&start[..end]));
+            return &start[..end];
         }
 
-        // Short filename
+        // Short filename, space-padded and, in the SysV form, slash-terminated
         let end = memchr::memchr(b'/', self.name).unwrap_or(self.name.len());
-        PathBuf::from(os_str(&self.name[..end]))
+        self.name[..end].trim_ascii_end()
     }
 }
 
@@ -87,13 +93,21 @@ fn parse_decimal(bytes: &[u8]) -> usize {
         .fold(0, |acc, &b| acc * 10 + (b - b'0') as usize)
 }
 
-/// Iterates over the members of an archive as (name, body) pairs, skipping
-/// the symbol table and string table.
-fn archive_members(
-    mf: &'static MappedFile,
-    thin: bool,
-) -> impl Iterator<Item = (PathBuf, &'static [u8])> {
-    let data = mf.data();
+/// An archive member. A thin archive's member has no contents in the
+/// archive; its name is the path of the file that has them.
+pub struct Member {
+    pub name: &'static [u8],
+    pub data: &'static [u8],
+    /// The modification time in the member header.
+    pub date: u64,
+}
+
+/// Iterates over the members of the archive `data`, regular or thin,
+/// skipping the symbol tables and the string table. `path` is the
+/// archive's name for error messages.
+pub fn members<'a>(path: &'a Path, data: &'static [u8]) -> impl Iterator<Item = Member> + 'a {
+    let thin = data.starts_with(b"!<thin>\n");
+    debug_assert!(thin || data.starts_with(b"!<arch>\n"));
     let mut pos = 8;
     let mut strtab: &'static [u8] = &[];
 
@@ -126,7 +140,7 @@ fn archive_members(
             }
 
             if thin && !hdr.name.starts_with(b"#1/") && !hdr.name.starts_with(b"/") {
-                fatal!("{}: filename is not stored as a long filename", mf.name.display());
+                fatal!("{}: filename is not stored as a long filename", path.display());
             }
 
             // Read the name field
@@ -136,17 +150,19 @@ fn archive_members(
                 // A thin archive member's contents live elsewhere; only a
                 // BSD-style long name occupies space after the header.
                 pos = body_start + (body_end - body_start - body.len());
+                body = &[];
             } else {
                 pos = body_end;
             }
 
-            // Skip BSD archive symbol tables.
-            if name == Path::new("__.SYMDEF") || name == Path::new("__.SYMDEF SORTED") {
+            // Skip BSD archive symbol tables (__.SYMDEF, __.SYMDEF SORTED,
+            // __.SYMDEF_64, ...).
+            if name.starts_with(b"__.SYMDEF") {
                 pos = body_end;
                 continue;
             }
 
-            return Some((name, body));
+            return Some(Member { name, data: body, date: hdr.date });
         }
     })
 }
@@ -157,14 +173,15 @@ pub fn get_thin_archive_member_paths<'a>(
     chroot: &'a Path,
     mf: &'static MappedFile,
 ) -> impl Iterator<Item = PathBuf> + 'a {
-    archive_members(mf, true).map(move |(name, _)| member_path(chroot, mf, name))
+    members(&mf.name, mf.data()).map(move |member| member_path(chroot, mf, member.name))
 }
 
 // An absolute member name is looked up in the --chroot directory. A relative
 // one is relative to the archive, whose path is already in that directory.
-fn member_path(chroot: &Path, mf: &MappedFile, name: PathBuf) -> PathBuf {
+fn member_path(chroot: &Path, mf: &MappedFile, name: &[u8]) -> PathBuf {
+    let name = Path::new(os_str(name));
     if name.is_absolute() {
-        apply_chroot(chroot, &name).into_owned()
+        apply_chroot(chroot, name).into_owned()
     } else {
         mf.name.parent().unwrap_or(Path::new(".")).join(name)
     }
@@ -177,13 +194,13 @@ pub fn read_archive_members<'a>(
     mf: &'static MappedFile,
 ) -> impl Iterator<Item = &'static MappedFile> + 'a {
     let thin = mf.data().starts_with(b"!<thin>\n");
-    debug_assert!(thin || mf.data().starts_with(b"!<arch>\n"));
     let base = mf.data().as_ptr() as usize;
-    archive_members(mf, thin).map(move |(name, body)| {
+    members(&mf.name, mf.data()).map(move |member| {
         if thin {
-            mf.open_thin_member(&member_path(chroot, mf, name))
+            mf.open_thin_member(&member_path(chroot, mf, member.name))
         } else {
-            mf.slice(name, body.as_ptr() as usize - base, body.len())
+            let name = PathBuf::from(os_str(member.name));
+            mf.slice(name, member.data.as_ptr() as usize - base, member.data.len())
         }
     })
 }

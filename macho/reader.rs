@@ -14,6 +14,7 @@
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
+use mold_common::archive_file::members;
 use mold_common::path::path_bytes;
 use rayon::prelude::*;
 
@@ -1366,7 +1367,7 @@ fn collect_archive_members<E: Target>(
     if rc.force_load {
         ctx.force_loaded.insert(mf.name.clone());
     }
-    for member in crate::archive_file::read_archive_members(mf) {
+    for member in members(&mf.name, mf.data()).map(|member| mf.member(&member)) {
         input_files::trace_file(ctx, path_bytes(&member.name));
         let alive = rc.force_load
             || all_load
