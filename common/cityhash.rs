@@ -1,5 +1,5 @@
 //! CityHash64, as libc++'s std::hash of a string computes it: a
-//! mergeable record hashes its names with that.
+//! Mach-O mergeable record hashes its names with that.
 //!
 //! This implementation is based on CityHash v1.0.3 at
 //! https://github.com/google/cityhash. libc++ differs from it in two
@@ -133,7 +133,7 @@ fn hash_len_33_to_64(s: &[u8]) -> u64 {
     shift_mix(r.wrapping_mul(K0).wrapping_add(vs)).wrapping_mul(K2)
 }
 
-pub(crate) fn hash(s: &[u8]) -> u64 {
+pub fn hash(s: &[u8]) -> u64 {
     let len = s.len();
     if len <= 16 {
         return hash_len_0_to_16(s);

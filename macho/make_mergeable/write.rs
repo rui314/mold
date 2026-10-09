@@ -13,7 +13,7 @@ use crate::util::align_to_mod;
 /// A name's hash as the record keeps it: its length in the top 20
 /// bits, the low 44 of its hash below.
 fn name_hash(name: &[u8]) -> u64 {
-    (name.len() as u64) << 44 | crate::util::cityhash::hash(name) & ((1 << 44) - 1)
+    (name.len() as u64) << 44 | mold_common::cityhash::hash(name) & ((1 << 44) - 1)
 }
 
 /// The record being written, and the strings its records point at,

@@ -2,6 +2,7 @@
 //! object files.
 
 pub mod archive_file;
+pub mod cityhash;
 pub mod compress;
 pub mod concurrent_map;
 pub mod demangle;

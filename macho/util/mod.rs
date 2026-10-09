@@ -1,6 +1,5 @@
 //! Small helpers shared across the linker.
 
-pub(crate) mod cityhash;
 pub mod demangle;
 
 pub use mold_common::util::{
