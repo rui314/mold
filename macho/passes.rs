@@ -7,10 +7,9 @@ use std::sync::Mutex;
 use mold_common::bits::align_to;
 use mold_common::bytes::display;
 use mold_common::bytes::split_once;
-use mold_common::error;
-use mold_common::fatal;
 use mold_common::path::path_bytes;
 use mold_common::worker_local::WorkerLocal;
+use mold_common::{error, fatal, notice, warn};
 use portable_atomic::AtomicU64;
 use rayon::prelude::*;
 use sha2::Digest;
@@ -649,7 +648,7 @@ pub struct CheckedInputs {
 fn warn_newer_dylib<E: Target>(ctx: &Context<E>, install_name: &[u8], built_for: u32) {
     let minos = ctx.args.platform_minos;
     if minos != 0 && built_for > minos {
-        mold_common::warn!(
+        warn!(
             "building for {}-{}, but linking with dylib '{}' which was built for newer version {}",
             platform_name(ctx.args.platform),
             format_version(minos),
@@ -708,7 +707,7 @@ fn check_object_version<E: Target>(ctx: &Context<E>, i: usize) {
     let Some(first) = obj.platform_versions.first() else {
         let assumed = ctx.args.effective_platform();
         if assumed != PLATFORM_FIRMWARE && !ctx.is_internal(i) {
-            mold_common::warn!(
+            warn!(
                 "no platform load command found in '{}', assuming: {}",
                 obj.mf.name.display(),
                 platform_name(assumed)
@@ -748,7 +747,7 @@ fn check_object_version<E: Target>(ctx: &Context<E>, i: usize) {
             format_version(minos)
         );
         match ctx.args.deployment_target_mismatches {
-            Treatment::Warning => mold_common::warn!("{msg}"),
+            Treatment::Warning => warn!("{msg}"),
             Treatment::Error => fatal!("{msg}"),
             Treatment::Suppress => {}
         }
@@ -777,7 +776,7 @@ fn check_objc_flags<E: Target>(
     if first != 0 && abi != 0 && abi != first {
         let (first, file) = (swift_abi_name(first), mf.name.display());
         if ctx.args.warn_swift_abi_mismatches {
-            mold_common::warn!(
+            warn!(
                 "{file} compiled with a different Swift ABI version ({}), than previous files \
                  ({first})",
                 swift_abi_name(abi)
@@ -792,7 +791,7 @@ fn check_objc_flags<E: Target>(
     }
     let cat = info.flags & OBJC_HAS_CATEGORY_CLASS_PROPERTIES;
     if cat != merged.flags & OBJC_HAS_CATEGORY_CLASS_PROPERTIES {
-        mold_common::warn!(
+        warn!(
             "mixed ObjC ABI, {} compiled {} category class properties",
             mf.name.display(),
             if cat != 0 { "with" } else { "without" }
@@ -811,7 +810,7 @@ fn check_objc_flags<E: Target>(
         );
         match ctx.args.objc_class_ro_signing_mismatch {
             Treatment::Error => fatal!("{msg}"),
-            _ => mold_common::warn!("{msg}"),
+            _ => warn!("{msg}"),
         }
     }
     chunks::objc_imageinfo::merge_objc_info(merged, info)
@@ -1010,7 +1009,7 @@ pub fn check_initializers<E: Target>(ctx: &Context<E>) {
     }
     for (name, file) in inits {
         let name = display(name);
-        mold_common::warn!(
+        warn!(
             "static initializer '{name}' found in '{file}'. Use -no_inits to make this an \
              error.  Use -no_warn_inits to suppress warning"
         );
@@ -1435,7 +1434,7 @@ pub fn force_symbol_weakness<E: Target>(ctx: &mut Context<E>) {
     hidden.par_sort_unstable();
     for (name, weak) in hidden {
         let kind = if weak { "weak" } else { "not-weak" };
-        mold_common::warn!("cannot force to be {kind}, non-external symbol {}", display(name));
+        warn!("cannot force to be {kind}, non-external symbol {}", display(name));
     }
 }
 
@@ -1659,7 +1658,7 @@ pub fn check_common_conflicts<E: Target>(ctx: &Context<E>) {
                     "common symbol '{name}' ({obj}) conflicts with definition from dylib '{name}' ({dylib})"
                 );
             } else {
-                mold_common::warn!(
+                warn!(
                     "using common symbol '{name}' ({obj}) and ignoring definition from dylib '{name}' ({dylib})"
                 );
             }
@@ -1695,8 +1694,8 @@ pub fn check_weak_exports<E: Target>(ctx: &Context<E>) {
         for (name, overrides) in &found {
             let name = display(name);
             match overrides {
-                true => mold_common::warn!("overrides weak external symbol: {name}"),
-                false => mold_common::warn!("weak external symbol: {name}"),
+                true => warn!("overrides weak external symbol: {name}"),
+                false => warn!("weak external symbol: {name}"),
             }
         }
     }
@@ -1794,7 +1793,7 @@ pub fn report_undef_errors<E: Target>(ctx: &mut Context<E>) {
     // first, and then reports the symbols by name, each with a file that
     // wants it.
     for msg in std::mem::take(&mut ctx.autolink_misses) {
-        mold_common::warn!("{msg}");
+        warn!("{msg}");
     }
     errors.par_sort_unstable_by_key(|&id| ctx.symbols[id].name());
     let referencers = first_referencers(ctx);
@@ -1893,18 +1892,18 @@ pub fn check_weak_imports<E: Target>(ctx: &Context<E>) {
         for (id, weak) in refs {
             let name = display(ctx.symbols[id].name());
             if weak && ctx.args.no_weak_imports {
-                mold_common::error::notice(format_args!(
+                notice!(
                     "weak import of symbol '{name}' not supported because of option: -no_weak_imports"
-                ));
+                );
                 weak_found = true;
             }
             let all_weak = weak_so_far.entry(id).or_insert(weak);
             if mismatches && *all_weak != weak {
                 let kind = if weak { "weak" } else { "non-weak" };
-                mold_common::error::notice(format_args!(
+                notice!(
                     "mismatching weak references for symbol: {name}, found {kind} import in {}",
                     obj.mf.name.display()
-                ));
+                );
                 mismatch_found = true;
             }
             *all_weak &= weak;
@@ -1991,17 +1990,14 @@ pub fn print_why_load<E: Target>(ctx: &Context<E>) {
         }
         let file = obj.mf.name.display();
         match ctx.why_load.get(&i) {
-            Some(name) => mold_common::error::notice(format_args!(
-                "'{}' caused load of {file}",
-                display(name)
-            )),
+            Some(name) => notice!("'{}' caused load of {file}", display(name)),
             None => {
                 let option = if ctx.args.all_load || ctx.force_loaded.contains(&archive.name) {
                     "-force_load"
                 } else {
                     "-ObjC"
                 };
-                mold_common::error::notice(format_args!("{option} caused load of {file}"));
+                notice!("{option} caused load of {file}");
             }
         }
     }
@@ -2154,7 +2150,7 @@ pub fn warn_unused_dylibs<E: Target>(ctx: &Context<E>) {
     }
     for (i, dylib) in ctx.dylibs.iter().enumerate() {
         if !bound[i] && dylib.is_bundle_loader {
-            mold_common::warn!(
+            warn!(
                 "linking with bundle loader ({}) but not using any symbols from it",
                 dylib.path.display()
             );
@@ -2166,7 +2162,7 @@ pub fn warn_unused_dylibs<E: Target>(ctx: &Context<E>) {
             && !dylib.is_bundle_loader
             && !EXEMPT.iter().any(|prefix| dylib.install_name.starts_with(prefix))
         {
-            mold_common::warn!(
+            warn!(
                 "linking with ({}) but not using any symbols from it",
                 display(&dylib.install_name)
             );
@@ -2309,7 +2305,7 @@ pub fn dead_strip_dylibs<E: Target>(ctx: &mut Context<E>) {
             let dylib = &mut ctx.dylibs[i];
             if dylib.is_upward {
                 let name = display(&dylib.install_name);
-                mold_common::warn!("ignoring upward dylib option for {name}");
+                warn!("ignoring upward dylib option for {name}");
                 dylib.is_upward = false;
             }
         }
@@ -3391,7 +3387,7 @@ fn resolve_zerofill_conflicts<E: Target>(ctx: &mut Context<E>, fill_kinds: &[u8]
             ty => ty,
         };
         hdr.flags = (hdr.flags & !SECTION_TYPE) | ty;
-        mold_common::warn!(
+        warn!(
             "section {},{} has both zero-fill and file-backed input sections; it is laid out \
              in the file",
             display(hdr.segname),
@@ -3662,11 +3658,7 @@ fn read_order_files<E: Target>(ctx: &Context<E>) -> Vec<OrderEntry> {
         let text = match std::fs::read(path) {
             Ok(text) => text,
             Err(e) => {
-                mold_common::warn!(
-                    "cannot open order file {}: {}",
-                    path.display(),
-                    error::strerror(&e)
-                );
+                warn!("cannot open order file {}: {}", path.display(), error::strerror(&e));
                 continue;
             }
         };
@@ -3698,14 +3690,11 @@ fn read_order_files<E: Target>(ctx: &Context<E>) -> Vec<OrderEntry> {
 fn report_order_file_statistics(entries: &[OrderEntry], found: &[bool]) {
     let mut missing = 0;
     for (entry, _) in entries.iter().zip(found).filter(|&(_, &found)| !found) {
-        mold_common::warn!(
-            "can't find function/data for order_file entry: {}",
-            display(&entry.name)
-        );
+        warn!("can't find function/data for order_file entry: {}", display(&entry.name));
         missing += 1;
     }
     if missing > 0 {
-        mold_common::warn!(
+        warn!(
             "only {} out of {} order_file symbols were applicable",
             entries.len() - missing,
             entries.len()
@@ -4226,7 +4215,7 @@ pub fn finish_section_alignments<E: Target>(ctx: &mut Context<E>) {
         let hdr = ctx.chunk_header_mut(id);
         if let Some(p2align) = sectalign {
             if p2align < hdr.p2align {
-                mold_common::warn!(
+                warn!(
                     "-sectalign reduces alignment of {},{} from {} to {}",
                     display(hdr.segname),
                     display(hdr.sectname),
@@ -4238,7 +4227,7 @@ pub fn finish_section_alignments<E: Target>(ctx: &mut Context<E>) {
         }
         if capped && hdr.p2align > max {
             if warn_capped {
-                mold_common::warn!(
+                warn!(
                     "reducing alignment of section {},{} from 0x{:x} to 0x{:x} because it exceeds segment maximum alignment",
                     display(hdr.segname),
                     display(hdr.sectname),
@@ -4274,14 +4263,10 @@ pub fn check_segment_order<E: Target>(ctx: &Context<E>) {
         if ctx.args.pagezero_size > 0 { (1, "second") } else { (0, "first") };
     let has_text = !ctx.args.preload && ctx.segments.iter().any(|s| s.name == b"__TEXT");
     if has_text && order.iter().position(|s| s == b"__TEXT").is_some_and(|i| i != text_pos) {
-        mold_common::warn!(
-            "-segment_order of __TEXT is ignored, the segment must be ordered {text_place}"
-        );
+        warn!("-segment_order of __TEXT is ignored, the segment must be ordered {text_place}");
     }
     if order.iter().position(|s| s == b"__LINKEDIT").is_some_and(|i| i != order.len() - 1) {
-        mold_common::warn!(
-            "-segment_order of __LINKEDIT is ignored, the segment must be ordered last"
-        );
+        warn!("-segment_order of __LINKEDIT is ignored, the segment must be ordered last");
     }
     for seg in &ctx.segments {
         let fixed = match seg.name {
@@ -4290,10 +4275,7 @@ pub fn check_segment_order<E: Target>(ctx: &Context<E>) {
             _ => false,
         };
         if !fixed && !order.iter().any(|s| s == seg.name) {
-            mold_common::warn!(
-                "-segment_order should list all segments, {} is missing",
-                display(seg.name)
-            );
+            warn!("-segment_order should list all segments, {} is missing", display(seg.name));
         }
     }
 }
@@ -4444,7 +4426,7 @@ pub fn warn_redundant_reexports<E: Target>(ctx: &Context<E>) {
     found.sort();
     for (name, file) in found {
         let name = display(name);
-        mold_common::warn!(
+        warn!(
             "explicit re-export for symbol '{name}' is redundant because it is already re-exported from dylib '{}'",
             file.display()
         );
@@ -4738,18 +4720,18 @@ pub fn report_text_relocs<E: Target>(ctx: &Context<E>) {
         addr(isec, sec.rels(&ctx.objs[sec.file as usize])[i as usize].offset)
     });
     if !found.is_empty() {
-        mold_common::error::notice(format_args!("Illegal text-relocations:"));
+        notice!("Illegal text-relocations:");
     }
     for &(id, i) in &found {
         let isec = &ctx.isecs[id as usize];
         let file = &ctx.objs[isec.file as usize];
         let rel = &isec.rels(file)[i as usize];
         let target = rel.target_name(ctx, file);
-        mold_common::error::notice(format_args!(
+        notice!(
             "  text-relocation in {} to '{}'",
             isec.location(ctx, rel.offset),
             display(&target)
-        ));
+        );
     }
     if !found.is_empty() {
         error!("Found illegal text-relocations");

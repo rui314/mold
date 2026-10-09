@@ -12,6 +12,7 @@ pub use crate::x86_64::X86_64;
 use std::path::Path;
 
 use mold_common::bytes::display;
+use mold_common::fatal;
 
 use crate::context::Context;
 use crate::input_sections::{InputSection, Reloc};
@@ -80,7 +81,7 @@ pub fn has_reloc_form(r: &MachRel, forms: u16) -> bool {
 #[cold]
 #[inline(never)]
 pub fn bad_reloc(file: &Path, hdr: &MachSection, r: &MachRel, what: &str) -> ! {
-    mold_common::fatal!(
+    fatal!(
         "{}:({},{}): {what} at 0x{:x}: type={}, p2size={}, pcrel={}, extern={}",
         file.display(),
         display(hdr.segname()),

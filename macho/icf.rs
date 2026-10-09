@@ -24,6 +24,7 @@
 use std::hash::Hash;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
+use mold_common::notice;
 use mold_common::siphash::SipHash13_128;
 use portable_atomic::AtomicU64;
 use rayon::prelude::*;
@@ -363,10 +364,11 @@ fn report_folds<E: Target>(
     }
     let size: u64 = folded().map(|i| ctx.isecs[candidates[i]].size as u64).sum();
     let percent = size as f64 * 100.0 / total.1 as f64;
-    mold_common::error::notice(format_args!(
+    notice!(
         "code deduplicated functions {count} (size: {size}) out of total {} (size: {}) ({percent:.2}% size reduction)",
-        total.0, total.1
-    ));
+        total.0,
+        total.1
+    );
 }
 
 /// What relocation `rel` of object `obj` points at, and its addend. A

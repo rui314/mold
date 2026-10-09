@@ -841,7 +841,7 @@ impl Target for Arm64 {
             let ent_addr = addr + off;
             let ptr_addr = ctx.symbols[sym].stub_ptr_addr(ctx, i);
             if !adrp_reaches(ptr_addr, ent_addr) {
-                mold_common::error!(
+                error!(
                     "stub for {}: ADRP out of range, from 0x{ent_addr:08X} to its pointer at 0x{ptr_addr:08X}",
                     ctx.symbols[sym]
                 );

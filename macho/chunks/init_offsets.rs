@@ -1,6 +1,8 @@
 //! __TEXT,__init_offsets: 32-bit image-relative initializer offsets,
 //! replacing __mod_init_func's absolute pointers.
 
+use mold_common::error;
+
 use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
@@ -66,7 +68,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
                 ctx.isecs[isec].addr(ctx) + off - ctx.mach_header.hdr.addr
             }
             InitFunc::Imported(id) => {
-                mold_common::error!(
+                error!(
                     "__init_offsets entry {i}: target '{}' does not have address",
                     ctx.symbols[id]
                 );

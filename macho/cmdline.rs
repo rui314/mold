@@ -12,9 +12,9 @@ use std::sync::LazyLock;
 use mold_common::bytes::display;
 use mold_common::bytes::{is_space, lines, os_str, trim_space};
 use mold_common::error::strerror;
-use mold_common::fatal;
 use mold_common::glob::{Glob, GlobBuilder};
 use mold_common::path::path_bytes;
+use mold_common::{fatal, warn};
 
 use crate::arch::Target;
 use crate::context::Context;
@@ -1045,7 +1045,7 @@ fn parse_dylib_version(opt: &str, arg: &str) -> u32 {
     }
     let nums = version_numbers(opt, arg);
     if !fits_version(&nums) {
-        mold_common::warn!("truncating {opt} to fit in 32-bit space used by old mach-o format");
+        warn!("truncating {opt} to fit in 32-bit space used by old mach-o format");
     }
     let num = |i: usize| nums.get(i).map_or(0, |&num| num.min(VERSION_LIMITS[i]) as u32);
     encode_version(num(0), num(1), num(2))
@@ -1310,7 +1310,7 @@ fn parse_prot(val: &[u8]) -> u8 {
             b'w' => prot |= 2,
             b'x' => prot |= 4,
             b'-' => {}
-            _ => mold_common::warn!("unknown -segprot letter '{}'", display(&[c])),
+            _ => warn!("unknown -segprot letter '{}'", display(&[c])),
         }
     }
     prot
@@ -1330,7 +1330,7 @@ fn section_name(name: &[u8]) -> Vec<u8> {
 fn sectcreate_name(kind: &str, name: &[u8]) -> Vec<u8> {
     let cut = section_name(name);
     if cut.len() < name.len() {
-        mold_common::warn!(
+        warn!(
             "-sectcreate {kind} name too long ('{}'), will be truncated to '{}'",
             display(name),
             display(&cut)
@@ -1671,11 +1671,9 @@ fn set_platform(args: &mut Args, st: &mut ParseState, platform: u32, minos: u32)
     if args.platform == platform && args.platform_minos != minos {
         let (old, new) = (format_version(args.platform_minos), format_version(minos));
         let name = platform_name(platform);
-        mold_common::warn!(
-            "passed two min versions ({old}, {new}) for platform {name}. Using {new}."
-        );
+        warn!("passed two min versions ({old}, {new}) for platform {name}. Using {new}.");
     } else if args.platform == PLATFORM_MACOS && platform == PLATFORM_FIRMWARE {
-        mold_common::warn!("conflicting -platform_version platform: macOS, using: firmware");
+        warn!("conflicting -platform_version platform: macOS, using: firmware");
     } else if args.platform != 0 && args.platform != platform {
         st.incompatible_platforms.get_or_insert((args.platform, platform));
     }
@@ -1691,7 +1689,7 @@ fn read_bundle_loader(cur: &mut ArgCursor, args: &mut Args, opt: &str) {
         && let InputArg::BundleLoader(old) = args.inputs.remove(pos)
     {
         let old = old.display();
-        mold_common::warn!("duplicate -bundle_loader option, '{old}' ignored");
+        warn!("duplicate -bundle_loader option, '{old}' ignored");
     }
     args.inputs.push(InputArg::BundleLoader(cur.next_path(opt)))
 }
@@ -1701,9 +1699,7 @@ fn add_dylib_file(args: &mut Args, arg: &[u8]) {
     let Some(colon) = memchr::memchr(b':', arg) else {
         fatal!("-dylib_file malformed <path:path>");
     };
-    mold_common::warn!(
-        "-dylib_file is deprecated. Use -F or -L to control where indirect dylibs are found"
-    );
+    warn!("-dylib_file is deprecated. Use -F or -L to control where indirect dylibs are found");
     let file = PathBuf::from(os_str(&arg[colon + 1..]));
     args.dylib_files.push((arg[..colon].to_vec(), file));
 }
@@ -1723,7 +1719,7 @@ fn add_linker_option(words: &mut Vec<Vec<u8>>, opt: &[u8]) {
         words.push(head.to_vec());
         words.push(arg.to_vec());
     } else {
-        mold_common::warn!(
+        warn!(
             "unknown linker option from -add_linker_option ignored, starting with: '{}'",
             display(head)
         );
@@ -1737,7 +1733,7 @@ fn read_segprot(cur: &mut ArgCursor, st: &mut ParseState, opt: &str) {
     let init = cur.next_arg(opt).as_encoded_bytes();
     // __LINKEDIT, which dyld reads, keeps its own.
     if seg == b"__LINKEDIT" {
-        mold_common::warn!("-segprot cannot be used to modify __LINKEDIT protections");
+        warn!("-segprot cannot be used to modify __LINKEDIT protections");
     } else {
         let max = parse_prot(max);
         let init = parse_prot(init);
@@ -1815,7 +1811,7 @@ fn read_sectalign(cur: &mut ArgCursor, args: &mut Args, opt: &str) {
     }
     let p2align = if align == 0 { 0 } else { align.trailing_zeros() as u8 };
     if !align.is_power_of_two() {
-        mold_common::warn!(
+        warn!(
             "alignment for -sectalign {} {} is not a power of two, using 0x{:X}",
             display(&seg),
             display(&sect),
@@ -1840,9 +1836,9 @@ fn parse_common_align(arg: &str) -> u8 {
         );
     }
     if align == 0 {
-        mold_common::warn!("zero is not a valid -max_default_common_align");
+        warn!("zero is not a valid -max_default_common_align");
     } else if !align.is_power_of_two() {
-        mold_common::warn!(
+        warn!(
             "alignment for -max_default_common_align is not a power of two, using {:#x}",
             1u64 << align.ilog2()
         );
@@ -1857,7 +1853,7 @@ fn read_alias_list(list: &Path, aliases: &mut Vec<(Vec<u8>, Vec<u8>)>) {
     let contents = match std::fs::read(list) {
         Ok(contents) => contents,
         Err(e) => {
-            mold_common::warn!("cannot open -alias_list file {}: {}", list.display(), strerror(&e));
+            warn!("cannot open -alias_list file {}: {}", list.display(), strerror(&e));
             Vec::new()
         }
     };
@@ -1876,7 +1872,7 @@ fn read_alias_list(list: &Path, aliases: &mut Vec<(Vec<u8>, Vec<u8>)>) {
 fn read_api_list(path: &Path) -> ApiList {
     use serde_json::Value;
     let fail = |what: &dyn std::fmt::Display| -> ! {
-        mold_common::fatal!("-sdk_imports_api_list invalid list at {}: {what}", path.display());
+        fatal!("-sdk_imports_api_list invalid list at {}: {what}", path.display());
     };
     let data = std::fs::read(path).unwrap_or_else(|e| fail(&mold_common::error::strerror(&e)));
     let root: Value = serde_json::from_slice(&data).unwrap_or_else(|e| fail(&e));
@@ -2058,7 +2054,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 Some(arg) if !arg.is_empty() && !arg.as_encoded_bytes().starts_with(b"-") => {
                     args.rpaths.push(arg.as_encoded_bytes().to_vec());
                 }
-                _ => mold_common::warn!("-rpath missing <path>"),
+                _ => warn!("-rpath missing <path>"),
             },
             b"-dyld_env" => {
                 let arg = cur.next_arg(name).as_encoded_bytes();
@@ -2093,7 +2089,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 read_version_min(&mut cur, &mut args, &mut st, name, PLATFORM_IOS)
             }
             b"-iphoneos_version_min" => {
-                mold_common::warn!("-iphoneos_version_min has been renamed to -ios_version_min");
+                warn!("-iphoneos_version_min has been renamed to -ios_version_min");
                 read_version_min(&mut cur, &mut args, &mut st, name, PLATFORM_IOS)
             }
             // Mac Catalyst's, which mold doesn't link for.
@@ -2177,7 +2173,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                     args.undefined_dynamic_lookup = true;
                 }
                 if treatment != "dynamic_lookup" {
-                    mold_common::warn!("-undefined {treatment} is deprecated");
+                    warn!("-undefined {treatment} is deprecated");
                 }
             }
             b"-exported_symbol" => {
@@ -2241,7 +2237,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // ld64 made an executable bind its dylibs' imports flat too
             // (MH_FORCE_FLAT); ld-prime takes it for -flat_namespace.
             b"-force_flat_namespace" => {
-                mold_common::warn!(
+                warn!(
                     "-force_flat_namespace is no longer supported, using -flat_namespace instead"
                 );
                 args.flat_namespace = true;
@@ -2433,7 +2429,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 let on = name == "-pie";
                 if st.pie == Some(!on) {
                     let other = if on { "-no_pie" } else { "-pie" };
-                    mold_common::warn!("{name} overriding previous {other}");
+                    warn!("{name} overriding previous {other}");
                 }
                 st.pie = Some(on);
             }
@@ -2659,7 +2655,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // them now, and ld64 takes this for -dead_strip alone.
             b"-no_dead_strip_inits_and_terms" => {
                 args.dead_strip = true;
-                mold_common::warn!(
+                warn!(
                     "option '-no_dead_strip_inits_and_terms' is obsolete, use '-dead_strip' instead"
                 );
             }
@@ -2695,11 +2691,11 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             | b"-Sn"
             | b"-Sp"
             | b"-twolevel_namespace_hints"
-            | b"-X" => mold_common::warn!("{name} is obsolete"),
+            | b"-X" => warn!("{name} is obsolete"),
             b"-executable_path" | b"-kext_objects_dir" | b"-multiply_defined" | b"-sdk_version"
             | b"-seg_addr_table" | b"-Y" => {
                 cur.arg_or_empty(name);
-                mold_common::warn!("{name} is obsolete");
+                warn!("{name} is obsolete");
             }
             // Bitcode bundles went with Xcode 14, and ld-prime ignores
             // the options that asked for one, as it does -ld_classic,
@@ -2711,9 +2707,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             | b"-bitcode_symbol_map"
             | b"-bitcode_verify"
             | b"-ld_classic" => {
-                mold_common::warn!("{name} is no longer supported and will be ignored")
+                warn!("{name} is no longer supported and will be ignored")
             }
-            b"-ld_prime" => mold_common::warn!("-ld_prime is deprecated, use -ld_new instead"),
+            b"-ld_prime" => warn!("-ld_prime is deprecated, use -ld_new instead"),
             b"-ld_new" => {}
             // ld64's switches for passes ld-prime doesn't run: the
             // labels a -r output gave the FDEs in __eh_frame, the
@@ -2987,7 +2983,7 @@ fn resolve_defaults(target: &TargetTraits, args: &mut Args, st: &ParseState) {
     // code that once set up the process, is not, so ld-prime keeps
     // _main.
     if !args.unixthread && args.has_entry_point() && args.entry == b"start" {
-        mold_common::warn!(
+        warn!(
             "Ignoring '-e start' because entry point 'start' is not used for the targeted OS version"
         );
         args.entry = b"_main".to_vec();
@@ -3003,9 +2999,7 @@ fn env_source_version() -> u64 {
     };
     env.to_str().and_then(parse_source_version).unwrap_or_else(|| {
         let env = env.display();
-        mold_common::warn!(
-            "$RC_ProjectSourceVersion: malformed 64-bit a.b.c.d.e version number: {env}"
-        );
+        warn!("$RC_ProjectSourceVersion: malformed 64-bit a.b.c.d.e version number: {env}");
         0
     })
 }
@@ -3074,13 +3068,10 @@ fn resolve_segaddrs(segaddrs: Vec<(Vec<u8>, u64)>) -> Vec<(Vec<u8>, u64)> {
     for (name, addr) in segaddrs {
         match out.iter_mut().find(|(seen, _)| *seen == name) {
             Some((_, old)) if *old == addr => {
-                mold_common::warn!("-segaddr {} used more than once", display(&name))
+                warn!("-segaddr {} used more than once", display(&name))
             }
             Some((_, old)) => {
-                mold_common::warn!(
-                    "-segaddr {} has conflicting values, using 0x{addr:X}",
-                    display(&name)
-                );
+                warn!("-segaddr {} has conflicting values, using 0x{addr:X}", display(&name));
                 *old = addr;
             }
             None => out.push((name, addr)),
@@ -3106,13 +3097,13 @@ fn resolve_lazy_load(args: &mut Args) {
         for input in &args.inputs {
             match input {
                 InputArg::Library(LibraryKind::Lazy, LibraryName::Framework(_)) => {
-                    mold_common::warn!(
+                    warn!(
                         "-lazy_framework cannot be used on firmware, changing to regular -framework"
                     )
                 }
-                InputArg::Library(LibraryKind::Lazy, _) => mold_common::warn!(
-                    "-lazy_library cannot be used on firmware, changing to regular link"
-                ),
+                InputArg::Library(LibraryKind::Lazy, _) => {
+                    warn!("-lazy_library cannot be used on firmware, changing to regular link")
+                }
                 _ => {}
             }
         }
@@ -3142,7 +3133,7 @@ fn dyld_supports(args: &Args, kind: LibraryKind, set: &VersionSet, feature: &str
     }
     let supported = args.targets(set) && !args.preload;
     for lib in libs.iter().filter(|_| !supported) {
-        mold_common::warn!(
+        warn!(
             "{feature} will be ignored for '{}' because deployment target version is too low",
             lib.display()
         );
@@ -3215,10 +3206,10 @@ fn resolve_pie(
     match pie {
         Some(false) if args.output_type == MH_EXECUTE && !args.static_link && !args.relocatable => {
             if is_new_os(target.name, MH_EXECUTE, args.platform, args.platform_minos) {
-                mold_common::warn!("-no_pie is deprecated when targeting new OS versions");
+                warn!("-no_pie is deprecated when targeting new OS versions");
             }
             if target.name == "arm64" {
-                mold_common::warn!("-no_pie ignored for arm64*");
+                warn!("-no_pie ignored for arm64*");
             }
             target.name == "arm64"
         }
@@ -3384,7 +3375,7 @@ fn resolve_shared_region(target: &TargetTraits, args: &mut Args) {
     }
     args.ignore_optimization_hints = true;
     if !args.rpaths.is_empty() {
-        mold_common::warn!(
+        warn!(
             "OS dylibs should not add rpaths (linker option: -rpath) (Xcode build setting: \
              LD_RUNPATH_SEARCH_PATHS)"
         );
@@ -3393,9 +3384,7 @@ fn resolve_shared_region(target: &TargetTraits, args: &mut Args) {
     // eligible may be.
     let install_name = args.install_name.as_deref().unwrap_or_default();
     if args.output_type == MH_DYLIB && install_name.starts_with(b"@rpath") {
-        mold_common::warn!(
-            "OS dylibs should not use @rpath for -install_name. Use absolute path instead"
-        );
+        warn!("OS dylibs should not use @rpath for -install_name. Use absolute path instead");
     }
     if args.objc_stubs_small {
         fatal!("Shared cache eligible dylibs cannot use '-objc_stubs_small'");
@@ -3435,9 +3424,7 @@ fn resolve_segment_align(target: &TargetTraits, args: &Args, segalign: Option<u6
         Some(align) if align.is_power_of_two() => align,
         Some(align) => {
             let p2 = 1 << align.ilog2();
-            mold_common::warn!(
-                "alignment for -segalign 0x{align:X} is not a power of two, using 0x{p2:X}"
-            );
+            warn!("alignment for -segalign 0x{align:X} is not a power of two, using 0x{p2:X}");
             p2
         }
     }
@@ -3496,7 +3483,7 @@ fn resolve_seg_page_sizes(args: &Args, sizes: Vec<(Vec<u8>, u64)>) -> Vec<(Vec<u
     for (name, mut size) in sizes {
         if size != 0 && !size.is_power_of_two() {
             size = 1 << size.ilog2();
-            mold_common::warn!(
+            warn!(
                 "-seg_page_size for {} is not a power of two, rounding down to 0x{size:x}",
                 display(&name)
             );
@@ -3541,13 +3528,13 @@ fn resolve_pagezero_size(args: &mut Args, size: Option<u64>) {
         let aligned = size
             .checked_next_multiple_of(page)
             .unwrap_or_else(|| fatal!("-pagezero_size 0x{size:X} is too large"));
-        mold_common::warn!(
+        warn!(
             "-pagezero_size not aligned, rounded up to: {aligned:#x}, use -segalign to change the alignment"
         );
         args.pagezero_size = aligned;
     }
     if args.fixup_chains && args.pagezero_size > 0x1_0000_0000 {
-        mold_common::warn!("-pagezero_size is too large, setting it to 4GB");
+        warn!("-pagezero_size is too large, setting it to 4GB");
         args.pagezero_size = 0x1_0000_0000;
     }
 }
@@ -3564,7 +3551,7 @@ fn resolve_pagezero_size(args: &mut Args, size: Option<u64>) {
 /// then for a multiple of the page size and smaller than the address.
 fn resolve_stack(target: &TargetTraits, args: &mut Args, size: Option<u64>, addr: Option<u64>) {
     if addr == Some(0) {
-        mold_common::warn!("-stack_addr 0x0 has no effect");
+        warn!("-stack_addr 0x0 has no effect");
     }
     let addr = addr.filter(|&addr| addr != 0);
     if let Some(addr) = addr {
@@ -3578,7 +3565,7 @@ fn resolve_stack(target: &TargetTraits, args: &mut Args, size: Option<u64>, addr
     }
     let Some(size) = size else { return };
     if size == 0 {
-        mold_common::warn!("-stack_size 0x0 has no effect");
+        warn!("-stack_size 0x0 has no effect");
         return;
     }
     let macos_x86_64 = target.name == "x86_64" && args.platform == PLATFORM_MACOS;
@@ -3659,7 +3646,7 @@ fn complete_segment_order(args: &mut Args) {
         && has(b"__DATA_CONST").is_none()
         && let Some(i) = has(b"__DATA")
     {
-        mold_common::warn!(
+        warn!(
             "-segment_order lists __DATA, but not __DATA_CONST, assuming standard order. list __DATA_CONST explicitly or disable the segment using -no_data_const"
         );
         args.segment_order.insert(i, b"__DATA_CONST".to_vec());
@@ -3698,9 +3685,7 @@ fn resolve_image_base(args: &mut Args) {
         let aligned = base
             .checked_next_multiple_of(align)
             .unwrap_or_else(|| fatal!("base address 0x{base:X} is too large"));
-        mold_common::warn!(
-            "base address 0x{base:X} is not properly aligned. Changing it to 0x{aligned:X}"
-        );
+        warn!("base address 0x{base:X} is not properly aligned. Changing it to 0x{aligned:X}");
         args.image_base = Some(aligned);
     }
     // It takes a zero base as none at all.
@@ -3719,18 +3704,16 @@ fn resolve_image_base(args: &mut Args) {
         if !args.static_link || args.pie {
             fatal!("-image_base and -segaddr __TEXT must match");
         }
-        mold_common::warn!(
-            "-image_base and -segaddr __TEXT must match, changing image base to {text:#x}"
-        );
+        warn!("-image_base and -segaddr __TEXT must match, changing image base to {text:#x}");
     }
     let Some(base) = text.or(args.image_base) else { return };
     args.image_base = Some(base);
 
     if args.output_type == MH_EXECUTE && args.pie && !args.static_link {
-        mold_common::warn!("Linking with PIE, -image_base will be ignored");
+        warn!("Linking with PIE, -image_base will be ignored");
         args.image_base = None;
     } else if !args.static_link && args.fixup_chains {
-        mold_common::warn!("prefered load addresses (-seg1addr) are disabled with chained fixups");
+        warn!("prefered load addresses (-seg1addr) are disabled with chained fixups");
         args.image_base = text;
     }
 }
@@ -3754,11 +3737,9 @@ fn resolve_unaligned_pointers(
         if treatment == Some(Treatment::Warning) {
             match args.fixup_chains {
                 true => {
-                    mold_common::warn!(
-                        "unaligned pointer errors are fatal when using chained fixups"
-                    )
+                    warn!("unaligned pointer errors are fatal when using chained fixups")
                 }
-                false => mold_common::warn!("unaligned pointer errors are fatal in OS binaries"),
+                false => warn!("unaligned pointer errors are fatal in OS binaries"),
             }
         }
         return Treatment::Error;
@@ -3807,9 +3788,7 @@ fn check_options(target: &TargetTraits, args: &mut Args, st: &ParseState) {
         fatal!("-r and -dead_strip cannot be used together");
     }
     if st.x86_64_layout_emulation && target.name != "arm64" {
-        mold_common::warn!(
-            "ignoring -x86_64_layout_emulation option, it can only be used with -arch arm64"
-        );
+        warn!("ignoring -x86_64_layout_emulation option, it can only be used with -arch arm64");
     }
     check_dylib_use(args);
     check_relocatable(args, st.data_const);
@@ -3822,7 +3801,7 @@ fn check_options(target: &TargetTraits, args: &mut Args, st: &ParseState) {
         && !args.without_dyld()
         && !args.relocatable
     {
-        mold_common::warn!(
+        warn!(
             "-headerpad {size:#x} is too small, at least 32 bytes are required to reserve space for code signature"
         );
     }
@@ -3833,10 +3812,10 @@ fn check_options(target: &TargetTraits, args: &mut Args, st: &ParseState) {
         fatal!("-reexported_symbols_list can only used used when created dynamic libraries");
     }
     if st.force_weakness_listed {
-        mold_common::warn!("-force_symbols_[not_]weak_list is deprecated");
+        warn!("-force_symbols_[not_]weak_list is deprecated");
     }
     if !args.has_entry_point() && st.explicit_entry {
-        mold_common::warn!("ignoring -e, not used for output type");
+        warn!("ignoring -e, not used for output type");
     }
 }
 
@@ -3860,16 +3839,14 @@ fn check_output_kind(args: &mut Args, pie: Option<bool>) {
     }
     let dyld_loaded = args.output_type == MH_DYLIB || (main_executable && !args.static_link);
     if args.no_dynamic_access && !dyld_loaded {
-        mold_common::warn!(
-            "-no_dynamic_access ignored. It can only be used with dylibs and main executables"
-        );
+        warn!("-no_dynamic_access ignored. It can only be used with dylibs and main executables");
         args.no_dynamic_access = false;
     }
     if pie == Some(true) && !main_executable {
         if args.relocatable || args.is_dylinker() {
             fatal!("-pie can only be used when linking a main executable");
         }
-        mold_common::warn!("-pie being ignored. It is only used when linking a main executable");
+        warn!("-pie being ignored. It is only used when linking a main executable");
     }
 }
 
@@ -3971,22 +3948,22 @@ fn warn_platform_options(target: &TargetTraits, args: &Args, st: &ParseState) {
     let platform = args.effective_platform();
     let name = platform_name(platform);
     if args.flat_namespace && platform != PLATFORM_MACOS {
-        mold_common::warn!("-flat_namespace is deprecated on {name}");
+        warn!("-flat_namespace is deprecated on {name}");
     }
     // A -r output has chained fixups only when -fixup_chains says so.
     let fixup_chains = args.fixup_chains && (!args.relocatable || st.fixup_chains == Some(true));
     if args.bind_at_load && fixup_chains {
-        mold_common::warn!("-bind_at_load is deprecated on {name}");
+        warn!("-bind_at_load is deprecated on {name}");
     }
     if args.undefined_dynamic_lookup
         && !matches!(platform, PLATFORM_MACOS | PLATFORM_FIRMWARE)
         && !args.relocatable
         && !args.without_dyld()
     {
-        mold_common::warn!("-undefined dynamic_lookup is deprecated on {name}");
+        warn!("-undefined dynamic_lookup is deprecated on {name}");
     }
     if st.read_only_relocs.is_some() && !read_only_relocs_apply(target, args) {
-        mold_common::warn!("-read_only_relocs relocs cannot be used in this configuration");
+        warn!("-read_only_relocs relocs cannot be used in this configuration");
     }
 }
 
@@ -3998,7 +3975,7 @@ fn warn_platform_options(target: &TargetTraits, args: &Args, st: &ParseState) {
 fn check_dynamic_lookup(args: &Args) {
     let dynamic_lookup = args.undefined_dynamic_lookup;
     if dynamic_lookup && !args.allowed_undefined.is_empty() {
-        mold_common::warn!("-U option is redundant when using -undefined dynamic_lookup");
+        warn!("-U option is redundant when using -undefined dynamic_lookup");
     } else if args.has_entry_point() && args.allowed_undefined.contains(&args.entry) {
         fatal!(
             "{} is an entry point and can't be used with -U for dynamic lookup",
@@ -4109,7 +4086,7 @@ fn push_search_dir(syslibroot: &[PathBuf], dirs: &mut Vec<PathBuf>, dir: &Path, 
             let path = under_root(root, &dir);
             match std::fs::metadata(&path) {
                 Ok(md) if md.is_dir() => dirs.push(path),
-                Ok(_) => mold_common::warn!(
+                Ok(_) => warn!(
                     "-syslibroot and combined search path '{}' is not a directory",
                     path.display()
                 ),
@@ -4122,8 +4099,8 @@ fn push_search_dir(syslibroot: &[PathBuf], dirs: &mut Vec<PathBuf>, dir: &Path, 
     }
     match std::fs::metadata(&dir) {
         Ok(md) if md.is_dir() => dirs.push(dir),
-        Ok(_) => mold_common::warn!("search path '{}' is not a directory", dir.display()),
-        Err(_) if !quiet => mold_common::warn!("search path '{}' not found", dir.display()),
+        Ok(_) => warn!("search path '{}' is not a directory", dir.display()),
+        Err(_) if !quiet => warn!("search path '{}' not found", dir.display()),
         Err(_) => {}
     }
 }

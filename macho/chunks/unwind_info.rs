@@ -2,6 +2,7 @@
 //! objects' __compact_unwind records.
 
 use mold_common::endian::{push_ul16, push_ul32};
+use mold_common::fatal;
 use rayon::prelude::*;
 
 use crate::arch::Target;
@@ -180,7 +181,7 @@ fn assign_personalities(records: &mut [UnwindRecord]) -> Vec<SymbolId> {
                 }
             };
             if idx >= 3 {
-                mold_common::fatal!("too many personality functions");
+                fatal!("too many personality functions");
             }
             rec.encoding |= ((idx + 1) as u32) << UNWIND_PERSONALITY_MASK.trailing_zeros();
         }

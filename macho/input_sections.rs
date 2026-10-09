@@ -1,6 +1,7 @@
 //! Input sections.
 
 use mold_common::bytes::display;
+use mold_common::error;
 
 use crate::arch::Target;
 use crate::chunks::ChunkId;
@@ -595,7 +596,7 @@ impl InputSection {
         let file = ctx.objs[self.file as usize].mf.name.display();
         let name = self.name(ctx);
         let name = display(&name);
-        mold_common::error!("{file}: {name}+0x{offset:x}: {msg}");
+        error!("{file}: {name}+0x{offset:x}: {msg}");
     }
 
     /// Whether the target of relocation `r` of this subsection has an

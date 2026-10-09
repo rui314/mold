@@ -5,6 +5,8 @@
 //! LINKEDIT (Args::legacy_linkedit). mold's reldyn.rs holds the ELF
 //! relative relocations they stand in for.
 
+use mold_common::error;
+
 use crate::arch::Target;
 use crate::chunks::{ChunkHeader, segment_and_offset, segment_prot};
 use crate::context::Context;
@@ -39,9 +41,7 @@ pub fn construct<E: Target>(ctx: &mut Context<E>) {
     let base = relocation_base(ctx);
     let reaches = |addr: u64| i32::try_from(addr.wrapping_sub(base) as i64).is_ok();
     if let Some(&addr) = locs.iter().find(|&&addr| !reaches(addr)) {
-        mold_common::error!(
-            "a local relocation can't reach the pointer at {addr:#x} from {base:#x}"
-        );
+        error!("a local relocation can't reach the pointer at {addr:#x} from {base:#x}");
     }
     ctx.local_relocs.hdr.size = (locs.len() * size_of::<MachRel>()) as u64;
     ctx.local_relocs.locs = locs;

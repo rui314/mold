@@ -1,6 +1,8 @@
 //! __TEXT,__eh_frame: the re-synthesized DWARF unwind records that
 //! compact unwind can't express.
 
+use mold_common::warn;
+
 use crate::arch::Target;
 use crate::chunks::{ChunkHeader, ChunkId};
 use crate::context::Context;
@@ -101,7 +103,7 @@ fn warn_eh_frame_too_large<E: Target>(ctx: &Context<E>) {
             && rec.fde().is_some_and(|fde| ctx.fdes[fde].output_offset > MAX_FDE_OFFSET)
     });
     if out_of_reach {
-        mold_common::warn!(
+        warn!(
             "__eh_frame section too large (max 16MB) to encode dwarf unwind offsets in compact unwind table, performance of exception handling might be affected"
         );
     }

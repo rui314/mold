@@ -13,6 +13,7 @@
 
 use mold_common::bytes::display;
 use mold_common::mem::leak_bytes;
+use mold_common::warn;
 
 use crate::arch::Target;
 use crate::cmdline::SymbolMove;
@@ -130,7 +131,7 @@ pub(crate) fn find_moves<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32,
             SymbolFile::Aliases(_) => display(b"-alias"),
         };
         let what = if subsec.content == Content::Code { "code" } else { "data" };
-        mold_common::warn!(
+        warn!(
             "cannot move symbol '{}' ({file}) to segment '{}' because it is {what}",
             display(ctx.symbols[id].name()),
             display(&list.segment),

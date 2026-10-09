@@ -28,6 +28,7 @@ use hashbrown::HashMap;
 use mold_common::bytes::display;
 use mold_common::bytes::split_once;
 use mold_common::endian::{push_ul16, push_ul32, push_ul64};
+use mold_common::error;
 use rayon::prelude::*;
 
 use crate::arch::Target;
@@ -142,7 +143,7 @@ pub fn create_dof_sections<E: Target>(ctx: &mut Context<E>) {
         let dof = match build_dof(provider, stability, typedefs, &probes, &functions) {
             Ok(dof) => dof,
             Err(name) => {
-                mold_common::error!("{}: unsupported DTrace probe encoding", display(name));
+                error!("{}: unsupported DTrace probe encoding", display(name));
                 return;
             }
         };

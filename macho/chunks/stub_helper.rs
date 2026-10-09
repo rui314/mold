@@ -3,6 +3,8 @@
 //! lazy-bind record - or, in legacy LINKEDIT, dyld_stub_binding_helper
 //! with the pointer's address.
 
+use mold_common::fatal;
+
 use crate::arch::Target;
 use crate::chunks::split_info::{Entry, Places};
 use crate::chunks::{ChunkHeader, ChunkId};
@@ -71,7 +73,7 @@ pub fn ensure_stub_binder<E: Target>(ctx: &mut Context<E>) {
         return;
     }
     let Some(id) = ctx.bind_linker_import(b"dyld_stub_binder") else {
-        mold_common::fatal!("lazy binding needs dyld_stub_binder, which no loaded dylib exports");
+        fatal!("lazy binding needs dyld_stub_binder, which no loaded dylib exports");
     };
     ctx.symbols[id].set_used(true);
     crate::chunks::got::add_got_symbol(ctx, id);

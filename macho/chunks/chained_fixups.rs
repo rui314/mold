@@ -4,7 +4,7 @@
 
 use mold_common::bytes::display;
 use mold_common::endian::{push_ul16, push_ul32, push_ul64};
-use mold_common::fatal;
+use mold_common::{error, fatal, warn};
 use rayon::prelude::*;
 
 use crate::arch::Target;
@@ -202,9 +202,7 @@ fn write_starts_in_image<E: Target>(ctx: &Context<E>, buf: &mut Vec<u8>, fixups:
         // arm64 image's -segalign sets.
         let page_size = chain_page_size(ctx);
         if !matches!(page_size, 0x1000 | 0x4000) {
-            mold_common::error!(
-                "chained fixups need a -segalign of 0x1000 or 0x4000, not {page_size:#x}"
-            );
+            error!("chained fixups need a -segalign of 0x1000 or 0x4000, not {page_size:#x}");
             break;
         }
         let npages =
@@ -532,17 +530,17 @@ fn check_pointer_alignment<E: Target>(
         && !ctx.args.without_dyld()
         && (!unaligned.is_empty() || fixups.iter().any(|&(addr, ..)| !addr.is_multiple_of(8)));
     if fallback {
-        mold_common::warn!("disabling chained fixups because of unaligned pointers");
+        warn!("disabling chained fixups because of unaligned pointers");
     }
     for (id, addr) in unaligned {
         let isec = &ctx.isecs[id as usize];
         let place = isec.location(ctx, (addr - isec.addr(ctx)) as u32);
         match ctx.args.unaligned_pointers {
             Treatment::Error => {
-                mold_common::error!("pointer not aligned at {addr:#x} in {place}");
+                error!("pointer not aligned at {addr:#x} in {place}");
                 break;
             }
-            Treatment::Warning => mold_common::warn!("pointer not aligned at {addr:#x} in {place}"),
+            Treatment::Warning => warn!("pointer not aligned at {addr:#x} in {place}"),
             Treatment::Suppress => break,
         }
     }

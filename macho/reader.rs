@@ -16,9 +16,8 @@ use std::path::{Path, PathBuf};
 
 use mold_common::archive_file::members;
 use mold_common::bytes::display;
-use mold_common::error;
-use mold_common::fatal;
 use mold_common::path::path_bytes;
+use mold_common::{error, fatal, warn};
 use rayon::prelude::*;
 
 use crate::arch::Target;
@@ -132,7 +131,7 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
         let words = std::slice::from_ref(&ctx.args.linker_options);
         let (opts, warnings) = read_linker_options(words, || "command line");
         for msg in warnings {
-            mold_common::warn!("{msg}");
+            warn!("{msg}");
         }
         ctx.cmdline_linker_options = Some(opts);
     }
@@ -215,7 +214,7 @@ fn warn_duplicate_libraries<E: Target>(ctx: &Context<E>) {
     }
     if !dups.is_empty() {
         let list: Vec<String> = dups.into_iter().collect();
-        mold_common::warn!("ignoring duplicate libraries: {}", list.join(", "));
+        warn!("ignoring duplicate libraries: {}", list.join(", "));
     }
 }
 
@@ -285,7 +284,7 @@ impl<'a> Prober<'a> {
             );
             match self.warnings {
                 Some(warnings) => warnings.lock().unwrap().push(msg.to_string()),
-                None => mold_common::warn!("{msg}"),
+                None => warn!("{msg}"),
             }
         }
         Some(path.to_path_buf())
@@ -328,7 +327,7 @@ impl ProbeLog {
             ctx.missing_files.lock().unwrap().extend(self.missing.into_inner().unwrap());
         }
         for msg in self.warnings.into_inner().unwrap() {
-            mold_common::warn!("{msg}");
+            warn!("{msg}");
         }
     }
 }
@@ -869,7 +868,7 @@ fn library_namings(
                     && !all.weak
                     && path.extension() == Some(OsStr::new("a"))
                 {
-                    mold_common::warn!(
+                    warn!(
                         "-weak-l{0} resolved to a static library '{1}', but only dynamic libraries can be weak linked. Use -l{0} when linking static libraries, or make sure .dylib/.tbd library is located in -L search paths.",
                         name.display(),
                         path.display()
@@ -996,7 +995,7 @@ fn sub_reexport<E: Target>(ctx: &Context<E>, arg: &InputArg, path: &Path) -> boo
         return false;
     }
     if framework.is_some() {
-        mold_common::warn!(
+        warn!(
             "using -sub_library to re-export a framework is deprecated.  Use -reexport_framework instead"
         );
     }
@@ -1119,7 +1118,7 @@ fn read_file<E: Target>(
         // the architecture as ever), then ignores it with a warning.
         FileType::Tapi | FileType::Dylib if ctx.args.relocatable || !ctx.args.links_dylibs() => {
             if ty == FileType::Dylib || input_files::load_tbd(ctx, mf).is_some() {
-                mold_common::warn!("ignoring unexpected dylib '{}'", mf.name.display());
+                warn!("ignoring unexpected dylib '{}'", mf.name.display());
             }
         }
         FileType::Dylib if rc.merge => merge_dylib(ctx, mf, out),
@@ -1162,7 +1161,7 @@ pub(crate) fn is_foreign<E: Target>(ctx: &Context<E>, mf: &MappedFile) -> bool {
     let Some(arch) = filetype::foreign_arch::<E>(mf) else { return false };
     if ctx.args.allow_sub_type_mismatches && filetype::is_subtype_mismatch::<E>(mf) {
         let name = filetype::without_fat_arch(path_bytes(&mf.name));
-        mold_common::warn!("linking {arch} file '{}' into {} link", display(&name), E::NAME);
+        warn!("linking {arch} file '{}' into {} link", display(&name), E::NAME);
         return false;
     }
     let why = format!("found architecture '{arch}', required architecture '{}'", E::NAME);
@@ -1285,7 +1284,7 @@ fn name_dylib<E: Target>(ctx: &mut Context<E>, idx: usize, rc: ReaderContext) {
         }
     }
     if rc.delay && dylib.has_weak_defs {
-        mold_common::warn!(
+        warn!(
             "delay-init link with '{}' will be ignored because it has weak-def exports",
             display(&dylib.install_name)
         );
@@ -1300,7 +1299,7 @@ fn name_dylib<E: Target>(ctx: &mut Context<E>, idx: usize, rc: ReaderContext) {
     if rc.sub_reexport {
         if dylib.is_weak {
             let name = display(&dylib.install_name);
-            mold_common::warn!("re-exported dylibs cannot be weak-linked: {name}");
+            warn!("re-exported dylibs cannot be weak-linked: {name}");
             dylib.is_weak = false;
         }
         dylib.is_reexported = true;
@@ -1472,7 +1471,7 @@ pub fn load_autolink_deps<E: Target>(ctx: &mut Context<E>) -> bool {
         })
         .collect();
     for msg in warnings.iter().flatten() {
-        mold_common::warn!("{msg}");
+        warn!("{msg}");
     }
     // ld64 does not act on auto-link options in a -r link: the
     // LC_LINKER_OPTION commands are copied into the output object and

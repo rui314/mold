@@ -2,6 +2,7 @@
 //! relative (12-byte entry) form, which needs no fixups.
 
 use mold_common::bits::align_to;
+use mold_common::fatal;
 
 use crate::arch::Target;
 use crate::chunks::output_section::append_tail;
@@ -138,7 +139,7 @@ pub fn write_lists<E: Target>(ctx: &Context<E>, chunk: ChunkId, chunk_addr: u64,
                 let rel =
                     if target == 0 { 0 } else { target.wrapping_sub(field + 4 * k as u64) as i64 };
                 if rel != rel as i32 as i64 {
-                    mold_common::fatal!("relative method list entry out of range");
+                    fatal!("relative method list entry out of range");
                 }
                 buf[at + 4 * k..at + 4 * k + 4].copy_from_slice(&(rel as i32).to_le_bytes());
             }

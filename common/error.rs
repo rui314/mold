@@ -205,6 +205,13 @@ macro_rules! warn {
 }
 
 #[macro_export]
+macro_rules! notice {
+    ($($arg:tt)*) => {
+        $crate::error::notice(format_args!($($arg)*))
+    };
+}
+
+#[macro_export]
 macro_rules! out {
     ($($arg:tt)*) => {
         $crate::error::out(format_args!($($arg)*))

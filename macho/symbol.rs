@@ -1,5 +1,6 @@
 //! Symbols and the global symbol table.
 
+use mold_common::error;
 use rayon::prelude::*;
 
 use crate::arch::Target;
@@ -588,7 +589,7 @@ impl Symbol {
             // ld-prime: where a branch that is no probe site goes.
             None => {
                 if !crate::dtrace::is_dtrace_symbol(self.name()) {
-                    mold_common::error!("undefined symbol: {self}");
+                    error!("undefined symbol: {self}");
                 }
                 0
             }

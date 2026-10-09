@@ -8,6 +8,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use mold_common::path::path_bytes;
+use mold_common::{error, warn};
 use rayon::prelude::*;
 use serde_json::{Value, json};
 
@@ -65,7 +66,7 @@ pub fn write_sdk_imports<E: Target>(ctx: &Context<E>) {
         "inputs": inputs,
     });
     let Ok(file) = std::fs::File::create(path) else {
-        mold_common::warn!("can't open SDK imports file for writing at '{}'", path.display());
+        warn!("can't open SDK imports file for writing at '{}'", path.display());
         return;
     };
     let mut out = std::io::BufWriter::new(file);
@@ -103,7 +104,7 @@ pub fn write_dependency_info<E: Target>(ctx: &Context<E>) {
     entries.sort();
 
     let Ok(file) = std::fs::File::create(path) else {
-        mold_common::warn!("Could not open or create -dependency_info file: {}", path.display());
+        warn!("Could not open or create -dependency_info file: {}", path.display());
         return;
     };
     let mut out = std::io::BufWriter::new(file);
@@ -208,10 +209,7 @@ pub fn write_trace_files<E: Target>(ctx: &Context<E>) {
 fn trace_symbols_dir_file<E: Target>(dir: &Path) -> Option<PathBuf> {
     if std::fs::create_dir_all(dir).is_err() {
         // ld-prime reports errno, which mkpath_np leaves alone.
-        mold_common::error!(
-            "call to mkpath_np({}) failed due to: Undefined error: 0",
-            dir.display()
-        );
+        error!("call to mkpath_np({}) failed due to: Undefined error: 0", dir.display());
         return None;
     }
     // SAFETY: getppid has no preconditions.
@@ -238,7 +236,7 @@ fn append_trace(path: &Path, record: &Value) {
             line.push(b'\n');
             let _ = file.write_all(&line);
         }
-        Err(e) => mold_common::error!(
+        Err(e) => error!(
             "Could not open or create trace file (errno={}): {}",
             e.raw_os_error().unwrap_or(0),
             path.display()
@@ -497,7 +495,7 @@ pub fn trace_symbol_layout<E: Target>(ctx: &Context<E>) {
         Some(path) => match std::fs::File::create(path) {
             Ok(file) => Box::new(std::io::BufWriter::new(file)),
             Err(e) => {
-                mold_common::warn!(
+                warn!(
                     "could not open -trace_symbol_layout_file {} for writing ({})\n",
                     path.display(),
                     e.raw_os_error().unwrap_or(0)
@@ -733,7 +731,7 @@ fn write_map<E: Target>(
     dead: &[Row],
 ) {
     let Ok(file) = std::fs::File::create(path) else {
-        mold_common::warn!("could not write map file: {}", path.display());
+        warn!("could not write map file: {}", path.display());
         return;
     };
     let mut out = std::io::BufWriter::new(file);

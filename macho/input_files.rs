@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use mold_common::bytes::display;
-use mold_common::fatal;
+use mold_common::{error, fatal, warn};
 use portable_atomic::AtomicU64;
 use rayon::prelude::*;
 
@@ -1908,7 +1908,7 @@ impl StagedObject {
     pub fn warn_about_sections(&self) {
         for (i, hdr) in self.sect_hdrs.iter().enumerate() {
             if is_unknown_ld_section(hdr) {
-                mold_common::warn!(
+                warn!(
                     "unknown section: __LD/{} in {}",
                     display(hdr.sectname()),
                     self.mf.name.display()
@@ -1918,7 +1918,7 @@ impl StagedObject {
                 && hdr.p2align.get() != 3
                 && self.isecs.iter().any(|isec| isec.shndx == i as u32 && isec.is_alive())
             {
-                mold_common::warn!(
+                warn!(
                     "section __DATA/__cfstring is not pointer aligned in {}",
                     self.mf.name.display()
                 );
@@ -1941,7 +1941,7 @@ pub fn section_target(
 ) -> (RelocTarget, i64) {
     let i = (r.sect() as usize).wrapping_sub(1);
     let Some(sec) = sections.get(i) else {
-        mold_common::fatal!("{}: bad relocation: {}", file.display(), r.offset.get());
+        fatal!("{}: bad relocation: {}", file.display(), r.offset.get());
     };
     (RelocTarget::Section(i as u32), addr.wrapping_sub(sec.addr.get()) as i64)
 }
@@ -2823,7 +2823,7 @@ impl StagedObject {
         sects.dedup();
         for shndx in sects {
             let sect = &self.sect_hdrs[shndx as usize];
-            mold_common::warn!(
+            warn!(
                 "symbols in {},{} ({}) have unwind information, but it's not a code section",
                 display(sect.segname()),
                 display(sect.sectname()),
@@ -3031,9 +3031,9 @@ pub fn ignore_foreign_file<E: Target>(
     why: &dyn std::fmt::Display,
 ) {
     if ctx.args.arch_errors_fatal {
-        mold_common::error!("{why} in '{}'", mf.name.display());
+        error!("{why} in '{}'", mf.name.display());
     } else {
-        mold_common::warn!("ignoring file '{}': {why}", mf.name.display());
+        warn!("ignoring file '{}': {why}", mf.name.display());
     }
 }
 
@@ -3214,7 +3214,7 @@ impl ReexportWalk<'_> {
         match (on_disk, inline) {
             (Some(mf), _) => self.load_file(ctx, mf, r),
             (None, Some(i)) => self.load_inlined(ctx, i, r),
-            (None, None) => mold_common::warn!(
+            (None, None) => warn!(
                 "ignoring missing indirect library: library for install name '{}' not found",
                 display(&r.name)
             ),
@@ -3501,9 +3501,9 @@ fn check_dylib_platforms<E: Target>(ctx: &Context<E>, mf: &MappedFile, platforms
         platforms_name(platforms),
     );
     if ctx.args.platform == PLATFORM_FIRMWARE {
-        mold_common::warn!("{msg}");
+        warn!("{msg}");
     } else {
-        mold_common::error!("{msg}");
+        error!("{msg}");
     }
 }
 

@@ -9,6 +9,7 @@
 
 use mold_common::bytes::display;
 use mold_common::mem::leak_bytes;
+use mold_common::{error, fatal};
 
 use crate::arch::{LazyRef, Target};
 use crate::chunks::delay_init::{DelayHelper, DelayStub, DelayUse, DlopenHelper};
@@ -31,9 +32,7 @@ pub fn create_delay_init<E: Target>(ctx: &mut Context<E>) {
     let uses = delay_uses(ctx);
     // (A mergeable dylib can't keep them; see lazy_load::create_lazy_loads.)
     if ctx.args.make_mergeable && !uses.is_empty() {
-        mold_common::fatal!(
-            "-delay-l/-delay_library/-delay_framework cannot be used with -make_mergeable"
-        );
+        fatal!("-delay-l/-delay_library/-delay_framework cannot be used with -make_mergeable");
     }
     let dlopen_of = create_dlopen_helpers(ctx, &uses);
     if ctx.delay_init.dlopens.is_empty() {
@@ -59,7 +58,7 @@ fn delay_uses<E: Target>(ctx: &Context<E>) -> Vec<LazyUseSite> {
         if how == LazyRef::Unsupported {
             let (sym, subsec) = (&ctx.symbols[id], ctx.isecs[isec as usize].name(ctx));
             let subsec = display(&subsec);
-            mold_common::error!("use of '{sym}' in '{subsec}' cannot be delayed");
+            error!("use of '{sym}' in '{subsec}' cannot be delayed");
         }
     }
     mold_common::error::checkpoint();
