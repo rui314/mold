@@ -165,16 +165,12 @@ pub fn read_uleb(bytes: &mut &[u8]) -> u64 {
     }
 }
 
-/// Converts bytes from a response file, a load command or a file list
-/// to an OS string. Unix paths can contain arbitrary non-NUL bytes.
-pub fn os_str(bytes: &[u8]) -> &std::ffi::OsStr {
-    std::os::unix::ffi::OsStrExt::from_bytes(bytes)
-}
+pub use mold_common::util::os_str;
 
 /// The bytes of a path, as the file system and Mach-O load commands
 /// hold them.
 pub fn path_bytes(path: &std::path::Path) -> &[u8] {
-    std::os::unix::ffi::OsStrExt::as_bytes(path.as_os_str())
+    path.as_os_str().as_encoded_bytes()
 }
 
 /// Whether a byte is white space as isspace() takes it in the C locale.

@@ -3,7 +3,6 @@
 //! with the string table.
 
 use rayon::prelude::*;
-use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -531,7 +530,7 @@ pub(crate) fn object_stabs_opening<E: Target>(
     let (dir, name) = match crate::dwarf::compile_unit_name(obj.mf.data(), &obj.sect_hdrs) {
         Some((dir, name)) => (dir, name),
         None => {
-            let leaf = obj.mf.name.file_name().map_or(&[][..], |f| f.as_bytes());
+            let leaf = obj.mf.name.file_name().map_or(&[][..], |f| f.as_encoded_bytes());
             (Vec::new(), leaf.to_vec())
         }
     };

@@ -17,6 +17,7 @@ hashbrown = "0.17"
 libc.workspace = true
 memchr = "2.8.3"
 memmap2 = "0.9"
+mold-common.workspace = true
 # std has no 64-bit atomics on hosts such as 32-bit PowerPC.
 portable-atomic = "1"
 rayon = "1.12.0"

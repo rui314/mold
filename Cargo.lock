@@ -487,6 +487,7 @@ dependencies = [
  "libc",
  "memchr",
  "memmap2",
+ "mold-common",
  "portable-atomic",
  "rayon",
  "serde_json",

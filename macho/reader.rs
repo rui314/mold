@@ -12,7 +12,6 @@
 //! infer_platform).
 
 use std::ffi::{OsStr, OsString};
-use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
@@ -157,7 +156,7 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>) {
     for (arg, path) in inputs.iter().zip(&paths) {
         if let (InputArg::Library(LibraryKind::Possible, name), None) = (arg, path) {
             let framework = matches!(name, LibraryName::Framework(_));
-            ctx.autolink_misses.push(missing_hint(framework, name.as_os_str().as_bytes()));
+            ctx.autolink_misses.push(missing_hint(framework, name.as_os_str().as_encoded_bytes()));
         }
     }
 
@@ -443,9 +442,10 @@ fn find_framework<E: Target>(
     arg: &OsStr,
     stubs: bool,
 ) -> Option<PathBuf> {
-    let (name, suffix) = match memchr::memchr(b',', arg.as_bytes()) {
-        Some(comma) => (&arg.as_bytes()[..comma], Some(&arg.as_bytes()[comma + 1..])),
-        None => (arg.as_bytes(), None),
+    let arg = arg.as_encoded_bytes();
+    let (name, suffix) = match memchr::memchr(b',', arg) {
+        Some(comma) => (&arg[..comma], Some(&arg[comma + 1..])),
+        None => (arg, None),
     };
     let name = crate::util::os_str(name);
     let mut framework = name.to_os_string();
@@ -556,7 +556,7 @@ fn search_library<E: Target>(
     name: &OsStr,
     passes: &[&[LibFile]],
 ) -> Option<PathBuf> {
-    if name.as_bytes().ends_with(b".o") {
+    if name.as_encoded_bytes().ends_with(b".o") {
         return ctx.args.library_paths.iter().map(|dir| dir.join(name)).find(|p| prober.exists(p));
     }
     // In a directory, ld-prime looks for each -image_suffix variant
@@ -982,7 +982,7 @@ fn sub_reexport<E: Target>(ctx: &Context<E>, arg: &InputArg, path: &Path) -> boo
         InputArg::Library(
             Plain | Weak | Reexport | Needed | Upward | Lazy,
             LibraryName::Framework(name),
-        ) => Some(name.as_bytes()),
+        ) => Some(name.as_encoded_bytes()),
         _ => None,
     };
     // (Less the suffix a -framework option may give after a comma.)
@@ -990,7 +990,7 @@ fn sub_reexport<E: Target>(ctx: &Context<E>, arg: &InputArg, path: &Path) -> boo
     if framework.is_some_and(|name| umbrellas.iter().any(|u| u == name)) {
         return true;
     }
-    let stem = path.file_stem().map_or(&b""[..], |stem| stem.as_bytes());
+    let stem = path.file_stem().map_or(&b""[..], |stem| stem.as_encoded_bytes());
     if !libraries.iter().any(|l| l == stem) {
         return false;
     }
@@ -1361,7 +1361,7 @@ fn collect_archive_members<E: Target>(
     out: &mut Vec<PendingObject>,
 ) {
     let all_load = ctx.args.all_load
-        && !mf.name.file_name().is_some_and(|f| f.as_bytes().starts_with(b"libclang_rt"));
+        && !mf.name.file_name().is_some_and(|f| f.as_encoded_bytes().starts_with(b"libclang_rt"));
     if rc.force_load {
         ctx.force_loaded.insert(mf.name.clone());
     }
@@ -1693,7 +1693,7 @@ fn autolinked_input<E: Target>(
             // -force_load_swift_libs loads a Swift library's archive
             // whole, by its file name.
             let is_swift = |path: &Path| {
-                path.file_name().is_some_and(|f| f.as_bytes().starts_with(b"libswift"))
+                path.file_name().is_some_and(|f| f.as_encoded_bytes().starts_with(b"libswift"))
             };
             let force_load = ctx.args.force_load_swift_libs && path.is_some_and(is_swift);
             let hidden = lib.starts_with(b"-hidden-l");

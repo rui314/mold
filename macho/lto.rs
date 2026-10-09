@@ -10,7 +10,6 @@
 //! into one module and one object.
 
 use std::ffi::{CStr, CString, c_char, c_int, c_void};
-use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
@@ -278,7 +277,7 @@ pub unsafe fn compile(plugin: &Plugin, cg: *mut c_void, opts: &CodegenOptions) -
     unsafe {
         let save_bitcode = |suffix: &str| {
             if let Some(path) = temp_path(suffix)
-                && let Ok(path) = CString::new(path.as_bytes())
+                && let Ok(path) = CString::new(path.as_encoded_bytes())
             {
                 (plugin.codegen_set_should_embed_uselists)(cg, true);
                 (plugin.codegen_write_merged_modules)(cg, path.as_ptr());
@@ -468,7 +467,7 @@ pub unsafe fn compile_thin(
         if let Some(output) = opts.save_temps {
             make_save_temps_dir(output);
             let dir = temp_path(output, ".thinlto.bcs/");
-            (plugin.thinlto_codegen_set_savetemps_dir)(cg, c(dir.as_bytes()).as_ptr());
+            (plugin.thinlto_codegen_set_savetemps_dir)(cg, c(dir.as_encoded_bytes()).as_ptr());
         }
         let objects_dir = opts.objects_dir.map(|dir| c(crate::util::path_bytes(dir)));
         if let Some(dir) = &objects_dir {

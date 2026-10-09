@@ -11,8 +11,6 @@
 //! chunks::segment_prots). Fixups, symbols and -order_file treat a moved
 //! subsection as any other.
 
-use std::os::unix::ffi::OsStrExt;
-
 use crate::arch::Target;
 use crate::cmdline::SymbolMove;
 use crate::context::Context;
@@ -153,7 +151,7 @@ pub(crate) fn find_moves<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32,
                 let found =
                     names.iter().flatten().map(|&name| match (list.symbols.find(name), leaf) {
                         (-1, Some(leaf)) => {
-                            list.symbols.find(&[leaf.as_bytes(), b":", name].concat())
+                            list.symbols.find(&[leaf.as_encoded_bytes(), b":", name].concat())
                         }
                         (found, _) => found,
                     });

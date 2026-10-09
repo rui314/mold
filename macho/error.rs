@@ -208,7 +208,7 @@ impl From<&str> for RawBuf {
 
 impl From<&std::path::Path> for RawBuf {
     fn from(path: &std::path::Path) -> Self {
-        Self(std::os::unix::ffi::OsStrExt::as_bytes(path.as_os_str()).to_vec())
+        Self(path.as_os_str().as_encoded_bytes().to_vec())
     }
 }
 
@@ -227,13 +227,13 @@ pub trait RawPath {
 
 impl RawPath for std::path::Path {
     fn raw(&self) -> Raw<'_> {
-        raw(std::os::unix::ffi::OsStrExt::as_bytes(self.as_os_str()))
+        raw(self.as_os_str().as_encoded_bytes())
     }
 }
 
 impl RawPath for std::ffi::OsStr {
     fn raw(&self) -> Raw<'_> {
-        raw(std::os::unix::ffi::OsStrExt::as_bytes(self))
+        raw(self.as_encoded_bytes())
     }
 }
 

@@ -6,7 +6,6 @@
 use std::borrow::Cow;
 use std::ffi::{OsStr, OsString};
 use std::io::IsTerminal;
-use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
 
 use crate::arch::Target;
@@ -166,7 +165,7 @@ pub enum Treatment {
 /// Reads a treatment as ld-prime reads them all: warning (or warn),
 /// error, and where the option takes it, suppress.
 fn parse_treatment(opt: &str, arg: &OsStr, suppress: bool) -> Treatment {
-    match arg.as_bytes() {
+    match arg.as_encoded_bytes() {
         b"warning" | b"warn" => Treatment::Warning,
         b"error" => Treatment::Error,
         b"suppress" if suppress => Treatment::Suppress,
@@ -1416,7 +1415,7 @@ fn read_response_file(path: &Path, depth: usize) -> Vec<Cow<'static, OsStr>> {
         } else {
             expanded.push(match tok {
                 Cow::Borrowed(bytes) => Cow::Borrowed(os_str(bytes)),
-                Cow::Owned(bytes) => Cow::Owned(OsString::from_vec(bytes)),
+                Cow::Owned(bytes) => Cow::Owned(os_str(&bytes).to_owned()),
             });
         }
     }
@@ -1427,7 +1426,7 @@ fn read_response_file(path: &Path, depth: usize) -> Vec<Cow<'static, OsStr>> {
 pub fn expand_response_files(argv: Vec<OsString>) -> Vec<Cow<'static, OsStr>> {
     let mut args = Vec::new();
     for arg in argv {
-        if let Some(path) = response_file(arg.as_bytes()) {
+        if let Some(path) = response_file(arg.as_encoded_bytes()) {
             args.extend(read_response_file(path, 1));
         } else {
             args.push(Cow::Owned(arg));
@@ -1441,11 +1440,11 @@ pub fn expand_response_files(argv: Vec<OsString>) -> Vec<Cow<'static, OsStr>> {
 /// comma in the option's argument. Returns the file's path and the
 /// paths.
 fn read_filelist(arg: &OsStr) -> (PathBuf, Vec<PathBuf>) {
-    let (path, dir) = match memchr::memchr(b',', arg.as_bytes()) {
-        Some(comma) => (
-            Path::new(os_str(&arg.as_bytes()[..comma])),
-            Some(Path::new(os_str(&arg.as_bytes()[comma + 1..]))),
-        ),
+    let bytes = arg.as_encoded_bytes();
+    let (path, dir) = match memchr::memchr(b',', bytes) {
+        Some(comma) => {
+            (Path::new(os_str(&bytes[..comma])), Some(Path::new(os_str(&bytes[comma + 1..]))))
+        }
         None => (Path::new(arg), None),
     };
     let text = std::fs::read(path)
@@ -1601,7 +1600,7 @@ impl<'a> ArgCursor<'a> {
     }
 
     fn next_bytes(&mut self, opt: &str) -> Vec<u8> {
-        self.next_arg(opt).as_bytes().to_vec()
+        self.next_arg(opt).as_encoded_bytes().to_vec()
     }
 
     /// A hexadecimal argument (see hex_number).
@@ -1624,7 +1623,7 @@ impl<'a> ArgCursor<'a> {
 /// An argument that is text by nature.
 fn text<'a>(opt: &str, arg: &'a OsStr) -> &'a str {
     arg.to_str().unwrap_or_else(|| {
-        fatal!("option {opt}: expected a UTF-8 argument: {}", raw(arg.as_bytes()))
+        fatal!("option {opt}: expected a UTF-8 argument: {}", raw(arg.as_encoded_bytes()))
     })
 }
 
@@ -1723,8 +1722,8 @@ fn add_linker_option(words: &mut Vec<Vec<u8>>, opt: &[u8]) {
 /// -segprot <segment> <max-prot> <init-prot>.
 fn read_segprot(cur: &mut ArgCursor, st: &mut ParseState, opt: &str) {
     let seg = cur.next_bytes(opt);
-    let max = cur.next_arg(opt).as_bytes();
-    let init = cur.next_arg(opt).as_bytes();
+    let max = cur.next_arg(opt).as_encoded_bytes();
+    let init = cur.next_arg(opt).as_encoded_bytes();
     // __LINKEDIT, which dyld reads, keeps its own.
     if seg == b"__LINKEDIT" {
         crate::warn!("-segprot cannot be used to modify __LINKEDIT protections");
@@ -1743,7 +1742,7 @@ fn read_segment_order(cur: &mut ArgCursor, args: &mut Args, opt: &str) {
     }
     args.segment_order = cur
         .next_arg(opt)
-        .as_bytes()
+        .as_encoded_bytes()
         .split(|&c| c == b':')
         .filter(|s| !s.is_empty())
         .map(<[u8]>::to_vec)
@@ -1763,7 +1762,7 @@ fn read_seg_page_size(cur: &mut ArgCursor, st: &mut ParseState, opt: &str) {
 /// -section_order <segment> <section>:<section>..., once per segment.
 fn read_section_order(cur: &mut ArgCursor, args: &mut Args, opt: &str) {
     let seg = cur.next_bytes(opt);
-    let list: Vec<Vec<u8>> = (cur.next_arg(opt).as_bytes().split(|&c| c == b':'))
+    let list: Vec<Vec<u8>> = (cur.next_arg(opt).as_encoded_bytes().split(|&c| c == b':'))
         .filter(|s| !s.is_empty())
         .map(<[u8]>::to_vec)
         .collect();
@@ -1778,9 +1777,9 @@ fn read_section_order(cur: &mut ArgCursor, args: &mut Args, opt: &str) {
 
 /// -sectcreate <segment> <section> <file>.
 fn read_sectcreate(cur: &mut ArgCursor, args: &mut Args, opt: &str) {
-    let seg = cur.next_arg(opt).as_bytes();
+    let seg = cur.next_arg(opt).as_encoded_bytes();
     let seg = sectcreate_name("segment", seg);
-    let sect = cur.next_arg(opt).as_bytes();
+    let sect = cur.next_arg(opt).as_encoded_bytes();
     let sect = sectcreate_name("section", sect);
     let file = cur.next_path(opt);
     args.sectcreate.push(SectCreate { segname: seg, sectname: sect, path: Some(file) });
@@ -1788,8 +1787,8 @@ fn read_sectcreate(cur: &mut ArgCursor, args: &mut Args, opt: &str) {
 
 /// -add_empty_section <segment> <section>.
 fn read_add_empty_section(cur: &mut ArgCursor, args: &mut Args, opt: &str) {
-    let seg = section_name(cur.next_arg(opt).as_bytes());
-    let sect = section_name(cur.next_arg(opt).as_bytes());
+    let seg = section_name(cur.next_arg(opt).as_encoded_bytes());
+    let sect = section_name(cur.next_arg(opt).as_encoded_bytes());
     args.sectcreate.push(SectCreate { segname: seg, sectname: sect, path: None });
 }
 
@@ -1931,7 +1930,7 @@ fn read_joined_option(cur: &mut ArgCursor, args: &mut Args, raw: &[u8]) {
 /// archive on the command line, though not in a -filelist, for a
 /// library option's (see LibraryKind::Plain).
 fn input_file(path: &OsStr) -> InputArg {
-    if path.as_bytes().ends_with(b".a") {
+    if path.as_encoded_bytes().ends_with(b".a") {
         InputArg::Library(LibraryKind::Plain, LibraryName::Path(PathBuf::from(path)))
     } else {
         InputArg::File(PathBuf::from(path))
@@ -1967,7 +1966,7 @@ fn initial_args() -> Args {
         fatal_warnings: env("LD_TREAT_WARNINGS_AS_ERRORS").is_some_and(|v| v != "0"),
         application_extension: env("LD_APPLICATION_EXTENSION_SAFE").is_some()
             || env("LD_NO_ENCRYPT").is_some(),
-        uuid_salt: env("RC_UUID_SALT").map_or(Vec::new(), |s| s.as_bytes().to_vec()),
+        uuid_salt: env("RC_UUID_SALT").map_or(Vec::new(), |s| s.into_encoded_bytes()),
         ..Default::default()
     }
 }
@@ -1993,7 +1992,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
         // is (see read_joined_option).
         let name = opt.to_string_lossy();
         let name: &str = &name;
-        match opt.as_bytes() {
+        match opt.as_encoded_bytes() {
             // The output, its kind, and what it says of itself.
             b"-o" => args.output = cur.next_path(name),
             b"-execute" => {
@@ -2045,13 +2044,13 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // ld-prime only warns about a missing path, or an empty
             // one or an option's name, which it takes all the same.
             b"-rpath" => match cur.advance() {
-                Some(arg) if !arg.is_empty() && !arg.as_bytes().starts_with(b"-") => {
-                    args.rpaths.push(arg.as_bytes().to_vec());
+                Some(arg) if !arg.is_empty() && !arg.as_encoded_bytes().starts_with(b"-") => {
+                    args.rpaths.push(arg.as_encoded_bytes().to_vec());
                 }
                 _ => crate::warn!("-rpath missing <path>"),
             },
             b"-dyld_env" => {
-                let arg = cur.next_arg(name).as_bytes();
+                let arg = cur.next_arg(name).as_encoded_bytes();
                 if !arg.starts_with(b"DYLD_") || !arg.contains(&b'=') {
                     fatal!(
                         "malformed '-dyld_env {}', arg should be of form 'DYLD_xxx=something'",
@@ -2099,7 +2098,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-arch_errors_fatal" => args.arch_errors_fatal = true,
             b"-allow_sub_type_mismatches" => args.allow_sub_type_mismatches = true,
             b"-no_allow_dylib_sub_type_mismatches" => {
-                st.dylib_subtype_list = Some(cur.next_arg(name).as_bytes());
+                st.dylib_subtype_list = Some(cur.next_arg(name).as_encoded_bytes());
             }
             b"-deployment_target_mismatches" => {
                 args.deployment_target_mismatches = parse_treatment(name, cur.next_arg(name), true);
@@ -2134,12 +2133,12 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-force_load_swift_libs" => args.force_load_swift_libs = true,
             b"-ignore_auto_link" => args.ignore_auto_link = true,
             b"-add_linker_option" => {
-                let opt = cur.next_arg(name).as_bytes();
+                let opt = cur.next_arg(name).as_encoded_bytes();
                 add_linker_option(&mut args.linker_options, opt);
             }
             b"-no_implicit_dylibs" => args.no_implicit_dylibs = true,
             b"-dylib_file" => {
-                add_dylib_file(&mut args, cur.next_arg(name).as_bytes());
+                add_dylib_file(&mut args, cur.next_arg(name).as_encoded_bytes());
             }
             b"-dead_strip_dylibs" => args.dead_strip_dylibs = true,
             b"-warn_unused_dylibs" => st.warn_unused_dylibs = Some(true),
@@ -2172,7 +2171,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-exported_symbol" => {
                 check_export_choice(&mut st.export_choice, ExportChoice::Exported, name);
-                let pat = cur.next_arg(name).as_bytes();
+                let pat = cur.next_arg(name).as_encoded_bytes();
                 add_initial_undefines(&mut args.forced_undefined, [pat]);
                 add_patterns(st.lists.exported_symbols.get_or_insert_default(), [pat]);
             }
@@ -2184,7 +2183,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-unexported_symbol" => {
                 check_export_choice(&mut st.export_choice, ExportChoice::Unexported, name);
-                add_patterns(&mut st.lists.unexported_symbols, [cur.next_arg(name).as_bytes()])
+                add_patterns(
+                    &mut st.lists.unexported_symbols,
+                    [cur.next_arg(name).as_encoded_bytes()],
+                )
             }
             b"-unexported_symbols_list" => {
                 check_export_choice(&mut st.export_choice, ExportChoice::Unexported, name);
@@ -2242,7 +2244,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-no_weak_exports" => args.no_weak_exports = true,
             b"-no_weak_imports" => args.no_weak_imports = true,
             b"-weak_reference_mismatches" => {
-                args.weak_reference_mismatches = match cur.next_arg(name).as_bytes() {
+                args.weak_reference_mismatches = match cur.next_arg(name).as_encoded_bytes() {
                     b"non-weak" => WeakRefMismatches::NonWeak,
                     b"weak" => WeakRefMismatches::Weak,
                     b"error" => WeakRefMismatches::Error,
@@ -2260,7 +2262,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 st.force_weakness_listed = true;
             }
             b"-commons" => {
-                args.commons = match cur.next_arg(name).as_bytes() {
+                args.commons = match cur.next_arg(name).as_encoded_bytes() {
                     b"ignore_dylibs" => CommonsMode::IgnoreDylibs,
                     b"use_dylibs" => CommonsMode::UseDylibs,
                     b"error" => CommonsMode::Error,
@@ -2275,7 +2277,10 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 st.max_default_common_align = Some(align);
             }
             b"-keep_duplicate" => {
-                add_patterns(&mut st.lists.keep_duplicates, [cur.next_arg(name).as_bytes()]);
+                add_patterns(
+                    &mut st.lists.keep_duplicates,
+                    [cur.next_arg(name).as_encoded_bytes()],
+                );
             }
             b"-keep_duplicates_list" => {
                 add_patterns(&mut st.lists.keep_duplicates, cur.next_symbol_list(name));
@@ -2287,7 +2292,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                 parse_treatment(name, cur.next_arg(name), false);
             }
             b"-poison_symbol" => {
-                st.lists.poisoned.add(cur.next_arg(name).as_bytes(), 0);
+                st.lists.poisoned.add(cur.next_arg(name).as_encoded_bytes(), 0);
             }
             b"-poison_symbols_list" => {
                 for pat in cur.next_symbol_list(name) {
@@ -2354,21 +2359,21 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-rename_section" => {
                 let old_seg = cur.next_bytes(name);
                 let old_sect = cur.next_bytes(name);
-                let new_seg = section_name(cur.next_arg(name).as_bytes());
-                let new_sect = section_name(cur.next_arg(name).as_bytes());
+                let new_seg = section_name(cur.next_arg(name).as_encoded_bytes());
+                let new_sect = section_name(cur.next_arg(name).as_encoded_bytes());
                 args.rename_sections.push((old_seg, old_sect, new_seg, new_sect));
             }
             b"-rename_segment" => {
                 let old = cur.next_bytes(name);
-                let new = section_name(cur.next_arg(name).as_bytes());
+                let new = section_name(cur.next_arg(name).as_encoded_bytes());
                 args.rename_segments.push((old, new));
             }
             b"-move_to_rw_segment" => {
-                let segment = cur.next_arg(name).as_bytes();
+                let segment = cur.next_arg(name).as_encoded_bytes();
                 args.move_to_rw.push(symbol_move(name, segment, &cur.next_path(name)));
             }
             b"-move_to_ro_segment" => {
-                let segment = cur.next_arg(name).as_bytes();
+                let segment = cur.next_arg(name).as_encoded_bytes();
                 args.move_to_ro.push(symbol_move(name, segment, &cur.next_path(name)));
             }
             b"-dirty_data_list" => {
@@ -2498,7 +2503,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // ld-prime takes this one without its argument.
             b"-oso_prefix" => {
                 if let Some(arg) = cur.advance() {
-                    args.oso_prefix = Some(arg.as_bytes().to_vec());
+                    args.oso_prefix = Some(arg.as_encoded_bytes().to_vec());
                 }
             }
             // This linker's output is always deterministic, but ld-prime
@@ -2528,7 +2533,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             // ld64 could still link the fragile (version 1) Objective-C
             // ABI of 32-bit macOS; ld-prime knows the modern one alone.
             b"-objc_abi_version" => {
-                let version = cur.next_arg(name).as_bytes();
+                let version = cur.next_arg(name).as_encoded_bytes();
                 if version != b"2" {
                     fatal!("-objc_abi_version '{}' not supported (expected 2)", raw(version));
                 }
@@ -2564,7 +2569,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             }
             b"-arch_variant_lto_cache_mismatch" => {
                 let treatment = cur.next_arg(name);
-                if !matches!(treatment.as_bytes(), b"warning" | b"error" | b"suppress") {
+                if !matches!(treatment.as_encoded_bytes(), b"warning" | b"error" | b"suppress") {
                     fatal!(
                         "-arch_variant_lto_cache_mismatch invalid option (warning | error | suppress)"
                     );
@@ -2606,7 +2611,9 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"--print-dependencies" => args.print_dependencies = true,
             b"-print_statistics" => args.perf = true,
             b"-why_load" | b"-whyload" => args.why_load = true,
-            b"-why_live" => add_patterns(&mut st.lists.why_live, [cur.next_arg(name).as_bytes()]),
+            b"-why_live" => {
+                add_patterns(&mut st.lists.why_live, [cur.next_arg(name).as_encoded_bytes()])
+            }
             b"-t" => args.trace = true,
             b"-trace_symbol_layout" => args.trace_symbol_layout = true,
             b"-trace_symbol_layout_file" => {
@@ -2859,7 +2866,8 @@ fn check_arch_options(target: &TargetTraits, args: &mut Args, st: &ParseState) {
         fatal!("-arch_variant is not supported with -arch {}", target.name);
     }
     let env_subtypes = std::env::var_os("LD_DYLIB_CPU_SUBTYPES_MUST_MATCH");
-    if let Some(list) = st.dylib_subtype_list.or(env_subtypes.as_deref().map(OsStrExt::as_bytes)) {
+    let env_subtypes = env_subtypes.as_deref().map(OsStr::as_encoded_bytes);
+    if let Some(list) = st.dylib_subtype_list.or(env_subtypes) {
         args.dylib_subtypes_must_match = names_cpu_family(list, target.name);
     }
 }

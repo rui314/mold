@@ -1,7 +1,6 @@
 //! The linker passes, in the order the driver runs them.
 
 use std::ops::Range;
-use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -3626,7 +3625,7 @@ fn order_file_ranks<E: Target>(ctx: &Context<E>) -> Option<Vec<u64>> {
         {
             obj = origin;
         }
-        let leaf = ctx.objs[obj].mf.name.file_name().map_or(&[][..], |f| f.as_bytes());
+        let leaf = ctx.objs[obj].mf.name.file_name().map_or(&[][..], |f| f.as_encoded_bytes());
         for &(_, rank) in lines.iter().filter(|(file, _)| file.is_none_or(|f| leaf == f)) {
             ranks[isec] = ranks[isec].min(rank);
             found[rank as usize] = true;
