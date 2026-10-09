@@ -27,20 +27,20 @@ fn macho_header(data: &[u8]) -> Option<MachHeader> {
     if data.len() < size_of::<MachHeader>() {
         return None;
     }
-    let hdr = MachHeader::read_from(data);
-    (hdr.magic == MH_MAGIC_64).then_some(hdr)
+    let hdr = MachHeader::parse(data);
+    (hdr.magic.get() == MH_MAGIC_64).then_some(hdr)
 }
 
 /// Returns the target name of a Mach-O file, or `None` if it is not a
 /// 64-bit Mach-O file for a CPU type we recognize.
 pub fn get_macho_target(data: &[u8]) -> Option<&'static str> {
-    crate::arch::cputype_name(macho_header(data)?.cputype)
+    crate::arch::cputype_name(macho_header(data)?.cputype.get())
 }
 
 /// Returns the file type (MH_EXECUTE, MH_BUNDLE, ...) of a 64-bit
 /// Mach-O file, or `None` if it is not one.
 pub fn get_macho_filetype(data: &[u8]) -> Option<u32> {
-    macho_header(data).map(|hdr| hdr.filetype)
+    macho_header(data).map(|hdr| hdr.filetype.get())
 }
 
 pub fn get_file_type(mf: &MappedFile) -> FileType {
@@ -74,7 +74,7 @@ pub fn get_file_type(mf: &MappedFile) -> FileType {
     }
 
     if let Some(hdr) = macho_header(data) {
-        return match hdr.filetype {
+        return match hdr.filetype.get() {
             MH_OBJECT => FileType::Object,
             MH_DYLIB => FileType::Dylib,
             _ => FileType::Unknown,
@@ -113,17 +113,18 @@ fn takes_arch<E: Target>(filetype: u32, cputype: u32, cpusubtype: u32) -> bool {
 /// The architecture of a thin object or dylib the link doesn't take
 /// (see takes_arch), which ld-prime ignores with a warning.
 pub fn foreign_arch<E: Target>(mf: &MappedFile) -> Option<&'static str> {
-    let hdr = MachHeader::read_from(mf.data());
-    let takes = takes_arch::<E>(hdr.filetype, hdr.cputype, hdr.cpusubtype);
-    (!takes).then(|| arch_name(hdr.cputype, hdr.cpusubtype))
+    let hdr = MachHeader::parse(mf.data());
+    let takes = takes_arch::<E>(hdr.filetype.get(), hdr.cputype.get(), hdr.cpusubtype.get());
+    (!takes).then(|| arch_name(hdr.cputype.get(), hdr.cpusubtype.get()))
 }
 
 /// Whether a thin file the link doesn't take is of its CPU type all the
 /// same, an x86_64h object in an x86_64 link: -allow_sub_type_mismatches
 /// has ld-prime take it, but for arm64e, whose pointers are signed.
 pub fn is_subtype_mismatch<E: Target>(mf: &MappedFile) -> bool {
-    let hdr = MachHeader::read_from(mf.data());
-    hdr.cputype == E::CPUTYPE && arch_name(hdr.cputype, hdr.cpusubtype) != "arm64e"
+    let hdr = MachHeader::parse(mf.data());
+    hdr.cputype.get() == E::CPUTYPE
+        && arch_name(hdr.cputype.get(), hdr.cpusubtype.get()) != "arm64e"
 }
 
 /// A fat (universal) file's slices: each one's CPU type, subtype, file
@@ -162,8 +163,9 @@ pub fn fat_slice<E: Target>(
         .find(|&&(cputype, cpusubtype, _, _)| arch_name(cputype, cpusubtype) == E::NAME)
         .or_else(|| {
             slices.iter().find(|&&(cputype, cpusubtype, off, _)| {
-                let filetype = MachHeader::read_from(&mf.data()[off..]).filetype;
-                !args.dylib_subtypes_must_match && takes_arch::<E>(filetype, cputype, cpusubtype)
+                let filetype = MachHeader::parse(&mf.data()[off..]).filetype;
+                !args.dylib_subtypes_must_match
+                    && takes_arch::<E>(filetype.get(), cputype, cpusubtype)
             })
         })
         .or_else(|| {

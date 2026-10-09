@@ -71,7 +71,7 @@ pub const fn reloc_form(pcrel: bool, p2size: u32, ext: bool) -> u16 {
 /// table: a lookup is much cheaper than testing the fields one by one.
 #[inline]
 pub fn has_reloc_form(r: &MachRel, forms: u16) -> bool {
-    forms >> ((r.bits >> 24) & 0xf) & 1 != 0
+    forms >> ((r.bits.get() >> 24) & 0xf) & 1 != 0
 }
 
 /// Reports relocation record `r` of section `hdr` of object `file`,
@@ -84,7 +84,7 @@ pub fn bad_reloc(file: &Path, hdr: &MachSection, r: &MachRel, what: &str) -> ! {
         file.raw(),
         crate::error::raw(hdr.segname()),
         crate::error::raw(hdr.sectname()),
-        r.offset,
+        r.offset.get(),
         r.ty(),
         r.p2size(),
         r.is_pcrel() as u8,

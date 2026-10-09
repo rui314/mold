@@ -1,61 +1,61 @@
 //! Mach-O file format definitions.
 //!
-//! All Mach-O targets we support (arm64 and x86-64) are little-endian, so
-//! records are defined with plain integer fields and read from and written
-//! to file buffers with unaligned copies. Structures in archive members may
-//! be misaligned in memory, so records are never referenced in place.
+//! All Mach-O targets we support (arm64 and x86-64) are little-endian.
+//! Integer fields are the byte-backed [`U16`], [`U32`] and [`U64`], which
+//! read and write little-endian at any alignment, as the ELF linker's
+//! integers read and write in their target's byte order. The output thus
+//! doesn't depend on the host's byte order, and records have alignment
+//! one: the big tables - symbols and relocations - are viewed in the input
+//! files rather than copied, even in archive members, which may be
+//! misaligned.
 //!
 //! The exception is code signatures: their data structures are big-endian,
 //! and are serialized by hand in the code-signature chunk.
 
+pub use mold_common::record::{
+    FileRecord, record_from_bytes, records_from_bytes, records_from_bytes_mut,
+};
+
 pub use crate::macho_consts::*;
 
-/// A record that can be copied between memory and a file buffer.
-///
-/// # Safety
-///
-/// Implementors must be `#[repr(C)]` with no padding and valid for any bit
-/// pattern.
-pub unsafe trait FileRecord: Copy + Default {
-    fn read_from(buf: &[u8]) -> Self {
-        assert!(buf.len() >= size_of::<Self>());
-        // SAFETY: the buffer is large enough, and any bit pattern is a
-        // valid value of the record type.
-        unsafe { std::ptr::read_unaligned(buf.as_ptr().cast::<Self>()) }
-    }
+/// A little-endian integer, at any alignment.
+macro_rules! le_integer {
+    ($name:ident, $int:ty) => {
+        #[repr(transparent)]
+        #[derive(Clone, Copy, Default, PartialEq, Eq, Hash)]
+        pub struct $name([u8; size_of::<$int>()]);
 
-    fn write_to(&self, buf: &mut [u8]) {
-        assert!(buf.len() >= size_of::<Self>());
-        // SAFETY: the buffer is large enough.
-        unsafe { std::ptr::write_unaligned(buf.as_mut_ptr().cast::<Self>(), *self) }
-    }
+        impl $name {
+            #[inline(always)]
+            pub const fn new(value: $int) -> Self {
+                Self(value.to_le_bytes())
+            }
 
-    fn as_bytes(&self) -> &[u8] {
-        // SAFETY: the record is repr(C) with no padding.
-        unsafe {
-            std::slice::from_raw_parts(
-                std::ptr::from_ref::<Self>(self).cast::<u8>(),
-                size_of::<Self>(),
-            )
+            #[inline(always)]
+            pub const fn get(&self) -> $int {
+                <$int>::from_le_bytes(self.0)
+            }
+
+            #[inline(always)]
+            pub fn set(&mut self, value: $int) {
+                self.0 = value.to_le_bytes();
+            }
         }
-    }
+
+        impl std::fmt::Debug for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                self.get().fmt(f)
+            }
+        }
+
+        // SAFETY: a transparent wrapper around a byte array.
+        unsafe impl FileRecord for $name {}
+    };
 }
 
-/// Reads an array of `n` records starting at `off`.
-pub fn read_array<T: FileRecord>(buf: &[u8], off: usize, n: usize) -> Vec<T> {
-    let mut vec = Vec::with_capacity(n);
-    for i in 0..n {
-        vec.push(T::read_from(&buf[off + i * size_of::<T>()..]));
-    }
-    vec
-}
-
-/// Writes records one after another starting at `off`.
-pub fn write_array<T: FileRecord>(buf: &mut [u8], off: usize, records: &[T]) {
-    for (i, record) in records.iter().enumerate() {
-        record.write_to(&mut buf[off + i * size_of::<T>()..]);
-    }
-}
+le_integer!(U16, u16);
+le_integer!(U32, u32);
+le_integer!(U64, u64);
 
 /// Returns the bytes of a 16-byte, NUL-padded section or segment name.
 /// A name is bytes, not text: ld-prime takes any but NUL, UTF-8 or
@@ -85,80 +85,86 @@ pub fn cut_name(name: &[u8]) -> &[u8] {
     &name[..name.len().min(16)]
 }
 
-#[derive(Clone, Copy, Default, Debug)]
+/// The file header, which Apple calls `mach_header_64`.
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct MachHeader {
-    pub magic: u32,
-    pub cputype: u32,
-    pub cpusubtype: u32,
-    pub filetype: u32,
-    pub ncmds: u32,
-    pub sizeofcmds: u32,
-    pub flags: u32,
-    pub reserved: u32,
+    pub magic: U32,
+    pub cputype: U32,
+    pub cpusubtype: U32,
+    pub filetype: U32,
+    pub ncmds: U32,
+    pub sizeofcmds: U32,
+    pub flags: U32,
+    pub reserved: U32,
 }
 
+// SAFETY: all fields are byte-backed integers or bytes, and `repr(C)` does
+// not insert padding between fields with alignment one.
 unsafe impl FileRecord for MachHeader {}
 
-#[derive(Clone, Copy, Default, Debug)]
+const _: () = assert!(size_of::<MachHeader>() == 32 && align_of::<MachHeader>() == 1);
+
+/// The fields every load command starts with.
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct LoadCommand {
-    pub cmd: u32,
-    pub cmdsize: u32,
+    pub cmd: U32,
+    pub cmdsize: U32,
 }
 
+// SAFETY: all fields are byte-backed integers or bytes, and `repr(C)` does
+// not insert padding between fields with alignment one.
 unsafe impl FileRecord for LoadCommand {}
 
-#[derive(Clone, Copy, Debug)]
+const _: () = assert!(size_of::<LoadCommand>() == 8 && align_of::<LoadCommand>() == 1);
+
+/// LC_SEGMENT_64, which `nsects` section headers follow.
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct SegmentCommand {
-    pub cmd: u32,
-    pub cmdsize: u32,
+    pub cmd: U32,
+    pub cmdsize: U32,
     pub segname: [u8; 16],
-    pub vmaddr: u64,
-    pub vmsize: u64,
-    pub fileoff: u64,
-    pub filesize: u64,
-    pub maxprot: u32,
-    pub initprot: u32,
-    pub nsects: u32,
-    pub flags: u32,
+    pub vmaddr: U64,
+    pub vmsize: U64,
+    pub fileoff: U64,
+    pub filesize: U64,
+    pub maxprot: U32,
+    pub initprot: U32,
+    pub nsects: U32,
+    pub flags: U32,
 }
 
+// SAFETY: all fields are byte-backed integers or bytes, and `repr(C)` does
+// not insert padding between fields with alignment one.
 unsafe impl FileRecord for SegmentCommand {}
 
-impl Default for SegmentCommand {
-    fn default() -> Self {
-        // SAFETY: all-zero bytes are a valid value for a plain record.
-        unsafe { std::mem::zeroed() }
-    }
-}
+const _: () = assert!(size_of::<SegmentCommand>() == 72 && align_of::<SegmentCommand>() == 1);
 
-#[derive(Clone, Copy, Debug)]
+/// A section header, which Apple calls `section_64`.
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct MachSection {
     pub sectname: [u8; 16],
     pub segname: [u8; 16],
-    pub addr: u64,
-    pub size: u64,
-    pub offset: u32,
-    pub p2align: u32,
-    pub reloff: u32,
-    pub nreloc: u32,
-    pub flags: u32,
-    pub reserved1: u32,
-    pub reserved2: u32,
-    pub reserved3: u32,
+    pub addr: U64,
+    pub size: U64,
+    pub offset: U32,
+    pub p2align: U32,
+    pub reloff: U32,
+    pub nreloc: U32,
+    pub flags: U32,
+    pub reserved1: U32,
+    pub reserved2: U32,
+    pub reserved3: U32,
 }
 
+// SAFETY: all fields are byte-backed integers or bytes, and `repr(C)` does
+// not insert padding between fields with alignment one.
 unsafe impl FileRecord for MachSection {}
 
-impl Default for MachSection {
-    fn default() -> Self {
-        // SAFETY: all-zero bytes are a valid value for a plain record.
-        unsafe { std::mem::zeroed() }
-    }
-}
+const _: () = assert!(size_of::<MachSection>() == 80 && align_of::<MachSection>() == 1);
 
 impl MachSection {
     pub fn sectname(&self) -> &[u8] {
@@ -184,7 +190,13 @@ impl MachSection {
     }
 
     pub fn section_type(&self) -> u32 {
-        self.flags & SECTION_TYPE
+        self.flags.get() & SECTION_TYPE
+    }
+
+    /// The section's relocation records in `data`, its file's contents.
+    pub fn relocs<'a>(&self, data: &'a [u8]) -> &'a [MachRel] {
+        let off = self.reloff.get() as usize;
+        records_from_bytes(&data[off..][..self.nreloc.get() as usize * size_of::<MachRel>()])
     }
 
     /// Whether the section's contents are zeros, whatever the file
@@ -195,180 +207,250 @@ impl MachSection {
     }
 }
 
-#[derive(Clone, Copy, Default, Debug)]
+/// LC_SYMTAB: where the symbol table and its string table are.
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct SymtabCommand {
-    pub cmd: u32,
-    pub cmdsize: u32,
-    pub symoff: u32,
-    pub nsyms: u32,
-    pub stroff: u32,
-    pub strsize: u32,
+    pub cmd: U32,
+    pub cmdsize: U32,
+    pub symoff: U32,
+    pub nsyms: U32,
+    pub stroff: U32,
+    pub strsize: U32,
 }
 
+// SAFETY: all fields are byte-backed integers or bytes, and `repr(C)` does
+// not insert padding between fields with alignment one.
 unsafe impl FileRecord for SymtabCommand {}
 
-#[derive(Clone, Copy, Default, Debug)]
+const _: () = assert!(size_of::<SymtabCommand>() == 24 && align_of::<SymtabCommand>() == 1);
+
+/// LC_DYSYMTAB: how the symbol table is partitioned, and the indirect
+/// symbol table and the external and local relocations.
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct DysymtabCommand {
-    pub cmd: u32,
-    pub cmdsize: u32,
-    pub ilocalsym: u32,
-    pub nlocalsym: u32,
-    pub iextdefsym: u32,
-    pub nextdefsym: u32,
-    pub iundefsym: u32,
-    pub nundefsym: u32,
-    pub tocoff: u32,
-    pub ntoc: u32,
-    pub modtaboff: u32,
-    pub nmodtab: u32,
-    pub extrefsymoff: u32,
-    pub nextrefsyms: u32,
-    pub indirectsymoff: u32,
-    pub nindirectsyms: u32,
-    pub extreloff: u32,
-    pub nextrel: u32,
-    pub locreloff: u32,
-    pub nlocrel: u32,
+    pub cmd: U32,
+    pub cmdsize: U32,
+    pub ilocalsym: U32,
+    pub nlocalsym: U32,
+    pub iextdefsym: U32,
+    pub nextdefsym: U32,
+    pub iundefsym: U32,
+    pub nundefsym: U32,
+    pub tocoff: U32,
+    pub ntoc: U32,
+    pub modtaboff: U32,
+    pub nmodtab: U32,
+    pub extrefsymoff: U32,
+    pub nextrefsyms: U32,
+    pub indirectsymoff: U32,
+    pub nindirectsyms: U32,
+    pub extreloff: U32,
+    pub nextrel: U32,
+    pub locreloff: U32,
+    pub nlocrel: U32,
 }
 
+// SAFETY: all fields are byte-backed integers or bytes, and `repr(C)` does
+// not insert padding between fields with alignment one.
 unsafe impl FileRecord for DysymtabCommand {}
 
-#[derive(Clone, Copy, Default, Debug)]
+const _: () = assert!(size_of::<DysymtabCommand>() == 80 && align_of::<DysymtabCommand>() == 1);
+
+/// LC_ID_DYLIB, LC_LOAD_DYLIB and their kin: a dylib, by its install
+/// name at `nameoff`, and its versions.
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct DylibCommand {
-    pub cmd: u32,
-    pub cmdsize: u32,
-    pub nameoff: u32,
-    pub timestamp: u32,
-    pub current_version: u32,
-    pub compatibility_version: u32,
+    pub cmd: U32,
+    pub cmdsize: U32,
+    pub nameoff: U32,
+    pub timestamp: U32,
+    pub current_version: U32,
+    pub compatibility_version: U32,
 }
 
+// SAFETY: all fields are byte-backed integers or bytes, and `repr(C)` does
+// not insert padding between fields with alignment one.
 unsafe impl FileRecord for DylibCommand {}
 
-#[derive(Clone, Copy, Default, Debug)]
+const _: () = assert!(size_of::<DylibCommand>() == 24 && align_of::<DylibCommand>() == 1);
+
+/// LC_LOAD_DYLINKER and its kin: a path at `nameoff`.
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct DylinkerCommand {
-    pub cmd: u32,
-    pub cmdsize: u32,
-    pub nameoff: u32,
+    pub cmd: U32,
+    pub cmdsize: U32,
+    pub nameoff: U32,
 }
 
+// SAFETY: all fields are byte-backed integers or bytes, and `repr(C)` does
+// not insert padding between fields with alignment one.
 unsafe impl FileRecord for DylinkerCommand {}
 
-#[derive(Clone, Copy, Default, Debug)]
+const _: () = assert!(size_of::<DylinkerCommand>() == 12 && align_of::<DylinkerCommand>() == 1);
+
+/// LC_UUID.
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct UuidCommand {
-    pub cmd: u32,
-    pub cmdsize: u32,
+    pub cmd: U32,
+    pub cmdsize: U32,
     pub uuid: [u8; 16],
 }
 
+// SAFETY: all fields are byte-backed integers or bytes, and `repr(C)` does
+// not insert padding between fields with alignment one.
 unsafe impl FileRecord for UuidCommand {}
 
-#[derive(Clone, Copy, Default, Debug)]
+const _: () = assert!(size_of::<UuidCommand>() == 24 && align_of::<UuidCommand>() == 1);
+
+/// LC_BUILD_VERSION, which `ntools` tool versions follow.
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct BuildVersionCommand {
-    pub cmd: u32,
-    pub cmdsize: u32,
-    pub platform: u32,
-    pub minos: u32,
-    pub sdk: u32,
-    pub ntools: u32,
+    pub cmd: U32,
+    pub cmdsize: U32,
+    pub platform: U32,
+    pub minos: U32,
+    pub sdk: U32,
+    pub ntools: U32,
 }
 
+// SAFETY: all fields are byte-backed integers or bytes, and `repr(C)` does
+// not insert padding between fields with alignment one.
 unsafe impl FileRecord for BuildVersionCommand {}
 
-#[derive(Clone, Copy, Default, Debug)]
+const _: () =
+    assert!(size_of::<BuildVersionCommand>() == 24 && align_of::<BuildVersionCommand>() == 1);
+
+/// LC_VERSION_MIN_MACOSX and its kin, which LC_BUILD_VERSION replaced.
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct VersionMinCommand {
-    pub cmd: u32,
-    pub cmdsize: u32,
-    pub version: u32,
-    pub sdk: u32,
+    pub cmd: U32,
+    pub cmdsize: U32,
+    pub version: U32,
+    pub sdk: U32,
 }
 
+// SAFETY: all fields are byte-backed integers or bytes, and `repr(C)` does
+// not insert padding between fields with alignment one.
 unsafe impl FileRecord for VersionMinCommand {}
 
-#[derive(Clone, Copy, Default, Debug)]
+const _: () = assert!(size_of::<VersionMinCommand>() == 16 && align_of::<VersionMinCommand>() == 1);
+
+/// LC_SOURCE_VERSION.
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct SourceVersionCommand {
-    pub cmd: u32,
-    pub cmdsize: u32,
-    pub version: u64,
+    pub cmd: U32,
+    pub cmdsize: U32,
+    pub version: U64,
 }
 
+// SAFETY: all fields are byte-backed integers or bytes, and `repr(C)` does
+// not insert padding between fields with alignment one.
 unsafe impl FileRecord for SourceVersionCommand {}
 
-#[derive(Clone, Copy, Default, Debug)]
+const _: () =
+    assert!(size_of::<SourceVersionCommand>() == 16 && align_of::<SourceVersionCommand>() == 1);
+
+/// LC_MAIN: the entry point, as an offset in the file.
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct EntryPointCommand {
-    pub cmd: u32,
-    pub cmdsize: u32,
-    pub entryoff: u64,
-    pub stacksize: u64,
+    pub cmd: U32,
+    pub cmdsize: U32,
+    pub entryoff: U64,
+    pub stacksize: U64,
 }
 
+// SAFETY: all fields are byte-backed integers or bytes, and `repr(C)` does
+// not insert padding between fields with alignment one.
 unsafe impl FileRecord for EntryPointCommand {}
+
+const _: () = assert!(size_of::<EntryPointCommand>() == 24 && align_of::<EntryPointCommand>() == 1);
 
 /// LC_ROUTINES_64: the image's -init function, by its unslid address;
 /// the fields after it were for the long-gone multi-module dylibs.
-#[derive(Clone, Copy, Default, Debug)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct RoutinesCommand64 {
-    pub cmd: u32,
-    pub cmdsize: u32,
-    pub init_address: u64,
-    pub init_module: u64,
-    pub reserved: [u64; 6],
+    pub cmd: U32,
+    pub cmdsize: U32,
+    pub init_address: U64,
+    pub init_module: U64,
+    pub reserved: [U64; 6],
 }
 
+// SAFETY: all fields are byte-backed integers or bytes, and `repr(C)` does
+// not insert padding between fields with alignment one.
 unsafe impl FileRecord for RoutinesCommand64 {}
 
-#[derive(Clone, Copy, Default, Debug)]
+const _: () = assert!(size_of::<RoutinesCommand64>() == 72 && align_of::<RoutinesCommand64>() == 1);
+
+/// LC_CODE_SIGNATURE, LC_FUNCTION_STARTS and the other load commands
+/// that point at a blob of LINKEDIT data.
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct LinkEditDataCommand {
-    pub cmd: u32,
-    pub cmdsize: u32,
-    pub dataoff: u32,
-    pub datasize: u32,
+    pub cmd: U32,
+    pub cmdsize: U32,
+    pub dataoff: U32,
+    pub datasize: U32,
 }
 
+// SAFETY: all fields are byte-backed integers or bytes, and `repr(C)` does
+// not insert padding between fields with alignment one.
 unsafe impl FileRecord for LinkEditDataCommand {}
 
-#[derive(Clone, Copy, Default, Debug)]
+const _: () =
+    assert!(size_of::<LinkEditDataCommand>() == 16 && align_of::<LinkEditDataCommand>() == 1);
+
+/// LC_DYLD_INFO and LC_DYLD_INFO_ONLY: where the rebase, bind and export
+/// information is.
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct DyldInfoCommand {
-    pub cmd: u32,
-    pub cmdsize: u32,
-    pub rebase_off: u32,
-    pub rebase_size: u32,
-    pub bind_off: u32,
-    pub bind_size: u32,
-    pub weak_bind_off: u32,
-    pub weak_bind_size: u32,
-    pub lazy_bind_off: u32,
-    pub lazy_bind_size: u32,
-    pub export_off: u32,
-    pub export_size: u32,
+    pub cmd: U32,
+    pub cmdsize: U32,
+    pub rebase_off: U32,
+    pub rebase_size: U32,
+    pub bind_off: U32,
+    pub bind_size: U32,
+    pub weak_bind_off: U32,
+    pub weak_bind_size: U32,
+    pub lazy_bind_off: U32,
+    pub lazy_bind_size: U32,
+    pub export_off: U32,
+    pub export_size: U32,
 }
 
+// SAFETY: all fields are byte-backed integers or bytes, and `repr(C)` does
+// not insert padding between fields with alignment one.
 unsafe impl FileRecord for DyldInfoCommand {}
 
+const _: () = assert!(size_of::<DyldInfoCommand>() == 48 && align_of::<DyldInfoCommand>() == 1);
+
 /// A symbol table entry, which Apple calls `nlist_64`.
-#[derive(Clone, Copy, Default, Debug)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct MachSym {
-    pub stroff: u32,
+    pub stroff: U32,
     pub n_type: u8,
     pub sect: u8,
-    pub desc: u16,
-    pub value: u64,
+    pub desc: U16,
+    pub value: U64,
 }
 
+// SAFETY: all fields are byte-backed integers or bytes, and `repr(C)` does
+// not insert padding between fields with alignment one.
 unsafe impl FileRecord for MachSym {}
+
+const _: () = assert!(size_of::<MachSym>() == 16 && align_of::<MachSym>() == 1);
 
 impl MachSym {
     pub fn is_stab(&self) -> bool {
@@ -384,7 +466,7 @@ impl MachSym {
     }
 
     pub fn is_common(&self) -> bool {
-        !self.is_stab() && self.ty() == N_UNDF && self.is_extern() && self.value != 0
+        !self.is_stab() && self.ty() == N_UNDF && self.is_extern() && self.value.get() != 0
     }
 
     /// Whether an external symbol is undefined: a reference, or a
@@ -395,55 +477,62 @@ impl MachSym {
 
     /// Whether a MachSym is an external weak definition in a section.
     pub fn is_weak_def(&self) -> bool {
-        !self.is_stab() && self.is_extern() && self.ty() == N_SECT && self.desc & N_WEAK_DEF != 0
+        !self.is_stab()
+            && self.is_extern()
+            && self.ty() == N_SECT
+            && self.desc.get() & N_WEAK_DEF != 0
     }
 
     /// The log2 of a tentative definition's alignment, which desc
     /// carries in bits 8 to 11 (Apple's GET_COMM_ALIGN).
     pub fn common_p2align(&self) -> u8 {
-        ((self.desc >> 8) & 0xf) as u8
+        ((self.desc.get() >> 8) & 0xf) as u8
     }
 }
 
 /// A relocation record, which Apple calls `relocation_info`. `offset`
 /// is followed by a bitfield laid out, from the least significant bit,
 /// as idx:24, pcrel:1, p2size:2, extern:1, type:4.
-#[derive(Clone, Copy, Default, Debug)]
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct MachRel {
-    pub offset: u32,
-    pub bits: u32,
+    pub offset: U32,
+    pub bits: U32,
 }
 
+// SAFETY: all fields are byte-backed integers or bytes, and `repr(C)` does
+// not insert padding between fields with alignment one.
 unsafe impl FileRecord for MachRel {}
+
+const _: () = assert!(size_of::<MachRel>() == 8 && align_of::<MachRel>() == 1);
 
 impl MachRel {
     pub fn idx(&self) -> u32 {
-        self.bits & 0xff_ffff
+        self.bits.get() & 0xff_ffff
     }
 
     /// The 1-based ordinal of the section a non-extern record refers
     /// to: idx's low byte, as a MachSym's sect is one byte.
     /// ld-prime ignores the rest of the field.
     pub fn sect(&self) -> u32 {
-        self.bits & 0xff
+        self.bits.get() & 0xff
     }
 
     pub fn is_pcrel(&self) -> bool {
-        self.bits & (1 << 24) != 0
+        self.bits.get() & (1 << 24) != 0
     }
 
     /// log2 of the size of the relocated field: 0, 1, 2 or 3.
     pub fn p2size(&self) -> u32 {
-        (self.bits >> 25) & 3
+        (self.bits.get() >> 25) & 3
     }
 
     pub fn is_extern(&self) -> bool {
-        self.bits & (1 << 27) != 0
+        self.bits.get() & (1 << 27) != 0
     }
 
     pub fn ty(&self) -> u8 {
-        (self.bits >> 28) as u8
+        (self.bits.get() >> 28) as u8
     }
 }
 

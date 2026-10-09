@@ -821,10 +821,10 @@ fn bitcode_msym(ls: &LtoSymbol) -> MachSym {
     }
     msym.n_type = N_ABS | N_EXT | if ls.is_private_extern { N_PEXT } else { 0 };
     if ls.is_weak_def {
-        msym.desc |= N_WEAK_DEF;
+        msym.desc.set(msym.desc.get() | N_WEAK_DEF);
     }
     if ls.is_weak_def && ls.can_be_hidden {
-        msym.desc |= N_WEAK_REF;
+        msym.desc.set(msym.desc.get() | N_WEAK_REF);
     }
     msym
 }
@@ -958,8 +958,8 @@ fn lto_roots<E: Target>(ctx: &Context<E>) -> Vec<&[u8]> {
                 (N_ABS, Some(false)) if lost() => MERGED_REF,
                 _ => 0,
             };
-            if defined && msym.desc & N_WEAK_DEF != 0 {
-                flag |= if msym.desc & N_WEAK_REF != 0 { WEAK } else { WEAK | NOT_HIDABLE };
+            if defined && msym.desc.get() & N_WEAK_DEF != 0 {
+                flag |= if msym.desc.get() & N_WEAK_REF != 0 { WEAK } else { WEAK | NOT_HIDABLE };
             } else if defined {
                 flag |= NOT_HIDABLE;
             }

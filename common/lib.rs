@@ -21,6 +21,7 @@ pub mod parallel;
 pub mod path;
 pub mod perf;
 mod prefetch;
+pub mod record;
 pub mod siphash;
 pub mod subprocess;
 pub mod tar;

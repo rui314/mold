@@ -158,8 +158,8 @@ fn add_methlist_section<E: Target>(ctx: &mut Context<E>) -> (u32, u32) {
     let hdr = MachSection {
         sectname: bytes_to_name(b"__objc_methlist"),
         segname: bytes_to_name(b"__TEXT"),
-        p2align: 2,
-        flags: S_REGULAR,
+        p2align: U32::new(2),
+        flags: U32::new(S_REGULAR),
         ..Default::default()
     };
     add_synthetic_section(ctx, hdr)
@@ -242,10 +242,12 @@ fn subsecs_of_sections<E: Target>(ctx: &Context<E>, names: &[&[u8]]) -> Vec<(u32
             sects.flat_map(move |(shndx, hdr, kind)| {
                 let isec = |id: &u32| &ctx.isecs[*id as usize];
                 let start =
-                    obj.subsecs.partition_point(|id| (isec(id).input_addr as u64) < hdr.addr);
+                    obj.subsecs.partition_point(|id| (isec(id).input_addr as u64) < hdr.addr.get());
                 obj.subsecs[start..]
                     .iter()
-                    .take_while(move |id| isec(id).input_addr as u64 <= hdr.addr + hdr.size)
+                    .take_while(move |id| {
+                        isec(id).input_addr as u64 <= hdr.addr.get() + hdr.size.get()
+                    })
                     .filter(move |id| isec(id).shndx == shndx && isec(id).is_alive())
                     .map(move |&id| (id, kind))
             })

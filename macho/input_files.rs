@@ -48,15 +48,19 @@ impl PlatformVersion {
     /// The deployment target of an object file: the one its first
     /// platform load command names, if it has one.
     pub fn of_object(data: &[u8]) -> Option<Self> {
-        let cputype = MachHeader::read_from(data).cputype;
+        let cputype = MachHeader::parse(data).cputype;
         let (cmd, bytes) = load_commands(data).find(|&(cmd, _)| is_platform_cmd(cmd))?;
-        Some(Self::read(cmd, bytes, cputype))
+        Some(Self::read(cmd, bytes, cputype.get()))
     }
 
     fn read(cmd: u32, data: &[u8], cputype: u32) -> Self {
         if cmd == LC_BUILD_VERSION {
-            let cmd = BuildVersionCommand::read_from(data);
-            return Self { platform: cmd.platform, minos: cmd.minos, sdk: cmd.sdk };
+            let cmd = BuildVersionCommand::parse(data);
+            return Self {
+                platform: cmd.platform.get(),
+                minos: cmd.minos.get(),
+                sdk: cmd.sdk.get(),
+            };
         }
         // Legacy Intel mobile objects target the simulator. Arm64
         // simulators always use LC_BUILD_VERSION.
@@ -71,8 +75,8 @@ impl PlatformVersion {
             LC_VERSION_MIN_WATCHOS => PLATFORM_WATCHOS,
             _ => unreachable!(),
         };
-        let vm = VersionMinCommand::read_from(data);
-        Self { platform, minos: vm.version, sdk: vm.sdk }
+        let vm = VersionMinCommand::parse(data);
+        Self { platform, minos: vm.version.get(), sdk: vm.sdk.get() }
     }
 
     /// The deployment target a bitcode file's target triple names, such
@@ -124,21 +128,21 @@ fn is_platform_cmd(cmd: u32) -> bool {
 /// A Mach-O file's load commands, in order: each one's type and its
 /// bytes.
 pub(crate) fn load_commands(data: &[u8]) -> impl Iterator<Item = (u32, &[u8])> {
-    let ncmds = MachHeader::read_from(data).ncmds;
+    let ncmds = MachHeader::parse(data).ncmds.get();
     let mut off = size_of::<MachHeader>();
     (0..ncmds).map(move |_| {
-        let lc = LoadCommand::read_from(&data[off..]);
-        let bytes = &data[off..off + lc.cmdsize as usize];
-        off += lc.cmdsize as usize;
-        (lc.cmd, bytes)
+        let lc = LoadCommand::parse(&data[off..]);
+        let bytes = &data[off..off + lc.cmdsize.get() as usize];
+        off += lc.cmdsize.get() as usize;
+        (lc.cmd.get(), bytes)
     })
 }
 
 /// The section headers of an LC_SEGMENT_64 load command.
 fn segment_sections(cmd: &[u8]) -> impl Iterator<Item = MachSection> + '_ {
-    let nsects = SegmentCommand::read_from(cmd).nsects as usize;
+    let nsects = SegmentCommand::parse(cmd).nsects.get() as usize;
     (0..nsects).map(move |i| {
-        MachSection::read_from(&cmd[size_of::<SegmentCommand>() + i * size_of::<MachSection>()..])
+        MachSection::parse(&cmd[size_of::<SegmentCommand>() + i * size_of::<MachSection>()..])
     })
 }
 
@@ -289,14 +293,14 @@ impl ObjectFile {
         let hi = *addrs.iter().max()?;
         let (id, _) = self.find_subsec(isecs, lo)?;
         let isec = &isecs[id];
-        let is_code = isec.hdr(self).flags & S_ATTR_PURE_INSTRUCTIONS != 0;
+        let is_code = isec.hdr(self).flags.get() & S_ATTR_PURE_INSTRUCTIONS != 0;
         let spans_symbol = || {
             self.mach_syms.iter().any(|msym| {
                 !msym.is_stab()
                     && msym.ty() == N_SECT
                     && msym.sect as u32 == isec.shndx + 1
-                    && lo < msym.value
-                    && msym.value <= hi
+                    && lo < msym.value.get()
+                    && msym.value.get() <= hi
             })
         };
         (is_code
@@ -345,13 +349,13 @@ impl ObjectFile {
             let (n_type, desc) = if msym.is_stab() {
                 continue;
             } else if !msym.is_extern() {
-                (msym.n_type, msym.desc)
+                (msym.n_type, msym.desc.get())
             } else if relocatable
                 && !ctx.args.keep_private_externs
                 && sym.is_private_extern()
                 && matches!(sym.file(), Some(FileId::Obj(o)) if o as usize == id)
             {
-                let desc = msym.desc & (N_ALT_ENTRY | N_NO_DEAD_STRIP | N_WEAK_DEF);
+                let desc = msym.desc.get() & (N_ALT_ENTRY | N_NO_DEAD_STRIP | N_WEAK_DEF);
                 (N_PEXT | msym.ty(), desc)
             } else {
                 continue;
@@ -378,7 +382,13 @@ impl ObjectFile {
                 use crate::relocatable::{section_desc, sym_addr};
                 let isec = sym.input_section();
                 let desc = desc | isec.map_or(0, |isec| section_desc(ctx, isec as usize));
-                MachSym { stroff: 0, n_type, sect, desc, value: sym_addr(ctx, sym_id) }
+                MachSym {
+                    stroff: U32::new(0),
+                    n_type,
+                    sect,
+                    desc: U16::new(desc),
+                    value: U64::new(sym_addr(ctx, sym_id)),
+                }
             } else {
                 MachSym { n_type: msym.ty(), ..local_msym(sect, 0) }
             };
@@ -439,7 +449,7 @@ impl<'a> SymtabBlock<'a> {
 
     #[inline]
     pub fn push(&mut self, msym: MachSym) {
-        msym.write_to(&mut self.syms[self.len * size_of::<MachSym>()..]);
+        msym.write(&mut self.syms[self.len * size_of::<MachSym>()..]);
         self.len += 1;
     }
 
@@ -560,8 +570,8 @@ pub(crate) fn add_data_blob<E: Target>(
     let hdr = MachSection {
         sectname: bytes_to_name(sect),
         segname: bytes_to_name(b"__DATA"),
-        p2align: 3,
-        flags,
+        p2align: U32::new(3),
+        flags: U32::new(flags),
         ..Default::default()
     };
     let (file, shndx) = add_synthetic_section(ctx, hdr);
@@ -578,8 +588,8 @@ pub fn add_data_word<E: Target>(ctx: &mut Context<E>, size: u32) -> u32 {
     let hdr = MachSection {
         sectname: bytes_to_name(b"__data"),
         segname: bytes_to_name(b"__DATA"),
-        p2align: p2align as u32,
-        flags: 0,
+        p2align: U32::new(p2align as u32),
+        flags: U32::new(0),
         ..Default::default()
     };
     let (file, shndx) = add_synthetic_section(ctx, hdr);
@@ -599,7 +609,7 @@ pub(crate) fn add_cstring<E: Target>(ctx: &mut Context<E>, s: &[u8]) -> u32 {
     let hdr = MachSection {
         sectname: bytes_to_name(b"__cstring"),
         segname: bytes_to_name(b"__TEXT"),
-        flags: S_CSTRING_LITERALS,
+        flags: U32::new(S_CSTRING_LITERALS),
         ..Default::default()
     };
     let (file, shndx) = add_synthetic_section(ctx, hdr);
@@ -1000,7 +1010,7 @@ fn is_discarded_section(hdr: &MachSection) -> bool {
 /// one.
 fn record_p2align(hdr: &MachSection, relocatable: bool) -> Option<u8> {
     let size = record_size(hdr)?;
-    let p2align = hdr.p2align as u8;
+    let p2align = hdr.p2align.get() as u8;
     Some(match hdr.section_type() {
         S_4BYTE_LITERALS | S_8BYTE_LITERALS | S_16BYTE_LITERALS => size.trailing_zeros() as u8,
         S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS | S_NON_LAZY_SYMBOL_POINTERS => 3,
@@ -1054,7 +1064,7 @@ pub(crate) fn record_size(hdr: &MachSection) -> Option<u64> {
 /// the slots null.
 fn check_sections(hdrs: &[MachSection], nindirect: u32, file: &Path) {
     for hdr in hdrs {
-        let partial = record_size(hdr).is_some_and(|size| !hdr.size.is_multiple_of(size));
+        let partial = record_size(hdr).is_some_and(|size| !hdr.size.get().is_multiple_of(size));
         let indirect = nindirect != 0
             && matches!(hdr.section_type(), S_LAZY_SYMBOL_POINTERS | S_NON_LAZY_SYMBOL_POINTERS);
         if partial || indirect {
@@ -1268,21 +1278,6 @@ pub struct StagedObject {
     pub loh: Vec<(u8, Vec<u64>)>,
 }
 
-/// The object's MachSym array as a slice of the mapped file, or None
-/// if it is unaligned or truncated (then the caller copies it).
-fn mach_syms_slice(data: &'static [u8], off: usize, n: usize) -> Option<&'static [MachSym]> {
-    let bytes = n.checked_mul(size_of::<MachSym>())?;
-    if off.checked_add(bytes)? > data.len()
-        || !(data.as_ptr() as usize + off).is_multiple_of(std::mem::align_of::<MachSym>())
-    {
-        return None;
-    }
-    // SAFETY: in bounds and aligned (checked above); MachSym is a
-    // #[repr(C)] struct of plain integers, valid for every bit pattern;
-    // the mapping lives for the whole link.
-    Some(unsafe { std::slice::from_raw_parts(data.as_ptr().add(off).cast::<MachSym>(), n) })
-}
-
 /// The MachSym index ranges of an object's local (with stab) and external
 /// (defined and undefined) symbols. With a partitioned table these are
 /// the two halves; without one, both are the whole table and callers'
@@ -1311,7 +1306,7 @@ impl ObjectFile {
         let id = self.sym_subsecs[i];
         (id != crate::symbol::NONE).then(|| {
             let id = id as usize;
-            (id, self.mach_syms[i].value - isecs[id].input_addr as u64)
+            (id, self.mach_syms[i].value.get() - isecs[id].input_addr as u64)
         })
     }
 }
@@ -1334,12 +1329,12 @@ impl StagedObject {
 fn first_global_of(mach_syms: &[MachSym], dysym: Option<&DysymtabCommand>) -> Option<u32> {
     let n = mach_syms.len() as u32;
     if let Some(d) = dysym
-        && d.ilocalsym == 0
+        && d.ilocalsym.get() == 0
         && d.iextdefsym == d.nlocalsym
-        && d.iundefsym == d.iextdefsym + d.nextdefsym
-        && d.iundefsym + d.nundefsym == n
+        && d.iundefsym.get() == d.iextdefsym.get() + d.nextdefsym.get()
+        && d.iundefsym.get() + d.nundefsym.get() == n
     {
-        return Some(d.iextdefsym);
+        return Some(d.iextdefsym.get());
     }
     let is_local = |msym: &MachSym| msym.is_stab() || !msym.is_extern();
     let first = mach_syms.iter().position(|msym| !is_local(msym)).unwrap_or(mach_syms.len());
@@ -1358,7 +1353,7 @@ fn bare_sections(
     strtab: &'static [u8],
     split_ok: bool,
 ) -> Vec<bool> {
-    let mut bare: Vec<bool> = sect_hdrs.iter().map(|s| s.size == 0).collect();
+    let mut bare: Vec<bool> = sect_hdrs.iter().map(|s| s.size.get() == 0).collect();
     for msym in mach_syms {
         if !msym.is_stab()
             && msym.ty() == N_SECT
@@ -1394,13 +1389,16 @@ impl LoadCommands {
             match cmd {
                 LC_SEGMENT_64 => {
                     for mut sect in segment_sections(bytes) {
-                        sect.flags =
-                            canonical_section_flags(sect.segname(), sect.sectname(), sect.flags);
+                        sect.flags = U32::new(canonical_section_flags(
+                            sect.segname(),
+                            sect.sectname(),
+                            sect.flags.get(),
+                        ));
                         cmds.sect_hdrs.push(sect);
                     }
                 }
-                LC_SYMTAB => cmds.symtab = Some(SymtabCommand::read_from(bytes)),
-                LC_DYSYMTAB => cmds.dysymtab = Some(DysymtabCommand::read_from(bytes)),
+                LC_SYMTAB => cmds.symtab = Some(SymtabCommand::parse(bytes)),
+                LC_DYSYMTAB => cmds.dysymtab = Some(DysymtabCommand::parse(bytes)),
                 cmd if is_platform_cmd(cmd) => {
                     let version = PlatformVersion::read(cmd, bytes, E::CPUTYPE);
                     cmds.platform_versions.push(version);
@@ -1425,9 +1423,9 @@ impl LoadCommands {
                     cmds.linker_options.push(strs);
                 }
                 LC_DATA_IN_CODE => {
-                    let cmd = LinkEditDataCommand::read_from(bytes);
-                    for i in 0..cmd.datasize as usize / 8 {
-                        let p = cmd.dataoff as usize + i * 8;
+                    let cmd = LinkEditDataCommand::parse(bytes);
+                    for i in 0..cmd.datasize.get() as usize / 8 {
+                        let p = cmd.dataoff.get() as usize + i * 8;
                         cmds.dice.push((
                             u32::from_le_bytes(data[p..p + 4].try_into().unwrap()),
                             u16::from_le_bytes(data[p + 4..p + 6].try_into().unwrap()),
@@ -1438,10 +1436,10 @@ impl LoadCommands {
                 LC_LINKER_OPTIMIZATION_HINT => {
                     // A stream of ULEB128 triples-and-more: kind, argument
                     // count, then that many instruction addresses.
-                    let cmd = LinkEditDataCommand::read_from(bytes);
+                    let cmd = LinkEditDataCommand::parse(bytes);
                     use mold_common::leb128::read_uleb;
-                    let mut payload =
-                        &data[cmd.dataoff as usize..(cmd.dataoff + cmd.datasize) as usize];
+                    let mut payload = &data[cmd.dataoff.get() as usize
+                        ..(cmd.dataoff.get() + cmd.datasize.get()) as usize];
                     while !payload.is_empty() {
                         let kind = read_uleb(&mut payload);
                         if kind == 0 {
@@ -1460,11 +1458,9 @@ impl LoadCommands {
 }
 
 /// Reads an object's symbol table: its MachSyms and string table. The
-/// MachSym array is used straight from the mmap when it is 8-aligned
-/// (ld64 aligns it; MachSym is #[repr(C)], all integer fields,
-/// so any bytes are a valid value) - no copy of 16 bytes per symbol.
-/// mold borrows its ElfSym array the same way (Cow, Owned only for
-/// synthesized symbols).
+/// MachSym array is used straight from the mmap - no copy of 16 bytes
+/// per symbol - as the ELF linker uses its ElfSym array (Cow, Owned only
+/// for synthesized symbols, or ones the linker changes).
 fn read_symtab(
     data: &'static [u8],
     cmd: Option<&SymtabCommand>,
@@ -1472,12 +1468,10 @@ fn read_symtab(
     let Some(cmd) = cmd else {
         return (std::borrow::Cow::Borrowed(&[]), &[]);
     };
-    let (off, n) = (cmd.symoff as usize, cmd.nsyms as usize);
-    let mach_syms = match mach_syms_slice(data, off, n) {
-        Some(s) => std::borrow::Cow::Borrowed(s),
-        None => std::borrow::Cow::Owned(read_array(data, off, n)),
-    };
-    let strtab = &data[cmd.stroff as usize..(cmd.stroff + cmd.strsize) as usize];
+    let (off, n) = (cmd.symoff.get() as usize, cmd.nsyms.get() as usize);
+    let mach_syms =
+        std::borrow::Cow::Borrowed(records_from_bytes(&data[off..][..n * size_of::<MachSym>()]));
+    let strtab = &data[cmd.stroff.get() as usize..(cmd.stroff.get() + cmd.strsize.get()) as usize];
     (mach_syms, strtab)
 }
 
@@ -1517,9 +1511,9 @@ pub fn stage_object<E: Target>(
     kept_fdes: KeptFdes,
 ) -> StagedObject {
     let data = mf.data();
-    let hdr = MachHeader::read_from(data);
+    let hdr = MachHeader::parse(data);
 
-    if hdr.cputype != E::CPUTYPE {
+    if hdr.cputype.get() != E::CPUTYPE {
         fatal!("{}: incompatible CPU type: expected {}", mf.name.raw(), E::NAME);
     }
 
@@ -1532,14 +1526,14 @@ pub fn stage_object<E: Target>(
 
     let (mach_syms, strtab) = read_symtab(data, cmds.symtab.as_ref());
     let first_global = first_global_of(&mach_syms, cmds.dysymtab.as_ref());
-    let nindirect = cmds.dysymtab.as_ref().map_or(0, |d| d.nindirectsyms);
+    let nindirect = cmds.dysymtab.as_ref().map_or(0, |d| d.nindirectsyms.get());
     check_sections(sect_hdrs, nindirect, &mf.name);
 
     // ld-prime ignores a record shorter than its 8 bytes and reads a
     // longer one's first 8.
     let objc_image_info =
-        sect_hdrs.iter().find(|s| is_objc_image_info(s) && s.size >= 8).map(|s| {
-            let off = s.offset as usize + 4;
+        sect_hdrs.iter().find(|s| is_objc_image_info(s) && s.size.get() >= 8).map(|s| {
+            let off = s.offset.get() as usize + 4;
             let classes = sect_hdrs
                 .iter()
                 .any(|s| s.segname() == b"__DATA" && s.sectname() == b"__objc_classlist");
@@ -1559,7 +1553,7 @@ pub fn stage_object<E: Target>(
         sect_hdrs,
         linker_options: cmds.linker_options,
         platform_versions: cmds.platform_versions,
-        subsections_via_symbols: hdr.flags & MH_SUBSECTIONS_VIA_SYMBOLS != 0,
+        subsections_via_symbols: hdr.flags.get() & MH_SUBSECTIONS_VIA_SYMBOLS != 0,
         isecs: Vec::new(),
         relocs: Vec::new(),
         subsecs: Vec::new(),
@@ -1621,7 +1615,7 @@ impl StagedObject {
             self.sect_hdrs.iter().map(|h| h.section_type() == S_THREAD_LOCAL_ZEROFILL).collect();
         for msym in self.demote_externals_in(&zerofill) {
             msym.n_type &= !(N_EXT | N_PEXT);
-            msym.desc &= !(N_WEAK_DEF | N_WEAK_REF);
+            msym.desc.set(msym.desc.get() & !(N_WEAK_DEF | N_WEAK_REF));
         }
     }
 
@@ -1689,10 +1683,10 @@ impl StagedObject {
                 sect.section_type(),
                 S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS | S_NON_LAZY_SYMBOL_POINTERS
             ) {
-                points.extend((0..sect.size).step_by(8).map(|off| sect.addr + off));
+                points.extend((0..sect.size.get()).step_by(8).map(|off| sect.addr.get() + off));
             }
-            points.push(sect.addr);
-            points.retain(|&a| sect.addr <= a && a <= sect.addr + sect.size);
+            points.push(sect.addr.get());
+            points.retain(|&a| sect.addr.get() <= a && a <= sect.addr.get() + sect.size.get());
             points.sort_unstable();
             points.dedup();
 
@@ -1701,15 +1695,15 @@ impl StagedObject {
 
             let first = self.isecs.len();
             for (j, &start) in points.iter().enumerate() {
-                let end = points.get(j + 1).copied().unwrap_or(sect.addr + sect.size);
+                let end = points.get(j + 1).copied().unwrap_or(sect.addr.get() + sect.size.get());
                 let contents: &[u8] = if is_zerofill {
                     &[]
                 } else {
-                    let lo = sect.offset as u64 + (start - sect.addr);
+                    let lo = sect.offset.get() as u64 + (start - sect.addr.get());
                     &data[lo as usize..(lo + (end - start)) as usize]
                 };
                 let size = end - start;
-                let p2align = record_p2align.unwrap_or(sect.p2align as u8);
+                let p2align = record_p2align.unwrap_or(sect.p2align.get() as u8);
                 self.isecs.push(InputSection {
                     input_addr: start as u32,
                     flags: if bare[i] {
@@ -1743,11 +1737,11 @@ impl StagedObject {
         for msym in self.mach_syms.iter() {
             if !msym.is_stab()
                 && msym.ty() == N_SECT
-                && msym.desc & N_ALT_ENTRY == 0
+                && msym.desc.get() & N_ALT_ENTRY == 0
                 && msym.sect >= 1
                 && let Some(points) = points.get_mut(msym.sect as usize - 1)
             {
-                points.push(msym.value);
+                points.push(msym.value.get());
             }
         }
         points
@@ -1769,7 +1763,7 @@ impl StagedObject {
     ) {
         let sect_hdrs = self.sect_hdrs;
         for (i, sect) in sect_hdrs.iter().enumerate() {
-            if sect_isecs[i].is_empty() || sect.nreloc == 0 {
+            if sect_isecs[i].is_empty() || sect.nreloc.get() == 0 {
                 continue;
             }
             let mut rels = self.read_section_relocs::<E>(i);
@@ -1793,7 +1787,7 @@ impl StagedObject {
 
             let mut pos = 0;
             for sub in sect_isecs[i].clone() {
-                let sub_off = (self.isecs[sub].input_addr as u64 - sect.addr) as u32;
+                let sub_off = (self.isecs[sub].input_addr as u64 - sect.addr.get()) as u32;
                 let end = sub_off + self.isecs[sub].size;
                 let start = self.relocs.len();
                 while pos < rels.len() && rels[pos].offset < end {
@@ -1812,9 +1806,8 @@ impl StagedObject {
     fn read_section_relocs<E: Target>(&self, i: usize) -> Vec<crate::input_sections::Reloc> {
         let sect = &self.sect_hdrs[i];
         let data = self.mf.data();
-        let raw: Vec<MachRel> = read_array(data, sect.reloff as usize, sect.nreloc as usize);
-        let contents = &data[sect.offset as usize..][..sect.size as usize];
-        E::read_relocs(&self.mf.name, self.sect_hdrs, sect, contents, &raw)
+        let contents = &data[sect.offset.get() as usize..][..sect.size.get() as usize];
+        E::read_relocs(&self.mf.name, self.sect_hdrs, sect, contents, sect.relocs(data))
     }
 
     /// Fails the link on a relocation to a section the link drops for
@@ -1853,7 +1846,7 @@ impl StagedObject {
         sect_isecs: &[std::ops::Range<usize>],
     ) -> (usize, u64) {
         let sect = &self.sect_hdrs[sect_pos as usize];
-        let addr = sect.addr.wrapping_add_signed(addend);
+        let addr = sect.addr.get().wrapping_add_signed(addend);
         let range = sect_isecs[sect_pos as usize].clone();
         if range.is_empty() {
             fatal!("{}: relocation against a discarded section", self.mf.name.raw());
@@ -1879,9 +1872,9 @@ impl StagedObject {
                 if msym.is_stab() || msym.ty() != N_SECT {
                     return crate::symbol::NONE;
                 }
-                let end = addrs.partition_point(|&a| a as u64 <= msym.value);
+                let end = addrs.partition_point(|&a| a as u64 <= msym.value.get());
                 let before = &self.subsecs[..end];
-                symbol_subsec_before(&self.isecs, before, msym.sect, msym.value)
+                symbol_subsec_before(&self.isecs, before, msym.sect, msym.value.get())
                     .map_or(crate::symbol::NONE, |(id, _)| id as u32)
             })
             .collect();
@@ -1918,7 +1911,7 @@ impl StagedObject {
                 );
             } else if hdr.segname() == b"__DATA"
                 && hdr.sectname() == b"__cfstring"
-                && hdr.p2align != 3
+                && hdr.p2align.get() != 3
                 && self.isecs.iter().any(|isec| isec.shndx == i as u32 && isec.is_alive())
             {
                 crate::warn!(
@@ -1944,9 +1937,9 @@ pub fn section_target(
 ) -> (RelocTarget, i64) {
     let i = (r.sect() as usize).wrapping_sub(1);
     let Some(sec) = sections.get(i) else {
-        crate::fatal!("{}: bad relocation: {}", file.raw(), r.offset);
+        crate::fatal!("{}: bad relocation: {}", file.raw(), r.offset.get());
     };
-    (RelocTarget::Section(i as u32), addr.wrapping_sub(sec.addr) as i64)
+    (RelocTarget::Section(i as u32), addr.wrapping_sub(sec.addr.get()) as i64)
 }
 
 /// Whether a section's contents are fixed-shape records the linker
@@ -2019,11 +2012,12 @@ fn is_pointer_list(sect: &MachSection) -> bool {
 fn literal_split_points(sect: &MachSection, data: &[u8]) -> Vec<u64> {
     let elem_size = match sect.section_type() {
         S_CSTRING_LITERALS => {
-            let contents = &data[sect.offset as usize..(sect.offset as u64 + sect.size) as usize];
+            let contents = &data
+                [sect.offset.get() as usize..(sect.offset.get() as u64 + sect.size.get()) as usize];
             let mut points = Vec::new();
             let mut start = 0;
             while start < contents.len() {
-                points.push(sect.addr + start as u64);
+                points.push(sect.addr.get() + start as u64);
                 match memchr::memchr(0, &contents[start..]) {
                     Some(len) => start += len + 1,
                     None => break,
@@ -2042,7 +2036,7 @@ fn literal_split_points(sect: &MachSection, data: &[u8]) -> Vec<u64> {
         // __cfstring: one 32-byte constant per record.
         _ => 32,
     };
-    (0..sect.size).step_by(elem_size).map(|o| sect.addr + o).collect()
+    (0..sect.size.get()).step_by(elem_size).map(|o| sect.addr.get() + o).collect()
 }
 
 impl StagedObject {
@@ -2437,7 +2431,7 @@ pub fn parse_object<E: Target>(
 /// but NUL, as ld-prime takes a symbol name, UTF-8 or not. The NUL scan
 /// goes through memchr, which is vectorized.
 fn symbol_name(strtab: &'static [u8], msym: &MachSym) -> &'static [u8] {
-    let rest = strtab.get(msym.stroff as usize..).unwrap_or_default();
+    let rest = strtab.get(msym.stroff.get() as usize..).unwrap_or_default();
     memchr::memchr(0, rest).map_or(rest, |len| &rest[..len])
 }
 
@@ -2489,13 +2483,13 @@ impl StagedObject {
         let file_name = mf.name.raw();
         let data = mf.data();
         let read_u32 = |off: usize| {
-            let off = hdr.offset as usize + off;
+            let off = hdr.offset.get() as usize + off;
             u32::from_le_bytes(data[off..off + 4].try_into().unwrap())
         };
         // An entry holds the function's address, its length, the
         // encoding, the personality and the LSDA, at offsets 0, 8, 12, 16
         // and 24. The pointers are read through their relocations below.
-        let num_entries = hdr.size as usize / ENTRY_SIZE;
+        let num_entries = hdr.size.get() as usize / ENTRY_SIZE;
         let mut records: Vec<UnwindRecord> = (0..num_entries)
             .map(|i| UnwindRecord {
                 isec: u32::MAX,
@@ -2524,11 +2518,11 @@ impl StagedObject {
                 RelocTarget::Sym(sym) => {
                     let msym = &self.mach_syms[sym as usize];
                     let sect_idx = if msym.ty() == N_SECT { msym.sect } else { 0 };
-                    (sect_idx, msym.value.wrapping_add_signed(r.addend))
+                    (sect_idx, msym.value.get().wrapping_add_signed(r.addend))
                 }
                 RelocTarget::Section(sect) => {
                     let addr = self.sect_hdrs[sect as usize].addr;
-                    (sect as u8 + 1, addr.wrapping_add_signed(r.addend))
+                    (sect as u8 + 1, addr.get().wrapping_add_signed(r.addend))
                 }
             };
 
@@ -2551,9 +2545,10 @@ impl StagedObject {
                         RelocTarget::Sym(sym) => Some(sym as usize),
                         // Resolve a section-relative reference back to
                         // the symbol at that address.
-                        RelocTarget::Section(_) => {
-                            self.mach_syms.iter().position(|n| n.is_extern() && n.value == addr)
-                        }
+                        RelocTarget::Section(_) => self
+                            .mach_syms
+                            .iter()
+                            .position(|n| n.is_extern() && n.value.get() == addr),
                     };
                     let Some(sym) = sym else {
                         fatal!("{file_name}: __compact_unwind: unsupported personality");
@@ -2618,15 +2613,16 @@ impl StagedObject {
     fn parse_ehframe<E: Target>(&mut self, hdr: &MachSection, keep_all_fdes: bool) {
         let mf = self.mf;
         let data = mf.data();
-        let rels: Vec<MachRel> = read_array(data, hdr.reloff as usize, hdr.nreloc as usize);
+        let rels = hdr.relocs(data);
 
         // The records borrow from a processed copy of the section, leaked
         // once per object (like its section headers): the CIE/FDE bytes
         // then need no per-record copy, and they carry the pre-applied
         // relocations.
-        let mut contents =
-            data[hdr.offset as usize..(hdr.offset as u64 + hdr.size) as usize].to_vec();
-        apply_eh_frame_relocs::<E>(&mut contents, &rels, &self.mach_syms, &mf.name);
+        let mut contents = data
+            [hdr.offset.get() as usize..(hdr.offset.get() as u64 + hdr.size.get()) as usize]
+            .to_vec();
+        apply_eh_frame_relocs::<E>(&mut contents, rels, &self.mach_syms, &mf.name);
         let contents: &'static [u8] = Vec::leak(contents);
 
         // Split the section into records: a zero ID marks a CIE, anything
@@ -2638,7 +2634,7 @@ impl StagedObject {
         while pos < contents.len() {
             let rec: &'static [u8] = &contents[pos..pos + 4 + word(pos) as usize];
             let id = word(pos + 4);
-            let input_addr = hdr.addr as u32 + pos as u32;
+            let input_addr = hdr.addr.get() as u32 + pos as u32;
             if id == 0 {
                 let (fde_enc, lsda_enc, personality_enc) = parse_cie_augmentation(rec, &mf.name);
                 personality_encs.push(personality_enc);
@@ -2668,8 +2664,8 @@ impl StagedObject {
         // DW_EH_PE_indirect|pcrel|sdata4), which the linker rewrites
         // into the output's GOT (see chunks::eh_frame). It would write
         // any other wrong, as `.cfi_personality 0x10, sym` makes one.
-        for r in &rels {
-            let addr = hdr.addr as u32 + r.offset;
+        for r in rels {
+            let addr = hdr.addr.get() as u32 + r.offset.get();
             let i = self.cies.partition_point(|c| c.input_addr <= addr);
             let Some(i) = i.checked_sub(1) else { continue };
             let cie = &mut self.cies[i];
@@ -2857,7 +2853,7 @@ impl StagedObject {
 /// Whether a section holds code, which is what unwind info describes:
 /// one with instructions, or __TEXT,__text.
 fn is_code_section(hdr: &MachSection) -> bool {
-    hdr.flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0
+    hdr.flags.get() & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0
         || (hdr.segname(), hdr.sectname()) == (b"__TEXT", b"__text")
 }
 
@@ -2880,7 +2876,7 @@ fn apply_eh_frame_relocs<E: Target>(
     file_name: &Path,
 ) {
     let target = |r: MachRel| {
-        if r.is_extern() { mach_syms[r.idx() as usize].value } else { 0 }
+        if r.is_extern() { mach_syms[r.idx() as usize].value.get() } else { 0 }
     };
     let mut i = 0;
     while i < rels.len() {
@@ -2897,7 +2893,7 @@ fn apply_eh_frame_relocs<E: Target>(
         } else {
             fatal!("{}: unsupported relocation in __eh_frame: type={ty}", file_name.raw());
         };
-        let loc = &mut contents[r.offset as usize..];
+        let loc = &mut contents[r.offset.get() as usize..];
         if r.p2size() == 2 {
             let old = u32::from_le_bytes(loc[..4].try_into().unwrap());
             loc[..4].copy_from_slice(&old.wrapping_add(val as u32).to_le_bytes());
@@ -3012,7 +3008,7 @@ pub fn has_objc_sections(mf: &MappedFile) -> bool {
     if data.len() < size_of::<MachHeader>() {
         return false;
     }
-    if MachHeader::read_from(data).magic != MH_MAGIC_64 {
+    if MachHeader::parse(data).magic.get() != MH_MAGIC_64 {
         return false;
     }
     section_headers(data).any(|sect| {
@@ -3393,11 +3389,13 @@ impl DylibIdentity {
             // LC_LOAD_DYLINKER: a string's offset after the header.
             let string = |nameoff| lc_string(bytes, nameoff).to_vec();
             match cmd {
-                LC_ID_DYLIB => id.install_name = string(DylibCommand::read_from(bytes).nameoff),
+                LC_ID_DYLIB => id.install_name = string(DylibCommand::parse(bytes).nameoff.get()),
                 LC_SUB_FRAMEWORK => {
-                    id.umbrella = Some(string(DylinkerCommand::read_from(bytes).nameoff));
+                    id.umbrella = Some(string(DylinkerCommand::parse(bytes).nameoff.get()));
                 }
-                LC_SUB_CLIENT => id.clients.push(string(DylinkerCommand::read_from(bytes).nameoff)),
+                LC_SUB_CLIENT => {
+                    id.clients.push(string(DylinkerCommand::parse(bytes).nameoff.get()))
+                }
                 _ => {}
             }
         }
@@ -3465,16 +3463,16 @@ pub fn is_allowed_client<E: Target>(ctx: &Context<E>, dylib: &DylibIdentity) -> 
 /// built for every simulator too, whose processes run on the Mac and may
 /// load it, at no particular version.
 fn check_dylib_platform<E: Target>(ctx: &Context<E>, mf: &MappedFile) -> u32 {
-    let hdr = MachHeader::read_from(mf.data());
+    let hdr = MachHeader::parse(mf.data());
     let versions: Vec<PlatformVersion> = load_commands(mf.data())
         .filter(|&(cmd, _)| is_platform_cmd(cmd))
-        .map(|(cmd, bytes)| PlatformVersion::read(cmd, bytes, hdr.cputype))
+        .map(|(cmd, bytes)| PlatformVersion::read(cmd, bytes, hdr.cputype.get()))
         .collect();
     if let Some(version) = versions.iter().find(|v| v.platform == ctx.args.platform) {
         return version.minos;
     }
     let mut platforms: Vec<u32> = versions.iter().map(|v| v.platform).collect();
-    if hdr.flags & MH_SIM_SUPPORT != 0 && platforms.contains(&PLATFORM_MACOS) {
+    if hdr.flags.get() & MH_SIM_SUPPORT != 0 && platforms.contains(&PLATFORM_MACOS) {
         platforms.extend([
             PLATFORM_IOSSIMULATOR,
             PLATFORM_WATCHOSSIMULATOR,
@@ -3541,8 +3539,8 @@ fn defined_externals(data: &'static [u8]) -> Vec<(&'static [u8], bool, bool)> {
     let mut dysymtab = None;
     for (cmd, bytes) in load_commands(data) {
         match cmd {
-            LC_SYMTAB => symtab = Some(SymtabCommand::read_from(bytes)),
-            LC_DYSYMTAB => dysymtab = Some(DysymtabCommand::read_from(bytes)),
+            LC_SYMTAB => symtab = Some(SymtabCommand::parse(bytes)),
+            LC_DYSYMTAB => dysymtab = Some(DysymtabCommand::parse(bytes)),
             _ => {}
         }
     }
@@ -3555,9 +3553,10 @@ fn defined_externals(data: &'static [u8]) -> Vec<(&'static [u8], bool, bool)> {
         .filter(|(_, sect)| sect.section_type() == S_THREAD_LOCAL_VARIABLES)
         .map(|(i, _)| (i + 1) as u8)
         .collect();
-    let range = dysym.iextdefsym as usize..(dysym.iextdefsym + dysym.nextdefsym) as usize;
+    let range =
+        dysym.iextdefsym.get() as usize..(dysym.iextdefsym.get() + dysym.nextdefsym.get()) as usize;
     let defs = mach_syms[range].iter().map(|msym| {
-        let weak = msym.desc & N_WEAK_DEF != 0;
+        let weak = msym.desc.get() & N_WEAK_DEF != 0;
         (symbol_name(strtab, msym), weak, tlv_sects.contains(&msym.sect))
     });
     defs.collect()
@@ -3576,13 +3575,13 @@ fn find_export_trie(data: &[u8]) -> Option<(usize, usize)> {
     for (cmd, bytes) in load_commands(data) {
         match cmd {
             LC_DYLD_EXPORTS_TRIE => {
-                let cmd = LinkEditDataCommand::read_from(bytes);
-                trie = Some((cmd.dataoff as usize, cmd.datasize as usize));
+                let cmd = LinkEditDataCommand::parse(bytes);
+                trie = Some((cmd.dataoff.get() as usize, cmd.datasize.get() as usize));
             }
             LC_DYLD_INFO | LC_DYLD_INFO_ONLY => {
-                let cmd = DyldInfoCommand::read_from(bytes);
-                if cmd.export_size != 0 {
-                    trie = Some((cmd.export_off as usize, cmd.export_size as usize));
+                let cmd = DyldInfoCommand::parse(bytes);
+                if cmd.export_size.get() != 0 {
+                    trie = Some((cmd.export_off.get() as usize, cmd.export_size.get() as usize));
                 }
             }
             _ => {}
@@ -3719,18 +3718,18 @@ pub(crate) fn read_dylib_binary(mf: &'static MappedFile) -> DylibBinary {
     for (cmd, bytes) in load_commands(data) {
         match cmd {
             LC_ID_DYLIB => {
-                let cmd = DylibCommand::read_from(bytes);
-                dylib.install_name = lc_string(bytes, cmd.nameoff).to_vec();
-                dylib.current_version = cmd.current_version;
-                dylib.compatibility_version = cmd.compatibility_version;
+                let cmd = DylibCommand::parse(bytes);
+                dylib.install_name = lc_string(bytes, cmd.nameoff.get()).to_vec();
+                dylib.current_version = cmd.current_version.get();
+                dylib.compatibility_version = cmd.compatibility_version.get();
             }
             LC_REEXPORT_DYLIB => {
-                let cmd = DylibCommand::read_from(bytes);
-                dylib.reexports.push(lc_string(bytes, cmd.nameoff).to_vec());
+                let cmd = DylibCommand::parse(bytes);
+                dylib.reexports.push(lc_string(bytes, cmd.nameoff.get()).to_vec());
             }
             LC_RPATH => {
-                let cmd = DylinkerCommand::read_from(bytes);
-                dylib.rpaths.push(loader_rpath(&mf.name, lc_string(bytes, cmd.nameoff)));
+                let cmd = DylinkerCommand::parse(bytes);
+                dylib.rpaths.push(loader_rpath(&mf.name, lc_string(bytes, cmd.nameoff.get())));
             }
             _ => {}
         }
@@ -4083,7 +4082,7 @@ impl ObjectFile {
         if msym.is_stab() || !msym.is_extern() {
             return None;
         }
-        let is_weak = msym.desc & N_WEAK_DEF != 0;
+        let is_weak = msym.desc.get() & N_WEAK_DEF != 0;
         let class: u64 = match msym.ty() {
             N_SECT | N_ABS if self.is_reachable && !is_weak => 0,
             N_SECT | N_ABS if self.is_reachable => 1,
@@ -4116,8 +4115,8 @@ impl ObjectFile {
     /// copy wins only if equally aligned.
     fn weak_definition_rank(&self, isec: &InputSection, msym: &MachSym) -> u64 {
         let private = msym.n_type & N_PEXT != 0 || self.hidden;
-        let auto_hide = !private && msym.desc & N_WEAK_REF != 0;
-        let p2align = isec.p2align_at(msym.value) as u64;
+        let auto_hide = !private && msym.desc.get() & N_WEAK_REF != 0;
+        let p2align = isec.p2align_at(msym.value.get()) as u64;
         ((auto_hide as u64) << 7) | ((private as u64) << 6) | (63 - p2align)
     }
 
@@ -4136,21 +4135,22 @@ impl ObjectFile {
         sym.set_extern(true);
         sym.set_imported(false);
         sym.set_common(false);
-        sym.set_weak_def(msym.desc & N_WEAK_DEF != 0);
+        sym.set_weak_def(msym.desc.get() & N_WEAK_DEF != 0);
         sym.set_private_extern(msym.n_type & N_PEXT != 0 || self.hidden);
-        sym.set_no_dead_strip(msym.desc & (N_NO_DEAD_STRIP | REFERENCED_DYNAMICALLY) != 0);
+        sym.set_no_dead_strip(msym.desc.get() & (N_NO_DEAD_STRIP | REFERENCED_DYNAMICALLY) != 0);
         sym.set_referenced_dynamically(
             msym.ty() == N_SECT
-                && msym.desc & (REFERENCED_DYNAMICALLY | N_WEAK_DEF) == REFERENCED_DYNAMICALLY,
+                && msym.desc.get() & (REFERENCED_DYNAMICALLY | N_WEAK_DEF)
+                    == REFERENCED_DYNAMICALLY,
         );
-        sym.set_alt_entry(msym.desc & N_ALT_ENTRY != 0);
+        sym.set_alt_entry(msym.desc.get() & N_ALT_ENTRY != 0);
 
         let file = FileId::Obj(obj_idx as u32);
         match msym.ty() {
             N_ABS => {
                 sym.set_file(file);
                 sym.set_input_section(None);
-                sym.value = msym.value;
+                sym.value = msym.value.get();
             }
             N_SECT => {
                 let Some((isec, off)) = self.symbol_subsec(isecs, i) else {
@@ -4175,7 +4175,7 @@ impl ObjectFile {
             N_UNDF => {
                 sym.clear_file();
                 sym.set_common(true);
-                sym.value = msym.value;
+                sym.value = msym.value.get();
                 sym.common_p2align = msym.common_p2align();
             }
             _ => unreachable!(),
@@ -4249,7 +4249,7 @@ impl ObjectFile {
                 N_ABS => {
                     sym.set_file(file);
                     sym.set_input_section(None);
-                    sym.value = msym.value;
+                    sym.value = msym.value.get();
                 }
                 N_SECT => {
                     if let Some((isec, off)) = self.symbol_subsec(isecs, i) {
@@ -4257,9 +4257,9 @@ impl ObjectFile {
                         sym.set_input_section(Some(isec as u32));
                         sym.value = off;
                         sym.set_no_dead_strip(
-                            msym.desc & (N_NO_DEAD_STRIP | REFERENCED_DYNAMICALLY) != 0,
+                            msym.desc.get() & (N_NO_DEAD_STRIP | REFERENCED_DYNAMICALLY) != 0,
                         );
-                        sym.set_alt_entry(msym.desc & N_ALT_ENTRY != 0);
+                        sym.set_alt_entry(msym.desc.get() & N_ALT_ENTRY != 0);
                     }
                 }
                 _ => {}
@@ -4305,7 +4305,7 @@ impl ObjectFile {
             let values = values.get_or_insert_with(|| {
                 let mut v: Vec<u64> = (self.mach_syms.iter())
                     .filter(|n| !n.is_stab() && n.ty() == N_SECT)
-                    .map(|n| n.value)
+                    .map(|n| n.value.get())
                     .collect();
                 v.sort_unstable();
                 v.dedup();
@@ -4315,7 +4315,7 @@ impl ObjectFile {
             let (start, end) = (l.input_addr as u64, l.input_addr as u64 + l.size as u64);
             let lo = values.partition_point(|&v| v < start);
             let hi = values.partition_point(|&v| v < end);
-            if values[lo..hi].iter().all(|&v| v == msym.value) {
+            if values[lo..hi].iter().all(|&v| v == msym.value.get()) {
                 out.push((loser, winner as usize));
             }
         }
@@ -4333,7 +4333,7 @@ impl ObjectFile {
                 let RelocTarget::Sym(idx) = rel.target() else { continue };
                 let sym_id = self.symbols[idx as usize];
                 if ctx.symbols[sym_id].is_imported() && seen.insert(sym_id) {
-                    out.push((sym_id, self.mach_syms[idx as usize].desc & N_WEAK_REF != 0));
+                    out.push((sym_id, self.mach_syms[idx as usize].desc.get() & N_WEAK_REF != 0));
                 }
             }
         }

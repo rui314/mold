@@ -310,11 +310,11 @@ pub(crate) fn data_seg<E: Target>(ctx: &Context<E>) -> &'static [u8] {
 /// the offset within it.
 pub fn segment_and_offset<E: Target>(ctx: &Context<E>, addr: u64) -> (usize, u64) {
     for (i, seg) in ctx.segments.iter().enumerate() {
-        if seg.cmd.vmaddr <= addr
-            && addr < seg.cmd.vmaddr + seg.cmd.vmsize
+        if seg.cmd.vmaddr.get() <= addr
+            && addr < seg.cmd.vmaddr.get() + seg.cmd.vmsize.get()
             && seg.name != b"__PAGEZERO"
         {
-            return (i, addr - seg.cmd.vmaddr);
+            return (i, addr - seg.cmd.vmaddr.get());
         }
     }
     unreachable!("no segment contains address {addr:#x}");
@@ -436,38 +436,40 @@ fn holds_moved_code<E: Target>(ctx: &Context<E>, seg: &OutputSegment) -> bool {
 
 fn create_segment_cmd<E: Target>(ctx: &Context<E>, seg: &OutputSegment) -> Vec<u8> {
     let mut cmd = seg.cmd;
-    cmd.cmd = LC_SEGMENT_64;
+    cmd.cmd.set(LC_SEGMENT_64);
     cmd.segname = bytes_to_name(seg.name);
 
     let sects: Vec<&ChunkHeader> =
         seg.chunks.iter().map(|&id| ctx.chunk_header(id)).filter(|hdr| hdr.is_sect).collect();
 
-    cmd.nsects = sects.len() as u32;
-    cmd.cmdsize = (size_of::<SegmentCommand>() + sects.len() * size_of::<MachSection>()) as u32;
-    (cmd.maxprot, cmd.initprot) = segment_prots(ctx, seg);
+    cmd.nsects.set(sects.len() as u32);
+    cmd.cmdsize.set((size_of::<SegmentCommand>() + sects.len() * size_of::<MachSection>()) as u32);
+    let (maxprot, initprot) = segment_prots(ctx, seg);
+    cmd.maxprot.set(maxprot);
+    cmd.initprot.set(initprot);
     // dyld makes __DATA_CONST read-only once binds are applied; not in
     // an image bound for the shared region, which ld-prime leaves to
     // the cache (or kernel collection) builder, but for dyld itself,
     // which makes its own read-only once it has slid itself.
     if seg.name == b"__DATA_CONST" && (!ctx.args.shared_region || ctx.args.is_dylinker()) {
-        cmd.flags = SG_READ_ONLY;
+        cmd.flags.set(SG_READ_ONLY);
     }
     let mut buf = to_vec(&cmd);
     for hdr in sects {
         let mut sect = MachSection {
             sectname: bytes_to_name(hdr.sectname),
             segname: bytes_to_name(seg.name),
-            addr: hdr.addr,
-            size: hdr.size,
-            offset: hdr.fileoff as u32,
-            p2align: hdr.p2align,
-            flags: hdr.flags,
-            reserved1: hdr.reserved1,
-            reserved2: hdr.reserved2,
+            addr: U64::new(hdr.addr),
+            size: U64::new(hdr.size),
+            offset: U32::new(hdr.fileoff as u32),
+            p2align: U32::new(hdr.p2align),
+            flags: U32::new(hdr.flags),
+            reserved1: U32::new(hdr.reserved1),
+            reserved2: U32::new(hdr.reserved2),
             ..Default::default()
         };
         if hdr.is_zerofill() {
-            sect.offset = 0;
+            sect.offset.set(0);
         }
         buf.extend_from_slice(sect.as_bytes());
     }
@@ -486,29 +488,29 @@ fn create_dyld_info_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     let (lazy_bind_off, lazy_bind_size) = place(&ctx.lazy_bind_info.hdr);
     let (export_off, export_size) = place(&ctx.export_trie.hdr);
     to_vec(&DyldInfoCommand {
-        cmd: LC_DYLD_INFO_ONLY,
-        cmdsize: size_of::<DyldInfoCommand>() as u32,
-        rebase_off,
-        rebase_size,
-        bind_off,
-        bind_size,
-        weak_bind_off,
-        weak_bind_size,
-        lazy_bind_off,
-        lazy_bind_size,
-        export_off,
-        export_size,
+        cmd: U32::new(LC_DYLD_INFO_ONLY),
+        cmdsize: U32::new(size_of::<DyldInfoCommand>() as u32),
+        rebase_off: U32::new(rebase_off),
+        rebase_size: U32::new(rebase_size),
+        bind_off: U32::new(bind_off),
+        bind_size: U32::new(bind_size),
+        weak_bind_off: U32::new(weak_bind_off),
+        weak_bind_size: U32::new(weak_bind_size),
+        lazy_bind_off: U32::new(lazy_bind_off),
+        lazy_bind_size: U32::new(lazy_bind_size),
+        export_off: U32::new(export_off),
+        export_size: U32::new(export_size),
     })
 }
 
 fn create_symtab_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     let cmd = SymtabCommand {
-        cmd: LC_SYMTAB,
-        cmdsize: size_of::<SymtabCommand>() as u32,
-        symoff: ctx.symtab.hdr.fileoff as u32,
-        nsyms: ctx.symtab.len() as u32,
-        stroff: ctx.strtab.hdr.fileoff as u32,
-        strsize: ctx.strtab.hdr.size as u32,
+        cmd: U32::new(LC_SYMTAB),
+        cmdsize: U32::new(size_of::<SymtabCommand>() as u32),
+        symoff: U32::new(ctx.symtab.hdr.fileoff as u32),
+        nsyms: U32::new(ctx.symtab.len() as u32),
+        stroff: U32::new(ctx.strtab.hdr.fileoff as u32),
+        strsize: U32::new(ctx.strtab.hdr.size as u32),
     };
     to_vec(&cmd)
 }
@@ -516,36 +518,36 @@ fn create_symtab_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
 fn create_dysymtab_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     let data = &ctx.symtab;
     let mut cmd = DysymtabCommand {
-        cmd: LC_DYSYMTAB,
-        cmdsize: size_of::<DysymtabCommand>() as u32,
-        ilocalsym: 0,
-        nlocalsym: data.nlocal,
-        iextdefsym: data.nlocal,
-        nextdefsym: data.nextdef,
-        iundefsym: data.nlocal + data.nextdef,
-        nundefsym: data.nundef,
+        cmd: U32::new(LC_DYSYMTAB),
+        cmdsize: U32::new(size_of::<DysymtabCommand>() as u32),
+        ilocalsym: U32::new(0),
+        nlocalsym: U32::new(data.nlocal),
+        iextdefsym: U32::new(data.nlocal),
+        nextdefsym: U32::new(data.nextdef),
+        iundefsym: U32::new(data.nlocal + data.nextdef),
+        nundefsym: U32::new(data.nundef),
         ..Default::default()
     };
     if ctx.chunks.contains(&ChunkId::IndirectSymtab) {
-        cmd.indirectsymoff = ctx.indirect_symtab.hdr.fileoff as u32;
-        cmd.nindirectsyms = (ctx.indirect_symtab.hdr.size / 4) as u32;
+        cmd.indirectsymoff.set(ctx.indirect_symtab.hdr.fileoff as u32);
+        cmd.nindirectsyms.set((ctx.indirect_symtab.hdr.size / 4) as u32);
     }
     // An empty relocation table has offset 0, as in ld-prime's output.
     if ctx.chunks.contains(&ChunkId::LocalRelocs) && !ctx.local_relocs.locs.is_empty() {
-        cmd.locreloff = ctx.local_relocs.hdr.fileoff as u32;
-        cmd.nlocrel = ctx.local_relocs.locs.len() as u32;
+        cmd.locreloff.set(ctx.local_relocs.hdr.fileoff as u32);
+        cmd.nlocrel.set(ctx.local_relocs.locs.len() as u32);
     }
     if ctx.chunks.contains(&ChunkId::ExternRelocs) && !ctx.extern_relocs.relocs.is_empty() {
-        cmd.extreloff = ctx.extern_relocs.hdr.fileoff as u32;
-        cmd.nextrel = ctx.extern_relocs.relocs.len() as u32;
+        cmd.extreloff.set(ctx.extern_relocs.hdr.fileoff as u32);
+        cmd.nextrel.set(ctx.extern_relocs.relocs.len() as u32);
     }
     to_vec(&cmd)
 }
 
 fn create_uuid_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     let cmd = UuidCommand {
-        cmd: LC_UUID,
-        cmdsize: size_of::<UuidCommand>() as u32,
+        cmd: U32::new(LC_UUID),
+        cmdsize: U32::new(size_of::<UuidCommand>() as u32),
         uuid: *ctx.uuid.lock().unwrap(),
     };
     to_vec(&cmd)
@@ -582,19 +584,19 @@ pub fn create_version_cmd<E: Target>(platform: u32, minos: u32, sdk: u32) -> Vec
     let old = !arm64_on_mac && !crate::cmdline::VERSION_2018_FALL.reached_by(platform, minos);
     if let Some(cmd) = legacy.filter(|_| old) {
         return to_vec(&VersionMinCommand {
-            cmd,
-            cmdsize: size_of::<VersionMinCommand>() as u32,
-            version: minos,
-            sdk,
+            cmd: U32::new(cmd),
+            cmdsize: U32::new(size_of::<VersionMinCommand>() as u32),
+            version: U32::new(minos),
+            sdk: U32::new(sdk),
         });
     }
     let cmd = BuildVersionCommand {
-        cmd: LC_BUILD_VERSION,
-        cmdsize: (size_of::<BuildVersionCommand>() + 8) as u32,
-        platform,
-        minos,
-        sdk,
-        ntools: 1,
+        cmd: U32::new(LC_BUILD_VERSION),
+        cmdsize: U32::new((size_of::<BuildVersionCommand>() + 8) as u32),
+        platform: U32::new(platform),
+        minos: U32::new(minos),
+        sdk: U32::new(sdk),
+        ntools: U32::new(1),
     };
     let mut buf = to_vec(&cmd);
     // A build_tool_version entry stamping which linker made the
@@ -609,9 +611,9 @@ pub fn create_version_cmd<E: Target>(platform: u32, minos: u32, sdk: u32) -> Vec
 
 fn create_source_version_cmd(version: u64) -> Vec<u8> {
     let cmd = SourceVersionCommand {
-        cmd: LC_SOURCE_VERSION,
-        cmdsize: size_of::<SourceVersionCommand>() as u32,
-        version,
+        cmd: U32::new(LC_SOURCE_VERSION),
+        cmdsize: U32::new(size_of::<SourceVersionCommand>() as u32),
+        version: U64::new(version),
     };
     to_vec(&cmd)
 }
@@ -635,7 +637,7 @@ fn create_load_dylib_cmd(dylib: &crate::input_files::DylibFile) -> Vec<u8> {
     let use_command = flags.count_ones() > 1 || flags & DYLIB_USE_DELAYED_INIT != 0;
     let flags = if use_command { flags } else { 0 };
     let cmd = DylibCommand {
-        cmd: if flags & DYLIB_USE_WEAK_LINK != 0 {
+        cmd: U32::new(if flags & DYLIB_USE_WEAK_LINK != 0 {
             LC_LOAD_WEAK_DYLIB
         } else if flags != 0 {
             LC_LOAD_DYLIB
@@ -647,19 +649,19 @@ fn create_load_dylib_cmd(dylib: &crate::input_files::DylibFile) -> Vec<u8> {
             LC_LOAD_UPWARD_DYLIB
         } else {
             LC_LOAD_DYLIB
-        },
-        cmdsize: 0,
-        nameoff: size_of::<DylibCommand>() as u32,
-        timestamp: 2,
-        current_version: dylib.current_version,
-        compatibility_version: dylib.compatibility_version,
+        }),
+        cmdsize: U32::new(0),
+        nameoff: U32::new(size_of::<DylibCommand>() as u32),
+        timestamp: U32::new(2),
+        current_version: U32::new(dylib.current_version),
+        compatibility_version: U32::new(dylib.compatibility_version),
     };
     let cmd = match flags {
         0 => cmd,
         _ => DylibCommand {
-            nameoff: cmd.nameoff + 4,
-            timestamp: DYLIB_USE_MARKER,
-            compatibility_version: encode_version(1, 0, 0),
+            nameoff: U32::new(cmd.nameoff.get() + 4),
+            timestamp: U32::new(DYLIB_USE_MARKER),
+            compatibility_version: U32::new(encode_version(1, 0, 0)),
             ..cmd
         },
     };
@@ -672,15 +674,15 @@ fn create_load_dylib_cmd(dylib: &crate::input_files::DylibFile) -> Vec<u8> {
 
 fn create_id_dylib_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     let cmd = DylibCommand {
-        cmd: LC_ID_DYLIB,
-        cmdsize: 0,
-        nameoff: size_of::<DylibCommand>() as u32,
+        cmd: U32::new(LC_ID_DYLIB),
+        cmdsize: U32::new(0),
+        nameoff: U32::new(size_of::<DylibCommand>() as u32),
         // The build time once, which prebinding compared with the
         // one a client recorded; nothing reads it now, and ld-prime
         // writes 1 here and 2 in the clients' load commands.
-        timestamp: 1,
-        current_version: ctx.args.current_version,
-        compatibility_version: ctx.args.compatibility_version,
+        timestamp: U32::new(1),
+        current_version: U32::new(ctx.args.current_version),
+        compatibility_version: U32::new(ctx.args.compatibility_version),
     };
     append_string(to_vec(&cmd), ctx.args.output_install_name())
 }
@@ -690,8 +692,11 @@ fn create_id_dylib_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
 // plus the offset of an inline NUL-terminated string, padded to an
 // 8-byte multiple.
 fn create_string_cmd(kind: u32, path: &[u8]) -> Vec<u8> {
-    let cmd =
-        DylinkerCommand { cmd: kind, cmdsize: 0, nameoff: size_of::<DylinkerCommand>() as u32 };
+    let cmd = DylinkerCommand {
+        cmd: U32::new(kind),
+        cmdsize: U32::new(0),
+        nameoff: U32::new(size_of::<DylinkerCommand>() as u32),
+    };
     append_string(to_vec(&cmd), path)
 }
 
@@ -735,10 +740,10 @@ fn create_main_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     // with __TEXT placed by the first round.
     let text = ctx.segments.iter().find(|s| s.name == b"__TEXT").unwrap();
     let cmd = EntryPointCommand {
-        cmd: LC_MAIN,
-        cmdsize: size_of::<EntryPointCommand>() as u32,
-        entryoff: entry_addr(ctx).saturating_sub(text.cmd.vmaddr),
-        stacksize: ctx.args.stack_size,
+        cmd: U32::new(LC_MAIN),
+        cmdsize: U32::new(size_of::<EntryPointCommand>() as u32),
+        entryoff: U64::new(entry_addr(ctx).saturating_sub(text.cmd.vmaddr.get())),
+        stacksize: U64::new(ctx.args.stack_size),
     };
     to_vec(&cmd)
 }
@@ -748,9 +753,9 @@ fn create_main_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
 /// sizes the command before the function has an address.)
 fn create_routines_cmd<E: Target>(ctx: &Context<E>, id: SymbolId) -> Vec<u8> {
     let cmd = RoutinesCommand64 {
-        cmd: LC_ROUTINES_64,
-        cmdsize: size_of::<RoutinesCommand64>() as u32,
-        init_address: ctx.symbols[id].addr(ctx),
+        cmd: U32::new(LC_ROUTINES_64),
+        cmdsize: U32::new(size_of::<RoutinesCommand64>() as u32),
+        init_address: U64::new(ctx.symbols[id].addr(ctx)),
         ..Default::default()
     };
     to_vec(&cmd)
@@ -773,7 +778,8 @@ fn create_unixthread_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     buf[pc..pc + 8].copy_from_slice(&entry_addr(ctx).to_le_bytes());
     if let Some(stack) = ctx.segments.iter().find(|seg| seg.name == b"__UNIXSTACK") {
         let sp = 16 + E::THREAD_STATE_SP_OFFSET;
-        buf[sp..sp + 8].copy_from_slice(&(stack.cmd.vmaddr + stack.cmd.vmsize).to_le_bytes());
+        buf[sp..sp + 8]
+            .copy_from_slice(&(stack.cmd.vmaddr.get() + stack.cmd.vmsize.get()).to_le_bytes());
     }
     buf
 }
@@ -802,10 +808,10 @@ fn create_encryption_info_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
 
 fn create_linkedit_data_cmd(cmd: u32, hdr: &ChunkHeader) -> Vec<u8> {
     let cmd = LinkEditDataCommand {
-        cmd,
-        cmdsize: size_of::<LinkEditDataCommand>() as u32,
-        dataoff: hdr.fileoff as u32,
-        datasize: hdr.size as u32,
+        cmd: U32::new(cmd),
+        cmdsize: U32::new(size_of::<LinkEditDataCommand>() as u32),
+        dataoff: U32::new(hdr.fileoff as u32),
+        datasize: U32::new(hdr.size as u32),
     };
     to_vec(&cmd)
 }
@@ -909,10 +915,10 @@ fn create_load_commands<E: Target>(ctx: &Context<E>) -> Vec<Vec<u8>> {
     let info = &ctx.lazy_load_info;
     for d in &info.dylibs {
         vec.push(to_vec(&LinkEditDataCommand {
-            cmd: LC_LAZY_LOAD_DYLIB_INFO,
-            cmdsize: size_of::<LinkEditDataCommand>() as u32,
-            dataoff: (info.hdr.fileoff + d.offset as u64) as u32,
-            datasize: d.size,
+            cmd: U32::new(LC_LAZY_LOAD_DYLIB_INFO),
+            cmdsize: U32::new(size_of::<LinkEditDataCommand>() as u32),
+            dataoff: U32::new((info.hdr.fileoff + d.offset as u64) as u32),
+            datasize: U32::new(d.size),
         }));
     }
 
@@ -1010,16 +1016,16 @@ fn header_pad<E: Target>(ctx: &Context<E>) -> u64 {
 pub fn write_mach_header<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let cmds = create_load_commands(ctx);
     let hdr = MachHeader {
-        magic: MH_MAGIC_64,
-        cputype: E::CPUTYPE,
-        cpusubtype: E::CPUSUBTYPE,
-        filetype: if ctx.args.preload { MH_PRELOAD } else { ctx.args.output_type },
-        ncmds: cmds.len() as u32,
-        sizeofcmds: cmds.iter().map(Vec::len).sum::<usize>() as u32,
-        flags: mach_header_flags(ctx),
-        reserved: 0,
+        magic: U32::new(MH_MAGIC_64),
+        cputype: U32::new(E::CPUTYPE),
+        cpusubtype: U32::new(E::CPUSUBTYPE),
+        filetype: U32::new(if ctx.args.preload { MH_PRELOAD } else { ctx.args.output_type }),
+        ncmds: U32::new(cmds.len() as u32),
+        sizeofcmds: U32::new(cmds.iter().map(Vec::len).sum::<usize>() as u32),
+        flags: U32::new(mach_header_flags(ctx)),
+        reserved: U32::new(0),
     };
-    hdr.write_to(buf);
+    hdr.write(buf);
 
     let mut off = size_of::<MachHeader>();
     for cmd in &cmds {
@@ -1110,16 +1116,16 @@ fn binds_to_weak<E: Target>(ctx: &Context<E>) -> bool {
 /// Writes the UUID into the LC_UUID command of a header that
 /// `write_mach_header` already wrote, leaving everything else as it is.
 pub fn write_uuid<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
-    let hdr = MachHeader::read_from(buf);
+    let hdr = MachHeader::parse(buf);
     let mut off = size_of::<MachHeader>();
-    for _ in 0..hdr.ncmds {
-        let lc = LoadCommand::read_from(&buf[off..]);
-        if lc.cmd == LC_UUID {
-            let mut cmd = UuidCommand::read_from(&buf[off..]);
+    for _ in 0..hdr.ncmds.get() {
+        let lc = LoadCommand::parse(&buf[off..]);
+        if lc.cmd.get() == LC_UUID {
+            let mut cmd = UuidCommand::parse(&buf[off..]);
             cmd.uuid = *ctx.uuid.lock().unwrap();
-            cmd.write_to(&mut buf[off..]);
+            cmd.write(&mut buf[off..]);
             return;
         }
-        off += lc.cmdsize as usize;
+        off += lc.cmdsize.get() as usize;
     }
 }

@@ -484,12 +484,14 @@ impl<E: Target> Synth<'_, E> {
 
     fn reloc(offset: u32, idx: usize, ty: u8, p2size: u32, pcrel: bool) -> MachRel {
         MachRel {
-            offset,
-            bits: idx as u32 & 0xff_ffff
-                | (pcrel as u32) << 24
-                | p2size << 25
-                | 1 << 27
-                | (ty as u32) << 28,
+            offset: U32::new(offset),
+            bits: U32::new(
+                idx as u32 & 0xff_ffff
+                    | (pcrel as u32) << 24
+                    | p2size << 25
+                    | 1 << 27
+                    | (ty as u32) << 28,
+            ),
         }
     }
 
@@ -623,7 +625,7 @@ impl<E: Target> Synth<'_, E> {
             if f.addend != 0 {
                 let bits =
                     (f.addend as u32 & 0xff_ffff) | 2 << 25 | (ARM64_RELOC_ADDEND as u32) << 28;
-                out.push(MachRel { offset: at, bits });
+                out.push(MachRel { offset: U32::new(at), bits: U32::new(bits) });
             }
         };
         let second = off + 4 * f.second as u32;
@@ -817,7 +819,7 @@ impl<E: Target> Synth<'_, E> {
             }
         }
         let so = |strtab: &mut Strtab, name: &[u8], sect: u8| MachSym {
-            stroff: strtab.add(name),
+            stroff: U32::new(strtab.add(name)),
             n_type: N_SO,
             sect,
             ..Default::default()
@@ -829,11 +831,11 @@ impl<E: Target> Synth<'_, E> {
             out.push(so(strtab, &info.source_dir, 0));
             out.push(so(strtab, &info.source_name, 0));
             out.push(MachSym {
-                stroff: strtab.add(&info.object_path),
+                stroff: U32::new(strtab.add(&info.object_path)),
                 n_type: N_OSO,
                 sect: self.rec.cpusubtype as u8,
-                desc: 1,
-                value: info.mtime as u64,
+                desc: U16::new(1),
+                value: U64::new(info.mtime as u64),
             });
             let mut notes: Vec<(u64, Vec<MachSym>)> = (0..self.rec.entries.len())
                 .filter(|&i| self.rec.entries[i].debug == unit)
@@ -859,7 +861,13 @@ impl<E: Target> Synth<'_, E> {
         if crate::input_sections::is_private_label(&sym.name) {
             return None;
         }
-        let entry = |n_type, stroff, sect, value| MachSym { stroff, n_type, sect, desc: 0, value };
+        let entry = |n_type, stroff, sect, value| MachSym {
+            stroff: U32::new(stroff),
+            n_type,
+            sect,
+            desc: U16::new(0),
+            value: U64::new(value),
+        };
         let name = strtab.add(&sym.name);
         let (sect, offset) = match sym.place {
             SymPlace::Common { .. } => return Some((u64::MAX, vec![entry(N_GSYM, name, 0, 0)])),
@@ -920,26 +928,26 @@ impl<E: Target> Synth<'_, E> {
     fn push_symbol(&self, table: &mut SymbolTable, i: usize) {
         let s = &self.symbols[i];
         let mut n = MachSym {
-            stroff: table.strtab.add(&s.name),
+            stroff: U32::new(table.strtab.add(&s.name)),
             n_type: s.n_type,
             sect: 0,
-            desc: s.desc,
-            value: 0,
+            desc: U16::new(s.desc),
+            value: U64::new(0),
         };
         match s.place {
             SymPlace::Defined { sect, offset } => {
                 n.n_type |= N_SECT;
                 n.sect = sect as u8 + 1;
-                n.value = self.sections[sect].addr + offset;
+                n.value.set(self.sections[sect].addr + offset);
             }
             SymPlace::Undefined => {}
             SymPlace::Common { size, p2align } => {
-                n.value = size;
-                n.desc |= (p2align as u16 & 0xf) << 8;
+                n.value.set(size);
+                n.desc.set(n.desc.get() | (p2align as u16 & 0xf) << 8);
             }
             SymPlace::Absolute(value) => {
                 n.n_type |= N_ABS;
-                n.value = value;
+                n.value.set(value);
             }
         }
         table.index[i] = table.mach_syms.len() as u32;
@@ -978,7 +986,7 @@ impl<E: Target> Synth<'_, E> {
             for r in &s.relocs {
                 let mut r = *r;
                 if r.is_extern() {
-                    r.bits = (r.bits & !0xff_ffff) | table.index[r.idx() as usize];
+                    r.bits.set((r.bits.get() & !0xff_ffff) | table.index[r.idx() as usize]);
                 }
                 out.extend_from_slice(r.as_bytes());
             }
@@ -1017,26 +1025,28 @@ impl<E: Target> Synth<'_, E> {
             off += bytes.len();
         };
         let header = MachHeader {
-            magic: MH_MAGIC_64,
-            cputype: self.rec.cputype,
-            cpusubtype: self.rec.cpusubtype,
-            filetype: MH_OBJECT,
-            ncmds: 4,
-            sizeofcmds: self.load_commands_size() as u32,
-            flags: MH_SUBSECTIONS_VIA_SYMBOLS,
-            reserved: 0,
+            magic: U32::new(MH_MAGIC_64),
+            cputype: U32::new(self.rec.cputype),
+            cpusubtype: U32::new(self.rec.cpusubtype),
+            filetype: U32::new(MH_OBJECT),
+            ncmds: U32::new(4),
+            sizeofcmds: U32::new(self.load_commands_size() as u32),
+            flags: U32::new(MH_SUBSECTIONS_VIA_SYMBOLS),
+            reserved: U32::new(0),
         };
         put(header.as_bytes());
         let nsects = self.sections.len();
         let segment = SegmentCommand {
-            cmd: LC_SEGMENT_64,
-            cmdsize: (size_of::<SegmentCommand>() + nsects * size_of::<MachSection>()) as u32,
-            vmsize: self.sections.iter().map(|s| s.addr + s.size).max().unwrap_or(0),
-            fileoff: layout.seg_fileoff,
-            filesize: layout.seg_filesize,
-            maxprot: VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE,
-            initprot: VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE,
-            nsects: nsects as u32,
+            cmd: U32::new(LC_SEGMENT_64),
+            cmdsize: U32::new(
+                (size_of::<SegmentCommand>() + nsects * size_of::<MachSection>()) as u32,
+            ),
+            vmsize: U64::new(self.sections.iter().map(|s| s.addr + s.size).max().unwrap_or(0)),
+            fileoff: U64::new(layout.seg_fileoff),
+            filesize: U64::new(layout.seg_filesize),
+            maxprot: U32::new(VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE),
+            initprot: U32::new(VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE),
+            nsects: U32::new(nsects as u32),
             ..Default::default()
         };
         put(segment.as_bytes());
@@ -1044,44 +1054,44 @@ impl<E: Target> Synth<'_, E> {
             let hdr = MachSection {
                 sectname: s.sectname,
                 segname: s.segname,
-                addr: s.addr,
-                size: s.size,
-                offset: layout.sect_offs[i],
-                p2align: s.p2align as u32,
-                reloff: if s.relocs.is_empty() { 0 } else { layout.reloc_offs[i] },
-                nreloc: s.relocs.len() as u32,
-                flags: s.flags,
+                addr: U64::new(s.addr),
+                size: U64::new(s.size),
+                offset: U32::new(layout.sect_offs[i]),
+                p2align: U32::new(s.p2align as u32),
+                reloff: U32::new(if s.relocs.is_empty() { 0 } else { layout.reloc_offs[i] }),
+                nreloc: U32::new(s.relocs.len() as u32),
+                flags: U32::new(s.flags),
                 ..Default::default()
             };
             put(hdr.as_bytes());
         }
         let build = BuildVersionCommand {
-            cmd: LC_BUILD_VERSION,
-            cmdsize: size_of::<BuildVersionCommand>() as u32,
-            platform: self.rec.platform,
-            minos: self.rec.minos,
-            sdk: self.rec.sdk,
-            ntools: 0,
+            cmd: U32::new(LC_BUILD_VERSION),
+            cmdsize: U32::new(size_of::<BuildVersionCommand>() as u32),
+            platform: U32::new(self.rec.platform),
+            minos: U32::new(self.rec.minos),
+            sdk: U32::new(self.rec.sdk),
+            ntools: U32::new(0),
         };
         put(build.as_bytes());
         let symtab = SymtabCommand {
-            cmd: LC_SYMTAB,
-            cmdsize: size_of::<SymtabCommand>() as u32,
-            symoff: layout.symoff as u32,
-            nsyms: table.mach_syms.len() as u32,
-            stroff: layout.stroff as u32,
-            strsize: table.strtab.data.len() as u32,
+            cmd: U32::new(LC_SYMTAB),
+            cmdsize: U32::new(size_of::<SymtabCommand>() as u32),
+            symoff: U32::new(layout.symoff as u32),
+            nsyms: U32::new(table.mach_syms.len() as u32),
+            stroff: U32::new(layout.stroff as u32),
+            strsize: U32::new(table.strtab.data.len() as u32),
         };
         put(symtab.as_bytes());
         let dysymtab = DysymtabCommand {
-            cmd: LC_DYSYMTAB,
-            cmdsize: size_of::<DysymtabCommand>() as u32,
-            ilocalsym: 0,
-            nlocalsym: table.nlocal as u32,
-            iextdefsym: table.nlocal as u32,
-            nextdefsym: table.nextdef as u32,
-            iundefsym: (table.nlocal + table.nextdef) as u32,
-            nundefsym: (table.mach_syms.len() - table.nlocal - table.nextdef) as u32,
+            cmd: U32::new(LC_DYSYMTAB),
+            cmdsize: U32::new(size_of::<DysymtabCommand>() as u32),
+            ilocalsym: U32::new(0),
+            nlocalsym: U32::new(table.nlocal as u32),
+            iextdefsym: U32::new(table.nlocal as u32),
+            nextdefsym: U32::new(table.nextdef as u32),
+            iundefsym: U32::new((table.nlocal + table.nextdef) as u32),
+            nundefsym: U32::new((table.mach_syms.len() - table.nlocal - table.nextdef) as u32),
             ..Default::default()
         };
         put(dysymtab.as_bytes());

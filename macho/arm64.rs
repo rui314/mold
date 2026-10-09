@@ -1205,7 +1205,7 @@ impl Target for Arm64 {
             // relocs have addends in the relocated field. Addends for
             // other types of relocations are specified by prepending an
             // ADDEND reloc, whose address ld-prime takes for the pair's.
-            let offset = rels[i].offset;
+            let offset = rels[i].offset.get();
             let loc = &contents[offset as usize..];
             let mut addend = 0;
             if rels[i].ty() == ARM64_RELOC_ADDEND {

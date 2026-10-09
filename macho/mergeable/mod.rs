@@ -450,8 +450,8 @@ pub(crate) const FLAG_CATEGORY_CLASS_PROPERTIES: u64 = 1 << 29;
 /// Where a dylib's LC_ATOM_INFO data is in its file, if it has one.
 fn record_range(data: &[u8]) -> Option<(usize, usize)> {
     let (_, cmd) = load_commands(data).find(|&(cmd, _)| cmd == LC_ATOM_INFO)?;
-    let cmd = LinkEditDataCommand::read_from(cmd);
-    Some((cmd.dataoff as usize, cmd.datasize as usize))
+    let cmd = LinkEditDataCommand::parse(cmd);
+    Some((cmd.dataoff.get() as usize, cmd.datasize.get() as usize))
 }
 
 impl MergeableRecord {

@@ -196,7 +196,7 @@ fn collect_references<E: Target>(ctx: &Context<E>, only_alive: bool) -> Referenc
         for (msym, &sym_id) in obj.mach_syms[r.clone()].iter().zip(&obj.symbols[r]) {
             if msym.is_undef() {
                 refs.used[sym_id as usize].store(true, Ordering::Relaxed);
-                if msym.desc & N_WEAK_REF != 0 {
+                if msym.desc.get() & N_WEAK_REF != 0 {
                     refs.weak[sym_id as usize].store(true, Ordering::Relaxed);
                 } else {
                     refs.strong[sym_id as usize].store(true, Ordering::Relaxed);
@@ -258,7 +258,7 @@ fn live_common_symbols<E: Target>(ctx: &Context<E>) -> Vec<(SymbolId, u64, u8, b
                 if !msym.is_stab() && msym.is_extern() && msym.ty() == N_UNDF && msym.is_common() {
                     let p2align = msym.common_p2align();
                     let pext = msym.n_type & N_PEXT != 0 || obj.hidden;
-                    Some((sym_id, msym.value, p2align, pext))
+                    Some((sym_id, msym.value.get(), p2align, pext))
                 } else {
                     None
                 }
@@ -1146,9 +1146,9 @@ pub fn convert_common_symbols<E: Target>(ctx: &mut Context<E>) {
         let hdr = MachSection {
             sectname: bytes_to_name(b"__common"),
             segname: bytes_to_name(b"__DATA"),
-            size,
-            p2align: p2align as u32,
-            flags: S_ZEROFILL,
+            size: U64::new(size),
+            p2align: U32::new(p2align as u32),
+            flags: U32::new(S_ZEROFILL),
             ..Default::default()
         };
         let (file, shndx) = add_synthetic_section(ctx, hdr);
@@ -1327,7 +1327,7 @@ pub fn auto_hide_weak_defs<E: Target>(ctx: &mut Context<E>) {
             if !msym.is_weak_def() {
                 continue;
             }
-            let bits = if msym.desc & N_WEAK_REF != 0 { SEEN } else { SEEN | NOT_HIDABLE };
+            let bits = if msym.desc.get() & N_WEAK_REF != 0 { SEEN } else { SEEN | NOT_HIDABLE };
             flags[sym_id as usize].fetch_or(bits, Ordering::Relaxed);
         }
     });
@@ -1520,7 +1520,7 @@ fn duplicate_symbols<E: Target>(ctx: &Context<E>, among_bitcode: bool) -> Vec<Du
                 if msym.is_stab()
                     || !msym.is_extern()
                     || !matches!(msym.ty(), N_SECT | N_ABS)
-                    || msym.desc & N_WEAK_DEF != 0
+                    || msym.desc.get() & N_WEAK_DEF != 0
                     || !matches!(ctx.symbols[sym_id].file(), Some(FileId::Obj(owner)) if owner as usize != obj_idx)
                 {
                     return None;
@@ -2091,7 +2091,7 @@ pub fn check_weak_assertions<E: Target>(ctx: &Context<E>) {
                     return None;
                 };
                 let id = obj.symbols[idx as usize];
-                let strong = obj.mach_syms[idx as usize].desc & N_WEAK_REF == 0;
+                let strong = obj.mach_syms[idx as usize].desc.get() & N_WEAK_REF == 0;
                 (strong && asserted(id).is_some()).then_some((id, file))
             })
         })
@@ -3169,7 +3169,7 @@ type OutputSectionKey = ([u8; 16], [u8; 16], u32, Option<(MoveOption, &'static [
 /// The key of the input sections with header `hdr` whose subsections
 /// the symbol move `mv` takes, if one does (mold's output_section_key).
 fn output_section_key(hdr: &MachSection, mv: Option<Move>) -> OutputSectionKey {
-    (hdr.segname, hdr.sectname, hdr.flags, mv.map(|m| (m.option, m.segment)))
+    (hdr.segname, hdr.sectname, hdr.flags.get(), mv.map(|m| (m.option, m.segment)))
 }
 
 /// A worker's cache (mold's CachedOutputSection, in two parts, as
@@ -3298,11 +3298,11 @@ fn destination(
 ) -> Option<Destination> {
     let (seg, sect) = (hdr.segname(), hdr.sectname());
     if let Some(m) = m
-        && let Some((moved, flags_name)) = map.moved_name(m, seg, sect, hdr.flags)
+        && let Some((moved, flags_name)) = map.moved_name(m, seg, sect, hdr.flags.get())
     {
         return Some(Destination { name: renamed(args, moved), flags_name, moved: Some(m.option) });
     }
-    let (name, flags_name) = output_section_for(args, map, seg, sect, hdr.flags)?;
+    let (name, flags_name) = output_section_for(args, map, seg, sect, hdr.flags.get())?;
     Some(Destination { name, flags_name, moved: None })
 }
 
@@ -3345,7 +3345,7 @@ fn first_member_flags<E: Target>(
         // whatever its type.
         return S_REGULAR;
     }
-    let mut input = input_section_flags(seg, sect, hdr.flags);
+    let mut input = input_section_flags(seg, sect, hdr.flags.get());
     // A kext's pointers are plain data to ld-prime, its GOT's too.
     if ctx.args.is_kext() && input & SECTION_TYPE == S_NON_LAZY_SYMBOL_POINTERS {
         input &= !SECTION_TYPE;
@@ -3509,7 +3509,7 @@ fn add_sectcreate_isec<E: Target>(
     let hdr = MachSection {
         sectname: bytes_to_name(&sc.sectname),
         segname: bytes_to_name(&sc.segname),
-        size: data.len() as u64,
+        size: U64::new(data.len() as u64),
         ..Default::default()
     };
     let (file, shndx) = add_synthetic_section(ctx, hdr);
@@ -3567,7 +3567,7 @@ pub fn sort_section_members<E: Target>(ctx: &mut Context<E>) {
             continue;
         }
         for (msym, &sym_id) in obj.mach_syms.iter().zip(&obj.symbols) {
-            if msym.is_stab() || msym.ty() != N_SECT || msym.desc & N_COLD_FUNC == 0 {
+            if msym.is_stab() || msym.ty() != N_SECT || msym.desc.get() & N_COLD_FUNC == 0 {
                 continue;
             }
             if let Some(isec) = ctx.symbols[sym_id].input_section() {
@@ -4597,7 +4597,12 @@ pub fn fix_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
                 let Some(segment) = ctx.segments.iter().find(|s| s.name == seg) else {
                     fatal!("no segment for boundary symbol: {}", ctx.symbols[id]);
                 };
-                if is_start { segment.cmd.vmaddr } else { segment.cmd.vmaddr + segment.cmd.vmsize }
+                (if is_start {
+                    segment.cmd.vmaddr
+                } else {
+                    U64::new(segment.cmd.vmaddr.get() + segment.cmd.vmsize.get())
+                })
+                .get()
             }
         };
         ctx.symbols[id].value = value;
@@ -4611,7 +4616,7 @@ pub fn fix_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
         && let Some(id) = ctx.symbols.lookup(b"___dso_handle")
         && ctx.symbols[id].input_section().is_none()
     {
-        ctx.symbols[id].value = text.cmd.vmaddr;
+        ctx.symbols[id].value = text.cmd.vmaddr.get();
     }
 }
 
@@ -4705,7 +4710,7 @@ fn text_reloc_ranges<E: Target>(ctx: &Context<E>) -> Vec<Range<u64>> {
                 && seg.name != b"__LINKEDIT"
                 && chunks::segment_prots(ctx, seg).1 & VM_PROT_WRITE == 0
         })
-        .map(|seg| seg.cmd.vmaddr..seg.cmd.vmaddr + seg.cmd.vmsize)
+        .map(|seg| seg.cmd.vmaddr.get()..seg.cmd.vmaddr.get() + seg.cmd.vmsize.get())
         .collect()
 }
 
@@ -4815,7 +4820,7 @@ fn in_place_segment<E: Target>(ctx: &Context<E>) -> Option<&'static [u8]> {
 /// (the XNU x86-64 kernel starts the segment after __TEXT on a 2 MiB
 /// boundary that way).
 fn segment_span<E: Target>(ctx: &Context<E>, seg: &OutputSegment) -> u64 {
-    align_to(seg.cmd.vmsize, ctx.args.seg_page_size(seg.name))
+    align_to(seg.cmd.vmsize.get(), ctx.args.seg_page_size(seg.name))
 }
 
 /// The alignment of a segment's address: a page, or its first section's
@@ -4835,16 +4840,16 @@ fn layout_segment<E: Target>(
 ) -> u64 {
     if ctx.segments[seg_idx].name == b"__PAGEZERO" {
         let seg = &mut ctx.segments[seg_idx];
-        seg.cmd.vmaddr = 0;
-        seg.cmd.vmsize = ctx.args.pagezero_size;
+        seg.cmd.vmaddr.set(0);
+        seg.cmd.vmsize.set(ctx.args.pagezero_size);
         return fileoff;
     }
     // The kernel maps a static executable's stack from nothing in the
     // file.
     if ctx.segments[seg_idx].name == b"__UNIXSTACK" {
         let seg = &mut ctx.segments[seg_idx];
-        seg.cmd.vmaddr = vmaddr;
-        seg.cmd.vmsize = ctx.args.stack_size;
+        seg.cmd.vmaddr.set(vmaddr);
+        seg.cmd.vmsize.set(ctx.args.stack_size);
         return fileoff;
     }
 
@@ -4910,16 +4915,16 @@ fn layout_segment<E: Target>(
     let page = ctx.args.segment_align;
     let seg_page = ctx.args.seg_page_size(ctx.segments[seg_idx].name);
     let seg = &mut ctx.segments[seg_idx];
-    seg.cmd.vmaddr = vmaddr;
-    seg.cmd.fileoff = fileoff;
+    seg.cmd.vmaddr.set(vmaddr);
+    seg.cmd.fileoff.set(fileoff);
     if linkedit {
-        seg.cmd.filesize = filesize;
-        seg.cmd.vmsize = align_to(vm_end - vmaddr, seg_page).max(filesize);
+        seg.cmd.filesize.set(filesize);
+        seg.cmd.vmsize.set(align_to(vm_end - vmaddr, seg_page).max(filesize));
         return fileoff + filesize;
     }
-    seg.cmd.filesize = align_to(filesize, page);
-    seg.cmd.vmsize = align_to(vm_end - vmaddr, page).max(seg.cmd.filesize);
-    fileoff + align_to(seg.cmd.filesize, seg_page)
+    seg.cmd.filesize.set(align_to(filesize, page));
+    seg.cmd.vmsize.set(align_to(vm_end - vmaddr, page).max(seg.cmd.filesize.get()));
+    fileoff + align_to(seg.cmd.filesize.get(), seg_page)
 }
 
 /// Gives every segment but __LINKEDIT its address, as ld-prime does:
@@ -4949,9 +4954,13 @@ fn place_segments<E: Target>(ctx: &mut Context<E>) {
     let in_place: Vec<bool> =
         segs.iter().map(|seg| seg.name == b"__PAGEZERO" || Some(seg.name) == header_seg).collect();
     let mut addrs: Vec<Option<u64>> = (0..segs.len())
-        .map(
-            |i| if in_place[i] { Some(segs[i].cmd.vmaddr) } else { ctx.args.segaddr(segs[i].name) },
-        )
+        .map(|i| {
+            if in_place[i] {
+                Some(segs[i].cmd.vmaddr.get())
+            } else {
+                ctx.args.segaddr(segs[i].name)
+            }
+        })
         .collect();
     for i in 1..segs.len() {
         if addrs[i].is_none()
@@ -4977,7 +4986,7 @@ fn place_segments<E: Target>(ctx: &mut Context<E>) {
     let floor = if detached { 0 } else { base };
     let header = segs.iter().position(|seg| Some(seg.name) == header_seg);
     let mut used: Vec<Range<u64>> =
-        header.map(|i| range(i, segs[i].cmd.vmaddr)).into_iter().collect();
+        header.map(|i| range(i, segs[i].cmd.vmaddr.get())).into_iter().collect();
     if let Some(addr) = ctx.args.segaddr(b"__LINKEDIT") {
         used.push(addr..addr);
     }
@@ -5027,8 +5036,8 @@ fn lowest_free_span(
 
 /// Moves a laid-out segment to `addr`.
 fn move_segment<E: Target>(ctx: &mut Context<E>, seg_idx: usize, addr: u64) {
-    let delta = addr.wrapping_sub(ctx.segments[seg_idx].cmd.vmaddr);
-    ctx.segments[seg_idx].cmd.vmaddr = addr;
+    let delta = addr.wrapping_sub(ctx.segments[seg_idx].cmd.vmaddr.get());
+    ctx.segments[seg_idx].cmd.vmaddr.set(addr);
     for i in 0..ctx.segments[seg_idx].chunks.len() {
         let id = ctx.segments[seg_idx].chunks[i];
         let hdr = ctx.chunk_header_mut(id);
@@ -5041,7 +5050,8 @@ fn move_segment<E: Target>(ctx: &mut Context<E>, seg_idx: usize, addr: u64) {
 /// make. Left out are empty segments and __LINKEDIT, sized last.
 fn check_segment_overlaps<E: Target>(ctx: &Context<E>) {
     let segs = &ctx.segments[..ctx.segments.len() - 1];
-    let span = |i: usize| segs[i].cmd.vmaddr..segs[i].cmd.vmaddr + segs[i].cmd.vmsize;
+    let span =
+        |i: usize| segs[i].cmd.vmaddr.get()..segs[i].cmd.vmaddr.get() + segs[i].cmd.vmsize.get();
     for i in 0..segs.len() {
         for j in i + 1..segs.len() {
             let (a, b) = (span(i), span(j));
@@ -5081,11 +5091,11 @@ fn check_segments<E: Target>(ctx: &Context<E>) {
     let mut template: Option<(usize, &ChunkHeader)> = None;
     let mut nsects = 0;
     for (i, seg) in segs.iter().enumerate() {
-        if slides && i > 0 && seg.cmd.vmaddr < segs[i - 1].cmd.vmaddr {
+        if slides && i > 0 && seg.cmd.vmaddr.get() < segs[i - 1].cmd.vmaddr.get() {
             error!("segment {} address is out of order", raw(seg.name));
             return;
         }
-        let seg_end = (seg.cmd.fileoff + seg.cmd.filesize) as u32;
+        let seg_end = (seg.cmd.fileoff.get() + seg.cmd.filesize.get()) as u32;
         for hdr in seg.chunks.iter().map(|&id| ctx.chunk_header(id)).filter(|hdr| hdr.is_sect) {
             if !hdr.is_zerofill() && hdr.fileoff + hdr.size > seg_end as u64 {
                 error!(
@@ -5121,7 +5131,7 @@ fn check_segments<E: Target>(ctx: &Context<E>) {
     }
     if slides
         && let (Some(addr), Some(last)) = (ctx.args.segaddr(linkedit.name), segs.last())
-        && addr < last.cmd.vmaddr
+        && addr < last.cmd.vmaddr.get()
     {
         error!("segment {} address is out of order", raw(linkedit.name));
     }
@@ -5138,15 +5148,15 @@ fn place_linkedit<E: Target>(ctx: &mut Context<E>) {
     let addr = if let Some(addr) = ctx.args.segaddr(b"__LINKEDIT") {
         addr
     } else if ctx.args.dyld_slides() || ctx.args.segaddrs.is_empty() {
-        others.iter().map(|seg| seg.cmd.vmaddr + segment_span(ctx, seg)).max().unwrap_or(0)
+        others.iter().map(|seg| seg.cmd.vmaddr.get() + segment_span(ctx, seg)).max().unwrap_or(0)
     } else {
         let used: Vec<Range<u64>> = others
             .iter()
-            .map(|seg| seg.cmd.vmaddr..seg.cmd.vmaddr + segment_span(ctx, seg))
+            .map(|seg| seg.cmd.vmaddr.get()..seg.cmd.vmaddr.get() + segment_span(ctx, seg))
             .collect();
         let size = ctx.segments[linkedit].cmd.vmsize;
         let base = image_base(ctx);
-        lowest_free_span(base, base, size, ctx.args.segment_align, &used).start
+        lowest_free_span(base, base, size.get(), ctx.args.segment_align, &used).start
     };
     move_segment(ctx, linkedit, addr);
 }

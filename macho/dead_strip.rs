@@ -149,7 +149,7 @@ fn should_keep<E: Target>(ctx: &Context<E>, isec: &InputSection) -> bool {
     let hdr = isec.hdr(&ctx.objs[isec.file as usize]);
     matches!(hdr.section_type(), S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS)
         || hdr.section_type() == S_INIT_FUNC_OFFSETS
-        || (hdr.flags & S_ATTR_NO_DEAD_STRIP != 0
+        || (hdr.flags.get() & S_ATTR_NO_DEAD_STRIP != 0
             && !(hdr.segname() == b"__DATA" && hdr.sectname() == b"__objc_classrefs"))
         || (!ctx.objs[isec.file as usize].subsections_via_symbols
             && !is_literal_section(hdr)
@@ -465,7 +465,7 @@ fn mark_live_support<E: Target>(
         .enumerate()
         .filter(|(_, isec)| {
             isec.is_alive()
-                && isec.hdr(&ctx.objs[isec.file as usize]).flags & S_ATTR_LIVE_SUPPORT != 0
+                && isec.hdr(&ctx.objs[isec.file as usize]).flags.get() & S_ATTR_LIVE_SUPPORT != 0
         })
         .map(|(id, _)| id)
         .collect();

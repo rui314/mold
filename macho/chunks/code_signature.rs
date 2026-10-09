@@ -211,7 +211,7 @@ fn push_code_directory<E: Target>(
     push_be32(sig, 0); // team offset
     push_be32(sig, 0); // spare3
     push_be64(sig, 0); // code limit 64
-    push_be64(sig, text.cmd.fileoff); // exec segment base
+    push_be64(sig, text.cmd.fileoff.get()); // exec segment base
     push_be64(sig, text_size); // exec segment limit
     let exec_seg_flags =
         if ctx.args.output_type == MH_EXECUTE { CS_EXECSEG_MAIN_BINARY } else { 0 };

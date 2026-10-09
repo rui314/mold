@@ -64,8 +64,8 @@ pub(crate) fn add_classref_stand_ins<E: Target>(ctx: &mut Context<E>, kept: Vec<
     let hdr = MachSection {
         sectname: bytes_to_name(b"__got"),
         segname: bytes_to_name(b"__DATA"),
-        p2align: 3,
-        flags: S_NON_LAZY_SYMBOL_POINTERS,
+        p2align: U32::new(3),
+        flags: U32::new(S_NON_LAZY_SYMBOL_POINTERS),
         ..Default::default()
     };
     let (file, shndx) = add_synthetic_section(ctx, hdr);

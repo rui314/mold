@@ -538,7 +538,7 @@ impl Target for X86_64 {
 
             // On x86-64 every relocation's addend is embedded in the
             // relocated field.
-            let loc = &contents[r.offset as usize..];
+            let loc = &contents[r.offset.get() as usize..];
             let embedded = match r.p2size() {
                 0 => loc[0] as i8 as i64,
                 2 => i32::from_le_bytes(loc[..4].try_into().unwrap()) as i64,
@@ -552,14 +552,14 @@ impl Target for X86_64 {
             let (target, addend) = if r.is_extern() {
                 (RelocTarget::Sym(r.idx()), addend)
             } else if r.is_pcrel() {
-                let addr = (hdr.addr + r.offset as u64 + 4).wrapping_add_signed(addend);
+                let addr = (hdr.addr.get() + r.offset.get() as u64 + 4).wrapping_add_signed(addend);
                 section_target(file_name, sections, r, addr)
             } else {
                 section_target(file_name, sections, r, addend as u64)
             };
 
             vec.push(Reloc {
-                offset: r.offset,
+                offset: r.offset.get(),
                 ty: r.ty(),
                 size: 1 << r.p2size(),
                 is_pcrel: r.is_pcrel(),

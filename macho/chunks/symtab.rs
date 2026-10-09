@@ -144,7 +144,7 @@ pub fn push_ast_paths<E: Target>(
 ) {
     for path in ast_paths(ctx) {
         names.push(leak_bytes(path_bytes(path).to_vec()));
-        entries.push((MachSym { stroff: 0, n_type: N_AST, ..Default::default() }, None));
+        entries.push((MachSym { stroff: U32::new(0), n_type: N_AST, ..Default::default() }, None));
     }
 }
 
@@ -235,15 +235,15 @@ impl StabPlan {
                 if addr.0 != id {
                     addr = (id, ctx.symbols[id].addr(ctx));
                 }
-                ent.value = addr.1;
+                ent.value.set(addr.1);
             }
             // A nameless entry gets the empty string after the string
             // table's leading space.
-            ent.stroff = match stab.shared_strx(strx_of) {
+            ent.stroff.set(match stab.shared_strx(strx_of) {
                 Some(strx) => strx,
                 None if stab.name.is_empty() => 1,
                 None => block.add_string(stab.name),
-            };
+            });
             block.push(ent);
         }
     }
@@ -279,7 +279,8 @@ impl SymbolStabs {
         let sect = self.sect;
         // Named entries get their string offsets later; the rest keep 1,
         // the empty string.
-        let stab = |n_type, sect| MachSym { stroff: 1, n_type, sect, ..Default::default() };
+        let stab =
+            |n_type, sect| MachSym { stroff: U32::new(1), n_type, sect, ..Default::default() };
         let mut out = [Stab::new(b"", stab(N_BNSYM, sect), id); 4];
         match self.n_type {
             N_FUN => {
@@ -287,10 +288,13 @@ impl SymbolStabs {
                 // address, then its size), N_ENSYM. Its stab reader takes
                 // an N_FUN without the bracketing symbols badly (a crash
                 // on a -r output that had only the pair).
-                let fun = MachSym { stroff: 0, ..stab(N_FUN, sect) };
+                let fun = MachSym { stroff: U32::new(0), ..stab(N_FUN, sect) };
                 out[1] = Stab { name_of: id, ..Stab::new(name, fun, id) };
-                out[2] =
-                    Stab::new(b"", MachSym { value: self.size as u64, ..stab(N_FUN, 0) }, None);
+                out[2] = Stab::new(
+                    b"",
+                    MachSym { value: U64::new(self.size as u64), ..stab(N_FUN, 0) },
+                    None,
+                );
                 out[3] = Stab::new(b"", stab(N_ENSYM, sect), id);
             }
             // An N_GSYM names the global only, with no section or
@@ -300,7 +304,7 @@ impl SymbolStabs {
                 out[0] = Stab { name, ent, value_of: None, name_of: id };
             }
             _ => {
-                let ent = MachSym { stroff: 0, ..stab(N_STSYM, sect) };
+                let ent = MachSym { stroff: U32::new(0), ..stab(N_STSYM, sect) };
                 out[0] = Stab { name_of: id, ..Stab::new(name, ent, id) };
             }
         }
@@ -418,25 +422,25 @@ fn copy_object_stabs<E: Target>(ctx: &Context<E>, obj_idx: usize) -> StabPlan {
         // name (a closing N_SO, an N_FUN size entry); offset 0
         // would read as the name " ", and lldb then never sees
         // the unit's end.
-        ent.stroff = if name.is_empty() { 1 } else { 0 };
+        ent.stroff.set(if name.is_empty() { 1 } else { 0 });
         // -reproducible (or ZERO_AR_DATE) zeroes the modification time
         // the earlier link wrote, as it does an object's own.
         if msym.n_type == N_OSO && ctx.args.zero_ar_date {
-            ent.value = 0;
+            ent.value.set(0);
         }
         if msym.n_type == N_GSYM {
             out.extend(copy_global_stab(ctx, obj_idx, name, ent, &locals));
             continue;
         }
         if addressed(msym) {
-            let Some((isec, off)) = noted_subsec(ctx, obj, msym.sect, msym.value) else {
+            let Some((isec, off)) = noted_subsec(ctx, obj, msym.sect, msym.value.get()) else {
                 // Dead code: drop the note, and a function's size
                 // entry with it.
                 skip_size = msym.n_type == N_FUN;
                 continue;
             };
             let isec = &ctx.isecs[isec];
-            ent.value = isec.addr(ctx) + off;
+            ent.value.set(isec.addr(ctx) + off);
             ent.sect = isec.sect_idx(ctx);
         } else if msym.n_type == N_FUN && skip_size {
             skip_size = false;
@@ -472,7 +476,7 @@ fn copy_global_stab<E: Target>(
         let sect = if msym.ty() == N_ABS {
             0
         } else {
-            let (isec, _) = noted_subsec(ctx, obj, msym.sect, msym.value)?;
+            let (isec, _) = noted_subsec(ctx, obj, msym.sect, msym.value.get())?;
             ctx.isecs[isec].sect_idx(ctx)
         };
         let ent = MachSym { n_type: N_STSYM, sect, ..ent };
@@ -481,7 +485,7 @@ fn copy_global_stab<E: Target>(
     let id = ctx.symbols.lookup(name)?;
     let own = matches!(ctx.symbols[id].file(), Some(FileId::Obj(o)) if o as usize == obj_idx);
     (own || is_still_common(ctx, id)).then(|| {
-        let ent = MachSym { sect: 0, value: 0, ..ent };
+        let ent = MachSym { sect: 0, value: U64::new(0), ..ent };
         Stab { name, ent, value_of: None, name_of: Some(id) }
     })
 }
@@ -586,7 +590,13 @@ pub(crate) fn object_stabs_opening<E: Target>(
     };
     out.push(Stab::new(
         leak_bytes(oso_name),
-        MachSym { stroff: 0, n_type: N_OSO, sect: E::CPUSUBTYPE as u8, desc: 1, value: mtime },
+        MachSym {
+            stroff: U32::new(0),
+            n_type: N_OSO,
+            sect: E::CPUSUBTYPE as u8,
+            desc: U16::new(1),
+            value: U64::new(mtime),
+        },
         None,
     ));
     out
@@ -611,7 +621,7 @@ fn symbol_stabs<E: Target>(
     };
     // The symbol has moved to the survivor if its subsection was
     // coalesced away; its own is the one to look at.
-    if msym.ty() == N_SECT && noted_subsec(ctx, obj, msym.sect, msym.value).is_none() {
+    if msym.ty() == N_SECT && noted_subsec(ctx, obj, msym.sect, msym.value.get()).is_none() {
         return None;
     }
     let isec = &ctx.isecs[ctx.isecs.resolve(isec)];
@@ -621,7 +631,7 @@ fn symbol_stabs<E: Target>(
     }
     let sect = isec.sect_idx(ctx);
     let is_text = hdr.segname_is(b"__TEXT")
-        && hdr.flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0;
+        && hdr.flags.get() & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0;
     Some(if is_text {
         SymbolStabs { size: isec.size, sect, n_type: N_FUN, ..global }
     } else if msym.is_extern() {
@@ -640,7 +650,8 @@ fn is_still_common<E: Target>(ctx: &Context<E>, id: SymbolId) -> bool {
 }
 
 /// An N_SO with an empty name: it closes an object's stabs.
-pub const STAB_END: MachSym = MachSym { stroff: 1, n_type: N_SO, sect: 1, desc: 0, value: 0 };
+pub const STAB_END: MachSym =
+    MachSym { stroff: U32::new(1), n_type: N_SO, sect: 1, desc: U16::new(0), value: U64::new(0) };
 
 /// A final image's local symbols: each object's non-external symbols
 /// it keeps, in its symbol table's order (see
@@ -678,7 +689,7 @@ fn plan_local_symbols<E: Target>(ctx: &Context<E>, pexts: &[usize]) -> Vec<Named
         };
         // A demoted weak definition keeps N_WEAK_DEF.
         let desc = if sym.is_weak_def() { N_WEAK_DEF } else { 0 };
-        ents.push((local_symbol_name(sym.name()), MachSym { desc, ..ent }, id));
+        ents.push((local_symbol_name(sym.name()), MachSym { desc: U16::new(desc), ..ent }, id));
     }
     ents.extend(linker_locals(ctx));
     ents
@@ -717,7 +728,7 @@ fn linker_locals<E: Target>(ctx: &Context<E>) -> Vec<NamedEntry> {
 
 /// A local symbol's entry, in section `sect`.
 pub fn local_msym(sect: u8, value: u64) -> MachSym {
-    MachSym { stroff: 0, n_type: N_SECT, sect, desc: 0, value }
+    MachSym { stroff: U32::new(0), n_type: N_SECT, sect, desc: U16::new(0), value: U64::new(value) }
 }
 
 /// A symbol table entry with its name, and the symbol whose address
@@ -843,7 +854,7 @@ pub fn create_output_symtab<E: Target>(
         if let (ent, Some(id)) = data.entries[i] {
             let index = if i < stabs_start { i } else { i + nstabs };
             entry_of[id as usize].store(index as u32, Ordering::Relaxed);
-            strx_of[id as usize].store(ent.stroff, Ordering::Relaxed);
+            strx_of[id as usize].store(ent.stroff.get(), Ordering::Relaxed);
         }
     });
     undefs.par_iter().enumerate().for_each(|(k, &id)| {
@@ -963,7 +974,8 @@ fn global_entry<E: Target>(ctx: &Context<E>, i: SymbolId) -> NamedEntry {
     if sym.is_referenced_dynamically() {
         desc |= REFERENCED_DYNAMICALLY;
     }
-    let ent = MachSym { stroff: 0, n_type, sect, desc, value: 0 };
+    let ent =
+        MachSym { stroff: U32::new(0), n_type, sect, desc: U16::new(desc), value: U64::new(0) };
     (sym.name(), ent, Some(i))
 }
 
@@ -979,7 +991,13 @@ fn import_entry<E: Target>(ctx: &Context<E>, i: usize) -> NamedEntry {
     if sym.is_weak_ref() {
         desc |= N_WEAK_REF;
     }
-    let ent = MachSym { stroff: 0, n_type: N_UNDF | N_EXT, sect: 0, desc, value: 0 };
+    let ent = MachSym {
+        stroff: U32::new(0),
+        n_type: N_UNDF | N_EXT,
+        sect: 0,
+        desc: U16::new(desc),
+        value: U64::new(0),
+    };
     (sym.name(), ent, None)
 }
 
@@ -1020,8 +1038,8 @@ fn make_indirect_aliases<E: Target>(ctx: &Context<E>, data: &mut SymtabSection) 
         let ent = &mut data.entries[entry(a)];
         ent.0.n_type = N_INDR | N_EXT;
         ent.0.sect = 0;
-        ent.0.desc = 0;
-        ent.0.value = target_strx as u64;
+        ent.0.desc.set(0);
+        ent.0.value.set(target_strx.get() as u64);
         ent.1 = None;
     }
 }
@@ -1098,13 +1116,13 @@ pub fn copy_buf<E: Target>(
                 for (i, ((msym, sym), name)) in ents.iter().zip(names).enumerate() {
                     let mut msym = *msym;
                     if let Some(id) = sym {
-                        msym.value = ctx.symbols[*id].addr(ctx);
+                        msym.value.set(ctx.symbols[*id].addr(ctx));
                     }
-                    msym.write_to(&mut out[i * size_of::<MachSym>()..]);
+                    msym.write(&mut out[i * size_of::<MachSym>()..]);
                     // SAFETY: layout_strings gave each name a range of
                     // its own within the string table.
                     unsafe {
-                        let dst = strtab.0.add(msym.stroff as usize);
+                        let dst = strtab.0.add(msym.stroff.get() as usize);
                         std::ptr::copy_nonoverlapping(name.as_ptr(), dst, name.len());
                     }
                 }
@@ -1138,7 +1156,7 @@ pub fn layout_strings(entries: &mut [(MachSym, Option<SymbolId>)], names: &[&[u8
     entries.par_chunks_mut(CHUNK).zip(names.par_chunks(CHUNK)).zip(bases).for_each(
         |((ents, names), mut off)| {
             for ((ent, _), name) in ents.iter_mut().zip(names) {
-                ent.stroff = if name.is_empty() { 1 } else { off };
+                ent.stroff.set(if name.is_empty() { 1 } else { off });
                 off += size(name);
             }
         },

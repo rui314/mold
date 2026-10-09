@@ -570,7 +570,7 @@ impl InputSection {
         }
         let hdr = self.hdr(&ctx.objs[self.file as usize]);
         let (seg, sect) = (crate::error::raw(hdr.segname()), crate::error::raw(hdr.sectname()));
-        let off = self.input_addr as u64 - hdr.addr;
+        let off = self.input_addr as u64 - hdr.addr.get();
         crate::error::render(format_args!("{seg},{sect}+0x{off:x}")).into()
     }
 
@@ -659,7 +659,8 @@ impl InputSection {
 
 /// Where a symbol labels a subsection's start, if it is a label at all.
 fn msym_label_key(msym: &crate::macho::MachSym) -> Option<(u32, u64)> {
-    (!msym.is_stab() && msym.ty() == crate::macho::N_SECT).then_some((msym.sect as u32, msym.value))
+    (!msym.is_stab() && msym.ty() == crate::macho::N_SECT)
+        .then_some((msym.sect as u32, msym.value.get()))
 }
 
 /// Whether a label is one a compiler or assembler makes for itself: an
@@ -677,7 +678,7 @@ pub fn is_private_label(name: &[u8]) -> bool {
 pub fn subsec_name_rank(msym: &MachSym, name: &[u8]) -> u8 {
     if name.starts_with(b"ltmp") {
         0
-    } else if msym.desc & N_WEAK_DEF != 0 {
+    } else if msym.desc.get() & N_WEAK_DEF != 0 {
         1
     } else if !msym.is_extern() {
         2

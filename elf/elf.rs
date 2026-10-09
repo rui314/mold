@@ -19,6 +19,11 @@
 use std::fmt;
 use std::marker::PhantomData;
 
+pub use mold_common::record::FileRecord;
+pub(crate) use mold_common::record::{
+    record_from_bytes, records_from_bytes, records_from_bytes_mut,
+};
+
 pub use crate::elf_consts::*;
 
 use crate::arch::{I386, Sparc64, Target, X86_64};
@@ -97,71 +102,6 @@ impl<E: Target> U24<E> {
             self.bytes.copy_from_slice(&bytes[1..]);
         }
     }
-}
-
-/// A record stored in its target-dependent file representation.
-///
-/// # Safety
-///
-/// Implementations must have alignment one, contain no padding or references,
-/// and accept every bit pattern. These requirements let records in possibly
-/// unaligned archive members be read and written without host dependencies.
-pub unsafe trait FileRecord: Clone + Copy + Default + Send + Sync + 'static {
-    fn parse(bytes: &[u8]) -> Self {
-        const { assert!(align_of::<Self>() == 1) };
-        assert!(bytes.len() >= size_of::<Self>());
-        // SAFETY: the trait guarantees that every bit pattern is valid, and
-        // the length check proves that a complete record is available.
-        unsafe { bytes.as_ptr().cast::<Self>().read_unaligned() }
-    }
-
-    fn write(&self, buf: &mut [u8]) {
-        assert!(buf.len() >= size_of::<Self>());
-        // SAFETY: `buf` has room for the complete record, and copying bytes
-        // does not depend on its alignment.
-        unsafe {
-            std::ptr::copy_nonoverlapping(
-                std::ptr::from_ref(self).cast::<u8>(),
-                buf.as_mut_ptr(),
-                size_of::<Self>(),
-            );
-        }
-    }
-
-    fn write_all(records: &[Self], buf: &mut [u8]) {
-        for (record, slot) in records.iter().zip(buf.chunks_exact_mut(size_of::<Self>())) {
-            record.write(slot);
-        }
-    }
-}
-
-/// Views one record directly in its file representation.
-pub(crate) fn record_from_bytes<R: FileRecord>(data: &[u8]) -> &R {
-    const { assert!(align_of::<R>() == 1) };
-    assert!(data.len() >= size_of::<R>());
-    // SAFETY: FileRecord requires alignment one and every bit pattern to be
-    // valid. The length check proves that one complete record is present.
-    unsafe { &*data.as_ptr().cast() }
-}
-
-/// Views records directly in their file representation.
-pub(crate) fn records_from_bytes<R: FileRecord>(data: &[u8]) -> &[R] {
-    const { assert!(align_of::<R>() == 1 && size_of::<R>() != 0) };
-    let size = size_of::<R>();
-    assert!(data.len().is_multiple_of(size));
-    // SAFETY: FileRecord requires alignment one and every bit pattern to be
-    // valid. The resulting slice covers exactly `data`.
-    unsafe { std::slice::from_raw_parts(data.as_ptr().cast(), data.len() / size) }
-}
-
-/// Mutably views records directly in their file representation.
-pub(crate) fn records_from_bytes_mut<R: FileRecord>(data: &mut [u8]) -> &mut [R] {
-    const { assert!(align_of::<R>() == 1 && size_of::<R>() != 0) };
-    let size = size_of::<R>();
-    assert!(data.len().is_multiple_of(size));
-    // SAFETY: FileRecord requires alignment one and every bit pattern to be
-    // valid. `data` is exclusively borrowed for the returned slice.
-    unsafe { std::slice::from_raw_parts_mut(data.as_mut_ptr().cast(), data.len() / size) }
 }
 
 /// The ELF file header.

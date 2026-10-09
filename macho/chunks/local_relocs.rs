@@ -58,7 +58,7 @@ pub(crate) fn relocation_base<E: Target>(ctx: &Context<E>) -> u64 {
                 || ctx.args.is_kext()
                 || segment_prot(seg.name) & VM_PROT_WRITE != 0
         })
-        .map_or(0, |seg| seg.cmd.vmaddr)
+        .map_or(0, |seg| seg.cmd.vmaddr.get())
 }
 
 /// Writes the records once the sections are in the buffer. Each is a
@@ -79,16 +79,16 @@ pub fn write<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let mut off = ctx.local_relocs.hdr.fileoff as usize;
     for &addr in &ctx.local_relocs.locs {
         let (seg, seg_off) = segment_and_offset(ctx, addr);
-        let pos = (ctx.segments[seg].cmd.fileoff + seg_off) as usize;
+        let pos = (ctx.segments[seg].cmd.fileoff.get() + seg_off) as usize;
         let value = u64::from_le_bytes(buf[pos..pos + 8].try_into().unwrap());
         // The last section starting at or below the target.
         let i = sects.partition_point(|&(start, _)| start <= value);
         let sect = sects[i.saturating_sub(1)].1;
         let rel = MachRel {
-            offset: addr.wrapping_sub(base) as u32,
-            bits: u32::from(sect) | (3 << 25) | (u32::from(E::RELOC_UNSIGNED) << 28),
+            offset: U32::new(addr.wrapping_sub(base) as u32),
+            bits: U32::new(u32::from(sect) | (3 << 25) | (u32::from(E::RELOC_UNSIGNED) << 28)),
         };
-        rel.write_to(&mut buf[off..]);
+        rel.write(&mut buf[off..]);
         off += size_of::<MachRel>();
     }
 }

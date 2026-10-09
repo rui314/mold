@@ -72,7 +72,7 @@ impl<E: Target> Builder<'_, E> {
         let hdr = sec.hdr(&ctx.objs[sec.file as usize]);
         let content_type = standard_content_type(hdr).unwrap_or(ctype::DATA);
         let mut entry = OutEntry::new(scope::LOCAL, kind::ANON, content_type);
-        entry.no_dead_strip = hdr.flags & crate::macho::S_ATTR_NO_DEAD_STRIP != 0;
+        entry.no_dead_strip = hdr.flags.get() & crate::macho::S_ATTR_NO_DEAD_STRIP != 0;
         entry.size = ctx.isecs[isec].size;
         entry.p2align = ctx.isecs[isec].p2align;
         entry.content = self.isec_content(&ctx.isecs[isec], hdr);

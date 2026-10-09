@@ -247,7 +247,7 @@ fn find_abbrev(table: &[u8], code: u64) -> Option<(u64, Reader<'_>)> {
 pub fn compile_unit_name(file: &[u8], sects: &[MachSection]) -> Option<(Vec<u8>, Vec<u8>)> {
     let section = |name: &[u8]| -> Option<&[u8]> {
         let s = sects.iter().find(|s| s.segname() == b"__DWARF" && s.sectname() == name)?;
-        file.get(s.offset as usize..(s.offset as u64 + s.size) as usize)
+        file.get(s.offset.get() as usize..(s.offset.get() as u64 + s.size.get()) as usize)
     };
     let info = section(b"__debug_info")?;
     let abbrev_sect = section(b"__debug_abbrev")?;

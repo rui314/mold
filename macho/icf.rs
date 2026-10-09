@@ -200,7 +200,7 @@ fn mark_auto_hidden<E: Target>(ctx: &Context<E>, i: usize, obj: &ObjectFile, fla
         let sym = &ctx.symbols[sym_id];
         if !msym.is_stab()
             && msym.n_type & N_PEXT == 0
-            && msym.desc & (N_WEAK_DEF | N_WEAK_REF) == N_WEAK_DEF | N_WEAK_REF
+            && msym.desc.get() & (N_WEAK_DEF | N_WEAK_REF) == N_WEAK_DEF | N_WEAK_REF
             && sym.is_private_extern()
             && sym.file() == Some(FileId::Obj(i as u32))
             && let Some(isec) = sym.input_section()
@@ -260,7 +260,7 @@ fn start_labels<'a, E: Target>(
         if sym.value != 0 || sym.file() != Some(FileId::Obj(i as u32)) || !wanted(isec as usize) {
             return None;
         }
-        let entry = (msym.desc & N_ALT_ENTRY == 0) as u8;
+        let entry = (msym.desc.get() & N_ALT_ENTRY == 0) as u8;
         Some((isec, entry << 4 | subsec_name_rank(msym, sym.name()), sym.name(), id))
     })
 }

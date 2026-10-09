@@ -203,7 +203,7 @@ impl<'a, E: Target> Places<'a, E> {
             Some(_) => hdr.addr + hdr.size,
             None => {
                 let seg = ctx.segments.iter().find(|s| s.name == seg)?;
-                seg.cmd.vmaddr + seg.cmd.vmsize
+                seg.cmd.vmaddr.get() + seg.cmd.vmsize.get()
             }
         };
         Some((hdr.sect_idx, if is_start { 0 } else { end - hdr.addr }))

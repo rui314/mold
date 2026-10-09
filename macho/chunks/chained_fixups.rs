@@ -206,7 +206,8 @@ fn write_starts_in_image<E: Target>(ctx: &Context<E>, buf: &mut Vec<u8>, fixups:
             );
             break;
         }
-        let npages = ((fx.last().unwrap().0 + 1 - seg.cmd.vmaddr).div_ceil(page_size)) as usize;
+        let npages =
+            ((fx.last().unwrap().0 + 1 - seg.cmd.vmaddr.get()).div_ceil(page_size)) as usize;
         // The record is 22 bytes of fields plus one u16 per page; its
         // size counts just those, without padding.
         push_ul32(buf, 22 + npages as u32 * 2);
@@ -214,12 +215,12 @@ fn write_starts_in_image<E: Target>(ctx: &Context<E>, buf: &mut Vec<u8>, fixups:
         push_ul16(buf, pointer_format(ctx));
         // A layout in error may put a segment below the image base; the
         // table is never written then.
-        push_ul64(buf, seg.cmd.vmaddr.wrapping_sub(image_base));
+        push_ul64(buf, seg.cmd.vmaddr.get().wrapping_sub(image_base));
         push_ul32(buf, 0); // max_valid_pointer
         push_ul16(buf, npages as u16);
         let mut j = 0;
         for i in 0..npages {
-            let page_addr = seg.cmd.vmaddr + i as u64 * page_size;
+            let page_addr = seg.cmd.vmaddr.get() + i as u64 * page_size;
             while j < fx.len() && fx[j].0 < page_addr {
                 j += 1;
             }
@@ -331,7 +332,9 @@ pub fn section_chain_starts<E: Target>(ctx: &Context<E>) -> Vec<u32> {
     let addrs: Vec<u64> = fixups.iter().map(|&(addr, ..)| addr).collect();
     let base = ctx.mach_header.hdr.addr;
     (ctx.segments.iter())
-        .flat_map(|seg| chains(&addrs, seg.cmd.vmaddr, seg.cmd.vmaddr + seg.cmd.vmsize))
+        .flat_map(|seg| {
+            chains(&addrs, seg.cmd.vmaddr.get(), seg.cmd.vmaddr.get() + seg.cmd.vmsize.get())
+        })
         .map(|addr| addr.wrapping_sub(base) as u32)
         .collect()
 }
@@ -353,7 +356,7 @@ pub fn write_fixup_chains<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     for seg in &ctx.segments {
         let fx = segment_fixups(&ctx.chained_fixups.fixups, seg);
         // Pages count from the segment's start.
-        let page = |addr: u64| (addr - seg.cmd.vmaddr) >> page_shift;
+        let page = |addr: u64| (addr - seg.cmd.vmaddr.get()) >> page_shift;
         let chains_to = |addr: u64, next: u64| {
             if ctx.args.fixup_chains_section {
                 next - addr <= MAX_CHAIN_STRIDE
@@ -371,7 +374,7 @@ pub fn write_fixup_chains<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
                 fatal!("unaligned fixup; re-link with -no_fixup_chains");
             }
 
-            let off = (seg.cmd.fileoff + (addr - seg.cmd.vmaddr)) as usize;
+            let off = (seg.cmd.fileoff.get() + (addr - seg.cmd.vmaddr.get())) as usize;
             let word = match sym {
                 Some(sym) => {
                     // dyld_chained_ptr_64_bind
@@ -391,8 +394,8 @@ pub fn write_fixup_chains<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 
 /// The fixups, sorted by address, that lie in a segment.
 fn segment_fixups<'a>(fixups: &'a [Fixup], seg: &OutputSegment) -> &'a [Fixup] {
-    let lo = fixups.partition_point(|&(a, _, _)| a < seg.cmd.vmaddr);
-    let hi = fixups.partition_point(|&(a, _, _)| a < seg.cmd.vmaddr + seg.cmd.vmsize);
+    let lo = fixups.partition_point(|&(a, _, _)| a < seg.cmd.vmaddr.get());
+    let hi = fixups.partition_point(|&(a, _, _)| a < seg.cmd.vmaddr.get() + seg.cmd.vmsize.get());
     &fixups[lo..hi]
 }
 

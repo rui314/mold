@@ -243,7 +243,7 @@ fn add_dof_section<E: Target>(ctx: &mut Context<E>, name: &[u8], dof: Dof, sites
     let hdr = MachSection {
         sectname,
         segname: bytes_to_name(b"__TEXT"),
-        flags: S_DTRACE_DOF,
+        flags: U32::new(S_DTRACE_DOF),
         ..Default::default()
     };
     let (file, shndx) = add_synthetic_section(ctx, hdr);

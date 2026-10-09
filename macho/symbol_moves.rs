@@ -236,9 +236,9 @@ fn common_owners<E: Target>(ctx: &Context<E>) -> hashbrown::HashMap<u32, u32> {
         let r = obj.global_range();
         for (msym, &sym) in obj.mach_syms[r.clone()].iter().zip(&obj.symbols[r]) {
             if !msym.is_stab() && msym.ty() == N_UNDF && msym.is_common() {
-                let decl = decls.entry(sym).or_insert((msym.value, i as u32));
-                if msym.value > decl.0 {
-                    *decl = (msym.value, i as u32);
+                let decl = decls.entry(sym).or_insert((msym.value.get(), i as u32));
+                if msym.value.get() > decl.0 {
+                    *decl = (msym.value.get(), i as u32);
                 }
             }
         }
@@ -317,7 +317,7 @@ fn subsec_named<'a, E: Target>(
     }
     let isec = &ctx.isecs[isec as usize];
     let hdr = isec.hdr(&ctx.objs[isec.file as usize]);
-    let flags = canonical_section_flags(hdr.segname(), hdr.sectname(), hdr.flags);
+    let flags = canonical_section_flags(hdr.segname(), hdr.sectname(), hdr.flags.get());
     let rewritten = rewritten.get(&(kept as u32));
     let content = match rewritten {
         Some(true) => Content::Code,

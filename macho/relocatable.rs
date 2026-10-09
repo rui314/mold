@@ -43,7 +43,7 @@ use crate::symbol::SymbolId;
 pub(crate) fn section_desc<E: Target>(ctx: &Context<E>, isec: usize) -> u16 {
     let isec = &ctx.isecs[isec];
     let h = isec.hdr(&ctx.objs[isec.file as usize]);
-    if h.flags & S_ATTR_NO_DEAD_STRIP != 0
+    if h.flags.get() & S_ATTR_NO_DEAD_STRIP != 0
         && !(h.segname() == b"__DATA" && h.sectname() == b"__objc_classrefs")
     {
         N_NO_DEAD_STRIP
@@ -217,7 +217,7 @@ fn write_object<E: Target>(
         buf[fileoff..fileoff + sec.contents.len()].copy_from_slice(sec.contents);
     }
     for (rels, &off) in relocs.iter().zip(&layout.reloffs) {
-        write_array(&mut buf, off as usize, rels);
+        MachRel::write_all(rels, &mut buf[off as usize..]);
     }
     crate::chunks::data_in_code::write_entries(&cmds.dice, &mut buf[layout.diceoff as usize..]);
     if let Some(loh) = &cmds.loh {
@@ -245,7 +245,13 @@ fn sectcreate_locals<E: Target>(ctx: &Context<E>) -> Vec<LocalSymbol> {
                 name: leak_bytes(
                     [b"l<sect-create>", &sc.segname[..], b",", &sc.sectname[..]].concat(),
                 ),
-                msym: MachSym { stroff: 0, n_type: N_SECT, sect, desc: N_NO_DEAD_STRIP, value },
+                msym: MachSym {
+                    stroff: U32::new(0),
+                    n_type: N_SECT,
+                    sect,
+                    desc: U16::new(N_NO_DEAD_STRIP),
+                    value: U64::new(value),
+                },
                 hidden: false,
                 sym: None,
             }
@@ -591,15 +597,15 @@ fn compact_unwind_contents<E: Target>(
             entry[..8].copy_from_slice(&func.to_le_bytes());
             entry[8..12].copy_from_slice(&rec.code_len.to_le_bytes());
             entry[12..16].copy_from_slice(&rec.encoding.to_le_bytes());
-            let func = MachRel { offset: at, bits };
+            let func = MachRel { offset: U32::new(at), bits: U32::new(bits) };
             let personality = rec.personality().map(|p| MachRel {
-                offset: at + 16,
-                bits: targets.personality(p) | len | (1 << 27),
+                offset: U32::new(at + 16),
+                bits: U32::new(targets.personality(p) | len | (1 << 27)),
             });
             let lsda = rec.lsda().map(|(lsda, off)| {
                 let (lsda, bits) = targets.pointer_to(ctx.isecs.resolve(lsda), off as u64, len);
                 entry[24..].copy_from_slice(&lsda.to_le_bytes());
-                MachRel { offset: at + 24, bits }
+                MachRel { offset: U32::new(at + 24), bits: U32::new(bits) }
             });
             [Some(func), personality, lsda].into_iter().flatten()
         })
@@ -638,12 +644,14 @@ fn eh_frame_contents<E: Target>(
                 let cie = &ctx.cies[c];
                 if let Some(p) = cie.personality {
                     relocs.push(MachRel {
-                        offset: off + cie.personality_offset,
-                        bits: targets.personality(p)
-                            | (1 << 24)
-                            | (2 << 25)
-                            | (1 << 27)
-                            | ((E::RELOC_GOTPC as u32) << 28),
+                        offset: U32::new(off + cie.personality_offset),
+                        bits: U32::new(
+                            targets.personality(p)
+                                | (1 << 24)
+                                | (2 << 25)
+                                | (1 << 27)
+                                | ((E::RELOC_GOTPC as u32) << 28),
+                        ),
                     });
                 }
             }
@@ -705,10 +713,12 @@ fn push_reloc<E: Target>(
             // instruction can't hold one.
             if rel.addend != 0 && E::relocatable_needs_addend(rel.ty) {
                 out.push(MachRel {
-                    offset,
-                    bits: (rel.addend as u32 & 0xff_ffff)
-                        | (2 << 25)
-                        | ((E::RELOC_ADDEND as u32) << 28),
+                    offset: U32::new(offset),
+                    bits: U32::new(
+                        (rel.addend as u32 & 0xff_ffff)
+                            | (2 << 25)
+                            | ((E::RELOC_ADDEND as u32) << 28),
+                    ),
                 });
             }
             (idx, true)
@@ -716,12 +726,13 @@ fn push_reloc<E: Target>(
         OutTarget::Section(target, _) => (ctx.isecs[target].sect_idx(ctx) as u32, false),
     };
     out.push(MachRel {
-        offset,
-        bits: idx
-            | ((rel.is_pcrel as u32) << 24)
-            | (rel.size.trailing_zeros() << 25)
-            | ((is_extern as u32) << 27)
-            | ((rel.ty as u32) << 28),
+        offset: U32::new(offset),
+        bits: U32::new(
+            idx | ((rel.is_pcrel as u32) << 24)
+                | (rel.size.trailing_zeros() << 25)
+                | ((is_extern as u32) << 27)
+                | ((rel.ty as u32) << 28),
+        ),
     });
 }
 
@@ -845,16 +856,16 @@ fn section_header(hdr: &ChunkHeader, relocs: &[MachRel], reloff: u64) -> MachSec
     MachSection {
         sectname: bytes_to_name(hdr.sectname),
         segname: bytes_to_name(hdr.segname),
-        addr: hdr.addr,
-        size: hdr.size,
-        offset: hdr.fileoff as u32,
-        p2align: hdr.p2align,
-        reloff: if relocs.is_empty() { 0 } else { reloff as u32 },
-        nreloc: relocs.len() as u32,
-        flags: hdr.flags,
-        reserved1: 0,
-        reserved2: 0,
-        reserved3: 0,
+        addr: U64::new(hdr.addr),
+        size: U64::new(hdr.size),
+        offset: U32::new(hdr.fileoff as u32),
+        p2align: U32::new(hdr.p2align),
+        reloff: U32::new(if relocs.is_empty() { 0 } else { reloff as u32 }),
+        nreloc: U32::new(relocs.len() as u32),
+        flags: U32::new(hdr.flags),
+        reserved1: U32::new(0),
+        reserved2: U32::new(0),
+        reserved3: U32::new(0),
     }
 }
 
@@ -876,57 +887,57 @@ fn write_load_commands<E: Target>(
         .filter(|(i, o)| o.is_reachable && !ctx.is_internal(*i))
         .all(|(_, o)| o.subsections_via_symbols);
     let hdr = MachHeader {
-        magic: MH_MAGIC_64,
-        cputype: E::CPUTYPE,
-        cpusubtype: E::CPUSUBTYPE,
-        filetype: MH_OBJECT,
-        ncmds: cmds.count(),
-        sizeofcmds: cmds.size() as u32,
-        flags: if subsections { MH_SUBSECTIONS_VIA_SYMBOLS } else { 0 },
-        reserved: 0,
+        magic: U32::new(MH_MAGIC_64),
+        cputype: U32::new(E::CPUTYPE),
+        cpusubtype: U32::new(E::CPUSUBTYPE),
+        filetype: U32::new(MH_OBJECT),
+        ncmds: U32::new(cmds.count()),
+        sizeofcmds: U32::new(cmds.size() as u32),
+        flags: U32::new(if subsections { MH_SUBSECTIONS_VIA_SYMBOLS } else { 0 }),
+        reserved: U32::new(0),
     };
-    hdr.write_to(buf);
+    hdr.write(buf);
     let mut p = size_of::<MachHeader>();
 
     let seg = SegmentCommand {
-        cmd: LC_SEGMENT_64,
-        cmdsize: (size_of::<SegmentCommand>() + size_of_val(headers)) as u32,
+        cmd: U32::new(LC_SEGMENT_64),
+        cmdsize: U32::new((size_of::<SegmentCommand>() + size_of_val(headers)) as u32),
         segname: [0; 16],
-        vmaddr: 0,
-        vmsize: layout.vmsize,
-        fileoff: layout.seg_fileoff,
-        filesize: layout.seg_filesize,
-        maxprot: VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE,
-        initprot: VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE,
-        nsects: headers.len() as u32,
-        flags: 0,
+        vmaddr: U64::new(0),
+        vmsize: U64::new(layout.vmsize),
+        fileoff: U64::new(layout.seg_fileoff),
+        filesize: U64::new(layout.seg_filesize),
+        maxprot: U32::new(VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE),
+        initprot: U32::new(VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE),
+        nsects: U32::new(headers.len() as u32),
+        flags: U32::new(0),
     };
-    seg.write_to(&mut buf[p..]);
+    seg.write(&mut buf[p..]);
     p += size_of::<SegmentCommand>();
-    write_array(buf, p, headers);
+    MachSection::write_all(headers, &mut buf[p..]);
     p += size_of_val(headers);
 
     let st = SymtabCommand {
-        cmd: LC_SYMTAB,
-        cmdsize: size_of::<SymtabCommand>() as u32,
-        symoff: layout.symoff as u32,
-        nsyms: symtab.table.len() as u32,
-        stroff: layout.stroff as u32,
-        strsize: symtab.table.strtab_size as u32,
+        cmd: U32::new(LC_SYMTAB),
+        cmdsize: U32::new(size_of::<SymtabCommand>() as u32),
+        symoff: U32::new(layout.symoff as u32),
+        nsyms: U32::new(symtab.table.len() as u32),
+        stroff: U32::new(layout.stroff as u32),
+        strsize: U32::new(symtab.table.strtab_size as u32),
     };
-    st.write_to(&mut buf[p..]);
+    st.write(&mut buf[p..]);
     p += size_of::<SymtabCommand>();
 
     buf[p..p + cmds.version.len()].copy_from_slice(&cmds.version);
     p += cmds.version.len();
 
     let dc = LinkEditDataCommand {
-        cmd: LC_DATA_IN_CODE,
-        cmdsize: size_of::<LinkEditDataCommand>() as u32,
-        dataoff: layout.diceoff as u32,
-        datasize: (cmds.dice.len() * 8) as u32,
+        cmd: U32::new(LC_DATA_IN_CODE),
+        cmdsize: U32::new(size_of::<LinkEditDataCommand>() as u32),
+        dataoff: U32::new(layout.diceoff as u32),
+        datasize: U32::new((cmds.dice.len() * 8) as u32),
     };
-    dc.write_to(&mut buf[p..]);
+    dc.write(&mut buf[p..]);
     p += size_of::<LinkEditDataCommand>();
 
     for cmd in &cmds.linker_options {
@@ -936,12 +947,12 @@ fn write_load_commands<E: Target>(
 
     if let Some(loh) = &cmds.loh {
         let cmd = LinkEditDataCommand {
-            cmd: LC_LINKER_OPTIMIZATION_HINT,
-            cmdsize: size_of::<LinkEditDataCommand>() as u32,
-            dataoff: layout.lohoff as u32,
-            datasize: loh.len() as u32,
+            cmd: U32::new(LC_LINKER_OPTIMIZATION_HINT),
+            cmdsize: U32::new(size_of::<LinkEditDataCommand>() as u32),
+            dataoff: U32::new(layout.lohoff as u32),
+            datasize: U32::new(loh.len() as u32),
         };
-        cmd.write_to(&mut buf[p..]);
+        cmd.write(&mut buf[p..]);
     }
 }
 
@@ -1103,14 +1114,14 @@ fn create_output_symtab<E: Target>(ctx: &Context<E>) -> RSymtab {
         if let Some(id) = l.sym {
             index_of_sym[id as usize].store(i as u32, Ordering::Relaxed);
             if !l.hidden {
-                strx_of[id as usize].store(entries[i].0.stroff, Ordering::Relaxed);
+                strx_of[id as usize].store(entries[i].0.stroff.get(), Ordering::Relaxed);
             }
         }
     });
     externals.par_iter().enumerate().for_each(|(k, &(_, id))| {
         let i = stabs_start + k;
         index_of_sym[id as usize].store((i + nstabs) as u32, Ordering::Relaxed);
-        strx_of[id as usize].store(entries[i].0.stroff, Ordering::Relaxed);
+        strx_of[id as usize].store(entries[i].0.stroff.get(), Ordering::Relaxed);
     });
     table.strx_of = strx_of.into_iter().map(AtomicU32::into_inner).collect();
     table.set_stabs(ctx, stabs, stabs_start, strtab_end);
@@ -1145,7 +1156,7 @@ fn defined_externals<E: Target>(ctx: &Context<E>) -> Vec<(MachSym, SymbolId)> {
                 && msym.ty() != N_UNDF
                 && matches!(ctx.symbols[sym_id].file(), Some(FileId::Obj(o)) if o as usize == obj_idx)
             {
-                desc_of[sym_id as usize].store(msym.desc, Ordering::Relaxed);
+                desc_of[sym_id as usize].store(msym.desc.get(), Ordering::Relaxed);
             }
         }
     });
@@ -1170,7 +1181,7 @@ fn defined_externals<E: Target>(ctx: &Context<E>) -> Vec<(MachSym, SymbolId)> {
             let Some(input) = sym.input_section() else {
                 let ent = MachSym {
                     n_type: N_ABS | N_EXT | pext,
-                    value: sym.value,
+                    value: U64::new(sym.value),
                     ..MachSym::default()
                 };
                 return (ent, i as u32);
@@ -1193,7 +1204,16 @@ fn defined_externals<E: Target>(ctx: &Context<E>) -> Vec<(MachSym, SymbolId)> {
             }
             desc |= section_desc(ctx, input as usize);
             let value = sym_addr(ctx, i as u32);
-            (MachSym { stroff: 0, n_type, sect, desc, value }, i as u32)
+            (
+                MachSym {
+                    stroff: U32::new(0),
+                    n_type,
+                    sect,
+                    desc: U16::new(desc),
+                    value: U64::new(value),
+                },
+                i as u32,
+            )
         })
         .collect()
 }
@@ -1226,7 +1246,16 @@ fn undefined_symbols<E: Target>(ctx: &Context<E>) -> Vec<(MachSym, SymbolId)> {
             } else if sym.is_weak_ref() {
                 desc |= N_WEAK_REF;
             }
-            (MachSym { stroff: 0, n_type, sect: 0, desc, value }, i as u32)
+            (
+                MachSym {
+                    stroff: U32::new(0),
+                    n_type,
+                    sect: 0,
+                    desc: U16::new(desc),
+                    value: U64::new(value),
+                },
+                i as u32,
+            )
         })
         .collect()
 }

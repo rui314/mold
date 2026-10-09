@@ -101,8 +101,9 @@ pub fn write<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
         } else {
             sym | (3 << 25) | (1 << 27) | (u32::from(E::RELOC_UNSIGNED) << 28)
         };
-        let rel = MachRel { offset: addr.wrapping_sub(base) as u32, bits };
-        rel.write_to(&mut buf[off..]);
+        let rel =
+            MachRel { offset: U32::new(addr.wrapping_sub(base) as u32), bits: U32::new(bits) };
+        rel.write(&mut buf[off..]);
         off += size_of::<MachRel>();
     }
 }

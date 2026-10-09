@@ -274,7 +274,7 @@ impl<'a, E: Target> Builder<'a, E> {
         let stabs = crate::chunks::symtab::object_stabs_opening(self.ctx, obj, &cwd);
         let [dir, name, oso] = &stabs[..] else { return 0 };
         self.debug.push(DebugRecord {
-            mtime: oso.ent.value as u32,
+            mtime: oso.ent.value.get() as u32,
             cpusubtype: oso.ent.sect,
             source_dir: dir.name.to_vec(),
             source_name: name.name.to_vec(),
@@ -319,9 +319,9 @@ impl<'a, E: Target> Builder<'a, E> {
         // which ld-prime reads as a pointer to the class whatever its
         // section's attributes; not so a reference to a superclass).
         let classref = hdr.sectname() == b"__objc_classrefs";
-        entry.no_dead_strip |= hdr.flags & S_ATTR_NO_DEAD_STRIP != 0 && !classref
+        entry.no_dead_strip |= hdr.flags.get() & S_ATTR_NO_DEAD_STRIP != 0 && !classref
             || matches!(hdr.section_type(), S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS);
-        entry.dds_if_refs_live = hdr.flags & S_ATTR_LIVE_SUPPORT != 0;
+        entry.dds_if_refs_live = hdr.flags.get() & S_ATTR_LIVE_SUPPORT != 0;
         entry.size = isec.size;
         entry.p2align = isec.p2align;
         if !isec.is_record() {
@@ -406,7 +406,7 @@ impl<'a, E: Target> Builder<'a, E> {
                 && !n.is_stab()
                 && n.ty() == N_SECT
                 && n.sect as u32 == isec.shndx + 1
-                && (start..end.max(start + 1)).contains(&n.value)
+                && (start..end.max(start + 1)).contains(&n.value.get())
                 && !crate::input_sections::is_private_label(ctx.symbols[obj.symbols[i]].name())
         });
         for i in syms {
@@ -420,9 +420,9 @@ impl<'a, E: Target> Builder<'a, E> {
             let mut alias = OutEntry::new(scope, kind, ctype::NONE);
             alias.name = Some(sym.name());
             alias.dds_if_refs_live = true;
-            alias.no_dead_strip = obj.mach_syms[i].desc & N_NO_DEAD_STRIP != 0;
+            alias.no_dead_strip = obj.mach_syms[i].desc.get() & N_NO_DEAD_STRIP != 0;
             alias.debug = debug;
-            let offset = (obj.mach_syms[i].value - start) as i64;
+            let offset = (obj.mach_syms[i].value.get() - start) as i64;
             alias.fixups.push(OutFixup::new(0, To::Entry(entry), fk::ALIAS_OF, offset));
             let idx = self.push_entry(alias, None);
             self.sym_entry.insert(sym_id, To::Entry(idx));
@@ -492,12 +492,11 @@ impl<'a, E: Target> Builder<'a, E> {
         }
         let segname = hdr.segname;
         let sectname = hdr.sectname;
-        let pos = self
-            .sections
-            .iter()
-            .position(|s| s.segname == segname && s.sectname == sectname && s.flags == hdr.flags);
+        let pos = self.sections.iter().position(|s| {
+            s.segname == segname && s.sectname == sectname && s.flags == hdr.flags.get()
+        });
         let idx = pos.unwrap_or_else(|| {
-            self.sections.push(CustomSection { segname, sectname, flags: hdr.flags });
+            self.sections.push(CustomSection { segname, sectname, flags: hdr.flags.get() });
             self.sections.len() - 1
         });
         (ctype::CUSTOM, Some(idx as u8))
@@ -592,7 +591,7 @@ impl<'a, E: Target> Builder<'a, E> {
         let obj = isec.file as usize;
         let r = &rels[i];
         let arm64 = E::CPUTYPE == CPU_TYPE_ARM64;
-        let code = isec.hdr(&ctx.objs[obj]).flags & S_ATTR_SOME_INSTRUCTIONS != 0;
+        let code = isec.hdr(&ctx.objs[obj]).flags.get() & S_ATTR_SOME_INSTRUCTIONS != 0;
         let insn = |r: &Reloc| {
             u32::from_le_bytes(isec.contents()[r.offset as usize..][..4].try_into().unwrap())
         };
@@ -872,9 +871,8 @@ impl<'a, E: Target> Builder<'a, E> {
     fn object_unwind_entries(&self, obj: &ObjectFile, sect: usize) -> Vec<OutEntry> {
         let hdr = &obj.sect_hdrs[sect];
         let data = obj.mf.data();
-        let contents = &data[hdr.offset as usize..][..hdr.size as usize];
-        let raw: Vec<MachRel> = read_array(data, hdr.reloff as usize, hdr.nreloc as usize);
-        let rels = E::read_relocs(&obj.mf.name, &obj.sect_hdrs, hdr, contents, &raw);
+        let contents = &data[hdr.offset.get() as usize..][..hdr.size.get() as usize];
+        let rels = E::read_relocs(&obj.mf.name, &obj.sect_hdrs, hdr, contents, hdr.relocs(data));
         let mut out = Vec::new();
         for (k, bytes) in contents.as_chunks::<32>().0.iter().enumerate() {
             let start = (k * 32) as u32;
@@ -911,14 +909,14 @@ impl<'a, E: Target> Builder<'a, E> {
             RelocTarget::Sym(idx) => {
                 let n = &obj.mach_syms[idx as usize];
                 if !n.is_stab() && n.ty() == N_SECT {
-                    let (to, off) = local(n.value)?;
+                    let (to, off) = local(n.value.get())?;
                     return Some((to, off + r.addend));
                 }
                 let (to, off) = self.sym_target(obj.symbols[idx as usize]);
                 Some((to, r.addend + off))
             }
             RelocTarget::Section(s) => {
-                local(obj.sect_hdrs[s as usize].addr.wrapping_add_signed(r.addend))
+                local(obj.sect_hdrs[s as usize].addr.get().wrapping_add_signed(r.addend))
             }
         }
     }
@@ -1012,7 +1010,7 @@ impl<'a, E: Target> Builder<'a, E> {
 /// the debug info, the unwind sections (whose records get entries of
 /// their own) and the image info the link makes afresh.
 fn has_entries(hdr: &MachSection) -> bool {
-    hdr.flags & S_ATTR_DEBUG == 0
+    hdr.flags.get() & S_ATTR_DEBUG == 0
         && hdr.segname() != b"__LLVM"
         && !(hdr.segname() == b"__LD" && hdr.sectname() == b"__compact_unwind")
         && hdr.sectname() != b"__eh_frame"
@@ -1066,19 +1064,19 @@ fn linkage<E: Target>(ctx: &Context<E>, msym: &MachSym, id: SymbolId) -> (u8, u8
         return (scope::LOCAL, kind::REGULAR);
     }
     let sym = &ctx.symbols[id];
-    let weak = msym.desc & N_WEAK_DEF != 0;
+    let weak = msym.desc.get() & N_WEAK_DEF != 0;
     let scope = if msym.n_type & N_PEXT != 0 {
         scope::HIDDEN
-    } else if weak && msym.desc & N_WEAK_REF != 0 {
+    } else if weak && msym.desc.get() & N_WEAK_REF != 0 {
         scope::AUTO_HIDE
     } else if sym.is_private_extern() {
         scope::HIDDEN
-    } else if msym.desc & REFERENCED_DYNAMICALLY != 0 {
+    } else if msym.desc.get() & REFERENCED_DYNAMICALLY != 0 {
         scope::NEVER_STRIP
     } else {
         scope::GLOBAL
     };
-    let kind = if msym.desc & N_SYMBOL_RESOLVER != 0 {
+    let kind = if msym.desc.get() & N_SYMBOL_RESOLVER != 0 {
         kind::RESOLVER
     } else if weak && scope != scope::HIDDEN {
         kind::WEAK_DEF
@@ -1101,8 +1099,8 @@ fn named_entry<E: Target>(
     let name = ctx.symbols[obj.symbols[i]].name();
     let mut entry = OutEntry::new(scope, kind, content_type);
     entry.name = Some(name);
-    entry.cold = obj.mach_syms[i].desc & N_COLD_FUNC != 0;
-    entry.no_dead_strip = obj.mach_syms[i].desc & N_NO_DEAD_STRIP != 0;
+    entry.cold = obj.mach_syms[i].desc.get() & N_COLD_FUNC != 0;
+    entry.no_dead_strip = obj.mach_syms[i].desc.get() & N_NO_DEAD_STRIP != 0;
     if !crate::input_sections::is_private_label(name) {
         entry.debug = debug;
     }
@@ -1187,7 +1185,8 @@ fn record_flags<E: Target>(ctx: &Context<E>) -> u64 {
             .map(|(_, o)| o)
     };
     let has_section = |names: &[&[u8]]| {
-        live_objs().any(|o| o.sect_hdrs.iter().any(|h| h.size > 0 && names.contains(&h.sectname())))
+        live_objs()
+            .any(|o| o.sect_hdrs.iter().any(|h| h.size.get() > 0 && names.contains(&h.sectname())))
     };
     let mut flags = 0u64;
     if live_objs().all(|o| o.subsections_via_symbols) {
@@ -1231,7 +1230,7 @@ fn x86_64_fixup(hdr: &MachSection, r: &Reloc, target: To, addend: i64) -> Option
         X86_64_RELOC_SIGNED_4 => X86_64_RIP4,
         X86_64_RELOC_GOT_LOAD => X86_64_RIP_GOT_LOAD,
         X86_64_RELOC_TLV => X86_64_RIP_TLV_LOAD,
-        X86_64_RELOC_GOT if hdr.flags & S_ATTR_SOME_INSTRUCTIONS != 0 => X86_64_RIP_GOT,
+        X86_64_RELOC_GOT if hdr.flags.get() & S_ATTR_SOME_INSTRUCTIONS != 0 => X86_64_RIP_GOT,
         // From data, relative to the field's start: Swift's has the
         // low bit set besides.
         X86_64_RELOC_GOT => {

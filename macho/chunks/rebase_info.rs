@@ -122,7 +122,7 @@ fn rebase_ops<E: Target>(ctx: &Context<E>, locs: &[u64]) -> Vec<Op> {
         if addr < seg_start || seg_end <= addr {
             let (seg, off) = segment_and_offset(ctx, addr);
             seg_start = addr - off;
-            seg_end = seg_start + ctx.segments[seg].cmd.vmsize;
+            seg_end = seg_start + ctx.segments[seg].cmd.vmsize.get();
             ops.push(Op::SegOffset(seg, off));
         } else if addr != cur_addr {
             ops.push(Op::AddAddr(addr.wrapping_sub(cur_addr)));
