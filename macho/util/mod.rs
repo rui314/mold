@@ -3,7 +3,6 @@
 pub(crate) mod cityhash;
 pub mod demangle;
 pub mod glob;
-pub mod perf;
 pub(crate) mod siphash;
 pub(crate) mod worker_local;
 

@@ -5386,7 +5386,7 @@ pub fn compute_uuid<E: Target>(
 /// stderr; ours reports the pass timers and the sizes that drive them.
 pub fn show_stats<E: Target>(ctx: &Context<E>) {
     if ctx.args.perf {
-        ctx.timers.print();
+        ctx.timers.print(&mut std::io::stderr());
         eprintln!(
             "  objects: {} alive of {}; dylibs: {}; output: {} bytes",
             ctx.objs

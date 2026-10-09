@@ -3,6 +3,8 @@
 
 use std::marker::PhantomData;
 
+use mold_common::perf::{Timer, Timers};
+
 use crate::arch::Target;
 use crate::chunks::bind_info::BindInfoSection;
 use crate::chunks::chain_starts::ChainStartsSection;
@@ -41,7 +43,6 @@ use crate::chunks::{
 use crate::cmdline::Args;
 use crate::input_files::{DylibFile, FileId, ObjectFile};
 use crate::symbol::{SymbolId, SymbolTable};
-use crate::util::perf::Timers;
 
 // Keep immutable and mutable chunk lookup in the same static match.
 macro_rules! chunk_header {
@@ -339,7 +340,7 @@ impl<E: Target> Context<E> {
     }
 
     /// Starts a -print_statistics timer for a pass.
-    pub fn timer(&self, name: &str) -> crate::util::perf::Timer {
+    pub fn timer(&self, name: &str) -> Timer {
         self.timers.start(name)
     }
 

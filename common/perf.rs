@@ -2,6 +2,7 @@
 
 // Counter is used to collect statistics.
 
+use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Once};
 use std::time::Instant;
@@ -171,7 +172,8 @@ impl Timers {
         Self { records: Some(Arc::new(Mutex::new(Vec::new()))) }
     }
 
-    /// Skips clock reads, system calls and shared recording when --perf is off.
+    /// Skips clock reads, system calls and shared recording when --perf (or
+    /// the Mach-O linker's -print_statistics) is off.
     pub fn disabled() -> Self {
         Self { records: None }
     }
@@ -217,7 +219,10 @@ impl Timers {
         }
     }
 
-    pub fn print(&self) {
+    /// Prints the timer tree to `out`: stdout for the ELF linker, as C++
+    /// mold does, and stderr for the Mach-O linker, where ld64 reports its
+    /// -print_statistics figures.
+    pub fn print(&self, out: &mut dyn Write) {
         let Some(records) = &self.records else {
             return;
         };
@@ -230,10 +235,11 @@ impl Timers {
         }
         nest_records(&mut records);
 
-        fn print_rec(records: &[Record], i: usize, indent: usize) {
+        fn print_rec(out: &mut dyn Write, records: &[Record], i: usize, indent: usize) {
             let r = &records[i];
             let real = r.end.unwrap().duration_since(r.start).as_secs_f64();
-            println!(
+            let _ = writeln!(
+                out,
                 " {:8.3} {:8.3} {:8.3}  {}{}",
                 r.user,
                 r.sys,
@@ -243,14 +249,14 @@ impl Timers {
             );
             // nest_records adds children in their recorded start order.
             for &child in &r.children {
-                print_rec(records, child, indent + 1);
+                print_rec(out, records, child, indent + 1);
             }
         }
 
-        println!("     User   System     Real  Name");
+        let _ = writeln!(out, "     User   System     Real  Name");
         for i in 0..records.len() {
             if records[i].parent.is_none() {
-                print_rec(&records, i, 0);
+                print_rec(out, &records, i, 0);
             }
         }
     }

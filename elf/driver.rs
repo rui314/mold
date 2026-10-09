@@ -610,7 +610,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
         passes::show_stats(&ctx);
     }
     if ctx.args.perf {
-        ctx.timers.print();
+        ctx.timers.print(&mut std::io::stdout());
     }
 
     let _ = std::io::Write::flush(&mut std::io::stdout());

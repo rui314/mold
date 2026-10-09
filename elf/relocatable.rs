@@ -241,7 +241,7 @@ pub fn combine_objects<E: Target>(ctx: &mut Context<E>) {
         passes::show_stats(ctx);
     }
     if ctx.args.perf {
-        ctx.timers.print();
+        ctx.timers.print(&mut std::io::stdout());
     }
     if ctx.args.quick_exit {
         mold_common::error::exit_after_cleanup(0);
