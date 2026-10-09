@@ -54,7 +54,7 @@ impl Target for X86_64 {
     const FAMILY: Family = Family::X86_64;
     const PAGE_SIZE: u64 = 4096;
     const E_MACHINE: u32 = EM_X86_64;
-    const PLTGOT_SIZE: u64 = 8;
+    const PLTGOT_SIZE: u64 = 16;
     const SFRAME_ABI: Option<u8> = Some(SFRAME_ABI_AMD64_ENDIAN_LITTLE);
     const TRAP: &'static [u8] = &[0xcc]; // int3
 
@@ -136,14 +136,27 @@ impl Target for X86_64 {
         }
     }
 
+    // A .plt.got entry is used as a function's address if it belongs to an
+    // ifunc in a position-dependent executable, so such an entry starts with
+    // endbr64.
     fn write_pltgot_entry(ctx: &Context<Self>, buf: &mut [u8], sym: &Symbol) {
-        const INSN: [u8; 8] = [
-            0xff, 0x25, 0, 0, 0, 0, // jmp *foo@GOT
-            0xcc, 0xcc, // (padding)
-        ];
-        buf[..8].copy_from_slice(&INSN);
-        let disp = sym.got_pltgot_addr(ctx).wrapping_sub(sym.plt_addr(ctx)).wrapping_sub(6);
-        write_ul32(&mut buf[2..], disp as u32);
+        let disp = sym.got_pltgot_addr(ctx).wrapping_sub(sym.plt_addr(ctx));
+        if sym.is_pde_ifunc(ctx) {
+            const INSN: [u8; 16] = [
+                0xf3, 0x0f, 0x1e, 0xfa, // endbr64
+                0xff, 0x25, 0, 0, 0, 0, // jmp *foo@GOT
+                0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, // (padding)
+            ];
+            buf[..16].copy_from_slice(&INSN);
+            write_ul32(&mut buf[6..], disp.wrapping_sub(10) as u32);
+        } else {
+            const INSN: [u8; 16] = [
+                0xff, 0x25, 0, 0, 0, 0, // jmp *foo@GOT
+                0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, // (padding)
+            ];
+            buf[..16].copy_from_slice(&INSN);
+            write_ul32(&mut buf[2..], disp.wrapping_sub(6) as u32);
+        }
     }
 
     fn apply_eh_reloc(
