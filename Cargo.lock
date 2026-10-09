@@ -236,6 +236,7 @@ dependencies = [
  "mold-elf-tests",
  "mold-elf-x86_64",
  "mold-mimalloc",
+ "mold-pe",
 ]
 
 [[package]]

@@ -75,7 +75,13 @@ fn main() {
         eprintln!("mold: no targets enabled; rebuild mold with the appropriate target support");
         std::process::exit(1);
     };
-    let args = std::env::args_os().collect();
+    let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
+    #[cfg(feature = "pe")]
+    {
+        if mold_pe::is_invocation(&args) {
+            std::process::exit(mold_pe::main(args));
+        }
+    }
     let status = mold_elf::driver::main(args, initial_target, link_for_target);
     std::process::exit(status);
 }

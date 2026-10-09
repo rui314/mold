@@ -20,6 +20,7 @@ repository = "https://github.com/rui314/mold"
 libc = "0.2"
 mold-common = { path = "common", version = "=3.0.0" }
 mold-elf = { path = "elf", version = "=3.0.0" }
+mold-pe = { path = "pe", version = "=3.0.0" }
 mold-elf-x86_64 = { path = "arch/elf-x86_64", version = "=3.0.0" }
 mold-elf-i386 = { path = "arch/elf-i386", version = "=3.0.0" }
 mold-elf-arm32 = { path = "arch/elf-arm32", version = "=3.0.0" }

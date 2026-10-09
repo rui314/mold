@@ -23,6 +23,7 @@ harness = false
 mimalloc = { package = "mold-mimalloc", version = "0.1.52" }
 mold-elf.workspace = true
 mold-elf-x86_64 = { workspace = true, optional = true }
+mold-pe = { workspace = true, optional = true }
 mold-elf-i386 = { workspace = true, optional = true }
 mold-elf-arm32 = { workspace = true, optional = true }
 mold-elf-arm32be = { workspace = true, optional = true }
@@ -52,9 +53,11 @@ mold-elf-tests = { path = "../tests/elf" }
 default = [
     "x86_64", "i386", "arm32", "arm32be", "arm64", "arm64be", "riscv64", "riscv64be", "riscv32", "riscv32be",
     "ppc64v2", "ppc32", "ppc64v1", "s390x", "sparc64", "m68k", "sh4", "sh4be", "loongarch64", "loongarch32",
+    "pe",
 ]
 system-allocator = []
 x86_64 = ["dep:mold-elf-x86_64"]
+pe = ["dep:mold-pe"]
 i386 = ["dep:mold-elf-i386"]
 arm32 = ["dep:mold-elf-arm32"]
 arm32be = ["dep:mold-elf-arm32be"]
