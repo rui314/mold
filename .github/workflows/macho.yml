@@ -40,7 +40,7 @@ jobs:
       # session alone takes ten seconds on a Mac, and the first of which
       # ran past a minute on the hosted runners. The executable is built
       # without the ELF targets, which these tests don't use.
-      - run: cargo test --locked -p mold-macho -p mold-macho-tests --lib
+      - run: cargo test --locked -p mold-macho -p mold-tests --lib
       - run: |
           cargo test --locked -p mold --no-default-features --features macho-arm64,macho-x86_64 \
             --test integration -- --timeout 120

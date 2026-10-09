@@ -4,7 +4,7 @@
 # arch/, and the executable in cli/ dispatches to them.
 [workspace]
 resolver = "3"
-members = ["cli", "common", "elf", "macho", "arch/*", "tests/elf", "tests/macho"]
+members = ["cli", "common", "elf", "macho", "arch/*", "tests"]
 
 [workspace.package]
 version = "3.0.0"

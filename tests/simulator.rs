@@ -171,7 +171,7 @@ impl Slot {
             thread::sleep(Duration::from_secs(1));
             waited += 1;
             if waited % 60 == 0 {
-                eprintln!("mold-macho-tests: waiting for the simulator slot ({waited}s)");
+                eprintln!("mold-tests: waiting for the simulator slot ({waited}s)");
             }
         }
     }
@@ -227,7 +227,7 @@ impl Device {
 impl Drop for Device {
     fn drop(&mut self) {
         if let Err(err) = simctl(&["shutdown", &self.udid]) {
-            eprintln!("mold-macho-tests: {err}");
+            eprintln!("mold-tests: {err}");
         }
     }
 }

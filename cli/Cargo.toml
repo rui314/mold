@@ -47,8 +47,7 @@ mold-macho-arm64 = { workspace = true, optional = true }
 mold-macho-x86_64 = { workspace = true, optional = true }
 
 [dev-dependencies]
-mold-elf-tests = { path = "../tests/elf" }
-mold-macho-tests = { path = "../tests/macho" }
+mold-tests = { path = "../tests" }
 
 # One feature per target. All are built by default; a build for one
 # target alone (`--no-default-features --features x86_64`) is much faster.

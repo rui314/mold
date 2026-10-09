@@ -1,8 +1,18 @@
 //! Runs mold's shell tests in parallel for Cargo's test harness.
 //!
-//! The tests themselves are shell scripts so that they exercise mold with
-//! the real compilers and binutils of each target. The runner owns test
-//! discovery, target selection, scheduling, timeouts and reporting.
+//! The tests are shell scripts, in elf/ and macho/, so that they exercise
+//! mold with the real compilers, binutils and loaders of each target. The
+//! runner owns test discovery, target selection, scheduling, timeouts and
+//! reporting. The ELF tests run for the host and, under QEMU, for each
+//! cross target whose toolchain is installed (see elf.rs). The Mach-O
+//! tests, which drive Apple's toolchain, run on macOS for the host, for
+//! x86_64 under Rosetta and on simulator devices (see macho.rs).
+
+pub mod elf;
+#[cfg(target_os = "macos")]
+pub mod macho;
+#[cfg(target_os = "macos")]
+mod simulator;
 
 use std::collections::BTreeMap;
 use std::env;
@@ -21,61 +31,25 @@ use std::os::unix::process::CommandExt;
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(60);
 
-#[derive(Clone, Copy)]
-struct TargetSpec {
-    machine: &'static str,
-    triple: &'static str,
-    qemu: &'static str,
-}
-
-// The targets tested by --all, the default mode. A target other than the
-// host's is tested only if its cross compiler and QEMU are installed.
-const TARGETS: &[TargetSpec] = &[
-    TargetSpec { machine: "x86_64", triple: "x86_64-linux-gnu", qemu: "qemu-x86_64" },
-    TargetSpec { machine: "i686", triple: "i686-linux-gnu", qemu: "qemu-i386" },
-    TargetSpec { machine: "aarch64", triple: "aarch64-linux-gnu", qemu: "qemu-aarch64" },
-    TargetSpec { machine: "aarch64_be", triple: "aarch64_be-linux-gnu", qemu: "qemu-aarch64_be" },
-    TargetSpec { machine: "arm", triple: "arm-linux-gnueabihf", qemu: "qemu-arm" },
-    TargetSpec { machine: "armeb", triple: "armeb-linux-gnueabihf", qemu: "qemu-armeb" },
-    TargetSpec { machine: "riscv64", triple: "riscv64-linux-gnu", qemu: "qemu-riscv64" },
-    TargetSpec { machine: "riscv32", triple: "riscv32-linux-gnu", qemu: "qemu-riscv32" },
-    TargetSpec { machine: "ppc", triple: "powerpc-linux-gnu", qemu: "qemu-ppc" },
-    TargetSpec { machine: "ppc64", triple: "powerpc64-linux-gnu", qemu: "qemu-ppc64" },
-    TargetSpec { machine: "ppc64le", triple: "powerpc64le-linux-gnu", qemu: "qemu-ppc64le" },
-    TargetSpec { machine: "sparc64", triple: "sparc64-linux-gnu", qemu: "qemu-sparc64" },
-    TargetSpec { machine: "s390x", triple: "s390x-linux-gnu", qemu: "qemu-s390x" },
-    TargetSpec { machine: "sh4", triple: "sh4-linux-gnu", qemu: "qemu-sh4" },
-    TargetSpec { machine: "sh4aeb", triple: "sh4aeb-linux-gnu", qemu: "qemu-sh4eb" },
-    TargetSpec { machine: "m68k", triple: "m68k-linux-gnu", qemu: "qemu-m68k" },
-    TargetSpec {
-        machine: "loongarch64",
-        triple: "loongarch64-linux-gnu",
-        qemu: "qemu-loongarch64",
-    },
-];
-
-#[derive(Clone, Debug)]
+/// A configuration the scripts run in.
 struct Target {
-    machine: String,
-    triple: Option<String>,
-    cpu: Option<String>,
+    /// The name its results go under.
     label: String,
-}
-
-impl Target {
-    fn native(machine: String) -> Self {
-        Self { label: machine.clone(), machine, triple: None, cpu: None }
-    }
-
-    fn cross(machine: String, triple: String) -> Self {
-        Self { label: machine.clone(), machine, triple: Some(triple), cpu: None }
-    }
+    /// If set, of the scripts named arch-*, only arch-<arch>-* run.
+    arch: Option<String>,
+    /// The environment variables the scripts get, each set or removed.
+    env: Vec<(&'static str, Option<String>)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Mode {
+    /// The targets the host runs directly, without QEMU or a simulator.
     Native,
+    /// The usual targets.
+    Default,
+    /// Every target there is a toolchain for.
     All,
+    /// One cross or simulator target.
     Triple(String),
 }
 
@@ -147,10 +121,20 @@ impl Counts {
 fn usage() -> ! {
     eprintln!(
         "Usage: cargo test [pattern] [-- [--test-threads N] \
-         [--native | --all | --triple TRIPLE] [--cpu CPU] \
-         [--timeout SECONDS] [--list]]"
+         [--native | --all | --triple TRIPLE] [--cpu CPU] [--timeout SECONDS] [--list]]\n\
+         By default the ELF tests run for every target whose cross compiler and QEMU are \
+         installed, and the Mach-O tests for macOS (arm64, and x86_64 under Rosetta) and the \
+         arm64 iOS simulator; --all adds the other simulators. --native runs the targets the \
+         host runs directly, --triple one cross or simulator target (e.g. aarch64-linux-gnu \
+         or arm64-apple-tvos-simulator)."
     );
     std::process::exit(2);
+}
+
+/// Reports an error of the runner itself and exits.
+fn fail(err: impl std::fmt::Display) -> ! {
+    eprintln!("mold-tests: {err}");
+    std::process::exit(1);
 }
 
 fn parse_usize(value: Option<String>) -> usize {
@@ -159,7 +143,7 @@ fn parse_usize(value: Option<String>) -> usize {
 
 fn parse_options() -> Options {
     let mut jobs = thread::available_parallelism().map_or(1, usize::from);
-    let mut mode = Mode::All;
+    let mut mode = Mode::Default;
     let mut mode_was_set = false;
     let mut cpu = None;
     let mut patterns = Vec::new();
@@ -182,12 +166,7 @@ fn parse_options() -> Options {
                 mode = Mode::Triple(args.next().unwrap_or_else(|| usage()));
                 mode_was_set = true;
             }
-            "--cpu" => {
-                cpu = args.next();
-                if cpu.is_none() {
-                    usage();
-                }
-            }
+            "--cpu" => cpu = Some(args.next().unwrap_or_else(|| usage())),
             "--timeout" => timeout = Duration::from_secs(parse_usize(args.next()) as u64),
             "--list" => list = true,
             "--nocapture" | "--show-output" => {}
@@ -203,158 +182,43 @@ fn parse_options() -> Options {
         }
     }
 
-    // Preserve the old runner's TRIPLE/CPU interface for callers that set
-    // the cross target in the environment.
-    if !mode_was_set {
-        if let Some(value) = env::var_os("TRIPLE").filter(|s| !s.is_empty()) {
-            mode = Mode::Triple(value.to_string_lossy().into_owned());
-        }
-        if cpu.is_none() {
-            cpu = env::var_os("CPU")
-                .filter(|s| !s.is_empty())
-                .map(|s| s.to_string_lossy().into_owned());
-        }
+    // TRIPLE and CPU in the environment select a target too.
+    let var = |name| env::var_os(name).filter(|s| !s.is_empty());
+    if !mode_was_set && let Some(triple) = var("TRIPLE") {
+        mode = Mode::Triple(triple.to_string_lossy().into_owned());
+    }
+    if cpu.is_none() {
+        cpu = var("CPU").map(|s| s.to_string_lossy().into_owned());
     }
 
     Options { jobs, mode, cpu, patterns, timeout, list }
 }
 
-fn canonical_machine(machine: &str) -> String {
-    let machine = machine.trim();
-    if machine == "amd64" {
-        return "x86_64".to_owned();
+fn matches_target(name: &str, target: &Target) -> bool {
+    match &target.arch {
+        Some(arch) => !name.starts_with("arch-") || name.starts_with(&format!("arch-{arch}-")),
+        None => true,
     }
-    if machine.len() == 4 && machine.starts_with('i') && machine.ends_with("86") {
-        return "i686".to_owned();
-    }
-    if machine.starts_with("armeb") {
-        return "armeb".to_owned();
-    }
-    if machine.starts_with("arm") {
-        return "arm".to_owned();
-    }
-    match machine {
-        "powerpc" => "ppc".to_owned(),
-        "powerpc64" => "ppc64".to_owned(),
-        "powerpc64le" => "ppc64le".to_owned(),
-        _ => machine.to_owned(),
-    }
-}
-
-fn machine_from_triple(triple: &str) -> String {
-    canonical_machine(triple.split('-').next().unwrap_or(triple))
-}
-
-fn native_machine() -> String {
-    if let Some(machine) = env::var_os("MACHINE").filter(|s| !s.is_empty()) {
-        return canonical_machine(&machine.to_string_lossy());
-    }
-
-    if let Ok(output) = Command::new("cc").arg("-dumpmachine").output()
-        && output.status.success()
-    {
-        let triple = String::from_utf8_lossy(&output.stdout);
-        if !triple.trim().is_empty() {
-            return machine_from_triple(&triple);
-        }
-    }
-    canonical_machine(env::consts::ARCH)
-}
-
-fn command_exists(command: &str) -> bool {
-    let path = Path::new(command);
-    if path.components().count() > 1 {
-        return path.is_file();
-    }
-    env::var_os("PATH")
-        .is_some_and(|paths| env::split_paths(&paths).any(|dir| dir.join(command).is_file()))
-}
-
-fn supports_power10() -> bool {
-    if !command_exists("powerpc64le-linux-gnu-gcc") || !command_exists("qemu-ppc64le") {
-        return false;
-    }
-
-    let compiler = Command::new("powerpc64le-linux-gnu-gcc")
-        .args(["-mcpu=power10", "-E", "-x", "c", "-"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|status| status.success());
-    let qemu = Command::new("qemu-ppc64le")
-        .args(["-cpu", "help"])
-        .output()
-        .is_ok_and(|output| String::from_utf8_lossy(&output.stdout).contains("power10_v2.0"));
-    compiler && qemu
-}
-
-fn all_targets(native: &str) -> (Vec<Target>, Vec<&'static TargetSpec>) {
-    let mut targets = Vec::new();
-    let mut unavailable = Vec::new();
-
-    for spec in TARGETS {
-        if spec.machine == native {
-            targets.push(Target::native(native.to_owned()));
-        } else if command_exists(spec.qemu) && command_exists(&format!("{}-gcc", spec.triple)) {
-            targets.push(Target::cross(spec.machine.to_owned(), spec.triple.to_owned()));
-        } else {
-            unavailable.push(spec);
-        }
-    }
-
-    if native == "ppc64le"
-        && fs::read_to_string("/proc/cpuinfo").is_ok_and(|s| s.contains("POWER10"))
-    {
-        let mut target = Target::native(native.to_owned());
-        target.cpu = Some("power10".to_owned());
-        target.label = "ppc64le-power10".to_owned();
-        targets.push(target);
-    } else if supports_power10() {
-        let mut target = Target::cross("ppc64le".to_owned(), "powerpc64le-linux-gnu".to_owned());
-        target.cpu = Some("power10".to_owned());
-        target.label = "ppc64le-power10".to_owned();
-        targets.push(target);
-    }
-
-    (targets, unavailable)
-}
-
-fn selected_targets(options: &Options) -> (Vec<Target>, Vec<&'static TargetSpec>) {
-    let native = native_machine();
-    match &options.mode {
-        Mode::Native => (vec![Target::native(native)], Vec::new()),
-        Mode::All => all_targets(&native),
-        Mode::Triple(triple) => {
-            let machine = machine_from_triple(triple);
-            let mut target = Target::cross(machine, triple.clone());
-            target.cpu.clone_from(&options.cpu);
-            if let Some(cpu) = &target.cpu {
-                target.label = format!("{}-{cpu}", target.machine);
-            }
-            (vec![target], Vec::new())
-        }
-    }
-}
-
-fn matches_target(name: &str, machine: &str) -> bool {
-    !name.starts_with("arch-") || name.starts_with(&format!("arch-{machine}-"))
 }
 
 fn matches_patterns(name: &str, patterns: &[String]) -> bool {
     patterns.is_empty() || patterns.iter().any(|pattern| name.contains(pattern))
 }
 
-fn discover_scripts(test_dir: &Path) -> io::Result<Vec<(String, PathBuf)>> {
+/// The scripts in `dir` that the patterns select, by name.
+fn selected_scripts(dir: &Path, patterns: &[String]) -> io::Result<Vec<(String, PathBuf)>> {
     let mut scripts = Vec::new();
-    for entry in fs::read_dir(test_dir)? {
+    for entry in fs::read_dir(dir)? {
         let path = entry?.path();
         if path.extension() != Some(OsStr::new("sh")) {
             continue;
         }
         let name = path.file_stem().unwrap().to_string_lossy().into_owned();
-        scripts.push((name, path));
+        if matches_patterns(&name, patterns) {
+            scripts.push((name, path));
+        }
     }
+    scripts.sort();
     Ok(scripts)
 }
 
@@ -392,6 +256,13 @@ fn replace_file_link(source: &Path, destination: &Path) -> io::Result<()> {
     }
 }
 
+/// Tests run from a directory beside the linker under test and write
+/// their outputs under out/test there, so nothing generated lands in the
+/// source tree. The directory holds the linker under the names the
+/// scripts invoke it by: mold, ld and ld.lld, which the ELF scripts find
+/// with ./mold and the compiler's -B. option (upstream LLVM defaults to
+/// ld.lld on FreeBSD, so overriding only ld is not enough), and
+/// ld64.mold, the name under which mold acts as the Mach-O linker.
 fn prepare_work_dir(mold: &Path) -> io::Result<PathBuf> {
     let mold = mold.canonicalize()?;
     let profile_dir = mold.parent().ok_or_else(|| {
@@ -400,44 +271,29 @@ fn prepare_work_dir(mold: &Path) -> io::Result<PathBuf> {
             format!("{} has no parent directory", mold.display()),
         )
     })?;
-
-    // The test scripts run in a directory containing mold and ld, which
-    // they find with ./mold and the compiler's -B. option, and write their
-    // outputs under out/test there. Create that directory next to the mold
-    // binary so that generated files stay out of the source tree.
     let work_dir = profile_dir.join("mold-test");
     fs::create_dir_all(&work_dir)?;
-
-    // Upstream LLVM defaults to ld.lld on FreeBSD, so overriding only ld
-    // with -B is not enough.
-    for name in ["mold", "ld", "ld.lld"] {
+    for name in ["mold", "ld", "ld.lld", "ld64.mold"] {
         replace_file_link(&mold, &work_dir.join(name))?;
     }
     Ok(work_dir)
 }
 
 fn make_jobs(
-    cases_dirs: &[PathBuf],
+    scripts: &[(String, PathBuf)],
     work_dir: &Path,
     targets: Vec<Target>,
-    patterns: &[String],
     clean: bool,
 ) -> io::Result<Vec<TestJob>> {
-    let mut scripts = Vec::new();
-    for dir in cases_dirs {
-        scripts.extend(discover_scripts(dir)?);
-    }
-    scripts.sort_by(|a, b| a.0.cmp(&b.0));
     let mut jobs = Vec::new();
-
     for target in targets {
         let target = Arc::new(target);
         let result_dir = work_dir.join("out/test/results").join(&target.label);
         if clean {
             clear_results(&result_dir)?;
         }
-        for (name, script) in &scripts {
-            if matches_target(name, &target.machine) && matches_patterns(name, patterns) {
+        for (name, script) in scripts {
+            if matches_target(name, &target) {
                 jobs.push(TestJob {
                     target: Arc::clone(&target),
                     script: script.clone(),
@@ -451,11 +307,12 @@ fn make_jobs(
     Ok(jobs)
 }
 
+/// A script that skips itself ends a line of its log with "skipped".
 fn log_says_skipped(path: &Path) -> bool {
     fs::read(path).is_ok_and(|bytes| {
         bytes
             .split(|&byte| byte == b'\n')
-            .any(|line| line.strip_suffix(b"\r").unwrap_or(line) == b"skipped")
+            .any(|line| line.strip_suffix(b"\r").unwrap_or(line).ends_with(b"skipped"))
     })
 }
 
@@ -465,23 +322,21 @@ fn run_process(root: &Path, job: &TestJob, timeout: Duration) -> Result<Outcome,
     let stderr =
         log.try_clone().map_err(|err| format!("cannot clone {}: {err}", job.log.display()))?;
     let mut command = Command::new(&job.script);
-    // A script that read the terminal would stop in its background process
-    // group until the timeout; give it end-of-file instead.
-    command
-        .current_dir(root)
-        .stdin(Stdio::null())
-        .env("MACHINE", &job.target.machine)
-        .stdout(Stdio::from(log))
-        .stderr(Stdio::from(stderr));
-    for (name, value) in [("TRIPLE", &job.target.triple), ("CPU", &job.target.cpu)] {
-        if let Some(value) = value {
-            command.env(name, value);
-        } else {
-            command.env_remove(name);
-        }
+    command.current_dir(root).stdout(Stdio::from(log)).stderr(Stdio::from(stderr));
+    for (name, value) in &job.target.env {
+        match value {
+            Some(value) => command.env(name, value),
+            None => command.env_remove(name),
+        };
     }
 
-    // A timeout must also kill compiler and QEMU children.
+    // A timeout must also kill compiler and QEMU children, so a test runs
+    // in its own process group. That is a background group of the
+    // terminal cargo was started from, so the test must not inherit the
+    // terminal as stdin: a program that reads it or restores its settings
+    // on exit (lldb does, even in batch mode) is stopped by SIGTTIN or
+    // SIGTTOU and hangs until the timeout.
+    command.stdin(Stdio::null());
     #[cfg(unix)]
     command.process_group(0);
     let mut child =
@@ -500,8 +355,7 @@ fn run_process(root: &Path, job: &TestJob, timeout: Duration) -> Result<Outcome,
             }
             None if start.elapsed() < timeout => thread::sleep(Duration::from_millis(20)),
             None => {
-                // SAFETY: kill has no memory-safety preconditions; the group
-                // id is the pid of the still-unreaped child.
+                // SAFETY: kill only signals the test's own process group.
                 #[cfg(unix)]
                 unsafe {
                     libc::kill(-(child.id() as i32), libc::SIGKILL);
@@ -593,9 +447,17 @@ fn run_jobs(root: &Path, jobs: Vec<TestJob>, options: &Options) -> Vec<TestResul
     })
 }
 
-fn print_inventory(jobs: &[TestJob], unavailable: &[&TargetSpec]) {
+/// Lists the tests the options select, by target, instead of running
+/// them, and the targets left out for want of a toolchain.
+fn print_inventory(
+    scripts: &[(String, PathBuf)],
+    work_dir: &Path,
+    targets: Vec<Target>,
+    unavailable: &[String],
+) -> ExitCode {
+    let jobs = make_jobs(scripts, work_dir, targets, false).unwrap_or_else(|err| fail(err));
     let mut counts = BTreeMap::new();
-    for job in jobs {
+    for job in &jobs {
         *counts.entry(job.target.label.as_str()).or_insert(0usize) += 1;
     }
     for (target, count) in counts {
@@ -603,13 +465,12 @@ fn print_inventory(jobs: &[TestJob], unavailable: &[&TargetSpec]) {
     }
     println!("total: tests={}", jobs.len());
     if !unavailable.is_empty() {
-        let targets =
-            unavailable.iter().map(|target| target.machine).collect::<Vec<_>>().join(", ");
-        println!("unavailable: {targets}");
+        println!("unavailable: {}", unavailable.join(", "));
     }
+    ExitCode::SUCCESS
 }
 
-fn print_summary(results: &[TestResult]) -> bool {
+fn print_summary(results: &[TestResult]) -> ExitCode {
     let mut by_target: BTreeMap<&str, Counts> = BTreeMap::new();
     for result in results {
         by_target.entry(&result.target.label).or_default().add(result.outcome);
@@ -625,39 +486,7 @@ fn print_summary(results: &[TestResult]) -> bool {
     } else {
         println!("pass={} skip={} fail={}", total.pass, total.skip, total.fail);
     }
-    total.fail == 0
-}
-
-pub fn run(cases_dirs: &[PathBuf], mold: &Path) -> ExitCode {
-    let options = parse_options();
-    let work_dir = match prepare_work_dir(mold) {
-        Ok(dir) => dir,
-        Err(err) => {
-            eprintln!("mold-elf-tests: {err}");
-            return ExitCode::FAILURE;
-        }
-    };
-    let (targets, unavailable) = selected_targets(&options);
-    let jobs = match make_jobs(cases_dirs, &work_dir, targets, &options.patterns, !options.list) {
-        Ok(jobs) => jobs,
-        Err(err) => {
-            eprintln!("mold-elf-tests: {err}");
-            return ExitCode::FAILURE;
-        }
-    };
-
-    if options.list {
-        print_inventory(&jobs, &unavailable);
-        return ExitCode::SUCCESS;
-    }
-    if options.mode == Mode::All && !unavailable.is_empty() {
-        let targets =
-            unavailable.iter().map(|target| target.machine).collect::<Vec<_>>().join(", ");
-        eprintln!("skipping targets without both compiler and QEMU: {targets}");
-    }
-
-    let results = run_jobs(&work_dir, jobs, &options);
-    if print_summary(&results) { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+    if total.fail == 0 { ExitCode::SUCCESS } else { ExitCode::FAILURE }
 }
 
 #[cfg(test)]
@@ -665,18 +494,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn canonicalizes_machine_names() {
-        assert_eq!(canonical_machine("amd64"), "x86_64");
-        assert_eq!(canonical_machine("i386"), "i686");
-        assert_eq!(canonical_machine("armv7l"), "arm");
-        assert_eq!(canonical_machine("aarch64"), "aarch64");
-        assert_eq!(canonical_machine("powerpc64le"), "ppc64le");
+    fn selects_tests_by_substring() {
+        assert!(matches_patterns("dead-strip", &[]));
+        assert!(matches_patterns("dead-strip", &["strip".to_owned()]));
+        assert!(!matches_patterns("hello", &["strip".to_owned()]));
     }
 
     #[test]
     fn selects_generic_and_target_tests() {
-        assert!(matches_target("gc-sections", "aarch64"));
-        assert!(matches_target("arch-aarch64-reloc", "aarch64"));
-        assert!(!matches_target("arch-x86_64-reloc", "aarch64"));
+        let target = Target { label: String::new(), arch: Some("aarch64".to_owned()), env: vec![] };
+        assert!(matches_target("gc-sections", &target));
+        assert!(matches_target("arch-aarch64-reloc", &target));
+        assert!(!matches_target("arch-x86_64-reloc", &target));
+        let target = Target { arch: None, ..target };
+        assert!(matches_target("arch-x86_64-reloc", &target));
     }
 }
