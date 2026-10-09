@@ -442,6 +442,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "mold-pe"
+version = "3.0.0"
+dependencies = [
+ "mold-common",
+]
+
+[[package]]
 name = "pkg-config"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"

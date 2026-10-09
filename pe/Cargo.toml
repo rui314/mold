@@ -1,0 +1,14 @@
+[package]
+name = "mold-pe"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The PE/COFF linker of mold, for x86_64 images such as UEFI applications"
+license.workspace = true
+repository.workspace = true
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+mold-common.workspace = true
