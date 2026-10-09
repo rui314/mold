@@ -183,13 +183,8 @@ pub fn write_trace_files<E: Target>(ctx: &Context<E>) {
     {
         return;
     }
-    let uuid = args.uuid.then(|| {
-        let u = *ctx.uuid.lock().unwrap();
-        let hex = |r: std::ops::Range<usize>| -> String {
-            u[r].iter().map(|b| format!("{b:02X}")).collect()
-        };
-        format!("{}-{}-{}-{}-{}", hex(0..4), hex(4..6), hex(6..8), hex(8..10), hex(10..16))
-    });
+    let uuid =
+        args.uuid.then(|| format!("{:X}", uuid::Uuid::from_bytes(*ctx.uuid.lock().unwrap())));
     let traces = TraceInputs::new(ctx);
     if let Some(uuid) = &uuid {
         if let Some(path) = &args.trace_file {

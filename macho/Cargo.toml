@@ -11,7 +11,6 @@ repository.workspace = true
 path = "lib.rs"
 
 [dependencies]
-getrandom = "0.4.3"
 hashbrown = "0.17"
 libc.workspace = true
 memchr = "2.8.3"
@@ -23,4 +22,5 @@ rayon = "1.12.0"
 serde_json = "1.0.151"
 sha1 = "0.11"
 sha2 = "0.11"
+uuid = { version = "1.27", default-features = false, features = ["v4"] }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }

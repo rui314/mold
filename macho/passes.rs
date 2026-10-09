@@ -5350,18 +5350,13 @@ pub fn compute_uuid<E: Target>(
     buf: &mut [u8],
     sig_start: usize,
 ) -> Vec<[u8; 32]> {
-    let set_uuid = |uuid: &[u8], buf: &mut [u8]| {
-        let mut uuid: [u8; 16] = uuid[..16].try_into().unwrap();
-        uuid[6] = (uuid[6] & 0x0f) | 0x40; // version 4
-        uuid[8] = (uuid[8] & 0x3f) | 0x80; // RFC 4122 variant
-        *ctx.uuid.lock().unwrap() = uuid;
+    let set_uuid = |uuid: uuid::Uuid, buf: &mut [u8]| {
+        *ctx.uuid.lock().unwrap() = uuid.into_bytes();
         chunks::write_uuid(ctx, buf);
     };
     let content_uuid = ctx.args.uuid && !ctx.args.random_uuid;
     if ctx.args.uuid && ctx.args.random_uuid {
-        let mut uuid = [0; 16];
-        getrandom::fill(&mut uuid).unwrap_or_else(|err| fatal!("cannot get random bytes: {err}"));
-        set_uuid(&uuid, buf);
+        set_uuid(uuid::Uuid::new_v4(), buf);
     }
     let mut hashes: Vec<[u8; 32]> = Vec::new();
     if content_uuid || ctx.args.adhoc_codesign {
@@ -5375,7 +5370,8 @@ pub fn compute_uuid<E: Target>(
         flat.extend(hashes.concat());
         let mut hash = [0; 32];
         crate::util::sha256(&flat, &mut hash);
-        set_uuid(&hash, buf);
+        let bytes = hash[..16].try_into().unwrap();
+        set_uuid(uuid::Builder::from_random_bytes(bytes).into_uuid(), buf);
         let hdr_end = ctx.mach_header.hdr.size as usize;
         chunks::code_signature::rehash_pages(&buf[..sig_start], &mut hashes, 0..hdr_end);
     }

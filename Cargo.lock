@@ -481,7 +481,6 @@ dependencies = [
 name = "mold-macho"
 version = "3.0.0"
 dependencies = [
- "getrandom",
  "hashbrown",
  "libc",
  "memchr",
@@ -492,6 +491,7 @@ dependencies = [
  "serde_json",
  "sha1",
  "sha2",
+ "uuid",
  "xxhash-rust",
 ]
 
