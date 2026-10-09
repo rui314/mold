@@ -484,6 +484,26 @@ Intel Control\-flow Enforcement Technology (CET) is a new x86 feature available 
 .IP
 \fBmold\fR looks for \fBGNU_PROPERTY_X86_FEATURE_1_IBT\fR bit and \fBGNU_PROPERTY_X86_FEATURE_1_SHSTK\fR bit in \fB\.note\.gnu\.property\fR section to determine whether or not an object file was compiled with \fB\-fcf\-protection\fR\.
 .TP
+\fB\-z bti\-report\fR=[ \fBwarning\fR | \fBerror\fR | \fBnone\fR ]
+Branch Target Identification (BTI) is an ARM64 feature to protect programs from control hijacking attacks by requiring indirect branches to land on \fBbti\fR instructions\. You can tell the compiler to use the feature by specifying the \fB\-mbranch\-protection=bti\fR or \fB\-mbranch\-protection=standard\fR flag\. An output file is marked as BTI\-enabled only if all object files are\.
+.IP
+\fB\-z bti\-report\fR flag is used to make sure that all object files were compiled with BTI\. If \fBwarning\fR or \fBerror\fR are given, \fBmold\fR prints out a warning or an error message if an object file has neither \fBGNU_PROPERTY_AARCH64_FEATURE_1_BTI\fR bit in its \fB\.note\.gnu\.property\fR section nor \fBTag_Feature_BTI\fR in its build attributes\.
+.TP
+\fB\-z force\-bti\fR
+Turn on \fBGNU_PROPERTY_AARCH64_FEATURE_1_BTI\fR bit in \fB\.note\.gnu\.property\fR section even if some object files were not compiled with BTI, and generate a PLT with BTI landing pads\. This option implies \fB\-z bti\-report=warning\fR\.
+.TP
+\fB\-z gcs\fR=[ \fBimplicit\fR | \fBalways\fR | \fBnever\fR ]
+Guarded Control Stack (GCS) is an ARM64 shadow stack feature\. With \fBimplicit\fR, which is the default, \fBGNU_PROPERTY_AARCH64_FEATURE_1_GCS\fR bit in \fB\.note\.gnu\.property\fR section is turned on only if all object files have the bit\. \fBalways\fR turns it on regardless of object files and implies \fB\-z gcs\-report=warning\fR and \fB\-z gcs\-report\-dynamic=warning\fR\. \fBnever\fR turns it off\.
+.TP
+\fB\-z gcs\-report\fR=[ \fBwarning\fR | \fBerror\fR | \fBnone\fR ]
+Print out a warning or an error message if an object file has neither \fBGNU_PROPERTY_AARCH64_FEATURE_1_GCS\fR bit in its \fB\.note\.gnu\.property\fR section nor \fBTag_Feature_GCS\fR in its build attributes\.
+.TP
+\fB\-z gcs\-report\-dynamic\fR=[ \fBwarning\fR | \fBerror\fR | \fBnone\fR ]
+Print out a warning or an error message if a shared library lacks \fBGNU_PROPERTY_AARCH64_FEATURE_1_GCS\fR bit in its \fB\.note\.gnu\.property\fR section\.
+.TP
+\fB\-z pac\-plt\fR
+Generate an ARM64 PLT that authenticates function addresses read from \fB\.got\.plt\fR using Pointer Authentication (PAC), and turn on \fBGNU_PROPERTY_AARCH64_FEATURE_1_PAC\fR bit in \fB\.note\.gnu\.property\fR section\. The output works only with a dynamic linker that signs \fB\.got\.plt\fR entries\.
+.TP
 \fB\-z now\fR, \fB\-z lazy\fR
 By default, functions referring to other ELF modules are resolved by the dynamic linker when they are called for the first time\. \fB\-z now\fR marks an executable or a shared library file so that all dynamic symbols are resolved when a file is loaded to memory\. \fB\-z lazy\fR restores the default behavior\.
 .TP
