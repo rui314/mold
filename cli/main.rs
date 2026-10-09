@@ -4,6 +4,13 @@
 //! can build them in parallel, and a feature per target decides which of
 //! them are built in.
 
+// rustc emits asynchronous unwind tables, which compact unwind can't
+// encode, so the unwind info of most functions goes to __eh_frame. In a
+// debug build, that section exceeds the 16 MiB that compact unwind can
+// refer to, and Apple's ld warns about that. The warning concerns only
+// the speed of unwinding, so we keep rustc from reporting it.
+#![cfg_attr(all(target_vendor = "apple", debug_assertions), allow(linker_messages))]
+
 use mold_elf::driver::{Cmdline, LinkResult};
 use std::ffi::OsStr;
 use std::path::Path;
