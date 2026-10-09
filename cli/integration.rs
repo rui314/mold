@@ -1,15 +1,16 @@
+//! Runs the shell tests of the format the host builds programs for. The
+//! Mach-O tests drive Apple's toolchain, which only macOS has, and the ELF
+//! tests need a toolchain that makes ELF programs, which macOS lacks.
+
+use std::path::Path;
 use std::process::ExitCode;
 
-#[cfg(not(target_os = "macos"))]
 fn main() -> ExitCode {
-    use std::path::Path;
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-    let cases = [root.join("tests/elf")];
-    mold_elf_tests::run(&cases, Path::new(env!("CARGO_BIN_EXE_mold")))
-}
+    #[cfg(target_os = "macos")]
+    let (cases, run) = ("tests/macho", mold_macho_tests::run);
+    #[cfg(not(target_os = "macos"))]
+    let (cases, run) = ("tests/elf", mold_elf_tests::run);
 
-#[cfg(target_os = "macos")]
-fn main() -> ExitCode {
-    println!("skipped: the ELF tests don't run on macOS");
-    ExitCode::SUCCESS
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    run(&[root.join(cases)], Path::new(env!("CARGO_BIN_EXE_mold")))
 }

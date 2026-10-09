@@ -43,7 +43,7 @@ jobs:
       - run: cargo test --locked -p mold-macho -p mold-macho-tests --lib
       - run: |
           cargo test --locked -p mold --no-default-features --features macho-arm64,macho-x86_64 \
-            --test macho-integration -- --timeout 120
+            --test integration -- --timeout 120
 
       # The harness reports only which tests failed; each test's log
       # and its output directory are kept under the target directory.

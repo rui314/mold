@@ -19,11 +19,6 @@ name = "integration"
 path = "integration.rs"
 harness = false
 
-[[test]]
-name = "macho-integration"
-path = "macho-integration.rs"
-harness = false
-
 [dependencies]
 mimalloc = { package = "mold-mimalloc", version = "0.1.52" }
 mold-elf.workspace = true
