@@ -481,7 +481,6 @@ dependencies = [
 name = "mold-macho"
 version = "3.0.0"
 dependencies = [
- "cpp_demangle",
  "getrandom",
  "hashbrown",
  "libc",

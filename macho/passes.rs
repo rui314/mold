@@ -4,6 +4,7 @@ use std::ops::Range;
 use std::path::Path;
 use std::sync::Mutex;
 
+use mold_common::worker_local::WorkerLocal;
 use portable_atomic::AtomicU64;
 use rayon::prelude::*;
 
@@ -29,7 +30,6 @@ use crate::macho::*;
 use crate::mapped_file::MappedFile;
 use crate::symbol::{NEEDS_GOT, NEEDS_STUB, Symbol, SymbolId};
 use crate::symbol_moves::{Move, MoveOption};
-use crate::util::worker_local::WorkerLocal;
 use crate::util::{align_to, path_bytes, split_once};
 
 /// Adds the object that owns what the linker synthesizes: the

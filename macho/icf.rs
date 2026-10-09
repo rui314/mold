@@ -24,6 +24,7 @@
 use std::hash::Hash;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
+use mold_common::siphash::SipHash13_128;
 use portable_atomic::AtomicU64;
 use rayon::prelude::*;
 
@@ -33,7 +34,6 @@ use crate::input_files::{FileId, ObjectFile};
 use crate::input_sections::{FdeRecord, InputSection, Reloc, RelocTarget, subsec_name_rank};
 use crate::macho::*;
 use crate::symbol::SymbolId;
-use crate::util::siphash::SipHash13_128;
 
 /// A stable identifier for what a relocation edge points at.
 #[derive(Hash, PartialEq, Eq, Clone, Copy)]

@@ -1,6 +1,6 @@
-//! The glob matcher used for symbol name patterns in version scripts and
-//! dynamic list files. Exact, prefix and suffix patterns are matched
-//! directly. Simple substring patterns such as these
+//! The glob matcher used for symbol name patterns in version scripts,
+//! dynamic list files and Mach-O symbol lists. Exact, prefix and suffix
+//! patterns are matched directly. Simple substring patterns such as these
 //!
 //!    *16QAccessibleCache*
 //!    *32QAbstractFileIconProviderPrivate*
@@ -24,6 +24,15 @@ enum Token {
     Bracket(Box<[bool; 256]>),
 }
 
+/// How a pattern spells bracket expressions and escapes: as fnmatch(3)
+/// does, which is how the ELF linkers read version scripts, or as
+/// ld-prime reads a Mach-O symbol list (see ld_prime_bracket).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Syntax {
+    Fnmatch,
+    LdPrime,
+}
+
 #[derive(Clone, Debug)]
 struct Pattern {
     tokens: Vec<Token>,
@@ -35,12 +44,17 @@ struct Pattern {
 }
 
 impl Pattern {
-    fn compile(mut pat: &[u8], value: i64) -> Option<Self> {
+    fn compile(mut pat: &[u8], value: i64, syntax: Syntax) -> Option<Self> {
         let mut tokens: Vec<Token> = Vec::new();
 
         while let Some((&c, rest)) = pat.split_first() {
             pat = rest;
             match c {
+                b'[' if syntax == Syntax::LdPrime => {
+                    let end = pat.iter().position(|&c| c == b']')?;
+                    tokens.push(Token::Bracket(ld_prime_bracket(&pat[..end])?));
+                    pat = &pat[end + 1..];
+                }
                 b'[' => {
                     // Here are a few bracket pattern examples:
                     //
@@ -109,11 +123,16 @@ impl Pattern {
                         tokens.push(Token::Star);
                     }
                 }
-                b'\\' => {
-                    let (&escaped, rest) = pat.split_first()?;
-                    pat = rest;
-                    push_char(&mut tokens, escaped);
-                }
+                // A backslash takes the next character as itself. ld-prime
+                // takes one at the end as itself too.
+                b'\\' => match pat.split_first() {
+                    Some((&escaped, rest)) => {
+                        pat = rest;
+                        push_char(&mut tokens, escaped);
+                    }
+                    None if syntax == Syntax::LdPrime => push_char(&mut tokens, c),
+                    None => return None,
+                },
                 _ => push_char(&mut tokens, c),
             }
         }
@@ -193,6 +212,37 @@ impl Pattern {
         }
         true
     }
+}
+
+/// The characters a bracket expression matches, given what is between
+/// its brackets, as ld-prime reads one: it ends at the first `]` (so
+/// `[]` matches nothing) and knows no negation or escapes - `[!a]`
+/// matches `!` or `a`, `[\a]` `\` or `a`. A `-` between two characters
+/// makes a range from the one before it, which after a range is that
+/// `-` itself (`[a-b-d]` is `a`-`b` and `-`-`d`), to the one after it;
+/// a reversed range is empty. A `-` first or last makes the expression,
+/// and so its pattern, malformed (None): it matches nothing.
+fn ld_prime_bracket(class: &[u8]) -> Option<Box<[bool; 256]>> {
+    let mut chars = Box::new([false; 256]);
+    let mut prev = None;
+    let mut i = 0;
+    while i < class.len() {
+        let c = class[i];
+        if c == b'-' {
+            let (Some(start), Some(&end)) = (prev, class.get(i + 1)) else {
+                return None;
+            };
+            for x in start..=end {
+                chars[x as usize] = true;
+            }
+            i += 1;
+        } else {
+            chars[c as usize] = true;
+        }
+        prev = Some(c);
+        i += 1;
+    }
+    Some(chars)
 }
 
 fn push_char(tokens: &mut Vec<Token>, c: u8) {
@@ -524,6 +574,24 @@ impl Default for Glob {
 impl GlobBuilder {
     /// Adds a pattern. Returns false if the pattern is malformed.
     pub fn add(&mut self, pat: &[u8], value: i64) -> bool {
+        self.add_pattern(pat, value, Syntax::Fnmatch)
+    }
+
+    /// Adds a pattern of a Mach-O symbol list, whose bracket expressions
+    /// and escapes are read as ld-prime reads them (see ld_prime_bracket).
+    /// Returns false if the pattern is malformed.
+    pub fn add_ld_prime(&mut self, pat: &[u8], value: i64) -> bool {
+        self.add_pattern(pat, value, Syntax::LdPrime)
+    }
+
+    /// Adds a string that matches itself alone, wildcards and all.
+    pub fn add_literal(&mut self, s: &[u8], value: i64) {
+        debug_assert!(value >= 0);
+        self.glob.max_value = self.glob.max_value.max(value);
+        self.glob.exacts.push(Literal { pat: s.to_vec(), value });
+    }
+
+    fn add_pattern(&mut self, pat: &[u8], value: i64, syntax: Syntax) -> bool {
         debug_assert!(value >= 0);
         self.glob.max_value = self.glob.max_value.max(value);
 
@@ -552,7 +620,7 @@ impl GlobBuilder {
             self.glob.aho_corasick.add(pat, value);
             return true;
         }
-        match Pattern::compile(pat, value) {
+        match Pattern::compile(pat, value, syntax) {
             Some(pattern) => {
                 self.glob.patterns.push(pattern);
                 true
@@ -699,6 +767,52 @@ mod tests {
         assert_eq!(g.find(b"leftmidright"), 3);
         assert_eq!(g.find(b"ay"), 4);
         assert_eq!(g.find(b"xy"), -1);
+    }
+
+    #[test]
+    fn ld_prime_brackets() {
+        let mut g = GlobBuilder::default();
+        for (i, pat) in
+            ["a[a-b-d]", "b[c-a]", "c[\\a]", "d[]x", "e\\*", "f\\", "g[!x]y"].iter().enumerate()
+        {
+            assert!(g.add_ld_prime(pat.as_bytes(), i as i64));
+        }
+        let g = g.build();
+        for (name, expected) in [
+            ("ab", 0),
+            ("a-", 0),
+            ("aA", 0),
+            ("ac", 0),
+            ("a,", -1),
+            ("bc", 1),
+            ("bb", -1),
+            ("c\\", 2),
+            ("ca", 2),
+            ("d]x", -1),
+            ("dx", -1),
+            ("e*", 4),
+            ("ex", -1),
+            ("f\\", 5),
+            ("g!y", 6),
+            ("gxy", 6),
+            ("gay", -1),
+        ] {
+            assert_eq!(g.find(name.as_bytes()), expected, "{name}");
+        }
+        let mut g = GlobBuilder::default();
+        for pat in ["x[", "y[a-]", "z[-a]"] {
+            assert!(!g.add_ld_prime(pat.as_bytes(), 0));
+        }
+        assert!(!g.add(b"f\\", 0));
+    }
+
+    #[test]
+    fn literal_matches_only_itself() {
+        let mut g = GlobBuilder::default();
+        g.add_literal(b"a*b", 0);
+        let g = g.build();
+        assert_eq!(g.find(b"a*b"), 0);
+        assert_eq!(g.find(b"axb"), -1);
     }
 
     #[test]

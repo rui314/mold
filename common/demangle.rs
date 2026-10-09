@@ -1,6 +1,8 @@
 //! Symbol name demangling for diagnostics.
 
-/// Demangles an Itanium C++ ABI symbol name, if `name` is one.
+/// Demangles an Itanium C++ ABI symbol name, if `name` is one the
+/// demangler reads: its identifiers are ASCII, so a name with other
+/// bytes stays as it is.
 pub fn demangle_cpp(name: &[u8]) -> Option<String> {
     if !name.starts_with(b"_Z") {
         return None;

@@ -9,6 +9,8 @@ use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
+use mold_common::glob::{Glob, GlobBuilder};
+
 use crate::arch::Target;
 use crate::context::Context;
 use crate::error::RawPath;
@@ -17,7 +19,6 @@ use crate::fatal;
 use crate::macho::*;
 use crate::mapped_file::MappedFile;
 use crate::reader::under_root;
-use crate::util::glob::{Glob, GlobBuilder};
 use crate::util::{is_space, lines, os_str, path_bytes, trim_space};
 
 /// The Apple ld64 version whose command line this linker implements,
@@ -1246,7 +1247,7 @@ fn add_patterns(glob: &mut GlobBuilder, entries: impl IntoIterator<Item: AsRef<[
         match exact_name(entry) {
             Some(name) => glob.add_literal(&name, 0),
             None => {
-                glob.add(entry, 0);
+                glob.add_ld_prime(entry, 0);
             }
         }
     }
@@ -1270,7 +1271,7 @@ fn symbol_move(opt: &str, segment: &[u8], path: &Path) -> SymbolMove {
         match exact_name(&entry) {
             Some(name) => symbols.add_literal(&name, 1),
             None => {
-                symbols.add(&entry, 0);
+                symbols.add_ld_prime(&entry, 0);
             }
         }
     }

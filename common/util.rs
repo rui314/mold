@@ -173,6 +173,13 @@ pub fn is_int(value: i64, n: u32) -> bool {
     sign_extend(value as u64, n) == value
 }
 
+/// Whether a byte is white space as isspace() takes it in the C locale,
+/// without the function call that a tokenizer would otherwise make for
+/// every byte of a response file.
+pub fn is_space(c: u8) -> bool {
+    matches!(c, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
+}
+
 /// Writes a NUL-terminated string and returns the number of bytes written.
 pub fn write_cstr(buf: &mut [u8], s: &[u8]) -> usize {
     buf[..s.len()].copy_from_slice(s);

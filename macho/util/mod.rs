@@ -2,20 +2,10 @@
 
 pub(crate) mod cityhash;
 pub mod demangle;
-pub mod glob;
-pub(crate) mod siphash;
-pub(crate) mod worker_local;
 
-/// Rounds `value` up to a multiple of `align`, which must be zero or a power
-/// of two. Zero means "no alignment".
-#[inline]
-pub fn align_to(value: u64, align: u64) -> u64 {
-    if align == 0 {
-        return value;
-    }
-    debug_assert!(align.is_power_of_two());
-    (value + align - 1) & !(align - 1)
-}
+pub use mold_common::util::{
+    align_to, bits, encode_sleb, encode_uleb, is_space, leak_bytes, os_str, read_uleb, sign_extend,
+};
 
 /// Rounds `val` up to the next value congruent to `modulus` modulo
 /// `align`: the smallest x >= val with x % align == modulus. ld64 places
@@ -27,40 +17,13 @@ pub fn align_to_mod(val: u64, align: u64, modulus: u64) -> u64 {
     if val <= modulus { modulus } else { align_to(val - modulus, align) + modulus }
 }
 
-// Returns [hi:lo] bits of val.
-#[inline]
-pub fn bits(value: u64, hi: u32, lo: u32) -> u64 {
-    (value >> lo) & ((1u64 << (hi - lo + 1)) - 1)
-}
-
-// Cast val to a signed N bit integer.
-// For example, sign_extend(x, 32) == (i32)x for any integer x.
-pub fn sign_extend(value: u64, n: u32) -> i64 {
-    ((value << (64 - n)) as i64) >> (64 - n)
-}
-
 // Little-endian reads and writes of the integer at the start of a
 // slice: the targets' instructions and relocated fields, and the
 // fields of a mergeable dylib's record.
-pub fn read16(loc: &[u8]) -> u16 {
-    u16::from_le_bytes(loc[..2].try_into().unwrap())
-}
-
-pub fn read32(loc: &[u8]) -> u32 {
-    u32::from_le_bytes(loc[..4].try_into().unwrap())
-}
-
-pub fn read64(loc: &[u8]) -> u64 {
-    u64::from_le_bytes(loc[..8].try_into().unwrap())
-}
-
-pub fn write32(loc: &mut [u8], val: u32) {
-    loc[..4].copy_from_slice(&val.to_le_bytes());
-}
-
-pub fn write64(loc: &mut [u8], val: u64) {
-    loc[..8].copy_from_slice(&val.to_le_bytes());
-}
+pub use mold_common::endian::{
+    read_ul16 as read16, read_ul32 as read32, read_ul64 as read64, write_ul32 as write32,
+    write_ul64 as write64,
+};
 
 // Little-endian appends of an integer to a buffer: the fields of the
 // tables the linker builds in full before writing them out (the chained
@@ -91,33 +54,6 @@ pub fn name_sort_key(name: &[u8]) -> (u64, &[u8]) {
     (u64::from_be_bytes(p), name)
 }
 
-/// Appends `value` in unsigned LEB128 encoding.
-pub fn encode_uleb(out: &mut Vec<u8>, mut value: u64) {
-    loop {
-        let byte = (value & 0x7f) as u8;
-        value >>= 7;
-        if value == 0 {
-            out.push(byte);
-            return;
-        }
-        out.push(byte | 0x80);
-    }
-}
-
-/// Appends `value` in signed LEB128 encoding.
-pub fn encode_sleb(out: &mut Vec<u8>, mut value: i64) {
-    loop {
-        let byte = (value & 0x7f) as u8;
-        value >>= 7;
-        let negative = byte & 0x40 != 0;
-        if (value == 0 && !negative) || (value == -1 && negative) {
-            out.push(byte);
-            return;
-        }
-        out.push(byte | 0x80);
-    }
-}
-
 /// Writes `value` in unsigned LEB128 encoding at the start of `buf`,
 /// returning its length.
 pub fn write_uleb(buf: &mut [u8], mut value: u64) -> usize {
@@ -146,35 +82,10 @@ pub fn uleb_size(mut value: u64) -> usize {
     len
 }
 
-/// Reads an unsigned LEB128 value, advancing `bytes` past it.
-#[inline]
-pub fn read_uleb(bytes: &mut &[u8]) -> u64 {
-    let mut value = 0;
-    let mut shift = 0;
-    loop {
-        let (&byte, rest) = bytes.split_first().expect("truncated LEB128");
-        *bytes = rest;
-        if shift < 64 {
-            value |= ((byte & 0x7f) as u64) << shift;
-        }
-        shift += 7;
-        if byte & 0x80 == 0 {
-            return value;
-        }
-    }
-}
-
-pub use mold_common::util::os_str;
-
 /// The bytes of a path, as the file system and Mach-O load commands
 /// hold them.
 pub fn path_bytes(path: &std::path::Path) -> &[u8] {
     path.as_os_str().as_encoded_bytes()
-}
-
-/// Whether a byte is white space as isspace() takes it in the C locale.
-pub fn is_space(c: u8) -> bool {
-    matches!(c, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
 }
 
 /// A byte string without the white space (see is_space) it starts and
@@ -221,13 +132,6 @@ pub fn reserve_arena<T>(v: &mut Vec<T>, additional: usize) {
     if v.capacity() - v.len() < additional {
         v.reserve_exact(additional + (v.len() + additional) / 8);
     }
-}
-
-/// Leaks a byte string for the rest of the process's lifetime: names
-/// in the output string table outlive every data structure of a link,
-/// and the process exits as soon as the link is done.
-pub fn leak_bytes(bytes: Vec<u8>) -> &'static [u8] {
-    Vec::leak(bytes)
 }
 
 /// Fills `buf` with random bytes from the operating system.

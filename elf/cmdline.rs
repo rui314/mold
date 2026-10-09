@@ -12,7 +12,7 @@ use mold_common::error::strerror;
 use mold_common::glob::{Glob, GlobBuilder};
 use mold_common::mapped_file::MappedFile;
 use mold_common::perf::Counter;
-use mold_common::util::{self, align_down};
+use mold_common::util::{self, align_down, is_space};
 use mold_common::{fatal, out, warn};
 
 use crate::arch::{Family, emulation_to_target};
@@ -735,12 +735,6 @@ pub struct TargetTraits {
     pub is_rela: bool,
     pub family: Family,
     pub page_size: u64,
-}
-
-fn is_space(c: u8) -> bool {
-    // Same as isspace() in the C locale, without the function call that the
-    // tokenizer below would otherwise make for every byte of a response file.
-    matches!(c, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
 }
 
 // If a command line argument is in the form of `@path/to/some/file` (i.e.

@@ -1,14 +1,6 @@
 //! Symbol name demangling for diagnostics.
 
-/// Demangles an Itanium C++ ABI symbol name, if `name` is one the
-/// demangler reads: its identifiers are ASCII, so a name with other
-/// bytes stays as it is.
-pub fn demangle_cpp(name: &[u8]) -> Option<String> {
-    if !name.starts_with(b"_Z") {
-        return None;
-    }
-    cpp_demangle::Symbol::new(name).ok()?.demangle().ok()
-}
+use mold_common::demangle::demangle_cpp;
 
 /// A Mach-O symbol name as diagnostics spell it (see display_name).
 pub struct DisplayName<'a>(&'a [u8]);
