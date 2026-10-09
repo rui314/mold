@@ -26,9 +26,9 @@ mold-macho-x86_64 = { workspace = true, optional = true }
 mold-macho-tests = { path = "../tests/macho" }
 
 # One feature per target. All are built by default; a build for one
-# target alone (`--no-default-features --features arm64`) is much faster.
+# target alone (`--no-default-features --features macho-arm64`) is much faster.
 [features]
-default = ["arm64", "x86_64"]
+default = ["macho-arm64", "macho-x86_64"]
 system-allocator = []
-arm64 = ["dep:mold-macho-arm64"]
-x86_64 = ["dep:mold-macho-x86_64"]
+macho-arm64 = ["dep:mold-macho-arm64"]
+macho-x86_64 = ["dep:mold-macho-x86_64"]

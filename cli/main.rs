@@ -16,9 +16,9 @@ type LinkFn = fn(Cmdline) -> LinkResult;
 // Each target has its own monomorphized link function. Start with the first
 // enabled target and switch to the matching function if the inputs differ.
 const TARGETS: &[(&str, LinkFn)] = &[
-    #[cfg(feature = "arm64")]
+    #[cfg(feature = "macho-arm64")]
     ("arm64", mold_macho_arm64::link),
-    #[cfg(feature = "x86_64")]
+    #[cfg(feature = "macho-x86_64")]
     ("x86_64", mold_macho_x86_64::link),
 ];
 
