@@ -12,6 +12,7 @@
 use std::ffi::{CStr, CString, c_char, c_int, c_void};
 use std::path::{Path, PathBuf};
 
+use mold_common::path::path_bytes;
 use rayon::prelude::*;
 
 use crate::arch::Target;
@@ -24,7 +25,6 @@ use crate::input_files::{FileId, ObjectFile, PlatformVersion, ignore_foreign_fil
 use crate::macho::*;
 use crate::mapped_file::MappedFile;
 use crate::symbol::{Symbol, SymbolId};
-use crate::util::path_bytes;
 
 // Symbol attribute bits from llvm-c/lto.h
 const LTO_SYMBOL_DEFINITION_MASK: u32 = 0x700;
@@ -158,8 +158,9 @@ fn toolchain_lto_library() -> Option<std::path::PathBuf> {
 pub fn load_plugin(path: Option<&Path>) -> Plugin {
     let default = path.is_none().then(toolchain_lto_library).flatten();
     let path = path.or(default.as_deref());
-    let path = CString::new(path.map_or(DEFAULT_LTO_LIBRARY.as_bytes(), crate::util::path_bytes))
-        .unwrap_or_else(|_| fatal!("-lto_library: path contains a NUL byte"));
+    let path =
+        CString::new(path.map_or(DEFAULT_LTO_LIBRARY.as_bytes(), mold_common::path::path_bytes))
+            .unwrap_or_else(|_| fatal!("-lto_library: path contains a NUL byte"));
     // SAFETY: dlopen/dlsym with valid NUL-terminated strings.
     unsafe {
         let handle = libc::dlopen(path.as_ptr(), libc::RTLD_NOW | libc::RTLD_GLOBAL);
@@ -330,7 +331,7 @@ pub unsafe fn write_merged_modules(
     cg: *mut c_void,
     path: &Path,
 ) -> Result<(), RawBuf> {
-    let path = CString::new(crate::util::path_bytes(path))
+    let path = CString::new(mold_common::path::path_bytes(path))
         .map_err(|_| RawBuf::from("output path contains a NUL byte"))?;
     // SAFETY: the generator is live per the caller, and the path is
     // NUL-terminated.
@@ -401,7 +402,7 @@ unsafe fn set_cache(plugin: &Plugin, cg: *mut c_void, cache: &CacheOptions) {
         crate::warn!("unable to create ThinLTO cache directory: {} ({errno})", cache.dir.raw());
         return;
     }
-    let dir = CString::new(crate::util::path_bytes(cache.dir)).unwrap_or_default();
+    let dir = CString::new(mold_common::path::path_bytes(cache.dir)).unwrap_or_default();
     // SAFETY: the generator is live per the caller; the path is
     // NUL-terminated.
     unsafe {
@@ -490,7 +491,7 @@ pub unsafe fn compile_thin(
             let dir = temp_path(output, ".thinlto.bcs/");
             (plugin.thinlto_codegen_set_savetemps_dir)(cg, c(dir.as_encoded_bytes()).as_ptr());
         }
-        let objects_dir = opts.objects_dir.map(|dir| c(crate::util::path_bytes(dir)));
+        let objects_dir = opts.objects_dir.map(|dir| c(mold_common::path::path_bytes(dir)));
         if let Some(dir) = &objects_dir {
             (plugin.thinlto_set_generated_objects_dir)(cg, dir.as_ptr());
         }
@@ -584,7 +585,7 @@ unsafe fn thin_object_files(plugin: &Plugin, cg: *mut c_void) -> Vec<ThinObject>
     unsafe {
         for i in 0..(plugin.thinlto_module_get_num_object_files)(cg) {
             let path = CStr::from_ptr((plugin.thinlto_module_get_object_file)(cg, i));
-            let path = std::path::PathBuf::from(crate::util::os_str(path.to_bytes()));
+            let path = std::path::PathBuf::from(mold_common::bytes::os_str(path.to_bytes()));
             let data = std::fs::read(&path)
                 .unwrap_or_else(|e| fatal!("cannot read ThinLTO object {}: {}", path.raw(), e));
             objects.push(ThinObject { path: Some(path), data });
@@ -660,7 +661,7 @@ pub struct LtoSymbol {
 
 /// Creates a module from a bitcode buffer.
 fn create_module(plugin: &Plugin, data: &[u8], name: &Path) -> *mut c_void {
-    let cname = CString::new(crate::util::path_bytes(name)).unwrap_or_default();
+    let cname = CString::new(mold_common::path::path_bytes(name)).unwrap_or_default();
     // SAFETY: the buffer is valid for the call's duration; libLTO copies
     // what it needs.
     let module = unsafe {
@@ -721,7 +722,7 @@ pub fn parse_module(plugin: &Plugin, data: &[u8], name: &Path) -> (usize, Vec<Lt
             let def = attr & LTO_SYMBOL_DEFINITION_MASK;
             let scope = attr & LTO_SYMBOL_SCOPE_MASK;
             syms.push(LtoSymbol {
-                name: crate::util::leak_bytes(cstr.to_bytes().to_vec()),
+                name: mold_common::mem::leak_bytes(cstr.to_bytes().to_vec()),
                 is_defined: matches!(
                     def,
                     LTO_SYMBOL_DEFINITION_REGULAR
@@ -760,7 +761,7 @@ pub fn read_lto_object<E: Target>(
     let (module, lsyms) = parse_module(&plugin, mf.data(), &mf.name);
     if let Some(arch) = foreign_bitcode_arch::<E>(&plugin, module) {
         if ctx.args.allow_sub_type_mismatches && is_bitcode_subtype_mismatch::<E>(&arch) {
-            let name = without_fat_arch(crate::util::path_bytes(&mf.name));
+            let name = without_fat_arch(mold_common::path::path_bytes(&mf.name));
             crate::warn!(
                 "linking {arch} file '{}' into {} link",
                 crate::error::raw(&name),

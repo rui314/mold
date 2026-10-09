@@ -18,8 +18,9 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
 
+use mold_common::bytes::os_str;
+
 use crate::mapped_file::MappedFile;
-use crate::util::os_str;
 
 const HEADER_SIZE: usize = 60;
 

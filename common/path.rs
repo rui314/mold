@@ -6,6 +6,12 @@ pub fn path_clean(path: &str) -> String {
     clean_path(std::path::Path::new(path)).to_string_lossy().into_owned()
 }
 
+/// The bytes of a path, as the file system and Mach-O load commands
+/// hold them.
+pub fn path_bytes(path: &std::path::Path) -> &[u8] {
+    path.as_os_str().as_encoded_bytes()
+}
+
 /// Normalizes an OS path without resolving symlinks.
 pub fn clean_path(path: &std::path::Path) -> std::path::PathBuf {
     use std::path::{Component, PathBuf};

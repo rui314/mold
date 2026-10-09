@@ -14,6 +14,7 @@
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
+use mold_common::path::path_bytes;
 use rayon::prelude::*;
 
 use crate::arch::Target;
@@ -29,7 +30,6 @@ use crate::input_files::PlatformVersion;
 use crate::macho::*;
 use crate::mapped_file::{MappedFile, unreadable_file};
 use crate::mergeable::MergedLibrary;
-use crate::util::path_bytes;
 
 /// Without -arch, ld-prime links for the target of the first object
 /// file named on the command line: a Mach-O object's CPU type, or a
@@ -118,7 +118,7 @@ pub fn infer_platform(args: &mut Args) {
 /// that starts with two slashes stays absolute and replaces the root.
 pub(crate) fn under_root(root: &Path, path: &Path) -> PathBuf {
     let bytes = path_bytes(path);
-    root.join(crate::util::os_str(bytes.strip_prefix(b"/").unwrap_or(bytes)))
+    root.join(mold_common::bytes::os_str(bytes.strip_prefix(b"/").unwrap_or(bytes)))
 }
 
 /// Reads all input files: finds the file each input names, loads the
@@ -447,7 +447,7 @@ fn find_framework<E: Target>(
         Some(comma) => (&arg[..comma], Some(&arg[comma + 1..])),
         None => (arg, None),
     };
-    let name = crate::util::os_str(name);
+    let name = mold_common::bytes::os_str(name);
     let mut framework = name.to_os_string();
     framework.push(".framework");
     let search = |subdir: &str| {
@@ -456,7 +456,7 @@ fn find_framework<E: Target>(
                 let mut path = dir.join(&framework).join(subdir).join(name);
                 if let Some(suffix) = suffix {
                     path = std::fs::canonicalize(&path).unwrap_or(path);
-                    path.as_mut_os_string().push(crate::util::os_str(suffix));
+                    path.as_mut_os_string().push(mold_common::bytes::os_str(suffix));
                 }
                 for path in with_image_suffixes(ctx, &path) {
                     let found = match stubs {
@@ -594,8 +594,8 @@ fn search_library<E: Target>(
 /// directory of the dylib that carries the entry.
 pub(crate) fn loader_rpath(dylib: &Path, rpath: &[u8]) -> PathBuf {
     match rpath.strip_prefix(b"@loader_path/") {
-        Some(rest) => dir_of(dylib).join(crate::util::os_str(rest)),
-        None => PathBuf::from(crate::util::os_str(rpath)),
+        Some(rest) => dir_of(dylib).join(mold_common::bytes::os_str(rest)),
+        None => PathBuf::from(mold_common::bytes::os_str(rpath)),
     }
 }
 
@@ -606,9 +606,9 @@ pub(crate) fn loader_rpath(dylib: &Path, rpath: &[u8]) -> PathBuf {
 /// reaches XCTestCore only from Versions/A). A fat file's name may
 /// carry the "(for architecture ...)" suffix the loader adds.
 fn dir_of(path: &Path) -> PathBuf {
-    let bytes = crate::util::path_bytes(path);
+    let bytes = mold_common::path::path_bytes(path);
     let end = memchr::memmem::find(bytes, b"(for architecture").unwrap_or(bytes.len());
-    let path = Path::new(crate::util::os_str(&bytes[..end]));
+    let path = Path::new(mold_common::bytes::os_str(&bytes[..end]));
     if let Ok(real) = std::fs::canonicalize(path)
         && let Some(dir) = real.parent()
     {
@@ -675,7 +675,7 @@ fn find_dylib_ref<E: Target>(
     loader: Option<(&Path, &[PathBuf])>,
     inlined: bool,
 ) -> Option<PathBuf> {
-    use crate::util::os_str;
+    use mold_common::bytes::os_str;
     if let Some((loader, loader_rpaths)) = loader {
         if let Some(rest) = name.strip_prefix(b"@loader_path/") {
             if let Some(path) = prober.library(&dir_of(loader).join(os_str(rest))) {
@@ -712,8 +712,9 @@ fn find_dylib_ref<E: Target>(
 /// (libfoo.1.dylib) in each library directory - but for a library
 /// inside a framework, which is looked up by its name alone.
 fn find_by_leaf<E: Target>(ctx: &Context<E>, prober: &Prober, name: &[u8]) -> Option<PathBuf> {
-    use crate::util::{os_str, path_bytes};
     use memchr::{memmem, memrchr};
+    use mold_common::bytes::os_str;
+    use mold_common::path::path_bytes;
     let leaf = memrchr(b'/', name).map_or(name, |slash| &name[slash + 1..]);
     let framework_dir = [b"/", leaf, b".framework/"].concat();
     if leaf.len() < name.len() && memmem::rfind(name, &framework_dir).is_some() {
@@ -1718,7 +1719,7 @@ fn find_autolinked<E: Target>(
     prober: &Prober,
     opt: &[Vec<u8>],
 ) -> Option<PathBuf> {
-    let os_str = crate::util::os_str;
+    let os_str = mold_common::bytes::os_str;
     match opt {
         [lib] => find_library(ctx, prober, os_str(autolinked_library(lib))),
         [flag, name] if flag.ends_with(b"framework") => {

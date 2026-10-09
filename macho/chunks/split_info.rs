@@ -17,6 +17,7 @@
 //! lists, __init_offsets and __unwind_info (image offsets), and
 //! __eh_frame's records.
 
+use mold_common::leb128::encode_uleb;
 use rayon::prelude::*;
 
 use crate::arch::{SplitRef, Target};
@@ -31,7 +32,6 @@ use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho_consts::*;
 use crate::objc::ObjcRef;
 use crate::symbol::SymbolId;
-use crate::util::encode_uleb;
 
 #[derive(Debug)]
 pub struct SplitInfoSection {

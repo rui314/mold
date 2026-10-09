@@ -1,11 +1,12 @@
 //! The LC_DYLD_INFO rebase opcode stream: every pointer dyld slides.
 //! mold's reldyn.rs holds the ELF relative relocations it stands in for.
 
+use mold_common::leb128::encode_uleb;
+
 use crate::arch::Target;
 use crate::chunks::{ChunkHeader, got, lazy_ptrs, objc_stubs, output_section, segment_and_offset};
 use crate::context::Context;
 use crate::macho::*;
-use crate::util::encode_uleb;
 
 /// The rebase opcode stream: every pointer dyld slides.
 #[derive(Debug)]

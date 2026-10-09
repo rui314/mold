@@ -11,6 +11,8 @@
 //! chunks::segment_prots). Fixups, symbols and -order_file treat a moved
 //! subsection as any other.
 
+use mold_common::mem::leak_bytes;
+
 use crate::arch::Target;
 use crate::cmdline::SymbolMove;
 use crate::context::Context;
@@ -18,7 +20,6 @@ use crate::error::{RawPath, raw};
 use crate::input_files::{FileId, canonical_section_flags, should_write_to_local_symtab};
 use crate::macho::*;
 use crate::symbol::SymbolId;
-use crate::util::leak_bytes;
 
 /// The option that moves a subsection.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

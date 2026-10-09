@@ -35,5 +35,4 @@ pub(crate) mod symbol_moves;
 pub(crate) mod tapi;
 pub(crate) mod thunks;
 pub(crate) mod tls;
-pub mod util;
 mod x86_64;

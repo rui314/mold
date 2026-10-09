@@ -20,6 +20,10 @@ use hashbrown::{HashMap, HashSet};
 use rayon::prelude::*;
 use std::sync::atomic::{AtomicU16, AtomicU32, Ordering};
 
+use mold_common::bits::align_to;
+use mold_common::leb128::encode_uleb;
+use mold_common::mem::leak_bytes;
+
 use crate::arch::Target;
 use crate::chunks::symtab::{SymtabSection, par_push_entries};
 use crate::chunks::{ChunkHeader, OutputSectionId};
@@ -31,7 +35,6 @@ use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
 use crate::output_file;
 use crate::symbol::SymbolId;
-use crate::util::{align_to, encode_uleb, leak_bytes};
 
 /// N_NO_DEAD_STRIP for a symbol from this input section: ld-prime
 /// marks every symbol of a no_dead_strip section, local or global, so

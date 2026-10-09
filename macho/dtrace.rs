@@ -25,6 +25,8 @@
 //! providers; we make them in the order of their first sites.
 
 use hashbrown::HashMap;
+use mold_common::bytes::split_once;
+use mold_common::endian::{push_ul16, push_ul32, push_ul64};
 use rayon::prelude::*;
 
 use crate::arch::Target;
@@ -34,7 +36,6 @@ use crate::input_files::add_synthetic_section;
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
 use crate::symbol::SymbolId;
-use crate::util::{push16, push32, push64, split_once};
 
 /// The prefix of the names of the symbols a `dtrace -h` header makes
 /// code refer to. ld-prime takes every undefined symbol whose name
@@ -525,9 +526,9 @@ impl ProbeTables {
                 let offidx = t.sites.len() as u32;
                 put_u32s(&mut t.records, &[func, name, nargv, xargv, argidx, offidx]);
                 t.records.extend_from_slice(&[nargc, nargc]);
-                push16(&mut t.records, inst.sites.len() as u16);
+                push_ul16(&mut t.records, inst.sites.len() as u16);
                 put_u32s(&mut t.records, &[t.tests.len() as u32]);
-                push16(&mut t.records, inst.tests.len() as u16);
+                push_ul16(&mut t.records, inst.tests.len() as u16);
                 t.records.extend_from_slice(&[0; 6]);
                 t.sites.extend(&inst.sites);
                 t.tests.extend(&inst.tests);
@@ -575,7 +576,7 @@ fn lay_out_dof(
     let mut data: Vec<u8> = Vec::new();
     let mut headers = Vec::new();
     for (ty, align, entsize, bytes) in sections {
-        data.resize(crate::util::align_to(data.len() as u64, align as u64) as usize, 0);
+        data.resize(mold_common::bits::align_to(data.len() as u64, align as u64) as usize, 0);
         headers.push((ty, align, entsize, (start + data.len()) as u64, bytes.len() as u64));
         data.extend_from_slice(&bytes);
     }
@@ -600,13 +601,13 @@ fn lay_out_dof(
 
 fn put_u32s(out: &mut Vec<u8>, vals: &[u32]) {
     for &v in vals {
-        push32(out, v);
+        push_ul32(out, v);
     }
 }
 
 fn put_u64s(out: &mut Vec<u8>, vals: &[u64]) {
     for &v in vals {
-        push64(out, v);
+        push_ul64(out, v);
     }
 }
 

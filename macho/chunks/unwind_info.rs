@@ -1,6 +1,7 @@
 //! __TEXT,__unwind_info: the compact unwind table, generated from the
 //! objects' __compact_unwind records.
 
+use mold_common::endian::{push_ul16, push_ul32};
 use rayon::prelude::*;
 
 use crate::arch::Target;
@@ -9,7 +10,6 @@ use crate::context::Context;
 use crate::input_sections::{InputSection, UnwindRecord};
 use crate::macho::*;
 use crate::symbol::SymbolId;
-use crate::util::{push16, push32};
 
 #[derive(Debug)]
 pub struct UnwindInfoSection {
@@ -268,18 +268,18 @@ fn write_table<E: Target>(
     let page2_off = lsda_off + num_lsda * 8;
 
     let mut buf = Vec::new();
-    push32(&mut buf, UNWIND_SECTION_VERSION);
-    push32(&mut buf, personality_off as u32);
-    push32(&mut buf, 0);
-    push32(&mut buf, personality_off as u32);
-    push32(&mut buf, personalities.len() as u32);
-    push32(&mut buf, page1_off as u32);
-    push32(&mut buf, pages.len() as u32 + 1);
+    push_ul32(&mut buf, UNWIND_SECTION_VERSION);
+    push_ul32(&mut buf, personality_off as u32);
+    push_ul32(&mut buf, 0);
+    push_ul32(&mut buf, personality_off as u32);
+    push_ul32(&mut buf, personalities.len() as u32);
+    push_ul32(&mut buf, page1_off as u32);
+    push_ul32(&mut buf, pages.len() as u32 + 1);
 
     // Personalities are image-relative pointers to the functions' GOT
     // slots, patched in by copy_buf.
     for &_sym in personalities {
-        push32(&mut buf, 0);
+        push_ul32(&mut buf, 0);
     }
 
     // Each second-level page and its LSDA rows depend only on its own
@@ -292,17 +292,17 @@ fn write_table<E: Target>(
     let mut lsda = Vec::new();
     let mut page2 = Vec::new();
     for out in &outs {
-        push32(&mut page1, out.first);
-        push32(&mut page1, (page2_off + page2.len()) as u32);
-        push32(&mut page1, (lsda_off + lsda.len()) as u32);
+        push_ul32(&mut page1, out.first);
+        push_ul32(&mut page1, (page2_off + page2.len()) as u32);
+        push_ul32(&mut page1, (lsda_off + lsda.len()) as u32);
         lsda.extend_from_slice(&out.lsda);
         page2.extend_from_slice(&out.page2);
     }
 
     // The terminating first-level entry.
-    push32(&mut page1, (end + 1).wrapping_sub(base) as u32);
-    push32(&mut page1, 0);
-    push32(&mut page1, (lsda_off + lsda.len()) as u32);
+    push_ul32(&mut page1, (end + 1).wrapping_sub(base) as u32);
+    push_ul32(&mut page1, 0);
+    push_ul32(&mut page1, (lsda_off + lsda.len()) as u32);
 
     buf.extend_from_slice(&page1);
     buf.extend_from_slice(&lsda);
@@ -328,24 +328,27 @@ fn encode_page<E: Target>(ctx: &Context<E>, records: &[UnwindRecord], page: &Pag
     let mut lsda = Vec::new();
     for rec in span {
         if let Some((isec, off)) = rec.lsda() {
-            push32(&mut lsda, func_addr(ctx, rec).wrapping_sub(base) as u32);
-            push32(&mut lsda, (ctx.isecs[isec].addr(ctx) + off as u64).wrapping_sub(base) as u32);
+            push_ul32(&mut lsda, func_addr(ctx, rec).wrapping_sub(base) as u32);
+            push_ul32(
+                &mut lsda,
+                (ctx.isecs[isec].addr(ctx) + off as u64).wrapping_sub(base) as u32,
+            );
         }
     }
 
     let mut page2 = Vec::new();
-    push32(&mut page2, UNWIND_SECOND_LEVEL_COMPRESSED);
-    push16(&mut page2, PAGE_HDR as u16); // entries offset
-    push16(&mut page2, span.len() as u16);
-    push16(&mut page2, (PAGE_HDR + span.len() * 4) as u16); // encodings offset
-    push16(&mut page2, encs.len() as u16);
+    push_ul32(&mut page2, UNWIND_SECOND_LEVEL_COMPRESSED);
+    push_ul16(&mut page2, PAGE_HDR as u16); // entries offset
+    push_ul16(&mut page2, span.len() as u16);
+    push_ul16(&mut page2, (PAGE_HDR + span.len() * 4) as u16); // encodings offset
+    push_ul16(&mut page2, encs.len() as u16);
     let page_base = func_addr(ctx, &span[0]);
     for rec in span {
         let idx = encs.iter().position(|&e| e == rec.encoding).unwrap() as u32;
-        push32(&mut page2, (func_addr(ctx, rec) - page_base) as u32 | idx << 24);
+        push_ul32(&mut page2, (func_addr(ctx, rec) - page_base) as u32 | idx << 24);
     }
     for &enc in encs {
-        push32(&mut page2, enc);
+        push_ul32(&mut page2, enc);
     }
     EncodedPage { page2, lsda, first: page_base.wrapping_sub(base) as u32 }
 }

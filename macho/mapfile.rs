@@ -7,6 +7,7 @@ use std::borrow::Cow;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use mold_common::path::path_bytes;
 use rayon::prelude::*;
 use serde_json::{Value, json};
 
@@ -17,7 +18,6 @@ use crate::error::RawPath;
 use crate::input_files::{DylibFile, FileId, NameSource};
 use crate::macho::*;
 use crate::symbol::SymbolId;
-use crate::util::path_bytes;
 
 /// Xcode's version-1 API import report. Despite its name, sdkImports
 /// includes imports from non-SDK dylibs too, grouped by install name in
@@ -423,7 +423,7 @@ fn json_names<'a>(names: &[&'a [u8]]) -> Vec<Cow<'a, str>> {
 /// name's.
 fn output_leaf<E: Target>(ctx: &Context<E>) -> String {
     let path = match ctx.args.output_type {
-        MH_DYLIB => Path::new(crate::util::os_str(ctx.args.output_install_name())),
+        MH_DYLIB => Path::new(mold_common::bytes::os_str(ctx.args.output_install_name())),
         _ => ctx.args.output.as_path(),
     };
     path.file_name().unwrap_or(path.as_os_str()).to_string_lossy().into_owned()
@@ -432,8 +432,8 @@ fn output_leaf<E: Target>(ctx: &Context<E>) -> String {
 /// A file's path as the traces give it: its real path, a fat file's
 /// slice by the file's.
 fn trace_path(path: &Path) -> String {
-    let (path, _) = crate::filetype::split_fat_arch(crate::util::path_bytes(path));
-    let path = Path::new(crate::util::os_str(path));
+    let (path, _) = crate::filetype::split_fat_arch(mold_common::path::path_bytes(path));
+    let path = Path::new(mold_common::bytes::os_str(path));
     let path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     path.to_string_lossy().into_owned()
 }

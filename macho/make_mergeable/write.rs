@@ -1,5 +1,7 @@
 //! The record's bytes, laid out as ld-prime writes them.
 
+use mold_common::bits::align_to_mod;
+
 use super::{Content, DylibRecord, MergeableRecord};
 use crate::arch::Target;
 use crate::context::Context;
@@ -8,7 +10,6 @@ use crate::mergeable::{
     DEBUG_INFO_SIZE, DYLIB_INFO_SIZE, ENTRY_SIZE, FIXUP_SIZE, HEADER_SIZE, MAGIC, SECTION_SIZE,
     header,
 };
-use crate::util::align_to_mod;
 
 /// A name's hash as the record keeps it: its length in the top 20
 /// bits, the low 44 of its hash below.

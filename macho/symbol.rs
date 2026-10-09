@@ -960,7 +960,7 @@ impl SymbolTable {
         // constructed on all cores, not pushed one at a time.
         let old_len = self.syms.len();
         let total_new = base - old_len;
-        crate::util::reserve_arena(&mut self.syms, total_new);
+        crate::input_files::reserve_arena(&mut self.syms, total_new);
         {
             struct SlotPtr(*mut Symbol);
             unsafe impl Sync for SlotPtr {}

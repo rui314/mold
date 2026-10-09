@@ -706,7 +706,7 @@ pub fn create_linker_option_cmd(opt: &[Vec<u8>]) -> Vec<u8> {
         cmd.extend_from_slice(s);
         cmd.push(0);
     }
-    cmd.resize(crate::util::align_to(cmd.len() as u64, 8) as usize, 0);
+    cmd.resize(mold_common::bits::align_to(cmd.len() as u64, 8) as usize, 0);
     let cmdsize = cmd.len() as u32;
     cmd[4..8].copy_from_slice(&cmdsize.to_le_bytes());
     cmd
@@ -792,7 +792,7 @@ fn create_encryption_info_cmd<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     let sections = || ctx.chunks.iter().filter(text).map(|&id| ctx.chunk_header(id));
     let start = sections().map(|hdr| hdr.fileoff).min().unwrap_or(0);
     let end = sections().map(|hdr| hdr.fileoff + hdr.size).max().unwrap_or(0);
-    let end = crate::util::align_to(end, ctx.args.segment_align);
+    let end = mold_common::bits::align_to(end, ctx.args.segment_align);
     let mut buf = Vec::with_capacity(24);
     for word in [LC_ENCRYPTION_INFO_64, 24, start as u32, end.saturating_sub(start) as u32, 0, 0] {
         buf.extend_from_slice(&word.to_le_bytes());
@@ -965,7 +965,7 @@ pub fn mach_header_size<E: Target>(ctx: &Context<E>) -> u64 {
     // header and load commands, left unencrypted, don't share; dyld's
     // starts a 4 KiB page of its own anyway.
     match ctx.args.encryptable && !ctx.args.is_dylinker() {
-        true => crate::util::align_to(size, ctx.args.segment_align),
+        true => mold_common::bits::align_to(size, ctx.args.segment_align),
         false => size,
     }
 }

@@ -7,13 +7,14 @@
 //! the public libraries such a dylib re-exports are delayed with it,
 //! by its dlopen helper.
 
+use mold_common::mem::leak_bytes;
+
 use crate::arch::{LazyRef, Target};
 use crate::chunks::delay_init::{DelayHelper, DelayStub, DelayUse, DlopenHelper};
 use crate::context::Context;
 use crate::input_files::{FileId, add_cstring, add_data_word};
 use crate::lazy_load::{LazyUseSite, import_uses, load_helper_name};
 use crate::symbol::SymbolId;
-use crate::util::leak_bytes;
 
 /// Makes the stubs and helpers through which the image reaches the
 /// symbols of its delay-init dylibs, as ld-prime does: calls branch to

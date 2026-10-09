@@ -2,6 +2,8 @@
 
 use std::path::Path;
 
+use mold_common::endian::{write_ul32, write_ul64};
+
 use crate::arch::{SplitRef, Target, has_reloc_form, reloc_form};
 use crate::chunks::delay_init::{DelayCode, DelayTarget, DelayUse};
 use crate::chunks::lazy_helpers::{LazyTarget, LazyUse};
@@ -12,7 +14,6 @@ use crate::input_files::{ObjectFile, section_target};
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
 use crate::symbol::{NEEDS_GOT, NEEDS_STUB, SymbolId};
-use crate::util::{write32, write64};
 use crate::{error, fatal};
 
 #[derive(Clone, Copy, Default)]
@@ -28,8 +29,8 @@ fn write_delay_check(ctx: &Context<X86_64>, ent: &mut [u8], base: u64, dlopen: u
     ent[..19].copy_from_slice(&[
         0x83, 0x3d, 0, 0, 0, 0, 0, 0x75, 0x0a, 0x55, 0x48, 0x89, 0xe5, 0xe8, 0, 0, 0, 0, 0x5d,
     ]);
-    write32(&mut ent[2..], flag.wrapping_sub(base + 7) as u32);
-    write32(&mut ent[14..], helper.wrapping_sub(base + 18) as u32);
+    write_ul32(&mut ent[2..], flag.wrapping_sub(base + 7) as u32);
+    write_ul32(&mut ent[14..], helper.wrapping_sub(base + 18) as u32);
 }
 
 /// "movq disp32(%rip), %reg" up to its displacement: REX.W (and REX.R
@@ -256,7 +257,7 @@ impl Target for X86_64 {
             // jmp *ptr(%rip)
             ent[0] = 0xff;
             ent[1] = 0x25;
-            write32(&mut ent[2..], disp as u32);
+            write_ul32(&mut ent[2..], disp as u32);
         }
     }
 
@@ -269,10 +270,10 @@ impl Target for X86_64 {
         let private = ctx.isecs[ctx.stub_helper.dyld_private_isec as usize].addr(ctx);
         let binder = ctx.symbols[ctx.stub_helper.dyld_stub_binder.unwrap()].got_addr(ctx);
         buf[0..3].copy_from_slice(&[0x4c, 0x8d, 0x1d]);
-        write32(&mut buf[3..], private.wrapping_sub(addr + 7) as u32);
+        write_ul32(&mut buf[3..], private.wrapping_sub(addr + 7) as u32);
         buf[7..9].copy_from_slice(&[0x41, 0x53]);
         buf[9..11].copy_from_slice(&[0xff, 0x25]);
-        write32(&mut buf[11..], binder.wrapping_sub(addr + 15) as u32);
+        write_ul32(&mut buf[11..], binder.wrapping_sub(addr + 15) as u32);
         buf[15] = 0x90;
         // Each entry: push $offset; jmp header; the zero padding.
         let lazy_offsets = &ctx.lazy_bind_info.offsets[..ctx.stubs.lazy.len()];
@@ -280,9 +281,9 @@ impl Target for X86_64 {
             let off = stub_helper::entry_offset(ctx, i as u32) as usize;
             let ent_addr = addr + off as u64;
             buf[off] = 0x68;
-            write32(&mut buf[off + 1..], lazy_off);
+            write_ul32(&mut buf[off + 1..], lazy_off);
             buf[off + 5] = 0xe9;
-            write32(&mut buf[off + 6..], addr.wrapping_sub(ent_addr + 10) as u32);
+            write_ul32(&mut buf[off + 6..], addr.wrapping_sub(ent_addr + 10) as u32);
             buf[off + 10..off + 12].fill(0);
         }
     }
@@ -302,9 +303,9 @@ impl Target for X86_64 {
             let ent_addr = addr + off;
             let ptr = ctx.lazy_ptrs.slot_addr(i);
             ent[0..3].copy_from_slice(&[0x4c, 0x8d, 0x1d]);
-            write32(&mut ent[3..], ptr.wrapping_sub(ent_addr + 7) as u32);
+            write_ul32(&mut ent[3..], ptr.wrapping_sub(ent_addr + 7) as u32);
             ent[7] = 0xe9;
-            write32(&mut ent[8..], helper.unwrap_or(0).wrapping_sub(ent_addr + 12) as u32);
+            write_ul32(&mut ent[8..], helper.unwrap_or(0).wrapping_sub(ent_addr + 12) as u32);
         }
     }
 
@@ -320,8 +321,8 @@ impl Target for X86_64 {
             // mov sel(%rip), %rsi; jmp *_objc_msgSend@GOT(%rip), packed
             // back to back as ld-prime lays them out.
             ent[..13].copy_from_slice(&[0x48, 0x8b, 0x35, 0, 0, 0, 0, 0xff, 0x25, 0, 0, 0, 0]);
-            write32(&mut ent[3..], sel_addr.wrapping_sub(ent_addr + 7) as u32);
-            write32(&mut ent[9..], msgsend_got.wrapping_sub(ent_addr + 13) as u32);
+            write_ul32(&mut ent[3..], sel_addr.wrapping_sub(ent_addr + 7) as u32);
+            write_ul32(&mut ent[9..], msgsend_got.wrapping_sub(ent_addr + 13) as u32);
         }
     }
 
@@ -345,12 +346,12 @@ impl Target for X86_64 {
             ];
             // cmpl $0, flag(%rip)
             ent[..7].copy_from_slice(&[0x83, 0x3d, 0, 0, 0, 0, 0]);
-            write32(&mut ent[2..], flag.wrapping_sub(base + 7) as u32);
+            write_ul32(&mut ent[2..], flag.wrapping_sub(base + 7) as u32);
             let start = match h.kind {
                 // je 1f; 2: jmp *slot(%rip); 1: (the call); jmp 2b
                 LazyUse::Call => {
                     ent[7..15].copy_from_slice(&[0x74, 0x06, 0xff, 0x25, 0, 0, 0, 0]);
-                    write32(&mut ent[11..], slot.wrapping_sub(base + 15) as u32);
+                    write_ul32(&mut ent[11..], slot.wrapping_sub(base + 15) as u32);
                     ent[43..45].copy_from_slice(&[0xeb, 0xdc]);
                     15
                 }
@@ -358,7 +359,7 @@ impl Target for X86_64 {
                 LazyUse::Load { reg, .. } => {
                     ent[7..9].copy_from_slice(&[0x75, 0x1c]);
                     ent[37..40].copy_from_slice(&movq_rip(reg));
-                    write32(&mut ent[40..], slot.wrapping_sub(base + 44) as u32);
+                    write_ul32(&mut ent[40..], slot.wrapping_sub(base + 44) as u32);
                     ent[44] = 0xc3;
                     9
                 }
@@ -366,16 +367,16 @@ impl Target for X86_64 {
                 LazyUse::Cmp => {
                     ent[7..9].copy_from_slice(&[0x75, 0x1c]);
                     ent[37..45].copy_from_slice(&[0x48, 0x83, 0x3d, 0, 0, 0, 0, 0]);
-                    write32(&mut ent[40..], slot.wrapping_sub(base + 45) as u32);
+                    write_ul32(&mut ent[40..], slot.wrapping_sub(base + 45) as u32);
                     ent[45] = 0xc3;
                     9
                 }
             };
             let at = base + start as u64;
             ent[start..start + call.len()].copy_from_slice(&call);
-            write32(&mut ent[start + 9..], flag.wrapping_sub(at + 13) as u32);
-            write32(&mut ent[start + 16..], header.wrapping_sub(at + 20) as u32);
-            write32(&mut ent[start + 21..], lazy_load.wrapping_sub(at + 25) as u32);
+            write_ul32(&mut ent[start + 9..], flag.wrapping_sub(at + 13) as u32);
+            write_ul32(&mut ent[start + 16..], header.wrapping_sub(at + 20) as u32);
+            write_ul32(&mut ent[start + 21..], lazy_load.wrapping_sub(at + 25) as u32);
         }
     }
 
@@ -394,7 +395,7 @@ impl Target for X86_64 {
             write_delay_check(ctx, ent, base, stub.dlopen);
             ent[19..21].copy_from_slice(&[0xff, 0x25]);
             let slot = ctx.got.slot_addr(stub.got as usize);
-            write32(&mut ent[21..], slot.wrapping_sub(base + 25) as u32);
+            write_ul32(&mut ent[21..], slot.wrapping_sub(base + 25) as u32);
         }
     }
 
@@ -418,12 +419,12 @@ impl Target for X86_64 {
             match h.kind {
                 DelayUse::Load { reg, .. } => {
                     ent[19..22].copy_from_slice(&movq_rip(reg));
-                    write32(&mut ent[22..], slot.wrapping_sub(base + 26) as u32);
+                    write_ul32(&mut ent[22..], slot.wrapping_sub(base + 26) as u32);
                     ent[26] = 0xc3;
                 }
                 DelayUse::Cmp => {
                     ent[19..22].copy_from_slice(&[0x48, 0x83, 0x3d]);
-                    write32(&mut ent[22..], slot.wrapping_sub(base + 27) as u32);
+                    write_ul32(&mut ent[22..], slot.wrapping_sub(base + 27) as u32);
                     ent[26..28].copy_from_slice(&[0, 0xc3]);
                 }
             }
@@ -436,9 +437,9 @@ impl Target for X86_64 {
             ent.copy_from_slice(&DLOPEN_HELPER);
             let (name, flag) =
                 (ctx.isecs[d.string as usize].addr(ctx), ctx.isecs[d.flag as usize].addr(ctx));
-            write32(&mut ent[68..], name.wrapping_sub(base + 72) as u32);
-            write32(&mut ent[75..], dlopen.wrapping_sub(base + 79) as u32);
-            write32(&mut ent[86..], flag.wrapping_sub(base + 90) as u32);
+            write_ul32(&mut ent[68..], name.wrapping_sub(base + 72) as u32);
+            write_ul32(&mut ent[75..], dlopen.wrapping_sub(base + 79) as u32);
+            write_ul32(&mut ent[86..], flag.wrapping_sub(base + 90) as u32);
         }
     }
 
@@ -662,7 +663,7 @@ impl Target for X86_64 {
                 let at = r.offset as usize - 3;
                 let disp = helper.wrapping_sub(base + at as u64 + 5);
                 buf[at] = 0xe8;
-                write32(&mut buf[at + 1..], disp as u32);
+                write_ul32(&mut buf[at + 1..], disp as u32);
                 let end = r.offset as usize + if r.ty == X86_64_RELOC_GOT { 5 } else { 4 };
                 buf[at + 5..end].fill(0x90);
                 i += 1;
@@ -705,7 +706,7 @@ impl Target for X86_64 {
                     } else {
                         ctx.pointers32.lock().unwrap().push((isec_id as u32, r.offset));
                     }
-                    write32(loc, val as u32);
+                    write_ul32(loc, val as u32);
                 }
                 X86_64_RELOC_UNSIGNED => {
                     isec.check_text_reloc(ctx, isec_id, rels, i, p);
@@ -715,9 +716,9 @@ impl Target for X86_64 {
                         // addend, to which a legacy LINKEDIT external
                         // relocation has dyld add the symbol's address.
                     } else if r.refers_to_tls(ctx, file) {
-                        write64(loc, s.wrapping_add_signed(a).wrapping_sub(ctx.tls_begin));
+                        write_ul64(loc, s.wrapping_add_signed(a).wrapping_sub(ctx.tls_begin));
                     } else {
-                        write64(loc, s.wrapping_add_signed(a));
+                        write_ul64(loc, s.wrapping_add_signed(a));
                     }
                 }
                 // The assembler pairs it with an UNSIGNED of its size.
@@ -726,9 +727,9 @@ impl Target for X86_64 {
                     let val =
                         rels[i].addr(ctx, file).wrapping_add_signed(rels[i].addend).wrapping_sub(s);
                     if r.size == 4 {
-                        write32(loc, val as u32);
+                        write_ul32(loc, val as u32);
                     } else {
-                        write64(loc, val);
+                        write_ul64(loc, val);
                     }
                 }
                 X86_64_RELOC_BRANCH if r.size == 1 => {
@@ -743,7 +744,7 @@ impl Target for X86_64 {
                         sym.is_imported() && !sym.has_stub(&ctx.symbols)
                     }) =>
                 {
-                    write32(loc, a as u32);
+                    write_ul32(loc, a as u32);
                 }
                 // A pc-relative fixup that can't reach is an error.
                 X86_64_RELOC_BRANCH => {
@@ -752,7 +753,7 @@ impl Target for X86_64 {
                         None => s,
                     };
                     let t = s.wrapping_add_signed(a);
-                    write32(loc, rip32_displacement(ctx, isec, r, p, t));
+                    write_ul32(loc, rip32_displacement(ctx, isec, r, p, t));
                 }
                 X86_64_RELOC_SIGNED
                 | X86_64_RELOC_SIGNED_1
@@ -760,7 +761,7 @@ impl Target for X86_64 {
                 | X86_64_RELOC_SIGNED_4 => {
                     if isec.target_has_address(ctx, r) {
                         let t = s.wrapping_add_signed(a);
-                        write32(loc, rip32_displacement(ctx, isec, r, p, t));
+                        write_ul32(loc, rip32_displacement(ctx, isec, r, p, t));
                     }
                 }
                 // A local thread-local's TLV load relaxes just like a
@@ -768,12 +769,12 @@ impl Target for X86_64 {
                 // becomes a leaq of the __thread_vars descriptor itself.
                 X86_64_RELOC_GOT_LOAD | X86_64_RELOC_TLV if relaxed_got_load => {
                     let t = s.wrapping_add_signed(a);
-                    write32(loc, rip32_displacement(ctx, isec, r, p, t));
+                    write_ul32(loc, rip32_displacement(ctx, isec, r, p, t));
                 }
                 X86_64_RELOC_GOT_LOAD | X86_64_RELOC_GOT | X86_64_RELOC_TLV => {
                     let g = ctx.symbols[r.sym(file).unwrap()].got_addr(ctx);
                     let t = g.wrapping_add_signed(a);
-                    write32(loc, rip32_displacement(ctx, isec, r, p, t));
+                    write_ul32(loc, rip32_displacement(ctx, isec, r, p, t));
                 }
                 _ => fatal!("unsupported relocation type: {}", r.ty),
             }

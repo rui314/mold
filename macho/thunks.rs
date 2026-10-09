@@ -33,6 +33,7 @@
 //! placement (which re-encodes __unwind_info) cost 5% of a debug clang
 //! link. The extra entries are dead code.
 
+use mold_common::bits::align_to;
 use rayon::prelude::*;
 
 use crate::arch::Target;
@@ -42,7 +43,6 @@ use crate::input_files::FileId;
 use crate::input_sections::InputSectionId;
 use crate::macho::{S_ATTR_PURE_INSTRUCTIONS, S_ATTR_SOME_INSTRUCTIONS};
 use crate::symbol::SymbolId;
-use crate::util::align_to;
 
 /// We create a thunk for each 10 MiB batch of code (mold: 32 MiB).
 const BATCH_SIZE: u64 = 10 << 20;

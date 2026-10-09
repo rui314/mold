@@ -4,9 +4,13 @@ use std::ops::Range;
 use std::path::Path;
 use std::sync::Mutex;
 
+use mold_common::bits::align_to;
+use mold_common::bytes::split_once;
+use mold_common::path::path_bytes;
 use mold_common::worker_local::WorkerLocal;
 use portable_atomic::AtomicU64;
 use rayon::prelude::*;
+use sha2::Digest;
 
 use crate::arch::Target;
 use crate::chunks::init_offsets::InitFunc;
@@ -30,7 +34,6 @@ use crate::macho::*;
 use crate::mapped_file::MappedFile;
 use crate::symbol::{NEEDS_GOT, NEEDS_STUB, Symbol, SymbolId};
 use crate::symbol_moves::{Move, MoveOption};
-use crate::util::{align_to, path_bytes, split_once};
 
 /// Adds the object that owns what the linker synthesizes: the
 /// sections standing for merged Objective-C records, folded class
@@ -90,7 +93,7 @@ fn intern_command_line_symbols<E: Target>(ctx: &mut Context<E>) {
         .args
         .command_line_symbols()
         .filter(|name| ctx.symbols.lookup(name).is_none())
-        .map(|name| crate::util::leak_bytes(name.to_vec()))
+        .map(|name| mold_common::mem::leak_bytes(name.to_vec()))
         .collect();
     for name in new {
         ctx.symbols.intern(name);
@@ -2692,7 +2695,7 @@ fn static_name(name: &[u8]) -> &'static [u8] {
         b"__TEXT" => b"__TEXT",
         b"__DATA_CONST" => b"__DATA_CONST",
         b"__DATA" => b"__DATA",
-        _ => crate::util::leak_bytes(name.to_vec()),
+        _ => mold_common::mem::leak_bytes(name.to_vec()),
     }
 }
 
@@ -3650,7 +3653,7 @@ struct OrderEntry {
 /// Reads the -order_file lists, #-comments and the lines for other
 /// architectures left out.
 fn read_order_files<E: Target>(ctx: &Context<E>) -> Vec<OrderEntry> {
-    use crate::util::{split_once, trim_space};
+    use mold_common::bytes::{split_once, trim_space};
     const ARCHS: [&[u8]; 6] = [b"arm64", b"arm64e", b"x86_64", b"i386", b"armv7", b"ppc"];
     let mut entries = Vec::new();
     for path in &ctx.args.order_files {
@@ -3662,7 +3665,7 @@ fn read_order_files<E: Target>(ctx: &Context<E>) -> Vec<OrderEntry> {
                 continue;
             }
         };
-        for line in crate::util::lines(&text) {
+        for line in mold_common::bytes::lines(&text) {
             let mut line = trim_space(line.split(|&c| c == b'#').next().unwrap_or_default());
             if line.is_empty() {
                 continue;
@@ -4506,7 +4509,7 @@ fn add_aliases<E: Target>(ctx: &mut Context<E>, internal: u32) {
         {
             continue;
         }
-        let dst = ctx.symbols.intern(crate::util::leak_bytes(new.clone()));
+        let dst = ctx.symbols.intern(mold_common::mem::leak_bytes(new.clone()));
         if ctx.symbols[dst].is_defined() {
             continue;
         }
@@ -5253,7 +5256,7 @@ fn sorted_globals<E: Target>(ctx: &Context<E>) -> Vec<SymbolId> {
                     .is_none_or(|isec| ctx.isecs[ctx.isecs.resolve(isec as usize)].is_alive())
         })
         .collect();
-    globals.par_sort_unstable_by_key(|&id| crate::util::name_sort_key(ctx.symbols[id].name()));
+    globals.par_sort_unstable_by_key(|&id| chunks::symtab::name_sort_key(ctx.symbols[id].name()));
     globals
 }
 
@@ -5368,8 +5371,7 @@ pub fn compute_uuid<E: Target>(
         // The build system's salt goes in first (see Args::uuid_salt).
         let mut flat: Vec<u8> = ctx.args.uuid_salt.clone();
         flat.extend(hashes.concat());
-        let mut hash = [0; 32];
-        crate::util::sha256(&flat, &mut hash);
+        let hash = sha2::Sha256::digest(&flat);
         let bytes = hash[..16].try_into().unwrap();
         set_uuid(uuid::Builder::from_random_bytes(bytes).into_uuid(), buf);
         let hdr_end = ctx.mach_header.hdr.size as usize;

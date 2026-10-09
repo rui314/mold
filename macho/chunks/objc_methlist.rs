@@ -1,6 +1,8 @@
 //! __TEXT,__objc_methlist: the Objective-C method lists rewritten in the
 //! relative (12-byte entry) form, which needs no fixups.
 
+use mold_common::bits::align_to;
+
 use crate::arch::Target;
 use crate::chunks::output_section::append_tail;
 use crate::chunks::split_info::{Entry, Places, push};
@@ -11,7 +13,6 @@ use crate::macho::DYLD_CACHE_ADJ_V2_DELTA_32;
 use crate::objc::{ObjcMethList, ObjcMethod};
 use crate::passes::{SectionName, record_section};
 use crate::symbol_moves::{Move, MoveOption};
-use crate::util::align_to;
 
 /// __TEXT,__objc_methlist: the Objective-C method lists rewritten in
 /// the relative (12-byte entry) form, which needs no fixups.

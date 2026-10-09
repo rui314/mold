@@ -1,12 +1,13 @@
 //! The LC_DYLD_INFO bind opcode stream: every slot dyld fills with an
 //! import.
 
+use mold_common::leb128::encode_uleb;
+
 use crate::arch::Target;
 use crate::chunks::{ChunkHeader, output_section, segment_and_offset};
 use crate::context::Context;
 use crate::input_files::data_blob_binds;
 use crate::macho::*;
-use crate::util::encode_uleb;
 
 /// The bind opcode stream: every slot dyld fills with an import.
 #[derive(Debug)]
@@ -121,7 +122,7 @@ pub(crate) fn encode_op(buf: &mut Vec<u8>, op: Op) {
         }
         Op::Addend(addend) => {
             buf.push(BIND_OPCODE_SET_ADDEND_SLEB);
-            crate::util::encode_sleb(buf, addend);
+            mold_common::leb128::encode_sleb(buf, addend);
         }
         Op::Bind => buf.push(BIND_OPCODE_DO_BIND),
     }

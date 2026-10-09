@@ -6,6 +6,9 @@ use rayon::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 
+use mold_common::mem::leak_bytes;
+use mold_common::path::path_bytes;
+
 use crate::arch::Target;
 use crate::chunks::{ChunkHeader, ChunkId, OutputSectionId};
 use crate::context::Context;
@@ -14,7 +17,6 @@ use crate::input_files::{
 };
 use crate::macho::*;
 use crate::symbol::{Symbol, SymbolId};
-use crate::util::{leak_bytes, path_bytes};
 
 /// The symbol table, laid out before addresses are known. The symbol
 /// slot of each entry supplies its final `value` when the table is
@@ -576,7 +578,7 @@ pub(crate) fn object_stabs_opening<E: Target>(
     } else if let Some(date) = obj.mf.mtime {
         date
     } else {
-        std::fs::metadata(crate::util::os_str(&path))
+        std::fs::metadata(mold_common::bytes::os_str(&path))
             .and_then(|m| m.modified())
             .ok()
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
@@ -747,6 +749,20 @@ pub fn par_push_entries<T: Sync>(
     }
 }
 
+/// A sort key that orders byte strings like the strings themselves but
+/// settles most comparisons on one integer: the first eight bytes,
+/// big-endian, zero-padded. Symbol names cannot contain NULs, so
+/// (prefix, name) order equals plain name order. Mach-O sorts its
+/// global symbols and export-trie input by name (ELF mold never
+/// name-sorts), and mangled names share long prefixes, which makes
+/// plain slice comparison the sort's bottleneck.
+pub fn name_sort_key(name: &[u8]) -> (u64, &[u8]) {
+    let mut p = [0u8; 8];
+    let n = name.len().min(8);
+    p[..n].copy_from_slice(&name[..n]);
+    (u64::from_be_bytes(p), name)
+}
+
 /// Builds the output symbol table contents: the local symbols (see
 /// plan_local_symbols), N_AST paths and debug notes, then the defined
 /// globals and the imports, each sorted by name. Symbol values are
@@ -779,7 +795,7 @@ pub fn create_output_symtab<E: Target>(
     // Undefined (imported) symbols, sorted by name.
     let mut undefs: Vec<usize> =
         (0..classes.len()).into_par_iter().filter(|&i| classes[i] == SymbolClass::Undef).collect();
-    undefs.par_sort_unstable_by_key(|&i| crate::util::name_sort_key(ctx.symbols[i].name()));
+    undefs.par_sort_unstable_by_key(|&i| name_sort_key(ctx.symbols[i].name()));
 
     // Every range's size is known now: the entries and their names are
     // allocated once, and each range is filled in parallel. The names

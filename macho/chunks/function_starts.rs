@@ -1,6 +1,7 @@
 //! LC_FUNCTION_STARTS data: delta-encoded function addresses, used by
 //! debuggers and crash reporters.
 
+use mold_common::leb128::encode_uleb;
 use rayon::prelude::*;
 
 use crate::arch::Target;
@@ -8,7 +9,6 @@ use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::input_files::FileId;
 use crate::macho::S_ATTR_PURE_INSTRUCTIONS;
-use crate::util::encode_uleb;
 
 /// LC_FUNCTION_STARTS data: delta-encoded function addresses, used by
 /// debuggers and crash reporters.

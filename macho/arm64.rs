@@ -2,6 +2,8 @@
 
 use std::path::Path;
 
+use mold_common::bits::{bits, sign_extend};
+use mold_common::endian::{read_ul32, write_ul32, write_ul64};
 use rayon::prelude::*;
 
 use crate::arch::{SplitRef, Target, has_reloc_form, reloc_form};
@@ -14,7 +16,6 @@ use crate::input_files::{ObjectFile, section_target};
 use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
 use crate::symbol::{NEEDS_GOT, NEEDS_STUB};
-use crate::util::{bits, read32, sign_extend, write32, write64};
 use crate::{error, fatal};
 
 #[derive(Clone, Copy, Default)]
@@ -40,7 +41,7 @@ fn page_offset(hi: u64, lo: u64) -> u32 {
 /// immediate the object left is replaced: under an ADDEND record,
 /// ld-prime ignores it.
 fn write_adrp(loc: &mut [u8], hi: u64, lo: u64) {
-    write32(loc, (read32(loc) & !ADRP_IMM) | page_offset(hi, lo));
+    write_ul32(loc, (read_ul32(loc) & !ADRP_IMM) | page_offset(hi, lo));
 }
 
 /// Whether an ADRP at `lo` reaches `hi`'s page: its signed 21-bit
@@ -70,7 +71,7 @@ fn is_ldr_imm(insn: u32) -> bool {
 /// Writes an immediate to an ADD, LDR or STR instruction. Fails with
 /// the access size of an LDR or STR whose target it doesn't divide.
 fn write_add_ldst(loc: &mut [u8], val: u64) -> Result<(), u32> {
-    let insn = read32(loc);
+    let insn = read_ul32(loc);
     let mut scale = 0;
 
     if insn & 0x3b00_0000 == 0x3900_0000 {
@@ -100,7 +101,7 @@ fn write_add_ldst(loc: &mut [u8], val: u64) -> Result<(), u32> {
     // them zero, but OR-ing without clearing would mix a leftover
     // placeholder with the final page offset.
     let imm = (bits(val, 11, scale as u32) as u32) << 10;
-    write32(loc, (insn & !IMM12) | imm);
+    write_ul32(loc, (insn & !IMM12) | imm);
     Ok(())
 }
 
@@ -291,11 +292,11 @@ fn check_reloc(file: &Path, hdr: &MachSection, rels: &[MachRel], i: usize, loc: 
     if !is_supported(r) || pointer32 {
         crate::arch::bad_reloc(file, hdr, r, "unsupported relocation");
     }
-    let load = || parse_ldst(read32(loc)).filter(|ls| !ls.is_store);
+    let load = || parse_ldst(read_ul32(loc)).filter(|ls| !ls.is_store);
     let ok = match r.ty() {
         ARM64_RELOC_GOT_LOAD_PAGEOFF12 => {
             // "add Wd|Xd, Wn|Xn, #imm" with an unshifted immediate
-            read32(loc) & 0x7fc0_0000 == 0x1100_0000 || load().is_some_and(|ls| ls.size == 8)
+            read_ul32(loc) & 0x7fc0_0000 == 0x1100_0000 || load().is_some_and(|ls| ls.size == 8)
         }
         ARM64_RELOC_TLVP_LOAD_PAGEOFF12 => load().is_some(),
         _ => true,
@@ -341,11 +342,11 @@ struct Hint<'a> {
 
 impl Hint<'_> {
     fn get(&self, i: usize) -> u32 {
-        read32(&self.buf[self.insns[i].off..])
+        read_ul32(&self.buf[self.insns[i].off..])
     }
 
     fn set(&mut self, i: usize, insn: u32) {
-        write32(&mut self.buf[self.insns[i].off..], insn);
+        write_ul32(&mut self.buf[self.insns[i].off..], insn);
     }
 
     fn addr(&self, i: usize) -> u64 {
@@ -817,7 +818,7 @@ impl Target for Arm64 {
     fn got_load_form(ty: u8, data: &[u8], offset: u32) -> Option<u8> {
         match ty {
             ARM64_RELOC_PAGE21 => Some(ARM64_RELOC_GOT_LOAD_PAGE21),
-            ARM64_RELOC_PAGEOFF12 if is_ldr_imm(read32(&data[offset as usize..])) => {
+            ARM64_RELOC_PAGEOFF12 if is_ldr_imm(read_ul32(&data[offset as usize..])) => {
                 Some(ARM64_RELOC_GOT_LOAD_PAGEOFF12)
             }
             _ => None,
@@ -846,9 +847,9 @@ impl Target for Arm64 {
             }
 
             // adrp x16, $ptr@PAGE; ldr x16, [x16, $ptr@PAGEOFF]; br x16
-            write32(&mut ent[0..], 0x9000_0010 | page_offset(ptr_addr, ent_addr));
-            write32(&mut ent[4..], 0xf940_0210 | (bits(ptr_addr, 11, 3) as u32) << 10);
-            write32(&mut ent[8..], 0xd61f_0200);
+            write_ul32(&mut ent[0..], 0x9000_0010 | page_offset(ptr_addr, ent_addr));
+            write_ul32(&mut ent[4..], 0xf940_0210 | (bits(ptr_addr, 11, 3) as u32) << 10);
+            write_ul32(&mut ent[8..], 0xd61f_0200);
         }
     }
 
@@ -862,22 +863,22 @@ impl Target for Arm64 {
         //   br   x16
         let private = ctx.isecs[ctx.stub_helper.dyld_private_isec as usize].addr(ctx);
         let binder = ctx.symbols[ctx.stub_helper.dyld_stub_binder.unwrap()].got_addr(ctx);
-        write32(&mut buf[0..], 0x9000_0011 | page_offset(private, addr));
-        write32(&mut buf[4..], 0x9100_0231 | ((private as u32 & 0xfff) << 10));
-        write32(&mut buf[8..], 0xa9bf_47f0);
-        write32(&mut buf[12..], 0x9000_0010 | page_offset(binder, addr + 12));
-        write32(&mut buf[16..], 0xf940_0210 | (bits(binder, 11, 3) as u32) << 10);
-        write32(&mut buf[20..], 0xd61f_0200);
+        write_ul32(&mut buf[0..], 0x9000_0011 | page_offset(private, addr));
+        write_ul32(&mut buf[4..], 0x9100_0231 | ((private as u32 & 0xfff) << 10));
+        write_ul32(&mut buf[8..], 0xa9bf_47f0);
+        write_ul32(&mut buf[12..], 0x9000_0010 | page_offset(binder, addr + 12));
+        write_ul32(&mut buf[16..], 0xf940_0210 | (bits(binder, 11, 3) as u32) << 10);
+        write_ul32(&mut buf[20..], 0xd61f_0200);
         // Each entry: ldr w16, #8 (the lazy-bind offset that follows);
         // b header; .long offset.
         let lazy_offsets = &ctx.lazy_bind_info.offsets[..ctx.stubs.lazy.len()];
         for (i, &lazy_off) in lazy_offsets.iter().enumerate() {
             let off = stub_helper::entry_offset(ctx, i as u32) as usize;
             let ent_addr = addr + off as u64;
-            write32(&mut buf[off..], 0x1800_0050);
+            write_ul32(&mut buf[off..], 0x1800_0050);
             let rel = addr.wrapping_sub(ent_addr + 4) as i64 >> 2;
-            write32(&mut buf[off + 4..], 0x1400_0000 | (rel as u32 & 0x03ff_ffff));
-            write32(&mut buf[off + 8..], lazy_off);
+            write_ul32(&mut buf[off + 4..], 0x1400_0000 | (rel as u32 & 0x03ff_ffff));
+            write_ul32(&mut buf[off + 8..], lazy_off);
         }
     }
 
@@ -892,10 +893,10 @@ impl Target for Arm64 {
 
                 // adrp x1, sel@PAGE; ldr x1, [x1, sel@PAGEOFF]
                 // b _objc_msgSend
-                write32(&mut ent[0..], 0x9000_0001 | page_offset(sel_addr, ent_addr));
-                write32(&mut ent[4..], 0xf940_0021 | (bits(sel_addr, 11, 3) as u32) << 10);
+                write_ul32(&mut ent[0..], 0x9000_0001 | page_offset(sel_addr, ent_addr));
+                write_ul32(&mut ent[4..], 0xf940_0021 | (bits(sel_addr, 11, 3) as u32) << 10);
                 let disp = msgsend.wrapping_sub(ent_addr + 8);
-                write32(&mut ent[8..], 0x1400_0000 | (disp >> 2) as u32 & B_IMM);
+                write_ul32(&mut ent[8..], 0x1400_0000 | (disp >> 2) as u32 & B_IMM);
             }
             return;
         }
@@ -909,14 +910,14 @@ impl Target for Arm64 {
 
             // adrp x1, sel@PAGE; ldr x1, [x1, sel@PAGEOFF]
             // adrp x16, _objc_msgSend@GOTPAGE; ldr x16, [...]; br x16
-            write32(&mut ent[0..], 0x9000_0001 | page_offset(sel_addr, ent_addr));
-            write32(&mut ent[4..], 0xf940_0021 | (bits(sel_addr, 11, 3) as u32) << 10);
-            write32(&mut ent[8..], 0x9000_0010 | page_offset(msgsend_got, ent_addr + 8));
-            write32(&mut ent[12..], 0xf940_0210 | (bits(msgsend_got, 11, 3) as u32) << 10);
-            write32(&mut ent[16..], 0xd61f_0200);
-            write32(&mut ent[20..], 0xd420_0020);
-            write32(&mut ent[24..], 0xd420_0020);
-            write32(&mut ent[28..], 0xd420_0020);
+            write_ul32(&mut ent[0..], 0x9000_0001 | page_offset(sel_addr, ent_addr));
+            write_ul32(&mut ent[4..], 0xf940_0021 | (bits(sel_addr, 11, 3) as u32) << 10);
+            write_ul32(&mut ent[8..], 0x9000_0010 | page_offset(msgsend_got, ent_addr + 8));
+            write_ul32(&mut ent[12..], 0xf940_0210 | (bits(msgsend_got, 11, 3) as u32) << 10);
+            write_ul32(&mut ent[16..], 0xd61f_0200);
+            write_ul32(&mut ent[20..], 0xd420_0020);
+            write_ul32(&mut ent[24..], 0xd420_0020);
+            write_ul32(&mut ent[28..], 0xd420_0020);
         }
     }
 
@@ -1160,7 +1161,7 @@ impl Target for Arm64 {
     // addressing form) before the adrp in its subsection - to be free to
     // call the helper; other code branches to a helper of its own.
     fn lazy_load_site(data: &[u8], offset: u32) -> (u8, bool) {
-        let reg = read32(&data[offset as usize..]) & 0x1f;
+        let reg = read_ul32(&data[offset as usize..]) & 0x1f;
         let (insns, _) = data[..offset as usize].as_chunks::<4>();
         let framed =
             insns.iter().any(|&insn| u32::from_le_bytes(insn) & 0x3c40_7fff == 0x2800_7bfd);
@@ -1183,9 +1184,9 @@ impl Target for Arm64 {
             let target = ctx.symbols[sym].branch_target_addr(ctx);
 
             // adrp x16, target@PAGE; add x16, x16, target@PAGEOFF; br x16
-            write32(&mut ent[0..], 0x9000_0010 | page_offset(target, ent_addr));
-            write32(&mut ent[4..], 0x9100_0210 | (bits(target, 11, 0) as u32) << 10);
-            write32(&mut ent[8..], 0xd61f_0200);
+            write_ul32(&mut ent[0..], 0x9000_0010 | page_offset(target, ent_addr));
+            write_ul32(&mut ent[4..], 0x9100_0210 | (bits(target, 11, 0) as u32) << 10);
+            write_ul32(&mut ent[8..], 0xd61f_0200);
         }
     }
 
@@ -1329,10 +1330,10 @@ impl Target for Arm64 {
                     } else if r.refers_to_tls(ctx, file) {
                         // A TLV descriptor's offset is relative to the
                         // TLS template image (see tls.rs).
-                        write64(loc, s.wrapping_add_signed(a).wrapping_sub(ctx.tls_begin));
+                        write_ul64(loc, s.wrapping_add_signed(a).wrapping_sub(ctx.tls_begin));
                     } else {
                         // Only a SUBTRACTOR's pair is 4 bytes long.
-                        write64(loc, s.wrapping_add_signed(a));
+                        write_ul64(loc, s.wrapping_add_signed(a));
                     }
                 }
                 ARM64_RELOC_SUBTRACTOR => {
@@ -1344,15 +1345,15 @@ impl Target for Arm64 {
                     let val =
                         rels[i].addr(ctx, file).wrapping_add_signed(rels[i].addend).wrapping_sub(s);
                     if r.size == 4 {
-                        write32(loc, val as u32);
+                        write_ul32(loc, val as u32);
                     } else {
-                        write64(loc, val);
+                        write_ul64(loc, val);
                     }
                 }
                 ARM64_RELOC_BRANCH26 => {
                     // A DTrace probe site does nothing (see dtrace).
                     if let Some(insn) = dtrace_site_insn(ctx, file, r) {
-                        write32(loc, insn);
+                        write_ul32(loc, insn);
                         i += 1;
                         continue;
                     }
@@ -1390,7 +1391,7 @@ impl Target for Arm64 {
                             }
                         }
                     }
-                    write32(loc, (read32(loc) & !B_IMM) | bits(val as u64, 27, 2) as u32);
+                    write_ul32(loc, (read_ul32(loc) & !B_IMM) | bits(val as u64, 27, 2) as u32);
                 }
                 ARM64_RELOC_PAGE21 => {
                     if isec.target_has_address(ctx, r) {
@@ -1418,7 +1419,7 @@ impl Target for Arm64 {
                         .or_else(|| delay_init::load_helper(ctx, isec_id, r)) =>
                 {
                     let op = if own { 0x1400_0000 } else { 0x9400_0000 };
-                    write32(loc, op | bits(helper.wrapping_sub(p), 27, 2) as u32);
+                    write_ul32(loc, op | bits(helper.wrapping_sub(p), 27, 2) as u32);
                 }
                 // A GOT load of a local symbol relaxes to computing the
                 // address directly, as ld-prime relaxes one unless dyld
@@ -1449,14 +1450,14 @@ impl Target for Arm64 {
                             report_ldst_alignment(ctx, isec, r, size);
                         }
                     } else {
-                        let insn = read32(loc);
+                        let insn = read_ul32(loc);
                         let is_add = r.ty == ARM64_RELOC_GOT_LOAD_PAGEOFF12
                             && insn & 0xffc0_0000 == 0x9100_0000;
                         if is_ldr_imm(insn) || is_add {
                             let target = s.wrapping_add_signed(a);
                             let add =
                                 0x9100_0000 | (insn & 0x3ff) | ((target as u32 & 0xfff) << 10);
-                            write32(loc, add);
+                            write_ul32(loc, add);
                         } else {
                             isec.fixup_error(ctx, r.offset, format_args!("non-LDR instruction"));
                         }
@@ -1464,7 +1465,7 @@ impl Target for Arm64 {
                 }
                 ARM64_RELOC_POINTER_TO_GOT => {
                     let g = ctx.symbols[r.sym(file).unwrap()].got_addr(ctx);
-                    write32(loc, g.wrapping_add_signed(a).wrapping_sub(p) as u32);
+                    write_ul32(loc, g.wrapping_add_signed(a).wrapping_sub(p) as u32);
                 }
                 _ => fatal!("unsupported relocation type: {}", r.ty),
             }

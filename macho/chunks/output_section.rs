@@ -2,6 +2,7 @@
 //! subsections assigned to it, the range-extension thunks placed among
 //! them, and the linker-synthesized tail after them.
 
+use mold_common::bits::align_to;
 use rayon::prelude::*;
 
 use crate::arch::Target;
@@ -14,7 +15,6 @@ use crate::input_sections::{InputSection, InputSectionId, Reloc};
 use crate::macho::DYLD_CACHE_ADJ_V2_POINTER_64;
 use crate::symbol_moves::MoveOption;
 use crate::thunks::Thunk;
-use crate::util::align_to;
 
 /// Linker-synthesized data appended to an output section after its
 /// input subsections. The Objective-C runtime reads exactly one
@@ -323,7 +323,7 @@ pub fn island_symbols<E: Target>(
                 }
                 ends.push(buf.len());
             }
-            let buf = crate::util::leak_bytes(buf);
+            let buf = mold_common::mem::leak_bytes(buf);
             let mut start = 0;
             ends.into_iter().enumerate().map(move |(i, end)| {
                 let name = &buf[start..end];

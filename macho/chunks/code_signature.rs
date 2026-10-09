@@ -1,13 +1,15 @@
 //! The ad-hoc code signature: SHA-256 page hashes in a code directory, the
 //! last chunk of the file.
 
+use mold_common::bits::align_to;
 use rayon::prelude::*;
+use sha1::Sha1;
+use sha2::{Digest, Sha256};
 
 use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::macho::*;
-use crate::util::align_to;
 
 /// The ad-hoc code signature. Must be the last chunk in the file.
 #[derive(Debug)]
@@ -97,13 +99,7 @@ fn push_be64(buf: &mut Vec<u8>, val: u64) {
 /// from them too.
 pub fn page_hashes(data: &[u8]) -> Vec<[u8; SHA256_SIZE]> {
     let page = CS_PAGE_SIZE as usize;
-    data.par_chunks(page)
-        .map(|chunk| {
-            let mut hash = [0; SHA256_SIZE];
-            crate::util::sha256(chunk, &mut hash);
-            hash
-        })
-        .collect()
+    data.par_chunks(page).map(|chunk| Sha256::digest(chunk).into()).collect()
 }
 
 /// Recomputes the hashes of the pages that overlap `data[range]`, after
@@ -115,7 +111,7 @@ pub fn rehash_pages(data: &[u8], hashes: &mut [[u8; SHA256_SIZE]], range: std::o
     for (i, hash) in hashes[first..last].iter_mut().enumerate() {
         let start = (first + i) * page;
         let end = (start + page).min(data.len());
-        crate::util::sha256(&data[start..end], hash);
+        *hash = Sha256::digest(&data[start..end]).into();
     }
 }
 
@@ -134,11 +130,7 @@ pub fn write<E: Target>(ctx: &Context<E>, buf: &mut [u8], hashes: &[[u8; SHA256_
     let sha1_hashes: Option<Vec<[u8; SHA1_SIZE]>> = has_sha1_directory(ctx).then(|| {
         buf[..cs_off as usize]
             .par_chunks(CS_PAGE_SIZE as usize)
-            .map(|chunk| {
-                let mut hash = [0; SHA1_SIZE];
-                crate::util::sha1(chunk, &mut hash);
-                hash
-            })
+            .map(|chunk| Sha1::digest(chunk).into())
             .collect()
     });
 

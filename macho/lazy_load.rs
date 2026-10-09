@@ -6,6 +6,7 @@
 //! __lazy_load_got slot, which the image reaches through the helpers of
 //! chunks::lazy_helpers.
 
+use mold_common::mem::leak_bytes;
 use rayon::prelude::*;
 
 use crate::arch::{LazyRef, Target};
@@ -15,7 +16,6 @@ use crate::context::Context;
 use crate::error::raw;
 use crate::input_files::{FileId, add_data_word};
 use crate::symbol::SymbolId;
-use crate::util::leak_bytes;
 
 /// Binds __dyld_lazy_load, which the lazy-load helpers call (see
 /// create_lazy_loads), in an image that uses a symbol of a lazy dylib,

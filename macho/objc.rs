@@ -1460,7 +1460,7 @@ impl MergedListWriter {
         suffix: &[u8],
     ) -> ListRefs {
         let name = |ctx: &mut Context<E>, prefix: &str, isec: u32| {
-            let name = crate::util::leak_bytes([prefix.as_bytes(), suffix].concat());
+            let name = mold_common::mem::leak_bytes([prefix.as_bytes(), suffix].concat());
             ctx.extra_local_syms.push((name, isec));
         };
         let mut refs = ListRefs::default();

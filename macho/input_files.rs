@@ -1439,7 +1439,7 @@ impl LoadCommands {
                     // A stream of ULEB128 triples-and-more: kind, argument
                     // count, then that many instruction addresses.
                     let cmd = LinkEditDataCommand::read_from(bytes);
-                    use crate::util::read_uleb;
+                    use mold_common::leb128::read_uleb;
                     let mut payload =
                         &data[cmd.dataoff as usize..(cmd.dataoff + cmd.datasize) as usize];
                     while !payload.is_empty() {
@@ -2354,11 +2354,24 @@ pub fn integrate_objects<E: Target>(
     }
 }
 
+/// Makes room in one of the link's arenas (the symbols, the subsections,
+/// ...) for `additional` more elements, with an eighth of the whole to
+/// spare when it grows: the auto-link rounds append a few objects' worth
+/// to arenas the command line's objects filled exactly, which they would
+/// take by copying themselves whole (the 57 MB of symbols and 82 MB of
+/// subsections of ASan iTerm2, 10 ms). The room left over costs address
+/// space until it is written.
+pub fn reserve_arena<T>(v: &mut Vec<T>, additional: usize) {
+    if v.capacity() - v.len() < additional {
+        v.reserve_exact(additional + (v.len() + additional) / 8);
+    }
+}
+
 /// Reserves room in an arena `v` for runs of `lens` elements after its
 /// own and returns them, uninitialized, for the caller to fill in
 /// parallel.
 fn spare_ranges<'a, T>(v: &'a mut Vec<T>, lens: &[usize]) -> Vec<&'a mut [MaybeUninit<T>]> {
-    crate::util::reserve_arena(v, lens.iter().sum());
+    reserve_arena(v, lens.iter().sum());
     let mut spare = v.spare_capacity_mut();
     let mut ranges = Vec::with_capacity(lens.len());
     for &len in lens {
@@ -2782,7 +2795,7 @@ impl StagedObject {
     /// that declares them).
     fn fde_lsda(&self, rec: &[u8], input_addr: u32, pos: usize, enc: u8) -> Option<(u32, u32)> {
         let mut aug = &rec[pos..];
-        if crate::util::read_uleb(&mut aug) == 0 {
+        if mold_common::leb128::read_uleb(&mut aug) == 0 {
             return None;
         }
         let pos = rec.len() - aug.len();
@@ -2952,7 +2965,7 @@ fn parse_cie_augmentation(data: &[u8], file_name: &Path) -> (u8, Option<u8>, Opt
     // and the augmentation data's length.
     let mut rest = &data[aug_end + 1..];
     for _ in 0..4 {
-        crate::util::read_uleb(&mut rest);
+        mold_common::leb128::read_uleb(&mut rest);
     }
     let mut pos = data.len() - rest.len();
     let mut fde_enc = DW_EH_PE_ABSPTR;
@@ -3218,7 +3231,7 @@ impl ReexportWalk<'_> {
             if let Some(mf) = found {
                 note_reexport_file(ctx, &mf.name);
             }
-            let found = found.map(|mf| crate::util::path_bytes(&mf.name).to_vec());
+            let found = found.map(|mf| mold_common::path::path_bytes(&mf.name).to_vec());
             trace_file(ctx, found.as_deref().unwrap_or(&r.name));
         }
         let doc = self.pool[i].clone();
@@ -3251,7 +3264,7 @@ impl ReexportWalk<'_> {
             ctx.indirect_files.push(dep);
             return;
         }
-        trace_file(ctx, crate::util::path_bytes(&dep.name));
+        trace_file(ctx, mold_common::path::path_bytes(&dep.name));
         note_reexport_file(ctx, &dep.name);
 
         if ty == FileType::Tapi {
@@ -3432,7 +3445,7 @@ pub fn is_allowed_client<E: Target>(ctx: &Context<E>, dylib: &DylibIdentity) -> 
         None => {
             let path = match &ctx.args.install_name {
                 Some(name) if ctx.args.output_type == MH_DYLIB => name.as_slice(),
-                _ => crate::util::path_bytes(&ctx.args.output),
+                _ => mold_common::path::path_bytes(&ctx.args.output),
             };
             let leaf = path.rsplit(|&b| b == b'/').next().unwrap_or(path);
             let leaf = leaf.strip_prefix(b"lib").unwrap_or(leaf);
@@ -3611,7 +3624,7 @@ fn export_trie_entries(data: &[u8], off: usize, size: usize) -> Vec<(&'static [u
         if terminal > 0 {
             let mut p = pos;
             let flags = read_uleb(&mut p);
-            names.push((crate::util::leak_bytes(prefix.clone()), flags));
+            names.push((mold_common::mem::leak_bytes(prefix.clone()), flags));
             pos += terminal;
         }
         let Some(&nchildren) = trie.get(pos) else { continue };
@@ -3650,7 +3663,7 @@ pub fn parse_bundle_loader<E: Target>(ctx: &mut Context<E>, mf: &'static MappedF
     }
 
     let priority = ctx.next_priority();
-    let install_name = crate::util::path_bytes(&mf.name).to_vec();
+    let install_name = mold_common::path::path_bytes(&mf.name).to_vec();
     let dylib = DylibFile {
         dylib_idx: BIND_SPECIAL_DYLIB_MAIN_EXECUTABLE,
         is_bundle_loader: true,

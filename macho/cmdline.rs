@@ -9,7 +9,9 @@ use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
+use mold_common::bytes::{is_space, lines, os_str, trim_space};
 use mold_common::glob::{Glob, GlobBuilder};
+use mold_common::path::path_bytes;
 
 use crate::arch::Target;
 use crate::context::Context;
@@ -19,7 +21,6 @@ use crate::fatal;
 use crate::macho::*;
 use crate::mapped_file::MappedFile;
 use crate::reader::under_root;
-use crate::util::{is_space, lines, os_str, path_bytes, trim_space};
 
 /// The Apple ld64 version whose command line this linker implements,
 /// reported by -version_details. Xcode passes flags according to this
@@ -910,7 +911,7 @@ impl Args {
         self.install_name
             .as_deref()
             .or(self.final_output.as_deref())
-            .unwrap_or(crate::util::path_bytes(&self.output))
+            .unwrap_or(mold_common::path::path_bytes(&self.output))
     }
 
     /// The address -segaddr pins a segment to.

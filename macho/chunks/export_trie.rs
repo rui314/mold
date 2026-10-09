@@ -1,5 +1,6 @@
 //! The export trie in __LINKEDIT: dyld's index of exported symbols.
 
+use mold_common::leb128::{uleb_size, write_uleb};
 use rayon::prelude::*;
 
 use crate::arch::Target;
@@ -8,7 +9,6 @@ use crate::context::Context;
 use crate::input_files::FileId;
 use crate::macho::*;
 use crate::symbol::SymbolId;
-use crate::util::{uleb_size, write_uleb};
 
 #[derive(Debug)]
 pub struct ExportTrieSection {

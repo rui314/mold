@@ -11,6 +11,9 @@
 
 use std::path::Path;
 
+use mold_common::bits::align_to_mod;
+use mold_common::endian::{read_ul32, read_ul64};
+
 use super::{
     Entry, FLAG_CATEGORY_CLASS_PROPERTIES, FLAG_HAS_OBJC_INFO, FLAG_SIGNED_CLASS_RO, Fixup,
     MergeableRecord, ctype, fk, kind, scope, standard_section,
@@ -19,7 +22,6 @@ use crate::arch::Target;
 use crate::error::RawPath;
 use crate::fatal;
 use crate::macho::*;
-use crate::util::{align_to_mod, read32, read64};
 
 /// Whether a section's subsections are fixed-size records or literals
 /// the linker splits by itself, all of one alignment. (A C string keeps
@@ -383,7 +385,7 @@ impl<E: Target> Synth<'_, E> {
             // Its value is its content, eight bytes.
             ABSOLUTE => {
                 let (Some(name), Some(value)) = (name, entry.content) else { return };
-                let value = value.get(..8).map_or(0, read64);
+                let value = value.get(..8).map_or(0, read_ul64);
                 let (n_type, desc) = scope_bits(entry.scope);
                 self.sym_of[i] = Some(self.add_symbol(Symbol {
                     name: name.to_vec(),
@@ -534,7 +536,7 @@ impl<E: Target> Synth<'_, E> {
     }
 
     fn insn(&self, sect: usize, off: u32) -> u32 {
-        read32(&self.sections[sect].data[off as usize..])
+        read_ul32(&self.sections[sect].data[off as usize..])
     }
 
     fn set_insn(&mut self, sect: usize, off: u32, insn: u32) {

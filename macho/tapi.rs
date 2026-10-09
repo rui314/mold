@@ -97,7 +97,7 @@ fn push_objc_class(exports: &mut Vec<&'static [u8]>, name: &str, eh_type: bool) 
 /// A symbol name a stub spells as a prefix and a name, which the link
 /// keeps to its end.
 fn leak_name(prefix: &str, name: &str) -> &'static [u8] {
-    crate::util::leak_bytes([prefix.as_bytes(), name.as_bytes()].concat())
+    mold_common::mem::leak_bytes([prefix.as_bytes(), name.as_bytes()].concat())
 }
 
 /// Parses a TBD v5 file: JSON with a "main_library" object and, for
@@ -387,9 +387,9 @@ impl LdSymbols {
                 continue;
             }
             // $ld$<action>$os<version>$<arg>, for the target's version.
-            let Some((action, rest)) = crate::util::split_once(rest, b'$') else { continue };
+            let Some((action, rest)) = mold_common::bytes::split_once(rest, b'$') else { continue };
             let Some((version, arg)) =
-                rest.strip_prefix(b"os").and_then(|r| crate::util::split_once(r, b'$'))
+                rest.strip_prefix(b"os").and_then(|r| mold_common::bytes::split_once(r, b'$'))
             else {
                 continue;
             };
@@ -495,7 +495,7 @@ impl PreviousDirective {
     /// platform (half of SwiftUICore's 30,000 are for Mac Catalyst), or
     /// one with a field that doesn't parse.
     fn parse(rest: &'static [u8], platform: u32) -> Option<Self> {
-        use crate::util::split_once;
+        use mold_common::bytes::split_once;
         let (install_name, rest) = split_once(rest, b'$')?;
         let (compat, rest) = split_once(rest, b'$')?;
         let (for_platform, rest) = split_once(rest, b'$')?;

@@ -373,9 +373,9 @@ impl InputSection {
     pub fn align_offset(&self, off: u64) -> u64 {
         let align = 1u64 << self.p2align;
         if self.flags.load(std::sync::atomic::Ordering::Relaxed) & NO_MODULUS != 0 {
-            return crate::util::align_to(off, align);
+            return mold_common::bits::align_to(off, align);
         }
-        crate::util::align_to_mod(off, align, self.input_addr as u64 & (align - 1))
+        mold_common::bits::align_to_mod(off, align, self.input_addr as u64 & (align - 1))
     }
 
     /// The alignment, as a power of two, that ld64 gives the part of
