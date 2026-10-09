@@ -2,6 +2,7 @@
 
 pub mod arch;
 pub(crate) mod archive_file;
+mod arm64;
 pub(crate) mod bundle_hook;
 pub(crate) mod chunks;
 pub(crate) mod cmdline;
@@ -35,3 +36,4 @@ pub(crate) mod tapi;
 pub(crate) mod thunks;
 pub(crate) mod tls;
 pub mod util;
+mod x86_64;

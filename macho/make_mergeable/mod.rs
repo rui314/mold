@@ -1218,7 +1218,7 @@ fn is_subtractor<E: Target>(ty: u8) -> bool {
 
 /// An x86-64 relocation's fixup. ld-prime's addend is to the
 /// target, the instruction's distance to the field's end aside (see
-/// arch::x86_64's reloc_bias).
+/// x86_64's reloc_bias).
 fn x86_64_fixup(hdr: &MachSection, r: &Reloc, target: To, addend: i64) -> Option<OutFixup> {
     use fk::*;
     let mut f = OutFixup::new(r.offset, target, 0, addend);

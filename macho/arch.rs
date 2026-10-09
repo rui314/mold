@@ -6,11 +6,8 @@
 //! relocation handling. The rest of the linker is generic over it. Each
 //! target is instantiated in a crate of its own under arch/.
 
-mod arm64;
-mod x86_64;
-
-pub use arm64::Arm64;
-pub use x86_64::X86_64;
+pub use crate::arm64::Arm64;
+pub use crate::x86_64::X86_64;
 
 use std::path::Path;
 
