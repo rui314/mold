@@ -1707,7 +1707,7 @@ pub fn write_repro_file<E: Target>(ctx: &Context<E>) {
     write(
         &mut tar,
         std::path::Path::new("version.txt"),
-        format!("{}\n", crate::cmdline::VERSION).as_bytes(),
+        format!("{}\n", *crate::cmdline::VERSION).as_bytes(),
     );
 
     // Input files are archived from memory. Their contents are still those

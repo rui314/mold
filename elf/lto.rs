@@ -544,7 +544,8 @@ unsafe extern "C" fn get_api_version(
     static LINKER_VERSION: OnceLock<CString> = OnceLock::new();
     unsafe {
         *linker_identifier = c"mold".as_ptr();
-        *linker_version = LINKER_VERSION.get_or_init(|| CString::new(VERSION).unwrap()).as_ptr();
+        *linker_version =
+            LINKER_VERSION.get_or_init(|| CString::new(VERSION.as_str()).unwrap()).as_ptr();
     }
     if LAPI_V1 <= maximal_api_supported {
         HOOKS.lock().unwrap().gcc_api_v1 = true;

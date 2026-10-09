@@ -22,3 +22,7 @@ pub mod util;
 pub mod worker_local;
 
 pub use prefetch::prefetch;
+
+/// The git commit that mold is built from, or None if the source tree has
+/// no git metadata, as in a source tarball.
+pub const GIT_HASH: Option<&str> = option_env!("MOLD_GIT_HASH");
