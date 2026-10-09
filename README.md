@@ -58,7 +58,7 @@ behavior involved in that change.
 
 ## Tests
 
-Tests are shell scripts under `tests/`, one feature per script,
+Tests are shell scripts under `tests/macho/`, one feature per script,
 driving the real toolchain through `cc --ld-path=...`; a harness runs
 each for macOS on arm64 and (under Rosetta) x86-64, and then for the
 arm64 iOS simulator if its runtime is installed, building the programs
