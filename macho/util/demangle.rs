@@ -7,9 +7,7 @@ pub fn demangle_cpp(name: &[u8]) -> Option<String> {
     if !name.starts_with(b"_Z") {
         return None;
     }
-    let sym = cpp_demangle::Symbol::new(name).ok()?;
-    let options = cpp_demangle::DemangleOptions::default();
-    sym.demangle(&options).ok()
+    cpp_demangle::Symbol::new(name).ok()?.demangle().ok()
 }
 
 /// A Mach-O symbol name as diagnostics spell it (see display_name).

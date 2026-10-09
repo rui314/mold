@@ -11,7 +11,7 @@ repository.workspace = true
 path = "lib.rs"
 
 [dependencies]
-cpp_demangle = "0.4"
+cpp_demangle = "0.5.1"
 getrandom = "0.4.3"
 hashbrown = "0.17"
 libc.workspace = true
