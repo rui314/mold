@@ -8,6 +8,10 @@
 //! device, which runs the programs as QEMU runs a cross target's in mold's
 //! ELF suite.
 
+// The scripts drive Apple's toolchain, so they run only on macOS.
+// Elsewhere this crate is empty, which lets the workspace build there.
+#![cfg(target_os = "macos")]
+
 mod simulator;
 
 use simulator::{Device, Runtime, Simulator};
