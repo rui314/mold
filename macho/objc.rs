@@ -29,9 +29,11 @@
 //! definition, even for a class in another library, in a block called
 //! a "category":
 //!
-//!   @implementation Foo (MyCategory)
-//!   - (void)bar { ... }
-//!   @end
+//! ```text
+//! @implementation Foo (MyCategory)
+//! - (void)bar { ... }
+//! @end
+//! ```
 //!
 //! Since the class may be compiled separately, the compiler emits a
 //! category as a separate data structure with a pointer to the class
