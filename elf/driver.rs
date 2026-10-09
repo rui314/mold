@@ -55,7 +55,7 @@ pub fn main(
     let orig_cwd = std::env::current_dir().ok();
 
     // Expand response files
-    let cmdline: Arc<[_]> = cmdline::expand_response_files(argv).into();
+    let cmdline: Arc<[_]> = mold_common::response_file::expand_response_files(argv, false).into();
 
     // Parse with an enabled target's defaults; if the target turns out to
     // be different, start over with the right one.

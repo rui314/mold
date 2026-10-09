@@ -37,7 +37,7 @@ pub fn main(
     initial_target: &str,
     link_for_target: impl Fn(&str, Cmdline) -> LinkResult,
 ) -> i32 {
-    let cmdline: Cmdline = cmdline::expand_response_files(argv).into();
+    let cmdline: Cmdline = mold_common::response_file::expand_response_files(argv, true).into();
 
     // Parse with an enabled target's defaults; if the target turns out to
     // be different, start over with the right one.

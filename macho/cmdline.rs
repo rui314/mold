@@ -19,7 +19,6 @@ use mold_common::{fatal, warn};
 use crate::arch::Target;
 use crate::context::Context;
 use crate::macho::*;
-use crate::mapped_file::MappedFile;
 use crate::reader::under_root;
 
 /// The Apple ld64 version whose command line this linker implements,
@@ -1332,110 +1331,6 @@ fn sectcreate_name(kind: &str, name: &[u8]) -> Vec<u8> {
         );
     }
     cut
-}
-
-/// The response file an argument names, if it names one: an argument
-/// starting with '@', but a dylib path starting "@rpath", "@loader_path"
-/// or "@executable_path", wherever it is, even an option's argument.
-fn response_file(arg: &[u8]) -> Option<&Path> {
-    const DYLIB_PATHS: [&[u8]; 3] = [b"@rpath", b"@loader_path", b"@executable_path"];
-    if DYLIB_PATHS.iter().any(|prefix| arg.starts_with(prefix)) {
-        return None;
-    }
-    arg.strip_prefix(b"@").map(|path| Path::new(os_str(path)))
-}
-
-// If a command line argument is in the form of `@path/to/some/file`
-// (i.e. it starts with an atsign), the linker reads the given file and
-// interprets its contents as a list of command line arguments. A file
-// containing command line arguments is called a "response file".
-//
-// A response file is often used to pass a very large number of arguments
-// to the linker without exceeding the kernel's command line length limit.
-//
-// This function opens a given file, tokenizes its contents, and returns a
-// list of tokens.
-fn read_response_file(path: &Path, depth: usize) -> Vec<Cow<'static, OsStr>> {
-    if depth > 10 {
-        fatal!("{}: response file nesting too deep", path.display());
-    }
-
-    let data = MappedFile::must_open(path).data();
-
-    // Arguments are passed on as C strings, e.g. to the LTO plugin, so they
-    // must not contain a NUL byte. Arguments given by the OS never do.
-    if data.contains(&0) {
-        fatal!("{}: response file contains a NUL byte", path.display());
-    }
-
-    let mut expanded = Vec::new();
-    let mut i = 0;
-
-    while i < data.len() {
-        if is_space(data[i]) {
-            i += 1;
-            continue;
-        }
-
-        // Plain tokens can borrow the mapping, which lives for the complete
-        // link. Copy only when removing quotes or backslashes.
-        let start = i;
-        while i < data.len() && !is_space(data[i]) && !matches!(data[i], b'\\' | b'\'' | b'"') {
-            i += 1;
-        }
-        let mut tok = Cow::Borrowed(&data[start..i]);
-        let mut quote = None;
-        while i < data.len() {
-            let c = data[i];
-            if c == b'\\' {
-                if i + 1 == data.len() {
-                    fatal!("{}: premature end of input", path.display());
-                }
-                tok.to_mut().push(data[i + 1]);
-                i += 2;
-            } else if let Some(q) = quote {
-                if c == q {
-                    quote = None;
-                } else {
-                    tok.to_mut().push(c);
-                }
-                i += 1;
-            } else if c == b'\'' || c == b'"' {
-                quote = Some(c);
-                i += 1;
-            } else if is_space(c) {
-                break;
-            } else {
-                tok.to_mut().push(c);
-                i += 1;
-            }
-        }
-        if quote.is_some() {
-            fatal!("{}: premature end of input", path.display());
-        }
-        if let Some(nested) = response_file(&tok) {
-            expanded.extend(read_response_file(nested, depth + 1));
-        } else {
-            expanded.push(match tok {
-                Cow::Borrowed(bytes) => Cow::Borrowed(os_str(bytes)),
-                Cow::Owned(bytes) => Cow::Owned(os_str(&bytes).to_owned()),
-            });
-        }
-    }
-    expanded
-}
-
-// Replace "@path/to/some/text/file" with its file contents.
-pub fn expand_response_files(argv: Vec<OsString>) -> Vec<Cow<'static, OsStr>> {
-    let mut args = Vec::new();
-    for arg in argv {
-        if let Some(path) = response_file(arg.as_encoded_bytes()) {
-            args.extend(read_response_file(path, 1));
-        } else {
-            args.push(Cow::Owned(arg));
-        }
-    }
-    args
 }
 
 /// Reads a -filelist file: one input path per line, in whatever bytes
