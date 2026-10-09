@@ -724,7 +724,7 @@ impl Clone for Symbol {
 
 impl std::fmt::Display for Symbol {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        crate::util::demangle::display_name(self.name()).fmt(f)
+        crate::error::display_name(self.name()).fmt(f)
     }
 }
 

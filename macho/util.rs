@@ -1,7 +1,5 @@
 //! Small helpers shared across the linker.
 
-pub mod demangle;
-
 pub use mold_common::util::{
     align_to, bits, encode_sleb, encode_uleb, is_space, leak_bytes, os_str, read_uleb, sign_extend,
 };

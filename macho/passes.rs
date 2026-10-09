@@ -1615,7 +1615,7 @@ pub fn check_poisoned_symbols<E: Target>(ctx: &Context<E>) {
             let isec = &ctx.isecs[isec];
             let file = ctx.objs[isec.file as usize].mf.name.raw();
             let subsec = isec.name(ctx);
-            let subsec = crate::util::demangle::display_name(&subsec);
+            let subsec = crate::error::display_name(&subsec);
             msg.extend(error::render(format_args!("      {subsec} in {file}\n")));
         }
     }
@@ -5308,7 +5308,7 @@ pub fn check_entry_point<E: Target>(ctx: &Context<E>) {
         _ => {
             error!(
                 "undefined symbol for entry point: {}",
-                crate::util::demangle::display_name(&ctx.args.entry)
+                crate::error::display_name(&ctx.args.entry)
             )
         }
     }

@@ -9,6 +9,8 @@ use std::io::{self, Write};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use mold_common::demangle::demangle_cpp;
+
 /// Whether to demangle symbol names in diagnostics. This is process-wide
 /// state so that `Display` implementations, which have no access to the
 /// linker context, can consult it.
@@ -231,6 +233,29 @@ impl fmt::Display for Raw<'_> {
             }
         }
         Ok(())
+    }
+}
+
+/// A Mach-O symbol name as diagnostics spell it (see display_name).
+pub struct DisplayName<'a>(&'a [u8]);
+
+/// A Mach-O symbol name as diagnostics spell it: demangled when
+/// -demangle is in effect. Mach-O prefixes every C-level name with an
+/// underscore, so an Itanium name reads `__Z...` here; symbol lookup and
+/// output always use the original spelling. A name that isn't demangled
+/// prints as its bytes are (see raw), UTF-8 or not.
+pub fn display_name(name: &[u8]) -> DisplayName<'_> {
+    DisplayName(name)
+}
+
+impl fmt::Display for DisplayName<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if demangle_enabled()
+            && let Some(demangled) = self.0.strip_prefix(b"_").and_then(demangle_cpp)
+        {
+            return f.write_str(&demangled);
+        }
+        raw(self.0).fmt(f)
     }
 }
 
