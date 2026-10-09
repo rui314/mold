@@ -12,7 +12,6 @@
 # LTO, in a -static or -preload image or with
 # -lto_softload_runtime_symbols, loading the members that define them
 # whether or not anything comes to call them.)
-mold_only() { $mold -v 2>&1 | grep -q mold-macho; }
 lto_library=$(dirname "$(xcrun -f clang)")/../lib/libLTO.dylib
 
 cat <<EOF | $CC -flto -O2 -c -xc - -o $t/fill.o
@@ -50,18 +49,18 @@ grep -q 'libms.a(ms.o)$' $t/map
 
 # Nothing calls it: the member stays out.
 static -e _f -o $t/static2 $t/f.o $t/libms.a -map $t/map2
-if mold_only; then
+if is_mold; then
   not grep -q 'libms.a(ms.o)$' $t/map2
 fi
 $CC --ld-path=$mold -flto -dynamiclib -o $t/libf.dylib $t/f.o $t/libms.a \
   -Wl,-lto_softload_runtime_symbols
 nm $t/libf.dylib > $t/nm-libf
-if mold_only; then
+if is_mold; then
   not grep -q _from_ms $t/nm-libf
 fi
 
 # The routine's member is bitcode.
-if mold_only; then
+if is_mold; then
   not static -e _fill -o $t/static3 $t/fill.o $t/libms-bc.a 2> $t/log3
   grep -q 'undefined symbol.*_memset' $t/log3
 fi

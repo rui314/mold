@@ -10,7 +10,7 @@ for inputs in "$t/large.o $t/aligned.o" "$t/aligned.o $t/large.o"; do
   $mold -r -arch $ARCH $inputs -o $t/common.o
   nm -m $t/common.o > $t/syms
   grep -E '^0*1000 \(common\) .*external _buffer$' $t/syms
-  if $mold -v 2>&1 | grep -q mold-macho; then
+  if is_mold; then
     grep -E '\(alignment 2\^12\) external _buffer$' $t/syms
   fi
 done

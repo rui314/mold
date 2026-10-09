@@ -40,7 +40,7 @@ link -X -s -multiply_defined suppress -segprot __FOO rz r -Si -b 2> $t/log
 # -w before them silences those.)
 link -X -w -Si 2> $t/log
 not grep -q "is obsolete" $t/log
-if $mold -v 2>&1 | grep -q mold-macho; then
+if is_mold; then
   link -X -s -w -Si 2> $t/log
   not grep -q "is obsolete" $t/log
 fi

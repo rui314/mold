@@ -12,7 +12,7 @@ EOF
 # bin directory it runs from, as ld-prime links its toolchain's. (The
 # system's ld is a shim that can't run from a copy; it finds Xcode's.)
 ld=$mold
-if $mold -v 2>&1 | grep -q mold-macho; then
+if is_mold; then
   rm -rf $t/tc
   mkdir -p $t/tc/bin $t/tc/lib
   ln $mold $t/tc/bin/ld 2> /dev/null || cp $mold $t/tc/bin/ld

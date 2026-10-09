@@ -35,7 +35,7 @@ grep -qF "to 0x00000000 ('___dtrace_probe\$p\$x\$v1')" $t/log
 # tests name, and a provider without its stability and typedefs
 # symbols, though dtrace -h writes neither. mold makes a DOF of them:
 # the probe has no arguments, the provider D's default attributes.
-$mold -v 2>&1 | grep -q mold-macho || exit 0
+is_mold || exit 0
 main enabled "$call "'___dtrace_isenabled$p$x$v1'
 $CC --ld-path=$mold -o $t/exe $t/enabled.o
 dof_dump $t/exe > $t/dof

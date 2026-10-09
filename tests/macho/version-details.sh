@@ -3,7 +3,7 @@ source "$(dirname "$0")"/common.inc
 
 # `ld -v` alone prints the banner (on stderr) and exits 0; build
 # systems probe the linker that way.
-banner='mold-macho\|PROGRAM:ld'
+banner='^mold \|PROGRAM:ld'
 $mold -v 2> $t/v.txt
 grep "$banner" $t/v.txt
 

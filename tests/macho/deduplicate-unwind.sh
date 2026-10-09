@@ -94,7 +94,7 @@ same_addr() {
 same_addr _frame1 _frame2
 same_addr _dwarf1 _dwarf2
 
-if $mold -v 2>&1 | grep -q mold-macho; then
+if is_mold; then
   not same_addr _none _frame1
   not same_addr _frame1 _frameless
   not same_addr _frame1 _dwarf1

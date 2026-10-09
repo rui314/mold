@@ -7,6 +7,7 @@ use std::borrow::Cow;
 use std::ffi::{OsStr, OsString};
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
 use crate::arch::Target;
 use crate::context::Context;
@@ -26,12 +27,17 @@ pub const LD64_COMPAT_VERSION: &str = "1267";
 
 /// The -v banner, which ld-prime also writes as its version in the
 /// -dependency_info file.
-pub const VERSION_BANNER: &str =
-    concat!("mold-macho ", env!("CARGO_PKG_VERSION"), " (compatible with Apple ld64)");
+pub static VERSION_BANNER: LazyLock<String> = LazyLock::new(|| {
+    let version = env!("CARGO_PKG_VERSION");
+    match mold_common::GIT_HASH {
+        Some(hash) => format!("mold {version} ({hash})"),
+        None => format!("mold {version}"),
+    }
+});
 
 /// Prints the -v banner on stderr, where ld-prime prints its own.
 pub fn print_version() {
-    eprintln!("{VERSION_BANNER}");
+    eprintln!("{}", *VERSION_BANNER);
 }
 
 /// Prints the -version_details JSON on stdout, as ld-prime does.

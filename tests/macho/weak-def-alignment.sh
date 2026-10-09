@@ -58,7 +58,7 @@ $RUN $t/exe3 | grep '^copy-C-whole-section 1 2 0$'
 # _w stays weak there, as mold keeps STB_WEAK, so the image exports it
 # weak (ld-prime makes the symbol that names a whole section non-weak;
 # see whole-section-weak.sh).
-if $mold -v 2>&1 | grep -q mold-macho; then
+if is_mold; then
   dyld_info -exports $t/exe3 > $t/exports3
   grep ' _w \[weak-def\]$' $t/exports3
   nm -m $t/exe3 > $t/nm3

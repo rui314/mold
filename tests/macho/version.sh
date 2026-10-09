@@ -3,7 +3,7 @@ source "$(dirname "$0")"/common.inc
 
 # The -v banner goes to stderr, as ld-prime's does, and stdout stays
 # empty.
-banner='mold-macho\|PROGRAM:ld'
+banner='^mold \|PROGRAM:ld'
 $mold -v > $t/out 2> $t/err
 [ ! -s $t/out ]
 grep "$banner" $t/err

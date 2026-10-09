@@ -12,8 +12,7 @@ rm -f $t/exe
 not $CC --ld-path=$mold $t/a.o -lSystem \
   -Wl,-warn_duplicate_libraries,-fatal_warnings -o $t/exe 2> $t/log
 grep -q 'ignoring duplicate libraries' $t/log
-mold_only() { $mold -v 2>&1 | grep -q mold-macho; }
-if mold_only; then
+if is_mold; then
   grep -q 'error: ignoring duplicate libraries' $t/log
   [ ! -e $t/exe ]
 fi
@@ -33,7 +32,7 @@ grep -q -- '-no_pie' $t/log2
 # options.
 not $CC --ld-path=$mold $t/a.o -Wl,-alias_list,$t/nosuch,-fatal_warnings -o $t/exe 2> $t/log4
 grep -q 'No such file or directory' $t/log4
-if mold_only; then
+if is_mold; then
   $CC --ld-path=$mold $t/b.o -mmacosx-version-min=14.0 \
     -Wl,-no_pie,-fatal_warnings,-w -o $t/exe
   $CC --ld-path=$mold $t/a.o -Wl,-fatal_warnings,-w,-alias_list,$t/nosuch -o $t/exe
@@ -43,7 +42,7 @@ fi
 rm -f $t/c.o
 not $mold -r -arch $ARCH -o $t/c.o $t/a.o -fatal_warnings -alias_list $t/nosuch 2> $t/log6
 grep -q 'No such file or directory' $t/log6
-if mold_only; then
+if is_mold; then
   [ ! -e $t/c.o ]
 fi
 

@@ -16,7 +16,7 @@ EOF
 ! $CC --ld-path=$mold -o $t/exe $t/a.o $t/b.o 2> $t/log || false
 grep -q 'duplicate symbol' $t/log
 grep -q _hello $t/log
-if $mold -v 2>&1 | grep -q mold-macho; then
+if is_mold; then
   grep -q "^mold: error: duplicate symbol: $t/b.o: $t/a.o: _hello\$" $t/log
 fi
 

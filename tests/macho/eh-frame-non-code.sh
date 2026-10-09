@@ -80,7 +80,7 @@ carried() {
 obj bar '.section __DATA,__bar'
 carried bar __DATA,__bar
 
-if $mold -v 2>&1 | grep -q mold-macho; then
+if is_mold; then
   obj data .data
   carried data __DATA,__data
   obj const '.section __TEXT,__const'

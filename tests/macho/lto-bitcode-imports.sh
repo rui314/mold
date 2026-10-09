@@ -11,7 +11,6 @@ source "$(dirname "$0")"/common.inc
 # (ld-prime resolves bitcode's references before LTO: it lists the
 # imports among them, unbound, unless -dead_strip, and keeps their
 # dylibs, under -dead_strip_dylibs and -dead_strip alike.)
-mold_only() { $mold -v 2>&1 | grep -q mold-macho; }
 
 cat <<EOF > $t/a.c
 #include <unistd.h>
@@ -29,7 +28,7 @@ for lto in thin full; do
   otool -L $t/exe-$lto > $t/libs-$lto
   grep -q /libz $t/libs-$lto
   nm -m $t/exe-$lto > $t/nm-$lto
-  if mold_only; then
+  if is_mold; then
     not grep -q -e _getpid -e _nowhere -e _zlibVersion $t/nm-$lto
   fi
 
@@ -40,7 +39,7 @@ for lto in thin full; do
   $CC --ld-path=$mold -flto=$lto -o $t/exe3-$lto $t/a-$lto.o -lz -Wl,-dead_strip_dylibs
   $RUN $t/exe3-$lto
   otool -L $t/exe3-$lto > $t/libs3-$lto
-  if mold_only; then
+  if is_mold; then
     not grep -q /libz $t/libs3-$lto
   fi
 done

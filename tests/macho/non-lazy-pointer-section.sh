@@ -47,7 +47,7 @@ not $CC --ld-path=$mold -o $t/exe $t/main.o $t/c.o 2> /dev/null
 
 # ld-prime refuses lazy pointers only in a section named __la_symbol_ptr
 # and leaves those of another name null.
-if $mold -v 2>&1 | grep -q mold-macho; then
+if is_mold; then
   cat <<EOF | $CC -o $t/d.o -c -xassembler -
 .text
 .globl _foo

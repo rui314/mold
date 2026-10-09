@@ -57,7 +57,7 @@ done
 # under the compiler's fixup, so no link could merge it. mold refuses
 # such a use; ld-prime crashes on -lazy-l and makes an unmergeable
 # dylib of -delay-l, so the rest of this test is mold's own.
-$mold -v 2>&1 | grep -q mold-macho || exit 0
+is_mold || exit 0
 
 for opt in -delay-lbar -delay_library,$t/lib/libbar.dylib -delay_framework,Bar; do
   not $CC --ld-path=$mold -shared -o $t/foo.dylib $t/foo.o -L$t/lib -F$t/Frameworks \

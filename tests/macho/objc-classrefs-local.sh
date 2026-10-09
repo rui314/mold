@@ -52,11 +52,11 @@ $RUN $t/exe | grep -q '^1$'
 otool -l $t/exe > $t/lc
 if [ $ARCH = arm64 ]; then
   not grep -q __objc_classrefs $t/lc
-elif $mold -v 2>&1 | grep -q mold-macho; then
+elif is_mold; then
   grep -q 'sectname __objc_classrefs' $t/lc
 fi
 
-if $mold -v 2>&1 | grep -q mold-macho; then
+if is_mold; then
   class b '.quad 7'
   $CC --ld-path=$mold -o $t/exe2 $t/main.o $t/b.o -mmacosx-version-min=15.0
   $RUN $t/exe2 | grep -q '^1$'

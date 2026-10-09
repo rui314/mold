@@ -65,7 +65,7 @@ grep -q 'section __DATA,__data file end (2147483664) goes past the segment end (
 # for segments of no size, which fails a final link only.)
 not $CC --ld-path=$mold -o $t/exe8 $t/b.o -Wl,-segalign,0 2> $t/log
 grep -q -- -segalign $t/log
-if $mold -v 2>&1 | grep -q mold-macho; then
+if is_mold; then
   not $mold -arch $ARCH -r -o $t/r.o $t/a.o -segalign 0
 fi
 $mold -arch $ARCH -r -o $t/r.o $t/a.o -segalign 0x80000000

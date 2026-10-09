@@ -38,7 +38,7 @@ diff $t/expected $t/paths
 # The banner comes once, after the options' warnings and before the
 # paths.
 link -L$t/lib -headerpad 0x10 > $t/log2 2>&1
-banner='^@(#)PROGRAM:ld\|^mold-macho'
+banner='^@(#)PROGRAM:ld\|^mold '
 [ "$(grep -c "$banner" $t/log2)" = 1 ]
 grep -n "warning: -headerpad\\|$banner\\|^Library search paths" $t/log2 | cut -d: -f1 > $t/lines
 [ "$(sort -n $t/lines)" = "$(cat $t/lines)" ]

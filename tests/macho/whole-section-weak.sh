@@ -69,7 +69,7 @@ extern long w, pad;
 int main() { printf("%ld %ld\n", w, pad); }
 EOF
 
-if $mold -v 2>&1 | grep -q mold-macho; then
+if is_mold; then
   $CC --ld-path=$mold -o $t/exe-a $t/main.o $t/a1.o
   nm -m $t/exe-a > $t/syms-a
   grep -q ') weak external _w$' $t/syms-a
@@ -105,7 +105,7 @@ done
 $CC --ld-path=$mold -o $t/exe-h $t/main.o $t/h1.o
 nm -m $t/exe-h > $t/syms-h
 grep -q 'non-external (was a private external) _w$' $t/syms-h
-if $mold -v 2>&1 | grep -q mold-macho; then
+if is_mold; then
   $CC --ld-path=$mold -o $t/exe-hh $t/main.o $t/h1.o $t/h2.o
   $RUN $t/exe-hh | grep -q '^1$'
 fi

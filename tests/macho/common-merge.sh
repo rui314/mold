@@ -32,7 +32,7 @@ for order in "$t/a.o $t/b.o" "$t/b.o $t/a.o"; do
   grep -q '^0 ' $t/out
   nm -m $t/exe > $t/log
   grep -q '(__DATA,__common) external _foo$' $t/log
-  if $mold -v 2>&1 | grep -q mold-macho; then
+  if is_mold; then
     # bar is 256-aligned whichever copy comes first (ld-prime: 4).
     grep -q '^0 0$' $t/out
   fi
@@ -64,7 +64,7 @@ for order in "$t/c.o $t/d.o" "$t/d.o $t/c.o"; do
   $CC --ld-path=$mold -shared -o $t/e.dylib $order
   nm -m $t/e.dylib > $t/log
   grep -q 'non-external (was a private external) _p$' $t/log
-  if $mold -v 2>&1 | grep -q mold-macho; then
+  if is_mold; then
     # A private external copy makes the symbol one, however small or
     # late (ld-prime keeps _e external, and _t only if c.o comes
     # first).
@@ -90,7 +90,7 @@ for order in "$t/f.o $t/g.o" "$t/g.o $t/f.o"; do
   otool -l $t/h.dylib > $t/lc
   size=$(awk '$1 == "sectname" { s = $2 } s == "__common" && $1 == "size" { print $2 }' $t/lc)
   [ $((size)) -ge 17 ]
-  if $mold -v 2>&1 | grep -q mold-macho; then
+  if is_mold; then
     [ "$(awk '$1 == "sectname" { s = $2 } s == "__common" && $1 == "align" { print $2 }' $t/lc)" = '2^5' ]
     nm $t/h.dylib > $t/syms
     [ $((0x$(awk '/ _v$/ { print $1 }' $t/syms) % 32)) = 0 ]
@@ -102,6 +102,6 @@ done
 $mold -r -arch $ARCH -o $t/r.o $t/a.o $t/b.o
 nm -m $t/r.o > $t/log
 grep -Eq '^0*100 \(common\) .*external _foo$' $t/log
-if $mold -v 2>&1 | grep -q mold-macho; then
+if is_mold; then
   grep -Eq '^0*4 \(common\) \(alignment 2\^8\) external _bar$' $t/log
 fi

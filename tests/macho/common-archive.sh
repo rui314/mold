@@ -86,7 +86,7 @@ rm -f $t/libcode.a $t/libtent.a
 ar rcs $t/libcode.a $t/code.o
 ar rcs $t/libtent.a $t/tent.o
 
-if $mold -v 2>&1 | grep -q mold-macho; then
+if is_mold; then
   # The member's code beats the tentative definition (ld-prime keeps
   # the tentative definition).
   $CC --ld-path=$mold -shared -o $t/d.dylib $t/x.o $t/libcode.a

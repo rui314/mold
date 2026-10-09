@@ -86,7 +86,7 @@ for n in a b; do
 _y_$n: .long 0
 EOF
 done
-if $mold -v 2>&1 | grep -q mold-macho; then
+if is_mold; then
   $mold -r -arch $ARCH -o $t/r2.o $t/da.o $t/db.o
   [ "$(sect $t/r2.o __TEXT __literal8)" = 0x0000000000000010 ]
   objdump --macho -r $t/r2.o > $t/relocs

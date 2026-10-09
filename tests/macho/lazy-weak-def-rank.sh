@@ -45,7 +45,7 @@ link $t/strong.a $t/libweak1.dylib | grep -q '^2$'
 link $t/libweak1.dylib $t/libweak3.dylib | grep -q '^1$'
 link $t/weak3.a $t/weak1.a | grep -q '^3$'
 
-if $mold -v 2>&1 | grep -q mold-macho; then
+if is_mold; then
   # An archive's weak member that comes first loses to its strong one,
   # which alone is loaded, and to a later dylib's strong export
   # (ld-prime: 1).
