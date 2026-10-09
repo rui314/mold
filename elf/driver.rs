@@ -90,7 +90,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
 
     // If no -m option is given, deduce it from input files.
     if ctx.args.emulation.is_empty() {
-        ctx.args.emulation = crate::reader::detect_machine_type(&mut ctx, &jobs);
+        ctx.args.emulation = crate::reader::detect_machine_type(&ctx, &jobs);
     }
 
     // Redo if -m does not match with our speculation.
@@ -263,7 +263,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     // Set "address-taken" bits for input sections.
     if ctx.args.icf {
         let t = ctx.timer("compute_address_significance");
-        passes::compute_address_significance(&mut ctx);
+        passes::compute_address_significance(&ctx);
         drop(t);
     }
     // Handle PPC64-specific .opd sections.

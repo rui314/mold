@@ -248,7 +248,7 @@ fn rewrite_opd(ctx: &mut Context<Ppc64V1>) {
 // When a function is exported, the dynamic symbol for the function should
 // refer to the function's .opd entry. This function marks such symbols
 // with NEEDS_PPC_OPD.
-fn scan_symbols(ctx: &mut Context<Ppc64V1>) {
+fn scan_symbols(ctx: &Context<Ppc64V1>) {
     let _t = ctx.timer("scan_symbols");
     let needs_descriptor = |sym: &Symbol| sym.add_flags(NEEDS_PPC_OPD);
 

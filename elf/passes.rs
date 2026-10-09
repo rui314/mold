@@ -421,7 +421,7 @@ pub fn gather_symbols<E: Target>(ctx: &mut Context<E>) {
     // Each hash shard is populated by one thread and writes directly to the
     // stable slots recorded while files were parsed, so no synchronization
     // or final scatter pass is needed.
-    symbols.gather_symbol_slots(bins, additional_capacity);
+    symbols.gather_symbol_slots(&bins, additional_capacity);
 }
 
 fn current_rank<E: Target>(ctx: &Context<E>, sym: &Symbol) -> u64 {
@@ -520,13 +520,12 @@ fn parse_input_sections<E: Target>(ctx: &mut Context<E>) {
     let t = ctx.timer("comdat_signatures");
     {
         let Context { objs, symbols, .. } = ctx;
-        symbols.gather(bins, 0, |(file, group_idx): (ObjId, u32), id| {
+        symbols.gather(&bins, 0, |(file, group_idx): (ObjId, u32), id| {
             objs[file.index()].comdat_groups[group_idx as usize].set_signature(id);
         });
 
         // Signatures just interned could not participate in the metadata
         // traversal above. Record them now.
-        let symbols: &crate::symbol::SymbolTable = symbols;
         pending.into_par_iter().flatten().for_each(|(file, group_idx)| {
             let file = &objs[file.index()];
             let sym = &symbols[file.comdat_groups[group_idx as usize].signature()];
@@ -2502,10 +2501,7 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
     let _t = ctx.timer("scan_relocations");
 
     // Scan relocations to find dynamic symbols.
-    {
-        let ctx_ref: &Context<E> = ctx;
-        ctx_ref.objs.par_iter().for_each(|file| file.scan_relocations(ctx_ref));
-    }
+    ctx.objs.par_iter().for_each(|file| file.scan_relocations(ctx));
     // Exit if there was a relocation that refers to an undefined symbol.
     mold_common::error::checkpoint();
 
@@ -2516,21 +2512,19 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
     // before any section is scanned. Otherwise, the result would depend
     // on which section happened to be scanned first.
     let results: Vec<(OutputSectionId, Vec<crate::chunks::output_section::AbsRel>, Vec<u64>)> = {
-        let ctx_ref: &Context<E> = ctx;
-        let abs_rels: Vec<_> = (0..ctx_ref.output_sections.len())
+        let abs_rels: Vec<_> = (0..ctx.output_sections.len())
             .into_par_iter()
             .map(|i| OutputSectionId::new(i as u32))
-            .filter(|&id| ctx_ref.output_sections[id.index()].hdr.is_alloc())
-            .map(|id| (id, chunks::output_section::collect_abs_relocations(ctx_ref, id)))
+            .filter(|&id| ctx.output_sections[id.index()].hdr.is_alloc())
+            .map(|id| (id, chunks::output_section::collect_abs_relocations(ctx, id)))
             .collect();
         abs_rels.par_iter().for_each(|(id, abs_rels)| {
-            chunks::output_section::promote_abs_relocations(ctx_ref, *id, abs_rels);
+            chunks::output_section::promote_abs_relocations(ctx, *id, abs_rels);
         });
         abs_rels
             .into_par_iter()
             .map(|(id, mut abs_rels)| {
-                let offsets =
-                    chunks::output_section::scan_abs_relocations(ctx_ref, id, &mut abs_rels);
+                let offsets = chunks::output_section::scan_abs_relocations(ctx, id, &mut abs_rels);
                 (id, abs_rels, offsets)
             })
             .collect()
@@ -2545,8 +2539,7 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
 
     // Group dynamic symbols by their owning file.
     let groups: Vec<Vec<SymbolId>> = {
-        let ctx_ref: &Context<E> = ctx;
-        let mut objs: Vec<Vec<SymbolId>> = ctx_ref
+        let mut objs: Vec<Vec<SymbolId>> = ctx
             .objs
             .par_iter()
             .map(|file| {
@@ -2556,14 +2549,14 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
                     .iter()
                     .copied()
                     .filter(|&s| {
-                        let sym = &ctx_ref.symbols[s];
+                        let sym = &ctx.symbols[s];
                         sym.file() == Some(id)
                             && (sym.flags() != 0 || sym.is_imported() || sym.is_exported())
                     })
                     .collect()
             })
             .collect();
-        let dsos: Vec<Vec<SymbolId>> = ctx_ref
+        let dsos: Vec<Vec<SymbolId>> = ctx
             .dsos
             .par_iter()
             .map(|file| {
@@ -2573,7 +2566,7 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
                     .iter()
                     .copied()
                     .filter(|&s| {
-                        let sym = &ctx_ref.symbols[s];
+                        let sym = &ctx.symbols[s];
                         sym.file() == Some(id)
                             && (sym.flags() != 0 || sym.is_imported() || sym.is_exported())
                     })
@@ -2697,10 +2690,7 @@ pub fn create_reloc_sections<E: Target>(ctx: &mut Context<E>) {
     // Create .rela.* sections
     let ids: Vec<OutputSectionId> =
         ctx.chunks.iter().filter_map(|c| c.as_output_section()).collect();
-    let secs: Vec<reloc::RelocSection<E>> = {
-        let ctx_ref: &Context<E> = ctx;
-        ids.par_iter().map(|&id| reloc::new(ctx_ref, id)).collect()
-    };
+    let secs: Vec<reloc::RelocSection<E>> = ids.par_iter().map(|&id| reloc::new(ctx, id)).collect();
     for (id, sec) in ids.into_iter().zip(secs) {
         ctx.reloc_sections.push(sec);
         let idx = ctx.reloc_sections.len() as u32 - 1;
@@ -2817,14 +2807,10 @@ pub fn create_output_symtab<E: Target>(ctx: &mut Context<E>) {
         chunks::compute_symtab_size(ctx, id);
     }
 
-    let obj_plans: Vec<crate::input_files::SymtabPlan> = {
-        let ctx_ref: &Context<E> = ctx;
-        ctx_ref.objs.par_iter().map(|f| f.plan_symtab(ctx_ref, f.id())).collect()
-    };
-    let dso_plans: Vec<crate::input_files::SymtabPlan> = {
-        let ctx_ref: &Context<E> = ctx;
-        ctx_ref.dsos.par_iter().map(|f| f.plan_symtab(ctx_ref, f.id())).collect()
-    };
+    let obj_plans: Vec<crate::input_files::SymtabPlan> =
+        ctx.objs.par_iter().map(|f| f.plan_symtab(ctx, f.id())).collect();
+    let dso_plans: Vec<crate::input_files::SymtabPlan> =
+        ctx.dsos.par_iter().map(|f| f.plan_symtab(ctx, f.id())).collect();
     for (file, plan) in ctx.objs.iter_mut().zip(obj_plans) {
         file.base.apply_symtab_plan(plan);
     }
@@ -3200,18 +3186,17 @@ pub fn compute_import_export<E: Target>(ctx: &mut Context<E>) {
 // whose addresses are taken in code. If that table is available, we use
 // that information in this function. Otherwise, we conservatively assume
 // that all data items are address-taken.
-pub fn compute_address_significance<E: Target>(ctx: &mut Context<E>) {
+pub fn compute_address_significance<E: Target>(ctx: &Context<E>) {
     let _t = ctx.timer("compute_address_significance");
-    let ctx_ref: &Context<E> = ctx;
 
-    ctx_ref.objs.par_iter().for_each(|file| {
+    ctx.objs.par_iter().for_each(|file| {
         // If .llvm_addrsig is available, use it.
         if let Some(mut p) = file.llvm_addrsig {
             while !p.is_empty() {
                 let idx = mold_common::util::read_uleb(&mut p) as usize;
-                let sym = &ctx_ref.symbols[file.base.symbols[idx]];
+                let sym = &ctx.symbols[file.base.symbols[idx]];
                 if let Some(r) = sym.input_section() {
-                    ctx_ref.input_section(r).set_address_taken();
+                    ctx.input_section(r).set_address_taken();
                 }
             }
             return;
@@ -3228,8 +3213,8 @@ pub fn compute_address_significance<E: Target>(ctx: &mut Context<E>) {
                 isec.set_address_taken();
             }
             for r in isec.rels(file) {
-                let sym = &ctx_ref.symbols[file.base.symbols[r.r_sym() as usize]];
-                if let Some(dst) = sym.input_section_ref(ctx_ref)
+                let sym = &ctx.symbols[file.base.symbols[r.r_sym() as usize]];
+                if let Some(dst) = sym.input_section_ref(ctx)
                     && (dst.sh_flags & SHF_EXECINSTR as u64 == 0 || !r.is_func_call::<E>())
                 {
                     dst.set_address_taken();
@@ -3239,18 +3224,18 @@ pub fn compute_address_significance<E: Target>(ctx: &mut Context<E>) {
     });
 
     let mark = |id: SymbolId| {
-        if let Some(r) = ctx_ref.symbols[id].input_section() {
-            ctx_ref.input_section(r).set_address_taken();
+        if let Some(r) = ctx.symbols[id].input_section() {
+            ctx.input_section(r).set_address_taken();
         }
     };
     // Some symbols' pointer values are leaked to the dynamic section.
-    mark(ctx_ref.syms.entry);
-    mark(ctx_ref.syms.init);
-    mark(ctx_ref.syms.fini);
+    mark(ctx.syms.entry);
+    mark(ctx.syms.init);
+    mark(ctx.syms.fini);
     // Exported symbols are conservatively considered address-taken.
-    ctx_ref.objs.par_iter().for_each(|file| {
+    ctx.objs.par_iter().for_each(|file| {
         for &id in file.base.global_symbols() {
-            let sym = &ctx_ref.symbols[id];
+            let sym = &ctx.symbols[id];
             if sym.file() == Some(FileId::Obj(file.id())) && sym.is_exported() {
                 mark(id);
             }

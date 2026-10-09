@@ -119,7 +119,7 @@ fn defer_lto_object<E: Target>(
 /// `--:ignore-ir-file` is an archive member a previous pass found
 /// unneeded.
 fn new_lto_object<E: Target>(
-    ctx: &mut Context<E>,
+    ctx: &Context<E>,
     rctx: &ReaderContext,
     mf: &'static MappedFile,
     archive_name: &'static Path,
@@ -204,7 +204,7 @@ pub fn read_file<E: Target>(
 }
 
 /// Deduces the target from the first recognizable input file.
-pub fn detect_machine_type<E: Target>(ctx: &mut Context<E>, jobs: &[ReaderJob]) -> &'static str {
+pub fn detect_machine_type<E: Target>(ctx: &Context<E>, jobs: &[ReaderJob]) -> &'static str {
     for job in jobs {
         if job.is_lib {
             continue;

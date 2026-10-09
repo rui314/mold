@@ -121,11 +121,15 @@ fn symidx_addend<'a, E: Target>(
 
 /// Writes the relocations. With `-r` on a REL target, the addends are
 /// written into the output section's bytes, passed as `osec_buf`.
-pub fn copy_buf<E: Target>(ctx: &Context<E>, i: u32, buf: &mut [u8], osec_buf: Option<&mut [u8]>) {
+pub fn copy_buf<E: Target>(
+    ctx: &Context<E>,
+    i: u32,
+    buf: &mut [u8],
+    mut osec_buf: Option<&mut [u8]>,
+) {
     let sec = &ctx.reloc_sections[i as usize];
     let osec = &ctx.output_sections[sec.output_section.index()];
     let out = rels_from_bytes_mut::<E>(buf);
-    let mut osec_buf = osec_buf;
 
     for (mi, &m) in osec.members.iter().enumerate() {
         let isec = ctx.input_section(m);

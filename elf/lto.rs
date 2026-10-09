@@ -733,7 +733,7 @@ fn plugin_input_file(mf: &'static MappedFile) -> (PluginInputFile, File) {
 /// Reads the symbols of an IR object through the plugin. Returns `None`
 /// for an archive member the plugin declines.
 pub fn read_lto_object<E: Target>(
-    ctx: &mut Context<E>,
+    ctx: &Context<E>,
     mf: &'static MappedFile,
     archive_name: &'static std::path::Path,
 ) -> Option<ObjectFile<E>> {

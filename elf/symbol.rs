@@ -1612,7 +1612,7 @@ impl SymbolTable {
     /// its symbol through `assign`.
     pub fn gather<S: Copy + Send + Sync>(
         &mut self,
-        bins: Vec<Bins<S>>,
+        bins: &[Bins<S>],
         additional_capacity: usize,
         assign: impl Fn(S, SymbolId) + Sync,
     ) {
@@ -1705,7 +1705,7 @@ impl SymbolTable {
     /// Gathers keys recorded against stable input-file symbol slots.
     pub(crate) fn gather_symbol_slots(
         &mut self,
-        bins: Vec<Bins<SymbolSlot>>,
+        bins: &[Bins<SymbolSlot>],
         additional_capacity: usize,
     ) {
         self.gather(bins, additional_capacity, SymbolSlot::assign);

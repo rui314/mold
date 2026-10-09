@@ -244,7 +244,7 @@ fn visit_batch<'scope, E: Target>(
 // Mark all reachable sections
 fn mark<'a, E: Target>(
     ctx: &'a Context<E>,
-    roots: Vec<&'a InputSection<E>>,
+    roots: &[&'a InputSection<E>],
     map: &'a StartStopMap<'a, E>,
 ) {
     let _t = ctx.timer("mark");
@@ -305,7 +305,7 @@ pub fn gc_sections<E: Target>(ctx: &mut Context<E>) {
     let t = ctx.timer("build_start_stop_map");
     let map = build_start_stop_map(ctx);
     drop(t);
-    mark(ctx, roots, &map);
+    mark(ctx, &roots, &map);
     sweep(ctx);
 
     crate::passes::remove_unreachable_dsos(ctx);

@@ -60,6 +60,27 @@ fn unquote(s: &[u8]) -> &[u8] {
     }
 }
 
+/// Version scripts and dynamic lists take a quoted name literally, while
+/// an unquoted one is a glob pattern. We escape glob metacharacters in a
+/// quoted name so that the pattern matcher treats them as literals.
+fn unquote_pattern(tok: &'static [u8]) -> &'static [u8] {
+    if !tok.starts_with(b"\"") {
+        return tok;
+    }
+    let s = unquote(tok);
+    if !s.iter().any(|&c| matches!(c, b'*' | b'?' | b'[' | b'\\')) {
+        return s;
+    }
+    let mut out = Vec::with_capacity(s.len() * 2);
+    for &c in s {
+        if matches!(c, b'*' | b'?' | b'[' | b'\\') {
+            out.push(b'\\');
+        }
+        out.push(c);
+    }
+    util::leak_bytes(out)
+}
+
 /// Reports a syntax error, pointing at the offending token.
 fn syntax_error(mf: &MappedFile, tok: &[u8], msg: &str) -> ! {
     let input = mf.data();
@@ -244,27 +265,6 @@ impl<'a, E: Target> Script<'a, E> {
         }
     }
 
-    /// Version scripts and dynamic lists take a quoted name literally, while
-    /// an unquoted one is a glob pattern. We escape glob metacharacters in a
-    /// quoted name so that the pattern matcher treats them as literals.
-    fn unquote_pattern(&self, tok: &'static [u8]) -> &'static [u8] {
-        if !tok.starts_with(b"\"") {
-            return tok;
-        }
-        let s = unquote(tok);
-        if !s.iter().any(|&c| matches!(c, b'*' | b'?' | b'[' | b'\\')) {
-            return s;
-        }
-        let mut out = Vec::with_capacity(s.len() * 2);
-        for &c in s {
-            if matches!(c, b'*' | b'?' | b'[' | b'\\') {
-                out.push(b'\\');
-            }
-            out.push(c);
-        }
-        util::leak_bytes(out)
-    }
-
     fn read_output_format<'t>(&self, tok: &'t [&'static [u8]]) -> &'t [&'static [u8]] {
         let tok = self.skip(tok, "(");
         match tok.iter().position(|t| *t == b")") {
@@ -389,7 +389,7 @@ impl<'a, E: Target> Script<'a, E> {
             if t == b"*" {
                 self.ctx.default_version = idx;
             } else {
-                let pattern = self.unquote_pattern(t);
+                let pattern = unquote_pattern(t);
                 self.ctx.version_patterns.push(VersionPattern {
                     pattern,
                     source: &self.mf.name,
@@ -476,7 +476,7 @@ impl<'a, E: Target> Script<'a, E> {
             }
 
             result.push(DynamicPattern {
-                pattern: self.unquote_pattern(t),
+                pattern: unquote_pattern(t),
                 source: &self.mf.name,
                 is_cpp,
             });

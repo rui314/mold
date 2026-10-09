@@ -99,6 +99,7 @@ pub struct ResolveMember<'a> {
     pub name: &'static BStr,
 }
 
+#[derive(Clone, Copy)]
 pub struct ResolveOptions<'a> {
     pub allocated_only: bool,
     pub gc_sections: bool,
@@ -290,7 +291,6 @@ pub fn resolve<E: Target>(ctx: &mut Context<E>, id: MergedSectionId) {
     let msec = &mut merged_sections[id.index()];
     msec.estimation = estimate.cardinality();
     msec.map = ConcurrentMap::with_capacity(msec.estimation as usize * 3 / 2);
-    let msec = &*msec;
     drop(t);
 
     let t = timers.start("resolve_contents");

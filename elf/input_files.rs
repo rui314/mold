@@ -2855,9 +2855,8 @@ impl<'a> SymtabBlock<'a> {
 
     /// Adds a synthesized local symbol with a name built from `name` and
     /// `suffix`.
-    pub fn push_synthetic<E: Target>(&mut self, name: &[u8], suffix: &[u8], esym: ElfSym<E>) {
+    pub fn push_synthetic<E: Target>(&mut self, name: &[u8], suffix: &[u8], mut esym: ElfSym<E>) {
         let st_name = self.add_string(&[name, suffix]);
-        let mut esym = esym;
         esym.set_st_name(st_name);
         self.locals.push::<E>(esym, 0);
     }

@@ -40,9 +40,8 @@ pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
 
 /// Writes the relocations; with REL or SH4 and `-r`, addends are written
 /// into `.eh_frame` itself, which is passed as `eh_frame_buf`.
-pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8], eh_frame_buf: Option<&mut [u8]>) {
+pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8], mut eh_frame_buf: Option<&mut [u8]>) {
     let out = rels_from_bytes_mut::<E>(buf);
-    let mut eh_frame_buf = eh_frame_buf;
     let mut n = 0;
 
     let mut copy = |file: &ObjectFile<E>,
