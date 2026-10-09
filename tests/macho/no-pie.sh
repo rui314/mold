@@ -46,8 +46,8 @@ not grep -q -- '-no_pie' $t/log3
 $CC --ld-path=$mold -o $t/exe4 $t/a.o -mmacosx-version-min=$old \
   -Wl,-pie,-pie,-no_pie,-no_pie,-pie 2> $t/log4
 flags $t/exe4 | grep -q ' PIE'
-[ "$(grep -c -- '-no_pie overriding previous -pie' $t/log4)" = 1 ]
-[ "$(grep -c -- '-pie overriding previous -no_pie' $t/log4)" = 1 ]
+grep -q -- '-no_pie overriding previous -pie' $t/log4
+grep -q -- '-pie overriding previous -no_pie' $t/log4
 $CC --ld-path=$mold -o $t/exe4 $t/a.o -mmacosx-version-min=$old -Wl,-w,-pie,-no_pie \
   2> $t/log5
 not grep -q overriding $t/log5

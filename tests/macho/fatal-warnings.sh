@@ -28,9 +28,8 @@ not $CC --ld-path=$mold $t/b.o -mmacosx-version-min=14.0 \
   -Wl,-no_pie,-fatal_warnings -o $t/exe 2> $t/log2
 grep -q -- '-no_pie' $t/log2
 
-# So are those given as an option is read, whatever the order of the
-# options.
-not $CC --ld-path=$mold $t/a.o -Wl,-alias_list,$t/nosuch,-fatal_warnings -o $t/exe 2> $t/log4
+# So are those given as an option after -fatal_warnings is read.
+not $CC --ld-path=$mold $t/a.o -Wl,-fatal_warnings,-alias_list,$t/nosuch -o $t/exe 2> $t/log4
 grep -q 'No such file or directory' $t/log4
 if is_mold; then
   $CC --ld-path=$mold $t/b.o -mmacosx-version-min=14.0 \

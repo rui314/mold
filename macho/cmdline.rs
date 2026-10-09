@@ -501,11 +501,6 @@ pub struct Args {
     /// __oslogstring start on a page of their own, which
     /// LC_ENCRYPTION_INFO_64 names (see resolve_encryptable).
     pub encryptable: bool,
-    /// -w: suppress warnings.
-    pub suppress_warnings: bool,
-    /// -fatal_warnings, or $LD_TREAT_WARNINGS_AS_ERRORS set to anything
-    /// but 0: a warning fails the link.
-    pub fatal_warnings: bool,
     pub demangle: bool,
     /// -undefined dynamic_lookup (or suppress): leave unresolved symbols
     /// to be looked up in any loaded image at run time.
@@ -1970,7 +1965,6 @@ fn initial_args() -> Args {
         warn_swift_abi_mismatches: env("LD_WARN_ON_SWIFT_ABI_VERSION_MISMATCHES").is_some(),
         prefer_stubs: env("LD_PREFER_TAPI_FILE").is_some(),
         order_file_statistics: env("LD_PRINT_ORDER_FILE_STATISTICS").is_some(),
-        fatal_warnings: env("LD_TREAT_WARNINGS_AS_ERRORS").is_some_and(|v| v != "0"),
         application_extension: env("LD_APPLICATION_EXTENSION_SAFE").is_some()
             || env("LD_NO_ENCRYPT").is_some(),
         uuid_salt: env("RC_UUID_SALT").map_or(Vec::new(), |s| s.into_encoded_bytes()),
@@ -1991,7 +1985,12 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     let mut st = ParseState::default();
 
     mold_common::error::set_color(std::io::stderr().is_terminal());
-    mold_common::error::hold_warnings();
+    // $LD_TREAT_WARNINGS_AS_ERRORS set to anything but 0 makes warnings
+    // fatal, as -fatal_warnings does.
+    mold_common::error::set_fatal_warnings(
+        std::env::var_os("LD_TREAT_WARNINGS_AS_ERRORS").is_some_and(|v| v != "0"),
+    );
+    mold_common::error::set_suppress_warnings(false);
 
     let mut cur = ArgCursor { args: cmdline, index: 0 };
     while let Some(opt) = cur.advance() {
@@ -2595,8 +2594,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-lto_softload_runtime_symbols" | b"-no_lto_softload_runtime_symbols" => {}
 
             // Diagnostics, reports and traces.
-            b"-w" => args.suppress_warnings = true,
-            b"-fatal_warnings" => args.fatal_warnings = true,
+            b"-w" => mold_common::error::set_suppress_warnings(true),
+            b"-fatal_warnings" => mold_common::error::set_fatal_warnings(true),
             b"-demangle" => args.demangle = true,
             b"-help" => {
                 println!("Usage: ld64.mold [options] file...");
@@ -2741,14 +2740,8 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
     // A parse for another target than this one is redone by the driver,
     // so what depends on the target is left to that parse.
     if !resolve_target(target, &mut args) {
-        mold_common::error::drop_held();
         return args;
     }
-    // -w and -fatal_warnings apply to every warning, wherever they
-    // appear on the command line.
-    mold_common::error::set_fatal_warnings(args.fatal_warnings);
-    mold_common::error::set_suppress_warnings(args.suppress_warnings);
-    mold_common::error::release_held();
 
     check_arch_options(target, &mut args, &st);
     resolve_defaults(target, &mut args, &st);

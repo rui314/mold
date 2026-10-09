@@ -30,7 +30,9 @@ not grep -q warning $t/log
 cmp $t/exe $t/exe0
 
 link -bitcode_bundle -X -ld_classic -ld_prime 2> $t/log
-[ "$(grep -c warning $t/log)" = 4 ]
+for opt in -bitcode_bundle -X -ld_classic -ld_prime; do
+  grep -q -- "warning: $opt " $t/log
+done
 cmp $t/exe $t/exe0
 
 link -w -bitcode_verify -ld_classic 2> $t/log

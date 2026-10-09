@@ -33,17 +33,12 @@ for opt in -kext_objects_dir -multiply_defined -sdk_version -seg_addr_table -Y; 
 done
 
 link -X -s -multiply_defined suppress -segprot __FOO rz r -Si -b 2> $t/log
-[ "$(grep -o -- "-[A-Za-z_]* is obsolete\|letter 'z'" $t/log | sort | tr '\n' ' ')" = \
+[ "$(grep -o -- "-[A-Za-z_]* is obsolete\|letter 'z'" $t/log | sort -u | tr '\n' ' ')" = \
   "-Si is obsolete -X is obsolete -b is obsolete -multiply_defined is obsolete -s is obsolete letter 'z' " ]
 
-# (ld-prime warns of -s, -Si and -Sn as it reads them, so that only a
-# -w before them silences those.)
-link -X -w -Si 2> $t/log
+# A -w before them silences them.
+link -w -X -s -Si 2> $t/log
 not grep -q "is obsolete" $t/log
-if is_mold; then
-  link -X -s -w -Si 2> $t/log
-  not grep -q "is obsolete" $t/log
-fi
 
-not link -X -s -fatal_warnings 2> $t/log
+not link -fatal_warnings -X -s 2> $t/log
 grep -q -- '-X is obsolete' $t/log

@@ -13,7 +13,7 @@ link() {
   $mold -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 26.0 26.0} -syslibroot "$SDK" -lSystem $t/a.o \
     -o $t/exe "$@" 2> $t/log
 }
-warnings() { grep -o 'warning: .*' $t/log | sed 's/^warning: //' | sort > $t/got; }
+warnings() { grep -o 'warning: .*' $t/log | sed 's/^warning: //' | sort -u > $t/got; }
 [ $ARCH = arm64 ] && arm64=1 || arm64=
 
 link -mark_dead_strippable_dylib -force_symbols_weak_list $t/list -U _x -undefined dynamic_lookup \

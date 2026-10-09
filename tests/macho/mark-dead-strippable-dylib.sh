@@ -13,7 +13,7 @@ grep -q -- '-mark_dead_strippable_dylib is obsolete' $t/log
 otool -hv $t/b.dylib > $t/log
 not grep -q DEAD_STRIPPABLE_DYLIB $t/log
 
-$CC --ld-path=$mold -shared -o $t/b.dylib $t/a.o -Wl,-mark_dead_strippable_dylib -Wl,-w 2> $t/log
+$CC --ld-path=$mold -shared -o $t/b.dylib $t/a.o -Wl,-w -Wl,-mark_dead_strippable_dylib 2> $t/log
 not grep -q obsolete $t/log
 
 # Nor does it drop a dylib whose header has the flag, which ld64 did

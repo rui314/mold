@@ -75,13 +75,8 @@ pub fn error(msg: fmt::Arguments) {
     }
 }
 
-/// Reports a warning, or holds it back (see hold_warnings). With
-/// `--fatal-warnings` it is promoted to an error.
+/// Reports a warning. With `--fatal-warnings` it is promoted to an error.
 pub fn warn(msg: fmt::Arguments) {
-    if let Some(held) = HELD.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
-        held.push(msg.to_string());
-        return;
-    }
     if SUPPRESS_WARNINGS.load(Ordering::Relaxed) {
         return;
     }
@@ -91,30 +86,6 @@ pub fn warn(msg: fmt::Arguments) {
     } else {
         emit("mold: warning: ", "mold: \x1b[0;1;35mwarning:\x1b[0m ", msg);
     }
-}
-
-/// The warnings held back while the options are read (Some while they
-/// are), until the parse is known to be the one that counts: the Mach-O
-/// linker parses once per target it guesses, and gives a warning once.
-static HELD: Mutex<Option<Vec<String>>> = Mutex::new(None);
-
-/// Holds back the warnings from here on (see HELD).
-pub fn hold_warnings() {
-    *HELD.lock().unwrap_or_else(|e| e.into_inner()) = Some(Vec::new());
-}
-
-/// Gives the warnings held back, and holds back no more.
-pub fn release_held() {
-    let held = HELD.lock().unwrap_or_else(|e| e.into_inner()).take();
-    for msg in held.into_iter().flatten() {
-        warn(format_args!("{msg}"));
-    }
-}
-
-/// Forgets the warnings held back, of options read for another target
-/// that are read again, and holds back no more.
-pub fn drop_held() {
-    *HELD.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
 
 /// Prints a message with no prefix to stderr: some reports of what the
