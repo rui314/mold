@@ -303,11 +303,12 @@ fn write_ehdr<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     if let Some(shdr) = &ctx.shdr {
         ehdr.e_shoff.set(shdr.shdr.sh_offset.get());
         ehdr.e_shentsize.set(size_of::<ElfShdr<E>>() as u16);
-        // Since e_shnum is a 16-bit integer field, we can't store a very
-        // large value there. If it is >65535, the real value is stored in
-        // the zeroth section's sh_size field.
+        // e_shnum is a 16-bit field whose values from SHN_LORESERVE up are
+        // reserved. If the number of sections is SHN_LORESERVE or more,
+        // e_shnum is 0 and the real value is stored in the zeroth section's
+        // sh_size field.
         let shnum = shdr.shdr.sh_size.get() / size_of::<ElfShdr<E>>() as u64;
-        ehdr.e_shnum.set(if shnum <= u16::MAX as u64 { shnum as u16 } else { 0 });
+        ehdr.e_shnum.set(if shnum < SHN_LORESERVE as u64 { shnum as u16 } else { 0 });
     }
 
     ehdr.write(buf);
@@ -324,7 +325,7 @@ fn write_shdr<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
         first.sh_link.set(shstrtab.shndx);
     }
     let shnum = buf.len() / size;
-    if shnum > u16::MAX as usize {
+    if shnum >= SHN_LORESERVE as usize {
         first.sh_size.set(shnum as u64);
     }
     first.write(buf);
