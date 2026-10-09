@@ -4,7 +4,10 @@ source "$(dirname "$0")"/common.inc
 # Once it has read the options, the linker checks them against one
 # another and the kind of output, with a warning for each it ignores or
 # changes and an error for one it refuses.
-echo 'int main() { return 0; }' | $CC -o $t/a.o -c -xc -
+# The object is built for the macOS version it is linked for, or the
+# linker warns that it is newer (a simulator's version is in $CC).
+on_simulator || version=-mmacosx-version-min=26.0
+echo 'int main() { return 0; }' | $CC -o $t/a.o -c -xc - $version
 echo _main > $t/list
 link() {
   $mold -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 26.0 26.0} -syslibroot "$SDK" -lSystem $t/a.o \

@@ -7,7 +7,10 @@ source "$(dirname "$0")"/common.inc
 # the files and symbols it used) leave the output as it is. Those that
 # name a file or a name want one; -debug_snapshot takes a mode after
 # its name, and -max_code_deduplicate_passes a decimal number.
-echo 'int main() { return 0; }' | $CC -o $t/a.o -c -xc -
+# The object is built for the macOS version it is linked for, or the
+# linker warns that it is newer (a simulator's version is in $CC).
+on_simulator || version=-mmacosx-version-min=26.0
+echo 'int main() { return 0; }' | $CC -o $t/a.o -c -xc - $version
 link() {
   $mold -arch $ARCH -platform_version ${PLATFORM_VERSION:-macos 26.0 26.0} -syslibroot "$SDK" -lSystem $t/a.o \
     -o $t/exe "$@"
