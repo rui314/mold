@@ -34,6 +34,7 @@ install -m 644 "$srcdir/docs/mold.1" "$mandir"
 install -m 644 "$srcdir/LICENSE" "$docdir"
 
 ln -sf mold "$bindir/ld.mold"
+ln -sf mold "$bindir/ld64.mold"
 ln -sf mold.1 "$mandir/ld.mold.1"
 
 # The ld symlink for GCC's -B option points to the executable with a relative
