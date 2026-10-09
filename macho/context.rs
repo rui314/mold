@@ -225,8 +225,8 @@ pub struct Context<E: Target> {
     /// For -t: every input file as it is loaded, by the path it was
     /// found at (a library inlined in a stub by its install name).
     pub traced_files: Vec<Vec<u8>>,
-    /// The address of the first thread-local data section. Thread
-    /// pointers are encoded relative to it.
+    /// The address of the TLS template image. A TLV descriptor's offset
+    /// is relative to it (see tls.rs).
     pub tls_begin: u64,
     /// The address ranges where a pointer that needs a fixup is a text
     /// relocation the output can't have (passes::text_reloc_ranges).

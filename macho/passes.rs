@@ -4683,16 +4683,7 @@ pub fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) {
     ctx.output_size = layout_segment(ctx, linkedit, fileoff, 0);
     place_linkedit(ctx);
 
-    // Thread pointers are relative to the start of the first
-    // thread-local data section.
-    ctx.tls_begin = ctx
-        .chunks
-        .iter()
-        .map(|&id| ctx.chunk_header(id))
-        .filter(|hdr| hdr.is_thread_local())
-        .map(|hdr| hdr.addr)
-        .min()
-        .unwrap_or(0);
+    ctx.tls_begin = crate::tls::tls_begin(ctx);
 }
 
 /// The address ranges of the segments mapped without write permission,

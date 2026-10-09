@@ -1327,8 +1327,8 @@ impl Target for Arm64 {
                     if imported {
                         // The slot is filled by dyld.
                     } else if r.refers_to_tls(ctx, file) {
-                        // __thread_vars holds thread-pointer-relative
-                        // offsets into the TLS initialization image.
+                        // A TLV descriptor's offset is relative to the
+                        // TLS template image (see tls.rs).
                         write64(loc, s.wrapping_add_signed(a).wrapping_sub(ctx.tls_begin));
                     } else {
                         // Only a SUBTRACTOR's pair is 4 bytes long.
