@@ -338,15 +338,13 @@ fn mark_live_objects<E: Target>(ctx: &mut Context<E>) {
 // `VER1` can be referred to either as `foo` or `foo@VER1`. No other
 // symbols have two names like that.
 //
-// By default, we insert symbols with a default version without an at-sign
-// (i.e. `foo` instead of `foo@VER1`) into our internal symbol table.
-// Therefore, if the symbol is referenced with an at-sign (i.e.
-// `foo@VER1`), the reference fails to resolve. This function corrects
-// that error.
-//
-// In this function, we check all unresolved versioned symbols of the form
-// `foo@VER1` by removing the version part and see if `foo` has version
-// `VER1`. If it does, that's the symbol we are looking for.
+// We insert symbols with a default version into our internal symbol table
+// without an at sign (i.e. `foo` instead of `foo@VER1`), so a reference
+// with an at sign (i.e. `foo@VER1`) refers to a different symbol. When a
+// DSO defines `foo` with the default version, symbol resolution makes
+// `foo@VER1` a proxy for `foo` by marking it versioned_default and setting
+// its origin to `foo`. This function redirects every reference to such a
+// proxy to `foo`.
 fn resolve_default_symver<E: Target>(ctx: &mut Context<E>) {
     let Context { objs, dsos, symbols, .. } = ctx;
     objs.par_iter_mut().for_each(|file| {
@@ -397,9 +395,9 @@ fn clear_symbols<E: Target>(ctx: &mut Context<E>) {
 pub fn gather_symbols<E: Target>(ctx: &mut Context<E>) {
     let _t = ctx.timer("gather_symbols");
     let bins = ctx.take_symbol_bins();
-    // Reserve local symbols and a cheap CREL-header bound before constructing
-    // globals, so that the symbol vector need not copy every existing symbol
-    // when fragment dummies are appended later.
+    // Reserve room for local symbols and for a cheap bound computed from CREL
+    // headers before constructing globals, so that the symbol vector need not
+    // copy every existing symbol when fragment dummies are appended later.
     let additional_capacity = ctx
         .objs
         .par_iter()
@@ -456,7 +454,8 @@ fn resolve_symbols_pass<E: Target>(ctx: &mut Context<E>, files: &[FileId], only_
     });
 }
 
-/// Resolves the rare hidden-symbol retry while ignoring DSO definitions.
+/// Runs the rare retry of symbol resolution for hidden symbols, ignoring DSO
+/// definitions.
 fn resolve_skip_dso_symbols_pass<E: Target>(ctx: &mut Context<E>) {
     let _t = ctx.timer("resolve_symbols_pass");
     let Context { objs, dsos, symbols, default_version, .. } = ctx;
@@ -473,8 +472,8 @@ fn resolve_skip_dso_symbols_pass<E: Target>(ctx: &mut Context<E>) {
 fn parse_input_sections<E: Target>(ctx: &mut Context<E>) {
     let _t = ctx.timer("parse_input_sections");
 
-    // Symbol resolution is clear while COMDAT groups are selected, so sym_idx
-    // can temporarily hold the winning file priority.
+    // Symbols are unresolved while COMDAT groups are selected, so sym_idx can
+    // temporarily hold the winning file priority.
     // Read COMDAT metadata and choose an owner among reachable regular objects.
     // Ordinary global signatures already refer to the files' symbols; record
     // the other signatures for interning while each file's metadata is hot.
@@ -624,8 +623,9 @@ fn parse_input_sections<E: Target>(ctx: &mut Context<E>) {
                 }
                 if file.base.mf.is_some() && !file.is_lto_input() && !file.sections_parsed {
                     file.parse_sections(args, file.id(), allocator, keep_discarded_comdat);
-                    // Parsing already omitted losing groups and constructed
-                    // the others alive. --gdb-index may kill group members.
+                    // Parsing has already omitted the losing groups and
+                    // constructed the winners' members as live sections.
+                    // --gdb-index may kill group members.
                     if !keep_discarded_comdat && !args.gdb_index {
                         return;
                     }
@@ -660,8 +660,8 @@ pub fn resolve_symbols<E: Target>(ctx: &mut Context<E>) {
         .collect();
 
     // Call resolve_symbols() to find the most appropriate file for each
-    // symbol. And then mark reachable objects to decide which files to
-    // include into an output.
+    // symbol, and then mark reachable objects to decide which files to
+    // include in the output.
     resolve_symbols_pass(ctx, &files, false);
     let t = ctx.timer("resolve_default_symver");
     resolve_default_symver(ctx);
@@ -706,8 +706,8 @@ pub fn resolve_symbols<E: Target>(ctx: &mut Context<E>) {
 
     // Now that we know the exact set of input files that are to be
     // included in the output file, we want to redo symbol resolution.
-    // This is because symbols defined by object files in archive files
-    // may have risen as a result of mark_live_objects().
+    // This is because the resolution of symbols defined by object files in
+    // archive files may have changed as a result of mark_live_objects().
     //
     // To redo symbol resolution, we want to clear the state first.
     let t = ctx.timer("clear_symbols");
@@ -747,14 +747,14 @@ pub fn do_lto<E: Target>(ctx: &mut Context<E>) {
     let _t = ctx.timer("do_lto");
 
     // The compiler backend needs to know how symbols are resolved, so
-    // compute symbol visibility, import/export bits, etc early.
+    // compute symbol visibility, import/export bits, etc. early.
     apply_version_script(ctx);
     parse_symbol_version(ctx);
     compute_import_export(ctx);
 
     // If multiple IR object files define the same symbol, the LTO backend
     // would choose one of them randomly instead of reporting an error.
-    // So we need to check for symbol duplication error before doing an LTO.
+    // So we need to check for duplicate symbols before doing LTO.
     if !ctx.args.allow_multiple_definition {
         check_duplicate_symbols(ctx);
     }
@@ -1081,19 +1081,19 @@ struct CachedOutputSection {
 
 type OutputSectionShared<E> = (HashMap<OutputSectionKey, OutputSectionId>, Vec<OutputSection<E>>);
 
-// PT_GNU_RELRO segment is a security mechanism to make more pages
+// The PT_GNU_RELRO segment is a security mechanism to make more pages
 // read-only than we could have done without it.
 //
 // Traditionally, sections are either read-only or read-write. If a
-// section contains dynamic relocations, it must have been put into a
+// section contains dynamic relocations, it must be put into a
 // read-write segment so that the program loader can mutate its
 // contents in memory, even if no one will write to it at runtime.
 //
-// RELRO segment allows us to make such pages writable only when a
-// program is being loaded. After that, the page becomes read-only.
+// The RELRO segment allows us to make such pages writable only when a
+// program is being loaded. After that, the pages become read-only.
 //
-// Some sections, such as .init, .fini, .got, .dynamic, contain
-// dynamic relocations but don't have to be writable at runtime,
+// Some sections, such as .init_array, .fini_array, .got and .dynamic,
+// contain dynamic relocations but don't have to be writable at runtime,
 // so they are put into a RELRO segment.
 fn is_relro<E: Target>(osec: &OutputSection<E>) -> bool {
     let name = osec.hdr.name;
@@ -1203,8 +1203,8 @@ pub fn create_output_sections<E: Target>(ctx: &mut Context<E>) {
         }
     }
 
-    // Copy large member vectors in parallel, as well as flattening different
-    // output sections in parallel. No task mutates another file's groups.
+    // Copy large member vectors in parallel, and flatten different output
+    // sections in parallel as well. No task mutates another file's groups.
     let flattened: Vec<_> = grouped
         .into_par_iter()
         .enumerate()
@@ -1470,7 +1470,7 @@ pub fn add_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
 
     resolve_internal_symbols(ctx);
 
-    // Make all synthetic symbols relative ones by associating them to
+    // Make all synthetic symbols relative ones by associating them with
     // a dummy output section.
     for i in 0..ctx.objs[obj_id.index()].base.symbols.len() {
         let id = ctx.objs[obj_id.index()].base.symbols[i];
@@ -1735,7 +1735,7 @@ pub fn check_duplicate_symbols<E: Target>(ctx: &Context<E>) {
         for i in file.base.first_global..file.base.elf_syms.len() {
             let esym = &file.base.elf_syms[i];
 
-            // Skip if our symbol is undef or weak
+            // Skip if our symbol is undef, common or weak
             if esym.is_undef() || esym.is_common() || esym.st_bind() == STB_WEAK {
                 continue;
             }
@@ -1814,8 +1814,8 @@ pub fn check_symbol_version_conflicts<E: Target>(ctx: &Context<E>) {
     mold_common::error::checkpoint();
 }
 
-// GCC and Clang set the SHT_NOBITS flag for an output section only if the
-// section name is .bss or similar. Sections with nonstandard names, such
+// GCC and Clang give a section the SHT_NOBITS type only if the section
+// name is .bss or similar. Sections with nonstandard names, such
 // as those defined with __attribute__((section(".sectname"))), are always
 // emitted as non-BSS sections even if they contain only uninitialized
 // variables.
@@ -1872,7 +1872,7 @@ fn has_dso_definition<E: Target>(ctx: &Context<E>, id: SymbolId) -> bool {
 pub fn check_shlib_undefined<E: Target>(ctx: &Context<E>) {
     let _t = ctx.timer("check_shlib_undefined");
 
-    // Skip test if we don't have a complete set of shared object files
+    // Skip the test if we don't have a complete set of shared object files
     // for the program, because if there's a missing .so, an undefined
     // symbol might be defined by that library.
     let complete =
@@ -1885,8 +1885,8 @@ pub fn check_shlib_undefined<E: Target>(ctx: &Context<E>) {
                 let esym = &file.base.elf_syms[i];
                 let id = file.base.symbols[i];
                 let sym = &ctx.symbols[id];
-                // Dynamic symbol table for SPARC contains bogus entries which
-                // we need to ignore
+                // The dynamic symbol table for SPARC contains bogus entries
+                // which we need to ignore
                 let is_sparc_register = E::IS_SPARC && esym.st_type() == STT_SPARC_REGISTER;
                 let defined = sym.file().is_some() && sym.visibility() != STV_HIDDEN;
                 if esym.is_undef()
@@ -2102,14 +2102,14 @@ pub fn sort_ctor_dtor<E: Target>(ctx: &mut Context<E>) {
 // because it reduces the size of the debug info sections.
 //
 // You can change the format to DWARF64 by passing `-gdwarf64`. Therefore,
-// the "right" approach to build an extremely large program in debug mode is
-// to recompile everything with `-gdwarf64`. However, that's often not
+// the "right" approach to building an extremely large program in debug mode
+// is to recompile everything with `-gdwarf64`. However, that's often not
 // feasible for various reasons.
 //
 // If we don't do anything about it, a relocation overflow could occur if
 // any output debug section exceeds 4 GiB in size, making it almost
 // impossible for users to link an object file compiled without `-gdwarf64`
-// to an extremely large program.
+// into an extremely large program.
 //
 // This function works around the issue by sorting output debug section
 // contents so that DWARF32 input sections are at the start of the output
@@ -2119,7 +2119,7 @@ pub fn sort_ctor_dtor<E: Target>(ctx: &mut Context<E>) {
 pub fn sort_debug_info_sections<E: Target>(ctx: &mut Context<E>) {
     let _t = ctx.timer("sort_debug_info_sections");
 
-    // True if mold is running under ctest
+    // Tests set MOLD_DEBUG to force sorting of small debug sections
     let is_in_test = std::env::var_os("MOLD_DEBUG").is_some_and(|v| !v.is_empty());
 
     // Get lists of output debug sections that need sorting
@@ -2187,7 +2187,7 @@ pub fn sort_debug_info_sections<E: Target>(ctx: &mut Context<E>) {
     }
 }
 
-// .ctors/.dtors serves the same purpose as .init_array/.fini_array,
+// .ctors/.dtors serve the same purpose as .init_array/.fini_array,
 // albeit with very subtle differences. Both contain pointers to
 // initializer/finalizer functions. The runtime executes them one by one
 // but in the exact opposite order to one another. Therefore, if we are to
@@ -2460,12 +2460,12 @@ pub fn claim_unresolved_symbols<E: Target>(ctx: &mut Context<E>) {
                 // for a data symbol, but the symbol size is not available for an
                 // unclaimed weak symbol.
                 //
-                // In contrast, GNU ld promotes weak symbols to dynamic ones even
-                // for an executable as long as they don't need copy relocations
-                // (i.e. they need only PLT entries.) That may result in an
-                // inconsistent behavior of a linked program depending on whether
-                // its object files were compiled with -fPIC or not. I think that's
-                // bad semantics, so we don't do that.
+                // In contrast, GNU ld promotes weak symbols to dynamic ones
+                // even for an executable as long as they don't need copy
+                // relocations (i.e. they need only PLT entries). That may
+                // result in inconsistent behavior of a linked program depending
+                // on whether its object files were compiled with -fPIC or not.
+                // I think that's bad semantics, so we don't do that.
                 claim(ctx, true);
             } else {
                 // Otherwise, weak undefs are converted to absolute symbols with value 0.
@@ -2785,7 +2785,7 @@ pub fn sort_dynsyms<E: Target>(ctx: &mut Context<E>) {
     ctx.dynsym.dynstr_entries = dynstr_entries;
     ctx.dynsym.symbols[1..].par_iter_mut().zip(syms).for_each(|(slot, id)| *slot = Some(id));
 
-    // ELF's symbol table sh_info holds the offset of the first global symbol.
+    // ELF's symbol table sh_info holds the index of the first global symbol.
     ctx.dynsym.hdr.shdr.sh_info.set(num_locals as u32 + 1);
 }
 
@@ -2829,10 +2829,10 @@ pub fn apply_version_script<E: Target>(ctx: &mut Context<E>) {
 
     // The "local:" label has a special meaning in the version script.
     // It can appear in any VERSION clause, and it hides matched symbols
-    // unless other non-local patterns match to them. In other words,
+    // unless other non-local patterns match them. In other words,
     // "local:" has lower precedence than other version definitions.
     //
-    // If two or more non-local patterns match to the same symbol, the
+    // If two or more non-local patterns match the same symbol, the
     // last one takes precedence.
     let mut patterns: Vec<&VersionPattern> = ctx.version_patterns.iter().collect();
     patterns.sort_by_key(|p| p.ver_idx as u32 != VER_NDX_LOCAL);
@@ -3158,13 +3158,13 @@ pub fn compute_import_export<E: Target>(ctx: &mut Context<E>) {
 //
 // As a space-saving optimization, we want to merge two read-only objects
 // into a single object if their contents are equivalent. That
-// optimization is called the Identical Code Folding or ICF.
+// optimization is called Identical Code Folding, or ICF.
 //
 // A catch is that comparing object contents is not enough to determine if
 // two objects can be merged safely; we need to take care of pointer
 // equivalence.
 //
-// In C/C++, two pointers are equivalent if and only if they are taken for
+// In C/C++, two pointers are equivalent if and only if they point to
 // the same object. Merging two objects into a single object can break
 // this assumption because two distinct pointers would become
 // equivalent as a result of merging. We can still merge one object with
@@ -3293,13 +3293,13 @@ pub fn compute_address_significance<E: Target>(ctx: &Context<E>) {
 // alignment, so by sorting them by alignment, we should be able to
 // avoid a gap between .note sections.
 //
-// .toc is placed right after .got for PPC64. PPC-specific .toc section
-// contains data that may be accessed with a 16-bit offset relative to
-// %r2. %r2 is set to .got + 32 KiB. Therefore, .toc needs to be within
-// [.got, .got + 64 KiB).
+// .toc is placed right after .got for PPC64. The PPC-specific .toc
+// section contains data that may be accessed with a 16-bit offset
+// relative to %r2. %r2 is set to .got + 32 KiB. Therefore, .toc needs to
+// be within [.got, .got + 64 KiB).
 //
 // Other file layouts are possible, but this layout is chosen to keep
-// the number of segments as few as possible.
+// the number of segments as small as possible.
 fn sort_output_sections_regular<E: Target>(ctx: &mut Context<E>) {
     let rank1 = |ctx: &Context<E>, id: ChunkId| -> i64 {
         let hdr = ctx.chunk_header(id);
@@ -3435,26 +3435,26 @@ fn tls_segment_alignment<E: Target>(ctx: &Context<E>) -> u64 {
 // constraints:
 //
 // - Memory protection (readable, writable and executable) works at page
-//   granularity. Therefore, if we want to set different memory attributes
-//   to two sections, we need to place them into separate pages.
+//   granularity. Therefore, if we want to give two sections different
+//   memory attributes, we need to place them into separate pages.
 //
 // - The ELF spec requires that a section's file offset is congruent to
 //   its virtual address modulo the page size. For example, a section at
 //   virtual address 0x401234 on x86-64 (4 KiB, or 0x1000 byte page
 //   system) can be at file offset 0x3234 or 0x50234 but not at 0x1000.
 //
-// We need to insert paddings between sections if we can't satisfy the
-// above constraints without them.
+// We need to insert padding between sections if we can't satisfy the
+// above constraints without it.
 //
-// We don't want to waste too much memory and disk space for paddings.
-// There are a few tricks we can use to minimize paddings as below:
+// We don't want to waste too much memory and disk space on padding.
+// There are a few tricks we can use to minimize padding:
 //
 // - We want to place sections with the same memory attributes
 //   as contiguous as possible.
 //
 // - We can map the same file region to memory more than once. For
 //   example, we can write code (with R and X bits) and read-only data
-//   (with R bit) adjacent on file and map it twice as the last page of
+//   (with R bit) adjacent in the file and map it twice as the last page of
 //   the executable segment and the first page of the read-only data
 //   segment. This doesn't save memory but saves disk space.
 fn set_virtual_addresses_regular<E: Target>(ctx: &mut Context<E>) {
@@ -3484,8 +3484,8 @@ fn set_virtual_addresses_regular<E: Target>(ctx: &mut Context<E>) {
 
         // .relro_padding is a padding section to extend a PT_GNU_RELRO
         // segment to cover an entire page. Technically, we don't need a
-        // .relro_padding section because we can leave a trailing part of a
-        // segment an unused space. However, the `strip` command would delete
+        // .relro_padding section because we can leave the trailing part of a
+        // segment as unused space. However, the `strip` command would delete
         // such an unused trailing part and make an executable invalid.
         // So we add a dummy section.
         if id == ChunkId::RelroPadding {
@@ -3510,7 +3510,7 @@ fn set_virtual_addresses_regular<E: Target>(ctx: &mut Context<E>) {
 
         // Memory protection works at page size granularity. We need to
         // put sections with different memory attributes into different
-        // pages. We do it by inserting paddings here.
+        // pages. We do it by inserting padding here.
         if i > 0 && ctx.chunks[i - 1] != ChunkId::RelroPadding {
             let flags1 = flags_of(ctx, ctx.chunks[i - 1]);
             let flags2 = flags_of(ctx, id);
@@ -3546,8 +3546,8 @@ fn set_virtual_addresses_regular<E: Target>(ctx: &mut Context<E>) {
         // leaves zero-initialized bytes as-is instead of copying zeros.
         // So no one really reads tbss at runtime.
         //
-        // We can instead allocate a dedicated virtual address space to tbss,
-        // but that would be just a waste of the address and disk space.
+        // We could instead allocate dedicated virtual address space to tbss,
+        // but that would just waste address space and disk space.
         if is_tbss(ctx, id) {
             let mut addr2 = addr;
             loop {
@@ -3584,9 +3584,9 @@ fn set_virtual_addresses_by_order<E: Target>(ctx: &mut Context<E>) {
         match ord {
             SectionOrder::Section(_) | SectionOrder::Group(_) => {
                 while i < vec.len() && ctx.chunk_header(vec[i]).sect_order == j as i64 {
-                    // Memory protection works on page size granularity. We need to
-                    // put sections with different memory attributes into different
-                    // pages. We do it by inserting a padding.
+                    // Memory protection works at page size granularity. We
+                    // need to put sections with different memory attributes
+                    // into different pages. We do it by inserting padding.
                     if i != 0 {
                         let flags1 = chunks::to_phdr_flags(ctx, vec[i - 1]);
                         let flags2 = chunks::to_phdr_flags(ctx, vec[i]);
@@ -3632,7 +3632,7 @@ fn set_virtual_addresses_by_order<E: Target>(ctx: &mut Context<E>) {
 // Returns the smallest integer N that satisfies N >= val and
 // N % align == skew % align.
 //
-// Section's file offset must be congruent to its virtual address modulo
+// A section's file offset must be congruent to its virtual address modulo
 // the page size. We use this function to satisfy that requirement.
 fn align_with_skew(val: u64, align: u64, skew: u64) -> u64 {
     val + (skew.wrapping_sub(val) & (align - 1))
@@ -3685,15 +3685,15 @@ fn set_file_offsets<E: Target>(ctx: &mut Context<E>) -> u64 {
                 break;
             }
             let prev = ctx.chunk_header(ctx.chunks[i - 1]).shdr;
-            // This section requires larger alignment, we need to adjust the
-            // offset to ensure offset % align == vaddr % align.
+            // This section requires larger alignment, so we need to adjust
+            // the offset to ensure offset % align == vaddr % align.
             if next.sh_addralign.get() > page_size
                 && next.sh_addralign.get() > prev.sh_addralign.get()
             {
                 break;
             }
             // If --section-start is given, there may be a large gap between
-            // sections. We don't want to allocate a disk space for a gap if
+            // sections. We don't want to allocate disk space for a gap if
             // one exists.
             let gap = next.sh_addr.get() - prev.sh_addr.get() - prev.sh_size.get();
             if gap >= page_size {
@@ -3913,7 +3913,7 @@ pub fn fix_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
         stop(ctx, ctx.syms.rel_iplt_start, Some(ChunkId::RelDyn), -n);
         stop(ctx, ctx.syms.rel_iplt_end, Some(ChunkId::RelDyn), 0);
     } else {
-        // If the symbols are not necessary, we turn them to absolute
+        // If the symbols are not necessary, we turn them into absolute
         // symbols at address 0.
         for sym in [ctx.syms.rel_iplt_start, ctx.syms.rel_iplt_end].into_iter().flatten() {
             ctx.symbols[sym].clear_origin();
@@ -3971,8 +3971,8 @@ pub fn fix_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
 
     // _TLS_MODULE_BASE_. This symbol is used to obtain the address of
     // the TLS block in the TLSDESC model. I believe GCC and Clang don't
-    // create a reference to it, but Intel compiler seems to be using
-    // this symbol.
+    // create a reference to it, but the Intel compiler seems to use this
+    // symbol.
     if let (Some(sym), Some(first)) = (ctx.syms.tls_module_base, first) {
         let dtp = ctx.dtp_addr;
         let s = ctx.set_symbol_output_chunk(sym, first);
@@ -4115,8 +4115,8 @@ pub fn write_build_id<E: Target>(ctx: &mut Context<E>, buf: &mut [u8], is_mmappe
                 .enumerate()
                 .map(|(i, shard)| {
                     let hash = *blake3::hash(shard).as_bytes();
-                    // Make the kernel page out the file contents we've just written
-                    // so that subsequent close(2) call will become quicker.
+                    // Make the kernel page out the file contents we've just
+                    // written so that a subsequent close(2) call is quicker.
                     if i > 0 && is_mmapped {
                         #[cfg(not(windows))]
                         // SAFETY: the shard is part of the output mapping,
@@ -4155,8 +4155,8 @@ pub fn write_build_id<E: Target>(ctx: &mut Context<E>, buf: &mut [u8], is_mmappe
 // We can't choose a random value as a dummy value for build
 // reproducibility. We also don't want to write a fixed value for all
 // files because the CRC checksum is in this section to prevent using
-// wrong file on debugging. gdb rejects a debug info file if its CRC
-// doesn't match with the one in .gnu_debuglink.
+// the wrong file when debugging. gdb rejects a debug info file if its
+// CRC doesn't match the one in .gnu_debuglink.
 //
 // Therefore, we'll try to make our CRC checksum as unique as possible.
 // We'll remember that checksum, and after creating a debug info file, add
@@ -4223,7 +4223,7 @@ pub fn write_separate_debug_file<E: Target>(ctx: &mut Context<E>) {
     // Open an output file early
     let mut output = OutputFile::open_locked(&ctx.args.separate_debug_file, 0o666);
 
-    // We want to write to the debug info file in background so that the
+    // We want to write to the debug info file in the background so that the
     // user doesn't have to wait for it to complete.
     if ctx.args.detach {
         mold_common::subprocess::notify_parent();
@@ -4283,7 +4283,7 @@ pub fn write_separate_debug_file<E: Target>(ctx: &mut Context<E>) {
     }
     sort_debug_info_sections(ctx);
 
-    // Handle --compress-debug-info
+    // Handle --compress-debug-sections
     if ctx.args.compress_debug_sections != DebugCompression::None {
         compress_debug_sections(ctx);
     }
@@ -4330,8 +4330,8 @@ pub fn write_separate_debug_file<E: Target>(ctx: &mut Context<E>) {
     }
 
     // Reverse-compute a CRC32 value so that the CRC32 checksum embedded in
-    // the .gnu_debuglink section in the main executable matches with the
-    // debug info file's CRC32 checksum.
+    // the .gnu_debuglink section in the main executable matches the debug
+    // info file's CRC32 checksum.
     let trailer =
         crc32_solve(crc32_parallel(output.buf()), ctx.gnu_debuglink.as_ref().unwrap().crc32);
     let len = output.len();
@@ -4490,9 +4490,9 @@ pub fn show_stats<E: Target>(ctx: &Context<E>) {
 // The problem here is that the compiler always emits a landing pad at the
 // beginning of a global function because it doesn't know whether or not the
 // function's address is taken in other translation units. As a result, the
-// resulting binary contains more landing pads than necessary.
+// output binary contains more landing pads than necessary.
 //
-// This function rewrites a landing pad with a nop if the function's address
+// This function replaces a landing pad with a nop if the function's address
 // was not actually taken. We can do what the compiler cannot because we
 // know about all translation units.
 pub fn rewrite_endbr<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
@@ -4518,7 +4518,7 @@ pub fn rewrite_endbr<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
         Some(osec.hdr.shdr.sh_offset.get() + isec.offset())
     };
 
-    // Rewrite all landing pad instructions referred to by function symbols
+    // Replace all landing pad instructions referred to by function symbols
     // with NOPs. We handle only global symbols because the compiler doesn't
     // emit a landing pad for a file-scoped function in the first place if its
     // address is not taken within the file.
@@ -4603,7 +4603,7 @@ pub fn rewrite_endbr<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 
     // A range extension thunk reaches its target with an indirect branch, so
     // a thunked function still needs its landing pad even if it's only ever
-    // called directly. thunk->symbols has been reduced to the symbols that
+    // called directly. thunk.symbols has been reduced to the symbols that
     // actually need a thunk by remove_redundant_thunks().
     if E::NEEDS_THUNK {
         for osec in &ctx.output_sections {

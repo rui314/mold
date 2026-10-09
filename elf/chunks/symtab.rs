@@ -93,9 +93,9 @@ pub fn copy_buf<E: Target>(
     strtab::copy_buf(ctx, strtab);
 
     // Symbols synthesized by chunks, then symbols from input files.
-    // Each writer fills its own part of the tables: the local symbols
-    // come first, the chunks' then the files', and the global symbols
-    // after them, with the names laid out in the same order.
+    // Each writer fills its own part of the tables. The local symbols
+    // come first, the chunks' before the files', followed by the global
+    // symbols. The names are laid out in the same order.
     enum Writer {
         Chunk(ChunkId),
         Obj(crate::input_files::ObjId),
@@ -266,7 +266,7 @@ pub fn to_output_esym<E: Target>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -
         });
         esym.set_st_value(sym.addr(ctx));
     } else if file.is_dso() || sym.is_undef() {
-        // Undefined symbol in a DSO
+        // Undefined symbol, or symbol defined in a DSO
         esym.set_st_shndx(SHN_UNDEF);
         esym.set_st_size(0);
         if sym.is_canonical() {
@@ -333,11 +333,11 @@ pub fn to_output_esym<E: Target>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -
         }
     }
 
-    // Symbol's st_shndx is only 16 bits wide, so we can't store a large
-    // section index there. If the total number of sections is equal to
-    // or greater than SHN_LORESERVE (= 65280), the real index is stored
-    // to a SHT_SYMTAB_SHNDX section which contains a parallel array of
-    // the symbol table.
+    // A symbol's st_shndx is only 16 bits wide, so we can't store a large
+    // section index there. If the section index is equal to or greater
+    // than SHN_LORESERVE (= 65280), the real index is stored in a
+    // SHT_SYMTAB_SHNDX section, which contains an array parallel to the
+    // symbol table.
     let mut xindex = 0;
     if let Some(shndx) = shndx {
         if shndx < SHN_LORESERVE {

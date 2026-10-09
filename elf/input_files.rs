@@ -36,7 +36,7 @@ use crate::symbol::{
 };
 use bstr::BStr;
 
-// Store short name lengths exactly. A long name stores a logarithmic lower
+// Store short name lengths exactly. For a long name, store a logarithmic lower
 // bound so that finding its exact length requires scanning only its suffix.
 #[derive(Clone, Copy, Debug, Default)]
 struct NameLen(u8);
@@ -451,8 +451,9 @@ impl<E: Target> InputFile<E> {
 
         // e_shnum contains the total number of sections in an object file.
         // Since it is a 16-bit integer field, it's not large enough to
-        // represent >65535 sections. If an object file contains more than 65535
-        // sections, the actual number is stored to sh_size field.
+        // represent >65535 sections. If an object file contains more than
+        // 65279 sections, e_shnum is zero and the actual number is stored in
+        // the first section header's sh_size field.
         let first = data.get(shoff..shoff + shdr_size).map(record_from_bytes::<ElfShdr<E>>);
         let num_sections = match (ehdr.e_shnum.get(), first) {
             (0, Some(first)) => first.sh_size.get() as usize,
@@ -476,8 +477,9 @@ impl<E: Target> InputFile<E> {
             ..Self::empty(mf.name.to_string_lossy())
         };
 
-        // e_shstrndx is a 16-bit field. If .shstrtab's section index is
-        // too large, the actual number is stored to sh_link field.
+        // e_shstrndx is a 16-bit field. If .shstrtab's section index is too
+        // large, the actual index is stored in the first section header's
+        // sh_link field.
         let shstrtab_idx = if u32::from(ehdr.e_shstrndx.get()) == SHN_XINDEX {
             file.shdrs.first().map_or(0, |s| s.sh_link.get() as usize)
         } else {
@@ -501,8 +503,8 @@ impl<E: Target> InputFile<E> {
     #[inline]
     pub fn mark_reachable(&self) -> bool {
         // A relaxed load + branch (assuming miss) takes only around 20 cycles,
-        // while an atomic RMW can easily take hundreds on x86. It is common
-        // that another thread beat us in marking, so test optimistically first.
+        // while an atomic RMW can easily take hundreds on x86. Often another
+        // thread has already marked the file, so test optimistically first.
         if self.is_reachable.load(Ordering::Relaxed) {
             return false;
         }
@@ -1378,8 +1380,8 @@ impl<E: Target> ObjectFile<E> {
     fn parse_symbols(&mut self) {
         if let Some(idx) = self.base.find_section(SHT_SYMTAB) {
             let shdr = &self.base.shdrs[idx];
-            // In ELF, all local symbols precede global symbols in the symbol table.
-            // sh_info has an index of the first global symbol.
+            // In ELF, all local symbols precede global symbols in the symbol
+            // table. sh_info holds the index of the first global symbol.
             self.base.first_global = shdr.sh_info.get() as usize;
             let contents = self.base.section_contents(idx);
             if !contents.len().is_multiple_of(size_of::<ElfSym<E>>()) {
@@ -1429,7 +1431,7 @@ impl<E: Target> ObjectFile<E> {
             let mut key = &strtab[..len];
             let name = &key[..pos];
 
-            // Parse symbol version after atsign
+            // Parse the symbol version after '@'
             let mut ver_len = 0;
             if pos != len {
                 let ver = &key[pos..];
@@ -1697,10 +1699,11 @@ impl<E: Target> ObjectFile<E> {
                         );
                     }
 
-                    // .note.GNU-stack section controls executable-ness of the stack
-                    // area in GNU linkers. We ignore that section because silently
-                    // making the stack area executable is too dangerous. Tell our
-                    // users about the difference if that matters.
+                    // In GNU linkers, the .note.GNU-stack section controls
+                    // whether the stack area is executable. We ignore that
+                    // section because silently making the stack area executable
+                    // is too dangerous. Tell our users about the difference if
+                    // that matters.
                     if name == b".note.GNU-stack" && !args.relocatable {
                         if flags & SHF_EXECINSTR as u64 != 0 {
                             if !args.z_execstack && !args.z_execstack_if_needed {
@@ -1768,9 +1771,10 @@ impl<E: Target> ObjectFile<E> {
 
                     // Save .llvm_addrsig for --icf=safe.
                     if shdr.sh_type.get() == SHT_LLVM_ADDRSIG && !args.relocatable {
-                        // sh_link should be the index of the symbol table section.
-                        // Tools that mutate the symbol table, such as objcopy or `ld -r`
-                        // tend to not preserve sh_link, so we ignore such a section.
+                        // sh_link should be the index of the symbol table
+                        // section. Tools that mutate the symbol table, such as
+                        // objcopy or `ld -r`, tend to not preserve sh_link, so
+                        // we ignore such a section.
                         if shdr.sh_link.get() != 0 {
                             self.llvm_addrsig = Some(isec.contents());
                         }
@@ -1817,10 +1821,12 @@ impl<E: Target> ObjectFile<E> {
                             isec.kill();
                         }
                         if name == b".debug_types" {
-                            // .debug_types is similar to .debug_info but contains type info only.
-                            // It exists only in DWARF 4, has been removed in DWARF 5 and neither
-                            // GCC nor Clang generate it by default (-fdebug-types-section is
-                            // needed). As such there is probably little need to support it.
+                            // .debug_types is similar to .debug_info but
+                            // contains type info only. It exists only in
+                            // DWARF 4 and has been removed in DWARF 5. Neither
+                            // GCC nor Clang generates it by default
+                            // (-fdebug-types-section is needed). As such there
+                            // is probably little need to support it.
                             fatal!(
                                 "{self}: mold's --gdb-index is not compatible with .debug_types; to fix this error, remove -fdebug-types-section and recompile"
                             );
@@ -1882,8 +1888,8 @@ impl<E: Target> ObjectFile<E> {
     }
 
     // Relocations are usually sorted by r_offset in relocation tables,
-    // but for some reason only RISC-V does not follow that convention.
-    // We expect them to be sorted, so sort them if necessary.
+    // but for some reason RISC-V and LoongArch do not always follow that
+    // convention. We expect them to be sorted, so sort them if necessary.
     fn sort_relocations(&mut self) {
         if E::IS_RISCV || E::IS_LOONGARCH {
             let sections: Vec<u32> = self
@@ -2029,10 +2035,10 @@ impl<E: Target> ObjectFile<E> {
     // When an exception is thrown, the runtime searches for a record in
     // .eh_frame with the current program counter as a key. A record that
     // covers the current PC explains how to find a handler and how to
-    // transfer the control to it.
+    // transfer control to it.
     //
-    // Unlike most other sections, linker has to parse .eh_frame contents
-    // because of the following reasons:
+    // Unlike most other sections, the linker has to parse .eh_frame contents
+    // for the following reasons:
     //
     // - There's usually only one .eh_frame section for each object file,
     //   which explains how to handle exceptions for all functions in the same
@@ -2041,17 +2047,17 @@ impl<E: Target> ObjectFile<E> {
     //   functions). We want to copy only records for live functions.
     //
     // - .eh_frame contains two types of records: CIE and FDE. There's usually
-    //   only one CIE at the beginning of the .eh_frame section followed by FDEs.
-    //   Compiler usually emits the identical CIE record for all object files.
-    //   We want to merge identical CIEs in an output .eh_frame section to
-    //   reduce the section size.
+    //   only one CIE at the beginning of the .eh_frame section followed by
+    //   FDEs. Compilers usually emit identical CIE records for all object
+    //   files. We want to merge identical CIEs in an output .eh_frame section
+    //   to reduce the section size.
     //
     // - Scanning a .eh_frame section to find a record is an O(n) operation
     //   where n is the number of records in the section. To reduce it to
-    //   O(log n), linker creates a .eh_frame_hdr section. The section
+    //   O(log n), the linker creates a .eh_frame_hdr section. The section
     //   contains a sorted list of [an address in .text, an FDE address whose
     //   coverage starts at the .text address] to make binary search doable.
-    //   In order to create .eh_frame_hdr, linker has to read .eh_frame.
+    //   In order to create .eh_frame_hdr, the linker has to read .eh_frame.
     //
     // This function parses an input .eh_frame section.
     pub fn parse_ehframe(&mut self) {
@@ -2084,7 +2090,7 @@ impl<E: Target> ObjectFile<E> {
                 }
 
                 if id == 0 {
-                    // This is CIE.
+                    // This is a CIE.
                     let mut cie = CieRecord {
                         section: shndx,
                         contents,
@@ -2100,11 +2106,12 @@ impl<E: Target> ObjectFile<E> {
                         parse_fde_encoding::<E>(self, isec, &contents[begin_offset..end_offset]);
                     new_cies.push(cie);
                 } else {
-                    // This is FDE.
+                    // This is an FDE.
                     if rel_begin == rel_idx || rels[rel_begin].r_sym() == 0 {
-                        // FDE has no valid relocation, which means FDE is dead from
-                        // the beginning. Compilers usually don't create such an FDE, but
-                        // `ld -r` tends to generate such dead FDEs.
+                        // The FDE has no valid relocation, which means it is
+                        // dead from the beginning. Compilers usually don't
+                        // create such an FDE, but `ld -r` tends to generate
+                        // such dead FDEs.
                         continue;
                     }
                     if rels[rel_begin].r_offset() as usize - begin_offset != 8 {
@@ -2121,7 +2128,7 @@ impl<E: Target> ObjectFile<E> {
                 }
             }
 
-            // Associate CIEs to FDEs.
+            // Associate CIEs with FDEs.
             for fde in &mut new_fdes {
                 let off = fde.input_offset as usize + 4;
                 let cie_offset = E::read_i32(&contents[off..]) as i64;
@@ -2140,8 +2147,8 @@ impl<E: Target> ObjectFile<E> {
         }
         self.eh_frame_sections = eh_frame_sections;
 
-        // We assume that FDEs for the same input sections are contiguous
-        // in `fdes` vector.
+        // We assume that FDEs for the same input section are contiguous
+        // in the `fdes` vector.
         let section_of = |file: &Self, fde: &FdeRecord| -> usize {
             let rel = fde.rels(file)[0];
             file.shndx_at(rel.r_sym() as usize)
@@ -2152,7 +2159,7 @@ impl<E: Target> ObjectFile<E> {
             self.section_at(shndx as u32).priority(self)
         });
 
-        // Associate FDEs to input sections.
+        // Associate FDEs with input sections.
         let mut i = 0;
         while i < fdes.len() {
             let begin = i;
@@ -2293,12 +2300,12 @@ impl<E: Target> ObjectFile<E> {
         self.sections = sections;
     }
 
-    // Usually a section is an atomic unit of inclusion or exclusion.
-    // Linker doesn't care about its contents. However, if a section is a
-    // mergeable section (a section with SHF_MERGE bit set), the linker is
-    // expected to split it into smaller pieces and merge each piece with
-    // other pieces from different object files. In mold, we call the
-    // atomic unit of mergeable section "section pieces".
+    // Usually a section is an atomic unit of inclusion or exclusion. The linker
+    // doesn't care about its contents. However, if a section is a mergeable
+    // section (a section with the SHF_MERGE bit set), the linker is expected
+    // to split it into smaller pieces and merge each piece with other pieces
+    // from different object files. In mold, we call the atomic units of a
+    // mergeable section "section fragments".
     //
     // This feature is typically used for string literals. String literals
     // are usually put into a mergeable section by the compiler. If the same
@@ -2316,24 +2323,24 @@ impl<E: Target> ObjectFile<E> {
     //   .L.str0
     //
     // '\0' represents a NUL byte. This mergeable section contains two
-    // section pieces, "Hello world" and "foo bar". The first string is
+    // section fragments, "Hello world" and "foo bar". The first string is
     // referred to by two symbols, .rodata and .L.str0, and the second by
     // .L.str1. .rodata is a section symbol and therefore a local symbol
     // and refers to the beginning of the section.
     //
-    // In this example, there are actually two different ways to point to
+    // In this example, there are actually two different ways to point to the
     // string "foo bar", because .rodata+12 and .L.str1+0 refer to the same
     // place in the section. This kind of "out-of-bound" reference occurs
     // only when a symbol is a section symbol. In other words, the compiler
     // may use an offset from the beginning of a section to refer to any
-    // section piece in a section, but it doesn't do so for any other types
+    // section fragment in a section, but it doesn't do so for any other types
     // of symbols.
     //
     // Section garbage collection and Identical Code Folding work on graphs
-    // where sections or section pieces are vertices and relocations are
+    // where sections or section fragments are vertices and relocations are
     // edges. To make it easy to handle them, we rewrite symbols and
     // relocations so that each non-absolute symbol always refers to either
-    // a non-mergeable section or a section piece.
+    // a non-mergeable section or a section fragment.
     //
     // We do that only for SHF_ALLOC sections because GC and ICF work only
     // on memory-allocated sections. Non-memory-allocated mergeable sections
@@ -2344,7 +2351,7 @@ impl<E: Target> ObjectFile<E> {
         symbols: &SymbolEditor<'_>,
         merged: &[MergedSection<E>],
     ) {
-        // Attach section pieces to symbols.
+        // Attach section fragments to symbols.
         for i in 1..self.base.elf_syms.len() {
             let esym = &self.base.elf_syms[i];
             if esym.is_abs() || esym.is_common() || esym.is_undef() {
@@ -2554,17 +2561,18 @@ impl<E: Target> ObjectFile<E> {
     // from global variable declarations in a header file. For example, if you
     // have a tentative definition `int foo;` in a header which is included
     // into multiple translation units, `foo` will be included into multiple
-    // object files, but it won't cause the duplicate symbol error. Instead,
+    // object files, but it won't cause a duplicate symbol error. Instead,
     // the linker will merge them into a single instance of `foo`.
     //
     // If a header file contains a tentative definition `int foo;` and one of
-    // the C files contains a definition with initial value such as `int foo = 5;`,
-    // then the "real" definition wins. The symbol for the tentative definition
-    // will be resolved to the real definition. If there is no "real"
-    // definition, the tentative definition gets the default initial value 0.
+    // the C files contains a definition with an initial value such as
+    // `int foo = 5;`, then the "real" definition wins. The symbol for the
+    // tentative definition will be resolved to the real definition. If there
+    // is no "real" definition, the tentative definition gets the default
+    // initial value 0.
     //
     // Tentative definitions are represented as "common symbols" in an object
-    // file. In this function, we allocate spaces in .common or .tls_common
+    // file. In this function, we allocate space in .common or .tls_common
     // for remaining common symbols that were not resolved to usual defined
     // symbols in previous passes.
     pub fn convert_common_symbols(
@@ -2680,8 +2688,8 @@ impl<E: Target> ObjectFile<E> {
         plan
     }
 
-    // Returns true if a given section contains a DWARF32 debug record.
-    // `isec` must be a .debug_info section.
+    // Returns true if any of the file's .debug_info sections contains a
+    // DWARF32 debug record.
     pub fn is_dwarf32(&mut self) -> bool {
         let name = display_file(&self.base.filename, self.archive_name);
         for i in 0..self.debug_info_sections.len() {
@@ -2701,9 +2709,9 @@ impl<E: Target> ObjectFile<E> {
             // starts with a 32-bit size field, while a 64-bit CU starts with a
             // magic number 0xffff'ffff followed by a 64-bit size field.
             //
-            // Note that size doesn't take the size field itself into account, so
-            // the actual size of a 64-bit CU including the size field is 12 bytes
-            // larger than the value in the size field.
+            // Note that the size doesn't take the size field itself into
+            // account, so the actual size of a 64-bit CU including the size
+            // field is 12 bytes larger than the value in the size field.
             if E::read_u32(&buf) != 0xffff_ffff {
                 return true;
             }
@@ -2903,9 +2911,9 @@ fn should_write_to_local_symtab<E: Target>(ctx: &Context<E>, sym: &Symbol) -> bo
     true
 }
 
-// Initialize cie's fde_ptr_size member by parsing the augmentation
-// string. We need this member to remove FDE records referring to an
-// empty segment from the output .eh_frame_hdr.
+// Returns the value of a CIE's fde_ptr_size member by parsing the
+// augmentation string. We need this member to remove FDE records referring
+// to an empty segment from the output .eh_frame_hdr.
 fn parse_fde_encoding<E: Target>(file: &ObjectFile<E>, isec: &InputSection<E>, data: &[u8]) -> u8 {
     // Returns the size in bytes of a value in the DWARF exception header
     // encoding `enc`.
@@ -3122,8 +3130,8 @@ impl<E: Target> SharedFile<E> {
         let num_syms = esyms.len() - first;
         self.base.elf_syms = Cow::Owned(Vec::with_capacity(num_syms));
         self.versyms.reserve(num_syms);
-        // These reservations keep recorded slots stable until gather, even
-        // while parsing appends symbols. FileList retains the backing files
+        // These reservations keep recorded slots stable until
+        // gather_symbols(), even while parsing appends symbols. FileList retains the backing files
         // when duplicate SONAMEs are removed from its live list.
         self.base.symbols.reserve(num_syms);
         self.symbols2.reserve(num_syms);
@@ -3187,12 +3195,13 @@ impl<E: Target> SharedFile<E> {
             let versioned_key =
                 || leak_bytes([name, b"@", self.version_strings[ver as usize]].concat());
 
-            // Symbol resolution involving symbol versioning is tricky because one
-            // symbol can be resolved with two different identifiers. Among
+            // Symbol resolution involving symbol versioning is tricky because
+            // one symbol can be resolved with two different identifiers. Among
             // symbols with the same name but different versions, one of them is
             // always marked as the "default" one. This symbol is often denoted
-            // with two atsigns as `foo@@VERSION` and can be referred to either
-            // as `foo` or `foo@VERSION`. No other symbols have two names like that.
+            // with two at signs as `foo@@VERSION` and can be referred to either
+            // as `foo` or `foo@VERSION`. No other symbols have two names like
+            // that.
             //
             // In contrast, a versioned non-default symbol can be referred to only
             // with an explicit version suffix, e.g., `foo@VERSION`.
@@ -3248,20 +3257,21 @@ impl<E: Target> SharedFile<E> {
     // want to make an API-breaking change to some function but want to keep
     // old programs working with the newer libraries.
     //
-    // With symbol versioning, dynamic symbols are resolved by (name, version)
+    // With symbol versioning, dynamic symbols are resolved by a (name, version)
     // tuple instead of just by name. For example, glibc 2.35 defines two
     // different versions of `posix_spawn`, `posix_spawn` of version
     // "GLIBC_2.15" and that of version "GLIBC_2.2.5". Any executable that
     // uses `posix_spawn` is linked either to that of "GLIBC_2.15" or that of
-    // "GLIBC_2.2.5"
+    // "GLIBC_2.2.5".
     //
     // Versions are just strings, and no ordering is defined between them.
     // For example, "GLIBC_2.15" is not considered a newer version of
     // "GLIBC_2.2.5" or vice versa. They are considered just different.
     //
     // If a shared object file has versioned symbols, it contains a parallel
-    // array for the symbol table. Version strings can be found in that
-    // parallel table.
+    // array for the symbol table (.gnu.version) whose elements are version
+    // indices. .gnu.version_d and .gnu.version_r map the indices to version
+    // strings.
     //
     // One version is considered the "default" version for each shared object.
     // If an undefined symbol `foo` is resolved to a symbol defined by the
@@ -3343,13 +3353,13 @@ impl<E: Target> SharedFile<E> {
         &sorted[begin..end]
     }
 
-    // Infer an alignment of a DSO symbol. An alignment of a symbol in another
+    // Infer the alignment of a DSO symbol. The alignment of a symbol in another
     // .so is not something we usually care about, but when we create a copy
     // relocation for a symbol, we need to preserve its alignment requirement.
     //
     // Symbol alignment is not explicitly represented in an ELF file. In this
-    // function, we conservatively infer it from a symbol address and a
-    // section alignment requirement.
+    // function, we conservatively infer it from the symbol's address and its
+    // section's alignment requirement.
     pub fn alignment(&self, sym: &Symbol) -> u64 {
         let shndx = self.base.elf_syms[sym.sym_idx() as usize].st_shndx() as usize;
         let shdr = &self.base.shdrs[shndx];
@@ -3415,7 +3425,7 @@ impl<E: Target> SharedFile<E> {
 //  1. Strong defined symbol
 //  2. Weak defined symbol
 //  3. Strong defined symbol in a DSO/archive
-//  4. Weak Defined symbol in a DSO/archive
+//  4. Weak defined symbol in a DSO/archive
 //  5. Common symbol
 //  6. Common symbol in an archive
 //  7. Unclaimed (nonexistent) symbol
@@ -3651,9 +3661,10 @@ impl<E: Target> SharedFile<E> {
                 }
             });
 
-            // A symbol with the default version is a special case because, unlike
-            // other symbols, the symbol can be referred to by two names, `foo` and
-            // `foo@VERSION`. Here, we resolve `foo@VERSION` as a proxy of `foo`.
+            // A symbol with the default version is a special case because,
+            // unlike other symbols, the symbol can be referred to by two names,
+            // `foo` and `foo@VERSION`. Here, we resolve `foo@VERSION` as a
+            // proxy for `foo`.
             let alias_id = self.symbols2[i];
             if alias_id != SymbolId::NONE && alias_id != sym_id {
                 resolver.with_symbol(alias_id, |sym| {

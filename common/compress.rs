@@ -10,9 +10,9 @@
 //! zstd-compressed data can be merged in the same way.
 //!
 //! Using threads to compress data has a downside. Since the dictionary
-//! is reset on boundaries of shards, compression ratio is sacrificed
-//! a little bit. However, if a shard size is large enough, that loss
-//! is negligible in practice.
+//! is reset at shard boundaries, the compression ratio is sacrificed a
+//! little bit. However, if the shard size is large enough, that loss is
+//! negligible in practice.
 
 use std::io::{ErrorKind, Read};
 
@@ -51,7 +51,7 @@ impl std::fmt::Debug for CompressedData {
 /// Compresses a shard as a raw deflate stream ending with a sync flush,
 /// so that the stream ends on a byte boundary and can be concatenated.
 fn zlib_compress_shard(input: &[u8], level: i32) -> Vec<u8> {
-    // Initialize zlib stream. Since debug info is generally compressed
+    // Initialize a zlib stream. Since debug info is generally compressed
     // pretty well with lower compression levels, the default level is 1.
     let mut stream = libz_rs_sys::z_stream::default();
     // SAFETY: stream is a valid z_stream with the default allocator. It
@@ -81,8 +81,8 @@ fn zlib_compress_shard(input: &[u8], level: i32) -> Vec<u8> {
     let mut out = vec![0; bound + 16];
 
     // Compress data. It writes all compressed bytes except the last
-    // partial byte, so up to 7 bits can be held to be written to the
-    // buffer.
+    // partial byte, so up to 7 bits may be left pending without being
+    // written to the buffer.
     stream.avail_out = out.len() as u32;
     stream.next_out = out.as_mut_ptr();
     // SAFETY: the input and output buffers remain alive and the output has
@@ -96,8 +96,8 @@ fn zlib_compress_shard(input: &[u8], level: i32) -> Vec<u8> {
     // three-bit value indicating the start of an uncompressed data
     // block followed by four bytes 00 00 ff ff which indicate that
     // the length of the block is zero. libbacktrace uses its own zlib
-    // inflate routine, and it had a bug that if that particular
-    // three-bit value happens to end at a byte boundary, it accidentally
+    // inflate routine, and it had a bug where, if that particular
+    // three-bit value happened to end at a byte boundary, it accidentally
     // skipped the next byte.
     //
     // In order to avoid triggering that bug, we should avoid calling

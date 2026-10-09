@@ -7,22 +7,22 @@
 //! All instructions are 4 bytes long and aligned to 4-byte boundaries.
 //!
 //! A notable feature of SPARC is that, unlike other RISC ISAs, it doesn't
-//! need range extension thunks. It is because the SPARC's CALL instruction
+//! need range extension thunks. This is because SPARC's CALL instruction
 //! contains a whopping 30-bit immediate. The processor scales it by 4 to
 //! extend it to 32 bits (this is doable because all instructions are
 //! aligned to 4-byte boundaries, so the least significant two bits are
 //! always zero). That means CALL's reach is PC ± 2 GiB, eliminating the
-//! need of range extension thunks. It comes with the cost that the CALL
-//! instruction alone takes 1/4th of the instruction encoding space,
-//! though.
+//! need for range extension thunks. It comes at the cost of the CALL
+//! instruction alone taking up a quarter of the instruction encoding
+//! space, though.
 //!
-//! SPARC has 32 general purpose registers. CALL instruction saves a return
-//! address to %o7, which is an alias for %r15. Thread pointer is stored to
-//! %g7 which is %r7.
+//! SPARC has 32 general purpose registers. The CALL instruction saves a
+//! return address in %o7, which is an alias for %r15. The thread pointer is
+//! stored in %g7, which is %r7.
 //!
 //! SPARC does not have PC-relative load/store instructions. To access data
-//! in the position-independent manner, we usually first set the address of
-//! .got to, for example, %l7, with the following piece of code
+//! in a position-independent manner, we usually first set a register (for
+//! example, %l7) to the address of .got with the following piece of code
 //!
 //!   sethi  %hi(. - _GLOBAL_OFFSET_TABLE_), %l7
 //!   add  %l7, %lo(. - _GLOBAL_OFFSET_TABLE_), %l7
@@ -35,15 +35,16 @@
 //!   add  %o7, %l7, %l7
 //!
 //! . SETHI and the following ADD materialize a 32-bit offset to .got.
-//! CALL instruction sets a return address to $o7, and the subsequent ADD
-//! adds it to the GOT offset to materialize the absolute address of .got.
+//! The CALL instruction sets %o7 to a return address, and the subsequent
+//! ADD adds it to the GOT offset to materialize the absolute address of
+//! .got.
 //!
 //! Note that we have a NOP after CALL and an ADD after RETL because of
-//! SPARC's delay branch slots. That is, the SPARC processor always
+//! SPARC's branch delay slots. That is, the SPARC processor always
 //! executes one instruction after a branch even if the branch is taken.
 //! This may seem like an odd behavior, and indeed it is considered as such
 //! (that's a premature optimization for the early pipelined SPARC
-//! processors), but that's been a part of the ISA's spec so that's what it
+//! processors), but it has been part of the ISA's spec, so that's what it
 //! is.
 //!
 //! Note also that the .got address obtained this way is not shared between
@@ -155,9 +156,9 @@ impl Target for Sparc64 {
     //
     // We also don't need a .got.plt section to store the result of lazy PLT
     // symbol resolution because the dynamic symbol resolver directly mutates
-    // instructions in PLT so that they jump to the right places next time.
-    // That's why each PLT entry contains lots of NOPs; they are a placeholder
-    // for the runtime to add more instructions.
+    // instructions in the PLT so that they jump to the right places next
+    // time. That's why each PLT entry contains lots of NOPs; they are
+    // placeholders for the runtime to add more instructions.
     //
     // Self-modifying code is nowadays considered really bad from the security
     // point of view, though.
@@ -251,7 +252,7 @@ impl Target for Sparc64 {
             0xc25b_c001, // ldx  [ %o7 + %g1 ], %g1
             0x81c0_4000, // jmp  %g1
             0x9e10_0005, // mov  %g5, %o7
-        ]; // .quad $plt_entry - $got_entry
+        ]; // .quad $got_entry - ($plt_entry + 4)
         for (i, &insn) in INSN.iter().enumerate() {
             write_ub32(&mut buf[i * 4..], insn);
         }
@@ -603,10 +604,11 @@ impl Target for Sparc64 {
                     if sym.has_tlsgd(&ctx.symbols) {
                         or32(loc, bits(tls_get_addr().wrapping_add(a).wrapping_sub(p), 31, 2));
                     } else if sym.has_gottp(&ctx.symbols) {
-                        // When we rewrite a branch instruction with a non-branch one,
-                        // we need to swap the instruction and the following one so that
-                        // the original execution order, which is inverted due to the
-                        // branch delay slot, is preserved.
+                        // When we replace a branch instruction with a
+                        // non-branch one, we need to swap the instruction and
+                        // the following one so that the original execution
+                        // order, which is inverted due to the branch delay
+                        // slot, is preserved.
                         //
                         // Since we apply relocations from the end to the beginning,
                         // the instruction at loc + 4 is already complete.

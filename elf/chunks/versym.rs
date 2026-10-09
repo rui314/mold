@@ -5,14 +5,9 @@ use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 
-// .gnu.version section contains version indices as a parallel array for
-// .dynsym. If a dynamic symbol is a defined one, its version information
+// The .gnu.version section contains version indices in an array parallel
+// to .dynsym. If a dynamic symbol is a defined one, its version information
 // is in .gnu.version_d. Otherwise, it's in .gnu.version_r.
-//
-// .gnu.version contains a parallel table for .dynsym to specify symbol
-// versions of undefined symbols. A symbol having an entry in .gnu.version
-// must be resolved to a symbol with the exact same version string at
-// runtime.
 #[derive(Debug)]
 pub struct VersymSection<E: Target> {
     pub hdr: ChunkHeader<E>,

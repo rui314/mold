@@ -83,8 +83,9 @@ impl Origin {
             }
             OriginValue::OutputChunk(chunk) => Self(u64::from(chunk.0) << 2 | CHUNK_TAG),
             OriginValue::Fragment(fragment) => {
-                // FragmentRef contains two u32 indices. One billion merged sections
-                // are enough to leave the low two bits available for the tag.
+                // FragmentRef contains two u32 indices. We limit the number of
+                // merged sections to 2^30, which is plenty, to leave the low two
+                // bits for the tag.
                 assert!(fragment.section.0 < 1 << 30, "too many merged sections");
                 Self(fragment.raw() << 2 | FRAGMENT_TAG)
             }
@@ -293,7 +294,7 @@ const _: () = assert!(size_of::<Symbol>() <= 48);
 
 const SYMBOL_LOCKED: u8 = 1 << 0;
 
-// For symbol resolution. This flag is used rarely. See a comment in
+// For symbol resolution. This flag is used rarely. See the comment in
 // resolve_symbols().
 const SYMBOL_SKIP_DSO: u8 = 1 << 1;
 
@@ -314,11 +315,11 @@ const WEAK: u16 = 1 << 0;
 // runtime, `is_imported` is true. If a symbol is a dynamic symbol and
 // can be used by other ELF files at runtime, `is_exported` is true.
 //
-// Note that both can be true at the same time. Such symbol represents
-// a function or data exported from this ELF file which can be
-// imported by other definition at runtime. That is actually a usual
-// exported symbol when creating a DSO. In other words, a dynamic
-// symbol exported by a DSO is usually imported by itself.
+// Note that both can be true at the same time. Such a symbol represents
+// a function or data exported from this ELF file that can be resolved
+// to another definition at runtime. That is actually the usual case for
+// an exported symbol when creating a DSO. In other words, a dynamic
+// symbol exported by a DSO is usually imported by the DSO itself.
 //
 // If is_imported is true and is_exported is false, it is a dynamic
 // symbol just imported from another DSO.
@@ -326,10 +327,10 @@ const WEAK: u16 = 1 << 0;
 // If is_imported is false and is_exported is true, there are two
 // possible cases. If we are creating an executable, we know that
 // exported symbols cannot be intercepted by any DSO (because the
-// dynamic loader searches a dynamic symbol from an executable before
+// dynamic loader searches the executable for a dynamic symbol before
 // examining any DSOs), so any exported symbol is export-only in an
 // executable. If we are creating a DSO, export-only symbols
-// represent a protected symbol (i.e. a symbol whose visibility is
+// represent protected symbols (i.e. symbols whose visibility is
 // STV_PROTECTED).
 const IMPORTED: u16 = 1 << 1;
 const EXPORTED: u16 = 1 << 2;
@@ -337,18 +338,18 @@ const EXPORTED: u16 = 1 << 2;
 // `is_canonical` is true if this symbol represents a "canonical" PLT.
 // Here is the explanation as to what the canonical PLT is.
 //
-// In C/C++, the process-wide function pointer equality is guaranteed.
-// That is, if you take an address of a function `foo`, it's always
-// evaluated to the same address wherever you do that.
+// In C/C++, process-wide function pointer equality is guaranteed.
+// That is, if you take the address of a function `foo`, it always
+// evaluates to the same address wherever you do that.
 //
 // For the sake of explanation, assume that `libx.so` exports a
 // function symbol `foo`, and there's a program that uses `libx.so`.
 // Both `libx.so` and the main executable take the address of `foo`,
-// which must be evaluated to the same address because of the above
+// which must evaluate to the same address because of the above
 // guarantee.
 //
-// If the main executable is position-independent code (PIC), `foo` is
-// evaluated to the beginning of the function code, as you would have
+// If the main executable is position-independent code (PIC), `foo`
+// evaluates to the beginning of the function code, as you would have
 // expected. The address of `foo` is stored to GOTs, and the machine
 // code that takes the address of `foo` reads the GOT entries at
 // runtime.
@@ -365,24 +366,23 @@ const EXPORTED: u16 = 1 << 2;
 // main executable (whose address is fixed at link-time) as its
 // address. In order to guarantee pointer equality, we also need to
 // fill foo's GOT entries in DSOs with the address of foo's PLT
-// entry instead of `foo`'s real address. We can do that by setting a
-// symbol value to `foo`'s dynamic symbol. If a symbol value is set,
+// entry instead of `foo`'s real address. We can do that by setting the
+// symbol value of `foo`'s dynamic symbol. If a symbol value is set,
 // the dynamic loader initializes `foo`'s GOT entries with that value
 // instead of the symbol's real address.
 //
-// We call such PLT entry in the main executable as "canonical".
-// If `foo` has a canonical PLT, its address is evaluated to its
-// canonical PLT's address. Otherwise, it's evaluated to `foo`'s
-// address.
+// We call such a PLT entry in the main executable "canonical". If
+// `foo` has a canonical PLT, `foo` evaluates to its canonical PLT's
+// address. Otherwise, it evaluates to `foo`'s real address.
 //
 // Only non-PIC main executables may have canonical PLTs. PIC
 // executables and shared objects never have a canonical PLT.
 //
-// This bit manages if we need to make this symbol's PLT canonical.
+// This bit indicates whether we need to make this symbol's PLT canonical.
 // This bit is meaningful only when the symbol has a PLT entry.
 const CANONICAL: u16 = 1 << 3;
 
-// If an input object file is not compiled with -fPIC (or with
+// If an input object file is compiled without -fPIC (or with
 // -fno-PIC), the file is not position independent. That means the
 // machine code included in the object file does not use GOT to access
 // global variables. Instead, it assumes that addresses of global
@@ -396,7 +396,7 @@ const CANONICAL: u16 = 1 << 3;
 // In this case, we could print out the "recompile with -fPIC" error
 // message, but there's a way to work around it.
 //
-// The loader supports a feature so-called "copy relocations".
+// The loader supports a feature called "copy relocations".
 // A copy relocation instructs the loader to copy data from a DSO to a
 // specified location in the main executable. By using this feature,
 // we can copy `foo`'s data to a BSS region at runtime. With that,
@@ -417,14 +417,14 @@ const COPYREL_READONLY: u16 = 1 << 5;
 const TRACED: u16 = 1 << 6; // for --trace-symbol
 const WRAPPED: u16 = 1 << 7; // for --wrap
 
-// For symbols with default symbol version, e.g. foo@@VERSION.
+// For symbols with a default symbol version, e.g. foo@@VERSION.
 const VERSIONED_DEFAULT: u16 = 1 << 8;
 
 // For --gc-sections
 const GC_ROOT: u16 = 1 << 10;
 
 // For LTO. True if the symbol is referenced by a regular object (as
-// opposed to IR object).
+// opposed to an IR object).
 const REFERENCED_BY_REGULAR_OBJ: u16 = 1 << 11;
 
 // For LTO. True if the symbol is the signature of a COMDAT group
@@ -479,8 +479,6 @@ symbol_bits! {
     is_rust, set_rust: RUST;
 }
 
-// Inline objects and functions
-
 impl Symbol {
     #[inline]
     pub fn new(name: &'static BStr) -> Self {
@@ -528,7 +526,7 @@ impl Symbol {
         *self.sym_idx.get_mut() = index;
     }
 
-    /// Records the lowest file priority while symbol resolution is clear.
+    /// Records the lowest file priority while symbols are unresolved.
     #[inline]
     pub(crate) fn record_comdat_owner(&self, priority: u32) {
         // Write only if the priority is lower, keeping the cache line shared.
@@ -634,7 +632,7 @@ impl Symbol {
         *bits = (*bits & !VISIBILITY_MASK) | (v as u8 & VISIBILITY_MASK);
     }
 
-    // Symbol's visibility is set to the most restrictive one. For example,
+    // A symbol's visibility is set to the most restrictive one. For example,
     // if one input file has a defined symbol `foo` with the default
     // visibility and the other input file has an undefined symbol `foo`
     // with the hidden visibility, the resulting symbol is a hidden defined
@@ -724,9 +722,9 @@ impl Symbol {
     #[inline]
     pub fn mark(&self) -> bool {
         // A relaxed load + branch (assuming miss) takes only around 20 cycles,
-        // while an atomic RMW can easily take hundreds on x86. We note that it's
-        // common that another thread beat us in marking, so doing an optimistic
-        // early test tends to improve performance in the ~20% ballpark.
+        // while an atomic RMW can easily take hundreds on x86. Another thread
+        // has often marked the symbol already, so doing an optimistic early
+        // test tends to improve performance in the ~20% ballpark.
         if self.flags.load(Ordering::Relaxed) & NEEDS_MASK != 0 {
             return false;
         }
@@ -828,7 +826,7 @@ impl Symbol {
         }
     }
 
-    /// Returns the origin's ID, resolved through its owning context when needed.
+    /// Returns the symbol's decoded origin.
     #[inline]
     pub(crate) fn origin(&self) -> OriginValue {
         self.origin.get()
@@ -903,7 +901,7 @@ impl Symbol {
         }
     }
 
-    /// Records the file's entry the symbol now refers to (see
+    /// Records the file's entry that the symbol now refers to (see
     /// [`Self::esym`]).
     pub fn set_esym<R: SymbolRecord>(&mut self, esym: &R) {
         self.type_and_bind = (esym.st_bind() << 4 | esym.st_type()) as u8;
@@ -969,7 +967,7 @@ impl Symbol {
 
     #[inline]
     pub fn is_absolute(&self) -> bool {
-        // An unresolved weak symbol acts as if it were an absolute address
+        // An unresolved weak symbol acts as if it were an absolute symbol
         // at address 0
         if self.is_remaining_undef_weak() {
             return true;
@@ -1093,7 +1091,7 @@ impl Symbol {
             // .eh_frame contents are parsed and reconstructed by the linker,
             // so pointing to a specific location in a source .eh_frame
             // section doesn't make much sense. However, CRT files contain
-            // symbols pointing to the very beginning and ending of the section.
+            // symbols pointing to the very beginning and end of the section.
             //
             // If LTO is enabled, GCC may add `.lto_priv.<whatever>` as a symbol
             // suffix. That's why we use starts_with() instead of `==` here.
@@ -1109,7 +1107,7 @@ impl Symbol {
             if name.starts_with(b"__FRAME_END__") || name.starts_with(b"__EH_FRAME_LIST_END__") {
                 return eh_frame.sh_addr.get() + eh_frame.sh_size.get();
             }
-            // ARM object files contain "$d" local symbol at the beginning
+            // ARM object files contain "$d" local symbols at the beginning
             // of data sections. Their values are not significant for .eh_frame,
             // so we just treat them as offset 0.
             if name == b"$d" || name.starts_with(b"$d.") {
@@ -1122,7 +1120,7 @@ impl Symbol {
             );
         }
 
-        // The control can reach here if there's a relocation that refers
+        // Control can reach here if there's a relocation that refers
         // to a local symbol belonging to a comdat group section. This is a
         // violation of the spec, as all relocations should use only global
         // symbols of comdat members. However, .eh_frame tends to have such
@@ -1180,9 +1178,9 @@ impl Symbol {
         // This function returns the address that the PLT entry should use
         // to jump to the resolved address.
         //
-        // Note that we don't use this function for PPC64. In PPC64, symbols
-        // are always accessed through the TOC table regardless of the
-        // -fno-PIE setting. We don't need canonical PLTs on the psABIs too.
+        // Note that we don't use this function for PPC64. In PPC64, symbols are
+        // always accessed through the TOC table regardless of the -fno-PIE
+        // setting. We don't need canonical PLTs on those psABIs either.
         if self.is_pde_ifunc(ctx) {
             self.got_addr(ctx) + E::WORD_SIZE as u64
         } else {
@@ -1750,7 +1748,7 @@ impl SymbolTable {
     }
 
     /// Lets parallel workers append up to `maximum` symbols without moving
-    /// the table. The final length contains exactly the ranges they allocate.
+    /// the table. The final length covers exactly the ranges they allocate.
     pub fn with_parallel_appender(
         &mut self,
         maximum: usize,

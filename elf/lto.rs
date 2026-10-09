@@ -269,7 +269,7 @@ impl ClaimedSymbol {
 }
 
 // Global variables
-// We store LTO-related information to global variables,
+// We store LTO-related information in global variables,
 // as the LTO plugin is not thread-safe by design anyway.
 static LOADED: AtomicBool = AtomicBool::new(false);
 static HOOKS: Mutex<Hooks> = Mutex::new(Hooks {
@@ -344,12 +344,9 @@ unsafe extern "C" fn add_input_file<E: Target>(path: *const c_char) -> c_int {
     file.base.set_reachable(true);
     file.base.priority = ctx.lto_file_priority;
     ctx.lto_file_priority += 1;
-    // The corresponding C++ path resolves these immediately:
-    // parse_symbols() only registers global symbols. Create their shared
-    // Symbol objects and fill in the file's pointers before resolving.
-    //
-    // The Rust port gathers and resolves the registered symbols after the
-    // plugin callback returns.
+    // ObjectFile::new only reads the symbol table. Record the file's
+    // global symbols here; once the plugin returns, do_lto() redoes name
+    // resolution, which creates their Symbols and resolves them.
     file.register_global_symbols(&ctx.args, &mut ctx.symbol_bin());
     ctx.objs.push(Box::new(file));
     LDPS_OK
@@ -465,7 +462,7 @@ unsafe extern "C" fn get_symbols_v3<E: Target>(
     unsafe { get_symbols::<E>(handle, nsyms, psyms, false) }
 }
 
-/// get_symbols teaches the LTO plugin as to how we have resolved symbols.
+/// get_symbols tells the LTO plugin how we have resolved symbols.
 /// The plugin uses the symbol resolution info to optimize the program.
 ///
 /// For example, if a definition in an IR file is not referenced by
@@ -492,8 +489,8 @@ unsafe fn get_symbols<E: Target>(
         return LDPS_BAD_HANDLE;
     };
 
-    // If file is an archive member which was not chosen to be included in
-    // the final result, we need to make the plugin ignore all symbols.
+    // If the file is an archive member that was not chosen to be included
+    // in the final result, we need to make the plugin ignore all symbols.
     if !file.base.is_reachable() {
         for psym in psyms {
             psym.resolution = LDPR_PREEMPTED_REG;
@@ -501,7 +498,7 @@ unsafe fn get_symbols<E: Target>(
         return LDPS_NO_SYMS;
     }
 
-    // Set the symbol resolution results to psyms.
+    // Store the symbol resolution results in psyms.
     let this = FileId::Obj(file.id());
     for (i, psym) in psyms.iter_mut().enumerate() {
         let esym = &file.base.elf_syms[i + 1];
@@ -698,8 +695,8 @@ fn load_plugin<E: Target>(ctx: &Context<E>) {
     }
 }
 
-/// Returns true if a given linker plugin looks like LLVM's one.
-/// Returns false if it's GCC.
+/// Returns true if a given linker plugin looks like LLVM's.
+/// Returns false if it's GCC's.
 fn is_llvm<E: Target>(ctx: &Context<E>) -> bool {
     memchr::memmem::find(ctx.args.plugin.as_os_str().as_encoded_bytes(), b"LLVMgold.").is_some()
 }
@@ -750,7 +747,7 @@ pub fn read_lto_object<E: Target>(
         fatal!("LTO plugin did not register a claim_file hook");
     };
 
-    // Create plugin's object instance
+    // Create the plugin's object instance
     let (input, file) = plugin_input_file(mf);
     let mut claimed: c_int = 0;
     // claim_file_hook() calls add_symbols() which initializes `CLAIMED_SYMBOLS`
@@ -798,13 +795,14 @@ pub fn read_lto_object<E: Target>(
 /// get_symbols_v1 and get_symbols_v2 don't provide a way to ignore an
 /// object file we previously passed to the linker plugin. So we can't
 /// "unload" object files in archives that we ended up not choosing to
-/// include into the final output.
+/// include in the final output.
 ///
 /// As a workaround, we restart the linker with a list of object files
 /// the linker has to ignore, so that it won't read the object files
 /// from archives next time.
 ///
-/// This is an ugly hack and should be removed once GCC adopts the v3 API.
+/// This is an ugly hack and should be removed once we drop support for
+/// GCC versions older than 12.
 fn restart_process<E: Target>(ctx: &Context<E>) -> ! {
     let mut args: Vec<Cow<'_, OsStr>> =
         ctx.cmdline_args.iter().map(|arg| Cow::Borrowed(arg.as_ref())).collect();

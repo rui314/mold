@@ -736,11 +736,8 @@ fn is_space(c: u8) -> bool {
     matches!(c, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
 }
 
-// Whitespace ends a token, while quotes and backslashes alter how its bytes
-// are interpreted. The tokenizer tests these characters directly.
-
 // If a command line argument is in the form of `@path/to/some/file` (i.e.
-// it starts with an atsign), the linker reads the given file and
+// it starts with an at sign), the linker reads the given file and
 // interprets its contents as a list of command line arguments. A file
 // containing command line arguments is called a "response file".
 //
@@ -1256,11 +1253,11 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
     // are written to both RELA records and relocated places, so we write
     // addends to relocated places by default. There are a few exceptions:
     //
-    // - It looks like the SPARC's dynamic linker takes both RELA's r_addend
+    // - It looks like SPARC's dynamic linker takes both RELA's r_addend
     // and the value at the relocated place. So we don't want to write
     // values to relocated places.
     //
-    // - Static PIE binaries crash on startup in some RISC-V environment if
+    // - Static PIE binaries crash on startup in some RISC-V environments if
     // we write addends to relocated places.
     a.apply_dynamic_relocs = !matches!(target.family, Family::Sparc64 | Family::RiscV);
 
@@ -2176,7 +2173,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
     }
 
     // --oformat=binary implies --strip-all because without a section
-    // header, there's no way to identify the locations of a symbol
+    // header, there's no way to identify the location of a symbol
     // table in an output file in the first place.
     if a.oformat_binary {
         a.strip_all = true;

@@ -89,8 +89,8 @@ fn collect_root_set<'a, E: Target>(ctx: &'a Context<E>) -> Vec<&'a InputSection<
             //
             // --gc-sections discards only SHF_ALLOC sections. If you want to
             // reduce the amount of non-memory-mapped segments, you should
-            // use `strip` command, compile without debug info or use
-            // --strip-all linker option.
+            // use the `strip` command, compile without debug info or use
+            // the --strip-all linker option.
             for isec in file.input_sections() {
                 if !isec.is_alive() {
                     continue;
@@ -172,7 +172,7 @@ fn visit_section<'scope, E: Target>(
             ctx.dsos[dso.index()].base.mark_reachable();
             continue;
         }
-        // Symbol can refer to either a section fragment or an input section.
+        // A symbol can refer to either a section fragment or an input section.
         match sym.origin() {
             OriginValue::Fragment(frag) => {
                 ctx.fragment(frag).set_alive();

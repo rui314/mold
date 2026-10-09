@@ -1,13 +1,12 @@
 //! Since RISC instructions are generally up to 32 bits long, there's no
 //! way to embed very large immediates into their branch instructions. For
-//! example, RISC-V's JAL (jump and link) instruction can jump to only
-//! within PC ± 1 MiB because its immediate is 21 bits long. If the
-//! destination is further than that, we need to use two instructions
-//! instead; the first instruction being AUIPC, which sets the upper 20
-//! bits of a displacement to a register, and the second being JALR, which
-//! specifies the lower 12 bits and the register. Combined, they specify a
-//! 32-bit displacement, which is sufficient to support the medium code
-//! model.
+//! example, RISC-V's JAL (jump and link) instruction can jump only within
+//! PC ± 1 MiB because its immediate is 21 bits long. If the destination is
+//! further than that, we need to use two instructions instead. The first
+//! is AUIPC, which sets the upper 20 bits of a displacement to a register,
+//! and the second is JALR, which specifies the lower 12 bits and the
+//! register. Combined, they specify a 32-bit displacement, which is
+//! sufficient to support the medium code model.
 //!
 //! However, always using two or more instructions for function calls is a
 //! waste of time and space if the branch target is within a single
@@ -28,14 +27,14 @@
 //!
 //! This file contains functions to support (2). For (1), see thunks.rs.
 //!
-//! With the presence of this code-shrinking relaxation, sections can no
-//! longer be considered as atomic units. If we delete an instruction from
-//! the middle of a section, the section contents after that point need to
-//! be shifted by the size of the instruction. Symbol values and relocation
+//! In the presence of this code-shrinking relaxation, sections can no
+//! longer be considered atomic units. If we delete an instruction from the
+//! middle of a section, the section contents after that point need to be
+//! shifted by the size of the instruction. Symbol values and relocation
 //! offsets have to be shifted too if they refer to bytes past the deleted
 //! ones.
 //!
-//! In mold, we use `r_deltas` to memorize how many bytes have been shifted
+//! In mold, we use `r_deltas` to record how many bytes have been shifted
 //! for relocations. For symbols, we directly mutate their `value` member.
 //!
 //! RISC-V and LoongArch object files tend to have way more relocations
@@ -73,20 +72,20 @@ pub fn compute_distance<E: Target>(
     rel: &ElfRel<E>,
 ) -> i64 {
     // We handle absolute symbols as if they were infinitely far away
-    // because `shrink_section` may increase a distance between a branch
+    // because `shrink_section` may increase the distance between a branch
     // instruction and an absolute symbol. Branching to an absolute
     // location is extremely rare in real code, though.
     if sym.is_absolute() {
         return i64::MAX;
     }
-    // Compute a distance between the relocated place and the symbol.
+    // Compute the distance between the relocated place and the symbol.
     let s = sym.addr(ctx) as i64;
     let p = (isec.addr(ctx) + rel.r_offset()) as i64;
     s.wrapping_add(rel.r_addend()).wrapping_sub(p)
 }
 
-/// Find all relaxable relocations and record how many bytes we can save
-/// into r_deltas.
+/// Find all relaxable relocations and record in r_deltas how many bytes we
+/// can save.
 ///
 /// Technically speaking, relaxing relocations may allow more relocations
 /// to be relaxed because the distance between a branch instruction and

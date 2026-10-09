@@ -9,7 +9,7 @@
 //! defined to be encoded in little-endian, though. Only the behavior of
 //! load/store instructions is different between LE RISC-V and BE RISC-V.
 //!
-//! From the linker's point of view, the RISC-V's psABI is unique because
+//! From the linker's point of view, RISC-V's psABI is unique because
 //! sections in input object files can be shrunk while being copied to the
 //! output file. That is contrary to other psABIs in which sections are an
 //! atomic unit of copying. See the file comments in shrink_sections.rs for
@@ -77,10 +77,10 @@ fn write_btype(loc: &mut [u8], val: u64) {
 
 fn write_utype(loc: &mut [u8], val: u64) {
     // U-type instructions are used in combination with I-type
-    // instructions. U-type insn sets an immediate to the upper 20-bits
-    // of a register. I-type insn sign-extends a 12-bit immediate and
-    // adds it to a register value to construct a complete value. 0x800
-    // is added here to compensate for the sign-extension.
+    // instructions. A U-type instruction sets an immediate to the upper
+    // 20 bits of a register. An I-type instruction sign-extends a 12-bit
+    // immediate and adds it to a register value to construct a complete
+    // value. 0x800 is added here to compensate for the sign extension.
     write_ul32(
         loc,
         (read_ul32(loc) & 0b000000_00000_00000_000_11111_1111111)
@@ -152,11 +152,12 @@ fn is_hi20(r_type: u32) -> bool {
     )
 }
 
-// RISC-V generally uses the AUIPC + ADDI/LW/SW/etc instruction pair
-// to access the AUIPC's address ± 2 GiB. AUIPC materializes the most
-// significant 52 bits in a PC-relative manner, and the following
-// instruction specifies the remaining least significant 12 bits.
-// There are several HI20 and LO12 relocation types for them.
+// RISC-V generally uses the AUIPC + ADDI/LW/SW/etc. instruction pair
+// to access anywhere within the AUIPC's address ± 2 GiB. AUIPC
+// materializes the most significant 52 bits in a PC-relative manner,
+// and the following instruction specifies the remaining least
+// significant 12 bits. There are several HI20 and LO12 relocation
+// types for them.
 //
 // LO12 relocations need to materialize an address relative to AUIPC's
 // address, not relative to the instruction that the relocation
@@ -197,7 +198,7 @@ fn find_paired_reloc<E: Target>(
 }
 
 // Returns true if isec's i'th relocation refers to the following
-// GOT-load instruction pair, which is an expanded form of
+// GOT-load instruction pair, which is an expanded form of the
 // `la t0, foo` pseudo assembly instruction.
 //
 // .L0
@@ -604,10 +605,10 @@ where
                 }
                 R_RISCV_HI20 => {
                     // lui (+ addi) => an instruction holding a link-time constant. The lui
-                    // may be compressed to c.lui (removed 2 bytes) or deleted outright
-                    // (removed 4 bytes); either way it no longer needs a relocation.
+                    // may be compressed to c.lui (2 bytes removed) or deleted outright
+                    // (4 bytes removed). Either way, it no longer needs a relocation.
                     if removed == 2 {
-                        // Rewrite LUI with C.LUI
+                        // Replace LUI with C.LUI
                         let rd = rd(orig);
                         write_ul16(loc, 0b011_0_00000_00000_01 | (rd as u16) << 7);
                         write_citype(loc, sa.wrapping_add(0x800) >> 12);
@@ -624,9 +625,9 @@ where
                     } else {
                         write_stype(loc, sa);
                     }
-                    // Rewrite `lw t1, 0(t0)` with `lw t1, 0(x0)` if the address is
-                    // accessible relative to the zero register because if that's the
-                    // case, corresponding LUI might have been removed by relaxation.
+                    // Rewrite `lw t1, 0(t0)` as `lw t1, 0(x0)` if the address is
+                    // accessible relative to the zero register, because in that case
+                    // the corresponding LUI might have been removed by relaxation.
                     if is_int(sa as i64, 12) {
                         set_rs1(loc, 0);
                     }
@@ -643,8 +644,7 @@ where
                 }
                 R_RISCV_TPREL_ADD => {
                     // This relocation just annotates an ADD instruction that can be
-                    // removed when a TPREL is relaxed. No value is needed to be
-                    // written.
+                    // removed when a TPREL is relaxed. No value needs to be written.
                     debug_assert!(removed == 0 || removed == 4);
                     if removed != 0 && ctx.args.emit_relocs {
                         rels[rel_idx].set_r_type(R_NONE);
@@ -657,7 +657,7 @@ where
                     } else {
                         write_stype(loc, val);
                     }
-                    // Rewrite `lw t1, 0(t0)` with `lw t1, 0(tp)` if the address is
+                    // Rewrite `lw t1, 0(t0)` as `lw t1, 0(tp)` if the address is
                     // directly accessible using tp. tp is x4.
                     if is_int(val as i64, 12) {
                         set_rs1(loc, 4);
@@ -676,14 +676,14 @@ where
                 //   jalr   t0, tY
                 //       R_RISCV_TLSDESC_CALL         .L0
                 //
-                // For non-dlopen'd DSO, we may relax the instructions to the following:
+                // For a non-dlopen'd DSO, we may relax the instructions to the following:
                 //
                 //   <deleted>
                 //   <deleted>
                 //   auipc  a0, %gottp_hi(a0)
                 //   l[d|w] a0, %gottp_lo(a0)
                 //
-                // For executable, if the TP offset is small enough, we'll relax
+                // For an executable, if the TP offset is small enough, we'll relax
                 // it to the following:
                 //
                 //   <deleted>
@@ -698,7 +698,7 @@ where
                 //   lui    a0, %tpoff_hi(a0)
                 //   addi   a0, a0, %tpoff_lo(a0)
                 //
-                // If the code-shrinking relaxation is disabled, we may leave
+                // If the code-shrinking relaxation is disabled, we may leave the
                 // original useless instructions instead of deleting them, but we
                 // accept that because relaxations are enabled by default.
                 //
@@ -783,7 +783,7 @@ where
                 R_RISCV_SUB32 => Self::write_u32(loc, Self::read_u32(loc).wrapping_sub(sa as u32)),
                 R_RISCV_SUB64 => Self::write_u64(loc, Self::read_u64(loc).wrapping_sub(sa)),
                 R_RISCV_ALIGN => {
-                    // A R_RISCV_ALIGN is followed by a NOP sequence. We need to remove
+                    // An R_RISCV_ALIGN is followed by a NOP sequence. We need to remove
                     // zero or more bytes so that the instruction after R_RISCV_ALIGN is
                     // aligned to a given alignment boundary.
                     //
@@ -931,7 +931,7 @@ where
             // or all of the instructions so that the instruction that immediately
             // follows the NOPs is aligned to a specified alignment boundary.
             if r.r_type() == R_RISCV_ALIGN {
-                // The total bytes of NOPs is stored to r_addend, so the next
+                // The total size of the NOPs is stored in r_addend, so the next
                 // instruction is r_addend away. The alignment itself is not recorded
                 // anywhere; it is the smallest power of two greater than r_addend,
                 // because the assembler emits as many NOP bytes as the worst case
@@ -965,9 +965,9 @@ where
 
             match r.r_type() {
                 R_RISCV_CALL | R_RISCV_CALL_PLT => {
-                    // These relocations refer to an AUIPC + JALR instruction pair to
-                    // allow to jump to anywhere in PC ± 2 GiB. If the jump target is
-                    // close enough to PC, we can use C.J, C.JAL or JAL instead.
+                    // These relocations refer to an AUIPC + JALR instruction pair that
+                    // can jump to anywhere in PC ± 2 GiB. If the jump target is close
+                    // enough to PC, we can use C.J, C.JAL or JAL instead.
                     let dist = compute_distance(ctx, sym, isec, r);
                     if dist & 1 != 0 {
                         continue;
@@ -1008,9 +1008,9 @@ where
                     let val = sym.addr(ctx).wrapping_add(r.r_addend() as u64) as i64;
                     let rd = rd(&contents[r.r_offset() as usize..]);
                     if is_int(val, 12) {
-                        // We can replace `lui t0, %hi(foo)` and `add t0, t0, %lo(foo)`
-                        // instruction pair with `add t0, x0, %lo(foo)` if foo's bits
-                        // [32:11] are all one or all zero.
+                        // We can replace the `lui t0, %hi(foo)` and `addi t0, t0, %lo(foo)`
+                        // instruction pair with `addi t0, x0, %lo(foo)` if foo's bits
+                        // [63:11] are all ones or all zeros.
                         remove(4);
                     } else if use_rvc && rd != 0 && rd != 2 && is_int(val + 0x800, 18) {
                         // If the upper 20 bits can actually be represented in 6 bits,
@@ -1026,7 +1026,7 @@ where
                     //  lui  t0, %tprel_hi(foo)         # R_RISCV_TPREL_HI20
                     //  add  t0, t0, tp                 # R_RISCV_TPREL_ADD
                     //
-                    // Then thread-local variable `foo` is accessed with the low
+                    // Then the thread-local variable `foo` is accessed with the low
                     // 12-bit offset like this:
                     //
                     //  sw   t0, %tprel_lo(foo)(t0)     # R_RISCV_TPREL_LO12_S
@@ -1099,14 +1099,14 @@ fn write_plt_stub<const IS_64: bool>(buf: &mut [u8], disp: u64) {
 
 // ISA name handlers
 //
-// An example of ISA name is "rv64i2p1_m2p0_a2p1_f2p2_d2p2_c2p0_zicsr2p0".
+// An example of an ISA name is "rv64i2p1_m2p0_a2p1_f2p2_d2p2_c2p0_zicsr2p0".
 // An ISA name starts with the base name (e.g. "rv64i2p1") followed by
 // ISA extensions separated by underscores.
 //
 // There are lots of ISA extensions defined for RISC-V, and they are
-// identified by name. Some extensions are of single-letter alphabet such
-// as "m" or "q". Newer extension names start with "z" followed by one or
-// more letters (e.g. "zicsr"). "s" and "x" prefixes are reserved
+// identified by name. Some extensions have single-letter names such as
+// "m" or "q". Newer extension names start with "z" followed by one or
+// more letters (e.g. "zicsr"). The "s" and "x" prefixes are reserved
 // for supervisor-level extensions and private extensions, respectively.
 //
 // Each extension consists of a name, a major version and a minor version.
@@ -1240,7 +1240,7 @@ pub fn attributes_contents<E: Target>(ctx: &Context<E>) -> Vec<u8> {
         let attrs = &file.riscv_attributes;
         if let Some(val) = attrs.stack_align {
             if stack.is_some_and(|s| s != val) {
-                error!("{file}: stack alignment requirement mistmatch");
+                error!("{file}: stack alignment requirement mismatch");
             }
             stack = Some(val);
         }

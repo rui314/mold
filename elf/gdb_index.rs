@@ -1,6 +1,6 @@
 //! This file contains code to read DWARF debug info to create .gdb_index.
 //!
-//! .gdb_index is an optional section to speed up GNU debugger. It contains
+//! .gdb_index is an optional section to speed up the GNU debugger. It contains
 //! two maps: 1) a map from function/variable/type names to compunits, and
 //! 2) a map from function address ranges to compunits. gdb uses these
 //! maps to quickly find a compunit given a name or an instruction pointer.
@@ -48,15 +48,15 @@
 //! A compunit contains one or more function address ranges. If an
 //! object file is compiled without -ffunction-sections, it contains
 //! only one .text section and therefore contains a single address range.
-//! Such a range is typically stored directly to the compunit.
+//! Such a range is typically stored directly in the compunit.
 //!
 //! If an object file is compiled with -ffunction-sections, it contains
 //! more than one .text section, and it has as many address ranges as
 //! the number of .text sections. Such discontiguous address ranges are
-//! stored to .debug_ranges in DWARF 2/3/4 and .debug_rnglists/.debug_addr
+//! stored in .debug_ranges in DWARF 2/3/4 and in .debug_rnglists/.debug_addr
 //! in DWARF 5.
 //!
-//! .debug_info section contains DWARF debug info. Although we don't need
+//! The .debug_info section contains DWARF debug info. Although we don't need
 //! to parse the whole .debug_info section to read address ranges, we
 //! have to do a little bit. DWARF is complicated and often handled using
 //! a library such as libdwarf. But we don't use any library because we
@@ -166,7 +166,7 @@ const _: () = assert!(size_of::<NameRecord>() <= 16);
 /// CU metadata carried from input parsing through final index serialization.
 /// CUs own address ranges; both CUs and TUs below may own public names.
 struct Compunit {
-    /// Initially relative to the input contribution selected by file_idx/shndx;
+    /// Initially relative to the input contribution selected by file/shndx;
     /// rebased to the output .debug_info section in prepare_tables.
     offset: u64,
     size: u64,
@@ -376,7 +376,7 @@ fn parse_unit_header<E: Target>(data: &[u8], pos: usize) -> UnitHeader {
     hdr
 }
 
-/// The address ranges a compilation unit covers.
+/// The relocated output debug sections from which CU address ranges are read.
 struct RangeSections<'a> {
     info: &'a [u8],
     abbrev: &'a [u8],
@@ -516,11 +516,11 @@ fn read_rnglist<E: Target>(r: &mut Reader<E>, addrx: &[u8], mut base: u64) -> Ve
     }
 }
 
-/// Returns a list of address ranges explained by a compunit at the
-/// `offset` in an output .debug_info section.
+/// Returns a list of address ranges described by a compunit at `offset` in
+/// an output .debug_info section.
 ///
 /// .debug_info contains DWARF debug info records, so this function
-/// parses DWARF. If a designated compunit contains multiple ranges, the
+/// parses DWARF. If the compunit contains multiple ranges, the
 /// ranges are read from .debug_ranges (or .debug_rnglists for DWARF5).
 /// Otherwise, a range is read directly from .debug_info (or possibly
 /// from .debug_addr for DWARF5).
@@ -958,8 +958,7 @@ fn read_type_name<E: Target>(
 fn read_debug_units<E: Target>(file: &GdbInputFile, file_idx: u32) -> FileUnits {
     let mut units = FileUnits::default();
     for input in &file.debug_info {
-        // Read every unit in one input .debug_info contribution. Keeping this separate
-        // leaves read_debug_units responsible only for object-level orchestration.
+        // Read every unit in one input .debug_info contribution.
         let contents = input.contents;
         let mut pos = 0;
         while pos < contents.len() {
@@ -1283,12 +1282,11 @@ pub fn read_inputs<E: Target>(timer: Timer, files: Vec<GdbInputFile>) -> GdbInde
 }
 
 /// Unit offsets are relative to their input .debug_info contributions.
-/// Convert them to output-section offsets and sort each .gdb_index list in
-/// output order. The format's unit-number namespace consists of every CU-list
-/// entry followed by every TU-list entry, even when CUs and TUs are
-/// interleaved in .debug_info. Address-area records refer only to the CU list.
-///
-/// The Rust port performs the sorting in `build_tables` after this rebasing.
+/// Convert them to output-section offsets, which `build_tables` uses to sort
+/// each .gdb_index list in output order. The format's unit-number namespace
+/// consists of every CU-list entry followed by every TU-list entry, even when
+/// CUs and TUs are interleaved in .debug_info. Address-area records refer
+/// only to the CU list.
 pub fn prepare_tables<E: Target>(ctx: &Context<E>, data: &mut GdbIndexData) {
     let output_offset = |file: u32, shndx: u32| ctx.objs[file as usize].section_at(shndx).offset();
     for cu in &mut data.cus {
@@ -1447,7 +1445,7 @@ pub fn build_tables(timer: Timer, mut data: GdbIndexData, workers: usize) -> Gdb
 }
 
 /// Builds the tables synchronously for the separate-debug-file path, where
-/// the output's section ordering differs from the main file.
+/// the output's section ordering differs from that of the main file.
 pub fn build_tables_now<E: Target>(ctx: &mut Context<E>) {
     let timer = ctx.timer("build_gdb_index_tables");
     let Some(mut data) = ctx.gdb_index_data.take() else {
@@ -1535,7 +1533,7 @@ pub fn write<E: Target>(ctx: &mut Context<E>, output: &mut OutputFile) {
     // Version 9 inserts a shortcut table between the symbol table and the
     // constant pool. We currently emit an empty shortcut table.
     let header_size = if has_tus { 28 } else { 24 };
-    // Compute sizes of each component.
+    // Compute the size of each component.
     let cu_list_offset = header_size;
     let cu_types_offset = cu_list_offset + data.cus.len() * 16;
     let ranges_offset = cu_types_offset + data.tus.len() * 24;

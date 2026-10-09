@@ -30,12 +30,12 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     for (i, &id) in ctx.plt.symbols.iter().enumerate() {
         let sym = &ctx.symbols[id];
         let rel = if E::IS_SPARC {
-            // SPARC doesn't have a .got.plt because its role is merged to .plt.
-            // On SPARC, .plt is writable (!) and the dynamic linker directly
-            // modifies .plt's machine instructions as it resolves dynamic symbols.
-            // Therefore, it doesn't need a separate section to store the symbol
-            // resolution results. That is of course horrible from the security
-            // point of view, though.
+            // SPARC doesn't have a .got.plt because its role is merged into
+            // .plt. On SPARC, .plt is writable (!) and the dynamic linker
+            // directly modifies .plt's machine instructions as it resolves
+            // dynamic symbols. Therefore, it doesn't need a separate section
+            // to store the symbol resolution results. That is of course
+            // horrible from the security point of view, though.
             let idx = sym.plt_idx(&ctx.symbols).unwrap() as u64;
             if idx < crate::arch::sparc64::SPARC_NUM_SMALL_PLT {
                 ElfRel::<E>::new(

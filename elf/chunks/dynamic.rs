@@ -7,9 +7,8 @@ use crate::elf::*;
 use crate::input_files::FileId;
 use crate::symbol::SymbolId;
 
-// .dynamic contains various information for dynamically-linked ELF files.
-// At runtime, the dynamic linker reads the information to work
-// appropriately.
+// .dynamic contains various information for dynamically-linked ELF files,
+// which the dynamic linker reads at runtime.
 pub fn new_header<E: Target>(args: &crate::cmdline::Args) -> ChunkHeader<E> {
     let mut hdr = ChunkHeader::<E>::new(".dynamic", SHT_DYNAMIC, 0);
     hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
@@ -25,17 +24,17 @@ pub fn new_header<E: Target>(args: &crate::cmdline::Args) -> ChunkHeader<E> {
 }
 
 // An ARM64 function with a non-standard calling convention is marked with
-// STO_AARCH64_VARIANT_PCS bit in the symbol table.
+// the STO_AARCH64_VARIANT_PCS bit in the symbol table.
 //
 // A function with that bit is not safe to be called through a lazy PLT
 // stub because the PLT resolver may clobber registers that should be
 // preserved in a non-standard calling convention.
 //
 // To solve the problem, the dynamic linker scans the dynamic symbol table
-// at process startup time and resolves symbols with STO_AARCH64_VARIANT_PCS
-// bit eagerly, so that the PLT resolver won't be called for that symbol
-// lazily. As an optimization, it does so only when DT_AARCH64_VARIANT_PCS
-// is set in the dynamic section.
+// at process startup time and eagerly resolves symbols with the
+// STO_AARCH64_VARIANT_PCS bit, so that the PLT resolver won't be called
+// lazily for those symbols. As an optimization, it does so only when
+// DT_AARCH64_VARIANT_PCS is set in the dynamic section.
 //
 // This function returns true if DT_AARCH64_VARIANT_PCS needs to be set.
 fn contains_variant_pcs<E: Target>(ctx: &Context<E>) -> bool {
@@ -249,12 +248,12 @@ fn for_each_entry<E: Target>(ctx: &Context<E>, mut define: impl FnMut(u32, u64))
     if E::IS_PPC64 {
         // PPC64_GLINK is defined by the psABI to refer to 32 bytes before
         // the first PLT entry. I don't know why it's 32 bytes off, but
-        // it's what it is.
+        // it is what it is.
         define(DT_PPC64_GLINK, plt.hdr.shdr.sh_addr.get() + E::plt_entry_offset(ctx, 0) - 32);
     }
 
-    // GDB needs a DT_DEBUG entry in an executable to store a word-size
-    // data for its own purpose. Its content is not important.
+    // GDB needs a DT_DEBUG entry in an executable to store word-size data
+    // for its own purposes. Its content is not important.
     if !ctx.args.shared && !ctx.args.z_rodynamic {
         define(DT_DEBUG, 0);
     }

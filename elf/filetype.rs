@@ -46,7 +46,7 @@ fn is_gcc_lto_obj<E: Target>(data: &[u8], has_gcc_plugin: bool) -> bool {
     let first = record_from_bytes::<ElfShdr<E>>(first_bytes);
 
     // e_shnum is a 16-bit field. If an object file contains more than 65279
-    // sections, e_shnum is zero and the actual number is stored to the first
+    // sections, e_shnum is zero and the actual number is stored in the first
     // section header's sh_size field.
     let num_sections = if ehdr.e_shnum.get() == 0 {
         let Ok(num_sections) = usize::try_from(first.sh_size.get()) else {
@@ -67,8 +67,8 @@ fn is_gcc_lto_obj<E: Target>(data: &[u8], has_gcc_plugin: bool) -> bool {
     };
     let shdrs = records_from_bytes::<ElfShdr<E>>(shdr_bytes);
 
-    // e_shstrndx is a 16-bit field. If .shstrtab's section index is
-    // too large, the actual number is stored to sh_link field.
+    // e_shstrndx is a 16-bit field. If .shstrtab's section index is too large,
+    // the actual index is stored in the first section header's sh_link field.
     let shstrtab_idx = if u32::from(ehdr.e_shstrndx.get()) == SHN_XINDEX {
         first.sh_link.get() as usize
     } else {
@@ -97,7 +97,7 @@ fn is_gcc_lto_obj<E: Target>(data: &[u8], has_gcc_plugin: bool) -> bool {
             continue;
         }
 
-        // GCC non-FAT LTO object contains only section symbols followed by
+        // A GCC non-FAT LTO object contains only section symbols followed by
         // a common symbol whose name is `__gnu_lto_slim` (or `__gnu_lto_v1`
         // for older GCC releases).
         let off = shdr.sh_offset.get() as usize;
@@ -242,8 +242,8 @@ pub fn get_elf_target(data: &[u8]) -> Option<&'static str> {
     Some(name)
 }
 
-// Reads the beginning of a given file and returns its machine type
-// (e.g. EM_X86_64 or EM_386).
+// Reads the beginning of a given file and returns its target name
+// (e.g. "x86_64" or "i386").
 pub fn get_machine_type(
     plugin: &std::path::Path,
     chroot: &std::path::Path,

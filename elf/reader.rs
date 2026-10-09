@@ -171,8 +171,9 @@ fn read_archive_member<E: Target>(
 // script, the files in it are read in place, recursively. IR files
 // for LTO are only recorded; see defer_lto_object().
 //
-// read_input_files() reads top-level files with this function too but
-// overrides the container cases to read archive members in parallel.
+// Linker scripts read the files they name with this function.
+// read_input_files() handles top-level files the same way, except that it
+// reads archive members in parallel and parses linker scripts afterward.
 pub fn read_file<E: Target>(
     ctx: &mut Context<E>,
     rctx: &mut ReaderContext,

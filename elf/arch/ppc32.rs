@@ -7,24 +7,24 @@
 //! has a few special registers. Notable ones are LR which holds a return
 //! address and CTR which we can use to store a branch target address.
 //!
-//! It feels that the PPC32 psABI is unnecessarily complicated at first
-//! glance, but that mainly stems from the fact that the ISA lacks
-//! PC-relative load/store instructions. Since machine instructions cannot
-//! load data relative to their own address, it is not straightforward to
-//! support position-independent code (PIC) on PPC32.
+//! The PPC32 psABI feels unnecessarily complicated at first glance, but
+//! that mainly stems from the fact that the ISA lacks PC-relative
+//! load/store instructions. Since machine instructions cannot load data
+//! relative to their own address, it is not straightforward to support
+//! position-independent code (PIC) on PPC32.
 //!
 //! A position-independent function typically contains the following code
 //! in the prologue to obtain its own address:
 //!
 //!    mflr  r0        // save the current return address to %r0
 //!    bcl   20, 31, 4 // call the next instruction as if it were a function
-//!    mtlr  r12       // save the return address to %r12
+//!    mflr  r12       // save the return address to %r12
 //!    mtlr  r0        // restore the original return address
 //!
 //! An object file compiled with -fPIC contains a data section named
 //! `.got2` to store addresses of locally-defined global variables and
-//! constants. A PIC function usually computes its .got2+0x8000 and sets it
-//! to %r30. This scheme allows the function to access global objects
+//! constants. A PIC function usually computes its .got2+0x8000 and stores
+//! it in %r30. This scheme allows the function to access global objects
 //! defined in the same input file with a single %r30-relative load/store
 //! instruction with a 16-bit offset, given that .got2 is smaller than
 //! 0x10000 (or 65536) bytes.

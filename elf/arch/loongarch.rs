@@ -58,8 +58,8 @@ fn page(val: u64) -> u64 {
 //
 // PCALAU12I materializes bits [63:12] by computing (pc + imm << 12)
 // and zero-clears [11:0]. ADDI.D sign-extends its 12-bit immediate and
-// adds it to the register. To compensate for the sign-extension, PCALAU12I
-// needs to materialize a 0x1000 larger value than the desired [63:12]
+// adds it to the register. To compensate for the sign extension, PCALAU12I
+// needs to materialize a value 0x1000 larger than the desired [63:12]
 // if [11:0] is sign-extended.
 //
 // This is similar to but different from RISC-V because RISC-V's AUIPC
@@ -73,7 +73,7 @@ fn hi20(val: u64, pc: u64) -> u64 {
 }
 
 // A PC-relative 64-bit address is materialized with the following
-// instructions for the large code model:
+// instructions for the extreme code model:
 //
 // pcalau12i $rN, %pc_hi20(sym)
 // addi.d    $rM, $zero, %lo12(sym)
@@ -83,9 +83,9 @@ fn hi20(val: u64, pc: u64) -> u64 {
 //
 // PCALAU12I computes (pc + imm << 12) to materialize a 64-bit value.
 // ADDI.D adds a sign-extended 12 bit value to a register. LU32I.D and
-// LU52I.D simply set bits to [51:32] and to [63:52], respectively.
+// LU52I.D simply set bits [51:32] and [63:52], respectively.
 //
-// Compensating all the sign-extensions is a bit complicated. The
+// Compensating for all the sign extensions is a bit complicated. The
 // psABI gives the following formula, in which `pc` is the address of
 // the PCALAU12I. LU32I.D and LU52I.D are 8 and 12 bytes after it.
 fn higher(val: u64, pc: u64) -> u64 {
@@ -562,7 +562,7 @@ where
                     if removed == 0 {
                         write_j20(loc, hi20(sa, p));
                     } else {
-                        // Rewrite pcalau12i + addi.d with pcaddi. The high part vanishes and
+                        // Replace pcalau12i + addi.d with pcaddi. The high part vanishes and
                         // the low part becomes the pcaddi's PC-relative relocation.
                         debug_assert_eq!(removed, 4);
                         write_pcaddi(loc, pcrel >> 2);
@@ -578,8 +578,8 @@ where
                 R_LARCH_GOT_PC_LO12 => write_k12(loc, got_entry()),
                 R_LARCH_GOT_PC_HI20 => {
                     if removed == 0 {
-                        // If the PC-relative symbol address is known at link-time, we can
-                        // rewrite the following GOT load
+                        // If the PC-relative symbol address is known at link time, we can
+                        // replace the following GOT load
                         //
                         // pcalau12i $t0, 0         # R_LARCH_GOT_PC_HI20
                         // ld.d      $t0, $t0, 0    # R_LARCH_GOT_PC_LO12
@@ -600,7 +600,7 @@ where
                             write_j20(loc, hi20(got_entry(), p));
                         }
                     } else {
-                        // Rewrite pcalau12i + ld.d with pcaddi. The high part vanishes and the
+                        // Replace pcalau12i + ld.d with pcaddi. The high part vanishes and the
                         // low part becomes the pcaddi's PC-relative relocation.
                         debug_assert_eq!(removed, 4);
                         write_pcaddi(loc, pcrel >> 2);
@@ -689,8 +689,8 @@ where
                 // jirl      $ra, $ra, 0
                 // R_LARCH_TLS_DESC_CALL       foo
                 //
-                // We may relax the instructions to the following if its TP-relative
-                // address is known at link-time
+                // We may relax the instructions to the following if the TP-relative
+                // address is known at link time
                 //
                 // <deleted>
                 // <deleted>
@@ -731,7 +731,7 @@ where
                     if sym.has_tlsdesc(&ctx.symbols) && removed == 0 {
                         // In the extreme code model, this instruction is followed by
                         // lu32i.d and lu52i.d to make a 64-bit offset, so it can't be
-                        // rewritten with pcaddi.
+                        // replaced with pcaddi.
                         let is_extreme = rels
                             .get(rel_idx + 1)
                             .is_some_and(|r| r.r_type() == R_LARCH_TLS_DESC64_PC_LO20);
@@ -824,7 +824,7 @@ where
                 R_LARCH_TLS_LE_LO12_R => {
                     let val = sa.wrapping_sub(ctx.tp_addr) as i64;
                     write_k12(loc, val as u64);
-                    // Rewrite `addi.d $t0, $t0, <offset>` with `addi.d $t0, $tp, <offset>`
+                    // Rewrite `addi.d $t0, $t0, <offset>` as `addi.d $t0, $tp, <offset>`
                     // if the offset is directly accessible using tp. tp is r2.
                     if is_int(val, 12) {
                         set_rj(loc, 2); // $tp
@@ -903,15 +903,15 @@ where
             let sym = &ctx.symbols[file.base.symbols[r.r_sym() as usize]];
 
             // An R_LARCH_ALIGN relocation refers to the beginning of a nop
-            // sequence. We need to remove some or all of them so that the
-            // instruction that immediately follows that is aligned to a specified
+            // sequence. We need to remove some or all of the nops so that the
+            // instruction that immediately follows them is aligned to a specified
             // boundary. To allow that, an R_LARCH_ALIGN relocation that requests
             // 2^n alignment refers to 2^n - 4 bytes of nop instructions.
             if r.r_type() == R_LARCH_ALIGN {
                 // The actual rule for storing the alignment size is a bit weird.
                 // In particular, the most significant 56 bits of r_addend are
-                // sometimes used to store the upper limit of the alignment,
-                // allowing the instruction that follows nops _not_ to be aligned at
+                // sometimes used to store the maximum number of padding bytes,
+                // allowing the instruction that follows the nops _not_ to be aligned at
                 // all. I think that's a spec bug, so we don't want to support that.
                 let alignment = if r.r_sym() != 0 {
                     if r.r_addend() >> 8 != 0 {
@@ -1009,7 +1009,7 @@ where
                 // pcaddu18i $t0,       0         # R_LARCH_CALL36
                 // jirl      $zero/$ra, $t0, 0
                 //
-                // If the displacement is PC ± 128 MiB, we can use B or BL instead.
+                // If the displacement is within ±128 MiB, we can use B or BL instead.
                 // Note that $zero is $r0 and $ra is $r1.
                 R_LARCH_CALL36 => {
                     let dist = compute_distance(ctx, sym, isec, r);

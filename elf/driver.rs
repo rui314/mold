@@ -49,12 +49,12 @@ pub fn main(
         crate::run::process_run_subcommand(&argv);
     }
 
-    // parse_nonpositional_args() may chdir(2) for -C. If we end up
-    // restarting in redo_main(), we need to re-enter from the original
-    // directory so relative paths (e.g. response files) still resolve.
+    // parse_args() may chdir(2) for -C. If we end up starting over for
+    // another target in the loop below, we need to re-enter from the
+    // original directory so that relative paths still resolve.
     let orig_cwd = std::env::current_dir().ok();
 
-    // Parse non-positional command line options
+    // Expand response files
     let cmdline: Arc<[_]> = cmdline::expand_response_files(argv).into();
 
     // Parse with an enabled target's defaults; if the target turns out to
@@ -93,7 +93,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
         ctx.args.emulation = crate::reader::detect_machine_type(&ctx, &jobs);
     }
 
-    // Redo if -m does not match with our speculation.
+    // Redo if -m does not match our speculation.
     if ctx.args.emulation != E::NAME {
         return Err(ctx.args.emulation);
     }
@@ -168,7 +168,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     crate::reader::read_input_files(&mut ctx, jobs);
 
     // FileList retains discarded DSOs in its backing pool, keeping symbol
-    // slots recorded during parsing valid until gather.
+    // slots recorded during parsing valid until gather_symbols().
     ctx.dsos.retain(|file| ctx.dso_sonames.insert(file.soname));
 
     // Handle -repro
@@ -226,7 +226,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     // Parse .sframe section contents.
     passes::parse_sframe_sections(&mut ctx);
 
-    // Split mergeable section contents into section pieces.
+    // Split mergeable section contents into section fragments.
     passes::create_merged_sections(&mut ctx);
 
     // Handle --relocatable. Since the linker's behavior is quite different
@@ -408,11 +408,12 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     if ctx.args.pack_dyn_relocs_relr {
         chunks::reldyn::construct_relr(&mut ctx);
     }
-    // Reserve a space for dynamic symbol strings in .dynstr and sort
+    // Reserve space for dynamic symbol strings in .dynstr and sort
     // .dynsym contents if necessary. Beyond this point, no symbol will
     // be added to .dynsym.
     passes::sort_dynsyms(&mut ctx);
-    // sort_debug_info_sections may uncompress the same .debug_info sections.
+    // sort_debug_info_sections may uncompress the .debug_info sections
+    // that the .gdb_index reader reads.
     if let Some(job) = gdb_input_job {
         ctx.gdb_index_data = Some(job.join());
     }
@@ -485,9 +486,9 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
         filesize = passes::set_osec_offsets(&mut ctx);
     }
 
-    // We've created range extension thunks with a pessimistic assumption
+    // We've created range extension thunks with the pessimistic assumption
     // that all out-of-section references are out of range. Now that we know
-    // the addresses of all sections, we can eliminate excessive thunks.
+    // the addresses of all sections, we can eliminate unnecessary thunks.
     if E::NEEDS_THUNK {
         crate::thunks::remove_redundant_thunks(&mut ctx);
         filesize = passes::set_osec_offsets(&mut ctx);
@@ -499,14 +500,14 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
 
     // At this point, memory layout is fixed.
 
-    // Set actual addresses to linker-synthesized symbols.
+    // Assign actual addresses to linker-synthesized symbols.
     let t = ctx.timer("fix_synthetic_symbols");
     passes::fix_synthetic_symbols(&mut ctx);
     drop(t);
     chunks::sframe::sort(&mut ctx);
 
-    // Beyond this, you can assume that symbol addresses including their
-    // GOT or PLT addresses have a correct final value.
+    // Beyond this point, you can assume that symbol addresses, including
+    // their GOT or PLT addresses, have correct final values.
 
     // If --compress-debug-sections is given, compress .debug_* sections
     // using zlib or zstd.
@@ -514,13 +515,13 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
         passes::compress_debug_sections(&mut ctx);
         filesize = passes::set_osec_offsets(&mut ctx);
     }
-    // Gather thunk symbols and attach them to themselves.
+    // Gather thunk addresses and attach them to their symbols.
     if E::NEEDS_THUNK {
         crate::thunks::gather_thunk_addresses(&mut ctx);
     }
     // Re-finalize layout. fix_synthetic_symbols above may have changed
     // addends for dynamic relocations referencing synthetic symbols, which
-    // can shift the encoded size of .rela.dyn under --pack-dyn-relocs=android
+    // can change the encoded size of .rela.dyn under --pack-dyn-relocs=android
     // because Android's packed format encodes addends in variable-length
     // SLEB128. Other modes, including ordinary RELR, encode nothing whose
     // size depends on addends, so they do not need this pass.
@@ -535,8 +536,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     drop(t);
     t_before_copy.stop();
 
-    // Create an output file
-    // Output buffer
+    // Create an output file.
     let t_open = ctx.timer("open_file");
     let mut output = open_output_file(&ctx.args, filesize, 0o777, ctx.args.overwrite_output_file);
     drop(t_open);
@@ -553,8 +553,8 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
             passes::rewrite_endbr(&ctx, buf);
         }
 
-        // Dynamic linker works better with sorted .rela.dyn section,
-        // so we sort them.
+        // The dynamic linker works better with a sorted .rela.dyn section,
+        // so we sort it.
         let reldyn = ctx.reldyn.hdr.shdr;
         if ctx.chunks.contains(&ChunkId::RelDyn) && reldyn.sh_size.get() != 0 {
             let start = reldyn.sh_offset.get() as usize;
@@ -571,9 +571,9 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
             crate::gdb_index::write(&mut ctx, &mut output);
         }
 
-        // .note.gnu.build-id section contains a cryptographic hash of the
-        // entire output file. Now that we wrote everything except build-id,
-        // we can compute it.
+        // The .note.gnu.build-id section contains a cryptographic hash of the
+        // entire output file. Now that we have written everything except the
+        // build ID, we can compute it.
         if ctx.buildid.is_some() {
             let is_mmapped = output.is_mmapped();
             passes::write_build_id(&mut ctx, output.buf(), is_mmapped);
@@ -705,14 +705,14 @@ pub(crate) fn copy_chunks<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 
     // For --relocatable and --emit-relocs, we want to copy non-relocation
     // sections first, for two reasons. First, REL-type relocation sections (as
-    // opposed to RELA-type) store relocation addends to target sections, so the
+    // opposed to RELA-type) store relocation addends in target sections, so the
     // targets must be written first. Second, relaxation may retype an emitted
     // relocation in place while applying relocations (e.g. AArch64 GOT/TLS
     // relaxations), and RelocSection has to observe the updated type, so it
     // must run after the target sections.
     //
-    // We also do that for SH4 because despite being RELA, we always need
-    // to write addends to relocated places for SH4.
+    // We also do that for SH4 because, although SH4 uses RELA, we always
+    // need to write addends to relocated places for it.
     run_tasks(ctx, buf, &first, &t);
     run_tasks(ctx, buf, &last, &t);
 
@@ -722,7 +722,7 @@ pub(crate) fn copy_chunks<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     // undefined errors.
     passes::report_undef_errors(ctx);
 
-    // Zero-clear paddings between chunks
+    // Zero-clear padding between chunks
     let mut ranges: Vec<Range<u64>> =
         ctx.chunks.iter().map(|&id| file_range(ctx, id)).filter(|r| !r.is_empty()).collect();
     ranges.sort_by_key(|r| r.start);
@@ -777,7 +777,7 @@ fn run_tasks<E: Target>(
         }
     });
 
-    // .eh_frame_hdr's header, whose table .eh_frame wrote.
+    // Write the header of .eh_frame_hdr, whose table .eh_frame wrote.
     if tasks.iter().any(|t| t.chunk == ChunkId::EhFrame) && ctx.eh_frame_hdr.is_some() {
         let r = file_range(ctx, ChunkId::EhFrameHdr);
         chunks::eh_frame_hdr::write_header(ctx, &mut buf[r.start as usize..r.end as usize]);

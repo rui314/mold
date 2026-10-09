@@ -9,7 +9,7 @@ use crate::elf::*;
 // are sorted by their corresponding function addresses, so that the
 // runtime can quickly find an exception-handling record for the current
 // function by binary search. Without .eh_frame_hdr, the runtime would
-// have had to do linear search in .eh_frame.
+// have to do a linear search in .eh_frame.
 #[derive(Debug)]
 pub struct EhFrameHdrSection<E: Target> {
     pub hdr: ChunkHeader<E>,

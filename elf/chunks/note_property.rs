@@ -8,8 +8,8 @@ use crate::cmdline::GcsKind;
 use crate::context::Context;
 use crate::elf::*;
 
-// .note.gnu.property section contains additional runtime information
-// about ISA variant.
+// The .note.gnu.property section contains additional runtime information
+// about the ISA variant.
 #[derive(Debug)]
 pub struct NotePropertySection<E: Target> {
     pub hdr: ChunkHeader<E>,

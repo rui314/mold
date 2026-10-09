@@ -4,13 +4,14 @@ use crate::arch::Target;
 use crate::chunks::ChunkHeader;
 use crate::elf::*;
 
-// .symtab_shndx is a parallel table for .symtab to contain section
+// .symtab_shndx is a table parallel to .symtab that contains section
 // indices for symbols.
 //
-// Symbol table entry contains a field for section index, but that's only
-// 16 bits in size, so it cannot refer to a section whose section index is
-// greater than 65535. We use .symtab_shndx for ELF files containing a lot
-// of sections.
+// A symbol table entry contains a field for the section index, but that's
+// only 16 bits in size, and the values from SHN_LORESERVE (= 65280) up are
+// reserved for special indices, so it cannot refer to a section whose
+// section index is 65280 or greater. We use .symtab_shndx for ELF files
+// containing a lot of sections.
 //
 // Use of this section is exceptional. Most ELF files don't contain one.
 pub fn new_header<E: Target>() -> ChunkHeader<E> {

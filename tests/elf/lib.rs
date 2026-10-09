@@ -1,8 +1,8 @@
 //! Runs mold's shell tests in parallel for Cargo's test harness.
 //!
-//! The tests themselves deliberately remain shell scripts so that this port
-//! exercises exactly the same inputs and toolchains as C++ mold. The runner
-//! owns test discovery, target selection, scheduling, timeouts and reporting.
+//! The tests themselves are shell scripts so that they exercise mold with
+//! the real compilers and binutils of each target. The runner owns test
+//! discovery, target selection, scheduling, timeouts and reporting.
 
 use std::collections::BTreeMap;
 use std::env;
@@ -28,7 +28,8 @@ struct TargetSpec {
     qemu: &'static str,
 }
 
-// Keep this list in the same order as mold's test/CMakeLists.txt.
+// The targets tested by --all, the default mode. A target other than the
+// host's is tested only if its cross compiler and QEMU are installed.
 const TARGETS: &[TargetSpec] = &[
     TargetSpec { machine: "x86_64", triple: "x86_64-linux-gnu", qemu: "qemu-x86_64" },
     TargetSpec { machine: "i686", triple: "i686-linux-gnu", qemu: "qemu-i386" },
@@ -400,13 +401,15 @@ fn prepare_work_dir(mold: &Path) -> io::Result<PathBuf> {
         )
     })?;
 
-    // C++ mold runs its tests from the build directory, which contains mold
-    // and ld. Give Cargo's test binary the same layout without writing
-    // generated files into the source tree.
+    // The test scripts run in a directory containing mold and ld, which
+    // they find with ./mold and the compiler's -B. option, and write their
+    // outputs under out/test there. Create that directory next to the mold
+    // binary so that generated files stay out of the source tree.
     let work_dir = profile_dir.join("mold-test");
     fs::create_dir_all(&work_dir)?;
 
-    // FreeBSD defaults to ld.lld on llvm upstream. Overriding ld is not enough with -B.
+    // Upstream LLVM defaults to ld.lld on FreeBSD, so overriding only ld
+    // with -B is not enough.
     for name in ["mold", "ld", "ld.lld"] {
         replace_file_link(&mold, &work_dir.join(name))?;
     }

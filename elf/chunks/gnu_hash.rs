@@ -117,8 +117,8 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     // Write a hash table
     let table_off = buckets_off + gh.num_buckets as usize * 4;
     for (i, &h) in hashes.iter().enumerate() {
-        // The last entry in a chain must be terminated with an entry with
-        // least-significant bit 1.
+        // The last entry in a chain must be marked by setting its
+        // least-significant bit to 1.
         let last = i + 1 == hashes.len() || indices[i] != indices[i + 1];
         E::write_u32(&mut buf[table_off + i * 4..], if last { h | 1 } else { h & !1 });
     }

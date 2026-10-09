@@ -82,8 +82,8 @@ pub struct MergedSection<E: Target> {
     /// The fragments in deterministic order within each hash-table shard.
     shards: Vec<ShardLayout>,
 
-    /// Starts of the 32-bit and unrestricted halves of every shard, followed
-    /// by the section size.
+    /// The start offsets of the 32-bit and unrestricted halves of every
+    /// shard, followed by the section size.
     shard_offsets: Vec<u64>,
 }
 
@@ -232,9 +232,10 @@ impl<E: Target> MergedSection<E> {
         p2align: u8,
         gc_sections: bool,
     ) -> EntryId {
-        // Even if GC is enabled, we garbage-collect only memory-mapped strings.
-        // Non-memory-allocated strings are typically identifiers used by debug info.
-        // To remove such strings, use the `strip` command.
+        // Even if GC is enabled, we garbage-collect only memory-allocated
+        // strings. Non-memory-allocated strings are typically identifiers
+        // used by debug info. To remove such strings, use the `strip`
+        // command.
         let is_alive = !gc_sections || !self.is_alloc();
         let (id, frag, _) = self.map.insert_with(data, hash, || SectionFragment::new(is_alive));
         // Most insertions find the fragment there already, so the alignment

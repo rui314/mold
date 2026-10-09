@@ -1,6 +1,6 @@
 //! Statistics counters and wall-clock and CPU time accounting.
 
-// Counter is used to collect statistics numbers.
+// Counter is used to collect statistics.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Once};
@@ -258,8 +258,8 @@ impl Timers {
 
 impl Timer {
     /// Starts a timer nested in this one. Timers started from parallel
-    /// tasks name their parent this way, since which timer started last
-    /// says nothing about nesting then.
+    /// tasks name their parent this way, because in parallel code, the
+    /// timer that started last is not necessarily the enclosing one.
     pub fn child(&self, name: impl std::fmt::Display) -> Self {
         self.timers.start_child(name, Some(self.index))
     }

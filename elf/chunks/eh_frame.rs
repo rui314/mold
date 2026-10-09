@@ -27,7 +27,8 @@ pub struct CieClasses {
     /// The class of each CIE, in input order. Classes are numbered in the
     /// order of their first CIEs.
     classes: Vec<u32>,
-    /// Where each live file's CIEs start in `classes`, and their end.
+    /// Where each live file's CIEs start in `classes`, followed by the end
+    /// of `classes`.
     starts: Vec<usize>,
     /// The first CIE of each class as (live file index, CIE index).
     pub leaders: Vec<(usize, usize)>,
@@ -128,8 +129,9 @@ pub fn construct<E: Target>(ctx: &mut Context<E>) {
         })
         .collect();
 
-    // Uniquify CIEs. The first CIE of each class represents it, and they
-    // are laid out in input order, followed by each file's FDEs.
+    // Uniquify CIEs. The first CIE of each class represents the class.
+    // These leaders are laid out in input order, followed by each file's
+    // FDEs.
     let cies = classify_cies(ctx);
     let mut offset = 0u64;
     let mut place = |size: u64| {
@@ -317,8 +319,8 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8], hdr_buf: Option<&mu
     E::write_u32(&mut buf[sh_size as usize - 4..], 0);
 
     // Sort .eh_frame_hdr contents. FDEs for the same function are ordered by
-    // their addresses, because an unstable sort orders equal keys differently
-    // on 32-bit and 64-bit hosts.
+    // their own addresses, because an unstable sort would order equal keys
+    // differently on 32-bit and 64-bit hosts.
     if let Some(table) = hdr_table {
         let (entries, remainder) = table.as_chunks_mut::<8>();
         debug_assert!(remainder.is_empty());

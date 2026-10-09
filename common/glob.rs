@@ -404,8 +404,8 @@ impl AhoCorasick {
             return;
         }
 
-        // A failure link may refer to any node at the previous depth, so failure
-        // links must be constructed breadth-first.
+        // A failure link may refer to any shallower node, so failure links
+        // must be constructed breadth-first.
         let mut queue = VecDeque::new();
         let mut child = self.nodes[0].first_child;
         while child != -1 {

@@ -19,7 +19,7 @@ static PIPE_WRITER: Mutex<Option<OwnedFd>> = Mutex::new(None);
 #[cfg(not(windows))]
 pub fn fork_child() {
     let mut pipefd = [0i32; 2];
-    // Preserve pipe's descriptor inheritance across the LTO restart.
+    // Keep the pipe's descriptors inheritable across the LTO restart.
     // SAFETY: pipe initializes both descriptors on success; each then has
     // exactly one owner in this process.
     let (reader, writer) = unsafe {
@@ -46,7 +46,7 @@ pub fn fork_child() {
 
             // If SIGCHLD is ignored, which is inherited across exec, the
             // child is reaped automatically and waitpid fails. Its exit
-            // status is lost then, so report a failure.
+            // status is then lost, so report a failure.
             let mut status = 0;
             if libc::waitpid(pid, &raw mut status, 0) == -1 {
                 libc::_exit(1);
@@ -124,9 +124,6 @@ extern "C" fn on_signal(
 
 #[cfg(not(windows))]
 pub fn install_signal_handler() {
-    // OneTBB 2021.9.0 (interface version 12090) installs its own signal
-    // handler. This binary does not link OneTBB, so no compatibility condition
-    // is needed.
     // SAFETY: installing a signal handler with the three-argument SA_SIGINFO
     // calling convention.
     unsafe {

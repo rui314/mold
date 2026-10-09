@@ -4,7 +4,7 @@
 //! with "ppc64" which refers to the original, big-endian PowerPC systems.
 //!
 //! PPC64 is a bit tricky to support because PC-relative load/store
-//! instructions hadn't been available until Power10 which debuted in 2021.
+//! instructions weren't available until Power10, which debuted in 2021.
 //! Prior to Power10, it wasn't trivial for position-independent code (PIC)
 //! to load a value from, for example, .got, as we can't do that with [PC +
 //! the offset to the .got entry].
@@ -23,7 +23,7 @@
 //!   mflr  r0  // copy the return address to r0
 //!   mtlr  r1  // restore the original link register value
 //!
-//! , but it's too expensive to do if we do this for each load/store.
+//! , but it's too expensive to do this for each load/store.
 //!
 //! As a workaround, most functions are compiled in such a way that r2 is
 //! assumed to always contain the address of .got + 0x8000. With this, we
@@ -36,21 +36,21 @@
 //! efficient.
 //!
 //! A function compiled for pre-Power10 usually has two entry points,
-//! global and local. The global entry point usually 8 bytes precedes
-//! the local entry point. In between are the following instructions:
+//! global and local. The global entry point usually precedes the local
+//! entry point by 8 bytes. In between are the following instructions:
 //!
 //!   addis r2, r12, .TOC.@ha
 //!   addi  r2, r2,  .TOC.@lo + 4;
 //!
-//! The global entry point assumes that the address of itself is in r12,
-//! and it computes its own TOC pointer from r12. It's easy to do so for
-//! the callee because the offset between its .got + 0x8000 and the
-//! function is known at link-time. The above code sequence then falls
-//! through to the local entry point that assumes r2 is .got + 0x8000.
+//! The global entry point assumes that its own address is in r12, and it
+//! computes its own TOC pointer from r12. It's easy to do so for the callee
+//! because the offset between its .got + 0x8000 and the function is known
+//! at link-time. The above code sequence then falls through to the local
+//! entry point that assumes r2 is .got + 0x8000.
 //!
 //! So, if a callee's TOC pointer is different from the current one
 //! (e.g. calling a function in another .so), we first load the callee's
-//! address to r12 (e.g. from .got.plt with an r2-relative load) and branch
+//! address into r12 (e.g. from .got.plt with an r2-relative load) and branch
 //! to that address. Then the callee computes its own TOC pointer using
 //! r12.
 //!
@@ -63,14 +63,15 @@
 //! r2 does not have a special meaning in such functions.
 //!
 //! When a function compiled for Power10 calls a function that uses the TOC
-//! pointer, we need to compute a correct value for TOC and set it to r2
-//! before transferring the control to the callee. Thunks are responsible
-//! for doing it.
+//! pointer, we need to compute the correct TOC value and set r2 to it
+//! before transferring control to the callee. Thunks are responsible for
+//! doing it.
 //!
 //! `_NOTOC` relocations such as `R_PPC64_REL24_NOTOC` indicate that the
-//! callee does not use TOC (i.e. compiled with `-mcpu=power10`). If a
-//! function using TOC is referenced via a `_NOTOC` relocation, that call
-//! is made through a range extension thunk.
+//! caller does not use TOC (i.e. compiled with `-mcpu=power10`), so r2
+//! doesn't hold a valid TOC pointer at the call site. If a function using
+//! TOC is referenced via a `_NOTOC` relocation, that call is made through
+//! a range extension thunk.
 //!
 //!
 //! Note on section names: the PPC64 psABI uses a weird naming convention
@@ -237,8 +238,8 @@ impl Target for Ppc64V2 {
         or32(&mut buf[32..], lo(val) as u32);
     }
 
-    // When the control is transferred to a PLT entry, the PLT entry's
-    // address is already set to %r12 by the caller.
+    // When control is transferred to a PLT entry, the caller has already
+    // set %r12 to the PLT entry's address.
     fn write_plt_entry(ctx: &Context<Self>, buf: &mut [u8], sym: &Symbol) {
         let plt = ctx.plt.hdr.shdr.sh_addr.get();
         let offset = plt.wrapping_sub(sym.plt_addr(ctx));
@@ -401,9 +402,10 @@ impl Target for Ppc64V2 {
                         let val = r2save_thunk().wrapping_add(a).wrapping_sub(p) as i64;
                         or32(loc, branch_field(val));
 
-                        // The thunk saves %r2 to the caller's r2 save slot. We need to
-                        // restore it after function return. To do so, there's usually a
-                        // NOP as a placeholder after a BL. 0x6000'0000 is a NOP.
+                        // The thunk saves %r2 to the caller's r2 save slot. We
+                        // need to restore it after the function returns. To do
+                        // so, there's usually a NOP as a placeholder after a
+                        // BL. 0x6000_0000 is a NOP.
                         if loc.len() >= 8 && read_ul32(&loc[4..]) == 0x6000_0000 {
                             write_ul32(&mut loc[4..], 0xe841_0018); // ld r2, 24(r1)
                         }
@@ -520,7 +522,7 @@ impl Target for Ppc64V2 {
 
     /// On PowerPC, all PLT calls go through range extension thunks.
     ///
-    /// PowerPC before Power9 lacks PC-relative load/store instructions.
+    /// PowerPC before Power10 lacks PC-relative load/store instructions.
     /// Functions compiled for Power9 or earlier assume that r2 points to
     /// GOT+0x8000, while those for Power10 use r2 as a scratch register.
     /// We need a thunk to recompute r2 for interworking.
@@ -549,8 +551,8 @@ impl Target for Ppc64V2 {
             0x7d89_03a6, // mtctr r12
             0x4e80_0420, // bctr
         ];
-        // If the destination is a non-imported function, we directly jump
-        // to its local entry point.
+        // If the destination is a non-imported function, we jump to its
+        // global entry point with r12 set to that address.
         const LOCAL_THUNK: [u32; 6] = [
             0xf841_0018, // std   r2, 24(r1)
             0x6000_0000, // nop

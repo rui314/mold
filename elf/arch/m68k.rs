@@ -1,10 +1,10 @@
-//! This file contains code for the Motorola 68000 series microprocessors,
-//! which is often abbreviated as m68k. Running a Unix-like system on an
-//! m68k-based machine today is a retro-computing hobby activity, but the
-//! processor was a popular choice to build Unix computers during the '80s.
-//! Early Sun workstations for example used m68k. Macintoshes until 1994 were
-//! based on m68k as well until they switched to PowerPC (and then to x86
-//! and to ARM.)
+//! This file contains code for the Motorola 68000 series of
+//! microprocessors, which is often abbreviated as m68k. Running a Unix-like
+//! system on an m68k-based machine today is a retro-computing hobby
+//! activity, but the processor was a popular choice for building Unix
+//! computers during the '80s. Early Sun workstations, for example, used
+//! m68k. Macintoshes were also based on m68k until they switched to
+//! PowerPC in 1994 (and later to x86 and ARM).
 //!
 //! From the linker's point of view, it is not hard to support m68k. It's
 //! just a 32-bit big-endian CISC ISA. Compared to contemporary i386,

@@ -30,7 +30,7 @@ pub struct ArmExidxSection<E: Target> {
     pub output_section: OutputSectionId,
 }
 
-/// Replaces the `.ARM.exidx` output section by the synthetic one.
+/// Replaces the `.ARM.exidx` output section with the synthetic one.
 pub fn create<E: Target>(ctx: &mut Context<E>) {
     let exidx = ctx.chunks.iter().enumerate().find_map(|(i, &id)| match id {
         ChunkId::Output(osec)
@@ -66,7 +66,7 @@ pub fn compute_section_size<E: Target>(ctx: &mut Context<E>) {
 }
 
 // .ARM.exidx's sh_link should be set to the .text section index.
-// Runtime doesn't care about it, but the binutils's strip command does.
+// The runtime doesn't care about it, but binutils' strip command does.
 pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
     if let Some(text) = ctx.find_chunk_by_name(b".text") {
         let shndx = ctx.chunk_header(text).shndx;
@@ -105,13 +105,13 @@ fn text_end<E: Target>(ctx: &Context<E>) -> u64 {
 
 // ARM executables use an .ARM.exidx section to look up an exception
 // handling record for the current instruction pointer. The table needs
-// to be sorted by their addresses.
+// to be sorted by address.
 //
 // Other targets use .eh_frame_hdr instead for the same purpose.
-// I don't know why only ARM uses the different mechanism, but it's
-// likely that it's due to some historical reason.
+// I don't know why only ARM uses a different mechanism, but it's
+// likely due to some historical reason.
 //
-// This function returns contents of .ARM.exidx.
+// This function returns the contents of .ARM.exidx.
 fn contents<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     let sec = ctx.arm_exidx.as_ref().unwrap();
     let osec = &ctx.output_sections[sec.output_section.index()];
@@ -128,7 +128,7 @@ fn contents<E: Target>(ctx: &Context<E>) -> Vec<u8> {
     // the .ARM.extab section.
     //
     // CANTUNWIND is value 1. The most significant bit is set in (2) but
-    // not in (3). So we can distinguish them just by looking at a value.
+    // not in (3). So we can distinguish them just by looking at the value.
 
     // We reserve one extra slot for the sentinel
     let num_entries = osec.hdr.shdr.sh_size.get() as usize / ENTRY_SIZE + 1;

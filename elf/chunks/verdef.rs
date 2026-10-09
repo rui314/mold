@@ -10,9 +10,9 @@ use crate::context::Context;
 use crate::elf::*;
 use crate::input_files::FileId;
 
-// .gnu.version contains a parallel table for .dynsym to specify symbol
-// versions of defined symbols. This section appears only in .so files,
-// and it specifies the symbol version for each defined dynamic symbol.
+// .gnu.version_d contains the symbol versions defined by the output file.
+// For each defined dynamic symbol, .gnu.version holds the index of its
+// version in this section.
 #[derive(Debug)]
 pub struct VerdefSection<E: Target> {
     pub hdr: ChunkHeader<E>,

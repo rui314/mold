@@ -163,8 +163,8 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     }
 }
 
-// Sort dynamic relocations. This is the reason why we do it.
-// Quote from https://www.airs.com/blog/archives/186
+// Sort dynamic relocations. The following quote from
+// https://www.airs.com/blog/archives/186 explains why we do it.
 //
 //   The dynamic linker in glibc uses a one element cache when processing
 //   relocs: if a relocation refers to the same symbol as the previous

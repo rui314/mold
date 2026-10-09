@@ -4,10 +4,10 @@
 //! and thus can be used interchangeably. ICF leaves one of them and discards
 //! the others.
 //!
-//! ICF is usually used in combination with -ffunction-sections and
+//! ICF is usually used in combination with the -ffunction-sections and
 //! -fdata-sections compiler options, so that object files have one section
 //! for each function or variable instead of having one large .text or .data.
-//! The unit of ICF merging is section.
+//! The unit of ICF merging is a section.
 //!
 //! Two sections are considered identical by ICF if they have the exact
 //! same contents, metadata such as section flags, exception handling
@@ -52,13 +52,13 @@
 //! hashes call chains up to (n-1) levels deep.
 //! We use a cryptographic hash function, so the number of unique hashes will
 //! only monotonically increase as we take into account deeper trees with
-//! iterations (otherwise, that means we have found a hash collision). We stop
-//! when the number of unique hashes stops increasing; this is based on the fact
-//! that once we observe an iteration with the same amount of unique hashes as
-//! the previous iteration, it will remain unchanged for further iterations.
-//! This is provable, but here we omit the proof for brevity.
+//! iterations (otherwise, we would have found a hash collision). We stop
+//! when the number of unique hashes stops increasing; this is based on the
+//! fact that once we observe an iteration with the same number of unique
+//! hashes as the previous iteration, it will remain unchanged for further
+//! iterations. This is provable, but here we omit the proof for brevity.
 //!
-//! When compared to other approaches, mold's approach has a relatively cheaper
+//! When compared to other approaches, mold's approach has a relatively low
 //! cost per iteration, and as a bonus, is highly parallelizable.
 //! For Chromium, mold's ICF finishes in less than 1 second with 20 threads,
 //! whereas lld takes 5 seconds and gold takes 50 seconds under the same
@@ -121,16 +121,19 @@ fn finish_digest(hasher: SipHash13_128) -> Digest {
 // number in which it was written; a slot stamped with an earlier round
 // is treated as vacant.
 //
-// Each slot consists of two 64-bit words and a section pointer. The
-// first word packs the round number, a busy bit, and 48 bits of the
-// digest; the second word holds another 64 bits. An inserter claims a
-// vacant slot by installing the first word with compare-and-swap with
-// the busy bit set, writes the second word and the pointer, and then
-// rewrites the first word with the busy bit cleared to publish the
-// slot. Since the slot index is derived from digest bits that the
-// first word doesn't contain, a successful match effectively compares
-// an entire 128-bit digest, so the map is exact under the same
-// hash-collision assumption the surrounding algorithm is built on.
+// Each slot consists of two 64-bit words and an encoded SectionRef.
+// The first word packs the round number, a busy bit, and the upper 48
+// bits of digest.hi; the second word holds digest.lo. An inserter
+// claims a vacant slot by using compare-and-swap to install the first
+// word with the busy bit set, writes the second word and the
+// SectionRef, and then rewrites the first word with the busy bit
+// cleared to publish the slot.
+//
+// A match compares only the 112 digest bits stored in the two words.
+// The low 16 bits of digest.hi determine only where probing starts, and
+// linear probing can place a digest past its home slot, so those bits
+// are not checked. 112 bits are still plenty under the hash-collision
+// assumption that the whole algorithm relies on.
 //
 // Of all sections inserted with the same digest in the same round, the
 // slot ends up pointing to the one with the smallest leader_key, which
@@ -399,7 +402,7 @@ fn compute_digest<E: Target>(ctx: &Context<E>, key: &[u8; 16], r: SectionRef) ->
         let cie = &file.cies[fde.cie_idx as usize];
         hash_u32(&mut h, cie.icf_idx);
         // Bytes 0 to 4 contain the length of this record, and bytes 4 to 8
-        // contain an offset to CIE. A record may end with any number of
+        // contain an offset to the CIE. A record may end with any number of
         // DW_CFA_nops, which are zero bytes; LLVM pads the last record of
         // .eh_frame to the section's alignment. Two records that differ only
         // in the number of trailing zeros mean the same thing, so trailing
@@ -475,7 +478,7 @@ fn gather_sections<E: Target>(ctx: &Context<E>) -> Vec<SectionRef> {
         rest = tail;
     }
 
-    // Fill `sections` contents.
+    // Fill in the contents of `sections`.
     ctx.objs.par_iter().zip(section_chunks.into_par_iter()).enumerate().for_each(
         |(fi, (file, out))| {
             let base = file_indices[fi];
@@ -525,9 +528,9 @@ struct Edges {
 // We use u32 indices here to improve cache locality.
 //
 // Relocations in a section's FDEs are edges too, because compute_digest
-// hashes relocation targets accepted by edge_target without identity, and
-// every such target must be represented as an edge to remain
-// distinguishable. In particular, an FDE's reference to an LSDA is an
+// does not hash the identity of a relocation target accepted by
+// edge_target, and every such target must be represented as an edge to
+// remain distinguishable. In particular, an FDE's reference to an LSDA is an
 // edge; without it, two identical functions whose exception tables catch
 // different types would be folded into one.
 fn gather_edges<E: Target>(ctx: &Context<E>, sections: &[SectionRef]) -> Edges {
@@ -535,8 +538,8 @@ fn gather_edges<E: Target>(ctx: &Context<E>, sections: &[SectionRef]) -> Edges {
 
     // Count the number of outgoing edges for each vertex and turn the
     // counts into starting indices with a prefix sum. The extra entry at
-    // the end makes edge_indices[i + 1] valid for every vertex, so that
-    // vertex i's edges are edge_indices[i] to edge_indices[i + 1].
+    // the end makes indices[i + 1] valid for every vertex, so that
+    // vertex i's edges are indices[i] to indices[i + 1].
     let mut indices = vec![0u32; sections.len() + 1];
     indices[..sections.len()]
         .par_iter_mut()
@@ -671,11 +674,10 @@ pub fn icf_sections<E: Target>(ctx: &mut Context<E>) {
     // yield the same count, the partition of sections into equivalence
     // classes has stopped changing and will remain unchanged for further
     // iterations (proof omitted for brevity). Note that individual
-    // digests may well still be changing at that point; sections that
-    // have a cycle in downstream (i.e. recursive functions and functions
-    // that call them) never settle on a digest. That doesn't matter
-    // because sections in the same class change their digests in
-    // lockstep, keeping the partition intact.
+    // digests never settle, since propagate rehashes each vertex's
+    // previous digest every round. That doesn't matter because sections
+    // in the same class change their digests in lockstep, keeping the
+    // partition intact.
     {
         let _t = ctx.timer("propagate");
         let mut num_classes = usize::MAX;

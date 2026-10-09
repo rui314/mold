@@ -5,7 +5,7 @@
 //! An archive file is either "regular" or "thin". A regular archive
 //! contains object files directly, while a thin archive contains only
 //! pathnames. In the latter case, actual file contents have to be read
-//! from given pathnames. A regular archive is sometimes called "fat"
+//! from given pathnames. A regular archive is sometimes called a "fat"
 //! archive as opposed to "thin".
 //!
 //! If an archive file is given to the linker, the linker pulls out
@@ -19,7 +19,7 @@
 //! functions are linked to your binary. Instead, only object files
 //! that provide functions and variables used in your program get
 //! linked. To make this efficient, static library functions are
-//! usually separated to each object file in an archive file. You can
+//! usually placed in separate object files in an archive file. You can
 //! see the contents of libc.a by running `ar t
 //! /usr/lib/x86_64-linux-gnu/libc.a`.
 
@@ -115,14 +115,12 @@ fn archive_members(
 
             // Read a string table.
             if hdr.is_strtab() {
-                // Read if string table
                 strtab = body;
                 pos = body_end;
                 continue;
             }
             // Skip a symbol table.
             if hdr.is_symtab() {
-                // Skip if symbol table
                 pos = body_end;
                 continue;
             }

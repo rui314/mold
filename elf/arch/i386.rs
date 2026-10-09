@@ -15,13 +15,14 @@
 //!     ret
 //!
 //! . With the function's own address (or, more precisely, the address
-//! immediately after the call instruction), the function can compute an
-//! absolute address of a variable with its address + link-time constant.
+//! immediately after the call instruction), the function can compute the
+//! absolute address of a variable as its own address + a link-time
+//! constant.
 //!
 //! Executing call-mov-ret isn't very cheap, and allocating one register to
-//! store PC isn't cheap too, especially given that i386 has only 8
+//! store PC isn't cheap either, especially given that i386 has only 8
 //! general-purpose registers. But that's the cost of PIC on i386. You need
-//! to pay it when creating a .so and a position-independent executable.
+//! to pay it when creating a .so or a position-independent executable.
 //!
 //! When a position-independent function calls another function, it sets
 //! %ebx to the address of .got. Position-independent PLT entries use that
@@ -386,8 +387,8 @@ impl Target for I386 {
                     // call   *(%eax)
                     // R_386_TLS_DESC_CALL foo
                     //
-                    // We may relax the instructions to the following if its TP-relative
-                    // address is known at link-time
+                    // We may relax the instructions to the following if the
+                    // TP-relative address is known at link-time
                     //
                     // mov     $foo@TPOFF, %eax
                     // nop
@@ -407,9 +408,9 @@ impl Target for I386 {
                     // call   *(%eax)
                     // R_386_TLS_DESC_CALL foo
                     //
-                    // Note that the compiler always uses the local-exec TLS model
-                    // for -fno-pic, so TLSDESC code is always PIC (i.e. uses %ebx to
-                    // store the address of GOT.)
+                    // Note that the compiler uses the local-exec or initial-exec
+                    // TLS model for -fno-pic, so TLSDESC code is always PIC (i.e.
+                    // uses %ebx to store the address of the GOT).
                     if sym.has_tlsdesc(&ctx.symbols) {
                         write_ul32(
                             &mut buf[off..],

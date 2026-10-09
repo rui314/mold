@@ -209,16 +209,17 @@ pub struct InputSection<E: Target> {
     /// Offset in the owner file's section-name string table.
     name_offset: u32,
 
-    // UINT16_MAX means that name() must scan the remaining suffix.
+    // u16::MAX means that name() must scan the remaining suffix.
     namelen: u16,
 
     /// The section header's flags; the rest of the header is read from the
     /// file when needed.
     pub sh_flags: u64,
 
-    // contents initially points into the input file and is replaced with an
-    // uncompressed buffer when necessary. sh_size is the section size after
-    // decompression and may shrink during relaxation.
+    // contents points into the input file, except that a compressed section
+    // has none (0) unless it is uncompressed into a separate buffer. sh_size
+    // is the section size after decompression and may shrink during
+    // relaxation.
     contents: usize,
 
     /// The size after decompression; may shrink during relaxation.
@@ -228,8 +229,9 @@ pub struct InputSection<E: Target> {
     pub output_section: Option<OutputSectionId>,
 
     // `offset` is normally the section's offset within the output section.
-    // During ICF, `icf_idx` temporarily holds a dense section index. After ICF,
-    // `icf_leader` points to the leader for a section eliminated by ICF.
+    // During ICF, set_icf_index() temporarily stores a dense section index in
+    // it. After ICF, set_icf_leader() stores the leader of a section
+    // eliminated by ICF.
     offset: AtomicU64,
 
     /// Index of the relocation section applying to this section, or
@@ -303,7 +305,7 @@ impl<E: Target> InputSection<E> {
             sh_flags: shdr.sh_flags.get(),
             // The pointer always has sh_size bytes behind it: a compressed
             // section has no contents until it is uncompressed, and neither
-            // has a NOBITS section, whose sh_size is its memory size.
+            // does a NOBITS section, whose sh_size is its memory size.
             contents: if compressed || contents.is_empty() {
                 0
             } else {
@@ -321,11 +323,11 @@ impl<E: Target> InputSection<E> {
 
         // Sections may have been compressed. We usually uncompress them
         // directly into the mmap'ed output file, but we want to uncompress
-        // early for REL-type ELF types to read relocation addends from
-        // section contents. For RELA-type, we don't need to do this because
-        // addends are in relocations.
+        // early for REL-type targets to read relocation addends from
+        // section contents. For RELA-type targets, we don't need to do this
+        // because addends are in relocations.
         //
-        // SH-4 stores addends to sections despite being RELA, which is a
+        // SH-4 stores addends in sections despite being RELA, which is a
         // special (and buggy) case.
         if !E::IS_RELA || E::FAMILY == Family::Sh4 {
             isec.uncompress(file, name, contents);
@@ -443,8 +445,8 @@ impl<E: Target> InputSection<E> {
         }
         debug_assert!(!self.is_compressed());
         // SAFETY: contents points into an input mapping or a leaked
-        // decompression buffer, both live for the complete link, and both
-        // at least sh_size bytes long: a compressed section has no contents
+        // decompression buffer. Both live for the complete link and are at
+        // least sh_size bytes long: a compressed section has no contents
         // until its sh_size bytes are uncompressed, and relaxation only
         // shrinks sh_size.
         unsafe { std::slice::from_raw_parts(self.contents as *const u8, self.sh_size as usize) }
@@ -602,8 +604,8 @@ impl<E: Target> InputSection<E> {
         &file.fdes[begin..end]
     }
 
-    /// Shares the nonallocated relocation prelude, retaining the caller's
-    /// cached owner and fragment lookup across relocations.
+    /// Runs the prelude shared by nonallocated relocations, retaining the
+    /// caller's cached owner and fragment lookup across relocations.
     #[inline(always)]
     pub(crate) fn resolve_nonalloc<'a>(
         &self,
@@ -813,7 +815,7 @@ impl<E: Target> InputSection<E> {
     // doing that requires parsing the entire debug section.
     //
     // Instead, linkers write "tombstone" values to dead debug info records
-    // instead of bogus values so that debuggers can skip them.
+    // rather than bogus values so that debuggers can skip them.
     //
     // This function returns a tombstone value for the symbol if the symbol
     // refers to a dead debug info section.
@@ -1235,12 +1237,12 @@ pub fn scan_tlsdesc<E: Target>(ctx: &Context<E>, sym: &Symbol) {
         // a TP-relative offset, so no dynamic relocation is needed.
         //
         // TLSDESC relocs must always be relaxed for statically-linked
-        // executables even if -no-relax is given. It is because a
+        // executables even if -no-relax is given. This is because a
         // statically-linked executable doesn't contain a trampoline
         // function needed for TLSDESC.
     } else if ctx.args.relax && sym.is_tprel_runtime_const(ctx) {
-        // In this condition, TP-relative offset of a thread-local variable
-        // is known at process startup time, so we can relax TLSDESC to the
+        // In this case, the TP-relative offset of a thread-local variable
+        // is known at process startup time, so we can relax TLSDESC to
         // code that reads the TP-relative offset from GOT and adds TP to it.
         sym.add_flags(NEEDS_GOTTP);
     } else {
@@ -1266,11 +1268,11 @@ pub fn check_tlsle<E: Target>(
     }
 }
 
-// .eh_frame section contains CIE and FDE records to teach the runtime
+// The .eh_frame section contains CIE and FDE records to teach the runtime
 // how to handle exceptions. Usually, a .eh_frame contains one CIE
 // followed by as many FDEs as the number of functions defined by the
-// file. CIE contains common information for FDEs (it is actually
-// short for Common Information Entry). FDE contains the start address
+// file. A CIE contains common information for FDEs (it is actually
+// short for Common Information Entry). An FDE contains the start address
 // of a function and its length as well as how to handle exceptions
 // for that function.
 //
@@ -1279,12 +1281,12 @@ pub fn check_tlsle<E: Target>(
 //
 // - Compilers tend to emit the same CIE as long as the programming
 //   language is the same, so CIEs in input object files are almost
-//   always identical. We want to merge them to make a resulting
+//   always identical. We want to merge them to make the resulting
 //   .eh_frame smaller.
 //
 // - If we eliminate a function (e.g. when we see two object files
 //   containing the duplicate definition of an inlined function), we
-//   want to also eliminate a corresponding FDE so that a resulting
+//   want to also eliminate the corresponding FDE so that the resulting
 //   .eh_frame doesn't contain a dead FDE entry.
 //
 // - If we need to compare two function definitions for equality for
@@ -1292,7 +1294,7 @@ pub fn check_tlsle<E: Target>(
 //   exception handlers.
 //
 // Note that we assume that the first relocation entry for an FDE
-// always points to the function that the FDE is associated to.
+// always points to the function that the FDE is associated with.
 #[derive(Debug)]
 pub struct CieRecord {
     /// The `.eh_frame` input section containing the record.
@@ -1540,21 +1542,21 @@ impl MergeInfo {
         }
     }
 
-    /// Mergeable sections (sections with SHF_MERGE bit) typically contain
-    /// string literals. Linker is expected to split the section contents
-    /// into null-terminated strings, merge them with mergeable strings
-    /// from other object files, and emit uniquified strings to an output
-    /// file.
+    /// Mergeable sections (sections with the SHF_MERGE bit) typically
+    /// contain string literals. The linker is expected to split the section
+    /// contents into null-terminated strings, merge them with mergeable
+    /// strings from other object files, and emit uniquified strings to an
+    /// output file.
     ///
     /// This mechanism reduces the size of an output file. If two source
     /// files happen to contain the same string literal, the output will
     /// contain only a single copy of it.
     ///
-    /// It is less common than string literals, but mergeable sections can
+    /// Though less common than string literals, mergeable sections can
     /// contain fixed-sized read-only records too.
     ///
     /// This function splits the section contents into small pieces that we
-    /// call "section fragments". Section fragment is a unit of merging.
+    /// call "section fragments". A section fragment is a unit of merging.
     ///
     /// We do not support mergeable sections that have relocations.
     pub fn split_contents<E: Target>(
@@ -1677,7 +1679,7 @@ fn find_null(data: &[u8], pos: usize, entsize: usize) -> Option<usize> {
 
 // ObjectFile needs a lookup table indexed by ELF section number. A regular
 // entry stores its dense input-section index plus one. The high bit
-// distinguishes sections with merge metadata, storing an index into
+// marks a section with merge metadata, whose entry stores an index into
 // `merge_info`.
 #[derive(Debug)]
 pub struct SectionList<E: Target> {
@@ -1702,9 +1704,9 @@ impl<E: Target> SectionList<E> {
         indices.reserve(additional);
         Self {
             indices,
-            // Most ELF headers describe relocations or metadata rather than
-            // InputSections. Let this vector grow with the sections actually
-            // inserted instead of over-reserving once per object file.
+            // Most ELF section headers describe relocations or metadata rather
+            // than InputSections. Let this vector grow with the sections
+            // actually inserted instead of over-reserving once per object file.
             inputs: Vec::with_capacity(additional),
             merge_info: Vec::new(),
         }

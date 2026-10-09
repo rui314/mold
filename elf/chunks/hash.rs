@@ -25,8 +25,8 @@ pub fn elf_hash(name: &[u8]) -> u32 {
 //
 // Quickly identifying whether or not a .dynsym contains a given symbol is
 // especially important for ELF because of the dynamic symbol lookup rule
-// for ELF. In ELF, each dynamic symbol is not searched from a specific
-// library but from all the ELF files loaded to memory. Therefore,
+// for ELF. In ELF, a dynamic symbol is not looked up in a specific
+// library but in all the ELF files loaded into memory. Therefore,
 // minimizing the cost of each dynamic symbol lookup is important.
 pub fn new_header<E: Target>() -> ChunkHeader<E> {
     let mut hdr = ChunkHeader::<E>::new(".hash", SHT_HASH, SHF_ALLOC as u64);

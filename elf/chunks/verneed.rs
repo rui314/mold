@@ -32,18 +32,18 @@ impl<E: Target> Default for VerneedSection<E> {
 }
 
 // If `-z pack-relative-relocs` is specified, we'll create a .relr.dyn
-// section and store base relocation records to that section instead of
-// to the usual .rela.dyn section.
+// section and store base relocation records in that section instead of
+// in the usual .rela.dyn section.
 //
-// .relr.dyn is a relatively new feature and not supported by glibc until
-// 2.38 which was released in 2022. If we don't do anything, executables
-// built with `-z pack-relative-relocs` would just crash immediately on
-// startup with an older version of glibc.
+// .relr.dyn is a relatively new feature and is not supported by glibc
+// before 2.36, which was released in 2022. If we don't do anything,
+// executables built with `-z pack-relative-relocs` would just crash
+// immediately on startup with an older version of glibc.
 //
-// As a workaround, we'll add a dependency to a dummy version name
+// As a workaround, we'll add a dependency on a dummy version name
 // "GLIBC_ABI_DT_RELR" if `-z pack-relative-relocs` is given so that
-// executables built with the option fail with a more friendly "version
-// `GLIBC_ABI_DT_RELR' not found" error message. glibc 2.38 or later knows
+// executables built with the option fail with a friendlier "version
+// `GLIBC_ABI_DT_RELR' not found" error message. glibc 2.36 or later knows
 // about this dummy version name and simply ignores it.
 fn is_glibc2<E: Target>(dso: &crate::input_files::SharedFile<E>) -> bool {
     dso.soname.starts_with(b"libc.so.")
@@ -113,7 +113,7 @@ pub fn construct<E: Target>(ctx: &mut Context<E>) {
         ctx.versym.contents[dynsym_idx] = builder.veridx;
     }
 
-    // Resize .gnu.version_r to fit to its contents.
+    // sh_info of .gnu.version_r is the number of verneed entries.
     ctx.verneed.hdr.shdr.sh_info.set(builder.num_groups);
     ctx.verneed.contents = builder.contents;
 }

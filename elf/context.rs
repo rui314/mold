@@ -46,7 +46,7 @@ use crate::input_sections::{
 use crate::linker_script::{DynamicPattern, VersionPattern};
 use crate::symbol::{Bins, Symbol, SymbolChunkId, SymbolId, SymbolSlot, SymbolTable};
 
-// Keep immutable and mutable chunk lookup in the same static match.
+// Keep immutable and mutable chunk lookups in the same static match.
 macro_rules! chunk_header {
     ($ctx:ident, $id:ident, $borrow:ident $(, $mutable:tt)?) => {
         match $id {
@@ -460,12 +460,12 @@ impl<E: Target> Context<E> {
         chunk_header!(self, id, as_mut, mut)
     }
 
-    /// Finds the first chunk of a section type.
+    /// Finds the first chunk of the given section type.
     pub fn find_chunk_by_type(&self, sh_type: u32) -> Option<ChunkId> {
         self.chunks.iter().copied().find(|&c| self.chunk_header(c).shdr.sh_type.get() == sh_type)
     }
 
-    /// Finds the first chunk with a name.
+    /// Finds the first chunk with the given name.
     pub fn find_chunk_by_name(&self, name: &[u8]) -> Option<ChunkId> {
         self.chunks.iter().copied().find(|&c| self.chunk_header(c).name == name)
     }

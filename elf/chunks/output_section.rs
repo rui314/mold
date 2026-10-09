@@ -91,8 +91,8 @@ pub fn link_order_target<E: Target>(
 }
 
 /// In a relocatable output, an SHF_LINK_ORDER section's sh_link refers to
-/// the output section of the sections its members are linked to. We don't
-/// support SHF_LINK_ORDER otherwise but just preserve it for -r.
+/// the output section of the sections its members are linked to. Other than
+/// preserving it for -r, we don't support SHF_LINK_ORDER.
 pub fn update_shdr<E: Target>(ctx: &mut Context<E>, id: OutputSectionId) {
     let osec = &ctx.output_sections[id.index()];
     if ctx.args.relocatable
@@ -219,7 +219,7 @@ pub fn write_to<E: Target>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]
         isec.write_to(ctx, own);
 
         // abs_rels is sorted by member, so this member's absolute
-        // relocations form one run of it.
+        // relocations form a contiguous run in it.
         let lo = abs_rels.partition_point(|r| (r.member as usize) < i);
         let hi = abs_rels.partition_point(|r| (r.member as usize) <= i);
         apply_abs_rels(ctx, osec, isec, &abs_rels[lo..hi], own);
@@ -435,7 +435,7 @@ fn abs_rel_kind<E: Target>(ctx: &Context<E>, sym: &crate::symbol::Symbol) -> Abs
 // be promoted to dynamic relocations.
 pub fn collect_abs_relocations<E: Target>(ctx: &Context<E>, id: OutputSectionId) -> Vec<AbsRel> {
     // Collect them in member order, so that each member's relocations
-    // form one run of the vector.
+    // form a contiguous run in the vector.
     ctx.output_sections[id.index()]
         .members
         .par_iter()
@@ -533,7 +533,7 @@ pub fn scan_abs_relocations<E: Target>(
     dynrel_offsets
 }
 
-// Compute spaces needed for thunk symbols
+// Compute the space needed for thunk symbols
 pub fn compute_symtab_size<E: Target>(ctx: &mut Context<E>, id: OutputSectionId) {
     if !E::NEEDS_THUNK {
         return;
@@ -556,7 +556,7 @@ pub fn compute_symtab_size<E: Target>(ctx: &mut Context<E>, id: OutputSectionId)
 
 // If we create range extension thunks, we also synthesize symbols to mark
 // the locations of thunks. Creating such symbols is optional, but it helps
-// disassembling and/or debugging our output.
+// with disassembling and/or debugging our output.
 pub fn populate_symtab<E: Target>(
     ctx: &Context<E>,
     id: OutputSectionId,

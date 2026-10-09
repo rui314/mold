@@ -8,9 +8,9 @@ use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 
-// .gnu_debuglink section contains a pathname and its CRC32 checksum for a
-// separate debug info file. gdb can read the section to read debug info
-// from an external file.
+// The .gnu_debuglink section contains the pathname and CRC32 checksum of
+// a separate debug info file. gdb can use the section to read debug info
+// from the external file.
 #[derive(Debug)]
 pub struct GnuDebuglinkSection<E: Target> {
     pub hdr: ChunkHeader<E>,

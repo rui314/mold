@@ -541,8 +541,8 @@ pub trait RelRecord: FileRecord + fmt::Debug {
     fn r_addend(&self) -> i64;
     fn set_r_addend(&mut self, value: i64);
 
-    /// Returns true if a given relocation is of type used for direct
-    /// function call.
+    /// Returns true if the relocation is of a type used for direct
+    /// function calls.
     #[inline(always)]
     fn is_func_call<E: Target>(&self) -> bool {
         E::R_FUNCALL.contains(&self.r_type())
@@ -565,9 +565,9 @@ pub trait RelRecord: FileRecord + fmt::Debug {
 // To keep target-independent code uniform, RelRecord::new always accepts an
 // addend. REL implementations ignore it.
 //
-// r_info packs the symbol index and the relocation type into one word. The
-// two halves would swap places in memory with the byte order if they were
-// separate fields, so the record keeps the word and the accessors split it.
+// r_info packs the symbol index and the relocation type into one word. If
+// they were separate fields, their order in memory would depend on the byte
+// order, so the record keeps the word and the accessors split it.
 
 /// A RELA relocation record.
 #[repr(C)]

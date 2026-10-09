@@ -143,7 +143,8 @@ impl ChunkId {
     }
 }
 
-// Chunk represents a contiguous region in an output file.
+// A chunk is a contiguous region in an output file. ChunkHeader holds the
+// data common to every chunk.
 #[derive(Debug)]
 pub struct ChunkHeader<E: Target> {
     pub name: &'static BStr,
@@ -158,7 +159,7 @@ pub struct ChunkHeader<E: Target> {
     pub is_relro: bool,
 
     /// Some synthetic sections add local symbols to the output. For
-    /// example, range extension thunks add a function_name@thunk symbol
+    /// example, range extension thunks add a function_name$thunkN symbol
     /// for each thunk entry. The following members are used for such
     /// synthesized symbols.
     pub local_symtab_idx: u32,
@@ -203,7 +204,7 @@ impl<E: Target> ChunkHeader<E> {
     }
 }
 
-// ELF header which is at the beginning of each ELF file.
+// The ELF header, which is at the beginning of every ELF file.
 pub fn new_ehdr<E: Target>(sh_flags: u64) -> ChunkHeader<E> {
     let mut hdr = ChunkHeader::<E>::new("EHDR", 0, sh_flags);
     hdr.shdr.sh_size.set(size_of::<ElfEhdr<E>>() as u64);
@@ -211,11 +212,10 @@ pub fn new_ehdr<E: Target>(sh_flags: u64) -> ChunkHeader<E> {
     hdr
 }
 
-// The section header table is usually
-// located at the end of an ELF file and is optional for executables.
-// Executables work without it because the runtime only reads the program
-// header. Section header is significant only in object files and not
-// needed at runtime
+// The section header table is usually located at the end of an ELF file
+// and is optional for executables. Executables work without it because the
+// runtime only reads the program header. The section header table is
+// significant only in object files and is not needed at runtime.
 pub fn new_shdr<E: Target>() -> ChunkHeader<E> {
     let mut hdr = ChunkHeader::<E>::new("SHDR", 0, 0);
     hdr.shdr.sh_size.set(1);
@@ -225,8 +225,8 @@ pub fn new_shdr<E: Target>() -> ChunkHeader<E> {
 
 // Program header, a.k.a. segment header. Each entry in the program header
 // represents a contiguous region of memory and has attributes such as
-// page protection bits. On program startup, the kernel mmap's the file
-// contents to memory based on the program header.
+// page protection bits. On program startup, the kernel mmaps the file
+// contents into memory based on the program header.
 #[derive(Debug)]
 pub struct OutputPhdr<E: Target> {
     pub hdr: ChunkHeader<E>,
@@ -274,8 +274,8 @@ fn write_ehdr<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     ehdr.e_flags.set(E::eflags(ctx));
     ehdr.e_ehsize.set(size_of::<ElfEhdr<E>>() as u16);
 
-    // If e_shstrndx is too large, a dummy value is set to e_shstrndx.
-    // The real value is stored to the zero'th section's sh_link field.
+    // If e_shstrndx is too large, a dummy value is stored in e_shstrndx,
+    // and the real value is stored in the zeroth section's sh_link field.
     if let Some(shstrtab) = &ctx.shstrtab {
         ehdr.e_shstrndx.set(if shstrtab.shndx < SHN_LORESERVE {
             shstrtab.shndx as u16
@@ -304,8 +304,8 @@ fn write_ehdr<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
         ehdr.e_shoff.set(shdr.shdr.sh_offset.get());
         ehdr.e_shentsize.set(size_of::<ElfShdr<E>>() as u16);
         // Since e_shnum is a 16-bit integer field, we can't store a very
-        // large value there. If it is >65535, the real value is stored to
-        // the zero'th section's sh_size field.
+        // large value there. If it is >65535, the real value is stored in
+        // the zeroth section's sh_size field.
         let shnum = shdr.shdr.sh_size.get() / size_of::<ElfShdr<E>>() as u64;
         ehdr.e_shnum.set(if shnum <= u16::MAX as u64 { shnum as u16 } else { 0 });
     }
@@ -526,7 +526,7 @@ fn create_phdr<E: Target>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
     }
 
     // Add PT_GNU_STACK, which is a marker segment that doesn't really
-    // contain any segments. It controls executable bit of stack area.
+    // contain any sections. It controls the executable bit of the stack.
     let mut stack = ElfPhdr::<E>::default();
     stack.set_p_type(PT_GNU_STACK);
     stack.set_p_flags(if ctx.args.z_execstack { PF_R | PF_W | PF_X } else { PF_R | PF_W });
@@ -694,8 +694,8 @@ pub fn num_dynrels<E: Target>(ctx: &Context<E>, id: ChunkId) -> u64 {
     }
 }
 
-/// The offsets (relative to the chunk) of base relocations that can be
-/// encoded in RELR form, marking them as such.
+/// Marks the base relocations that can be encoded in RELR form and returns
+/// their offsets relative to the chunk.
 pub fn relr_offsets<E: Target>(ctx: &mut Context<E>, id: ChunkId) -> Vec<u64> {
     match id {
         ChunkId::Output(id) => output_section::relr_offsets(ctx, id),

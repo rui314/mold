@@ -4,7 +4,7 @@
 //!
 //! This is an implementation of a fast concurrent hash map. Unlike
 //! ordinary hash tables, this impl just aborts if it becomes full.
-//! So you need to give a correct estimation of the final size before
+//! So you need to give a correct estimate of the final size before
 //! using it. We use this hash map to uniquify pieces of data in
 //! mergeable sections.
 //!
@@ -116,8 +116,8 @@ impl EntryId {
     }
 }
 
-/// A map under construction. Freeze it once concurrent insertion is complete
-/// to look up and traverse its entries.
+/// A map under construction. Once concurrent insertion is complete, freeze
+/// it to look up and traverse its entries.
 pub struct ConcurrentMap<T> {
     entries: *mut Entry<T>,
     nbuckets: usize,
@@ -153,7 +153,7 @@ impl<T> ConcurrentMap<T> {
         size_of::<Entry<T>>().checked_mul(nbuckets).expect("table size overflow")
     }
 
-    /// The number of entries, counted.
+    /// Counts the number of entries.
     fn len(&self) -> usize {
         (0..self.nbuckets).filter(|&idx| self.is_occupied(idx)).count()
     }
@@ -329,8 +329,8 @@ impl<T> std::fmt::Debug for ConcurrentMap<T> {
     }
 }
 
-/// A map after all insertions, whose values can be updated from a
-/// unique reference.
+/// A map after all insertions, for lookup and traversal. Values are
+/// reachable only through shared references.
 #[derive(Debug)]
 pub struct FrozenMap<T>(ConcurrentMap<T>);
 
@@ -373,7 +373,7 @@ impl<T> FrozenMap<T> {
         self.key_at(id.0 as usize).expect("an occupied bucket")
     }
 
-    /// Returns the map entries in a deterministic order.
+    /// Returns the entries in the given shard in a deterministic order.
     ///
     /// Linear probing fills the same set of buckets whatever the order
     /// keys were inserted in, but which of two colliding keys got the

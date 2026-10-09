@@ -3,8 +3,8 @@
 //! A notable example is Sega's Dreamcast game console which debuted in 1998.
 //! Hitachi later spun off its semiconductor division as an independent
 //! company, Renesas, and Renesas is still selling SH-4 processors for the
-//! embedded market. It has never been as popular as ARM is, and its
-//! popularity continues to decline though.
+//! embedded market. It has never been as popular as ARM, though, and its
+//! popularity continues to decline.
 //!
 //! SH-4's most distinctive feature compared to other RISC ISAs is that its
 //! instructions are 16 bits in length instead of the more common 32 bits for
@@ -12,19 +12,20 @@
 //! instruction set as shown below:
 //!
 //!  - SH-4 has 16 general-purpose registers (GPRs) instead of the most
-//!    common 32 GPR configuration to save one bit to specify a register.
+//!    common 32-GPR configuration so that a register can be specified with
+//!    one fewer bit.
 //!
 //!  - Binary instructions such as ADD normally take three registers in
 //!    RISC ISAs (e.g. x ← y ⊕ z where x, y and z are registers), but
 //!    SH-4's instructions take only two registers. The result of an
 //!    operation is written to one of the source registers (e.g. x ← x ⊕ y).
 //!
-//!  - Usual RISC ISAs have "load high" and "load low" instructions to set
-//!    an immediate to most significant and least significant bits in a
-//!    register to construct a full 32-bit value in a register. This
-//!    technique is hard to use in SH-4, as 16 bit instructions are too
+//!  - Typical RISC ISAs have "load high" and "load low" instructions that
+//!    set the most significant and least significant bits of a register to
+//!    an immediate, constructing a full 32-bit value in the register. This
+//!    technique is hard to use on SH-4, as 16-bit instructions are too
 //!    small to contain large immediates. On SH-4, large immediates are
-//!    loaded from memory using `mov.l` PC-relative load instruction.
+//!    loaded from memory using the PC-relative load instruction `mov.l`.
 //!
 //!  - Many RISC ISAs are, despite their name, actually fairly complex.
 //!    They tend to have hundreds if not thousands of different instructions.
@@ -33,18 +34,18 @@
 //!    result, the number of relocations the linker has to support is also
 //!    small.
 //!
-//! Besides these, SH-4 has a delay branch slot just like contemporary MIPS
+//! Besides these, SH-4 has a branch delay slot just like contemporary MIPS
 //! and SPARC. That is, one instruction after a branch instruction will
-//! always be executed even if the branch is taken. Delay branch slot allows
-//! a pipelined CPU to start and finish executing an instruction after a
-//! branch regardless of the branch's condition, simplifying the processor's
-//! implementation. It's considered a bad premature optimization nowadays,
-//! though. Modern RISC processors don't have it.
+//! always be executed even if the branch is taken. A branch delay slot
+//! allows a pipelined CPU to start and finish executing an instruction
+//! after a branch regardless of the branch's condition, simplifying the
+//! processor's implementation. It's considered a bad premature optimization
+//! nowadays, though. Modern RISC processors don't have it.
 //!
 //! Here are notes about the SH-4 psABI:
 //!
 //!  - If a source file is compiled with -fPIC, each function starts
-//!    with a piece of code to store the address of .got to %r12.
+//!    with a piece of code to store the address of .got in %r12.
 //!    We can use the register in our PLT for position-independent output.
 //!
 //!  - Even though it uses RELA-type relocations, object files store

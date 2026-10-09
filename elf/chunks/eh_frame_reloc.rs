@@ -58,7 +58,8 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8], mut eh_frame_buf: O
             if E::IS_RELA || is_section {
                 isec.rel_addend(r)
             } else {
-                // Ordinary REL symbols keep the addend already in .eh_frame.
+                // With REL, a relocation against a non-section symbol keeps
+                // the addend already in .eh_frame.
                 0
             }
         })

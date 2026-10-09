@@ -1,13 +1,13 @@
 //! RISC instructions are usually up to 4 bytes long, so the immediates of
-//! their branch instructions are naturally smaller than 32 bits.  This is
-//! contrary to x86-64 on which branch instructions take 4-byte immediates
-//! and can jump to anywhere within PC ± 2 GiB.
+//! their branch instructions are naturally smaller than 32 bits. This is
+//! unlike x86-64, whose branch instructions take 4-byte immediates and can
+//! jump anywhere within PC ± 2 GiB.
 //!
-//! In fact, ARM32's branch instructions can jump only within ±16 MiB and
-//! ARM64's ±128 MiB, for example. If a branch target is further than that,
+//! For example, ARM32's branch instructions can jump only within ±16 MiB
+//! and ARM64's within ±128 MiB. If a branch target is further than that,
 //! we need to let it branch to a linker-synthesized code sequence that
-//! constructs a full 32 bit address in a register and jumps there. That
-//! linker-synthesized code is called "thunk".
+//! constructs a full 32-bit address in a register and jumps there. That
+//! linker-synthesized code is called a "thunk".
 //!
 //! The function in this file creates thunks.
 //!
@@ -110,7 +110,7 @@ fn requires_thunk<E: Target>(
         match sym.input_section_ref(ctx) {
             Some(target) if target.output_section == isec.output_section => {
                 // If the target section is in the same output section but
-                // hasn't got any address yet, that's unreachable.
+                // hasn't been assigned an address yet, it's unreachable.
                 if target.offset() == UNPLACED {
                     return true;
                 }
@@ -118,7 +118,7 @@ fn requires_thunk<E: Target>(
             _ => return true,
         }
 
-        // Even if the target is the same section, we branch to its PLT
+        // Even if the target is in the same section, we branch to its PLT
         // if it has one. So a symbol with a PLT is also considered an
         // out-of-section reference.
         if sym.has_plt(&ctx.symbols) {
@@ -130,7 +130,7 @@ fn requires_thunk<E: Target>(
         return true;
     }
 
-    // Compute a distance between the relocated place and the symbol
+    // Compute the distance between the relocated place and the symbol
     // and check if they are within reach.
     let s = sym.addr_with(ctx, AddrFlags::NO_OPD) as i64;
     let a = isec.rel_addend(rel);
@@ -190,20 +190,20 @@ fn code_section<E: Target>(ctx: &Context<E>, sym: &Symbol) -> Option<InputSectio
 ///
 /// This function returns functions that may need a landing pad. We don't
 /// know yet which calls are out of range, so any function called from
-/// another section is a candidate. The result is indexed by output section,
-/// and each element is a list of pairs of the index of a function's section
-/// in the output section's members and the function, in the order of the
-/// index, which is the order in which create_section_thunks() places the
-/// sections.
+/// another section is a candidate. The result is indexed by output section.
+/// Each element is a list of (index, function) pairs, where the index is
+/// that of the function's section in the output section's members. The
+/// list is sorted by index, which is the order in which
+/// create_section_thunks() places the sections.
 fn landing_pad_candidates<E: Target>(ctx: &Context<E>) -> Vec<Vec<(usize, SymbolId)>> {
     let mut candidates = vec![Vec::new(); ctx.output_sections.len()];
     if E::landing_pad_size(ctx) == 0 {
         return candidates;
     }
 
-    // Record the index of each section in its output section's members in
-    // its offset. create_section_thunks() overwrites the offsets right away
-    // before laying out the sections.
+    // Store the index of each section within its output section's members
+    // as the section's offset. create_section_thunks() overwrites the
+    // offsets right away before laying out the sections.
     let sections = executable_sections(ctx);
     for &id in &sections {
         ctx.output_sections[id.index()].members.par_iter().enumerate().for_each(|(i, &member)| {
@@ -454,7 +454,7 @@ fn create_section_thunks<E: Target>(
 /// creation of thunks is a two-pass process.
 pub fn remove_redundant_thunks<E: Target>(ctx: &mut Context<E>) {
     let _t = ctx.timer("remove_redundant_thunks");
-    // Gather output executable sections
+    // Gather executable output sections
     let sections = executable_sections(ctx);
 
     // Mark all symbols that actually need range extension thunks

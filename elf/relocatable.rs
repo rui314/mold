@@ -1,13 +1,13 @@
-//! This file implements -r or --relocatable. That option forces the linker
-//! to combine input object files into another single large object file.
+//! This file implements -r or --relocatable. That option makes the linker
+//! combine input object files into another single large object file.
 //! Since the behavior of the linker when the option is given is quite
-//! different from that of the normal execution mode, we separate code for
-//! the feature into this separate file.
+//! different from that of the normal execution mode, we put the code for
+//! the feature in this separate file.
 //!
 //! The --relocatable option isn't used very often. After all, if you want
 //! to combine object files into a single file, you could use `ar`.
-//! However, some programs use it in a creative manner which is hard to be
-//! substituted with static archives, so we need to support this option in
+//! However, some programs use it in a creative manner that is hard to
+//! replace with static archives, so we need to support this option in
 //! the same way as GNU ld does. A notable example is GHC (Glasgow Haskell
 //! Compiler). GHC has its own dynamic linker which can load a .o file (as
 //! opposed to a .so) into memory. GHC's module is not a shared object file

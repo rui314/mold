@@ -14,7 +14,8 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 type LinkFn = fn(Cmdline) -> LinkResult;
 
 // Each target has its own monomorphized link function. Start with the first
-// enabled target and switch to the matching function if the inputs differ.
+// enabled target and switch to the matching function if the inputs are for
+// another target.
 const TARGETS: &[(&str, LinkFn)] = &[
     #[cfg(feature = "x86_64")]
     ("x86_64", mold_elf_x86_64::link),

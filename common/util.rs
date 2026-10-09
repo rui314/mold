@@ -1,6 +1,6 @@
 //! Small helpers shared across the linker.
 
-/// An `UnsafeCell` that may be shared between threads, as std's unstable
+/// An `UnsafeCell` that may be shared between threads, like std's unstable
 /// type of the same name. A parallel pass views a slice as cells so that
 /// each task can write the elements it owns through a shared reference,
 /// with the slice's bounds checks still applied to every access.
@@ -156,14 +156,14 @@ pub fn bit(value: u64, pos: u32) -> u64 {
     (value >> pos) & 1
 }
 
-// Returns [hi:lo] bits of val.
+// Returns bits [hi:lo] of `value`.
 #[inline]
 pub fn bits(value: u64, hi: u32, lo: u32) -> u64 {
     (value >> lo) & ((1u64 << (hi - lo + 1)) - 1)
 }
 
-// Cast val to a signed N bit integer.
-// For example, sign_extend(x, 32) == (i32)x for any integer x.
+// Casts `value` to a signed `n`-bit integer.
+// For example, sign_extend(x, 32) == x as i32 as i64 for any x.
 pub fn sign_extend(value: u64, n: u32) -> i64 {
     ((value << (64 - n)) as i64) >> (64 - n)
 }

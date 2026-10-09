@@ -1,16 +1,16 @@
-//! This file contains ARM64-specific code. Being new, the ARM64's ELF
-//! psABI doesn't have anything peculiar. ARM64 is a clean RISC
-//! instruction set that supports PC-relative load/store instructions.
+//! This file contains ARM64-specific code. Being new, ARM64's ELF psABI
+//! doesn't have anything peculiar. ARM64 is a clean RISC instruction set
+//! that supports PC-relative load/store instructions.
 //!
-//! Unlike ARM32, instruction length doesn't vary. All ARM64
+//! Unlike on ARM32, instruction length doesn't vary. All ARM64
 //! instructions are 4 bytes long.
 //!
-//! Branch instructions used for function call can jump within ±128 MiB.
+//! Branch instructions used for function calls can jump within ±128 MiB.
 //! We need to create range extension thunks to support binaries whose
 //! .text is larger than that.
 //!
-//! Unlike most other targets, the TLSDESC access model is used by default
-//! for -fPIC to access thread-local variables instead of the less
+//! Unlike on most other targets, the TLSDESC access model is used by
+//! default for -fPIC to access thread-local variables instead of the less
 //! efficient GD model. You can still enable GD but it needs the
 //! -mtls-dialect=trad flag. Since GD is used rarely, we don't need to
 //! implement GD → LE relaxation.
@@ -340,7 +340,7 @@ impl<const LE: bool> Target for Arm64Target<LE> {
                 R_AARCH64_ADR_GOT_PAGE => {
                     // An ADR_GOT_PAGE and GOT_LO12_NC relocation pair is used to load a
                     // symbol's address from GOT. If the GOT value is a link-time
-                    // constant, we may be able to rewrite the ADRP+LDR instruction pair
+                    // constant, we may be able to replace the ADRP+LDR instruction pair
                     // with an ADRP+ADD, eliminating a GOT memory load.
                     let relaxable = ctx.args.relax
                         && sym.is_pcrel_linktime_const(ctx)
@@ -533,10 +533,10 @@ impl<const LE: bool> Target for Arm64Target<LE> {
                     }
                 }
                 R_AARCH64_ADR_PREL_PG_HI21 | R_AARCH64_ADR_PREL_PG_HI21_NC => {
-                    // The ARM64 psABI defines that an `ADRP x0, foo` and `ADD x0, x0,
-                    // :lo12: foo` instruction pair to materialize a PC-relative address
-                    // in a register can be relaxed to `NOP` followed by `ADR x0, foo`
-                    // if foo is in PC ± 1 MiB.
+                    // The ARM64 psABI says that an `ADRP x0, foo` and `ADD x0, x0,
+                    // :lo12: foo` instruction pair that materializes a PC-relative
+                    // address in a register can be relaxed to `NOP` followed by
+                    // `ADR x0, foo` if foo is within PC ± 1 MiB.
                     if Self::relaxes_adrp_add(ctx, isec, rels, i - 1) {
                         let reg = bits(read_ul32(loc) as u64, 4, 0) as u32;
                         write_ul32(loc, NOP);
@@ -687,8 +687,8 @@ impl<const LE: bool> Target for Arm64Target<LE> {
                 // blr     x1
                 // R_AARCH64_TLSDESC_CALL       foo
                 //
-                // We may relax the instructions to the following if its TP-relative
-                // address is known at link-time
+                // We may relax the instructions to the following if the TP-relative
+                // address is known at link time
                 //
                 // nop
                 // nop
@@ -831,9 +831,9 @@ impl<const LE: bool> Target for Arm64Target<LE> {
     // The size of a thunk entry varies on ARM64 depending on the distance to
     // the branch target. This function computes the size of each thunk entry.
     fn thunk_offsets(ctx: &Context<Self>, thunk: &Thunk, addr: u64) -> Vec<u64> {
-        // The distance between S and P is only reduced by
-        // remove_redundant_thunks(), but page(S) – page(P) may still increase
-        // by one page due to address changes, so we add a safety margin.
+        // remove_redundant_thunks() only reduces the distance between S and
+        // P, but page(S) – page(P) may still increase by one page due to
+        // address changes, so we add a safety margin.
         //
         // For example, page(0x1200) – page(0x1000) is 0, whereas
         // page(0x1100) – page(0xfff) is 0x1000, even though the latter

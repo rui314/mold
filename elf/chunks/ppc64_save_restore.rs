@@ -5,10 +5,11 @@ use crate::chunks::ChunkHeader;
 use crate::context::Context;
 use crate::elf::*;
 
-// GCC may emit references to the following functions in function prologue
-// and epilogue if -Os is specified. For some reason, these functions are
-// not in libgcc.a and expected to be synthesized by the linker. There are
-// variants for general-purpose, floating-point and vector registers.
+// GCC may emit references to the following functions in function
+// prologues and epilogues if -Os is specified. For some reason, these
+// functions are not in libgcc.a and are expected to be synthesized by the
+// linker. There are variants for general-purpose, floating-point and
+// vector registers.
 pub const SAVE_RESTORE_INSNS: &[(&str, u32)] = &[
     ("_savegpr0_14", 0xf9c1ff70), // std r14,-144(r1)
     ("_savegpr0_15", 0xf9e1ff78), // std r15,-136(r1)

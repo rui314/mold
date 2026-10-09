@@ -6,7 +6,7 @@ use crate::context::Context;
 use crate::elf::*;
 
 // .got.plt is similar to .got in the sense that it is a table containing
-// pointers. The contents in .got.plt are function pointers used by .plt.
+// pointers. The contents of .got.plt are function pointers used by .plt.
 pub fn new_header<E: Target>(args: &crate::cmdline::Args) -> ChunkHeader<E> {
     let sh_type = if E::IS_PPC64 { SHT_NOBITS } else { SHT_PROGBITS };
     let mut hdr = ChunkHeader::<E>::new(".got.plt", sh_type, (SHF_ALLOC | SHF_WRITE) as u64);
@@ -33,8 +33,8 @@ pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
 
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     // On PPC64, it's the dynamic loader's responsibility to fill the .got.plt
-    // section. Dynamic loader finds the address of the first PLT entry by
-    // DT_PPC64_GLINK and assumes that each PLT entry is 4 bytes long.
+    // section. The dynamic loader finds the address of the first PLT entry
+    // via DT_PPC64_GLINK and assumes that each PLT entry is 4 bytes long.
     if E::IS_PPC64 {
         return;
     }

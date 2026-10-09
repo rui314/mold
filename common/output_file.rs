@@ -1,7 +1,5 @@
 //! The output file and helpers for writing to it from many threads.
 
-// TODO: use an intermediate temporary file for output on Windows.
-
 use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
 use std::ops::Range;
@@ -31,8 +29,9 @@ static TMPFILE: AtomicPtr<libc::c_char> = AtomicPtr::new(std::ptr::null_mut());
 fn set_tmpfile(path: Option<&Path>) {
     #[cfg(not(windows))]
     {
-        // Published paths live until process exit: a signal on another thread
-        // may still be using the old pointer when this registration changes.
+        // Published paths live until process exit: a signal handler on another
+        // thread may still be using the old pointer when this registration
+        // changes.
         let ptr = path.map_or(std::ptr::null_mut(), |path| {
             std::ffi::CString::new(path.as_os_str().as_encoded_bytes())
                 .expect("temporary path contains NUL")
@@ -98,8 +97,9 @@ pub fn cleanup() {
         let path = TMPFILE.swap(std::ptr::null_mut(), Ordering::AcqRel);
         if !path.is_null() {
             // SAFETY: path is a published, NUL-terminated string that is never
-            // freed. This path is also called from a signal handler, so it must
-            // not lock, allocate or drop owned storage. unlink is signal-safe.
+            // freed. This function is also called from a signal handler, so it
+            // must not lock, allocate or drop owned storage. unlink is
+            // signal-safe.
             unsafe { libc::unlink(path) };
         }
     }
@@ -179,7 +179,7 @@ fn map_file(file: &File, len: usize) -> io::Result<Option<MmapMut>> {
     #[cfg(windows)]
     let map = unsafe { MmapMut::map_mut(file) };
     let mut map = map?;
-    // Enable transparent huge pages for an output memory-mapped file
+    // Enable transparent huge pages for a memory-mapped output file
     // when the target provides the required advice.
     // Linking a Chromium debug build is ~20% faster with this madvise call.
     //
@@ -209,10 +209,10 @@ impl OutputFile {
     /// A regular file is written through a memory mapping of a temporary
     /// file that is renamed into place on close, so that a failed link
     /// doesn't leave a truncated output behind and a running executable
-    /// isn't modified underneath the kernel. Anything else — a device, a
-    /// pipe, or standard output — is assembled in memory and written out
-    /// at the end. If `mmap` is false, a regular file is assembled in
-    /// memory too and then written out to the temporary file.
+    /// isn't modified underneath the kernel. Anything else, such as a
+    /// device, a pipe or standard output, is assembled in memory and
+    /// written out at the end. If `mmap` is false, a regular file is
+    /// assembled in memory too and then written out to the temporary file.
     pub fn open(path: &Path, size: u64, perm: u32, overwrite_in_place: bool, mmap: bool) -> Self {
         let len = buffer_len(path, size);
         let is_special =
@@ -448,7 +448,7 @@ impl OutputFile {
             }
         };
         if let Some(tmp) = self.tmp_path {
-            // If an output file already exists, open a file and then remove it.
+            // If an output file already exists, open it and then remove it.
             // This is the fastest way to unlink a file, as it does not make the
             // system immediately release disk blocks occupied by the file.
             // The descriptor is kept until the process exits.

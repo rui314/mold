@@ -5,16 +5,16 @@
 //!
 //! The psABI specifies %r11 as neither caller- nor callee-saved. It's
 //! intentionally left out so that we can use it as a scratch register in
-//! PLT.
+//! the PLT.
 //!
-//! Thread Pointer (TP) is stored not to a general-purpose register but to
-//! FS segment register. Segment register is a 64-bit register which can
-//! be used as a base address for memory access. Each thread has a unique
-//! FS value, and they access their thread-local variables relative to FS
-//! as %fs:offset_from_tp.
+//! The thread pointer (TP) is stored not in a general-purpose register but
+//! in the FS segment register. A segment register is a 64-bit register that
+//! can be used as a base address for memory access. Each thread has a
+//! unique FS value, and they access their thread-local variables relative
+//! to FS as %fs:offset_from_tp.
 //!
 //! The value of a segment register itself is not generally readable from
-//! the user space. As a workaround, libc initializes %fs:0 (the first word
+//! user space. As a workaround, libc initializes %fs:0 (the first word
 //! referenced by FS) to the value of %fs itself. So we can obtain TP just
 //! by `mov %fs:0, %rax` if we need it.
 //!
@@ -80,7 +80,7 @@ impl Target for X86_64 {
     }
 
     // This is a security-enhanced version of the regular PLT. The PLT
-    // header and each PLT entry starts with endbr64 for Intel's
+    // header and each PLT entry start with endbr64 for Intel's
     // control-flow enforcement security mechanism.
     //
     // Note that our IBT-enabled PLT instruction sequence is different
@@ -113,7 +113,7 @@ impl Target for X86_64 {
         let plt_idx = sym.plt_idx(&ctx.symbols).unwrap();
         let disp = sym.gotplt_addr(ctx).wrapping_sub(sym.plt_addr(ctx));
         // Only a canonical PLT can be address-taken; there's no way to take
-        // an address of a non-canonical PLT. Therefore, a non-canonical PLT
+        // the address of a non-canonical PLT. Therefore, a non-canonical PLT
         // doesn't have to start with an endbr64.
         if sym.is_canonical() {
             const INSN: [u8; 16] = [
@@ -185,11 +185,11 @@ impl Target for X86_64 {
     }
 
     fn scan_relocations(ctx: &Context<Self>, isec: &InputSection<Self>) {
-        // Linker has to create data structures in an output file to apply
-        // some type of relocations. For example, if a relocation refers to a GOT
-        // or a PLT entry of a symbol, linker has to create an entry in .got
-        // or in .plt for that symbol. In order to fix the file layout, we
-        // need to scan relocations.
+        // The linker has to create data structures in an output file to
+        // apply some types of relocations. For example, if a relocation
+        // refers to a GOT or a PLT entry of a symbol, the linker has to
+        // create an entry in .got or in .plt for that symbol. In order to fix
+        // the file layout, we need to scan relocations.
         debug_assert!(isec.is_alloc());
         let file = &ctx.objs[isec.file.index()];
         let rels = isec.rels(file);
@@ -457,8 +457,8 @@ impl Target for X86_64 {
                     //   call   *(%rax)
                     //       R_X86_64_TLSDESC_CALL       foo
                     //
-                    // We may relax the instructions to the following if its TP-relative
-                    // address is known at link-time
+                    // We may relax the instructions to the following if the
+                    // TP-relative address is known at link-time
                     //
                     //   mov     $foo@TPOFF, %rax
                     //   nop
@@ -528,10 +528,10 @@ impl Target for X86_64 {
     // at runtime).
     //
     // Relocations against non-SHF_ALLOC sections are much easier to
-    // handle than those against SHF_ALLOC sections. It is because, since
-    // they are not mapped to memory, they don't contain any variable or
-    // function and never need PLT or GOT. Non-SHF_ALLOC sections are
-    // mostly debug info sections.
+    // handle than those against SHF_ALLOC sections. This is because such
+    // sections are not mapped to memory, so they don't contain any
+    // variables or functions and never need PLT or GOT. Non-SHF_ALLOC
+    // sections are mostly debug info sections.
     //
     // Relocations against non-SHF_ALLOC sections are not scanned by
     // scan_relocations.
@@ -586,9 +586,9 @@ impl Target for X86_64 {
                     s.wrapping_add(a).wrapping_sub(ctx.gotplt.shdr.sh_addr.get()),
                 ),
                 R_X86_64_GOTPC64 => {
-                    // PC-relative relocation doesn't make sense for non-memory-allocated
-                    // section, but GCC 6.3.0 seems to create this reloc for
-                    // _GLOBAL_OFFSET_TABLE_.
+                    // A PC-relative relocation doesn't make sense for a
+                    // non-memory-allocated section, but GCC 6.3.0 seems to
+                    // create this reloc for _GLOBAL_OFFSET_TABLE_.
                     write_ul64(&mut buf[off..], ctx.gotplt.shdr.sh_addr.get().wrapping_add(a))
                 }
                 R_X86_64_SIZE32 => write32(buf, sym.esym(ctx).st_size().wrapping_add(a)),
@@ -862,7 +862,7 @@ fn relax_gd_to_ie(buf: &mut [u8], off: usize, rel: &ElfRel<X86_64>, val: u64) {
 
 // Rewrite a function call to __tls_get_addr to a cheaper instruction
 // sequence. The difference from relax_gd_to_le is that we are materializing
-// the address of the beginning of TLS block instead of an address of a
+// the address of the beginning of the TLS block instead of the address of a
 // particular thread-local variable.
 fn relax_ld_to_le(buf: &mut [u8], off: usize, rel: &ElfRel<X86_64>, tls_size: u64) {
     match rel.r_type() {

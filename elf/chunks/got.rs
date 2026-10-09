@@ -125,10 +125,10 @@ struct GotEntry {
 
 // Get .got and .rel.dyn contents.
 //
-// .got is a linker-synthesized constant pool whose entry is of pointer
-// size. If we know a correct value for an entry, we'll just set that value
-// to the entry. Otherwise, we'll create a dynamic relocation and let the
-// dynamic linker fill the entry at load-time.
+// .got is a linker-synthesized constant pool whose entries are
+// pointer-sized. If we know the correct value for an entry, we'll just
+// store that value in the entry. Otherwise, we'll create a dynamic
+// relocation and let the dynamic linker fill the entry at load-time.
 //
 // Most GOT entries contain addresses of global variables. If a global
 // variable is an imported symbol, we don't know its address until runtime.
@@ -136,7 +136,7 @@ struct GotEntry {
 // access imported global variables via GOT.
 //
 // Thread-local variables (TLVs) also use GOT entries. We need them because
-// TLVs are accessed in a different way than the ordinary global variables.
+// TLVs are accessed in a different way than ordinary global variables.
 // Their addresses are not unique; each thread has its own copy of TLVs.
 fn for_each_entry<E: Target>(ctx: &Context<E>, mut emit: impl FnMut(GotEntry)) {
     let mut add = |idx: u32, val: u64, r_type: u32, sym: Option<SymbolId>| {
@@ -349,7 +349,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
             // where one slot holds a function pointer and the other an
             // argument to the function. An addend should be applied not to
             // the function pointer but to the function argument, which is
-            // usually stored to the second slot.
+            // usually stored in the second slot.
             //
             // ARM32 employs the inverted layout for some reason, so an
             // addend is applied to the first slot.

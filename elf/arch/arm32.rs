@@ -282,8 +282,9 @@ pub fn swap_code_bytes<const LE: bool>(ctx: &Context<Arm32Target<LE>>, buf: &mut
     }
 
     // Swap bytes one input section at a time. Each mapping symbol's range
-    // is indexed within the section's own bytes, so a symbol value outside
-    // of the section is rejected.
+    // is indexed within the section's own bytes, so a symbol whose value is
+    // outside of the section causes a panic rather than corrupting other
+    // sections.
     for osec in &ctx.output_sections {
         let shdr = &osec.hdr.shdr;
         if shdr.sh_flags.get() & SHF_EXECINSTR == 0 || shdr.sh_type.get() == SHT_NOBITS {
@@ -568,9 +569,9 @@ impl<const LE: bool> Target for Arm32Target<LE> {
                         write_thm32::<Self>(loc, THM_NOP_W);
                         continue;
                     }
-                    // THM_CALL relocation refers to either BL or BLX instruction.
-                    // They are different in only one bit. We need to use BLX if the
-                    // jump target is an ARM function. Otherwise, use BL.
+                    // A THM_CALL relocation refers to either a BL or BLX instruction.
+                    // They differ in only one bit. We need to use BLX if the jump
+                    // target is an ARM function. Otherwise, we use BL.
                     let val1 = pcrel as i64;
                     let val2 = align_to(pcrel, 4) as i64;
                     let arm = is_arm_func(ctx, sym);
@@ -599,8 +600,8 @@ impl<const LE: bool> Target for Arm32Target<LE> {
                         write32(loc, ARM_NOP); // NOP
                         continue;
                     }
-                    // Just like THM_CALL, ARM_CALL relocation refers to either BL or
-                    // BLX instruction. We may need to rewrite BL → BLX or BLX → BL.
+                    // Just like THM_CALL, an ARM_CALL relocation refers to either a BL
+                    // or BLX instruction. We may need to rewrite BL → BLX or BLX → BL.
                     let insn = Self::read_u32(loc);
                     let is_bl = insn & 0xff00_0000 == 0xeb00_0000;
                     let is_blx = insn & 0xfe00_0000 == 0xfa00_0000;
@@ -609,8 +610,8 @@ impl<const LE: bool> Target for Arm32Target<LE> {
                     }
                     if is_int(pcrel as i64, 26) {
                         if t != 0 {
+                            // BLX
                             write32(loc, 0xfa00_0000 | (bt(pcrel, 1) << 24) | b(pcrel, 25, 2));
-                        // BLX
                         } else {
                             write32(loc, 0xeb00_0000 | b(pcrel, 25, 2)); // BL
                         }
@@ -626,11 +627,11 @@ impl<const LE: bool> Target for Arm32Target<LE> {
                         write32(loc, ARM_NOP); // NOP
                         continue;
                     }
-                    // These relocs refer to a B (unconditional branch) instruction.
-                    // Unlike BL or BLX, we can't rewrite B to BX in place when the
-                    // processor mode switch is required because BX doesn't take an
-                    // immediate; it takes only a register. So if mode switch is
-                    // required, we jump to a linker-synthesized thunk which does the
+                    // This relocation refers to a B (unconditional branch)
+                    // instruction. Unlike BL or BLX, B can't be rewritten to BX in
+                    // place when a processor mode switch is required because BX takes
+                    // only a register, not an immediate. So if a mode switch is
+                    // required, we jump to a linker-synthesized thunk that does the
                     // job with a longer code sequence.
                     let mut val = pcrel;
                     if t != 0 || !is_int(val as i64, 26) {
@@ -664,7 +665,7 @@ impl<const LE: bool> Target for Arm32Target<LE> {
                         write_thm32::<Self>(loc, THM_NOP_W); // NOP
                         continue;
                     }
-                    // Just like R_ARM_JUMP24, we need to jump to a thunk if we need to
+                    // As with R_ARM_JUMP24, we need to jump to a thunk if we need to
                     // switch processor mode.
                     let mut val = pcrel;
                     if is_arm_func(ctx, sym) || !is_int(val as i64, 25) {
@@ -709,8 +710,8 @@ impl<const LE: bool> Target for Arm32Target<LE> {
                 // .L2: .word   foo + . - .L1
                 // R_ARM_TLS_GOTDESC
                 //
-                // We may relax the instructions to the following if its TP-relative
-                // address is known at link-time
+                // We may relax the instructions to the following if the TP-relative
+                // address is known at link time
                 //
                 // ldr     r0, .L2
                 // .L1: nop
@@ -763,7 +764,7 @@ impl<const LE: bool> Target for Arm32Target<LE> {
                     if sym.has_tlsdesc(&ctx.symbols) {
                         let val = align_to(tlsdesc_trampoline().wrapping_sub(p).wrapping_sub(4), 4);
                         write_thm_b25::<Self>(loc, val as u32);
-                        // rewrite BL with BLX
+                        // rewrite BL as BLX
                         set_thm_bl::<Self>(loc, false);
                     } else if sym.has_gottp(&ctx.symbols) {
                         // Since `ldr r0, [pc, r0]` is not representable in Thumb,

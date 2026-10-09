@@ -7,7 +7,7 @@ use crate::elf::*;
 
 // .note.gnu.build-id contains an identifier for an output ELF file. The
 // contents of the section are usually a cryptographic hash of the output
-// file itself to guarantee uniqueness of build-id.
+// file itself to guarantee the uniqueness of the build ID.
 #[derive(Debug)]
 pub struct BuildIdSection<E: Target> {
     pub hdr: ChunkHeader<E>,
