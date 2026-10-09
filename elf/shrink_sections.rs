@@ -98,21 +98,19 @@ pub fn compute_distance<E: Target>(
 pub fn shrink_sections<E: Target>(ctx: &mut Context<E>) {
     let _t = ctx.timer("shrink_sections");
 
-    let shrunk: Vec<Vec<(u32, Vec<RelocDelta>)>> = {
-        let ctx: &Context<E> = ctx;
-        ctx.objs
-            .par_iter()
-            .map(|file| {
-                file.input_sections()
-                    .filter(|isec| isec.is_alive() && isec.sh_flags & SHF_EXECINSTR as u64 != 0)
-                    .filter_map(|isec| {
-                        let deltas = E::shrink_section(ctx, isec);
-                        (!deltas.is_empty()).then_some((isec.shndx, deltas))
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .collect()
-    };
+    let shrunk: Vec<Vec<(u32, Vec<RelocDelta>)>> = ctx
+        .objs
+        .par_iter()
+        .map(|file| {
+            file.input_sections()
+                .filter(|isec| isec.is_alive() && isec.sh_flags & SHF_EXECINSTR as u64 != 0)
+                .filter_map(|isec| {
+                    let deltas = E::shrink_section(ctx, isec);
+                    (!deltas.is_empty()).then_some((isec.shndx, deltas))
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
     let Context { objs, .. } = ctx;
     objs.par_iter_mut().zip(shrunk).for_each(|(file, shrunk)| {
         for (shndx, deltas) in shrunk {
@@ -159,22 +157,20 @@ pub fn shrink_sections<E: Target>(ctx: &mut Context<E>) {
     }
 
     // Recompute sizes of executable sections
-    let sizes: Vec<_> = {
-        let ctx: &Context<E> = ctx;
-        ctx.chunks
-            .par_iter()
-            .filter_map(|&id| match id {
-                ChunkId::Output(osec)
-                    if ctx.output_sections[osec.index()].hdr.shdr.sh_flags.get()
-                        & SHF_EXECINSTR as u64
-                        != 0 =>
-                {
-                    Some((osec, chunks::output_section::layout(ctx, osec)))
-                }
-                _ => None,
-            })
-            .collect()
-    };
+    let sizes: Vec<_> = ctx
+        .chunks
+        .par_iter()
+        .filter_map(|&id| match id {
+            ChunkId::Output(osec)
+                if ctx.output_sections[osec.index()].hdr.shdr.sh_flags.get()
+                    & SHF_EXECINSTR as u64
+                    != 0 =>
+            {
+                Some((osec, chunks::output_section::layout(ctx, osec)))
+            }
+            _ => None,
+        })
+        .collect();
     for (osec, size) in sizes {
         ctx.output_sections[osec.index()].hdr.shdr.sh_size.set(size);
     }

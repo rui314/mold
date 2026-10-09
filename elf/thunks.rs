@@ -375,32 +375,29 @@ fn create_section_thunks<E: Target>(
 
         // Create a new thunk and place it at D.
         offset = align_to(offset, THUNK_ALIGN);
-        let symbols = {
-            let ctx: &Context<E> = ctx;
-            // Scan relocations between B and C to collect symbols that need
-            // entries in the new thunk.
-            members[b..c]
-                .par_iter()
-                .fold(Vec::new, |mut symbols, &member| {
-                    let isec = ctx.input_section(member);
-                    let file = &ctx.objs[isec.file.index()];
-                    for rel in isec.rels(file) {
-                        if !rel.is_func_call::<E>() {
-                            continue;
-                        }
-                        let id = file.base.symbols[rel.r_sym() as usize];
-                        let sym = &ctx.symbols[id];
-                        if requires_thunk(ctx, isec, rel, sym, true) && sym.mark() {
-                            symbols.push(id);
-                        }
+        // Scan relocations between B and C to collect symbols that need
+        // entries in the new thunk.
+        let symbols = members[b..c]
+            .par_iter()
+            .fold(Vec::new, |mut symbols, &member| {
+                let isec = ctx.input_section(member);
+                let file = &ctx.objs[isec.file.index()];
+                for rel in isec.rels(file) {
+                    if !rel.is_func_call::<E>() {
+                        continue;
                     }
-                    symbols
-                })
-                .reduce(Vec::new, |mut symbols, mut other| {
-                    symbols.append(&mut other);
-                    symbols
-                })
-        };
+                    let id = file.base.symbols[rel.r_sym() as usize];
+                    let sym = &ctx.symbols[id];
+                    if requires_thunk(ctx, isec, rel, sym, true) && sym.mark() {
+                        symbols.push(id);
+                    }
+                }
+                symbols
+            })
+            .reduce(Vec::new, |mut symbols, mut other| {
+                symbols.append(&mut other);
+                symbols
+            });
         // Add symbols to the thunk. Functions in the sections placed since
         // the previous thunk get their landing pads in this thunk.
         let end = pad + candidates[pad..].partition_point(|&(idx, _)| idx < d);
@@ -431,13 +428,10 @@ fn create_section_thunks<E: Target>(
     }
 
     // Sort symbols for deterministic output.
-    {
-        let ctx: &Context<E> = ctx;
-        thunks.par_iter_mut().for_each(|thunk| {
-            thunk.landing_pads.sort_unstable_by_key(|&id| sort_key(ctx, id));
-            thunk.symbols.sort_unstable_by_key(|&id| sort_key(ctx, id));
-        });
-    }
+    thunks.par_iter_mut().for_each(|thunk| {
+        thunk.landing_pads.sort_unstable_by_key(|&id| sort_key(ctx, id));
+        thunk.symbols.sort_unstable_by_key(|&id| sort_key(ctx, id));
+    });
 
     let osec = &mut ctx.output_sections[id.index()];
     osec.hdr.shdr.sh_size.set(offset);
@@ -464,45 +458,42 @@ pub fn remove_redundant_thunks<E: Target>(ctx: &mut Context<E>) {
     let sections = executable_sections(ctx);
 
     // Mark all symbols that actually need range extension thunks
-    {
-        let ctx: &Context<E> = ctx;
-        for &id in &sections {
-            ctx.output_sections[id.index()].members.par_iter().for_each(|&m| {
-                let isec = ctx.input_section(m);
-                let file = &ctx.objs[isec.file.index()];
-                for rel in isec.rels(file) {
-                    if !rel.is_func_call::<E>() {
-                        continue;
-                    }
-                    let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
-
-                    // A thunk jumps to the start of a symbol, so it can't serve a
-                    // branch to an offset from a section symbol, which assemblers
-                    // emit for calls to static functions. On RELA targets, such
-                    // branches already refer to symbols at their destinations
-                    // (see redirect_section_relocations()), but an addend in a
-                    // REL instruction can't be moved into a symbol that way.
-                    if !E::IS_RELA
-                        && sym.ty() == STT_SECTION
-                        && isec.rel_addend(rel) != 0
-                        && requires_thunk(ctx, isec, rel, sym, false)
-                    {
-                        error!(
-                            "{}: relocation {} against {} needs a range extension thunk, \
-                             which can't jump to an offset from a section; recompile \
-                             with -ffunction-sections",
-                            isec.display(file),
-                            rel.type_name::<E>(),
-                            sym
-                        );
-                    }
-
-                    if !sym.is_marked() && requires_thunk(ctx, isec, rel, sym, false) {
-                        sym.mark();
-                    }
+    for &id in &sections {
+        ctx.output_sections[id.index()].members.par_iter().for_each(|&m| {
+            let isec = ctx.input_section(m);
+            let file = &ctx.objs[isec.file.index()];
+            for rel in isec.rels(file) {
+                if !rel.is_func_call::<E>() {
+                    continue;
                 }
-            });
-        }
+                let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
+
+                // A thunk jumps to the start of a symbol, so it can't serve a
+                // branch to an offset from a section symbol, which assemblers
+                // emit for calls to static functions. On RELA targets, such
+                // branches already refer to symbols at their destinations
+                // (see redirect_section_relocations()), but an addend in a
+                // REL instruction can't be moved into a symbol that way.
+                if !E::IS_RELA
+                    && sym.ty() == STT_SECTION
+                    && isec.rel_addend(rel) != 0
+                    && requires_thunk(ctx, isec, rel, sym, false)
+                {
+                    error!(
+                        "{}: relocation {} against {} needs a range extension thunk, \
+                         which can't jump to an offset from a section; recompile \
+                         with -ffunction-sections",
+                        isec.display(file),
+                        rel.type_name::<E>(),
+                        sym
+                    );
+                }
+
+                if !sym.is_marked() && requires_thunk(ctx, isec, rel, sym, false) {
+                    sym.mark();
+                }
+            }
+        });
     }
 
     // Remove symbols from thunks if they don't actually need range extension
@@ -520,7 +511,6 @@ pub fn remove_redundant_thunks<E: Target>(ctx: &mut Context<E>) {
         // may be landing pads in other thunks, so compute sizes while all
         // thunks are in place.
         let offsets: Vec<Vec<u64>> = {
-            let ctx: &Context<E> = ctx;
             let osec = &ctx.output_sections[id.index()];
             osec.thunks
                 .par_iter()

@@ -2350,18 +2350,16 @@ pub fn compute_section_sizes<E: Target>(ctx: &mut Context<E>) {
 
     // Output sections are laid out in parallel with each other, and each
     // in parallel over its members; the synthesized chunks follow.
-    let sizes: Vec<(OutputSectionId, u64)> = {
-        let ctx: &Context<E> = ctx;
-        ctx.chunks
-            .par_iter()
-            .filter_map(|&id| match id {
-                ChunkId::Output(osec) if !needs_thunks(ctx, id) => {
-                    Some((osec, chunks::output_section::layout(ctx, osec)))
-                }
-                _ => None,
-            })
-            .collect()
-    };
+    let sizes: Vec<(OutputSectionId, u64)> = ctx
+        .chunks
+        .par_iter()
+        .filter_map(|&id| match id {
+            ChunkId::Output(osec) if !needs_thunks(ctx, id) => {
+                Some((osec, chunks::output_section::layout(ctx, osec)))
+            }
+            _ => None,
+        })
+        .collect();
     for (osec, size) in sizes {
         ctx.output_sections[osec.index()].hdr.shdr.sh_size.set(size);
     }
@@ -3065,43 +3063,40 @@ pub fn compute_import_export<E: Target>(ctx: &mut Context<E>) {
 
     // Export symbols that are not hidden or marked as local.
     // We also want to mark imported symbols as such.
-    {
-        let ctx: &Context<E> = ctx;
-        ctx.objs.par_iter().for_each(|file| {
-            let file_id = FileId::Obj(file.id());
-            for (i, &id) in file.base.global_symbols().iter().enumerate() {
-                let sym = &ctx.symbols[id];
+    ctx.objs.par_iter().for_each(|file| {
+        let file_id = FileId::Obj(file.id());
+        for (i, &id) in file.base.global_symbols().iter().enumerate() {
+            let sym = &ctx.symbols[id];
 
-                // If we are using a symbol in a DSO, we need to import it.
-                if let Some(FileId::Dso(_)) = sym.file() {
-                    sym.set_imported_shared();
+            // If we are using a symbol in a DSO, we need to import it.
+            if let Some(FileId::Dso(_)) = sym.file() {
+                sym.set_imported_shared();
 
-                    // Shared symbols remain weak only if every undefined
-                    // reference is weak. Fragment dummies have no ElfSym.
-                    if file
-                        .base
-                        .elf_syms
-                        .get(file.base.first_global + i)
-                        .is_some_and(|esym| esym.is_undef() && !esym.is_weak())
-                    {
-                        sym.clear_weak_shared();
-                    }
-                    continue;
+                // Shared symbols remain weak only if every undefined
+                // reference is weak. Fragment dummies have no ElfSym.
+                if file
+                    .base
+                    .elf_syms
+                    .get(file.base.first_global + i)
+                    .is_some_and(|esym| esym.is_undef() && !esym.is_weak())
+                {
+                    sym.clear_weak_shared();
                 }
+                continue;
+            }
 
-                // If we have a definition of a symbol, we may want to export it.
-                if sym.file() == Some(file_id) && should_export(ctx, sym) {
-                    sym.set_exported_shared();
+            // If we have a definition of a symbol, we may want to export it.
+            if sym.file() == Some(file_id) && should_export(ctx, sym) {
+                sym.set_exported_shared();
 
-                    // Exported symbols are marked as imported as well by default
-                    // for DSOs.
-                    if ctx.args.shared && !is_protected(ctx, sym) {
-                        sym.set_imported_shared();
-                    }
+                // Exported symbols are marked as imported as well by default
+                // for DSOs.
+                if ctx.args.shared && !is_protected(ctx, sym) {
+                    sym.set_imported_shared();
                 }
             }
-        });
-    }
+        }
+    });
 
     // Apply --dynamic-list, --export-dynamic-symbol and
     // --export-dynamic-symbol-list options.

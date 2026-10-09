@@ -853,18 +853,16 @@ pub fn run_plugin<E: Target>(ctx: &mut Context<E>) {
     }
 
     // Set `referenced_by_regular_obj` bit.
-    let referenced: Vec<SymbolId> = {
-        let ctx: &Context<E> = ctx;
-        ctx.objs
-            .par_iter()
-            .filter(|file| !file.is_lto_input())
-            .flat_map_iter(|file| {
-                file.base.global_symbols().iter().copied().filter(|&id| {
-                    matches!(ctx.symbols[id].file(), Some(FileId::Obj(owner)) if ctx.objs[owner.index()].is_lto_input())
-                })
+    let referenced: Vec<SymbolId> = ctx
+        .objs
+        .par_iter()
+        .filter(|file| !file.is_lto_input())
+        .flat_map_iter(|file| {
+            file.base.global_symbols().iter().copied().filter(|&id| {
+                matches!(ctx.symbols[id].file(), Some(FileId::Obj(owner)) if ctx.objs[owner.index()].is_lto_input())
             })
-            .collect()
-    };
+        })
+        .collect();
     for id in referenced {
         ctx.symbols[id].set_referenced_by_regular_obj(true);
     }
