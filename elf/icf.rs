@@ -67,6 +67,7 @@
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 
+use mold_common::fatal;
 use mold_common::perf::Counter;
 use mold_common::siphash::SipHash13_128;
 use portable_atomic::AtomicU64;
@@ -647,7 +648,7 @@ pub fn icf_sections<E: Target>(ctx: &mut Context<E>) {
         return;
     }
     let mut key = [0u8; 16];
-    mold_common::util::random_bytes(&mut key);
+    getrandom::fill(&mut key).unwrap_or_else(|err| fatal!("cannot get random bytes: {err}"));
 
     uniquify_cies(ctx);
     // Prepare for the propagation rounds.

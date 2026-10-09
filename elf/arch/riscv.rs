@@ -20,8 +20,9 @@
 // Binary literals are grouped by instruction field.
 #![allow(clippy::unusual_byte_groupings)]
 
+use mold_common::bits::{align_to, bit, bits, is_int};
 use mold_common::endian::{read_ul16, read_ul32, write_ul16, write_ul32};
-use mold_common::util::{align_to, bit, bits, encode_uleb, is_int, overwrite_uleb, read_uleb};
+use mold_common::leb128::{encode_uleb, overwrite_uleb, read_uleb};
 use mold_common::{error, fatal};
 
 use crate::arch::{Class, ElfClass, Family, Target};

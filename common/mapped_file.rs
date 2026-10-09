@@ -22,8 +22,9 @@ use rayon::prelude::*;
 
 use crate::error::strerror;
 use crate::fatal;
-use crate::util;
-use crate::util::SyncUnsafeCell;
+use crate::mem::leak;
+use crate::parallel::SyncUnsafeCell;
+use crate::path::clean_path;
 
 /// All files opened during this link.
 static FILE_POOL: Mutex<Vec<&'static MappedFile>> = Mutex::new(Vec::new());
@@ -163,7 +164,7 @@ impl MappedFile {
             SyncUnsafeCell::from_mut(Box::leak(Box::new(map)).as_mut())
         };
 
-        let mf = util::leak(Self {
+        let mf = leak(Self {
             name: path.to_path_buf(),
             data,
             given_fullpath: true,
@@ -199,7 +200,7 @@ impl MappedFile {
 
     /// Returns a view of a member of this archive.
     pub fn slice(&'static self, name: PathBuf, start: usize, size: usize) -> &'static Self {
-        let mf = util::leak(Self {
+        let mf = leak(Self {
             name,
             data: &self.data[start..start + size],
             given_fullpath: true,
@@ -214,7 +215,7 @@ impl MappedFile {
     /// Opens a member whose bytes are stored outside this thin archive.
     pub fn open_thin_member(&'static self, path: &Path) -> &'static Self {
         let member = Self::must_open(path);
-        util::leak(Self {
+        leak(Self {
             name: member.name.clone(),
             data: member.data,
             given_fullpath: true,
@@ -288,7 +289,7 @@ impl MappedFile {
 
 pub fn apply_chroot<'a>(chroot: &Path, path: &'a Path) -> Cow<'a, Path> {
     if path.is_absolute() && !chroot.as_os_str().is_empty() {
-        Cow::Owned(chroot.join(util::clean_path(path).strip_prefix("/").unwrap_or(path)))
+        Cow::Owned(chroot.join(clean_path(path).strip_prefix("/").unwrap_or(path)))
     } else {
         Cow::Borrowed(path)
     }

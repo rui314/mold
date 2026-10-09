@@ -8,11 +8,13 @@ use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
 use bstr::{ByteSlice, ByteVec};
+use mold_common::bits::align_down;
+use mold_common::bytes::{display, is_space, os_str};
 use mold_common::error::strerror;
 use mold_common::glob::{Glob, GlobBuilder};
 use mold_common::mapped_file::MappedFile;
+use mold_common::path::clean_path;
 use mold_common::perf::Counter;
-use mold_common::util::{self, align_down, is_space};
 use mold_common::{fatal, out, warn};
 
 use crate::arch::{Family, emulation_to_target};
@@ -808,13 +810,15 @@ fn read_response_file(path: &Path, depth: usize) -> Vec<Cow<'static, OsStr>> {
             fatal!("{}: premature end of input", path.display());
         }
         if let Some(nested) = tok.strip_prefix(b"@") {
-            expanded.extend(read_response_file(Path::new(util::os_str(nested)), depth + 1));
+            expanded.extend(read_response_file(Path::new(os_str(nested)), depth + 1));
         } else {
             expanded.push(match tok {
-                Cow::Borrowed(bytes) => Cow::Borrowed(util::os_str(bytes)),
-                Cow::Owned(bytes) => Cow::Owned(bytes.into_os_string().unwrap_or_else(|e| {
-                    fatal!("invalid OS string: {}", util::display(e.as_bytes()))
-                })),
+                Cow::Borrowed(bytes) => Cow::Borrowed(os_str(bytes)),
+                Cow::Owned(bytes) => Cow::Owned(
+                    bytes
+                        .into_os_string()
+                        .unwrap_or_else(|e| fatal!("invalid OS string: {}", display(e.as_bytes()))),
+                ),
             });
         }
     }
@@ -826,7 +830,7 @@ pub fn expand_response_files(argv: Vec<OsString>) -> Vec<Cow<'static, OsStr>> {
     let mut args = Vec::new();
     for arg in argv {
         if let Some(path) = arg.as_encoded_bytes().strip_prefix(b"@") {
-            args.extend(read_response_file(Path::new(util::os_str(path)), 1));
+            args.extend(read_response_file(Path::new(os_str(path)), 1));
         } else {
             args.push(Cow::Owned(arg));
         }
@@ -854,13 +858,13 @@ pub fn expand_response_files(argv: Vec<OsString>) -> Vec<Cow<'static, OsStr>> {
 fn match_option<'a>(arg: &'a OsStr, name: &str) -> Option<&'a OsStr> {
     let arg = arg.as_encoded_bytes();
     if let Some(name) = name.strip_prefix("--") {
-        return arg.strip_prefix(b"--")?.strip_prefix(name.as_bytes()).map(util::os_str);
+        return arg.strip_prefix(b"--")?.strip_prefix(name.as_bytes()).map(os_str);
     }
     let arg = arg.strip_prefix(b"-")?;
     if name.len() == 1 {
-        return arg.strip_prefix(name.as_bytes()).map(util::os_str);
+        return arg.strip_prefix(name.as_bytes()).map(os_str);
     }
-    arg.strip_prefix(b"-").unwrap_or(arg).strip_prefix(name.as_bytes()).map(util::os_str)
+    arg.strip_prefix(b"-").unwrap_or(arg).strip_prefix(name.as_bytes()).map(os_str)
 }
 
 fn parse_hex(opt: &str, value: &str) -> u64 {
@@ -932,7 +936,7 @@ fn parse_package_metadata(arg: &[u8]) -> Vec<u8> {
                 || !arg[i + 1].is_ascii_hexdigit()
                 || !arg[i + 2].is_ascii_hexdigit()
             {
-                fatal!("--package-metadata: invalid string: {}", util::display(arg));
+                fatal!("--package-metadata: invalid string: {}", display(arg));
             }
             out.push((from_hex(arg[i + 1]) << 4) | from_hex(arg[i + 2]));
             i += 3;
@@ -1009,7 +1013,7 @@ fn parse_defsym_value(s: &[u8]) -> DefsymValue {
         let Some(v) =
             std::str::from_utf8(hex).ok().and_then(|hex| u64::from_str_radix(hex, 16).ok())
         else {
-            fatal!("-defsym: not a number: {}", util::display(s));
+            fatal!("-defsym: not a number: {}", display(s));
         };
         return DefsymValue::Addr(v);
     }
@@ -1091,7 +1095,7 @@ impl<'a> ArgCursor<'a> {
         } else if name.len() == 1 {
             (rest, 1)
         } else {
-            (util::os_str(rest.as_encoded_bytes().strip_prefix(b"=")?), 1)
+            (os_str(rest.as_encoded_bytes().strip_prefix(b"=")?), 1)
         };
         self.index += count;
         Some(value)
@@ -1099,7 +1103,7 @@ impl<'a> ArgCursor<'a> {
 
     fn read_eq(&mut self, name: &str) -> Option<&'a OsStr> {
         let rest = match_option(self.current(), name)?;
-        let value = util::os_str(rest.as_encoded_bytes().strip_prefix(b"=")?);
+        let value = os_str(rest.as_encoded_bytes().strip_prefix(b"=")?);
         self.index += 1;
         Some(value)
     }
@@ -2024,7 +2028,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             if let Some(rest) = bytes.strip_prefix(b"=").or_else(|| bytes.strip_prefix(b"$SYSROOT"))
             {
                 let mut full = a.sysroot.as_os_str().to_os_string();
-                full.push(util::os_str(rest));
+                full.push(os_str(rest));
                 *path = PathBuf::from(full);
             }
         }
@@ -2033,7 +2037,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
     // Clean library paths by removing redundant `/..` and `/.` so that
     // they are easier to read in log messages.
     for path in &mut a.library_paths {
-        *path = util::clean_path(path);
+        *path = clean_path(path);
     }
 
     if a.shared {
@@ -2072,7 +2076,8 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
     if let ShuffleSections::Shuffle(seed) = &mut a.shuffle_sections {
         *seed = shuffle_sections_seed.unwrap_or_else(|| {
             let mut buf = [0u8; 8];
-            util::random_bytes(&mut buf);
+            getrandom::fill(&mut buf)
+                .unwrap_or_else(|err| fatal!("cannot get random bytes: {err}"));
             u64::from_ne_bytes(buf)
         });
     }
@@ -2269,7 +2274,7 @@ mod tests {
     fn cursor_borrows_non_utf8_separate_and_attached_values() {
         let args: Vec<_> = [b"mold".as_slice(), b"-o", b"out-\xff", b"--plugin-opt=arg-\xfe"]
             .into_iter()
-            .map(|s| Cow::Borrowed(util::os_str(s)))
+            .map(|s| Cow::Borrowed(os_str(s)))
             .collect();
         let mut cursor = ArgCursor { args: &args, index: 1 };
         assert_eq!(cursor.read_arg("o").unwrap().as_encoded_bytes(), b"out-\xff");

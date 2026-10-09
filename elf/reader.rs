@@ -257,7 +257,7 @@ pub fn find_library<E: Target>(
     name: &std::ffi::OsStr,
 ) -> &'static MappedFile {
     if let Some(exact) = name.as_encoded_bytes().strip_prefix(b":") {
-        let exact = std::path::Path::new(mold_common::util::os_str(exact));
+        let exact = std::path::Path::new(mold_common::bytes::os_str(exact));
         let exact = exact.strip_prefix("/").unwrap_or(exact);
         for dir in &ctx.args.library_paths {
             if let Some(mf) = open_library(ctx, rctx, &dir.join(exact)) {
@@ -339,7 +339,7 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
             // Open the input named by this command line argument.
             let mf = if job.is_lib {
                 let mf = find_library(ctx_ref, &rctx, job.name.as_os_str());
-                mold_common::util::leak(MappedFile {
+                mold_common::mem::leak(MappedFile {
                     name: mf.name.clone(),
                     data: mf.data,
                     given_fullpath: false,

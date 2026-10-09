@@ -14,6 +14,7 @@ path = "lib.rs"
 blake3 = "1.8.7"
 bstr = "1"
 crc32fast = "1"
+getrandom = "0.4.3"
 hashbrown = "0.17.1"
 libc.workspace = true
 memchr = "2.8.3"

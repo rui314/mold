@@ -4,11 +4,13 @@ use std::fmt::{self, Write};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use bstr::BStr;
+use mold_common::bytes::{cstr_at, display};
 use mold_common::compress::{zlib_decompress, zstd_decompress};
 use mold_common::concurrent_map::EntryId;
 use mold_common::hyperloglog::HyperLogLog;
+use mold_common::mem::leak_bytes;
+use mold_common::parallel::atomic_or;
 use mold_common::perf::Counter;
-use mold_common::util::{self, cstr_at, leak_bytes};
 use mold_common::{error, fatal};
 use portable_atomic::AtomicU64;
 
@@ -386,7 +388,7 @@ impl<E: Target> InputSection<E> {
 
     #[inline]
     pub fn set_nobits(&self) {
-        util::atomic_or(&self.flags, IS_NOBITS);
+        atomic_or(&self.flags, IS_NOBITS);
     }
 
     #[inline]
@@ -412,17 +414,17 @@ impl<E: Target> InputSection<E> {
 
     #[inline]
     pub fn set_visited(&self) {
-        util::atomic_or(&self.flags, IS_VISITED);
+        atomic_or(&self.flags, IS_VISITED);
     }
 
     #[inline]
     pub fn set_address_taken(&self) {
-        util::atomic_or(&self.flags, IS_ADDRESS_TAKEN);
+        atomic_or(&self.flags, IS_ADDRESS_TAKEN);
     }
 
     #[inline]
     pub fn set_icf_removed(&self) {
-        util::atomic_or(&self.flags, IS_ICF_REMOVED);
+        atomic_or(&self.flags, IS_ICF_REMOVED);
     }
 
     /// Marks the section dead. Returns true if it was alive; the caller is
@@ -434,7 +436,7 @@ impl<E: Target> InputSection<E> {
 
     #[inline]
     pub fn revive(&self) {
-        util::atomic_or(&self.flags, IS_ALIVE);
+        atomic_or(&self.flags, IS_ALIVE);
     }
 
     /// The section contents, decompressed if [`Self::uncompress`] has run.
@@ -544,7 +546,7 @@ impl<E: Target> InputSection<E> {
         let mut buf = vec![0u8; self.sh_size as usize];
         self.copy_contents_to(file, name, input, &mut buf);
         self.contents = leak_bytes(buf).as_ptr() as usize;
-        util::atomic_or(&self.flags, IS_UNCOMPRESSED);
+        atomic_or(&self.flags, IS_UNCOMPRESSED);
     }
 
     /// Copies the contents into `buf`, which must be at most `sh_size`
@@ -673,7 +675,7 @@ impl<E: Target> InputSection<E> {
         debug_assert_ne!(relsec_idx, NO_RELSEC);
         self.relsec_idx = relsec_idx;
         if has_relocs {
-            util::atomic_or(&self.flags, HAS_RELOCS);
+            atomic_or(&self.flags, HAS_RELOCS);
         }
     }
 
@@ -978,7 +980,7 @@ impl<E: Target> InputSection<E> {
     ) {
         let mut msg = String::new();
         match file.base.source_name(&ctx.symbols) {
-            Some(source) => writeln!(msg, ">>> referenced by {}", util::display(source)).unwrap(),
+            Some(source) => writeln!(msg, ">>> referenced by {}", display(source)).unwrap(),
             None => writeln!(msg, ">>> referenced by {}", self.display(file)).unwrap(),
         }
         write!(msg, ">>>               {file}").unwrap();

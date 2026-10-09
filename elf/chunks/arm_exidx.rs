@@ -12,7 +12,7 @@
 //! sorts the records, appends a sentinel and merges adjacent functions
 //! with identical unwind information.
 
-use mold_common::util::sign_extend;
+use mold_common::bits::sign_extend;
 use rayon::prelude::*;
 
 use crate::arch::Target;

@@ -1,7 +1,7 @@
 //! `.note.package`, package metadata.
 
-use mold_common::util::align_to;
-use mold_common::util::write_cstr;
+use mold_common::bits::align_to;
+use mold_common::bytes::write_cstr;
 
 use crate::arch::Target;
 use crate::chunks::ChunkHeader;

@@ -7,14 +7,15 @@ use std::sync::atomic::Ordering;
 use std::sync::{Mutex, RwLock};
 
 use bstr::BStr;
+use mold_common::bits::align_to;
 use mold_common::compress::Compressor;
 use mold_common::error::strerror;
 use mold_common::glob::GlobBuilder;
+use mold_common::mem::leak_bytes;
 use mold_common::output_file::OutputFile;
 use mold_common::parallel::stable_partition;
 use mold_common::perf::Counter;
 use mold_common::tar::TarWriter;
-use mold_common::util::{align_to, leak_bytes};
 use mold_common::worker_local::WorkerLocal;
 use mold_common::{error, fatal, out, warn};
 use rayon::prelude::*;
@@ -1807,7 +1808,7 @@ pub fn check_symbol_version_conflicts<E: Target>(ctx: &Context<E>) {
             error!(
                 "duplicate symbol: {file}: {}: {}",
                 ctx.file_display(sym2.file().unwrap()),
-                mold_common::util::display(file.base.symbol_name_in(sym.sym_idx() as usize))
+                mold_common::bytes::display(file.base.symbol_name_in(sym.sym_idx() as usize))
             );
         }
     });
@@ -2845,10 +2846,10 @@ pub fn apply_version_script<E: Target>(ctx: &mut Context<E>) {
         }
         if v.is_cpp {
             if !cpp_matcher.add(v.pattern, priority) {
-                fatal!("invalid version pattern: {}", mold_common::util::display(v.pattern));
+                fatal!("invalid version pattern: {}", mold_common::bytes::display(v.pattern));
             }
         } else if has_wildcard(v.pattern) && !matcher.add(v.pattern, priority) {
-            fatal!("invalid version pattern: {}", mold_common::util::display(v.pattern));
+            fatal!("invalid version pattern: {}", mold_common::bytes::display(v.pattern));
         }
     }
 
@@ -2890,7 +2891,7 @@ pub fn apply_version_script<E: Target>(ctx: &mut Context<E>) {
                 warn!(
                     "{}: cannot assign version `{}` to symbol `{sym}`: symbol not found",
                     v.source.display(),
-                    mold_common::util::display(v.ver_str)
+                    mold_common::bytes::display(v.ver_str)
                 );
             }
             if matches!(sym.file(), Some(FileId::Obj(_))) {
@@ -2960,7 +2961,7 @@ pub fn parse_symbol_version<E: Target>(ctx: &mut Context<E>) {
                 "{}: symbol {} has undefined version {}",
                 file,
                 ctx.symbols[id],
-                mold_common::util::display(ver)
+                mold_common::bytes::display(ver)
             );
             continue;
         };
@@ -3115,7 +3116,7 @@ pub fn compute_import_export<E: Target>(ctx: &mut Context<E>) {
                 fatal!(
                     "{}: invalid dynamic list entry: {}",
                     p.source.display(),
-                    mold_common::util::display(p.pattern)
+                    mold_common::bytes::display(p.pattern)
                 );
             }
             continue;
@@ -3125,7 +3126,7 @@ pub fn compute_import_export<E: Target>(ctx: &mut Context<E>) {
                 fatal!(
                     "{}: invalid dynamic list entry: {}",
                     p.source.display(),
-                    mold_common::util::display(p.pattern)
+                    mold_common::bytes::display(p.pattern)
                 );
             }
             continue;
@@ -3193,7 +3194,7 @@ pub fn compute_address_significance<E: Target>(ctx: &Context<E>) {
         // If .llvm_addrsig is available, use it.
         if let Some(mut p) = file.llvm_addrsig {
             while !p.is_empty() {
-                let idx = mold_common::util::read_uleb(&mut p) as usize;
+                let idx = mold_common::leb128::read_uleb(&mut p) as usize;
                 let sym = &ctx.symbols[file.base.symbols[idx]];
                 if let Some(r) = sym.input_section() {
                     ctx.input_section(r).set_address_taken();
@@ -4347,7 +4348,7 @@ pub fn write_dependency_file<E: Target>(ctx: &Context<E>) {
     let mut seen = HashSet::new();
     for mf in mold_common::mapped_file::file_pool() {
         if mf.is_dependency() && mf.parent.is_none() {
-            let path = mold_common::util::clean_path(&mf.name);
+            let path = mold_common::path::clean_path(&mf.name);
             if seen.insert(path.clone()) {
                 deps.push(path);
             }

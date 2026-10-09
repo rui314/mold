@@ -5360,7 +5360,7 @@ pub fn compute_uuid<E: Target>(
     let content_uuid = ctx.args.uuid && !ctx.args.random_uuid;
     if ctx.args.uuid && ctx.args.random_uuid {
         let mut uuid = [0; 16];
-        crate::util::random_bytes(&mut uuid);
+        getrandom::fill(&mut uuid).unwrap_or_else(|err| fatal!("cannot get random bytes: {err}"));
         set_uuid(&uuid, buf);
     }
     let mut hashes: Vec<[u8; 32]> = Vec::new();

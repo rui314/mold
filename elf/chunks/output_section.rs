@@ -3,7 +3,7 @@
 use std::sync::atomic::Ordering;
 
 use bstr::BStr;
-use mold_common::util::align_to;
+use mold_common::bits::align_to;
 use mold_common::{error, warn};
 use rayon::prelude::*;
 

@@ -156,7 +156,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
             }
             cmdline::DynamicListSource::Pattern(pattern) => {
                 ctx.dynamic_list_patterns.push(crate::linker_script::DynamicPattern {
-                    pattern: mold_common::util::leak_bytes(pattern),
+                    pattern: mold_common::mem::leak_bytes(pattern),
                     source: std::path::Path::new("<command line>"),
                     is_cpp: false,
                 });

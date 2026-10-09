@@ -23,7 +23,7 @@ pub fn new<E: Target>(ctx: &Context<E>, osec_id: OutputSectionId) -> RelocSectio
     let osec = &ctx.output_sections[osec_id.index()];
     let (prefix, ty) =
         if E::IS_RELA { (b".rela".as_slice(), SHT_RELA) } else { (b".rel".as_slice(), SHT_REL) };
-    let name = BStr::new(mold_common::util::leak_bytes([prefix, osec.hdr.name.as_ref()].concat()));
+    let name = BStr::new(mold_common::mem::leak_bytes([prefix, osec.hdr.name.as_ref()].concat()));
     let mut hdr = ChunkHeader::<E>::with_name(name, ty, SHF_INFO_LINK as u64);
     hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
     let entsize = size_of::<ElfRel<E>>() as u64;

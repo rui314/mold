@@ -32,7 +32,7 @@
 
 use std::collections::HashMap;
 
-use mold_common::util::align_to;
+use mold_common::bits::align_to;
 
 use crate::arch::{Family, Target};
 use crate::chunks::comdat_group::ComdatGroupSection;

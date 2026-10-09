@@ -7,9 +7,9 @@
 
 use hashbrown::HashMap;
 
+use mold_common::bits::is_int;
 use mold_common::output_file::split_at_offsets;
 use mold_common::siphash::SipHash13_128;
-use mold_common::util::is_int;
 use mold_common::{error, fatal};
 use rayon::prelude::*;
 
@@ -47,7 +47,7 @@ impl CieClasses {
 /// collide, as ICF does.
 pub fn classify_cies<E: Target>(ctx: &Context<E>) -> CieClasses {
     let mut key = [0u8; 16];
-    mold_common::util::random_bytes(&mut key);
+    getrandom::fill(&mut key).unwrap_or_else(|err| fatal!("cannot get random bytes: {err}"));
     let hashes: Vec<u128> = ctx
         .objs
         .par_iter()

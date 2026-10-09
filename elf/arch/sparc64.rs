@@ -59,8 +59,8 @@
 
 use std::sync::atomic::Ordering;
 
+use mold_common::bits::bits;
 use mold_common::endian::{read_ub32, write_ub16, write_ub32, write_ub64};
-use mold_common::util::bits;
 use mold_common::{error, fatal};
 
 use crate::arch::{Family, Target};

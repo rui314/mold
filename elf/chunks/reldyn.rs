@@ -1,6 +1,6 @@
 //! `.rel.dyn` and `.rela.dyn`, dynamic relocations.
 
-use mold_common::util::encode_sleb;
+use mold_common::leb128::encode_sleb;
 use rayon::prelude::*;
 
 use crate::arch::Target;

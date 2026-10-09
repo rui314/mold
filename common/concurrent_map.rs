@@ -145,7 +145,7 @@ impl<T> ConcurrentMap<T> {
         let entries = allocate_entries(bufsize);
         // SAFETY: the range is the fresh allocation; the advice is only a
         // hint on targets that support it.
-        unsafe { crate::util::madvise_hugepage(entries.cast(), bufsize) };
+        unsafe { crate::mem::madvise_hugepage(entries.cast(), bufsize) };
         Self { entries, nbuckets }
     }
 

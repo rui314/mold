@@ -71,10 +71,11 @@
 use mold_common::concurrent_map::{ConcurrentMap, EntryId, FrozenMap};
 use mold_common::fatal;
 use mold_common::hyperloglog::HyperLogLog;
+use mold_common::leb128::{read_sleb, read_uleb};
+use mold_common::mem::leak_bytes;
 use mold_common::output_file::{OutputFile, split_at_offsets};
+use mold_common::parallel::SyncUnsafeCell;
 use mold_common::perf::Timer;
-use mold_common::util::SyncUnsafeCell;
-use mold_common::util::{leak_bytes, read_sleb, read_uleb};
 use rayon::prelude::*;
 
 use crate::arch::Target;

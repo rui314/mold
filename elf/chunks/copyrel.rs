@@ -1,7 +1,7 @@
 //! `.copyrel` and `.copyrel.rel.ro`, storage for copy relocations.
 
+use mold_common::bits::align_to;
 use mold_common::error;
-use mold_common::util::align_to;
 
 use crate::arch::Target;
 use crate::chunks::ChunkHeader;

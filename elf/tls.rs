@@ -151,7 +151,7 @@
 //! relative to the copy is decided by each psABI. The dynamic thread
 //! pointer (DTP) is the base `__tls_get_addr` returns for offset 0.
 
-use mold_common::util::{align_down, align_to};
+use mold_common::bits::{align_down, align_to};
 
 use crate::arch::{Family, Target};
 use crate::elf::{ElfPhdr, PT_TLS, PhdrRecord};

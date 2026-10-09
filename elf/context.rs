@@ -273,9 +273,9 @@ impl<E: Target> Context<E> {
     pub fn new(mut args: Args, cmdline_args: impl Into<Arc<[Cow<'static, OsStr>]>>) -> Self {
         let mut symbols = SymbolTable::new();
         let syms = SyntheticSymbols {
-            entry: symbols.intern(mold_common::util::leak_bytes(std::mem::take(&mut args.entry))),
-            init: symbols.intern(mold_common::util::leak_bytes(std::mem::take(&mut args.init))),
-            fini: symbols.intern(mold_common::util::leak_bytes(std::mem::take(&mut args.fini))),
+            entry: symbols.intern(mold_common::mem::leak_bytes(std::mem::take(&mut args.entry))),
+            init: symbols.intern(mold_common::mem::leak_bytes(std::mem::take(&mut args.init))),
+            fini: symbols.intern(mold_common::mem::leak_bytes(std::mem::take(&mut args.fini))),
             ..SyntheticSymbols::default()
         };
         let timers = if args.perf { Timers::new() } else { Timers::disabled() };

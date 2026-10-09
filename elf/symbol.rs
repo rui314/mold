@@ -19,7 +19,7 @@ use hashbrown::{Equivalent, HashMap};
 use mold_common::demangle::{demangle_cpp, demangle_rust};
 use mold_common::error::demangle_enabled;
 use mold_common::hyperloglog::HyperLogLog;
-use mold_common::util::SyncUnsafeCell;
+use mold_common::parallel::SyncUnsafeCell;
 use rayon::prelude::*;
 
 use crate::arch::Target;
@@ -548,7 +548,7 @@ impl Symbol {
     #[inline]
     pub fn set_skip_dso(&self, on: bool) {
         if on {
-            mold_common::util::atomic_or(&self.mu, SYMBOL_SKIP_DSO);
+            mold_common::parallel::atomic_or(&self.mu, SYMBOL_SKIP_DSO);
         } else {
             self.mu.fetch_and(!SYMBOL_SKIP_DSO, Ordering::Relaxed);
         }
@@ -669,7 +669,7 @@ impl Symbol {
     #[inline]
     pub fn add_flags(&self, flags: u8) {
         debug_assert_eq!(flags & WRITE_TO_SYMTAB, 0);
-        mold_common::util::atomic_or(&self.flags, flags);
+        mold_common::parallel::atomic_or(&self.flags, flags);
     }
 
     // The following setters are for passes that update symbols in parallel
@@ -708,7 +708,7 @@ impl Symbol {
 
     #[inline]
     pub fn set_write_to_symtab(&self) {
-        mold_common::util::atomic_or(&self.flags, WRITE_TO_SYMTAB);
+        mold_common::parallel::atomic_or(&self.flags, WRITE_TO_SYMTAB);
     }
 
     #[inline]
@@ -1444,7 +1444,7 @@ fn madvise_hugepage<T>(values: &Vec<T>) {
     };
     // SAFETY: the vector's allocation covers its capacity; the helper leaves
     // its possibly shared boundary pages untouched.
-    unsafe { mold_common::util::madvise_hugepage_interior(values.as_ptr().cast(), byte_len) };
+    unsafe { mold_common::mem::madvise_hugepage_interior(values.as_ptr().cast(), byte_len) };
 }
 
 /// The vector of all symbols, and the index of global ones by name.
@@ -1504,7 +1504,7 @@ impl SymbolTable {
         if let Some(id) = self.lookup(key) {
             return id;
         }
-        self.intern(mold_common::util::leak_bytes(key.to_vec()))
+        self.intern(mold_common::mem::leak_bytes(key.to_vec()))
     }
 
     /// Interns `key` for a symbol named `name`, a prefix of the key.

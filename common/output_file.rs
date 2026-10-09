@@ -191,7 +191,7 @@ fn map_file(file: &File, len: usize) -> io::Result<Option<MmapMut>> {
     // it, the kernel backs the mapping with large folios and the
     // number of faults drops by an order of magnitude.
     // SAFETY: the range is the mapping; the advice is only a hint.
-    unsafe { crate::util::madvise_hugepage(map.as_mut_ptr(), map.len()) };
+    unsafe { crate::mem::madvise_hugepage(map.as_mut_ptr(), map.len()) };
     Ok(Some(map))
 }
 

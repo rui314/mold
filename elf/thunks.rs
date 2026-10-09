@@ -21,8 +21,8 @@
 //! removed. Sections only shrink in the second pass, so no existing
 //! reference to a thunk goes out of range because of it.
 
+use mold_common::bits::align_to;
 use mold_common::error;
-use mold_common::util::align_to;
 use rayon::prelude::*;
 
 use crate::arch::{Family, Target};

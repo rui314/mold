@@ -13,11 +13,14 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{OnceLock, RwLock};
 
+use mold_common::bits::{align_to, bits};
+use mold_common::bytes::{cstr_at, display};
+use mold_common::leb128::{read_sleb, read_uleb};
 use mold_common::mapped_file::MappedFile;
+use mold_common::mem::leak_bytes;
+use mold_common::parallel::SyncUnsafeCell;
+use mold_common::path::path_clean;
 use mold_common::perf::Counter;
-use mold_common::util::{
-    self, SyncUnsafeCell, align_to, bits, cstr_at, leak_bytes, path_clean, read_uleb,
-};
 use mold_common::{error, fatal, out, warn};
 use rayon::prelude::*;
 
@@ -859,7 +862,7 @@ pub fn display_file<'a>(filename: &'a str, archive_name: &'a Path) -> impl fmt::
         if archive_name.as_os_str().is_empty() {
             write!(f, "{}", path_clean(filename))
         } else {
-            write!(f, "{}({})", mold_common::util::clean_path(archive_name).display(), filename)
+            write!(f, "{}({})", mold_common::path::clean_path(archive_name).display(), filename)
         }
     })
 }
@@ -1012,13 +1015,13 @@ impl<E: Target> Iterator for CrelReader<'_, E> {
         self.offset = self.offset.wrapping_add(delta << self.scale);
 
         if flags & 1 != 0 {
-            self.r_sym += util::read_sleb(&mut self.data);
+            self.r_sym += read_sleb(&mut self.data);
         }
         if flags & 2 != 0 {
-            self.r_type += util::read_sleb(&mut self.data);
+            self.r_type += read_sleb(&mut self.data);
         }
         if self.is_rela && flags & 4 != 0 {
-            self.addend = self.addend.wrapping_add(util::read_sleb(&mut self.data));
+            self.addend = self.addend.wrapping_add(read_sleb(&mut self.data));
         }
 
         Some(ElfRel::<E>::new(self.offset, self.r_type as u32, self.r_sym as u32, self.addend))
@@ -1694,7 +1697,7 @@ impl<E: Target> ObjectFile<E> {
                     if !is_known_section_type::<E>(shdr) {
                         fatal!(
                             "{self}: {}: unsupported section type: 0x{:x}",
-                            util::display(name),
+                            display(name),
                             shdr.sh_type.get()
                         );
                     }
@@ -2945,11 +2948,7 @@ fn parse_fde_encoding<E: Target>(file: &ObjectFile<E>, isec: &InputSection<E>, d
             break 'enc DW_EH_PE_absptr as u8;
         }
         if aug[0] != b'z' {
-            fatal!(
-                "{}: unsupported CIE augmentation string: {}",
-                isec.display(file),
-                util::display(aug)
-            );
+            fatal!("{}: unsupported CIE augmentation string: {}", isec.display(file), display(aug));
         }
 
         // ULEB128 and SLEB128 values have the same framing, so read_uleb
@@ -2984,7 +2983,7 @@ fn parse_fde_encoding<E: Target>(file: &ObjectFile<E>, isec: &InputSection<E>, d
                 _ => fatal!(
                     "{}: unsupported CIE augmentation string: {}",
                     isec.display(file),
-                    util::display(aug)
+                    display(aug)
                 ),
             }
         }
@@ -3161,7 +3160,7 @@ impl<E: Target> SharedFile<E> {
                 if !esym.is_undef() {
                     fatal!(
                         "{self}: invalid version index 0 for defined symbol {}",
-                        util::display(cstr_at(self.base.symbol_strtab, esym.st_name() as usize))
+                        display(cstr_at(self.base.symbol_strtab, esym.st_name() as usize))
                     );
                 }
                 ver = VER_NDX_GLOBAL as u16;

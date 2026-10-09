@@ -25,9 +25,9 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::bytes::{cstr_at, os_str};
 use crate::fatal;
 use crate::mapped_file::{MappedFile, apply_chroot};
-use crate::util;
 
 const HEADER_SIZE: usize = 60;
 
@@ -60,8 +60,8 @@ impl<'a> ArHeader<'a> {
             let len = parse_decimal(rest);
             let (name, remaining) = body.split_at(len.min(body.len()));
             *body = remaining;
-            let name = util::cstr_at(name, 0);
-            return PathBuf::from(util::os_str(name));
+            let name = cstr_at(name, 0);
+            return PathBuf::from(os_str(name));
         }
 
         // SysV-style long filename
@@ -69,12 +69,12 @@ impl<'a> ArHeader<'a> {
             let offset = parse_decimal(rest);
             let start = strtab.get(offset..).unwrap_or(&[]);
             let end = memchr::memmem::find(start, b"/\n").unwrap_or(start.len());
-            return PathBuf::from(util::os_str(&start[..end]));
+            return PathBuf::from(os_str(&start[..end]));
         }
 
         // Short filename
         let end = memchr::memchr(b'/', self.name).unwrap_or(self.name.len());
-        PathBuf::from(util::os_str(&self.name[..end]))
+        PathBuf::from(os_str(&self.name[..end]))
     }
 }
 

@@ -50,8 +50,8 @@
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 
+use mold_common::bits::{bits, is_int};
 use mold_common::endian::{read_ub16, read_ub32, write_ub16, write_ub32, write_ub64};
-use mold_common::util::{bits, is_int};
 use mold_common::{error, fatal};
 use rayon::prelude::*;
 

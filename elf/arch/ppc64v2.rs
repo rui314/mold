@@ -86,8 +86,8 @@
 
 use std::sync::atomic::Ordering;
 
+use mold_common::bits::{bits, is_int};
 use mold_common::endian::{read_ul16, read_ul32, write_ul16, write_ul32, write_ul64};
-use mold_common::util::{bits, is_int};
 use mold_common::{error, fatal};
 
 use crate::arch::{Family, Target, ThunkLayout};

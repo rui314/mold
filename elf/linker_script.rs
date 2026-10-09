@@ -8,8 +8,10 @@
 
 use std::path::{Path, PathBuf};
 
+use mold_common::bytes::{display, os_str};
 use mold_common::mapped_file::{MappedFile, apply_chroot, must_open_file};
-use mold_common::util;
+use mold_common::mem::leak_bytes;
+use mold_common::path::clean_path;
 use mold_common::{fatal, warn};
 
 use crate::arch::Target;
@@ -78,7 +80,7 @@ fn unquote_pattern(tok: &'static [u8]) -> &'static [u8] {
         }
         out.push(c);
     }
-    util::leak_bytes(out)
+    leak_bytes(out)
 }
 
 /// Reports a syntax error, pointing at the offending token.
@@ -90,7 +92,7 @@ fn syntax_error(mf: &MappedFile, tok: &[u8], msg: &str) -> ! {
     let label = format!("{}:{}: ", mf.name.display(), lineno);
     let indent = "mold: fatal: ".len() + label.len();
     let column = pos - line_start;
-    fatal!("{label}{}\n{}^ {msg}", util::display(line), " ".repeat(indent + column));
+    fatal!("{label}{}\n{}^ {msg}", display(line), " ".repeat(indent + column));
 }
 
 fn tokenize(mf: &'static MappedFile) -> Vec<&'static [u8]> {
@@ -163,7 +165,7 @@ fn resolve_path<E: Target>(
     check_target: bool,
 ) -> &'static MappedFile {
     let s = unquote(tok);
-    let name = Path::new(util::os_str(s));
+    let name = Path::new(os_str(s));
     let chroot = &ctx.args.chroot;
     // Opens `path`, to which --chroot has already been applied.
     let open = |path: &Path| -> Option<&'static MappedFile> {
@@ -183,7 +185,7 @@ fn resolve_path<E: Target>(
     };
     let in_sysroot = |suffix: &[u8]| {
         let mut path = ctx.args.sysroot.as_os_str().to_os_string();
-        path.push(util::os_str(suffix));
+        path.push(os_str(suffix));
         PathBuf::from(path)
     };
 
@@ -195,10 +197,10 @@ fn resolve_path<E: Target>(
         return must_open_file(chroot, in_sysroot(rest));
     }
     if let Some(lib) = s.strip_prefix(b"-l") {
-        return reader::find_library(ctx, rctx, util::os_str(lib));
+        return reader::find_library(ctx, rctx, os_str(lib));
     }
     if !name.is_absolute() {
-        let path = util::clean_path(&mf.name.parent().unwrap_or(Path::new(".")).join(name));
+        let path = clean_path(&mf.name.parent().unwrap_or(Path::new(".")).join(name));
         if let Some(mf) = open(&path) {
             return mf;
         }
@@ -212,7 +214,7 @@ fn resolve_path<E: Target>(
             return mf;
         }
     }
-    syntax_error(mf, tok, &format!("library not found: {}", util::display(s)));
+    syntax_error(mf, tok, &format!("library not found: {}", display(s)));
 }
 
 /// The target a script produces output for: the one `OUTPUT_FORMAT`

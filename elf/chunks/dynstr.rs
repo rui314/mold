@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use mold_common::util::write_cstr;
+use mold_common::bytes::write_cstr;
 use rayon::prelude::*;
 
 use crate::arch::Target;

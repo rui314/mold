@@ -35,7 +35,7 @@ use std::sync::{Mutex, OnceLock};
 
 use mold_common::error::strerror;
 use mold_common::mapped_file::{MappedFile, must_open_file};
-use mold_common::util::leak_bytes;
+use mold_common::mem::leak_bytes;
 use mold_common::{fatal, out, warn};
 use rayon::prelude::*;
 
@@ -335,7 +335,7 @@ unsafe extern "C" fn add_symbols(
 /// Receives an object file the plugin compiled.
 unsafe extern "C" fn add_input_file<E: Target>(path: *const c_char) -> c_int {
     let ctx = unsafe { &mut *CONTEXT.load(Ordering::Acquire).cast::<Context<E>>() };
-    let path = mold_common::util::os_str(unsafe { CStr::from_ptr(path) }.to_bytes());
+    let path = mold_common::bytes::os_str(unsafe { CStr::from_ptr(path) }.to_bytes());
     let mf = must_open_file(std::path::Path::new(""), path);
     mf.set_dependency(false);
 

@@ -20,8 +20,8 @@
 //! Instructions are little-endian even on big-endian targets, where only
 //! data is byte-swapped.
 
+use mold_common::bits::{bits, is_int};
 use mold_common::endian::{read_ul32, write_ul32};
-use mold_common::util::{bits, is_int};
 use mold_common::{error, fatal};
 
 use crate::arch::{Family, Target, ThunkLayout};

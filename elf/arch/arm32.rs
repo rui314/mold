@@ -44,8 +44,8 @@
 //! output; see [`swap_code_bytes`]. Linker-synthesized code is written
 //! in little-endian form to begin with.
 
+use mold_common::bits::{align_to, bit, bits, is_int, sign_extend};
 use mold_common::endian::write_ul32;
-use mold_common::util::{align_to, bit, bits, is_int, sign_extend};
 use mold_common::{error, fatal};
 use rayon::prelude::*;
 

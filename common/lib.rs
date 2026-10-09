@@ -2,6 +2,8 @@
 //! object files.
 
 pub mod archive_file;
+pub mod bits;
+pub mod bytes;
 pub mod cityhash;
 pub mod compress;
 pub mod concurrent_map;
@@ -11,15 +13,17 @@ pub mod error;
 pub mod glob;
 pub mod hyperloglog;
 pub mod jobs;
+pub mod leb128;
 pub mod mapped_file;
+pub mod mem;
 pub mod output_file;
 pub mod parallel;
+pub mod path;
 pub mod perf;
 mod prefetch;
 pub mod siphash;
 pub mod subprocess;
 pub mod tar;
-pub mod util;
 pub mod worker_local;
 
 pub use prefetch::prefetch;
