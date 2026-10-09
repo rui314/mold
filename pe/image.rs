@@ -8,6 +8,7 @@ use std::rc::Rc;
 use mold_common::fatal;
 use mold_common::util::align_to;
 
+use crate::arch::x86_64::X86_64;
 use crate::arch::{Arch, Fixup, RelocError, Target};
 use crate::coff::{self, SCN_CNT_CODE, SCN_CNT_INITIALIZED_DATA, SCN_CNT_UNINITIALIZED_DATA};
 use crate::link::{Linker, Loc};
@@ -84,8 +85,18 @@ struct OutSection {
     raw_size: u64,
 }
 
-/// Lays out the live chunks of `ln` and returns the image.
-pub(crate) fn build<A: Arch>(ln: &mut Linker<'_>, entry: u32) -> Vec<u8> {
+/// Lays out the live chunks of `ln` and returns the image, for the machine
+/// type of the input objects.
+pub(crate) fn build(ln: &mut Linker<'_>, entry: u32) -> Vec<u8> {
+    match ln.machine {
+        Some(machine) if machine == X86_64::MACHINE => build_for::<X86_64>(ln, entry),
+        Some(machine) => fatal!("unsupported machine type 0x{machine:04x}"),
+        None => fatal!("no input object files"),
+    }
+}
+
+/// Lays out the live chunks of `ln` and returns the image for architecture `A`.
+fn build_for<A: Arch>(ln: &mut Linker<'_>, entry: u32) -> Vec<u8> {
     let image_base = ln.opts.image_base.unwrap_or(DEFAULT_IMAGE_BASE);
 
     let mut outs = group_chunks(ln);

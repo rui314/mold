@@ -11,6 +11,22 @@ pub(crate) const BASE_HIGHLOW: u8 = 3;
 /// The base relocation type for a 64-bit absolute address (`IMAGE_REL_BASED_DIR64`).
 pub(crate) const BASE_DIR64: u8 = 10;
 
+/// The COFF machine types that the linker can produce images for.
+const MACHINES: &[u16] = &[x86_64::MACHINE];
+
+/// Returns true if the linker can produce images for a COFF machine type.
+pub(crate) fn supports(machine: u16) -> bool {
+    MACHINES.contains(&machine)
+}
+
+/// Returns the COFF machine type that a `/machine:` option names, if the linker supports it.
+pub(crate) fn machine_by_name(name: &str) -> Option<u16> {
+    match name.to_ascii_lowercase().as_str() {
+        "x64" | "amd64" => Some(x86_64::MACHINE),
+        _ => None,
+    }
+}
+
 /// Where a relocation points.
 #[derive(Clone, Copy)]
 pub(crate) enum Target {

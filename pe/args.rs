@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 
 use mold_common::fatal;
 
+use crate::arch;
+
 pub const SUBSYSTEM_WINDOWS: u16 = 2;
 pub const SUBSYSTEM_CONSOLE: u16 = 3;
 
@@ -46,6 +48,8 @@ pub struct Options {
     pub nxcompat: bool,
     /// Symbols that the link must include, from `/include:`.
     pub includes: Vec<String>,
+    /// The machine type that `/machine:` names, if given.
+    pub machine: Option<u16>,
     /// Set by /nodefaultlib, which makes the link ignore libraries that objects ask for.
     pub no_default_lib: bool,
     pub inputs: Vec<PathBuf>,
@@ -68,6 +72,7 @@ pub fn parse(argv: &[OsString]) -> Options {
         gc_sections: true,
         nxcompat: true,
         includes: Vec::new(),
+        machine: None,
         no_default_lib: false,
         inputs: Vec::new(),
     };
@@ -107,9 +112,10 @@ pub fn parse(argv: &[OsString]) -> Options {
                 opts.image_base = Some(base);
             }
             ("machine", Some(v)) => {
-                if !v.eq_ignore_ascii_case("x64") && !v.eq_ignore_ascii_case("amd64") {
-                    fatal!("unsupported machine: {v}; only x64 is supported");
-                }
+                let Some(machine) = arch::machine_by_name(v) else {
+                    fatal!("unsupported machine: {v}");
+                };
+                opts.machine = Some(machine);
             }
             ("opt", Some(v)) => {
                 for part in v.split(',') {

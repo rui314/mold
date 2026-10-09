@@ -2,7 +2,7 @@
 //! the archive members that rustc and clang emit for x86_64 Windows and UEFI
 //! targets.
 
-use crate::arch::x86_64::MACHINE;
+use crate::arch;
 
 pub const SCN_CNT_CODE: u32 = 0x0000_0020;
 pub const SCN_CNT_INITIALIZED_DATA: u32 = 0x0000_0040;
@@ -34,6 +34,7 @@ const RELOC_SIZE: usize = 10;
 /// A parsed object file. Symbol indices are COFF symbol table indices, so
 /// auxiliary records keep their slots in `symbols`, marked by `aux_slot`.
 pub struct Object<'a> {
+    pub machine: u16,
     pub name: String,
     pub sections: Vec<Section<'a>>,
     pub symbols: Vec<Symbol<'a>>,
@@ -78,16 +79,20 @@ pub struct Symbol<'a> {
     pub weak_default: Option<u32>,
 }
 
-/// Returns true if `data` starts with a COFF file header for x86_64.
+/// The machine types of COFF object files. Objects of these machines are
+/// recognized as COFF even when the linker doesn't support their machine.
+const KNOWN_MACHINES: &[u16] = &[0x014c, 0x01c0, 0x01c4, 0x8664, 0xaa64];
+
+/// Returns true if `data` starts with a COFF file header.
 pub fn is_coff_object(data: &[u8]) -> bool {
-    data.len() >= 2 && u16::from_le_bytes([data[0], data[1]]) == MACHINE
+    data.len() >= 2 && KNOWN_MACHINES.contains(&u16::from_le_bytes([data[0], data[1]]))
 }
 
 pub fn parse<'a>(name: String, data: &'a [u8]) -> Result<Object<'a>, String> {
     let truncated = || format!("{name}: truncated COFF object file");
     let header = get(data, 0, 20).ok_or_else(truncated)?;
     let machine = le16(&header[0..2]);
-    if machine != MACHINE {
+    if !arch::supports(machine) {
         return Err(format!("{name}: unsupported machine type 0x{machine:04x}"));
     }
     let nsec = le16(&header[2..4]) as usize;
@@ -189,7 +194,7 @@ pub fn parse<'a>(name: String, data: &'a [u8]) -> Result<Object<'a>, String> {
         }
     }
 
-    Ok(Object { name, sections, symbols })
+    Ok(Object { name, machine, sections, symbols })
 }
 
 fn read_relocs(

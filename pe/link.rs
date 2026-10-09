@@ -19,7 +19,6 @@ use mold_common::fatal;
 use mold_common::mapped_file::MappedFile;
 use mold_common::output_file::OutputFile;
 
-use crate::arch;
 use crate::args::{self, Options};
 use crate::coff::{self, Object};
 use crate::image;
@@ -84,6 +83,8 @@ pub(crate) struct Linker<'a> {
     pub opts: Options,
     pub objs: Vec<Rc<Object<'a>>>,
     pub included: Vec<bool>,
+    /// The machine type of the input objects, from the first object included.
+    pub machine: Option<u16>,
     /// The order in which objects were included, which lld uses to order its chunks.
     pub file_seq: Vec<u32>,
     /// The resolved locations of each object's symbols, indexed by symbol.
@@ -110,6 +111,7 @@ impl<'a> Linker<'a> {
             opts,
             objs: Vec::new(),
             included: Vec::new(),
+            machine: None,
             file_seq: Vec::new(),
             locs: Vec::new(),
             sec_chunks: Vec::new(),
@@ -253,6 +255,19 @@ impl<'a> Linker<'a> {
     /// it refers to are recorded, and may queue archive members.
     fn include(&mut self, oi: u32) {
         self.included[oi as usize] = true;
+        let machine = self.objs[oi as usize].machine;
+        match (self.machine, self.opts.machine) {
+            (_, Some(want)) if want != machine => fatal!(
+                "{}: machine type 0x{machine:04x} does not match /machine:0x{want:04x}",
+                self.objs[oi as usize].name
+            ),
+            (Some(first), _) if first != machine => fatal!(
+                "{}: machine type 0x{machine:04x} does not match 0x{first:04x} of the other inputs",
+                self.objs[oi as usize].name
+            ),
+            (None, _) => self.machine = Some(machine),
+            _ => {}
+        }
         let obj = Rc::clone(&self.objs[oi as usize]);
 
         let mut sec_chunks = vec![NO_CHUNK; obj.sections.len()];
@@ -687,7 +702,7 @@ pub fn link(opts: Options) {
     ln.check_undefined();
     ln.compute_liveness();
 
-    let image = image::build::<arch::x86_64::X86_64>(&mut ln, entry);
+    let image = image::build(&mut ln, entry);
 
     let mut out = OutputFile::open(&output, image.len() as u64, 0o755, false, false);
     out.buf().copy_from_slice(&image);
