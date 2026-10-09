@@ -90,10 +90,13 @@ fi
 # arguments, which take the place of the macOS version a script names:
 # -platform_version ${PLATFORM_VERSION:-macos 14.0 14.0}.
 
-# The runner sets $mold to the linker under test; default to the debug
-# build for running a script by hand.
+# The runner sets $mold to the linker under test, a symlink named
+# ld64.mold so that mold acts as the Mach-O linker. For running a script
+# by hand, make one to the debug build.
 if [ -z "$mold" ]; then
-  mold="$(cd "$(dirname "$0")"/../.. && pwd)/target/debug/mold"
+  mkdir -p $TESTDIR
+  ln -sf "$(cd "$(dirname "$0")"/../.. && pwd)/target/debug/mold" $TESTDIR/ld64.mold
+  mold=$PWD/$TESTDIR/ld64.mold
 fi
 
 # Common functions

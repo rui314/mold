@@ -325,7 +325,8 @@ fn clear_results(dir: &Path) -> io::Result<()> {
 
 /// Tests run from a directory beside the linker under test and write
 /// their outputs under out/test there, so nothing generated lands in the
-/// source tree.
+/// source tree. The directory also holds a symlink to the linker named
+/// ld64.mold, the name under which mold acts as the Mach-O linker.
 fn prepare_work_dir(mold: &Path) -> io::Result<PathBuf> {
     let mold = mold.canonicalize()?;
     let profile_dir = mold.parent().ok_or_else(|| {
@@ -336,6 +337,14 @@ fn prepare_work_dir(mold: &Path) -> io::Result<PathBuf> {
     })?;
     let work_dir = profile_dir.join("mold-test");
     fs::create_dir_all(&work_dir)?;
+
+    let link = work_dir.join("ld64.mold");
+    match fs::remove_file(&link) {
+        Ok(()) => {}
+        Err(err) if err.kind() == io::ErrorKind::NotFound => {}
+        Err(err) => return Err(err),
+    }
+    std::os::unix::fs::symlink(&mold, &link)?;
     Ok(work_dir)
 }
 
@@ -568,7 +577,7 @@ pub fn run(cases_dirs: &[PathBuf], mold: &Path) -> ExitCode {
         eprintln!("mold-macho-tests: {err}");
         std::process::exit(1);
     });
-    let linker = mold.canonicalize().expect("linker not found");
+    let linker = work_dir.join("ld64.mold");
     let (targets, unavailable) = selected_targets(&options);
     let scripts = selected_scripts(cases_dirs, &options.patterns).unwrap_or_else(|err| {
         eprintln!("mold-macho-tests: {err}");

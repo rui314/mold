@@ -19,6 +19,11 @@ name = "integration"
 path = "integration.rs"
 harness = false
 
+[[test]]
+name = "macho-integration"
+path = "macho-integration.rs"
+harness = false
+
 [dependencies]
 mimalloc = { package = "mold-mimalloc", version = "0.1.52" }
 mold-elf.workspace = true
@@ -48,6 +53,7 @@ mold-macho-x86_64 = { workspace = true, optional = true }
 
 [dev-dependencies]
 mold-elf-tests = { path = "../tests/elf" }
+mold-macho-tests = { path = "../tests/macho" }
 
 # One feature per target. All are built by default; a build for one
 # target alone (`--no-default-features --features x86_64`) is much faster.

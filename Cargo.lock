@@ -287,6 +287,7 @@ dependencies = [
  "mold-elf-x86_64",
  "mold-macho",
  "mold-macho-arm64",
+ "mold-macho-tests",
  "mold-macho-x86_64",
  "mold-mimalloc",
 ]
