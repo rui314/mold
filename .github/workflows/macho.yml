@@ -1,0 +1,53 @@
+name: Mach-O CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same branch supersedes a run still in progress.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    # The tests drive Apple's toolchain (cc, nm, otool, dyld_info, lldb),
+    # so they need a macOS host. An arm64 runner covers both targets:
+    # the harness runs every test natively and again under Rosetta.
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rosetta 2
+        run: |
+          if ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+            sudo softwareupdate --install-rosetta --agree-to-license
+          fi
+
+      - name: Update Rust
+        run: rustup update --no-self-update stable && rustup default stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      # The unit tests, then the shell tests with twice the harness's
+      # default timeout, as mold's CI gives its slow configurations more:
+      # here the simulator's tests are slow, lldb's above all, whose lldb
+      # session alone takes ten seconds on a Mac, and the first of which
+      # ran past a minute on the hosted runners.
+      - run: cargo test --workspace --lib --bins
+      - run: cargo test -p mold-macho-cli --test integration -- --timeout 120
+
+      # The harness reports only which tests failed; each test's log
+      # and its output directory are kept under the target directory.
+      - name: Upload test logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-logs
+          path: target/debug/mold-test/out/test/
+          if-no-files-found: ignore

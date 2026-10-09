@@ -1,0 +1,92 @@
+#!/bin/bash
+source "$(dirname "$0")"/common.inc
+
+# A CIE goes to __eh_frame only with an FDE that points at it, ahead of
+# the FDE: a CIE no FDE points at is dropped, with no GOT slot for its
+# personality, and so is one whose FDEs all go - here _g's, which has a
+# compact unwind record - in a final image. A -r output keeps _g's FDE
+# for the next link. (ld-prime keeps a lone CIE, in its place among the
+# records, unless -dead_strip.)
+if [ $ARCH = arm64 ]; then
+  ret=ret ra=30 sp='0x0c, 31, 0' got='@GOT - .'
+else
+  ret=retq ra=16 sp='0x0c, 7, 8' got=@GOTPCREL
+fi
+cat <<EOF | $CC -o $t/a.o -c -xassembler -
+.text
+.globl _main, _g
+.p2align 2
+_main:
+  $ret
+_g:
+  $ret
+.section __TEXT,__eh_frame
+EH_frame0:
+.long 20
+.long 0
+.byte 1, 0x7a, 0x52, 0, 1, 0x78, $ra, 1, 0x10, $sp, 0, 0, 0, 0
+.long 24
+.long 28
+.quad _main - .
+.quad 1
+.long 0
+EH_frame1:
+.long 24
+.long 0
+.byte 1
+.asciz "zPR"
+.byte 1, 0x78, $ra, 6, 0x9b
+.long ___gcc_personality_v0$got
+.byte 0x10, $sp, 0, 0
+EH_frame2:
+.long 20
+.long 0
+.byte 1, 0x7a, 0x52, 0, 1, 0x78, $ra, 1, 0x10, $sp, 0, 0, 0, 0
+.long 24
+.long 28
+.quad _g - .
+.quad 1
+.long 0
+.section __LD,__compact_unwind,regular,debug
+.p2align 3
+.quad _g
+.long 1
+.long 0x02000000
+.quad 0
+.quad 0
+.subsections_via_symbols
+EOF
+
+# Prints the kinds of an __eh_frame's records, and the personality
+# pointer of the zPR CIE as an address.
+eh_frame() {
+  python3 - $1 <<'EOF2'
+import struct, sys, macho
+m = macho.MachO(sys.argv[1])
+sect = m.section('__eh_frame')
+addr, d = sect.addr, m.contents(sect)
+pos = 0
+while pos < len(d):
+    length, id = struct.unpack_from('<II', d, pos)
+    print('FDE' if id else 'CIE', end=' ')
+    if d[pos + 9:pos + 13] == b'zPR\0':
+        cell = pos + 18
+        print(hex(addr + cell + struct.unpack_from('<i', d, cell)[0]), end=' ')
+    pos += 4 + length
+print()
+EOF2
+}
+
+$CC --ld-path=$mold -o $t/exe $t/a.o
+eh_frame $t/exe > $t/records
+[ "$(cat $t/records)" = 'CIE FDE ' ]
+dyld_info -fixups $t/exe > $t/fixups
+not grep -q ___gcc_personality_v0 $t/fixups
+
+$CC --ld-path=$mold -o $t/exe2 $t/a.o -Wl,-dead_strip
+eh_frame $t/exe2 > $t/records2
+[ "$(cat $t/records2)" = 'CIE FDE ' ]
+
+$mold -r -arch $ARCH -o $t/b.o $t/a.o
+eh_frame $t/b.o > $t/records3
+[ "$(cat $t/records3)" = 'CIE FDE CIE FDE ' ]

@@ -1,0 +1,14 @@
+[package]
+name = "mold-macho-x86_64"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "An internal crate of the mold linker, which instantiates its Mach-O linker for x86_64"
+license.workspace = true
+repository.workspace = true
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+mold-macho.workspace = true

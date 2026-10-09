@@ -1,0 +1,26 @@
+[package]
+name = "mold-macho"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "An internal crate of the mold linker, which implements its Mach-O linker"
+license.workspace = true
+repository.workspace = true
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+cpp_demangle = "0.5.1"
+getrandom = "0.4.3"
+hashbrown = "0.17"
+libc.workspace = true
+memchr = "2.8.3"
+memmap2 = "0.9"
+# std has no 64-bit atomics on hosts such as 32-bit PowerPC.
+portable-atomic = "1"
+rayon = "1.12.0"
+serde_json = "1.0.151"
+sha1 = "0.11"
+sha2 = "0.11"
+xxhash-rust = { version = "0.8", features = ["xxh3"] }

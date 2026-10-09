@@ -1,0 +1,174 @@
+//! __TEXT,__lazy_helpers: the code through which an image reaches the
+//! symbols of a dylib dyld loads lazily (-lazy-l and the like, macOS 27
+//! on). Each helper checks the dylib's flag word; once dyld has loaded
+//! the dylib and bound its __lazy_load_got slots, it goes on through
+//! the symbol's slot, and before that it first has __dyld_lazy_load
+//! load the dylib.
+
+use crate::arch::Target;
+use crate::chunks::split_info::{Entry, Places, push};
+use crate::chunks::symtab::{NamedEntry, local_msym};
+use crate::chunks::{ChunkHeader, ChunkId, stubs};
+use crate::context::Context;
+use crate::input_sections::Reloc;
+use crate::macho::*;
+use crate::symbol::SymbolId;
+
+/// The reference a helper stands in for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum LazyUse {
+    /// Calls, which branch to `_foo$lazyLoadStub` instead: it jumps
+    /// through the symbol's slot.
+    Call,
+    /// A load of the symbol's address from the GOT into register `reg`:
+    /// arm64's adrp of the GOT slot's page becomes a call of
+    /// `_foo$lazyGOT$loadHelper_<reg>`, which returns with the page of
+    /// the symbol's __lazy_load_got slot in the register, for the ldr
+    /// under the adrp to load from the slot; x86-64's movq becomes a
+    /// call of one that loads the slot. arm64 code that may not have
+    /// saved its link register branches instead to a helper of its
+    /// own, which branches back past the adrp: `site` names that adrp
+    /// (subsection, offset).
+    Load { reg: u8, site: Option<(u32, u32)> },
+    /// x86-64's test of a weak import, cmpq $0 of its GOT slot: it
+    /// becomes a call of `_foo$lazyGOT$cmpHelper`, which compares the
+    /// slot instead, leaving the flags for the code after the call.
+    Cmp,
+}
+
+/// What a helper's code refers to, for LC_SEGMENT_SPLIT_INFO: the flag
+/// word, the helper's slot, the mach header, __dyld_lazy_load's stub,
+/// or the code to return to past the site.
+#[derive(Clone, Copy, Debug)]
+pub enum LazyTarget {
+    Flag,
+    Slot,
+    Header,
+    LazyLoad,
+    Site,
+}
+
+#[derive(Debug)]
+pub struct LazyHelper {
+    pub sym: SymbolId,
+    pub kind: LazyUse,
+    /// The helper's local symbol, as ld-prime names it.
+    pub name: &'static [u8],
+    /// The subsection of the flag word of the symbol's dylib, and the
+    /// symbol's __lazy_load_got slot the helper goes through.
+    pub flag: u32,
+    pub slot: u32,
+    /// Where the helper lies in the section.
+    pub offset: u32,
+}
+
+/// __TEXT,__lazy_helpers: the helpers, in the order of the image's
+/// first uses.
+#[derive(Debug)]
+pub struct LazyHelpersSection {
+    pub hdr: ChunkHeader,
+    pub helpers: Vec<LazyHelper>,
+    /// The helper each rewritten GOT load goes to, by the subsection
+    /// and offset of the instruction it replaces.
+    pub sites: hashbrown::HashMap<(u32, u32), u32>,
+    /// __dyld_lazy_load, which the helpers call through its stub.
+    pub dyld_lazy_load: Option<SymbolId>,
+}
+
+impl LazyHelpersSection {
+    pub fn new() -> Self {
+        let mut hdr = ChunkHeader::new(b"__TEXT", b"__lazy_helpers");
+        hdr.flags = S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS;
+        Self { hdr, helpers: Vec::new(), sites: Default::default(), dyld_lazy_load: None }
+    }
+
+    /// Returns the address of helper `i`.
+    pub fn helper_addr(&self, i: usize) -> u64 {
+        self.hdr.addr + self.helpers[i].offset as u64
+    }
+}
+
+impl Default for LazyHelpersSection {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The helper that relocation `r` of subsection `isec` calls in place
+/// of a GOT load (or x86-64's compare), if it reaches a symbol of a
+/// dylib dyld loads lazily (see LazyUse): its address, and whether it
+/// is the site's own, which branches back to the site rather than
+/// returning.
+pub fn load_helper<E: Target>(ctx: &Context<E>, isec: usize, r: &Reloc) -> Option<(u64, bool)> {
+    let lazy = &ctx.lazy_helpers;
+    if lazy.sites.is_empty() {
+        return None;
+    }
+    let &i = lazy.sites.get(&(isec as u32, r.offset))?;
+    let own = matches!(lazy.helpers[i as usize].kind, LazyUse::Load { site: Some(_), .. });
+    Some((lazy.helper_addr(i as usize), own))
+}
+
+/// Sizes the helpers, which go where the stubs do.
+pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
+    let last = ctx.lazy_helpers.helpers.last().unwrap();
+    let size = last.offset + E::lazy_helper_size(last.kind);
+    let hdr = &mut ctx.lazy_helpers.hdr;
+    hdr.segname = ctx.stubs.hdr.segname;
+    hdr.p2align = E::LAZY_HELPERS_P2ALIGN;
+    hdr.size = size as u64;
+}
+
+/// The helpers' local symbols: a call helper's, like a selector stub's,
+/// with N_PEXT set.
+pub fn populate_symtab<E: Target>(ctx: &Context<E>, out: &mut Vec<NamedEntry>) {
+    let hdr = &ctx.lazy_helpers.hdr;
+    for (i, h) in ctx.lazy_helpers.helpers.iter().enumerate() {
+        let addr = ctx.lazy_helpers.helper_addr(i);
+        let n_type = match h.kind {
+            LazyUse::Call => N_PEXT | N_SECT,
+            _ => N_SECT,
+        };
+        let ent = MachSym { n_type, ..local_msym(hdr.sect_idx, addr) };
+        out.push((h.name, ent, None));
+    }
+}
+
+pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
+    E::write_lazy_helpers(ctx, ctx.lazy_helpers.hdr.addr, buf);
+}
+
+/// The helpers' references, for LC_SEGMENT_SPLIT_INFO: to the flag word
+/// and slot they check and load, to the arguments and the stub of the
+/// call of __dyld_lazy_load, and to the code after the site they return
+/// to (see LazyTarget).
+pub(crate) fn split_info_entries<E: Target>(p: &Places<'_, E>, out: &mut Vec<Entry>) {
+    let ctx = p.ctx;
+    let lazy = &ctx.lazy_helpers;
+    let Some(lazy_load) = lazy.dyld_lazy_load else { return };
+    let stub = p.chunk(
+        ChunkId::Stubs,
+        stubs::entry_offset::<E>(ctx.symbols[lazy_load].stub_idx(&ctx.symbols).unwrap()),
+    );
+    for (i, h) in lazy.helpers.iter().enumerate() {
+        let (n, at) = p.lazy_helper(i as u32);
+        for (off, kind, to) in E::lazy_helper_refs(h.kind) {
+            let to = match to {
+                LazyTarget::Flag => p.isec(h.flag as usize),
+                LazyTarget::Slot => {
+                    let slot = ctx.lazy_load_got.slot_addr(h.slot);
+                    Some(p.chunk_addr(ChunkId::LazyLoadGot, slot))
+                }
+                LazyTarget::Header => Some((0, 0)),
+                LazyTarget::LazyLoad => Some(stub),
+                LazyTarget::Site => match h.kind {
+                    LazyUse::Load { site: Some((isec, off)), .. } => {
+                        p.isec(isec as usize).map(|(n, o)| (n, o + off as u64 + 4))
+                    }
+                    _ => None,
+                },
+            };
+            push(out, (n, at + off as u64), kind, to);
+        }
+    }
+}

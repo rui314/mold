@@ -1,0 +1,38 @@
+//! A high-performance Mach-O linker.
+
+pub mod arch;
+pub(crate) mod archive_file;
+pub(crate) mod bundle_hook;
+pub(crate) mod chunks;
+pub(crate) mod cmdline;
+pub(crate) mod context;
+pub(crate) mod dead_strip;
+pub(crate) mod delay_init;
+pub mod driver;
+pub(crate) mod dtrace;
+pub(crate) mod dwarf;
+pub(crate) mod error;
+pub(crate) mod filetype;
+pub(crate) mod icf;
+pub(crate) mod input_files;
+pub(crate) mod input_sections;
+pub(crate) mod lazy_load;
+pub(crate) mod lto;
+pub mod macho;
+mod macho_consts;
+pub(crate) mod make_mergeable;
+pub(crate) mod mapfile;
+pub(crate) mod mapped_file;
+pub(crate) mod mergeable;
+pub(crate) mod objc;
+pub(crate) mod output_file;
+pub(crate) mod passes;
+pub(crate) mod reader;
+pub(crate) mod relocatable;
+pub(crate) mod subprocess;
+pub(crate) mod symbol;
+pub(crate) mod symbol_moves;
+pub(crate) mod tapi;
+pub(crate) mod thunks;
+pub(crate) mod tls;
+pub mod util;

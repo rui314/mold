@@ -1,6 +1,8 @@
 /target
+/out
 /dist
 /bench
 /.claude
 /.codex
 *~
+__pycache__/
