@@ -1,6 +1,6 @@
-//! Lays out the live chunks in output sections, applies the x86_64 COFF
-//! relocations, builds the base relocation table and writes the PE headers.
-//! The image is built in memory and returned as bytes.
+//! Lays out the live chunks in output sections, applies the relocations of the
+//! target architecture, builds the base relocation table and writes the PE
+//! headers. The image is built in memory and returned as bytes.
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -8,6 +8,7 @@ use std::rc::Rc;
 use mold_common::fatal;
 use mold_common::util::align_to;
 
+use crate::arch::{Arch, Fixup, RelocError, Target};
 use crate::coff::{self, SCN_CNT_CODE, SCN_CNT_INITIALIZED_DATA, SCN_CNT_UNINITIALIZED_DATA};
 use crate::link::{Linker, Loc};
 
@@ -45,16 +46,6 @@ const BUILTIN_SECTIONS: &[&[u8]] = &[
     b".dtors",
 ];
 
-const IMAGE_REL_AMD64_ABSOLUTE: u16 = 0;
-const IMAGE_REL_AMD64_ADDR64: u16 = 1;
-const IMAGE_REL_AMD64_ADDR32: u16 = 2;
-const IMAGE_REL_AMD64_ADDR32NB: u16 = 3;
-const IMAGE_REL_AMD64_REL32: u16 = 4;
-const IMAGE_REL_AMD64_REL32_5: u16 = 9;
-
-const IMAGE_REL_BASED_HIGHLOW: u8 = 3;
-const IMAGE_REL_BASED_DIR64: u8 = 10;
-
 const IMAGE_FILE_EXECUTABLE_IMAGE: u16 = 0x0002;
 const IMAGE_FILE_LARGE_ADDRESS_AWARE: u16 = 0x0020;
 const IMAGE_DLLCHARACTERISTICS_HIGH_ENTROPY_VA: u16 = 0x0020;
@@ -68,13 +59,6 @@ const OUTPUT_CHAR_MASK: u32 = SCN_CNT_CODE
     | coff::SCN_MEM_READ
     | coff::SCN_MEM_WRITE
     | coff::SCN_MEM_EXECUTE;
-
-/// Where a relocation points: an RVA in the image, or an absolute value.
-#[derive(Clone, Copy)]
-enum Target {
-    Image(u64),
-    Abs(u64),
-}
 
 /// A member of an output section: a chunk, with the keys that order it.
 struct Member {
@@ -101,7 +85,7 @@ struct OutSection {
 }
 
 /// Lays out the live chunks of `ln` and returns the image.
-pub(crate) fn build(ln: &mut Linker<'_>, entry: u32) -> Vec<u8> {
+pub(crate) fn build<A: Arch>(ln: &mut Linker<'_>, entry: u32) -> Vec<u8> {
     let image_base = ln.opts.image_base.unwrap_or(DEFAULT_IMAGE_BASE);
 
     let mut outs = group_chunks(ln);
@@ -129,7 +113,7 @@ pub(crate) fn build(ln: &mut Linker<'_>, entry: u32) -> Vec<u8> {
     let have_relocs = outs
         .iter()
         .flat_map(|o| o.members.iter())
-        .any(|m| has_address_relocs(ln_ref, m.chunk as usize));
+        .any(|m| has_address_relocs::<A>(ln_ref, m.chunk as usize));
     let emitted = outs.iter().filter(|o| o.virt_size > 0).count();
     let nsec = emitted + usize::from(have_relocs);
     let headers_size = align_to(
@@ -183,7 +167,7 @@ pub(crate) fn build(ln: &mut Linker<'_>, entry: u32) -> Vec<u8> {
     let mut sites = Vec::new();
     for c in 0..ln.chunks.len() {
         if ln.chunks[c].live {
-            apply_relocs(ln, c, image_base, &chunk_rva, &chunk_file, &mut image, &mut sites);
+            apply_relocs::<A>(ln, c, image_base, &chunk_rva, &chunk_file, &mut image, &mut sites);
         }
     }
 
@@ -229,6 +213,7 @@ pub(crate) fn build(ln: &mut Linker<'_>, entry: u32) -> Vec<u8> {
 
     let headers = Headers {
         image_base,
+        machine: A::MACHINE,
         entry_rva,
         subsystem: ln.opts.subsystem,
         nxcompat: ln.opts.nxcompat,
@@ -321,18 +306,15 @@ fn sort_outs(outs: &mut [OutSection]) {
 }
 
 /// Returns true if a chunk has a relocation that needs a base relocation entry.
-fn has_address_relocs(ln: &Linker<'_>, c: usize) -> bool {
+fn has_address_relocs<A: Arch>(ln: &Linker<'_>, c: usize) -> bool {
     let ch = &ln.chunks[c];
     let obj = &ln.objs[ch.obj as usize];
-    obj.sections[ch.sec as usize]
-        .relocs
-        .iter()
-        .any(|r| r.kind == IMAGE_REL_AMD64_ADDR64 || r.kind == IMAGE_REL_AMD64_ADDR32)
+    obj.sections[ch.sec as usize].relocs.iter().any(|r| A::has_base_reloc(r.kind))
 }
 
 /// Applies the relocations of live chunk `c` to `image`. Each absolute
 /// address that depends on the image base is recorded in `sites`.
-fn apply_relocs(
+fn apply_relocs<A: Arch>(
     ln: &Linker<'_>,
     c: usize,
     image_base: u64,
@@ -354,52 +336,22 @@ fn apply_relocs(
     let p_base_off = chunk_file[c];
 
     for r in &sec.relocs {
-        let p_rva = p_base_rva + r.offset as u64;
-        let p_off = (p_base_off + r.offset as u64) as usize;
-        let target = target_of(ln, ch.obj, r.symbol, chunk_rva, &obj.name);
-        let va = match target {
-            Target::Image(rva) => image_base + rva,
-            Target::Abs(v) => v,
+        let fixup = Fixup {
+            kind: r.kind,
+            at: (p_base_off + r.offset as u64) as usize,
+            rva: p_base_rva + r.offset as u64,
+            target: target_of(ln, ch.obj, r.symbol, chunk_rva, &obj.name),
+            image_base,
         };
-        match r.kind {
-            IMAGE_REL_AMD64_ABSOLUTE => {}
-            IMAGE_REL_AMD64_ADDR64 => {
-                if let Target::Image(_) = target {
-                    sites.push((rva32(p_rva), IMAGE_REL_BASED_DIR64));
-                }
-                // COFF relocations add to the field, which holds the addend.
-                let addend = u64::from_le_bytes(image[p_off..p_off + 8].try_into().unwrap());
-                image[p_off..p_off + 8].copy_from_slice(&addend.wrapping_add(va).to_le_bytes());
+        match A::apply(image, fixup) {
+            Ok(Some(kind)) => sites.push((rva32(fixup.rva), kind)),
+            Ok(None) => {}
+            Err(RelocError::Unsupported(kind)) => {
+                fatal!("{}: unsupported relocation type 0x{kind:x}", obj.name)
             }
-            IMAGE_REL_AMD64_ADDR32 => {
-                if let Target::Image(_) = target {
-                    sites.push((rva32(p_rva), IMAGE_REL_BASED_HIGHLOW));
-                }
-                let addend = u32::from_le_bytes(image[p_off..p_off + 4].try_into().unwrap());
-                image[p_off..p_off + 4]
-                    .copy_from_slice(&addend.wrapping_add(va as u32).to_le_bytes());
+            Err(RelocError::OutOfRange) => {
+                fatal!("{}: relocation out of range at offset {}", obj.name, r.offset)
             }
-            IMAGE_REL_AMD64_ADDR32NB => {
-                let rva = match target {
-                    Target::Image(rva) => rva,
-                    Target::Abs(v) => v,
-                };
-                let addend = u32::from_le_bytes(image[p_off..p_off + 4].try_into().unwrap());
-                image[p_off..p_off + 4]
-                    .copy_from_slice(&addend.wrapping_add(rva as u32).to_le_bytes());
-            }
-            IMAGE_REL_AMD64_REL32..=IMAGE_REL_AMD64_REL32_5 => {
-                // The field holds an addend, which lld and COFF add to the displacement.
-                // IMAGE_REL_AMD64_REL32_n add n for the bytes that follow the field.
-                let extra = (r.kind - IMAGE_REL_AMD64_REL32) as u64;
-                let pc = (image_base + p_rva + 4 + extra) as i64;
-                let addend = i32::from_le_bytes(image[p_off..p_off + 4].try_into().unwrap()) as i64;
-                let Ok(delta) = i32::try_from(addend + va as i64 - pc) else {
-                    fatal!("{}: relocation out of range at offset {}", obj.name, r.offset);
-                };
-                image[p_off..p_off + 4].copy_from_slice(&delta.to_le_bytes());
-            }
-            kind => fatal!("{}: unsupported relocation type 0x{kind:x}", obj.name),
         }
     }
 }
@@ -463,6 +415,7 @@ fn base_relocs(sites: &mut [(u32, u8)]) -> Vec<u8> {
 }
 
 struct Headers {
+    machine: u16,
     image_base: u64,
     entry_rva: u64,
     subsystem: u16,
@@ -501,7 +454,7 @@ fn write_headers(image: &mut [u8], h: &Headers, sections: &[&OutSection]) {
     }
 
     // COFF file header.
-    put(image, coff, &coff::MACHINE_AMD64.to_le_bytes());
+    put(image, coff, &h.machine.to_le_bytes());
     put(image, coff + 2, &(sections.len() as u16).to_le_bytes());
     put(image, coff + 16, &(OPTIONAL_HEADER_SIZE as u16).to_le_bytes());
     let file_chars = IMAGE_FILE_EXECUTABLE_IMAGE | IMAGE_FILE_LARGE_ADDRESS_AWARE;

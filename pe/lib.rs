@@ -1,15 +1,18 @@
-//! The PE/COFF linker of mold, for x86_64 images such as UEFI applications.
+//! The PE/COFF linker of mold, for images such as UEFI applications.
 //!
 //! It reads COFF objects and archives, and accepts the command line of
-//! lld-link, which rustc passes to linkers for its MSVC-style targets.
+//! lld-link, which rustc passes to linkers for MSVC-style targets.
 //!
 //! - [`args`] parses the command line.
 //! - [`coff`] reads object files.
 //! - `link` resolves symbols, selects COMDAT sections and garbage-collects.
 //! - `image` lays out the sections and writes the PE file.
+//! - `arch` holds what depends on the processor architecture.
 
 pub mod args;
 pub mod coff;
+
+mod arch;
 mod image;
 mod link;
 

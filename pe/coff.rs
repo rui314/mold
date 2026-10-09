@@ -2,8 +2,7 @@
 //! the archive members that rustc and clang emit for x86_64 Windows and UEFI
 //! targets.
 
-/// `IMAGE_FILE_MACHINE_AMD64`.
-pub const MACHINE_AMD64: u16 = 0x8664;
+use crate::arch::x86_64::MACHINE;
 
 pub const SCN_CNT_CODE: u32 = 0x0000_0020;
 pub const SCN_CNT_INITIALIZED_DATA: u32 = 0x0000_0040;
@@ -81,14 +80,14 @@ pub struct Symbol<'a> {
 
 /// Returns true if `data` starts with a COFF file header for x86_64.
 pub fn is_coff_object(data: &[u8]) -> bool {
-    data.len() >= 2 && u16::from_le_bytes([data[0], data[1]]) == MACHINE_AMD64
+    data.len() >= 2 && u16::from_le_bytes([data[0], data[1]]) == MACHINE
 }
 
 pub fn parse<'a>(name: String, data: &'a [u8]) -> Result<Object<'a>, String> {
     let truncated = || format!("{name}: truncated COFF object file");
     let header = get(data, 0, 20).ok_or_else(truncated)?;
     let machine = le16(&header[0..2]);
-    if machine != MACHINE_AMD64 {
+    if machine != MACHINE {
         return Err(format!("{name}: unsupported machine type 0x{machine:04x}"));
     }
     let nsec = le16(&header[2..4]) as usize;

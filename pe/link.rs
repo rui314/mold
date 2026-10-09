@@ -19,6 +19,7 @@ use mold_common::fatal;
 use mold_common::mapped_file::MappedFile;
 use mold_common::output_file::OutputFile;
 
+use crate::arch;
 use crate::args::{self, Options};
 use crate::coff::{self, Object};
 use crate::image;
@@ -686,7 +687,7 @@ pub fn link(opts: Options) {
     ln.check_undefined();
     ln.compute_liveness();
 
-    let image = image::build(&mut ln, entry);
+    let image = image::build::<arch::x86_64::X86_64>(&mut ln, entry);
 
     let mut out = OutputFile::open(&output, image.len() as u64, 0o755, false, false);
     out.buf().copy_from_slice(&image);
