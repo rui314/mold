@@ -1,23 +1,89 @@
-//! The Objective-C passes: the rewrites ld-prime makes to an image's
-//! Objective-C metadata, in the order the driver runs them.
+//! This file contains the passes that rewrite Objective-C metadata.
+//! An ELF linker doesn't care about the contents of C++ vtables or
+//! RTTI, but a Mach-O linker is expected to understand the data
+//! structures of the Objective-C runtime and optimize them. Let's start
+//! with what they are.
 //!
-//! - coalesce_objc_refs keeps one of the selector references, class
-//!   references and CFStrings the compiler emits once per object.
-//! - create_objc_msgsend_stubs and scan_objc_stubs synthesize the
-//!   _objc_msgSend$<selector> stubs, with their selector references
-//!   (chunks/objc_stubs.rs writes them).
-//! - fold_objc_classrefs turns class references into GOT loads (macOS
-//!   15 on).
-//! - convert_objc_method_lists rewrites the method lists in the
-//!   relative form (macOS 11 on; chunks/objc_methlist.rs writes them).
-//! - merge_objc_categories merges the categories of a class defined in
-//!   the image into the class.
+//! In Objective-C, a method is called by its name rather than by a
+//! vtable index. For example, `[obj foo:x]` is compiled to something
+//! like this:
 //!
-//! The passes read the metadata the way dyld sees it, through
-//! relocations: a pointer field is the 8-byte relocation at its offset
-//! (objc_pointer_at), leading to the subsection and offset it points
-//! at (objc_ref_location). What they synthesize refers to its targets
-//! by ObjcRef, resolved to an address when the output is written.
+//!   objc_msgSend(obj, "foo:", x);
+//!
+//! objc_msgSend() looks up the method named "foo:" in obj's class and
+//! calls it. A method name is called a "selector". For speed, selectors
+//! are compared as pointers, so they are interned at load time, and
+//! their addresses are not known until then. Code therefore loads a
+//! selector from a pointer in __objc_selrefs, which is set at load time
+//! to point to the interned string. Such a pointer is called a
+//! "selector reference". It's something like a GOT entry. Likewise,
+//! code accesses a class through a "class reference" in
+//! __objc_classrefs.
+//!
+//! A class is defined by a data structure called class_t, which the
+//! runtime registers at startup. It points to a method list through
+//! class_ro_t. A method list is something like a vtable: an array of
+//! tuples of a selector, a type string and a function pointer.
+//!
+//! Methods of a class can also be defined outside of its class
+//! definition, even for a class in another library, in a block called
+//! a "category":
+//!
+//!   @implementation Foo (MyCategory)
+//!   - (void)bar { ... }
+//!   @end
+//!
+//! Since the class may be compiled separately, the compiler emits a
+//! category as a separate data structure with a pointer to the class
+//! and its own method list, and lists it in __objc_catlist. At startup,
+//! the runtime adds the category's methods to the class's method list.
+//!
+//! Each pointer in this metadata needs a dynamic relocation (a "fixup"
+//! in Mach-O terms), because a Mach-O file is position-independent.
+//! Fixups take time at load time and make pages dirty, and the runtime
+//! has its own work to do at startup. The passes in this file reduce
+//! both. In the order the driver runs them:
+//!
+//!  - coalesce_objc_refs merges selector references to the same
+//!    selector into one, as the compiler creates them for each object
+//!    file. It does the same for class references and a few other
+//!    kinds, and merges identical constant strings (`@"..."` literals).
+//!
+//!  - create_objc_msgsend_stubs and scan_objc_stubs create functions
+//!    named `_objc_msgSend$<selector>`. Loading a selector before
+//!    calling objc_msgSend takes two instructions on ARM64 (adrp and
+//!    ldr), so since Xcode 14, instead of repeating them at every call
+//!    site, the compiler emits a call to `_objc_msgSend$<selector>` and
+//!    leaves it undefined. The linker creates a function for each such
+//!    symbol that loads the selector and jumps to objc_msgSend, like a
+//!    PLT entry whose contents depend on the symbol name. Unlike the
+//!    other passes, this one is not optional.
+//!
+//!  - fold_objc_classrefs replaces class references with GOT entries
+//!    for macOS 15 or later. References to the same class then share
+//!    one GOT entry, and for a class defined in the same output file,
+//!    the GOT load is relaxed to an address computation, so no pointer
+//!    is needed at all.
+//!
+//!  - convert_objc_method_lists reduces dynamic relocations. A method
+//!    list needs three per method, so for macOS 11 or later, this pass
+//!    rewrites method lists to use 32-bit relative offsets, which need
+//!    none. The lists can then also go into the read-only
+//!    __TEXT,__objc_methlist section. A flag in a method list's header
+//!    tells the runtime which format it is in.
+//!
+//!  - merge_objc_categories does the runtime's work for categories at
+//!    link-time if their classes are in the same output file. It
+//!    creates a method list containing the methods of the class and its
+//!    categories, points the class to it, and removes the categories
+//!    from __objc_catlist.
+//!
+//! These passes run before layout, so pointer fields in the input don't
+//! have their values yet. We read them through relocations instead: the
+//! 8-byte absolute relocation at a pointer field's offset tells what it
+//! points to (see objc_pointer_at and objc_ref_location). Data we
+//! synthesize refers to other data by ObjcRef, which is resolved to an
+//! address when we write the output file.
 
 use rayon::prelude::*;
 
