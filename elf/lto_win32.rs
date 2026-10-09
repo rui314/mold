@@ -8,7 +8,7 @@ use crate::context::Context;
 use crate::input_files::ObjectFile;
 
 pub fn read_lto_object<E: Target>(
-    _ctx: &mut Context<E>,
+    _ctx: &Context<E>,
     _mf: &'static MappedFile,
     _archive_name: &'static std::path::Path,
 ) -> Option<ObjectFile<E>> {
