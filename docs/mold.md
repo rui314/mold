@@ -417,16 +417,22 @@ point symbol in a script.
 * `-m` _target_:
   Choose a _target_.
 
+* `-n`, `--nmagic`, `--no-nmagic`:
+  Do not align sections to page boundaries.
+
 * `-o` _file_, `--output`=_file_:
   Use _file_ as the output file name instead of the default name `a.out`.
 
-* `-r`, `--relocatable`:
+* `-r`, `-i`, `--relocatable`:
   Instead of generating an executable or a shared object file, combine input
   object files to generate another object file that can be used as an input to
   a linker.
 
 * `-s`, `--strip-all`:
   Omit `.symtab` section from the output file.
+
+* `-t`, `--trace`:
+  Print name of each input file.
 
 * `-u` _symbol_, `--undefined`=_symbol_:
   If _symbol_ remains as an undefined symbol after reading all object files,
@@ -783,9 +789,6 @@ point symbol in a script.
 
 * `--sysroot`=_dir_:
   Set target system root directory to _dir_.
-
-* `--trace`:
-  Print name of each input file.
 
 * `--undefined-glob`=_pattern_:
   Synonym for `--undefined`, except that `--undefined-glob` takes a glob

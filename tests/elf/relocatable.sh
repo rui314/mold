@@ -18,3 +18,6 @@ EOF
 
 $CC -B. -o $t/exe $t/c.o
 $QEMU $t/exe
+
+./mold -i -o $t/d.o $t/a.o $t/b.o
+cmp $t/c.o $t/d.o

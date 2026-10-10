@@ -12,3 +12,6 @@ EOF
 
 $CC -B. -o $t/exe $t/a.o -Wl,-trace > $t/log
 grep '/a\.o$' $t/log
+
+$CC -B. -o $t/exe $t/a.o -Wl,-t > $t/log2
+grep '/a\.o$' $t/log2

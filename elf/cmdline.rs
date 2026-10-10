@@ -52,10 +52,13 @@ Options:
   -l LIBNAME, --library LIBNAME
                               Search for a given library
   -m TARGET                   Set target
+  -n, --nmagic                Do not page align sections
+    --no-nmagic
   -o FILE, --output FILE      Set output filename
   -q, --emit-relocs           Leaves relocation sections in the output
-  -r, --relocatable           Generate relocatable output
+  -r, -i, --relocatable       Generate relocatable output
   -s, --strip-all             Strip .symtab section
+  -t, --trace                 Print the name of each input file
   -u SYMBOL, --undefined SYMBOL
                               Force to resolve SYMBOL
   -w, --no-warnings           Suppress warnings
@@ -128,8 +131,6 @@ Options:
   --init SYMBOL               Call SYMBOL at load-time
   --mmap-output-file          Write the output file using mmap (default)
     --no-mmap-output-file
-  --nmagic                    Do not page align sections
-    --no-nmagic
   --no-undefined              Report undefined symbols (even with --shared)
   --noinhibit-exec            Create an output file even if errors occur
   --oformat=binary            Omit ELF, section, and program headers
@@ -177,7 +178,6 @@ Options:
                               Use COUNT number of threads
   --threads                   Use multiple threads (default)
     --no-threads
-  --trace                     Print the name of each input file
   --undefined-glob PATTERN    Force to resolve all symbols that match a given pattern
   --undefined-version         Do not report version scripts that refer to undefined symbols
     --no-undefined-version    Report version scripts that refer to undefined symbols (default)
@@ -1395,7 +1395,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             cursor.read_switch("apply-dynamic-relocs", "no-apply-dynamic-relocs")
         {
             a.apply_dynamic_relocs = value;
-        } else if cursor.read_flag("trace") {
+        } else if cursor.read_flag("trace") || cursor.read_flag("t") {
             a.trace = true;
         } else if let Some(value) = cursor.read_switch("eh-frame-hdr", "no-eh-frame-hdr") {
             a.eh_frame_hdr = value;
@@ -1412,7 +1412,8 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             a.relax = value;
         } else if let Some(value) = cursor.read_switch("gdb-index", "no-gdb-index") {
             a.gdb_index = value;
-        } else if cursor.read_flag("r") || cursor.read_flag("relocatable") {
+        } else if cursor.read_flag("r") || cursor.read_flag("i") || cursor.read_flag("relocatable")
+        {
             a.relocatable = true;
             a.emit_relocs = true;
         } else if cursor.read_flag("relocatable-merge-sections") {
@@ -1674,6 +1675,8 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
             a.z_rewrite_endbr = false;
         } else if let Some(value) = cursor.read_switch("nmagic", "no-nmagic") {
             a.nmagic = value;
+        } else if cursor.read_flag("n") {
+            a.nmagic = true;
         } else if cursor.read_flag("fatal-warnings") {
             mold_common::error::set_fatal_warnings(true);
         } else if cursor.read_flag("no-fatal-warnings") {
