@@ -1,24 +1,89 @@
-//! The hook for the classes of mergeable libraries. Xcode keeps a
-//! mergeable framework's bundle in the app, with its resources, where
-//! an image merges the framework's code (-merge_*) or re-exports it
-//! from elsewhere (-no_merge_*), and so +[NSBundle bundleForClass:]
-//! would find the image's bundle for the framework's classes. ld-prime
-//! links a hook into such an image, unless -no_merged_libraries_hook:
-//! an initializer that, in an app, has the Objective-C runtime name the
-//! framework's binary in the app as each class's image
-//! (objc_setHook_getImageName), from which NSBundle finds the bundle.
-//! A debug build of a mergeable dylib gets one for the classes it
-//! doesn't export with -add_mergeable_debug_hook.
+//! On macOS, a library is often distributed as a directory that holds the
+//! library's .dylib together with the data files it uses at runtime, such
+//! as images, UI layouts and translated messages. An application embeds
+//! such directories for the libraries it uses, like this:
 //!
-//! mold's hook is a C file of its own, c/bundle-hook.c, built ahead of
-//! time and embedded. It looks a class up in a table mold makes: a
-//! count, then a record per class of the class (a rebase or a bind),
-//! its library's name and the path the hook makes from it. ld-prime's
-//! hook has tables of another layout, and links Foundation,
-//! CoreFoundation, libc++ and libswiftCore; mold's needs libSystem.
-//! The hook's object goes first, as ld-prime's does, which so runs its
-//! initializer first from __mod_init_func, but last from __init_offsets
-//! (see passes::convert_init_offsets).
+//!   MyApp.app/Contents/Frameworks/Foo.framework/
+//!     Foo
+//!     Resources/icon.png
+//!     Resources/MainMenu.nib
+//!     Resources/ja.lproj/Localizable.strings
+//!
+//! Here, Foo is the library's .dylib file. In such a directory, the .dylib
+//! is named after the directory, without the .dylib suffix.
+//!
+//! A library usually finds its data files by asking the Objective-C
+//! runtime which file one of its classes was loaded from, with
+//! class_getImageName() (which [NSBundle bundleForClass:] and Swift's
+//! Bundle(for:) call), and looking in the Resources directory that goes
+//! with that file, such as
+//! MyApp.app/Contents/Frameworks/Foo.framework/Resources/ for
+//! MyApp.app/Contents/Frameworks/Foo.framework/Foo. The runtime knows the
+//! file, because it registers the classes of each executable and .dylib as
+//! they are loaded. This works only as long as the library is linked
+//! dynamically. If the library were linked statically, the runtime would
+//! answer the application's executable, and the library would look in the
+//! wrong directory. (A library written for static linking looks for its
+//! data files by a name it knows instead, but many libraries aren't written
+//! that way.)
+//!
+//! Linking libraries dynamically has a cost, though: an application starts
+//! more slowly for each .dylib it has to load. So since Xcode 15, a library
+//! can be built as a .dylib that can also be linked statically. Such a
+//! .dylib keeps the relocations and other information of the object files
+//! it was made from, so that the linker can turn it back into those object
+//! files and link them into an executable as if they came from a static
+//! library.
+//!
+//! Xcode links such a library statically into a release build of an
+//! application. A debug build, which should be quick to link, instead links
+//! an ordinary .dylib build of the library dynamically, and puts that .dylib
+//! not in MyApp.app/Contents/Frameworks/Foo.framework/ but in a separate
+//! directory, MyApp.app/Contents/Frameworks/ReexportedBinaries/Foo.framework/.
+//! In both cases, the data files stay in
+//! MyApp.app/Contents/Frameworks/Foo.framework/Resources/, but a library
+//! written for dynamic linking looks for them elsewhere:
+//!
+//!  - In a release build, the runtime answers the application's executable,
+//!    MyApp.app/Contents/MacOS/MyApp, so the library looks in the
+//!    application's own MyApp.app/Contents/Resources/.
+//!
+//!  - In a debug build, the runtime answers
+//!    MyApp.app/Contents/Frameworks/ReexportedBinaries/Foo.framework/Foo,
+//!    so the library looks in
+//!    MyApp.app/Contents/Frameworks/ReexportedBinaries/Foo.framework/Resources/,
+//!    which has no data files.
+//!
+//! The macOS linker works around it by faking class_getImageName(). It adds
+//! code to the output that, at startup, installs a function that answers
+//! class_getImageName() in place of the runtime, with
+//! objc_setHook_getImageName(). For the library's classes, the function
+//! always answers MyApp.app/Contents/Frameworks/Foo.framework/Foo, whether
+//! the library's code is in the application's executable or in
+//! ReexportedBinaries, and whether or not that file is there. The library
+//! then finds its data files. -no_merged_libraries_hook turns this off.
+//!
+//! The function needs a pointer to each class it answers for. In a debug
+//! build, the application can refer to a class in the library's .dylib
+//! only by an exported symbol, so the function in the application can
+//! handle only the classes the library exports. With
+//! -add_mergeable_debug_hook, the debug build of the library gets the
+//! function too, for the rest of its classes.
+//!
+//! mold's version of the function is c/bundle-hook.c, which is compiled
+//! ahead of time and embedded in mold. It finds the classes it answers
+//! for, and the names of their libraries, in a table that mold creates at
+//! link time (see create_class_table). Like the macOS linker, mold puts the
+//! code's object file before the other input files, so that it installs the
+//! function before other startup code may ask the runtime. (In an output
+//! that lists its startup functions in the newer __init_offsets form, they
+//! run in the reverse order, as with the macOS linker; see
+//! passes::convert_init_offsets.)
+//!
+//! Apple calls a library's directory a "framework" and its data files
+//! "resources". It calls a library that can be linked both ways
+//! "mergeable", the two ways to link it "merging" and "re-exporting", and
+//! the function a "hook", hence the names in this file.
 
 use crate::arch::Target;
 use crate::cmdline::Args;
