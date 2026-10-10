@@ -1,10 +1,18 @@
-//! The external relocations of a kext (LC_DYSYMTAB's extreloff): each
-//! place kmutil fills with the address of a symbol the kext imports
-//! from the kernel or another kext, as dyld's binds would for a dylib.
-//! Its local relocations (local_relocs.rs) slide the rest. Legacy
-//! LINKEDIT (Args::legacy_linkedit) has dyld bind an image's pointers
-//! in data by them too, its GOT slots and lazy pointers being bound by
-//! the indirect symbol table.
+//! This file creates the external relocations of LC_DYSYMTAB, the oldest
+//! way to tell a loader where to put the addresses of symbols from other
+//! images: one relocation record, in the object-file format, per pointer
+//! slot or call that refers to an imported symbol.
+//!
+//! A kext (a kernel extension) uses them: kmutil, which links kexts with
+//! the kernel, fills each such place with the address of a symbol from the
+//! kernel or another kext, as dyld's binds do for a .dylib. The kext's
+//! local relocations (see local_relocs.rs) slide everything else. On
+//! x86-64, a kext calls an imported function directly, without a stub, so
+//! the call gets an external relocation too. An image with legacy LINKEDIT
+//! (for macOS before 10.6; see Args::legacy_linkedit) also has dyld bind
+//! its pointers in data by external relocations, while dyld binds its GOT
+//! slots and lazy pointers through the indirect symbol table (see
+//! indirect_symtab.rs).
 
 use crate::arch::Target;
 use crate::chunks::ChunkHeader;

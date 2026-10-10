@@ -1,6 +1,12 @@
-//! __TEXT,__chain_starts: where the fixup chains of an image no dyld
-//! loads start, for its own loader to walk (-fixup_chains_section), in
-//! place of the LC_DYLD_CHAINED_FIXUPS payload.
+//! This file creates __TEXT,__chain_starts, which lists where the fixup
+//! chains (see chained_fixups.rs) of an image that dyld doesn't load start.
+//! A -static image has no dyld to read the LC_DYLD_CHAINED_FIXUPS payload.
+//! With -fixup_chains_section, it gets chains all the same, for its own
+//! loader to walk, and this section in place of the payload: the chains'
+//! pointer format, their count, and each chain's first fixup as an offset
+//! from the image's address. Unlike dyld's chains, these don't stop at page
+//! boundaries; a chain ends where the next fixup is too far away for the
+//! word to encode.
 
 use crate::arch::Target;
 use crate::chunks::ChunkHeader;

@@ -1,5 +1,20 @@
-//! The LC_DYLD_INFO bind opcode stream: every slot dyld fills with an
-//! import.
+//! This file creates the bind opcode stream of LC_DYLD_INFO, which tells
+//! dyld what to write into each pointer slot that refers to a symbol in
+//! another image: a GOT slot of an imported symbol, or a pointer in data
+//! initialized with an imported symbol's address. It does what dynamic
+//! relocations naming a symbol, such as `R_*_GLOB_DAT`, do on ELF. With
+//! chained fixups, the binds are in the chains instead (see
+//! chained_fixups.rs).
+//!
+//! Unlike on ELF, an imported symbol is normally looked up in one
+//! particular library, not in every loaded library in turn: each bind names
+//! the library by its ordinal, the index of the load command that loads it
+//! (Mach-O calls this a "two-level namespace"). Like the rebase info (see
+//! rebase_info.rs), the binds are encoded as opcodes for a state machine
+//! in dyld, which set the library, the symbol, the address and the addend,
+//! each only when it changes, and bind. The functions bound on their first
+//! call are in the lazy-bind stream (see lazy_bind_info.rs), and the slots
+//! of weak definitions in the weak-bind stream (see weak_bind_info.rs).
 
 use mold_common::leb128::encode_uleb;
 

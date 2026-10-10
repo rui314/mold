@@ -1,13 +1,23 @@
-//! Link-time optimization via libLTO.
+//! This file implements link-time optimization (LTO). As with ELF, when
+//! clang is given -flto, the object files it emits hold LLVM bitcode
+//! instead of machine code, and the linker has LLVM compile them into
+//! machine code at link time, when it can see the whole program.
 //!
-//! With -flto, clang emits object files that are LLVM bitcode rather
-//! than Mach-O. The linker is expected to load LLVM's libLTO
-//! (clang passes its path as -lto_library), register every bitcode
-//! module, tell the library which symbols must survive, and have it
-//! compile them to Mach-O objects that then join the link like any
-//! other input: the modules clang built for ThinLTO (-flto=thin) one
-//! object each, through libLTO's thinlto_* API, and the rest merged
-//! into one module and one object.
+//! How the linker talks to LLVM differs. mold's ELF linker uses GNU ld's
+//! linker plugin interface (LLVMgold.so, or GCC's plugin), in which the
+//! plugin calls back into the linker. On macOS, the linker instead loads
+//! libLTO.dylib, an LLVM library with a plain C API, and calls it. It gives
+//! libLTO every bitcode module, tells it which symbols must survive (those
+//! code outside the bitcode refers to, the exported ones and a few more;
+//! see lto_roots), and has it compile the modules into Mach-O object
+//! files, which then join the link like any other input. The modules clang
+//! built for ThinLTO (-flto=thin) become one object file each, through
+//! libLTO's thinlto_* functions, and the others are merged into one module
+//! and compiled into one object file.
+//!
+//! libLTO is the one clang names with -lto_library, or else the one in the
+//! lib directory beside the bin directory the linker is in, or else the one
+//! the dynamic loader finds by its name.
 
 use std::ffi::{CStr, CString, c_char, c_int, c_void};
 use std::path::{Path, PathBuf};

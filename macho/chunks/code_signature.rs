@@ -1,5 +1,22 @@
-//! The ad-hoc code signature: SHA-256 page hashes in a code directory, the
-//! last chunk of the file.
+//! This file creates the ad-hoc code signature, which is the last chunk of
+//! the output file.
+//!
+//! macOS checks a program's code as the kernel loads its pages: a code
+//! signature holds a hash of each 4 KiB page of the file, and the kernel
+//! kills a process that runs a page whose hash doesn't match. On Apple
+//! silicon, all code must be signed, so the linker signs an arm64 macOS or
+//! simulator image itself by default (-adhoc_codesign). Such an "ad-hoc"
+//! signature has only the page hashes, without a signing identity or a
+//! certificate; a program distributed to users is signed again later with
+//! the developer's identity.
+//!
+//! The signature is a blob, pointed to by LC_CODE_SIGNATURE, that holds a
+//! "code directory": a header, an identifier made from the image's install
+//! name or output path, and the SHA-256 hashes of the file's pages before
+//! the signature. An image for an OS release that checks only SHA-1 hashes
+//! gets a second code directory with SHA-1 hashes (see
+//! has_sha1_directory). Unlike the rest of the file, the signature's data
+//! structures are big-endian.
 
 use mold_common::bits::align_to;
 use rayon::prelude::*;

@@ -1,5 +1,13 @@
-//! LC_FUNCTION_STARTS data: delta-encoded function addresses, used by
-//! debuggers and crash reporters.
+//! This file creates the function starts table, which LC_FUNCTION_STARTS
+//! points to.
+//!
+//! A stripped ELF binary doesn't tell where its functions begin. A Mach-O
+//! image keeps a list of its functions' start addresses even when its
+//! symbol table is stripped, so that debuggers, profilers and crash
+//! reporters can tell the functions in a backtrace apart. The list is a
+//! series of ULEB128 numbers in __LINKEDIT: the first function's offset
+//! from the start of the image, then each function's distance from the
+//! previous one, ending with a zero. -no_function_starts leaves it out.
 
 use mold_common::leb128::encode_uleb;
 use rayon::prelude::*;

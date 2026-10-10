@@ -1,13 +1,24 @@
-//! The object file a mergeable dylib's record stands for, which a
-//! merging link takes in place of the dylib: as an `ld -r` of the
-//! dylib's objects would write it, debug notes included. Each entry
-//! gets its section (one of ld-prime's standard ones by its content
-//! type, or one of the custom table's), its symbol or a private label,
-//! and its fixups the relocations the objects had; an import stays
-//! undefined, and the dylibs the mergeable one links stand by their
-//! install names (see reader::add_merged_dependencies). What ld-prime
-//! keeps of the objects is all there is: no data-in-code entries and no
-//! optimization hints survive, in its merged images either.
+//! This file turns a mergeable library's record (see mod.rs) back into an
+//! object file, which a link given -merge_framework or the like takes in
+//! place of the .dylib.
+//!
+//! The object file is what `ld -r` of the library's original object files
+//! would produce, debug notes included. Each entry of the record becomes a
+//! piece of a section. The record doesn't name an entry's section; it gives
+//! the entry a content type, such as code, C string or selector reference,
+//! from which the standard section follows (see standard_section), or it
+//! points to its table of other sections. A named entry gets its symbol,
+//! and an unnamed one a private label. An entry's fixups become
+//! relocations again, and the bytes they apply to get back what the object
+//! file had (see apply_fixups). An import stays an undefined symbol, and
+//! the .dylibs the library links are linked by their install names (see
+//! reader::add_merged_dependencies).
+//!
+//! The record keeps only what the macOS linker keeps of the object files.
+//! Data-in-code entries, which mark data embedded in code for
+//! disassemblers, and linker optimization hints, which tell the linker
+//! which arm64 instruction sequences it may simplify, don't survive, as
+//! they don't in an image the macOS linker merges the library into either.
 
 use std::path::Path;
 

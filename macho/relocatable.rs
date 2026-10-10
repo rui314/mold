@@ -1,20 +1,35 @@
-//! -r: relocatable output.
+//! This file implements -r, which combines object files into one bigger
+//! object file instead of linking an executable or a .dylib, as `ld -r`
+//! does with ELF.
 //!
-//! `ld -r` combines object files into one bigger object file instead
-//! of a final image: sections are merged and laid out from address 0
-//! in a single nameless segment, symbols keep their definitions and
-//! undefined references, and - the essential part - relocations are
-//! *regenerated* against the merged section and symbol tables rather
-//! than applied. No dyld structures, no code signature.
+//! As with ELF, the input sections of the same name are concatenated into
+//! one output section, symbols keep their definitions and undefined
+//! references, and relocations aren't applied but written to the output
+//! again, now against the merged sections and symbol table. The output's
+//! sections are laid out from address 0 in a single segment with no name,
+//! and it has none of what a final image has for the dynamic loader, nor a
+//! code signature.
 //!
-//! Section contents are copied raw (relocations stay unapplied), so
-//! fields that embed addends keep them; only non-external relocations
-//! need their embedded target addresses rewritten into the merged
-//! address space. Literals are not deduplicated (the final link does
-//! that), so every input label, and every relocation's target, carries
-//! through as it was. DWARF is not merged (its section-relative offsets
-//! carry no relocations); like ld64, the output gets debug-note stabs
-//! naming the input objects, which a later link carries through.
+//! Mach-O relocations differ from ELF's in two ways that matter here.
+//! First, most addends are stored in the relocated fields, as in ELF's REL
+//! format, so section contents are copied as they are, and the fields keep
+//! their addends. Second, a relocation can refer to a section rather than
+//! a symbol (a "non-external" relocation), and then the field holds the
+//! target's address in the input object file. As the sections move, such
+//! a field is rewritten to hold the target's address in the output (see
+//! rewrite_field).
+//!
+//! Literals such as C strings aren't merged (the final link does that),
+//! so every label and relocation target in the inputs carries through as
+//! it was. The unwind information sections (__compact_unwind and
+//! __eh_frame) and __objc_imageinfo are made anew from the inputs'.
+//!
+//! On macOS, DWARF debug information stays in the object files. The linker
+//! doesn't copy the __DWARF sections into its output, not even with -r;
+//! instead, it writes symbols called "debug notes" (stabs of type N_SO and
+//! N_OSO) that tell the debugger which object files to read DWARF from.
+//! The output of -r likewise gets debug notes naming its input object
+//! files, which a later link carries through.
 
 use std::sync::atomic::{AtomicU16, AtomicU32, Ordering};
 

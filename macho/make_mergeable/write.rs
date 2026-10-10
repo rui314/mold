@@ -1,4 +1,5 @@
-//! The record's bytes, laid out as ld-prime writes them.
+//! This file turns the record (see mergeable/mod.rs for its format) into
+//! bytes, laid out as the macOS linker lays it out.
 
 use mold_common::bits::align_to_mod;
 

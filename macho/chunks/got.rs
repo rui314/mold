@@ -1,5 +1,13 @@
-//! The global offset table: pointers to symbols, bound by dyld for imported
-//! ones. mold's got.rs holds the ELF counterpart.
+//! This file creates the GOT, which works as on ELF (see mold's
+//! elf/chunks/got.rs): a pointer slot per symbol that code loads addresses
+//! from. It is __got in __DATA_CONST, which dyld makes read-only once it
+//! has fixed up the pointers, like ELF's RELRO, or in __DATA. dyld fills in
+//! the slots of imported symbols, by binds or chained fixups (see
+//! bind_info.rs and chained_fixups.rs); the slots of symbols defined in the
+//! image hold their addresses and get rebases. Each slot also has an entry
+//! in the indirect symbol table (see indirect_symtab.rs). When functions
+//! aren't bound lazily, the stubs jump through their GOT slots (see
+//! stubs.rs).
 
 use crate::arch::Target;
 use crate::chunks::split_info::{Entry, Places, push};

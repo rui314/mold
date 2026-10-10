@@ -1,5 +1,16 @@
-//! The merged __objc_imageinfo section: the Objective-C runtime reads
-//! exactly one 8-byte record per image.
+//! This file creates the image's __objc_imageinfo section, which tells the
+//! Objective-C runtime how the image's Objective-C and Swift code was
+//! compiled.
+//!
+//! Every object file with Objective-C or Swift code has an 8-byte
+//! __objc_imageinfo record: a version, which is always 0, and a word of
+//! flags, such as the Swift ABI and language versions the code was
+//! compiled for and whether its classes' read-only data pointers are
+//! signed. The runtime reads one record per image, so the linker can't
+//! concatenate the objects' records as it does other sections; it merges
+//! them into one (see merge_objc_info) and writes it in a section of its
+//! own. An image that dyld doesn't load, such as a -static one, gets no
+//! record, because no runtime sets up its Objective-C.
 
 use crate::arch::Target;
 use crate::chunks::{ChunkHeader, ChunkId};

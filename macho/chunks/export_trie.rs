@@ -1,4 +1,12 @@
-//! The export trie in __LINKEDIT: dyld's index of exported symbols.
+//! This file creates the export trie, the table in __LINKEDIT through which
+//! dyld looks up the symbols an image exports when it binds other images'
+//! references to them. It does the job of .dynsym and the hash table
+//! (.gnu.hash) on ELF. The trie is a prefix tree of the exported symbols'
+//! names: each edge is labeled with a piece of a name, and the node where a
+//! name ends gives the symbol's address, relative to the image, and flags,
+//! such as whether it is a weak definition or thread-local, or, for a
+//! symbol re-exported from another library, the library and the name the
+//! symbol has there.
 
 use mold_common::leb128::{uleb_size, write_uleb};
 use rayon::prelude::*;

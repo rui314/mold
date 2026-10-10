@@ -1,5 +1,9 @@
-//! LC_ATOM_INFO: the mergeable record of a -make_mergeable dylib, which
-//! make_mergeable builds (see there).
+//! This file contains the chunk that holds a mergeable .dylib's record in
+//! __LINKEDIT, which LC_ATOM_INFO points to (see mergeable/mod.rs for what
+//! the record is). make_mergeable builds the record. What this file adds is
+//! the part that depends on where the record lands in the file: the record
+//! refers to the .dylib's own bytes by offsets back from itself, so those
+//! offsets are filled in as the record is copied to the output.
 
 use crate::arch::Target;
 use crate::chunks::ChunkHeader;

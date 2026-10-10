@@ -1,5 +1,16 @@
-//! The LC_DYLD_INFO rebase opcode stream: every pointer dyld slides.
-//! mold's reldyn.rs holds the ELF relative relocations it stands in for.
+//! This file creates the rebase opcode stream of LC_DYLD_INFO, the older of
+//! the two forms in which an image tells dyld how to fix up its pointers
+//! (see chained_fixups.rs for the newer one).
+//!
+//! An image is usually loaded at an address other than the one it was
+//! linked at, so every pointer in it that holds an address in the image
+//! itself must be adjusted by the difference (the "slide"). Mach-O calls
+//! that a rebase; it is what `R_*_RELATIVE` relocations do on ELF (see
+//! mold's elf/chunks/reldyn.rs). Instead of a table of relocations, the
+//! rebase info is a compact program for a small state machine in dyld:
+//! opcodes set the segment and the offset, advance the address, and rebase
+//! a run of consecutive pointers. A non-PIE executable, which is never
+//! slid, has none.
 
 use mold_common::leb128::encode_uleb;
 

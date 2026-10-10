@@ -1,21 +1,40 @@
-//! LC_SEGMENT_SPLIT_INFO: every reference the image makes from one
-//! section into another, or into the mach header, so that the dyld
-//! shared cache builder, or kmutil building a kernel collection, can
-//! slide the segments apart and fix the references up. ld-prime 27037
-//! writes it in the V2 format on both targets.
+//! This file creates the split segment information, which
+//! LC_SEGMENT_SPLIT_INFO points to.
 //!
-//! The entries are ld-prime's. An absolute pointer or a distance (a
-//! SUBTRACTOR pair) in data counts wherever it points, its own section
-//! included; arm64's adrp, the ldr or add under it and its branches
-//! count when they reach another section, and so does an x86-64 32-bit
-//! displacement, which outside code counts anywhere. A reference dyld
-//! binds (into another image) or to an absolute symbol needs no entry.
-//! Besides the inputs' relocations, the linker's own references count:
-//! __stubs and __stub_helper to their pointers, the lazy pointers to
-//! __stub_helper, a GOT slot to a symbol of this image, __objc_stubs,
+//! On macOS, the system's dylibs aren't loaded one by one from their own
+//! files. A tool merges them all into one big prelinked file, the "dyld
+//! shared cache", which every process maps. To pack the dylibs tightly,
+//! the tool takes each one apart and moves its segments (__TEXT, __DATA,
+//! and so on) independently of one another, placing all the dylibs' __TEXT
+//! together, all their __DATA together, and so on. A reference from one
+//! segment to another must then be fixed up, even a PC-relative one that a
+//! dynamic loader would never touch, and the code doesn't say where those
+//! references are. So a dylib bound for the cache records here every
+//! reference it makes from one section into another, or into its Mach-O
+//! header. kmutil, which builds a "kernel collection" out of the kernel and
+//! its extensions in the same way, reads it too.
+//!
+//! Only an image built for one of those gets the table (see
+//! Args::shared_region): a dylib installed where the cache takes libraries
+//! from, dyld itself, the kernel (-kernel), an arm64 kernel extension, or
+//! an image linked with -add_split_seg_info. The table is in the "V2"
+//! format, which the macOS linker writes on both arm64 and x86-64: the
+//! references are grouped by the pair of sections they go between, then
+//! by target offset, then by kind, all encoded in ULEB128 (see encode).
+//!
+//! What counts as a reference follows the macOS linker. An absolute pointer
+//! or a difference of two addresses (a SUBTRACTOR pair) in data counts
+//! wherever it points, its own section included. arm64's adrp, the ldr or
+//! add after it, and its branches count when they reach another section.
+//! An x86-64 32-bit PC-relative displacement counts when it reaches
+//! another section, or anywhere when it is outside code. A reference that
+//! dyld binds to another image, or one to an absolute symbol, needs no
+//! entry. Besides the inputs' relocations, the linker's own references
+//! count: __stubs and __stub_helper to their pointers, the lazy pointers
+//! to __stub_helper, a GOT slot to a symbol of this image, __objc_stubs,
 //! the synthesized selector references and Objective-C records, method
-//! lists, __init_offsets and __unwind_info (image offsets), and
-//! __eh_frame's records.
+//! lists, __init_offsets and __unwind_info (offsets from the image's
+//! start), and __eh_frame's records.
 
 use mold_common::leb128::encode_uleb;
 use rayon::prelude::*;

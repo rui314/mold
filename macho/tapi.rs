@@ -1,15 +1,26 @@
-//! TAPI text-based dylib stub (.tbd) files.
+//! This file reads text-based dylib stubs (.tbd files), which describe a
+//! dylib in place of the dylib itself.
 //!
-//! SDKs don't ship dylib binaries; each dylib is described by a YAML file
-//! giving its install name, exported symbols and reexports. We don't need
-//! a general YAML parser: TAPI files are machine-generated and regular, so
-//! a line-oriented scan is enough.
+//! Apple's SDKs don't contain the system's dylibs. To link against a
+//! dylib, the linker only needs to know what it exports, so the SDK has a
+//! text file for each dylib, made by Apple's TAPI tool, that gives its
+//! install name (the path it is loaded by, like an ELF soname), versions,
+//! exported symbols and re-exported libraries. The linker reads the file
+//! in place of the dylib, much as it would read the dylib's symbol table.
+//! Versions 1 to 4 of the format are YAML, and version 5 is JSON. We don't
+//! need a general YAML parser: the files are machine-generated and regular,
+//! so a line-oriented scan is enough.
 //!
-//! A .tbd file may contain multiple YAML documents: the first one is the
-//! library itself, and the rest are the libraries it reexports, inlined.
-//! Each document is kept apart: the linker decides per library whether
-//! its symbols resolve through the top-level library or bind to it
-//! directly.
+//! A .tbd file may contain several documents: the first one is the library
+//! itself, and the rest are the libraries it re-exports, inlined. Each
+//! document is kept apart, because the linker decides per library whether
+//! its symbols resolve through the top-level library or bind to the
+//! re-exported library directly.
+//!
+//! A library's exports may also include names starting with "$ld$", which
+//! aren't symbols but directives to the linker that change the library for
+//! some deployment targets, e.g. to make a link for an older OS bind a
+//! symbol to the library where it used to live (see LdSymbols).
 
 use std::path::Path;
 

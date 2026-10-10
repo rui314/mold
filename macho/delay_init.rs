@@ -1,11 +1,21 @@
-//! Delay-init dylibs (-delay-l, -delay_library, -delay_framework): a
-//! dylib dyld loads and binds at launch as any other, but whose
-//! initializers run only once the image dlopen()s it, before its first
-//! use of one of the dylib's symbols. ld-prime gives the dylib a
-//! dylib_use_command with DYLIB_USE_DELAYED_INIT and reaches its
-//! symbols through code that dlopen()s it once (see chunks::delay_init);
-//! the public libraries such a dylib re-exports are delayed with it,
-//! by its dlopen helper.
+//! This file implements delay-init dylibs (-delay-l, -delay_library and
+//! -delay_framework, which dyld supports from macOS 15 on). dyld loads and
+//! binds a delay-init dylib at startup like any other dylib, but doesn't
+//! run its initializers (its static constructors) then. They run only when
+//! the program first uses one of the dylib's symbols, which keeps them out
+//! of the program's startup time.
+//!
+//! The image names such a dylib with a load command flagged as delayed
+//! (DYLIB_USE_DELAYED_INIT). dyld runs the dylib's initializers when the
+//! program calls dlopen() on the dylib. So the linker rewrites each
+//! reference to one of the dylib's symbols to go through a small piece of
+//! code (see chunks::delay_init) that calls dlopen() the first time, and
+//! then goes on through the symbol's GOT slot as usual. A reference that
+//! can't be rewritten that way, such as a pointer in data, which dyld
+//! fills at startup, before the dylib is initialized, is an error, as it
+//! is with the macOS linker. A symbol of a library the delay-init dylib
+//! re-exports goes through the same code, which dlopen()s the delay-init
+//! dylib.
 
 use mold_common::bytes::display;
 use mold_common::mem::leak_bytes;

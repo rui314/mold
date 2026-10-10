@@ -1,6 +1,15 @@
-//! LC_DATA_IN_CODE: ranges inside __text that hold data (jump tables, inline
-//! constants), so disassemblers and the signature verifier can treat them
-//! as bytes.
+//! This file creates the data-in-code table, which LC_DATA_IN_CODE points
+//! to.
+//!
+//! The compiler sometimes puts data in the middle of code, such as a jump
+//! table for a switch statement or a constant pool. An object file marks
+//! such ranges with LC_DATA_IN_CODE entries, each of which gives a range's
+//! offset, length and kind, so that a disassembler shows the bytes as data
+//! instead of decoding them as instructions. (ELF has no such table; on
+//! ARM, mapping symbols such as $d serve that purpose.) The linker carries
+//! the entries of the live code into the output, each moved to where its
+//! code ends up: to its file offset in an image, to its address in a -r
+//! output.
 
 use crate::arch::Target;
 use crate::chunks::ChunkHeader;

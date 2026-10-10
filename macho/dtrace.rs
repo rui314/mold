@@ -1,28 +1,34 @@
-//! DTrace USDT probes (statically defined tracing).
+//! This file implements DTrace USDT probes: tracing points that a program
+//! defines in its source code, which cost almost nothing until a tracer
+//! enables them. On Linux, the same idea is the SDT probes of SystemTap's
+//! sys/sdt.h, whose sites are nops described in .note.stapsdt notes of the
+//! object file. On macOS, it is the linker that turns the sites into nops
+//! and describes them.
 //!
-//! A header `dtrace -h` makes from a D script has the code call an
-//! undefined function for each probe site, `___dtrace_probe$<provider>$
-//! <probe>$v1$<argument types>`, and for each is-enabled test,
-//! `___dtrace_isenabled$<provider>$<probe>$v1`, and refer to two more
-//! undefined symbols per provider that no relocation uses: its
-//! stability attributes and its argument typedefs. None of these is
-//! ever defined.
+//! A header that `dtrace -h` makes from a D script, which declares the
+//! probes, has the code call an undefined function for each probe site,
+//! `___dtrace_probe$<provider>$<probe>$v1$<argument types>`, and for each
+//! is-enabled test (a check whether a probe is enabled, to skip preparing
+//! its arguments when it isn't), `___dtrace_isenabled$<provider>$<probe>$v1`.
+//! It also refers to two undefined symbols per provider that no relocation
+//! uses: the provider's stability attributes and its argument typedefs.
+//! None of these symbols is ever defined.
 //!
 //! A final link turns each site into code that does nothing - a probe's
 //! call into a nop, an is-enabled test's into setting its result to 0 -
 //! and describes the sites, one provider at a time, in a DOF ("DTrace
-//! Object Format") section of __TEXT, __dof_<provider>, which dyld hands
-//! to the kernel as it loads the image; enabling a probe has the kernel
-//! patch its sites. ld-prime has the OS's libdtrace make the DOF from
-//! the symbol names (dtrace_ld_create_dof): it rebuilds the provider's
-//! D script from them, compiles it, and registers each site under its
-//! probe and the function it is in. We make the DOF from the symbols
-//! ourselves, in libdtrace's layout (see build_dof). The DOF leaves a
-//! slot for each site's distance from it, which a pair of relocations
-//! fills in once the output is laid out.
+//! Object Format") section of __TEXT, `__dof_<provider>`, which dyld hands
+//! to the kernel as it loads the image. Enabling a probe has the kernel
+//! patch its sites. The macOS linker has the OS's libdtrace make the DOF
+//! from the symbol names: libdtrace rebuilds the provider's D script from
+//! them, compiles it, and registers each site under its probe and the
+//! function it is in. mold makes the DOF from the symbols itself, in
+//! libdtrace's layout (see build_dof). The DOF leaves a slot for each
+//! site's distance from it, which a pair of relocations fills in once the
+//! output is laid out.
 //!
-//! ld-prime makes the DOF sections in the order of a hash table of the
-//! providers; we make them in the order of their first sites.
+//! The macOS linker makes the DOF sections in the order of a hash table of
+//! the providers; mold makes them in the order of their first sites.
 
 use hashbrown::HashMap;
 use mold_common::bytes::display;

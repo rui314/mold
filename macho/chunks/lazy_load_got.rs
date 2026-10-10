@@ -1,5 +1,9 @@
-//! __DATA,__lazy_load_got: the pointers through which the lazy-load
-//! helpers reach the symbols of the dylibs dyld loads lazily.
+//! The __lazy_load_got section of the __DATA segment holds the pointers
+//! through which the image reaches the symbols of its lazily loaded dylibs
+//! (see crate::lazy_load): a slot per symbol, like a GOT entry. Unlike the
+//! GOT, dyld doesn't fill these slots at startup. It fills a dylib's slots
+//! when __dyld_lazy_load loads the dylib, finding them through the dylib's
+//! record (see lazy_load_info.rs).
 
 use crate::arch::Target;
 use crate::chunks::ChunkHeader;

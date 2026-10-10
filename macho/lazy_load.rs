@@ -1,10 +1,33 @@
-//! Lazy dylibs (-lazy-l, -lazy_library, -lazy_framework, from macOS 27
-//! on): a dylib dyld loads only once the image first uses one of its
-//! symbols. Such a dylib has no LC_LOAD_DYLIB: it has an
-//! LC_LAZY_LOAD_DYLIB_INFO record (see chunks::lazy_load_info) naming
-//! it, a flag word and the symbols the image uses from it, each with a
-//! __lazy_load_got slot, which the image reaches through the helpers of
-//! chunks::lazy_helpers.
+//! This file implements lazily loaded dylibs (-lazy-l, -lazy_library and
+//! -lazy_framework, which dyld supports from macOS 27 on). A lazy dylib
+//! isn't loaded when the program starts, but only when the program first
+//! uses one of its symbols, much like a delay-loaded DLL on Windows. That
+//! saves the time to load a dylib the program may never use.
+//!
+//! Normally, an image (an executable or a .dylib) names each dylib it needs
+//! with a load command, LC_LOAD_DYLIB, which is like DT_NEEDED in ELF, and
+//! dyld, the dynamic loader, loads all of them and binds the image's
+//! references to their symbols at startup. A lazy dylib has no such load
+//! command. Instead, the image has a record for it, which names the dylib
+//! and the symbols the image uses from it (see chunks::lazy_load_info), a
+//! flag word that says whether the dylib is loaded yet, and a slot per
+//! symbol in __lazy_load_got, which works like a GOT entry but is filled
+//! only when the dylib is loaded (see chunks::lazy_load_got).
+//!
+//! Code doesn't refer to such a symbol directly. The linker rewrites each
+//! reference to go through a small piece of code in __lazy_helpers (see
+//! chunks::lazy_helpers): a call branches to a helper instead of the
+//! symbol, and a load of the symbol's address from the GOT becomes a call
+//! of a helper that gets it from the symbol's __lazy_load_got slot
+//! instead. A helper checks the dylib's flag word, and if the dylib isn't
+//! loaded yet, it first calls __dyld_lazy_load, a function in libdyld,
+//! which loads the dylib, fills its slots and sets the flag. A reference
+//! that can't be rewritten that way, such as a pointer in data, which
+//! dyld would have to bind at startup, is an error, as it is with the
+//! macOS linker.
+//!
+//! This file finds the references, and creates the flag words, the slots,
+//! the records and the helpers, in the order of the image's first uses.
 
 use mold_common::bytes::display;
 use mold_common::mem::leak_bytes;

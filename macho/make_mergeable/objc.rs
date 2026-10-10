@@ -1,9 +1,20 @@
-//! The Objective-C metadata of a mergeable dylib's record: what the
-//! link made of the objects' (see crate::objc) as entries, as ld-prime
-//! records its own rewrites - the method lists in the relative form,
-//! the records category merging wrote, the selector references of the
-//! objc stubs and of the lists - and the slots it leaves for lists a
-//! merging link may add.
+//! This file adds the Objective-C metadata of a mergeable .dylib to its
+//! record.
+//!
+//! The link rewrites the object files' Objective-C metadata (see
+//! crate::objc): it converts method lists to the relative form, merges
+//! categories into their classes, and creates selector references for the
+//! objc_msgSend stubs. The .dylib's bytes have the rewritten metadata, and
+//! the record describes it as it is, as the macOS linker does: the relative
+//! method lists, the records category merging wrote, and the selector
+//! references of the stubs and of the method lists become entries of their
+//! own.
+//!
+//! The record also leaves room for the lists a merging link may add to a
+//! class or category of the .dylib: a fixup to an empty placeholder entry
+//! at each null list pointer (of methods, protocols or properties) of a
+//! class or category. The macOS linker crashes when it merges a record
+//! without them.
 
 use hashbrown::HashSet;
 

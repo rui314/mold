@@ -1,6 +1,16 @@
-//! The indirect symbol table: for each __stubs, __got and
-//! __la_symbol_ptr slot, and each slot of the inputs' other non-lazy
-//! symbol pointer sections, the output symbol it holds.
+//! This file creates the indirect symbol table, which says which symbol each
+//! slot of the stubs, the GOT and the lazy pointers is for, and each slot of
+//! the input files' sections of pointers to symbols. It is an array of
+//! symbol table indices, one per slot; each such section's header gives the
+//! index of its first slot's entry, in its reserved1 field. A slot whose
+//! value the linker fills in itself, such as a GOT slot of a symbol defined
+//! in the image, is marked INDIRECT_SYMBOL_LOCAL instead.
+//!
+//! On ELF, the symbol of a PLT or GOT entry is known from its dynamic
+//! relocation. On Mach-O, tools such as otool and debuggers read this table
+//! to tell which symbol a slot is for. In legacy LINKEDIT (images for macOS
+//! before 10.6; see Args::legacy_linkedit), dyld binds the GOT slots and
+//! the lazy pointers by it as well.
 
 use crate::arch::Target;
 use crate::chunks::{ChunkHeader, ChunkId};

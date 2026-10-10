@@ -1,37 +1,37 @@
-//! Range-extension thunks.
+//! This file creates range extension thunks, as mold's ELF linker does for
+//! arm64 and other RISC targets. An arm64 branch instruction (b or bl)
+//! reaches only 128 MiB forward or backward, so when the code is larger
+//! than that, a branch to a function out of reach goes through a thunk: a
+//! small piece of code placed among the functions that jumps anywhere
+//! within 4 GiB (with adrp, add and br). x86-64 needs no thunks, as its
+//! branches reach 2 GiB. (The macOS linker calls thunks "branch islands".)
 //!
-//! An arm64 b/bl reaches +-128 MiB; code larger than that needs
-//! thunks, trampolines placed among the code that branch anywhere
-//! within 4 GiB, for the branches that can't reach their targets.
-//! ld-prime makes its branch islands only for such branches (one that
-//! spans more than 124 MiB of its layout without islands), so an image
-//! whose code - from its first code section to the end of its last,
-//! __stubs and __objc_stubs included - fits within a branch's reach
-//! gets none. need_thunks bounds that span before placement and lays
-//! the code out without thunks if it fits.
+//! Most programs are small enough to need no thunks, and the macOS linker
+//! creates them only for branches that are really out of reach. So first,
+//! need_thunks bounds the span of the code, from the start of the first
+//! code section to the end of the last, __stubs and __objc_stubs included.
+//! If it fits within a branch's reach, the code is laid out without
+//! thunks.
 //!
-//! Otherwise every code section is laid out with thunks as mold does:
-//! a thunk is placed for each batch of code at D, the farthest point
-//! from the batch start that a thunk placed there stays within reach
-//! of the whole batch. The subsections up to D thus have their final
-//! offsets when the batch is scanned, so a branch to one of them needs
-//! an entry only if it really is out of reach; a target beyond D, a
-//! branch reach minus a batch away, is assumed to be. Branches to the
-//! other code sections and the stubs are judged by bounds on the room
-//! the code span takes before and after the section.
+//! Otherwise, each code section is laid out with thunks as mold does it.
+//! The code is processed in batches of 10 MiB, and the thunk for a batch is
+//! placed at the farthest point from the batch's start where every branch
+//! in the batch can still reach it. When a batch's branches are examined,
+//! every function up to that point already has its final address, so a
+//! branch to one of them gets a thunk entry only if it really is out of
+//! reach, and a function beyond that point is assumed to be. Branches to
+//! other code sections and to the stubs are judged by bounds on how far
+//! away those can be.
 //!
-//! As in mold, a thunk entry belongs to a *symbol*, not to a
-//! relocation: a symbol that some branch of the batch may not reach
-//! gets an entry, deduplicated by an atomic mark on the symbol inside
-//! the parallel scan, and keeps its mark, getting no second entry, for
-//! as long as that entry stays within reach of the batches that follow;
-//! gather_thunk_addresses records each symbol's entry addresses so that
-//! applying an out-of-range branch just picks the one within reach.
-//! mold also trims the entries that turn out unneeded once addresses
-//! are final (remove_redundant_thunks) and lays the section out again;
-//! ours does not, as the rescan of every branch and the second __TEXT
-//! placement (which re-encodes __unwind_info) cost 5% of a debug clang
-//! link. The extra entries are dead code.
+//! As in mold, a thunk entry belongs to a symbol, not to a branch: one
+//! entry serves all branches to the same symbol from the batches within
+//! its reach, and gather_thunk_addresses records each symbol's entries so
+//! that an out-of-range branch picks one it can reach. mold also removes
+//! the entries that turn out to be unneeded once all addresses are final,
+//! and lays the section out again. We don't, because examining every
+//! branch again and placing __TEXT a second time (which re-encodes
+//! __unwind_info) cost 5% of a debug build of clang's link time. The extra
+//! entries are just unused code.
 
 use mold_common::bits::align_to;
 use rayon::prelude::*;

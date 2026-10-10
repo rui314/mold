@@ -1,9 +1,11 @@
-//! __TEXT,__lazy_helpers: the code through which an image reaches the
-//! symbols of a dylib dyld loads lazily (-lazy-l and the like, macOS 27
-//! on). Each helper checks the dylib's flag word; once dyld has loaded
-//! the dylib and bound its __lazy_load_got slots, it goes on through
-//! the symbol's slot, and before that it first has __dyld_lazy_load
-//! load the dylib.
+//! The __lazy_helpers section of the __TEXT segment holds the code through
+//! which an image reaches the symbols of its lazily loaded dylibs (see
+//! crate::lazy_load for the feature). There is a helper for each symbol
+//! the image calls, and one for each symbol and register that a GOT load
+//! of the symbol loads into (see LazyUse). Each helper checks the flag
+//! word of the symbol's dylib. Once dyld has loaded the dylib and filled
+//! its __lazy_load_got slots, the helper goes on through the symbol's
+//! slot; before that, it first calls __dyld_lazy_load to load the dylib.
 
 use crate::arch::Target;
 use crate::chunks::split_info::{Entry, Places, push};

@@ -1,6 +1,15 @@
-//! The sections -sectcreate makes from files and -add_empty_section
-//! makes empty, and an empty one for a section only a boundary symbol
-//! names.
+//! This file contains the sections the linker creates by name rather than
+//! from input sections.
+//!
+//! `-sectcreate SEG SECT FILE` adds the contents of a file to the output as
+//! section SECT of segment SEG; it is often used to embed an Info.plist
+//! into an executable. `-add_empty_section SEG SECT` adds an empty section.
+//! If an input file has a section of that name, the option's contents go
+//! into its output section after the input sections; otherwise they get a
+//! section of their own, a SectCreateSection (see
+//! passes::place_sectcreate_inputs). A reference to a section's boundary
+//! symbol, such as `section$start$__DATA$__foo` (like ELF's `__start_foo`),
+//! also creates an empty section of that name if no other section has it.
 
 use crate::arch::Target;
 use crate::chunks::ChunkHeader;

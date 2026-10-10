@@ -1,24 +1,45 @@
-//! -make_mergeable: the LC_ATOM_INFO record of a dylib's contents, which
-//! lets a later link's -merge_* take the dylib as the objects it was
-//! made of (the mergeable module reads the record; see there for its
-//! format).
+//! This module writes the record that makes a .dylib mergeable, for
+//! -make_mergeable.
 //!
-//! The record has an entry for each piece the linker moves as a whole:
-//! each live subsection of the objects, an alias for each other symbol
-//! it defines, a tentative definition, an import or a symbol the linker
-//! defines, an initializer offset the link made of an initializer
-//! pointer, and an unwind record (an __eh_frame CIE or FDE, a
-//! __compact_unwind record). Each entry has its name, linkage and
-//! section, and fixups that say what the relocations of its object
-//! said, by entry; its bytes are the dylib's own, linked (an unwind
-//! record's, which the image has none of, are the object's). The dylibs
-//! the dylib links are recorded by install name, for the merging link
-//! to load in its place, and the objects with debug info by the notes
-//! that point a debugger at them.
+//! A mergeable .dylib can also be linked statically: a later link given
+//! -merge_framework or the like turns it back into the object files it was
+//! made from (see bundle_hook.rs for why, and mergeable/ for that side).
+//! What makes that possible is a record of the object files, which this
+//! module writes into the .dylib. mergeable/mod.rs describes its format.
 //!
-//! The entries come object by object, then those of the names the
-//! objects import or leave to the linker, then what the linker made.
-//! Fixups refer to entries by index; their order means nothing else.
+//! The record has an entry for each piece the linker places or removes as
+//! a unit:
+//!
+//!  - each live subsection of the object files (a piece of a section, like
+//!    a section of an ELF object built with -ffunction-sections);
+//!
+//!  - an alias for each other symbol a subsection defines;
+//!
+//!  - each tentative definition (a common symbol);
+//!
+//!  - each import, and each symbol the linker defines itself;
+//!
+//!  - each startup function in the newer __init_offsets form of the list
+//!    of startup functions, which the link made from a pointer in the older
+//!    __mod_init_func form;
+//!
+//!  - each unwind record: an __eh_frame CIE or FDE, or a __compact_unwind
+//!    record (Mach-O's compact form of unwind information).
+//!
+//! Each entry has its name, linkage and section, and fixups that say what
+//! the relocations of its object file said, with entries in place of
+//! symbols. An entry's bytes are the .dylib's own, which are already
+//! linked, except for an unwind record's: the .dylib doesn't keep such a
+//! record as it is, so its bytes are copied from the object file. The
+//! record also lists the .dylibs this .dylib links, by install name, so
+//! that a merging link can link them in its place, and the object files
+//! with debug information, by the debug notes that point a debugger at
+//! them.
+//!
+//! The entries come object file by object file, then those for the symbols
+//! the object files import or leave to the linker, then those for what the
+//! linker made. Fixups refer to entries by index; the order means nothing
+//! else.
 
 use hashbrown::HashMap;
 use mold_common::fatal;

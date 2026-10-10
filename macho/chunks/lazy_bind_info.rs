@@ -1,5 +1,14 @@
-//! The LC_DYLD_INFO lazy-bind opcode stream: one record per lazy pointer,
-//! entered by its stub helper on first call.
+//! This file creates the lazy-bind opcode stream of LC_DYLD_INFO: the binds
+//! dyld makes not at load time but on the first call to each imported
+//! function, as ELF's lazy PLT binding does. A call to an imported function
+//! goes through a stub (see stubs.rs), which jumps through the function's
+//! lazy pointer (see lazy_ptrs.rs). The lazy pointer starts out pointing at
+//! the function's stub helper entry (see stub_helper.rs), which enters dyld
+//! with the offset of the function's record in this stream. A record plays
+//! the role of an `R_*_JUMP_SLOT` relocation on ELF. It is self-contained,
+//! so that dyld can run it alone: the lazy pointer's place, the library,
+//! the symbol name, and a bind. dyld writes the function's address into the
+//! lazy pointer, and later calls jump through it straight to the function.
 
 use crate::arch::Target;
 use crate::chunks::bind_info::{self, Op};

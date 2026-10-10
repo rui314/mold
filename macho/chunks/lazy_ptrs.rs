@@ -1,5 +1,10 @@
-//! __DATA,__la_symbol_ptr: the lazy pointers the stubs jump through, bound
-//! by dyld on first call.
+//! This file creates __DATA,__la_symbol_ptr, the lazy pointers of the
+//! functions bound lazily with LC_DYLD_INFO, the Mach-O counterpart of
+//! .got.plt. Each such function's stub (see stubs.rs) jumps through its
+//! lazy pointer, which at first points at the function's stub helper entry
+//! (see stub_helper.rs); on the first call, dyld writes the function's
+//! address into it. Since a lazy pointer holds an address in the image
+//! until then, it gets a rebase (see rebase_info.rs).
 
 use crate::arch::Target;
 use crate::chunks::split_info::{Entry, Places, push};

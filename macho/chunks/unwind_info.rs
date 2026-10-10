@@ -1,5 +1,30 @@
-//! __TEXT,__unwind_info: the compact unwind table, generated from the
-//! objects' __compact_unwind records.
+//! This file creates __TEXT,__unwind_info, the table the unwinder reads to
+//! unwind the stack through a function, for exceptions and backtraces.
+//!
+//! On ELF, a function's unwind information is a DWARF CFI record (an FDE)
+//! in .eh_frame, and .eh_frame_hdr is a sorted table that lets the unwinder
+//! find the FDE for an address by binary search. On macOS, most functions
+//! don't need a DWARF record: how to unwind through them can be described
+//! by a single 32-bit "compact unwind encoding", such as "a standard frame
+//! that saved these registers" or "no frame, with this stack size". The
+//! compiler emits one record per function in each object's
+//! __compact_unwind section, with the function's address and length, its
+//! encoding, and its personality routine and LSDA (the language-specific
+//! data for exceptions, as on ELF).
+//!
+//! The linker turns those records into __unwind_info, a two-level table
+//! sorted by address that holds the encodings themselves, so it is
+//! .eh_frame_hdr and most of .eh_frame in one compact table. The first
+//! level divides the code into pages, and each second-level page lists its
+//! functions' start offsets, each with an index into the page's
+//! encodings. Personality routines are listed once and referred to by
+//! index, and the LSDAs have an index of their own. A function whose
+//! unwinding the compact encoding can't express gets an encoding that says
+//! "use DWARF", with the offset of its FDE in __eh_frame (see eh_frame.rs).
+//!
+//! The table is encoded as __TEXT is laid out; see encode_unwind_info for
+//! what that means for addresses outside __TEXT and for the personality
+//! routines' pointers.
 
 use mold_common::endian::{push_ul16, push_ul32};
 use mold_common::fatal;

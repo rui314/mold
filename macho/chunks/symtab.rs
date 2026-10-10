@@ -1,6 +1,25 @@
-//! The symbol table in __LINKEDIT: the symbols it lists, with the debug
-//! notes (stabs) of each object, and the writer that emits it together
-//! with the string table.
+//! This file creates the symbol table, which LC_SYMTAB points to and
+//! LC_DYSYMTAB divides into parts, and writes it with its string table.
+//!
+//! A Mach-O image has one symbol table, in __LINKEDIT, which serves the
+//! purpose of ELF's .symtab: debuggers, profilers and nm read it. (dyld
+//! finds the image's exports in the export trie instead; see
+//! export_trie.rs.) LC_DYSYMTAB divides the table into three runs: the
+//! local symbols, the symbols the image defines and exports ("external"
+//! symbols, sorted by name), and the symbols it imports (sorted by name
+//! too).
+//!
+//! The table also holds debug notes, called "stabs". A Mach-O image doesn't
+//! carry DWARF debug information: the linker leaves it in the object files,
+//! and for each object file with debug information it writes symbol table
+//! entries that tell the debugger where the object file is (N_OSO) and
+//! where each of its functions and variables ended up (N_FUN and others).
+//! The debugger then reads the DWARF from the object files. The notes come
+//! after the local symbols, before the external ones.
+//!
+//! The table is laid out before addresses are known; its entries get their
+//! values as it is written (see copy_symtab), and their names are written
+//! into the string table (strtab.rs) at the same time.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};

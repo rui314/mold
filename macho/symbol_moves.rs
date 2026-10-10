@@ -1,14 +1,35 @@
-//! -move_to_rw_segment, -move_to_ro_segment and -dirty_data_list: lists
-//! of symbols whose subsections move to another segment - data written
-//! at run time (rw) or code and constants (ro), to put them on pages of
-//! their own, and the data a shared-cache dylib dirties, to
-//! __DATA_DIRTY. Each option takes the first of its lists that names one
-//! of a subsection's symbols, or matches it with a pattern, and moves
-//! the subsection to the section of its name in the list's segment (see
-//! passes::assign_input_sections). A new segment follows the
-//! linker's own, read-write as any other ld-prime doesn't know - but one
-//! made for moved code, which mold makes executable (see
-//! chunks::segment_prots). Fixups, symbols and -order_file treat a moved
+//! This file implements -move_to_rw_segment, -move_to_ro_segment and
+//! -dirty_data_list, which move chosen functions and data to segments of
+//! their own.
+//!
+//! A Mach-O image is divided into segments, like an ELF executable into
+//! PT_LOAD segments, but each segment has a name: __TEXT for code and
+//! read-only data, __DATA for writable data, and so on. Putting chosen
+//! code or data on pages of their own can save memory, for example by
+//! keeping the data a program writes away from data it only reads, so that
+//! fewer pages become private copies of the process. These options let a
+//! build system do that by symbol:
+//!
+//!  - -move_to_rw_segment moves data that is written at runtime to a named
+//!    segment;
+//!
+//!  - -move_to_ro_segment moves code and constants to a named segment;
+//!
+//!  - -dirty_data_list moves the data that a dylib in the dyld shared cache
+//!    writes to __DATA_DIRTY. (The shared cache is a single prelinked file
+//!    that holds the OS's system dylibs.)
+//!
+//! Each option takes a file that lists symbol names or patterns. The
+//! subsection a listed symbol is in (a piece of a section, like a section
+//! of an ELF object built with -ffunction-sections) moves to the section of
+//! the same name in the option's segment (see
+//! passes::assign_input_sections). find_moves decides which subsection goes
+//! where, and warns about a listed symbol its option can't move, such as
+//! code for -move_to_rw_segment. A segment the linker doesn't otherwise
+//! know is placed after its own segments and is read-write, except that
+//! mold makes one made for moved code executable (see
+//! chunks::segment_prots), where the macOS linker makes it read-write too.
+//! Otherwise, relocations, symbols and -order_file treat a moved
 //! subsection as any other.
 
 use mold_common::bytes::display;

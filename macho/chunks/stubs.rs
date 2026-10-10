@@ -1,4 +1,10 @@
-//! __TEXT,__stubs: jump stubs for calls to imported functions.
+//! This file creates __TEXT,__stubs, the Mach-O counterpart of the PLT. A
+//! call to a function in another image goes to the function's stub, a few
+//! instructions that jump through a pointer: the function's lazy pointer
+//! when functions are bound lazily (see lazy_ptrs.rs and stub_helper.rs),
+//! or otherwise its GOT slot, which dyld fills in at load time (see
+//! got.rs). Unlike the PLT, __stubs has no header entry; the code that
+//! enters dyld for lazy binding is in __stub_helper.
 
 use crate::arch::Target;
 use crate::chunks::split_info::{Entry, Places};

@@ -1,15 +1,46 @@
-//! Reading input files: finding the files the command line names, and
-//! the libraries the objects' auto-link options name, and loading them
-//! as objects, archives and dylibs.
+//! This file reads the input files: it finds the files the command line
+//! names, loads them as object files, archives and .dylibs, and does the
+//! same for the libraries the object files ask for themselves.
 //!
-//! Dylibs are loaded as they are named, in command line order, which
-//! decides their load commands; objects and archive members are queued
-//! and parsed in parallel, then added to the link in command line order,
-//! which gives each its priority for symbol resolution.
+//! As in an ELF linker, `-l<name>` looks for `lib<name>` in the library
+//! search path, trying each directory for a shared library
+//! (`lib<name>.dylib`, or a .tbd file, see below) and then an archive
+//! (`lib<name>.a`) before moving on to the next one. Mach-O also has
+//! `-framework <name>`, which looks for `<name>.framework/<name>` in the
+//! framework search path (see bundle_hook.rs for what a framework is).
 //!
-//! Before that, the option parser reads the first objects here for the
-//! target and the platform the options don't name (detect_machine_type,
-//! infer_platform).
+//! A few things differ from ELF:
+//!
+//!  - The SDK, the directory -syslibroot names, holds the system libraries
+//!    of the target. Most of them aren't .dylibs but .tbd files ("text-based
+//!    stubs"): small text files that list a .dylib's install name and the
+//!    symbols it exports, which is all the linker needs to link against it
+//!    (see tapi.rs).
+//!
+//!  - An object file can ask for libraries itself, with load commands
+//!    (LC_LINKER_OPTION) holding options such as -lz or -framework
+//!    Foundation, which the compiler emits for the modules a source file
+//!    imports. Swift relies on them entirely. These "auto-link" options are
+//!    acted on once symbols are resolved, as if they had been on the
+//!    command line (see load_autolink_deps).
+//!
+//!  - A .dylib names the .dylibs it re-exports by their install names,
+//!    which may start with @rpath or @loader_path. The linker resolves
+//!    those names as the dynamic loader would at run time, to load the
+//!    re-exported .dylibs too (see resolve_dylib_ref).
+//!
+//!  - A file may be a "universal" file, which holds the same program built
+//!    for several architectures. The linker reads the slice of the target.
+//!
+//! .dylibs are loaded one by one in command line order, which decides the
+//! order of the output's load commands for them. Object files and archive
+//! members are queued and parsed in parallel, and then added to the link
+//! in command line order, which decides which definition wins in symbol
+//! resolution.
+//!
+//! Before all that, the option parser calls detect_machine_type and
+//! infer_platform, which read the first object files for the target
+//! architecture and platform when the options don't name them.
 
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};

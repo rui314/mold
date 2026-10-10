@@ -1,26 +1,47 @@
-//! Mergeable dylibs: a dylib ld-prime links with -make_mergeable keeps
-//! a record of the subsections and symbols of its objects, which a
-//! later link's -merge_framework, -merge_library or -merge-l takes in
-//! place of a load command.
+//! This module reads the extra information a mergeable library carries.
 //!
-//! LC_ATOM_INFO points at the record, a blob in __LINKEDIT in a format
-//! of ld-prime's own (magic "nldprecr", file version 3): a header, then
-//! tables of 40-byte entries, 16-byte fixups, large addends, custom
-//! sections, symbol names, the dylib's own identity and the dylibs it
-//! links, debug notes, and pools of strings and contents. An entry
-//! stands for a subsection, a symbol or an import of the objects. Its
-//! content is mostly the dylib's own linked bytes, which a negative
-//! offset from the content pool reaches back to, so its fixups have to
-//! be applied again: a pointer holds a chained fixup there, an
-//! instruction its final immediate, a GOT load ld-prime relaxed an add
-//! (a leaq on x86-64), while the fixup records what the object had.
-//! Compact unwind records, which have no place in the image, are in the
-//! content pool as the objects had them.
+//! Since Xcode 15, a library can be built as a .dylib that can also be
+//! linked statically (see bundle_hook.rs for why). Such a .dylib, linked
+//! with -make_mergeable, keeps a record of the object files it was made
+//! from. A later link given -merge_framework, -merge_library or -merge-l
+//! reads the record, turns it back into those object files, and links them
+//! in place of the .dylib. Apple calls such a library "mergeable". mold
+//! writes the record in make_mergeable/, this module defines its format and
+//! reads it, and object.rs turns it back into an object file.
 //!
-//! This module has the format and reads the record; to merge, mold
-//! turns the entries back into the object file they stand for (see
-//! object.rs) and links that. make_mergeable writes the record in a
-//! dylib linked with -make_mergeable.
+//! The record is in the .dylib's __LINKEDIT segment, where the linker puts
+//! its other tables such as the symbol table, and a load command,
+//! LC_ATOM_INFO, points to it. Its format is the macOS linker's own and is
+//! undocumented (its magic is "nldprecr", and we read file version 3).
+//! After a header, it has tables of:
+//!
+//!  - entries, each of which is a subsection, a symbol or an import of the
+//!    original object files. (A subsection is a piece of a section that
+//!    the linker places or removes as a unit, like a section of an ELF
+//!    object built with -ffunction-sections. Apple calls it an "atom".)
+//!
+//!  - fixups, which are the entries' relocations.
+//!
+//!  - the names of sections other than the standard ones, symbol names,
+//!    and other strings.
+//!
+//!  - the install names and versions of the .dylib itself and of the
+//!    .dylibs it links. (An install name is the path a .dylib is loaded
+//!    by, like an ELF soname.)
+//!
+//!  - the object files' debug notes (their N_SO and N_OSO symbols), so that
+//!    a debugger can still find the object files after a merge.
+//!
+//! An entry's bytes aren't copied into the record. Most of them point back
+//! to the .dylib's own bytes, by a negative offset from the record's
+//! content pool. Those bytes have already been relocated: a pointer holds
+//! a chained fixup (Mach-O's encoding of a dynamic relocation inside the
+//! pointer itself), an instruction holds its final immediate, and a GOT
+//! load the linker relaxed is an add (a leaq on x86-64). So a fixup also
+//! records what the object file had there, which object.rs puts back.
+//! Compact unwind records (Mach-O's compact form of unwind information,
+//! which the linker merges into one table in the .dylib) are copied into
+//! the content pool as the object files had them.
 
 use std::path::Path;
 

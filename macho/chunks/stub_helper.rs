@@ -1,7 +1,21 @@
-//! __TEXT,__stub_helper: with classic dyld info, the code a lazy pointer
-//! initially points at, which enters dyld_stub_binder with the pointer's
-//! lazy-bind record - or, in legacy LINKEDIT, dyld_stub_binding_helper
-//! with the pointer's address.
+//! This file creates __TEXT,__stub_helper, the code that binds imported
+//! functions lazily, on their first call, with LC_DYLD_INFO. It plays the
+//! part of PLT0 and of the second half of each PLT entry on ELF.
+//!
+//! A call to an imported function jumps through its lazy pointer (see
+//! stubs.rs and lazy_ptrs.rs), which at first points at the function's
+//! entry here. The entry loads the offset of the function's record in the
+//! lazy-bind stream (see lazy_bind_info.rs) and jumps to the header at the
+//! start of this section. The header passes the offset, along with the
+//! address of __dyld_private, a word the linker allocates for dyld, to
+//! dyld_stub_binder in libSystem, as PLT0 enters the dynamic loader on ELF.
+//! dyld_stub_binder binds the function, writes its address into the lazy
+//! pointer, and jumps to it.
+//!
+//! In legacy LINKEDIT (images for macOS before 10.6; see
+//! Args::legacy_linkedit), there is no header. Each entry instead passes
+//! its lazy pointer's address to dyld_stub_binding_helper, which the
+//! startup object file (crt1.o, dylib1.o or bundle1.o) defines.
 
 use mold_common::fatal;
 

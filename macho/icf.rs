@@ -1,25 +1,33 @@
-//! Identical code folding.
+//! This file implements identical code folding: it merges functions whose
+//! code is identical into one copy, as mold's ELF linker does with --icf.
+//! On macOS, folding is part of an ordinary link. The macOS linker folds
+//! functions at -O1 and above or with -deduplicate, and this linker folds
+//! them unless -no_deduplicate is given.
 //!
-//! ld64 deduplicates identical functions (ld-prime at -O1 and up or
-//! with -deduplicate, this linker unless -no_deduplicate); mold's ICF
-//! does the same for ELF. Two subsections can share one copy when their
-//! bytes, relocations and unwind information are all identical, *and*
-//! folding cannot be observed. ld-prime folds the functions of
-//! __TEXT,__text that no one can compare the addresses of: those the
-//! compiler marked .weak_def_can_be_hidden (C++ inline functions with
-//! unnamed_addr) that the link hid and Swift functions, whether or not
-//! their address is taken, and any other unexported one whose address
-//! is never taken - mold's --icf=safe.
+//! Only functions in __TEXT,__text, the code section, are folded. Two of
+//! them can share one copy when their bytes, relocations and unwind
+//! information are all identical, and no one can tell that they were
+//! folded, that is, no one compares their addresses. Mach-O object files
+//! have no address-significance table like ELF's .llvm_addrsig, so, as
+//! with mold's --icf=safe, the linker assumes that any reference to a
+//! function other than a call or a jump takes its address, and so does
+//! exporting it (see passes::compute_address_significance). Some functions
+//! need no such check, because their addresses mean nothing by declaration:
+//! a C++ inline function that clang marks as one the linker may hide
+//! (.weak_def_can_be_hidden, given to one with unnamed_addr), once the link
+//! hides it, and any Swift function. The macOS linker folds those even if
+//! their addresses are taken or they are exported, and so do we.
 //!
-//! The algorithm follows mold: every candidate gets a hash of its
-//! literal content, and a few refinement rounds rehash each candidate
-//! with the previous-round hashes of its relocation targets, so the
-//! hash comes to describe the whole reachable shape. Groups with equal
-//! final hashes are then verified structurally and folded onto their
-//! first member. That folds functions that call each other in a cycle
-//! (two instances of a mutually recursive sort) as a group, which
-//! ld-prime, folding only callers of functions already found equal,
-//! leaves apart; either is correct, and ours is the cheaper to find.
+//! The algorithm is mold's. Each candidate gets a hash of its contents.
+//! Then, in a few rounds, each candidate's hash is recomputed with the
+//! previous round's hashes of what its relocations refer to, so that the
+//! hash comes to describe everything the function reaches. Candidates
+//! with equal final hashes are compared to make sure they really are
+//! identical, and each group is folded into its first member. This folds
+//! functions that call each other in a cycle, such as two instances of a
+//! mutually recursive sort, as a group. The macOS linker folds a function
+//! only after the functions it calls have been found equal, so it leaves
+//! them apart; both are correct, and ours is cheaper to compute.
 
 use std::hash::Hash;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};

@@ -1,5 +1,19 @@
-//! __TEXT,__eh_frame: the re-synthesized DWARF unwind records that
-//! compact unwind can't express.
+//! This file creates __TEXT,__eh_frame, which holds the DWARF unwind
+//! records (CIEs and FDEs, as in ELF's .eh_frame) of the functions whose
+//! unwinding __unwind_info's compact encoding can't express.
+//!
+//! An object's __eh_frame has an FDE for each function, as on ELF, but on
+//! macOS most of them aren't needed: a function that also has a compact
+//! unwind record is unwound by __unwind_info (see unwind_info.rs), and its
+//! FDE is dropped. The FDEs that remain are those of the functions whose
+//! compact unwind record says "use DWARF", or that have none, and
+//! __unwind_info points each such function at its FDE by its offset in
+//! this section. So unlike ELF's .eh_frame, this section is rebuilt from
+//! the remaining FDEs and the CIEs they use, rather than concatenated from
+//! the inputs. (A -r output, a -static image, an image linked with
+//! -no_compact_unwind and one for a macOS older than 10.9 keep every FDE;
+//! see Args::keeps_all_fdes.) There is no .eh_frame_hdr: __unwind_info
+//! serves its purpose.
 
 use mold_common::warn;
 

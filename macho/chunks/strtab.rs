@@ -1,4 +1,6 @@
-//! The string table in __LINKEDIT.
+//! This file contains the string table of the symbol table (see
+//! symtab.rs), like ELF's .strtab. Its contents are written along with the
+//! symbol table.
 
 use crate::chunks::ChunkHeader;
 

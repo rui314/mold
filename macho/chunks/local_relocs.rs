@@ -1,9 +1,12 @@
-//! The local relocations of a -static -pie image or a kext
-//! (LC_DYSYMTAB's locreloff): one per pointer a loader must slide, the
-//! job dyld's rebase info does for a dynamic image. A kernel slides
-//! itself by them, kmutil a kext, and dyld an image with legacy
-//! LINKEDIT (Args::legacy_linkedit). mold's reldyn.rs holds the ELF
-//! relative relocations they stand in for.
+//! This file creates the local relocations of LC_DYSYMTAB: one relocation
+//! record, in the object-file format, per pointer that a loader must adjust
+//! when it loads the image at another address. That is the job that the
+//! rebase info (see rebase_info.rs) or chained fixups do for an image dyld
+//! loads, and that `R_*_RELATIVE` relocations do on ELF. Images that dyld
+//! doesn't load use local relocations instead: a -static -pie image, such
+//! as the kernel, which slides itself by them, and a kext, which kmutil
+//! slides. dyld uses them for an image with legacy LINKEDIT (for macOS
+//! before 10.6; see Args::legacy_linkedit).
 
 use mold_common::error;
 

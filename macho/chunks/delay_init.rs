@@ -1,11 +1,11 @@
-//! __TEXT,__delay_stubs and __TEXT,__delay_helper: the code through
-//! which an image reaches the symbols of the dylibs it initializes at
-//! the first use of one (-delay-l and the like). dyld loads and binds
-//! such a dylib at launch as any other, but runs its initializers only
-//! when the image dlopen()s it: each stub and helper checks the flag
-//! word of the dylib's dlopen helper, has the helper dlopen the dylib
-//! (which sets the flag) the first time, and then goes on through the
-//! symbol's __got slot.
+//! The __delay_stubs and __delay_helper sections of the __TEXT segment hold
+//! the code through which an image reaches the symbols of its delay-init
+//! dylibs (see crate::delay_init for the feature). A call of such a symbol
+//! branches to a stub, `_foo$delayInitStub`, and a GOT load of it calls a
+//! helper (see DelayUse). Each dylib also has a dlopen helper, last in
+//! __delay_helper, which calls dlopen() on the dylib and sets a flag word.
+//! A stub or helper checks the flag, calls the dlopen helper the first
+//! time, and then goes on through the symbol's __got slot.
 
 use crate::arch::Target;
 use crate::chunks::split_info::{Entry, Place, Places, push};

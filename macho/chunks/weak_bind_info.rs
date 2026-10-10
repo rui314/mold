@@ -1,6 +1,20 @@
-//! The LC_DYLD_INFO weak-bind opcode stream: the slots dyld redirects when
-//! another image's copy of one of this image's weak definitions wins
-//! coalescing.
+//! This file creates the weak-bind opcode stream of LC_DYLD_INFO.
+//!
+//! C++ inline functions, templates and the like make weak definitions, of
+//! which a program must use one copy even if several images define it. On
+//! ELF, symbol interposition takes care of that: references to such a
+//! symbol go through the GOT or the PLT, and the dynamic loader binds them
+//! all to the same definition. On Mach-O, a slot that holds the address of
+//! one of an image's own weak definitions is rebased to the image's copy,
+//! and a bind names a particular library (see bind_info.rs), so dyld has to
+//! be told where an image refers to its weak definitions.
+//!
+//! This stream lists, by symbol name, each pointer slot that holds the
+//! address of one of this image's weak definitions. If another image's copy
+//! of the symbol wins (dyld calls choosing a copy "coalescing"), dyld
+//! rebinds the slot to it. The stream starts with this image's strong
+//! definitions that override a library's weak definition of the same name,
+//! so that dyld knows this image's copy wins.
 
 use crate::arch::Target;
 use crate::chunks::bind_info::{self, Op};

@@ -1,6 +1,11 @@
-//! The LC_LAZY_LOAD_DYLIB_INFO records in __LINKEDIT: for each dylib
-//! dyld loads lazily, what __dyld_lazy_load needs to load it and bind
-//! the image's slots for its symbols.
+//! The records that tell dyld how to load each lazily loaded dylib (see
+//! crate::lazy_load). They are in __LINKEDIT, the segment for the linker's
+//! tables, and dyld finds each lazy dylib's record through its
+//! LC_LAZY_LOAD_DYLIB_INFO load command. A record names the dylib and the
+//! symbols the image uses from it, and gives the image offsets of the
+//! dylib's flag word and of its first __lazy_load_got slot: what
+//! __dyld_lazy_load needs to load the dylib, fill the slots and set the
+//! flag.
 
 use crate::arch::Target;
 use crate::chunks::ChunkHeader;

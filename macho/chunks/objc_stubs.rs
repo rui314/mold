@@ -1,5 +1,19 @@
-//! __TEXT,__objc_stubs: the linker-synthesized _objc_msgSend$<selector>
-//! stubs, with the selector strings and references they load.
+//! This file creates __TEXT,__objc_stubs, the functions the linker creates
+//! for the `_objc_msgSend$<selector>` symbols.
+//!
+//! An Objective-C method call `[obj foo:x]` is a call to objc_msgSend() with
+//! the method's name, its "selector", loaded from a selector reference (see
+//! objc.rs). Since Xcode 14, the compiler doesn't load the selector at each
+//! call site; it calls an undefined symbol named `_objc_msgSend$foo:`
+//! instead, and leaves it to the linker. For each such symbol, the linker
+//! creates a stub here that loads the selector and jumps to objc_msgSend,
+//! like a PLT entry whose code depends on the symbol's name.
+//!
+//! The linker also creates the selector references the stubs load, and
+//! the selector names they point to. Those go at the ends of the
+//! __objc_selrefs and __objc_methname output sections (see
+//! output_section::Tail), because the runtime reads only one section of
+//! each of those names per image.
 
 use crate::arch::Target;
 use crate::chunks::split_info::{Entry, Places, push};

@@ -1,6 +1,17 @@
-//! An output section of the image: the concatenation of the input
-//! subsections assigned to it, the range-extension thunks placed among
-//! them, and the linker-synthesized tail after them.
+//! This file contains OutputSection, a section of the output file that the
+//! linker fills with input sections, as an output section is in an ELF
+//! linker.
+//!
+//! A Mach-O object built with "subsections via symbols", as compilers build
+//! them by default, has each of its sections split at its symbols into
+//! subsections, which the linker places and removes one by one, like the
+//! sections of an ELF object built with -ffunction-sections and
+//! -fdata-sections. An output section is the concatenation of the live
+//! subsections assigned to it, each at its alignment. Two kinds of data the
+//! linker makes itself go there too: range-extension thunks, for branches
+//! that can't reach their targets (see thunks.rs), are placed among the
+//! subsections, and some Objective-C data the linker creates is appended
+//! after them as the section's tail (see Tail).
 
 use mold_common::bits::align_to;
 use rayon::prelude::*;

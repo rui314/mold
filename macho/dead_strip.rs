@@ -1,12 +1,30 @@
-//! Dead-stripping (-dead_strip): mold's gc-sections for Mach-O.
+//! This file implements dead stripping (-dead_strip), Mach-O's equivalent
+//! of the ELF linkers' --gc-sections: it removes the code and data that
+//! nothing live refers to.
 //!
-//! Subsections not reachable from the roots - the entry point,
-//! exported symbols (for a dylib), initializers and everything the
-//! format pins (no-dead-strip sections and symbols) - are removed.
-//! Reachability follows relocations and unwind-info edges, so a live
-//! function keeps its LSDA and personality. This is passes.rs's
-//! liveness walk's section-level counterpart, and mirrors
-//! gc_sections.rs in mold (dead-strip.cc in sold).
+//! The difference is the unit it removes. An ELF linker removes whole input
+//! sections, so it relies on the compiler's -ffunction-sections to put each
+//! function in a section of its own. A Mach-O object file instead has a
+//! few large sections, and the linker splits each section at its symbols
+//! into subsections, one per function or variable, if the object file
+//! allows that with MH_SUBSECTIONS_VIA_SYMBOLS, as clang's do. Dead
+//! stripping removes subsections.
+//!
+//! As with --gc-sections, the linker marks everything reachable from a set
+//! of roots by following relocations, and removes the rest. The roots are
+//! the entry point, the symbols the output exports, the symbols the command
+//! line names (-u and the like), the startup and exit functions, and what
+//! the object files mark to be kept (no-dead-strip sections and symbols).
+//! The code and data of an object file that doesn't allow splitting are
+//! kept, as the linker can't tell where its functions end. A function's
+//! unwind information counts as references, so a live function keeps its
+//! exception table (LSDA) and personality function. A section marked
+//! live-support (S_ATTR_LIVE_SUPPORT) lives only if it refers to something
+//! live.
+//!
+//! The macOS linker also strips dead code unasked in an executable or a
+//! .dylib of code that LTO compiled, to find what LTO must keep (see
+//! strips_dead_code and native_refs_before_lto).
 
 use std::collections::{HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};

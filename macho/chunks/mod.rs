@@ -1,13 +1,24 @@
-//! Output chunks: the pieces an output file is assembled from.
+//! This module contains the output chunks, the pieces an output file is
+//! assembled from, like the ELF linker's chunks module.
 //!
-//! A chunk is a contiguous byte range of the output: the mach header with
-//! its load commands, an output section collecting input sections, or a
-//! table in __LINKEDIT. Each kind is a struct of its own holding a
-//! ChunkHeader and the data it is written from, reached through the
-//! typed fields of Context; a ChunkId names one, and `ctx.chunks` lists
-//! the chunks of the output in file order. Segments group chunks for
-//! the LC_SEGMENT_64 load commands. mold's chunks module has the
-//! same shape.
+//! A Mach-O file starts with the Mach-O header, which is followed by "load
+//! commands": records that tell the kernel and dyld how to load the file,
+//! like ELF's program headers and dynamic section in one. An LC_SEGMENT_64
+//! command describes a segment (__TEXT, __DATA, ...), which is mapped into
+//! memory as a unit, and the sections in it, so every section belongs to a
+//! segment. Other load commands point to tables in the last segment,
+//! __LINKEDIT, which holds what only the loader and tools read, such as the
+//! symbol table and the dynamic linking information.
+//!
+//! A chunk is a contiguous byte range of the output: the Mach-O header with
+//! its load commands, an output section that collects input sections, a
+//! section the linker synthesizes, or a table in __LINKEDIT. Each kind is a
+//! struct of its own holding a ChunkHeader and the data it is written from,
+//! reached through the typed fields of Context. A ChunkId names a chunk,
+//! and `ctx.chunks` lists the chunks of the output in file order.
+//! OutputSegment groups chunks into segments for the LC_SEGMENT_64
+//! commands. This file also creates the load commands and writes the
+//! Mach-O header.
 
 pub mod bind_info;
 pub mod chain_starts;

@@ -1,5 +1,15 @@
-//! __TEXT,__objc_methlist: the Objective-C method lists rewritten in the
-//! relative (12-byte entry) form, which needs no fixups.
+//! This file creates __TEXT,__objc_methlist, which holds the Objective-C
+//! method lists the linker rewrites in the relative form.
+//!
+//! A class's methods are listed in a method list, which is something like
+//! a vtable (see objc.rs): an entry for each method, with pointers to its
+//! selector, its type string and its function. Those three pointers each
+//! need a dynamic relocation, and the list must be in a writable segment
+//! for them. When the image targets an OS that understands it, such as
+//! macOS 11 or later, the linker rewrites each list in the "relative" form,
+//! whose 12-byte entries hold three 32-bit offsets from the fields
+//! themselves instead (see objc::convert_objc_method_lists). They need no
+//! relocations, so the lists can go in this read-only section of __TEXT.
 
 use mold_common::bits::align_to;
 use mold_common::fatal;

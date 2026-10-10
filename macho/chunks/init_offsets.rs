@@ -1,5 +1,16 @@
-//! __TEXT,__init_offsets: 32-bit image-relative initializer offsets,
-//! replacing __mod_init_func's absolute pointers.
+//! This file creates __TEXT,__init_offsets, the list of the functions to
+//! run when the image is loaded, like ELF's .init_array.
+//!
+//! The compiler lists an object's startup functions (constructors of C++
+//! global variables, functions marked `__attribute__((constructor))`) as
+//! pointers in a __mod_init_func section, which is like .init_array. Each
+//! pointer needs a dynamic relocation, since the image may be loaded at
+//! any address. With -init_offsets, which chained fixups imply (see
+//! Args::init_offsets), the linker turns that list into this section,
+//! which holds each function's 32-bit offset from the start of the image
+//! instead (see passes::convert_init_offsets). dyld runs the functions the
+//! same way, but has nothing to fix up, and the section can be in the
+//! read-only __TEXT segment.
 
 use mold_common::error;
 

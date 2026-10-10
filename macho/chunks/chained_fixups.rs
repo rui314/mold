@@ -1,6 +1,28 @@
-//! The LC_DYLD_CHAINED_FIXUPS payload in __LINKEDIT: the modern
-//! replacement for the rebase and bind opcode streams, with the fixup
-//! chains it describes threaded through the data sections.
+//! This file creates the chained fixups, the newer of the two forms in
+//! which a Mach-O image tells dyld, the dynamic loader, how to fix up its
+//! pointers as it is loaded. The macOS linker uses them by default for
+//! recent deployment targets, such as macOS 12 and later; the older form is
+//! LC_DYLD_INFO's opcode streams (see rebase_info.rs and bind_info.rs).
+//!
+//! As on ELF, a pointer needs a fixup in two cases. It may hold an address
+//! in the image itself, which must be adjusted by however far the image
+//! lands from the address it was linked at (a "rebase", which is what
+//! `R_*_RELATIVE` does on ELF), or it may hold the address of a symbol in
+//! another image (a "bind", which is what a dynamic relocation naming a
+//! symbol does). ELF lists such places in relocation sections. With chained
+//! fixups, the pointer slots themselves carry the information: instead of
+//! its value, each slot holds a 64-bit word that encodes either the rebase
+//! target or an index into a table of imported symbols (with a small
+//! addend), plus the distance to the next slot that needs a fixup in the
+//! same page. The slots of a page thus form a linked list, a "chain", which
+//! dyld walks to write the real values.
+//!
+//! What remains for __LINKEDIT is the LC_DYLD_CHAINED_FIXUPS payload: a
+//! header, the offset of the first fixup in each page of each segment, the
+//! import table and the imported symbols' names. This file builds the
+//! payload and writes the chains into the output's data. An image with
+//! chained fixups binds every symbol at load time; there is no lazy binding
+//! (see stub_helper.rs).
 
 use mold_common::bytes::display;
 use mold_common::endian::{push_ul16, push_ul32, push_ul64};
