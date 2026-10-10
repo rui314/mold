@@ -1019,6 +1019,33 @@ pub(crate) enum Item {
     /// `-z cet-report=error`.
     #[arg(skip)]
     ZCetReportError,
+    /// `-z bti-report=none`.
+    #[arg(skip)]
+    ZBtiReportNone,
+    /// `-z bti-report=warning`.
+    #[arg(skip)]
+    ZBtiReportWarning,
+    /// `-z bti-report=error`.
+    #[arg(skip)]
+    ZBtiReportError,
+    /// `-z gcs-report=none`.
+    #[arg(skip)]
+    ZGcsReportNone,
+    /// `-z gcs-report=warning`.
+    #[arg(skip)]
+    ZGcsReportWarning,
+    /// `-z gcs-report=error`.
+    #[arg(skip)]
+    ZGcsReportError,
+    /// `-z gcs-report-dynamic=none`.
+    #[arg(skip)]
+    ZGcsReportDynamicNone,
+    /// `-z gcs-report-dynamic=warning`.
+    #[arg(skip)]
+    ZGcsReportDynamicWarning,
+    /// `-z gcs-report-dynamic=error`.
+    #[arg(skip)]
+    ZGcsReportDynamicError,
     /// `-z execstack`.
     #[arg(skip)]
     ZExecstack,
@@ -1070,6 +1097,24 @@ pub(crate) enum Item {
     /// `-z ibtplt`.
     #[arg(skip)]
     ZIbtplt,
+    /// `-z global`.
+    #[arg(skip)]
+    ZGlobal,
+    /// `-z force-bti`.
+    #[arg(skip)]
+    ZForceBti,
+    /// `-z pac-plt`.
+    #[arg(skip)]
+    ZPacPlt,
+    /// `-z gcs=implicit`.
+    #[arg(skip)]
+    ZGcsImplicit,
+    /// `-z gcs=never`.
+    #[arg(skip)]
+    ZGcsNever,
+    /// `-z gcs=always`.
+    #[arg(skip)]
+    ZGcsAlways,
     /// `-z muldefs`.
     #[arg(skip)]
     ZMuldefs,
@@ -1140,11 +1185,8 @@ pub(crate) enum Item {
     #[arg(skip)]
     ZNorewriteEndbr,
     // GNU ld's -z keywords mold has no use for: they mark the output
-    // (DF_1_GLOBAL, DF_1_UNIQUE, global auditing), or do nothing on the
-    // targets mold supports.
-    /// `-z global`.
-    #[arg(skip)]
-    ZGlobal,
+    // (DF_1_UNIQUE, global auditing), or do nothing on the targets mold
+    // supports.
     /// `-z globalaudit`.
     #[arg(skip)]
     ZGlobalaudit,
@@ -1263,6 +1305,15 @@ pub(crate) fn z_opt(word: &OsStr) -> Option<Item> {
         "cet-report=none" => Item::ZCetReportNone,
         "cet-report=warning" => Item::ZCetReportWarning,
         "cet-report=error" => Item::ZCetReportError,
+        "bti-report=none" => Item::ZBtiReportNone,
+        "bti-report=warning" => Item::ZBtiReportWarning,
+        "bti-report=error" => Item::ZBtiReportError,
+        "gcs-report=none" => Item::ZGcsReportNone,
+        "gcs-report=warning" => Item::ZGcsReportWarning,
+        "gcs-report=error" => Item::ZGcsReportError,
+        "gcs-report-dynamic=none" => Item::ZGcsReportDynamicNone,
+        "gcs-report-dynamic=warning" => Item::ZGcsReportDynamicWarning,
+        "gcs-report-dynamic=error" => Item::ZGcsReportDynamicError,
         "execstack" => Item::ZExecstack,
         "execstack-if-needed" => Item::ZExecstackIfNeeded,
         "start-stop-visibility=protected" => Item::ZStartStopVisibilityProtected,
@@ -1280,6 +1331,12 @@ pub(crate) fn z_opt(word: &OsStr) -> Option<Item> {
         "interpose" => Item::ZInterpose,
         "ibt" => Item::ZIbt,
         "ibtplt" => Item::ZIbtplt,
+        "global" => Item::ZGlobal,
+        "force-bti" => Item::ZForceBti,
+        "pac-plt" => Item::ZPacPlt,
+        "gcs=implicit" => Item::ZGcsImplicit,
+        "gcs=never" => Item::ZGcsNever,
+        "gcs=always" => Item::ZGcsAlways,
         "muldefs" => Item::ZMuldefs,
         "keep-text-section-prefix" => Item::ZKeepTextSectionPrefix,
         "nokeep-text-section-prefix" => Item::ZNokeepTextSectionPrefix,
@@ -1302,7 +1359,6 @@ pub(crate) fn z_opt(word: &OsStr) -> Option<Item> {
         "x86-64-v4" => Item::ZX8664V4,
         "rewrite-endbr" => Item::ZRewriteEndbr,
         "norewrite-endbr" => Item::ZNorewriteEndbr,
-        "global" => Item::ZGlobal,
         "globalaudit" => Item::ZGlobalaudit,
         "loadfltr" => Item::ZLoadfltr,
         "start-stop-gc" => Item::ZStartStopGc,
@@ -1649,8 +1705,6 @@ mod tests {
     fn gnu_ld_z_keywords_mold_has_no_use_for_are_accepted() {
         // As the dispatch does: -z KEYWORD is the option it stands for.
         let items: Vec<Item> = parse_items(&[
-            "-z",
-            "global",
             "-zglobalaudit",
             "-z",
             "loadfltr",
@@ -1674,15 +1728,73 @@ mod tests {
             item => item,
         })
         .collect();
+        assert!(matches!(&items[0], Item::ZGlobalaudit));
+        assert!(matches!(&items[1], Item::ZLoadfltr));
+        assert!(matches!(&items[2], Item::ZStartStopGc));
+        assert!(matches!(&items[3], Item::ZNoStartStopGc));
+        assert!(matches!(&items[4], Item::ZUnique));
+        assert!(matches!(&items[5], Item::ZNounique));
+        assert!(matches!(&items[6], Item::ZUniqueSymbol));
+        assert!(matches!(&items[7], Item::ZNouniqueSymbol));
+        assert!(matches!(&items[8], Item::Input(_)));
+    }
+
+    #[test]
+    fn z_options_the_built_in_parser_reads_are_mapped() {
+        // The -z options the built-in parser handles, as the dispatch does.
+        let items: Vec<Item> = parse_items(&[
+            "-z",
+            "global",
+            "-zforce-bti",
+            "-z",
+            "pac-plt",
+            "-z",
+            "gcs=implicit",
+            "-z",
+            "gcs=never",
+            "-z",
+            "gcs=always",
+            "-z",
+            "bti-report=none",
+            "-z",
+            "bti-report=warning",
+            "-z",
+            "bti-report=error",
+            "-z",
+            "gcs-report=none",
+            "-z",
+            "gcs-report=warning",
+            "-z",
+            "gcs-report=error",
+            "-z",
+            "gcs-report-dynamic=none",
+            "-z",
+            "gcs-report-dynamic=warning",
+            "-z",
+            "gcs-report-dynamic=error",
+            "a.o",
+        ])
+        .into_iter()
+        .map(|item| match item {
+            Item::Z(z) => z_opt(&z.value).unwrap_or(Item::Z(z)),
+            item => item,
+        })
+        .collect();
         assert!(matches!(&items[0], Item::ZGlobal));
-        assert!(matches!(&items[1], Item::ZGlobalaudit));
-        assert!(matches!(&items[2], Item::ZLoadfltr));
-        assert!(matches!(&items[3], Item::ZStartStopGc));
-        assert!(matches!(&items[4], Item::ZNoStartStopGc));
-        assert!(matches!(&items[5], Item::ZUnique));
-        assert!(matches!(&items[6], Item::ZNounique));
-        assert!(matches!(&items[7], Item::ZUniqueSymbol));
-        assert!(matches!(&items[8], Item::ZNouniqueSymbol));
-        assert!(matches!(&items[9], Item::Input(_)));
+        assert!(matches!(&items[1], Item::ZForceBti));
+        assert!(matches!(&items[2], Item::ZPacPlt));
+        assert!(matches!(&items[3], Item::ZGcsImplicit));
+        assert!(matches!(&items[4], Item::ZGcsNever));
+        assert!(matches!(&items[5], Item::ZGcsAlways));
+        assert!(matches!(&items[6], Item::ZBtiReportNone));
+        assert!(matches!(&items[7], Item::ZBtiReportWarning));
+        assert!(matches!(&items[8], Item::ZBtiReportError));
+        assert!(matches!(&items[9], Item::ZGcsReportNone));
+        assert!(matches!(&items[10], Item::ZGcsReportWarning));
+        assert!(matches!(&items[11], Item::ZGcsReportError));
+        assert!(matches!(&items[12], Item::ZGcsReportDynamicNone));
+        assert!(matches!(&items[13], Item::ZGcsReportDynamicWarning));
+        assert!(matches!(&items[14], Item::ZGcsReportDynamicError));
+        assert!(matches!(&items[15], Item::Input(_)));
     }
 }

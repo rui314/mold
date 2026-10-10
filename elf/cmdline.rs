@@ -1147,11 +1147,8 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
     let mut report_undefined: Option<bool> = None;
     let mut z_relro: Option<bool> = None;
     let mut z_dynamic_undefined_weak: Option<bool> = None;
-    #[cfg_attr(feature = "winnow-args", allow(unused_mut))]
     let mut z_bti_report: Option<ReportKind> = None;
-    #[cfg_attr(feature = "winnow-args", allow(unused_mut))]
     let mut z_gcs_report: Option<ReportKind> = None;
-    #[cfg_attr(feature = "winnow-args", allow(unused_mut))]
     let mut z_gcs_report_dynamic: Option<ReportKind> = None;
     let mut separate_debug_file: Option<PathBuf> = None;
     // An explicit seed survives intervening --reverse-sections options.
@@ -3094,6 +3091,33 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                 Item::ZCetReportError => {
                     a.z_cet_report = ReportKind::Error;
                 }
+                Item::ZBtiReportNone => {
+                    z_bti_report = Some(ReportKind::None);
+                }
+                Item::ZBtiReportWarning => {
+                    z_bti_report = Some(ReportKind::Warning);
+                }
+                Item::ZBtiReportError => {
+                    z_bti_report = Some(ReportKind::Error);
+                }
+                Item::ZGcsReportNone => {
+                    z_gcs_report = Some(ReportKind::None);
+                }
+                Item::ZGcsReportWarning => {
+                    z_gcs_report = Some(ReportKind::Warning);
+                }
+                Item::ZGcsReportError => {
+                    z_gcs_report = Some(ReportKind::Error);
+                }
+                Item::ZGcsReportDynamicNone => {
+                    z_gcs_report_dynamic = Some(ReportKind::None);
+                }
+                Item::ZGcsReportDynamicWarning => {
+                    z_gcs_report_dynamic = Some(ReportKind::Warning);
+                }
+                Item::ZGcsReportDynamicError => {
+                    z_gcs_report_dynamic = Some(ReportKind::Error);
+                }
                 Item::ZExecstack => {
                     a.z_execstack = true;
                 }
@@ -3149,6 +3173,24 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                     a.z_ibt = true;
                 }
                 Item::ZIbtplt => {}
+                Item::ZGlobal => {
+                    a.z_global = true;
+                }
+                Item::ZForceBti => {
+                    a.z_force_bti = true;
+                }
+                Item::ZPacPlt => {
+                    a.z_pac_plt = true;
+                }
+                Item::ZGcsImplicit => {
+                    a.z_gcs = GcsKind::Implicit;
+                }
+                Item::ZGcsNever => {
+                    a.z_gcs = GcsKind::Never;
+                }
+                Item::ZGcsAlways => {
+                    a.z_gcs = GcsKind::Always;
+                }
                 Item::ZMuldefs => {
                     a.allow_multiple_definition = true;
                 }
@@ -3223,8 +3265,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
                 Item::ZNorewriteEndbr => {
                     a.z_rewrite_endbr = false;
                 }
-                Item::ZGlobal
-                | Item::ZGlobalaudit
+                Item::ZGlobalaudit
                 | Item::ZLoadfltr
                 | Item::ZStartStopGc
                 | Item::ZNoStartStopGc
