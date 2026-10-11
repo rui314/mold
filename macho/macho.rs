@@ -57,6 +57,21 @@ le_integer!(U16, u16);
 le_integer!(U32, u32);
 le_integer!(U64, u64);
 
+// Little-endian appends of an integer to a buffer: the fields of the
+// tables the linker builds in full before writing them out (the chained
+// fixups, the unwind info, a DOF section).
+pub fn push16(buf: &mut Vec<u8>, val: u16) {
+    buf.extend_from_slice(&val.to_le_bytes());
+}
+
+pub fn push32(buf: &mut Vec<u8>, val: u32) {
+    buf.extend_from_slice(&val.to_le_bytes());
+}
+
+pub fn push64(buf: &mut Vec<u8>, val: u64) {
+    buf.extend_from_slice(&val.to_le_bytes());
+}
+
 /// Returns the bytes of a 16-byte, NUL-padded section or segment name.
 /// A name is bytes, not text: ld-prime takes any but NUL, UTF-8 or
 /// not, and writes them to the output as they came.

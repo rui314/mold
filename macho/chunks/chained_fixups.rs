@@ -25,7 +25,6 @@
 //! (see stub_helper.rs).
 
 use mold_common::bytes::display;
-use mold_common::endian::{push_ul16, push_ul32, push_ul64};
 use mold_common::{error, fatal, warn};
 use rayon::prelude::*;
 
@@ -147,13 +146,13 @@ pub fn build_chained_fixups<E: Target>(ctx: &Context<E>) -> Option<ChainedFixups
 
     let mut buf = Vec::new();
     // dyld_chained_fixups_header; the offsets are backpatched.
-    push_ul32(&mut buf, 0); // fixups_version
-    push_ul32(&mut buf, 0); // starts_offset
-    push_ul32(&mut buf, 0); // imports_offset
-    push_ul32(&mut buf, 0); // symbols_offset
-    push_ul32(&mut buf, imports.len() as u32);
-    push_ul32(&mut buf, format);
-    push_ul32(&mut buf, 0); // symbols_format: uncompressed
+    push32(&mut buf, 0); // fixups_version
+    push32(&mut buf, 0); // starts_offset
+    push32(&mut buf, 0); // imports_offset
+    push32(&mut buf, 0); // symbols_offset
+    push32(&mut buf, imports.len() as u32);
+    push32(&mut buf, format);
+    push32(&mut buf, 0); // symbols_format: uncompressed
     pad(&mut buf, 8);
 
     let starts_offset = buf.len();
@@ -200,10 +199,10 @@ fn write_starts_in_image<E: Target>(ctx: &Context<E>, buf: &mut Vec<u8>, fixups:
     let starts_offset = buf.len();
     // One per segment command: a -preload image's __LINKEDIT has none.
     let seg_count = ctx.segments.len() - usize::from(ctx.args.preload);
-    push_ul32(buf, seg_count as u32);
+    push32(buf, seg_count as u32);
     let seg_info_table = buf.len();
     for _ in 0..seg_count {
-        push_ul32(buf, 0);
+        push32(buf, 0);
     }
 
     // A segment's offset counts from the image's own address, which
@@ -231,14 +230,14 @@ fn write_starts_in_image<E: Target>(ctx: &Context<E>, buf: &mut Vec<u8>, fixups:
             ((fx.last().unwrap().0 + 1 - seg.cmd.vmaddr.get()).div_ceil(page_size)) as usize;
         // The record is 22 bytes of fields plus one u16 per page; its
         // size counts just those, without padding.
-        push_ul32(buf, 22 + npages as u32 * 2);
-        push_ul16(buf, page_size as u16);
-        push_ul16(buf, pointer_format(ctx));
+        push32(buf, 22 + npages as u32 * 2);
+        push16(buf, page_size as u16);
+        push16(buf, pointer_format(ctx));
         // A layout in error may put a segment below the image base; the
         // table is never written then.
-        push_ul64(buf, seg.cmd.vmaddr.get().wrapping_sub(image_base));
-        push_ul32(buf, 0); // max_valid_pointer
-        push_ul16(buf, npages as u16);
+        push64(buf, seg.cmd.vmaddr.get().wrapping_sub(image_base));
+        push32(buf, 0); // max_valid_pointer
+        push16(buf, npages as u16);
         let mut j = 0;
         for i in 0..npages {
             let page_addr = seg.cmd.vmaddr.get() + i as u64 * page_size;
@@ -246,9 +245,9 @@ fn write_starts_in_image<E: Target>(ctx: &Context<E>, buf: &mut Vec<u8>, fixups:
                 j += 1;
             }
             if j < fx.len() && fx[j].0 < page_addr + page_size {
-                push_ul16(buf, (fx[j].0 - page_addr) as u16);
+                push16(buf, (fx[j].0 - page_addr) as u16);
             } else {
-                push_ul16(buf, DYLD_CHAINED_PTR_START_NONE);
+                push16(buf, DYLD_CHAINED_PTR_START_NONE);
             }
         }
     }
@@ -270,17 +269,17 @@ fn write_imports<E: Target>(
         match format {
             DYLD_CHAINED_IMPORT => {
                 let ordinal = import_ordinal(ctx, sym, 8) as u32;
-                push_ul32(buf, ordinal | (weak << 8) | (name_off << 9));
+                push32(buf, ordinal | (weak << 8) | (name_off << 9));
             }
             DYLD_CHAINED_IMPORT_ADDEND => {
                 let ordinal = import_ordinal(ctx, sym, 8) as u32;
-                push_ul32(buf, ordinal | (weak << 8) | (name_off << 9));
-                push_ul32(buf, addend as u32);
+                push32(buf, ordinal | (weak << 8) | (name_off << 9));
+                push32(buf, addend as u32);
             }
             _ => {
                 let ordinal = import_ordinal(ctx, sym, 16);
-                push_ul64(buf, ordinal | ((weak as u64) << 16) | ((name_off as u64) << 32));
-                push_ul64(buf, addend);
+                push64(buf, ordinal | ((weak as u64) << 16) | ((name_off as u64) << 32));
+                push64(buf, addend);
             }
         }
         name_off += ctx.symbols[sym].name().len() as u32 + 1;

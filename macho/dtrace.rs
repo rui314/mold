@@ -33,7 +33,6 @@
 use hashbrown::HashMap;
 use mold_common::bytes::display;
 use mold_common::bytes::split_once;
-use mold_common::endian::{push_ul16, push_ul32, push_ul64};
 use mold_common::error;
 use rayon::prelude::*;
 
@@ -533,9 +532,9 @@ impl ProbeTables {
                 let offidx = t.sites.len() as u32;
                 put_u32s(&mut t.records, &[func, name, nargv, xargv, argidx, offidx]);
                 t.records.extend_from_slice(&[nargc, nargc]);
-                push_ul16(&mut t.records, inst.sites.len() as u16);
+                push16(&mut t.records, inst.sites.len() as u16);
                 put_u32s(&mut t.records, &[t.tests.len() as u32]);
-                push_ul16(&mut t.records, inst.tests.len() as u16);
+                push16(&mut t.records, inst.tests.len() as u16);
                 t.records.extend_from_slice(&[0; 6]);
                 t.sites.extend(&inst.sites);
                 t.tests.extend(&inst.tests);
@@ -608,13 +607,13 @@ fn lay_out_dof(
 
 fn put_u32s(out: &mut Vec<u8>, vals: &[u32]) {
     for &v in vals {
-        push_ul32(out, v);
+        push32(out, v);
     }
 }
 
 fn put_u64s(out: &mut Vec<u8>, vals: &[u64]) {
     for &v in vals {
-        push_ul64(out, v);
+        push64(out, v);
     }
 }
 
