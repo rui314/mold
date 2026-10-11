@@ -5414,23 +5414,26 @@ pub fn add_entry_stub<E: Target>(ctx: &mut Context<E>) {
     }
 }
 
-/// Computes the UUID that identifies the build and writes it into the
-/// header's LC_UUID, and returns the SHA256 hashes of every 4KiB page
-/// before the code signature at `sig_start`, which the signature is
-/// made of. This is mold's write_build_id: a Mach-O build ID is its
-/// UUID.
+/// Writes the build ID into the header's LC_UUID, and returns the
+/// SHA256 hash of every 4KiB page before the code signature at
+/// `sig_start`, which the signature is made of.
 ///
-/// The UUID is derived from those page hashes rather than from a second
-/// pass over the contents: the pages are hashed while the LC_UUID field
-/// is still zero, the array is hashed once more and stamped as a
-/// version-4 UUID, and only the pages the header spans are hashed again
-/// for the signature. The circularity - the signature covers the
-/// header, the header holds the UUID - is broken by the zeroed field.
-/// The UUID depends on the contents before the signature only, not on
-/// the signature blob (whose identifier is the output's basename);
-/// unsigned output hashes its pages the same way. A -random_uuid one
-/// goes in before anything is hashed.
-pub fn compute_uuid<E: Target>(
+/// The build ID is the first 16 bytes of a SHA256 over the page hashes,
+/// so an output with the same contents gets the same ID. Its version
+/// and variant bits are set as in a version-4 UUID. -random_uuid writes
+/// a random UUID instead, before anything is hashed, and -no_uuid
+/// leaves LC_UUID out. The pages are hashed only if the build ID or the
+/// signature needs them.
+///
+/// Deriving the build ID from the page hashes reads the contents once.
+/// As the signature covers the header, which holds the build ID, the
+/// pages are hashed while the LC_UUID field is still zero, and once the
+/// build ID is in, the pages the header spans are hashed again for the
+/// signature. The build ID thus depends only on the contents before the
+/// signature, not on the signature blob (whose identifier is the
+/// output's basename), and an unsigned output's is derived the same
+/// way.
+pub fn write_build_id<E: Target>(
     ctx: &Context<E>,
     buf: &mut [u8],
     sig_start: usize,
@@ -5439,16 +5442,16 @@ pub fn compute_uuid<E: Target>(
         *ctx.uuid.lock().unwrap() = uuid.into_bytes();
         chunks::write_uuid(ctx, buf);
     };
-    let content_uuid = ctx.args.uuid && !ctx.args.random_uuid;
+    let hashed_id = ctx.args.uuid && !ctx.args.random_uuid;
     if ctx.args.uuid && ctx.args.random_uuid {
         set_uuid(uuid::Uuid::new_v4(), buf);
     }
     let mut hashes: Vec<[u8; 32]> = Vec::new();
-    if content_uuid || ctx.args.adhoc_codesign {
+    if hashed_id || ctx.args.adhoc_codesign {
         let _t = ctx.timer("page_hashes");
         hashes = chunks::code_signature::page_hashes(&buf[..sig_start]);
     }
-    if content_uuid {
+    if hashed_id {
         let _t = ctx.timer("uuid");
         // The build system's salt goes in first (see Args::uuid_salt).
         let mut flat: Vec<u8> = ctx.args.uuid_salt.clone();

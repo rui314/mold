@@ -416,8 +416,9 @@ pub struct Args {
     /// ld64 does unless -no_objc_category_merging is given (there is no
     /// option to turn it on).
     pub objc_category_merging: bool,
-    /// Compute a content-hash LC_UUID (on by default; -no_uuid leaves
-    /// it zeroed - dyld refuses executables without the load command).
+    /// Whether the image has an LC_UUID, which holds its build ID (see
+    /// passes::write_build_id). On by default; -no_uuid leaves it out,
+    /// though dyld refuses to load an image without one.
     pub uuid: bool,
     /// -random_uuid: a random LC_UUID in place of the content hash,
     /// which saves hashing a large output.

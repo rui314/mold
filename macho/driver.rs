@@ -330,7 +330,7 @@ pub fn link<E: Target>(parsed: ParsedArgs) {
     out.queue(symtab_start, sig_start - symtab_start);
     chunks::write_mach_header(&ctx, &mut buf);
 
-    let hashes = passes::compute_uuid(&ctx, &mut buf, sig_start);
+    let hashes = passes::write_build_id(&ctx, &mut buf, sig_start);
     out.queue(0, hdr_end);
 
     if ctx.args.adhoc_codesign {
