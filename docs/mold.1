@@ -217,14 +217,20 @@ Search for \fBlib\fR\fIlibname\fR\fB\.so\fR or \fBlib\fR\fIlibname\fR\fB\.a\fR f
 \fB\-m\fR \fItarget\fR
 Choose a \fItarget\fR\.
 .TP
+\fB\-n\fR, \fB\-\-nmagic\fR, \fB\-\-no\-nmagic\fR
+Do not align sections to page boundaries\.
+.TP
 \fB\-o\fR \fIfile\fR, \fB\-\-output\fR=\fIfile\fR
 Use \fIfile\fR as the output file name instead of the default name \fBa\.out\fR\.
 .TP
-\fB\-r\fR, \fB\-\-relocatable\fR
+\fB\-r\fR, \fB\-i\fR, \fB\-\-relocatable\fR
 Instead of generating an executable or a shared object file, combine input object files to generate another object file that can be used as an input to a linker\.
 .TP
 \fB\-s\fR, \fB\-\-strip\-all\fR
 Omit \fB\.symtab\fR section from the output file\.
+.TP
+\fB\-t\fR, \fB\-\-trace\fR
+Print name of each input file\.
 .TP
 \fB\-u\fR \fIsymbol\fR, \fB\-\-undefined\fR=\fIsymbol\fR
 If \fIsymbol\fR remains as an undefined symbol after reading all object files, and if there is a static archive that contains an object file defining \fIsymbol\fR, pull out the object file and link it so that the output file contains a definition of \fIsymbol\fR\.
@@ -440,9 +446,6 @@ Do not link against shared libraries\.
 .TP
 \fB\-\-sysroot\fR=\fIdir\fR
 Set target system root directory to \fIdir\fR\.
-.TP
-\fB\-\-trace\fR
-Print name of each input file\.
 .TP
 \fB\-\-undefined\-glob\fR=\fIpattern\fR
 Synonym for \fB\-\-undefined\fR, except that \fB\-\-undefined\-glob\fR takes a glob pattern instead of just a single symbol name\.
