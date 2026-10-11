@@ -121,8 +121,8 @@ fn report_ldst_alignment(ctx: &Context<Arm64>, isec: &InputSection, r: &Reloc, s
 // can't know how far a symbol will land, so it materializes addresses
 // with adrp and leaves hints naming the instructions of each sequence,
 // for the linker to shorten once addresses are final. ld-prime ignores
-// them; they are applied here as ld64 does, under its conditions, with
-// the target address read back from the relocated instructions.
+// them, but ld64 applies them, and so do we, reading each target address
+// back from the relocated instructions.
 
 const NOP: u32 = 0xd503_201f;
 
@@ -137,8 +137,8 @@ fn dtrace_site_insn(ctx: &Context<Arm64>, file: &ObjectFile, r: &Reloc) -> Optio
     }
 }
 
-/// ld64's withinOneMeg: whether `to` is in reach of an adr or a
-/// literal load at `from`.
+/// Whether `to` is in reach of an adr or a literal load at `from`:
+/// within 1 MiB either way.
 fn within_1mb(from: u64, to: u64) -> bool {
     let delta = to.wrapping_sub(from) as i64;
     -(1 << 20) < delta && delta < 1 << 20
@@ -174,8 +174,8 @@ fn parse_add(insn: u32) -> Option<Add> {
     })
 }
 
-/// A load or store with a scaled unsigned offset, as ld64's
-/// parseLoadOrStore takes it apart.
+/// A load or store with a scaled unsigned offset, "ldr Rt, [Xn, #imm]"
+/// or "str Rt, [Xn, #imm]", taken apart.
 struct LoadStore {
     insn: u32,
     reg: u32,
@@ -222,8 +222,8 @@ fn parse_ldst(insn: u32) -> Option<LoadStore> {
 }
 
 impl LoadStore {
-    /// ld64's literalableSize: loads of 4, 8 and 16 bytes have a
-    /// pc-relative literal form.
+    /// Whether the access has a pc-relative literal form: loads of 4, 8
+    /// and 16 bytes do; smaller loads and stores don't.
     fn has_literal_form(&self) -> bool {
         self.size >= 4 && !self.is_store
     }
@@ -354,9 +354,10 @@ impl Hint<'_> {
         self.insns[i].addr
     }
 
-    /// ld64's checks on the relocations: the first two instructions
-    /// carry the page and page-offset halves of one reference, and a
-    /// third carries none - its offset is the compiler's own.
+    /// Whether the relocations are those of the sequence the hint
+    /// describes: the first two instructions carry the page and
+    /// page-offset halves of one reference, and a third carries none -
+    /// its offset is the compiler's own.
     fn has_page_pair(&self, got: bool) -> bool {
         let (a, b) = (self.insns[0].rel, self.insns[1].rel);
         is_page_rel(a, got)
@@ -421,9 +422,9 @@ fn adrp_add_ldst(h: &Hint) -> Option<(u64, Add, LoadStore)> {
 }
 
 /// AdrpAddLdr: a load through adrp+add. From within 1 MiB of the
-/// load, it becomes a literal load (ld64's T1); within 1 MiB of the
-/// adrp, the address an adr (T4); else, if the load has no offset of
-/// its own, the add folds into it (T2).
+/// load, it becomes a literal load; within 1 MiB of the adrp, the
+/// address an adr; else, if the load has no offset of its own, the add
+/// folds into it.
 fn loh_adrp_add_ldr(h: &mut Hint) {
     let Some((addr, add, ld)) = adrp_add_ldst(h) else { return };
     let target = addr + ld.offset;
@@ -442,8 +443,7 @@ fn loh_adrp_add_ldr(h: &mut Hint) {
 }
 
 /// AdrpAddStr: a store through adrp+add, as AdrpAddLdr but for the
-/// literal form stores lack. (ld64's T2 keeps the add's destination
-/// as the base; it is the adrp's register in compiled code.)
+/// literal form stores lack.
 fn loh_adrp_add_str(h: &mut Hint) {
     let Some((addr, add, st)) = adrp_add_ldst(h) else { return };
     if !st.is_store {
@@ -484,8 +484,8 @@ fn got_load(h: &Hint) -> Option<GotLoad> {
 }
 
 /// AdrpLdrGot: a GOT load. A slot within 1 MiB of the load is loaded
-/// by a literal load (ld64's T5); relaxed, a target within 1 MiB of
-/// the adrp is computed by an adr (T4).
+/// by a literal load; relaxed, a target within 1 MiB of the adrp is
+/// computed by an adr.
 fn loh_adrp_ldr_got(h: &mut Hint) {
     match got_load(h) {
         Some(GotLoad::Slot(slot, got)) if within_1mb(h.addr(1), slot) => {
@@ -500,9 +500,10 @@ fn loh_adrp_ldr_got(h: &mut Hint) {
     }
 }
 
-/// T5 of AdrpLdrGotLdr and AdrpLdrGotStr: the GOT slot a load or store
-/// goes through is loaded by a literal load. ld64 measures the reach
-/// and the alignment to the slot plus the access's offset.
+/// Turns the GOT load of AdrpLdrGotLdr or AdrpLdrGotStr into a literal
+/// load of the slot, if the access goes through the register it loads.
+/// Not only the slot but the slot plus the access's offset must be
+/// within 1 MiB of the load, and the latter must be 4-aligned.
 fn got_literal(h: &mut Hint, slot: u64, got: &LoadStore, ls: &LoadStore) {
     let end = slot + ls.offset;
     if ls.base == got.reg
@@ -515,10 +516,11 @@ fn got_literal(h: &mut Hint, slot: u64, got: &LoadStore, ls: &LoadStore) {
     }
 }
 
-/// AdrpLdrGotLdr: a load through a GOT load. Relaxed, the target
+/// AdrpLdrGotLdr: a load through a GOT load. Unrelaxed, the slot may
+/// be loaded by a literal load (see got_literal). Relaxed, the target
 /// plus the load's offset within 1 MiB of the load becomes one literal
-/// load (T1), a target within 1 MiB of the adrp an adr (T4), and the
-/// add folds into the load otherwise (T2).
+/// load, a target within 1 MiB of the adrp an adr, and the add folds
+/// into the load otherwise.
 fn loh_adrp_ldr_got_ldr(h: &mut Hint) {
     let Some(ld) = parse_ldst(h.get(2)) else { return };
     match got_load(h) {
@@ -544,8 +546,8 @@ fn loh_adrp_ldr_got_ldr(h: &mut Hint) {
 }
 
 /// AdrpLdrGotStr: a store through a GOT load, as AdrpLdrGotLdr but
-/// for the literal form stores lack, and T2 only for a store with no
-/// offset of its own.
+/// for the literal form stores lack, and with the add folded only into
+/// a store with no offset of its own.
 fn loh_adrp_ldr_got_str(h: &mut Hint) {
     let Some(st) = parse_ldst(h.get(2)).filter(|st| st.is_store) else { return };
     match got_load(h) {
@@ -563,11 +565,10 @@ fn loh_adrp_ldr_got_str(h: &mut Hint) {
     }
 }
 
-/// Finds a hint's instructions where ld64 takes them (see
-/// ObjectFile::hint_subsec), in a subsection that made it to the
-/// output. Returns the subsection's range in the output file with the
-/// instructions. A copy folded into another subsection has its hints
-/// dropped with it.
+/// Finds a hint's instructions (see ObjectFile::hint_subsec) in a
+/// subsection that made it to the output. Returns the subsection's
+/// range in the output file with the instructions. A copy folded into
+/// another subsection has its hints dropped with it.
 fn hint_insns<'a>(
     ctx: &'a Context<Arm64>,
     obj: &ObjectFile,
@@ -602,7 +603,7 @@ fn apply_hints(ctx: &Context<Arm64>, buf: &mut [u8]) {
     let bufp = &bufp;
 
     ctx.objs.par_iter().filter(|obj| obj.is_reachable).for_each(|obj| {
-        // AdrpAdrp goes last, as ld64's second pass.
+        // AdrpAdrp goes last (see loh_adrp_adrp).
         for last in [false, true] {
             for (kind, addrs) in &obj.loh {
                 if (*kind == LOH_ARM64_ADRP_ADRP) != last {
@@ -787,10 +788,11 @@ impl Target for Arm64 {
         !matches!(ty, ARM64_RELOC_UNSIGNED | ARM64_RELOC_SUBTRACTOR)
     }
 
-    // ld64 applies no hints to an image bound for the dyld shared cache
+    // No hints are applied to an image bound for the dyld shared cache
     // (resolve_shared_region sets -ignore_optimization_hints): on arm64
-    // it records split-seg info v2 for one, which lets the cache builder
-    // move segments apart, out of the 1 MiB reach a rewrite relies on.
+    // such an image records split-seg info v2, which lets the cache
+    // builder move segments apart, out of the 1 MiB reach a rewrite
+    // relies on.
     fn apply_optimization_hints(ctx: &Context<Self>, buf: &mut [u8]) {
         if !ctx.args.ignore_optimization_hints {
             apply_hints(ctx, buf);

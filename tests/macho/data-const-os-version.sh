@@ -6,11 +6,11 @@ on_simulator && skip
 
 # dyld makes __DATA_CONST read-only once it has applied an image's
 # fixups. ld-prime gives an executable, a dylib or a bundle that
-# segment by default only from macOS 10.15 (ld64's version2019Fall),
-# but not for 10.15.4 up to 10.16, and not with -no_pie (which arm64
-# ignores for the executable, and which means nothing to a dylib),
-# unless the image is bound for the dyld shared cache. -data_const and
-# -no_data_const decide either way.
+# segment by default only from macOS 10.15, but not for 10.15.4 up to
+# 10.16, and not with -no_pie (which arm64 ignores for the executable,
+# and which means nothing to a dylib), unless the image is bound for
+# the dyld shared cache. -data_const and -no_data_const decide either
+# way.
 cat <<EOF | $CC -o $t/a.o -c -xc -
 int x = 42;
 int *const p = &x;

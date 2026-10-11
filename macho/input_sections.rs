@@ -288,7 +288,7 @@ const IS_VISITED: u8 = 1 << 1;
 const IS_PLACED: u8 = 1 << 2;
 /// The subsection starts at a multiple of its alignment regardless of
 /// its input offset: a fixed-size record (a literal, an initializer
-/// pointer, a CFString), which ld64 aligns with no modulus.
+/// pointer, a CFString).
 const NO_MODULUS: u8 = 1 << 3;
 /// A literal record a symbol names: ld-prime keeps it a subsection of its
 /// own, merged with no identical copy, and a -r output keeps its label.
@@ -364,12 +364,11 @@ impl InputSection {
     /// alignment per subsection (NetNewsWire's __TEXT,__const was 11KB
     /// larger than ld-prime's).
     ///
-    /// ld64 models this as a subsection alignment of (power of two,
-    /// modulus). A fixed-size literal is the exception: its alignment
-    /// is the literal size with modulus 0, so a 16-byte literal from a
-    /// p2align-3 __literal16 section, or one that survived merging
-    /// with a copy from a better-aligned section, still lands on a
-    /// 16-byte boundary. Its input offset is not a constraint the
+    /// A fixed-size literal is the exception: it starts at a multiple
+    /// of its size, whatever its input offset, so a 16-byte literal
+    /// from a p2align-3 __literal16 section, or one that survived
+    /// merging with a copy from a better-aligned section, still lands
+    /// on a 16-byte boundary. Its input offset is not a constraint the
     /// compiler meant, and a 16-byte load through a scaled PAGEOFF12
     /// immediate can only address a 16-aligned slot.
     #[inline]
@@ -381,12 +380,12 @@ impl InputSection {
         mold_common::bits::align_to_mod(off, align, self.input_addr as u64 & (align - 1))
     }
 
-    /// The alignment, as a power of two, that ld64 gives the part of
-    /// this subsection starting at object address `addr`: the
-    /// section's, unless that part sits at a nonzero offset modulo it,
-    /// whose trailing zeros count instead (a subsection at 8 mod 16 is
-    /// 8-aligned). ld64 keeps the most aligned of two copies of a weak
-    /// definition or a literal.
+    /// The alignment, as a power of two, of the part of this subsection
+    /// starting at object address `addr`: the section's, unless that
+    /// part sits at a nonzero offset modulo it, whose trailing zeros
+    /// count instead (a subsection at 8 mod 16 is 8-aligned). ld64
+    /// keeps the most aligned of two copies of a weak definition or a
+    /// literal.
     pub fn p2align_at(&self, addr: u64) -> u8 {
         let modulus = addr & ((1 << self.p2align) - 1);
         if self.is_record() || modulus == 0 { self.p2align } else { modulus.trailing_zeros() as u8 }

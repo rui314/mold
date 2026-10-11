@@ -169,10 +169,10 @@ impl<E: Target> Builder<'_, E> {
 
     /// The slots ld-prime leaves for the lists a merging link may add
     /// to a class or category of the dylib: a fixup to an entry of no
-    /// bytes (an "anonPlaceholder") at each null list pointer of a
-    /// class's and its metaclass's class_ro_t (methods, protocols,
-    /// properties), and of a category_t (its method, protocol and
-    /// property lists), in the order of the class and category lists.
+    /// bytes at each null list pointer of a class's and its metaclass's
+    /// class_ro_t (methods, protocols, properties), and of a category_t
+    /// (its method, protocol and property lists), in the order of the
+    /// class and category lists.
     /// ld-prime's merging link crashes without them.
     pub(super) fn add_objc_placeholders(&mut self) {
         let lists: Vec<To> = (0..self.entries.len())

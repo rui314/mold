@@ -739,7 +739,7 @@ impl<E: Target> Synth<'_, E> {
             // A data reference to a GOT slot is from the field's start,
             // as the instruction's are from its end; Swift's relative
             // reference to one has its low bit set besides (the indirect
-            // flag of a relative pointer), which ld-prime's kind implies.
+            // flag of a relative pointer), which the fixup's kind implies.
             PCREL32_TO_GOT => f.addend + 4,
             SWIFT_REL32_TO_GOT => f.addend + 5,
             _ => f.addend - bias,

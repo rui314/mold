@@ -154,7 +154,8 @@ pub(crate) mod ctype {
     pub const COMMON: u8 = 66;
 }
 
-/// The fixup kinds (ld-prime's Fixup::Kind), generic and per target.
+/// The kinds of a fixup (bits 0-9 of its third word), generic and per
+/// target.
 pub(crate) mod fk {
     pub const KEEP_ALIVE: u16 = 1;
     pub const PTR64: u16 = 2;
@@ -199,8 +200,7 @@ pub(crate) mod fk {
     pub const X86_64_RIP1_GOT: u16 = 0x109;
 }
 
-/// How a fixup kind uses its last word and where its addend is
-/// (ld-prime's Fixup::KindInfo extrasUsage).
+/// How a fixup kind uses its last word and where its addend is.
 pub(crate) fn extras_usage(kind: u16) -> u8 {
     use fk::*;
     match kind {
@@ -685,9 +685,8 @@ impl Reader<'_> {
     }
 }
 
-/// The sections ld-prime gives the entries of a content type (its
-/// StandardSection::fromContentType): segment and section names and
-/// Mach-O flags, as an object would have them.
+/// The sections ld-prime gives the entries of a content type: segment
+/// and section names and Mach-O flags, as an object would have them.
 const STANDARD_SECTIONS: &[(u8, &[u8], &[u8], u32)] = &[
     (2, b"__TEXT", b"__text", TEXT),
     (9, b"__TEXT", b"__const", 0),

@@ -55,7 +55,7 @@ pub fn is_dtrace_symbol(name: &[u8]) -> bool {
     name.starts_with(PREFIX)
 }
 
-/// What a call of a DTrace symbol is: ld-prime's dtraceKind.
+/// What a call of a DTrace symbol is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SiteKind {
     /// A probe's site, which fires it.

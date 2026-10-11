@@ -1014,13 +1014,12 @@ fn lto_roots<E: Target>(ctx: &Context<E>) -> Vec<&[u8]> {
     roots
 }
 
-/// Whether a definition is exported before LTO, as ld-prime's walk
-/// before it and libLTO's preserve set see it: under an export list if
-/// the list names it, hidden or not; otherwise, unless
-/// -unexported_symbols_list names it, any external definition in -r,
-/// and a visible one in an image that exports any (see
-/// dead_strip::keeps_export) - but not one every copy of which can be
-/// hidden, which the image auto-hides (see
+/// Whether a definition is exported before LTO, and so is one libLTO
+/// must preserve: under an export list if the list names it, hidden or
+/// not; otherwise, unless -unexported_symbols_list names it, any
+/// external definition in -r, and a visible one in an image that
+/// exports any (see dead_strip::keeps_export) - but not one every copy
+/// of which can be hidden, which the image auto-hides (see
 /// passes::auto_hide_weak_defs).
 fn exported_before_lto<E: Target>(ctx: &Context<E>, sym: &Symbol, hidable: bool) -> bool {
     if !sym.is_extern() || !matches!(sym.file(), Some(FileId::Obj(_))) {

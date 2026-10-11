@@ -281,12 +281,11 @@ impl ObjectFile {
     }
 
     /// The subsection holding a linker optimization hint's instructions,
-    /// if they are where ld64 takes a hint: one to three of them, 4-byte
+    /// if the hint is one to apply: one to three instructions, 4-byte
     /// aligned, in one subsection of code and within 64 KiB of each
-    /// other. ld64 drops any other hint as it reads the object. Without
-    /// MH_SUBSECTIONS_VIA_SYMBOLS a section is one subsection here, but
-    /// ld64 still splits it into subsections at every symbol, so a hint
-    /// may not span one.
+    /// other, and not across a symbol even in a section without
+    /// MH_SUBSECTIONS_VIA_SYMBOLS, which is one subsection here. ld64
+    /// applies no other hint either.
     pub fn hint_subsec(&self, isecs: &[InputSection], addrs: &[u64]) -> Option<usize> {
         let lo = *addrs.iter().min()?;
         let hi = *addrs.iter().max()?;
@@ -1173,12 +1172,12 @@ pub(crate) fn canonical_section_flags(segname: &[u8], sectname: &[u8], flags: u3
     }
 }
 
-/// The flags of a section ld-prime's table of standard sections names:
-/// those a compiler marks a section of that name with, or ld-prime its
-/// own sections - code (the stubs and helpers too), literals, pointer
-/// lists, the thread-local and zero-fill types, no-dead-strip for the
-/// lists the Objective-C runtime scans, and none for the rest of the
-/// data. None for another name, or in another segment.
+/// The flags of a standard section, by its name: those a compiler
+/// marks a section of that name with, or ld-prime its own sections -
+/// code (the stubs and helpers too), literals, pointer lists, the
+/// thread-local and zero-fill types, no-dead-strip for the lists the
+/// Objective-C runtime scans, and none for the rest of the data. None
+/// for another name, or in another segment.
 pub(crate) fn standard_section_flags(segname: &[u8], sectname: &[u8]) -> Option<u32> {
     let flags = match (segname, sectname) {
         (
@@ -2982,8 +2981,8 @@ fn parse_cie_augmentation(data: &[u8], file_name: &Path) -> (u8, Option<u8>, Opt
             // The rest carry no augmentation data: 'S' marks a signal
             // frame and, on AArch64, 'B' return addresses signed with
             // the pointer-authentication B key and 'G' an MTE-tagged
-            // frame. ld64 parses CIEs with libunwind, which ignores any
-            // letter it does not know.
+            // frame. Any other letter is ignored too, as libunwind
+            // ignores a letter it does not know.
             _ => {}
         }
     }
@@ -3035,8 +3034,8 @@ pub fn warn_fat_missing_arch<E: Target>(ctx: &Context<E>, mf: &MappedFile) {
     ignore_foreign_file(ctx, mf, &why);
 }
 
-/// Whether a re-exported dylib at this install path may be bound to
-/// directly: ld64's "public location" rule. /usr/lib/lib*.dylib (not
+/// Whether a re-exported dylib at this install path is public, so that
+/// it may be bound to directly. /usr/lib/lib*.dylib (not
 /// /usr/lib/system/) and a top-level /System/Library/Frameworks
 /// framework are public; a private framework, a sub-framework or a
 /// libSystem component is not, and its symbols bind to the dylib that
@@ -3398,8 +3397,8 @@ impl DylibIdentity {
     }
 
     /// Whether a re-export of this library binds to it rather than to
-    /// the re-exporter: ld64's public install name, which a library
-    /// that names its clients never has (rdar://20627554).
+    /// the re-exporter: a public install name (see is_public_location),
+    /// which a library that names its clients never has.
     fn is_public<E: Target>(&self, ctx: &Context<E>) -> bool {
         !ctx.args.no_implicit_dylibs
             && is_public_location(&self.install_name)
@@ -3423,8 +3422,8 @@ pub fn dylib_identity<E: Target>(ctx: &Context<E>, mf: &'static MappedFile) -> D
 /// SwiftUI, UIKit and a few more): the output may link it if its client
 /// name - -client_name, else the leaf of its install name (a dylib) or
 /// path, less a "lib" prefix and cut at the first '.' or '_' - is the
-/// dylib's umbrella or begins one of the clients (ld64's strncmp makes
-/// it a prefix match), or if it is a sibling under the same -umbrella.
+/// dylib's umbrella or begins one of the clients (a prefix match, not
+/// an exact one), or if it is a sibling under the same -umbrella.
 pub fn is_allowed_client<E: Target>(ctx: &Context<E>, dylib: &DylibIdentity) -> bool {
     if dylib.clients.is_empty() {
         return true;

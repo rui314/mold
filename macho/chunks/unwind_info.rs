@@ -218,7 +218,7 @@ fn assign_personalities(records: &mut [UnwindRecord]) -> Vec<SymbolId> {
 /// between two functions does not keep them apart. An x86-64 entry in
 /// "stack immediate indirect" mode gives where the stack size is in the
 /// function as an offset from the entry's start, so it can't cover a
-/// second function (ld64's encodingCannotBeMerged).
+/// second function.
 fn merge_records<E: Target>(records: &mut Vec<UnwindRecord>) {
     let stack_ind = |enc: u32| {
         E::CPUTYPE == CPU_TYPE_X86_64 && enc & UNWIND_MODE_MASK == UNWIND_X86_64_MODE_STACK_IND

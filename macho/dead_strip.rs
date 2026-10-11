@@ -470,9 +470,9 @@ fn walk<E: Target>(
 
 /// A live-support subsection (S_ATTR_LIVE_SUPPORT) lives only if it
 /// references a live subsection, and then keeps what it references.
-/// ld64 checks them once, in input order, after what the roots reach is
-/// marked, so one that only a later live-support subsection would make
-/// live stays dead.
+/// They are checked once, in input order, after what the roots reach
+/// is marked, so one that only a later live-support subsection would
+/// make live stays dead, as with ld64.
 fn mark_live_support<E: Target>(
     ctx: &Context<E>,
     redirects: &[usize],

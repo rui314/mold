@@ -6,9 +6,8 @@ source "$(dirname "$0")"/common.inc
 # personality, 'L' the LSDA encoding), and some letters are flags with
 # no data: 'S' for a signal frame and, on AArch64, 'B' for return
 # addresses signed with the pointer-authentication B key and 'G' for an
-# MTE-tagged frame. ld64 reads CIEs with libunwind's parser, which
-# ignores any letter it does not know, so all of these give _f the same
-# unwind info as "zR".
+# MTE-tagged frame. libunwind ignores any letter it does not know, so
+# all of these give _f the same unwind info as "zR".
 #
 # The records are written out, with the named labels older compilers
 # gave them, as no assembler directive makes a CIE with these letters.

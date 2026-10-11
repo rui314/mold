@@ -1,11 +1,11 @@
 #!/bin/bash
 source "$(dirname "$0")"/common.inc
 
-# ld-prime turns most of its defaults on at a season's OS releases, the
-# version sets ld64 names (version2019Fall: macOS 10.15 and iOS 13).
-# tvOS is numbered as iOS is, a simulator as its device, and visionOS
-# has every default up to its first release. Each check links just
-# before and at a set's iOS or visionOS version.
+# ld-prime turns most of its defaults on at a season's OS releases,
+# such as those of fall 2019, macOS 10.15 and iOS 13. tvOS is numbered
+# as iOS is, a simulator as its device, and visionOS has every default
+# up to its first release. Each check links just before and at a
+# season's iOS or visionOS version.
 plats='ios-simulator tvos-simulator xros-simulator'
 [ $ARCH = arm64 ] && plats="ios tvos xros $plats"
 

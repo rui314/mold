@@ -281,9 +281,8 @@ pub struct Args {
     pub load_objc: bool,
     /// Symbols to treat as undefined from the start, forcing archive
     /// members that define them to be linked: those -u and -init name,
-    /// and those an export list names without wildcards (ld64's "initial
-    /// undefines"). One that stays undefined is an error even under
-    /// -undefined dynamic_lookup.
+    /// and those an export list names without wildcards. One that stays
+    /// undefined is an error even under -undefined dynamic_lookup.
     pub forced_undefined: Vec<Vec<u8>>,
     /// If set, only these symbols are exported (-exported_symbols_list
     /// or -exported_symbol).
@@ -531,8 +530,8 @@ pub struct Args {
     /// shared cache (and spares warnings that only matter for binaries
     /// shipped to customers; there are none here).
     pub debug_variant: bool,
-    /// Whether the image is bound for the dyld shared cache (ld64's
-    /// fSharedRegionEligible): see resolve_shared_region.
+    /// Whether the image is bound for the dyld shared cache (see
+    /// resolve_shared_region).
     pub shared_region: bool,
     /// -no_inits / -no_warn_inits: static initializers are an error, or
     /// go unmentioned in a dylib bound for the shared cache.
@@ -553,8 +552,8 @@ pub struct Args {
     pub lazy_binding: bool,
     /// Whether dyld learns what to bind and slide from relocations and
     /// the indirect symbol table, as before LC_DYLD_INFO came with
-    /// macOS 10.6 (ld64's legacy LINKEDIT): resolved at the end of
-    /// parsing (see resolve_legacy_linkedit).
+    /// macOS 10.6: resolved at the end of parsing (see
+    /// resolve_legacy_linkedit).
     pub legacy_linkedit: bool,
     /// -application_extension: mark a dylib safe for app extensions. Set
     /// $LD_APPLICATION_EXTENSION_SAFE or $LD_NO_ENCRYPT (ld64's iOS
@@ -809,16 +808,15 @@ pub struct Args {
 }
 
 impl Args {
-    /// Whether the image is a kext (ld64's kKextBundle, MH_KEXT_BUNDLE),
-    /// which kmutil links into the kernel (see resolve_kext).
+    /// Whether the image is a kext (MH_KEXT_BUNDLE), which kmutil links
+    /// into the kernel (see resolve_kext).
     pub fn is_kext(&self) -> bool {
         self.output_type == MH_KEXT_BUNDLE
     }
 
-    /// Whether the image is dyld itself (ld64's kDyld, MH_DYLINKER),
-    /// which the kernel maps next to a main executable and starts: it
-    /// loads no dylib, and slides itself by its fixups before it loads
-    /// anything else.
+    /// Whether the image is dyld itself (MH_DYLINKER), which the kernel
+    /// maps next to a main executable and starts: it loads no dylib, and
+    /// slides itself by its fixups before it loads anything else.
     pub fn is_dylinker(&self) -> bool {
         self.output_type == MH_DYLINKER
     }
@@ -923,8 +921,7 @@ impl Args {
         sizes.iter().find(|(name, _)| name == segname).map_or(self.segment_align, |&(_, size)| size)
     }
 
-    /// Whether -segment_order lists a segment after one that -segaddr pins
-    /// (ld64's segmentOrderAfterFixedAddressSegment).
+    /// Whether -segment_order lists a segment after one that -segaddr pins.
     pub fn follows_pinned_segment(&self, segname: &[u8]) -> bool {
         let mut pinned = false;
         for name in &self.segment_order {
@@ -937,10 +934,9 @@ impl Args {
     }
 }
 
-/// A season's releases of Apple's OSes, which ld64 names its version
-/// sets after (ld::version2019Fall and the like): it turns a default on
-/// for every deployment target at or past such a set, as dyld and the
-/// runtimes of that season support what the default makes. tvOS is
+/// A season's releases of Apple's OSes. Many of the linker's defaults
+/// turn on for every deployment target at or past such a set, as dyld
+/// and the runtimes of that season support what they make. tvOS is
 /// numbered as iOS is, and a simulator as its device; visionOS, which
 /// came later, has every default up to its own first release. Firmware,
 /// which no OS release governs, has the defaults of the older sets.
@@ -3248,17 +3244,17 @@ fn check_fixup_sections(
 }
 
 /// Decides whether the image is bound for the dyld shared cache or a
-/// kernel collection (ld64's fSharedRegionEligible): with
-/// -add_split_seg_info or -kernel, an arm64 kext, dyld, or a dylib
-/// installed where the cache takes libraries from, unless
-/// -not_for_dyld_shared_cache, or -debug_variant for a dylib. Such an
-/// image records its references between sections
-/// (LC_SEGMENT_SPLIT_INFO), so ld64 leaves its code as compiled (no
-/// optimization hints); it may not look symbols up dynamically, since
-/// the cache builder binds every one to the dylib that exports it (see
-/// check_dynamic_lookup); nor may it have small objc stubs, on either
-/// architecture; and ld-prime warns about run paths, which an OS
-/// library must not need. (check_dylib_use refuses a flat namespace.)
+/// kernel collection: with -add_split_seg_info or -kernel, an arm64
+/// kext, dyld, or a dylib installed where the cache takes libraries
+/// from, unless -not_for_dyld_shared_cache, or -debug_variant for a
+/// dylib. Such an image records its references between sections
+/// (LC_SEGMENT_SPLIT_INFO), so its code is left as compiled, with no
+/// optimization hints applied; it may not look symbols up dynamically,
+/// since the cache builder binds every one to the dylib that exports
+/// it (see check_dynamic_lookup); nor may it have small objc stubs, on
+/// either architecture; and ld-prime warns about run paths, which an
+/// OS library must not need. (check_dylib_use refuses a flat
+/// namespace.)
 fn resolve_shared_region(target: &TargetTraits, args: &mut Args) {
     let is_dylib = args.output_type == MH_DYLIB;
     args.shared_region = !args.not_for_dyld_shared_cache
@@ -3500,10 +3496,10 @@ fn resolve_stack(target: &TargetTraits, args: &mut Args, size: Option<u64>, addr
 /// bound for the shared region: nothing else would make it read-only.
 /// A non-PIE executable, which keeps its classic layout, has none; an
 /// image bound for the shared region and firmware have one. Elsewhere
-/// ld64 gives one from its version2019Fall (macOS 10.15, iOS 13) on,
-/// but not for macOS 10.15.4 up to 10.16, and not with -no_pie, even
-/// where the option is otherwise ignored (an arm64 executable, a dylib
-/// or a bundle).
+/// an image has one from the fall 2019 releases (macOS 10.15, iOS 13)
+/// on, but not for macOS 10.15.4 up to 10.16, and not with -no_pie,
+/// even where the option is otherwise ignored (an arm64 executable, a
+/// dylib or a bundle).
 fn default_data_const(args: &Args, pie: Option<bool>) -> bool {
     if args.without_dyld() {
         return args.shared_region;
@@ -3519,12 +3515,11 @@ fn default_data_const(args: &Args, pie: Option<bool>) -> bool {
     pie != Some(false) && args.targets(&VERSION_2019_FALL) && !macos_hole
 }
 
-/// A kext (ld64's kKextBundle, MH_KEXT_BUNDLE) is linked into the
-/// kernel by kmutil, which resolves its undefined symbols against the
-/// kernel's and other kexts' exports: ld64 treats them as dynamically
-/// looked up. On arm64 its code gets a __TEXT_EXEC segment of its own
-/// (-text_exec) and, as the kext is bound for the shared region,
-/// __DATA_CONST (-data_const).
+/// A kext (MH_KEXT_BUNDLE) is linked into the kernel by kmutil, which
+/// resolves its undefined symbols against the kernel's and other
+/// kexts' exports: ld64 treats them as dynamically looked up. On arm64
+/// its code gets a __TEXT_EXEC segment of its own (-text_exec) and, as
+/// the kext is bound for the shared region, __DATA_CONST (-data_const).
 fn resolve_kext(target: &TargetTraits, args: &mut Args) {
     if !args.is_kext() {
         return;

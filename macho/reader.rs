@@ -397,12 +397,11 @@ fn find_input<E: Target>(ctx: &Context<E>, arg: &InputArg) -> Option<PathBuf> {
 }
 
 /// The file an option that takes a library's path names: an absolute
-/// path under each -syslibroot first, as ld64's findFile looks it up,
-/// a stub in place of the library where there is one there -
-/// `-weak_library /usr/lib/libz.dylib` links the SDK's
-/// usr/lib/libz.tbd - then the path as it is, itself only. An object
-/// is taken as it is. A library to merge is no stub (`stubs`). A last
-/// -syslibroot of / drops the roots (see sdk_roots).
+/// path under each -syslibroot first, a stub in place of the library
+/// where there is one there - `-weak_library /usr/lib/libz.dylib`
+/// links the SDK's usr/lib/libz.tbd - then the path as it is, itself
+/// only. An object is taken as it is. A library to merge is no stub
+/// (`stubs`). A last -syslibroot of / drops the roots (see sdk_roots).
 fn find_file<E: Target>(
     ctx: &Context<E>,
     prober: &Prober,

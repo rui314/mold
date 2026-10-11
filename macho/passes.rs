@@ -1316,8 +1316,7 @@ struct Literal {
     isec: InputSectionId,
     /// The index of the element's kind in literal_kinds' list.
     kind: u32,
-    /// The element's alignment, as ld64 sees it (see
-    /// InputSection::p2align_at).
+    /// The element's alignment (see InputSection::p2align_at).
     p2align: u8,
 }
 
@@ -2454,8 +2453,7 @@ pub fn check_shared_cache_deps<E: Target>(ctx: &Context<E>) {
 /// loader included, will do, libSystem or not, but a lazy one, which
 /// has no load command, won't. ld-prime does the same and, like ld64,
 /// lets off libsystem_kernel, which libSystem is built on, and any link
-/// with an exit-asm.o (a stopgap for rdar://39514191). Firmware has no
-/// libSystem to link.
+/// with an exit-asm.o. Firmware has no libSystem to link.
 pub fn check_libsystem_linked<E: Target>(ctx: &Context<E>) {
     if ctx.args.platform == crate::macho::PLATFORM_FIRMWARE {
         return;
@@ -5003,8 +5001,7 @@ fn layout_segment<E: Target>(
 ///
 /// - A segment -segaddr pins goes there.
 /// - With -segment_order, the segments listed after a pinned one
-///   follow it, one after another (ld64's
-///   segmentOrderAfterFixedAddressSegment).
+///   follow it, one after another.
 /// - The others go from the image base, in segment order, each to the
 ///   lowest address where it runs into no segment placed before it.
 ///   The segments the two rules above place count as placed only from
@@ -5428,12 +5425,11 @@ pub fn add_entry_stub<E: Target>(ctx: &mut Context<E>) {
 /// is still zero, the array is hashed once more and stamped as a
 /// version-4 UUID, and only the pages the header spans are hashed again
 /// for the signature. The circularity - the signature covers the
-/// header, the header holds the UUID - is broken by the zeroed field,
-/// the way ld64 hashes with the UUID zeroed. Like ld64's, the UUID
-/// depends on the contents before the signature only, not on the
-/// signature blob (whose identifier is the output's basename); unsigned
-/// output hashes its pages the same way. A -random_uuid one goes in
-/// before anything is hashed.
+/// header, the header holds the UUID - is broken by the zeroed field.
+/// The UUID depends on the contents before the signature only, not on
+/// the signature blob (whose identifier is the output's basename);
+/// unsigned output hashes its pages the same way. A -random_uuid one
+/// goes in before anything is hashed.
 pub fn compute_uuid<E: Target>(
     ctx: &Context<E>,
     buf: &mut [u8],

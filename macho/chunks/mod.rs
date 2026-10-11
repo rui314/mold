@@ -578,12 +578,11 @@ pub fn has_version_cmd(args: &crate::cmdline::Args) -> bool {
 
 /// The load command naming the deployment target, for a final image
 /// and for -r alike: LC_BUILD_VERSION, or for an OS older than macOS
-/// 10.14 and iOS 12, which brought it (ld64's version2018Fall), the
-/// legacy LC_VERSION_MIN_MACOSX, _IPHONEOS or _TVOS {version, sdk}
-/// their loaders read. Those name no simulator: an x86-64 image's is the
-/// simulator's, so an arm64 simulator's image gets LC_BUILD_VERSION at
-/// any version, as an arm64 macOS one does; so does a visionOS image,
-/// that OS being newer.
+/// 10.14 and iOS 12, which brought it, the legacy LC_VERSION_MIN_MACOSX,
+/// _IPHONEOS or _TVOS {version, sdk} their loaders read. Those name no
+/// simulator: an x86-64 image's is the simulator's, so an arm64
+/// simulator's image gets LC_BUILD_VERSION at any version, as an arm64
+/// macOS one does; so does a visionOS image, that OS being newer.
 pub fn create_version_cmd<E: Target>(platform: u32, minos: u32, sdk: u32) -> Vec<u8> {
     let legacy = match platform {
         PLATFORM_MACOS if minos != 0 => Some(LC_VERSION_MIN_MACOSX),
