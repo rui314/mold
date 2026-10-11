@@ -26,19 +26,22 @@ use crate::reader::under_root;
 /// number (Xcode 26.6 ships ld-1267).
 pub const LD64_COMPAT_VERSION: &str = "1267";
 
-/// The -v banner, which ld-prime also writes as its version in the
-/// -dependency_info file.
+/// The first line of the -v banner, which ld-prime also writes as its
+/// version in the -dependency_info file. It names the Mach-O linker, so
+/// that it tells apart from the ELF linker's.
 pub static VERSION_BANNER: LazyLock<String> = LazyLock::new(|| {
     let version = env!("CARGO_PKG_VERSION");
     match mold_common::GIT_HASH {
-        Some(hash) => format!("mold {version} ({hash})"),
-        None => format!("mold {version}"),
+        Some(hash) => format!("mold-macho {version} ({hash})"),
+        None => format!("mold-macho {version}"),
     }
 });
 
-/// Prints the -v banner on stderr, where ld-prime prints its own.
+/// Prints the -v banner on stderr, where ld-prime prints its own: the
+/// version, then the supported targets, as ld-prime lists them.
 pub fn print_version() {
     eprintln!("{}", *VERSION_BANNER);
+    eprintln!("configured to support archs: arm64 x86_64");
 }
 
 /// Prints the -version_details JSON on stdout, as ld-prime does.

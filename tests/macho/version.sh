@@ -2,11 +2,12 @@
 source "$(dirname "$0")"/common.inc
 
 # The -v banner goes to stderr, as ld-prime's does, and stdout stays
-# empty.
-banner='^mold \|PROGRAM:ld'
+# empty. It lists the architectures the linker supports.
+banner='^mold-macho \|PROGRAM:ld'
 $mold -v > $t/out 2> $t/err
 [ ! -s $t/out ]
 grep "$banner" $t/err
+grep -Eq "^configured to support archs: (.* )?$ARCH( |$)" $t/err
 
 cat <<EOF | $CC -o $t/a.o -c -xc -
 #include <stdio.h>

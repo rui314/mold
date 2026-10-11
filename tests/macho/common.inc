@@ -113,7 +113,7 @@ not() {
 # Whether $mold is mold rather than Apple's ld, which the scripts also
 # run against.
 is_mold() {
-  $mold -v 2>&1 | grep -q '^mold '
+  $mold -v 2>&1 | grep -q '^mold-macho '
 }
 
 # lldb launching a process under Rosetta hangs on the hosted CI runner
