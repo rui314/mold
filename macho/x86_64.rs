@@ -449,34 +449,38 @@ impl Target for X86_64 {
     }
 
     // Each a 32-bit displacement.
-    fn delay_refs(code: DelayCode) -> Vec<(u32, u8, DelayTarget)> {
+    fn delay_refs(code: DelayCode) -> &'static [(u32, u8, DelayTarget)] {
         use DelayTarget::*;
-        let refs = match code {
-            DelayCode::Stub => vec![(2, Flag), (14, DlopenHelper), (21, Slot)],
-            DelayCode::Helper(_) => vec![(2, Flag), (14, DlopenHelper), (22, Slot)],
-            DelayCode::Dlopen => vec![(68, Name), (75, Dlopen), (86, Flag)],
-        };
-        refs.into_iter().map(|(off, to)| (off, DYLD_CACHE_ADJ_V2_DELTA_32, to)).collect()
+        const D32: u8 = DYLD_CACHE_ADJ_V2_DELTA_32;
+        match code {
+            DelayCode::Stub => &[(2, D32, Flag), (14, D32, DlopenHelper), (21, D32, Slot)],
+            DelayCode::Helper(_) => &[(2, D32, Flag), (14, D32, DlopenHelper), (22, D32, Slot)],
+            DelayCode::Dlopen => &[(68, D32, Name), (75, D32, Dlopen), (86, D32, Flag)],
+        }
     }
 
     // Each a 32-bit displacement: the flag's in the cmpl, the lea's of
     // the call's arguments and the call's; and the jmp's or the final
     // movq's or cmpq's of the slot.
-    fn lazy_helper_refs(kind: LazyUse) -> Vec<(u32, u8, LazyTarget)> {
+    fn lazy_helper_refs(kind: LazyUse) -> &'static [(u32, u8, LazyTarget)] {
         use LazyTarget::*;
-        let call = |k: u32| [(k + 9, Flag), (k + 16, Header), (k + 21, LazyLoad)];
-        let mut refs = vec![(2, Flag)];
+        const D32: u8 = DYLD_CACHE_ADJ_V2_DELTA_32;
         match kind {
-            LazyUse::Call => {
-                refs.push((11, Slot));
-                refs.extend(call(15));
-            }
-            _ => {
-                refs.extend(call(9));
-                refs.push((40, Slot));
-            }
+            LazyUse::Call => &[
+                (2, D32, Flag),
+                (11, D32, Slot),
+                (24, D32, Flag),
+                (31, D32, Header),
+                (36, D32, LazyLoad),
+            ],
+            _ => &[
+                (2, D32, Flag),
+                (18, D32, Flag),
+                (25, D32, Header),
+                (30, D32, LazyLoad),
+                (40, D32, Slot),
+            ],
         }
-        refs.into_iter().map(|(off, to)| (off, DYLD_CACHE_ADJ_V2_DELTA_32, to)).collect()
     }
 
     fn lazy_ref(r: &Reloc, data: &[u8]) -> crate::arch::LazyRef {

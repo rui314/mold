@@ -1084,67 +1084,71 @@ impl Target for Arm64 {
         36
     }
 
-    fn delay_refs(code: DelayCode) -> Vec<(u32, u8, DelayTarget)> {
+    fn delay_refs(code: DelayCode) -> &'static [(u32, u8, DelayTarget)] {
         use DelayTarget::*;
-        let (adrp, off12, br26) = (
-            DYLD_CACHE_ADJ_V2_ARM64_ADRP,
-            DYLD_CACHE_ADJ_V2_ARM64_OFF12,
-            DYLD_CACHE_ADJ_V2_ARM64_BR26,
-        );
+        const ADRP: u8 = DYLD_CACHE_ADJ_V2_ARM64_ADRP;
+        const OFF12: u8 = DYLD_CACHE_ADJ_V2_ARM64_OFF12;
+        const BR26: u8 = DYLD_CACHE_ADJ_V2_ARM64_BR26;
         match code {
-            DelayCode::Stub => vec![
-                (0, adrp, Flag),
-                (4, off12, Flag),
-                (20, br26, DlopenHelper),
-                (28, adrp, Slot),
-                (32, off12, Slot),
+            DelayCode::Stub => &[
+                (0, ADRP, Flag),
+                (4, OFF12, Flag),
+                (20, BR26, DlopenHelper),
+                (28, ADRP, Slot),
+                (32, OFF12, Slot),
             ],
-            DelayCode::Helper(_) => vec![
-                (0, adrp, Flag),
-                (4, off12, Flag),
-                (20, br26, DlopenHelper),
-                (28, adrp, Slot),
-                (32, br26, Site),
+            DelayCode::Helper(_) => &[
+                (0, ADRP, Flag),
+                (4, OFF12, Flag),
+                (20, BR26, DlopenHelper),
+                (28, ADRP, Slot),
+                (32, BR26, Site),
             ],
-            DelayCode::Dlopen => vec![
-                (64, adrp, Name),
-                (68, off12, Name),
-                (76, br26, Dlopen),
-                (80, adrp, Flag),
-                (84, off12, Flag),
+            DelayCode::Dlopen => &[
+                (64, ADRP, Name),
+                (68, OFF12, Name),
+                (76, BR26, Dlopen),
+                (80, ADRP, Flag),
+                (84, OFF12, Flag),
             ],
         }
     }
 
-    fn lazy_helper_refs(kind: LazyUse) -> Vec<(u32, u8, LazyTarget)> {
+    fn lazy_helper_refs(kind: LazyUse) -> &'static [(u32, u8, LazyTarget)] {
         use LazyTarget::*;
-        let (adrp, off12, br26) = (
-            DYLD_CACHE_ADJ_V2_ARM64_ADRP,
-            DYLD_CACHE_ADJ_V2_ARM64_OFF12,
-            DYLD_CACHE_ADJ_V2_ARM64_BR26,
-        );
-        let mut refs = vec![(0, adrp, Flag), (4, off12, Flag)];
-        let call = |k: u32| {
-            let k = k * 4;
-            [(k, adrp, Flag), (k + 4, off12, Flag), (k + 8, adrp, Header), (k + 12, off12, Header)]
-                .into_iter()
-                .chain([(k + 16, br26, LazyLoad)])
-        };
+        const ADRP: u8 = DYLD_CACHE_ADJ_V2_ARM64_ADRP;
+        const OFF12: u8 = DYLD_CACHE_ADJ_V2_ARM64_OFF12;
+        const BR26: u8 = DYLD_CACHE_ADJ_V2_ARM64_BR26;
         match kind {
-            LazyUse::Call => {
-                refs.extend([(12, adrp, Slot), (16, off12, Slot)]);
-                refs.extend(call(8));
-            }
+            LazyUse::Call => &[
+                (0, ADRP, Flag),
+                (4, OFF12, Flag),
+                (12, ADRP, Slot),
+                (16, OFF12, Slot),
+                (32, ADRP, Flag),
+                (36, OFF12, Flag),
+                (40, ADRP, Header),
+                (44, OFF12, Header),
+                (48, BR26, LazyLoad),
+            ],
             LazyUse::Load { site, .. } => {
-                refs.extend(call(6));
-                refs.push((56, adrp, Slot));
-                if site.is_some() {
-                    refs.push((60, br26, Site));
-                }
+                // The last entry is the branch back to the site, if the
+                // helper has one.
+                let refs = &[
+                    (0, ADRP, Flag),
+                    (4, OFF12, Flag),
+                    (24, ADRP, Flag),
+                    (28, OFF12, Flag),
+                    (32, ADRP, Header),
+                    (36, OFF12, Header),
+                    (40, BR26, LazyLoad),
+                    (56, ADRP, Slot),
+                    (60, BR26, Site),
+                ];
+                if site.is_some() { refs } else { &refs[..8] }
             }
             LazyUse::Cmp => unreachable!(),
         }
-        refs
     }
 
     fn lazy_ref(r: &Reloc, _data: &[u8]) -> crate::arch::LazyRef {

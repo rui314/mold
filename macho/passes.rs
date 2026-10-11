@@ -869,7 +869,7 @@ pub fn do_lto<E: Target>(ctx: &mut Context<E>) {
         // warns of it in an x86_64 link as of an input.
         let mf = Box::leak(Box::new(mf));
         if !crate::reader::is_foreign(ctx, mf) {
-            let i = input_files::parse_object(ctx, mf, true);
+            let i = input_files::parse_object(ctx, mf);
             ctx.objs[i].lto_output = true;
         }
     }

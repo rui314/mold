@@ -234,7 +234,8 @@ pub fn hook_object<E: Target>(ctx: &Context<E>) -> Option<&'static MappedFile> {
         return None;
     }
     let data = if E::CPUTYPE == CPU_TYPE_ARM64 { ARM64_OBJECT } else { X86_64_OBJECT };
-    Some(MappedFile::synthesized("bundleForClassHook.o".into(), data.to_vec()))
+    let name = "bundleForClassHook.o".into();
+    Some(Box::leak(Box::new(MappedFile { name, data, parent: None, mtime: None })))
 }
 
 /// Makes the hook's table, once the symbols are resolved, or drops the

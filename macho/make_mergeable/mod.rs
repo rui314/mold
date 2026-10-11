@@ -738,7 +738,7 @@ impl<'a, E: Target> Builder<'a, E> {
                 continue;
             }
             // A SUBTRACTOR and the UNSIGNED of its size after it.
-            if is_subtractor::<E>(r.ty) && i + 1 < rels.len() {
+            if r.ty == E::RELOC_SUBTRACTOR && i + 1 < rels.len() {
                 let (to, to_off) = self.reloc_target(obj, &rels[i + 1]);
                 let kind = if rels[i + 1].size == 8 { fk::DIFF64 } else { fk::DIFF32 };
                 let mut f = OutFixup::new(r.offset, to, kind, rels[i + 1].addend + to_off - off);
@@ -1225,14 +1225,6 @@ fn record_flags<E: Target>(ctx: &Context<E>) -> u64 {
         flags |= FLAG_HAS_CLASSES;
     }
     flags
-}
-
-fn is_subtractor<E: Target>(ty: u8) -> bool {
-    if E::CPUTYPE == CPU_TYPE_ARM64 {
-        ty == ARM64_RELOC_SUBTRACTOR
-    } else {
-        ty == X86_64_RELOC_SUBTRACTOR
-    }
 }
 
 /// An x86-64 relocation's fixup. ld-prime's addend is to the

@@ -242,14 +242,14 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
     /// of each reference.
     fn delay_refs(
         code: crate::chunks::delay_init::DelayCode,
-    ) -> Vec<(u32, u8, crate::chunks::delay_init::DelayTarget)>;
+    ) -> &'static [(u32, u8, crate::chunks::delay_init::DelayTarget)];
 
     /// Where a __lazy_helpers entry of a kind refers to what, for
     /// LC_SEGMENT_SPLIT_INFO: offsets in the entry, with the split-info
     /// kind of each reference.
     fn lazy_helper_refs(
         kind: crate::chunks::lazy_helpers::LazyUse,
-    ) -> Vec<(u32, u8, crate::chunks::lazy_helpers::LazyTarget)>;
+    ) -> &'static [(u32, u8, crate::chunks::lazy_helpers::LazyTarget)];
 
     /// How relocation `r`, of a subsection whose contents are `data`,
     /// reaches a symbol of a dylib dyld loads lazily, or a delay-init

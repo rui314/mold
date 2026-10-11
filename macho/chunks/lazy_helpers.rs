@@ -154,7 +154,7 @@ pub(crate) fn split_info_entries<E: Target>(p: &Places<'_, E>, out: &mut Vec<Ent
     );
     for (i, h) in lazy.helpers.iter().enumerate() {
         let (n, at) = p.lazy_helper(i as u32);
-        for (off, kind, to) in E::lazy_helper_refs(h.kind) {
+        for &(off, kind, to) in E::lazy_helper_refs(h.kind) {
             let to = match to {
                 LazyTarget::Flag => p.isec(h.flag as usize),
                 LazyTarget::Slot => {

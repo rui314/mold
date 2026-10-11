@@ -236,7 +236,7 @@ pub(crate) fn split_info_entries<E: Target>(p: &Places<'_, E>, out: &mut Vec<Ent
     let dlopen_helper =
         |i: u32| p.chunk_addr(ChunkId::DelayHelper, delay.dlopen_helper_addr(i as usize));
     let mut push_refs = |from: Place, code: DelayCode, resolve: &dyn Fn(DelayTarget) -> _| {
-        for (off, kind, to) in E::delay_refs(code) {
+        for &(off, kind, to) in E::delay_refs(code) {
             let from = (from.0, from.1 + off as u64);
             let to: Option<Place> = resolve(to);
             if to.is_some_and(|to| to.0 != from.0) {

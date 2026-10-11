@@ -192,10 +192,6 @@ impl<E: Target> Synth<'_, E> {
         E::CPUTYPE == CPU_TYPE_ARM64
     }
 
-    fn unsigned() -> u8 {
-        if Self::is_arm64() { ARM64_RELOC_UNSIGNED } else { X86_64_RELOC_UNSIGNED }
-    }
-
     /// Lays an entry out in its section, if it has a place in one.
     fn place(&mut self, i: usize, path: &Path) {
         use kind::*;
@@ -298,7 +294,7 @@ impl<E: Target> Synth<'_, E> {
             });
             self.class_refs[n].label = label;
             let class = self.target_sym(class).expect("a fixup's target has a symbol");
-            let reloc = Self::reloc(offset as u32, class, Self::unsigned(), 3, false);
+            let reloc = Self::reloc(offset as u32, class, E::RELOC_UNSIGNED, 3, false);
             self.sections[sect].relocs.push(reloc);
         }
     }
@@ -566,14 +562,12 @@ impl<E: Target> Synth<'_, E> {
         sym: usize,
         addend: i64,
     ) -> [MachRel; 2] {
-        let (sub, unsigned) = if Self::is_arm64() {
-            (ARM64_RELOC_SUBTRACTOR, ARM64_RELOC_UNSIGNED)
-        } else {
-            (X86_64_RELOC_SUBTRACTOR, X86_64_RELOC_UNSIGNED)
-        };
         let p2size = if size == 8 { 3 } else { 2 };
         self.put(sect, off, size, addend as u64);
-        [Self::reloc(off, from, sub, p2size, false), Self::reloc(off, sym, unsigned, p2size, false)]
+        [
+            Self::reloc(off, from, E::RELOC_SUBTRACTOR, p2size, false),
+            Self::reloc(off, sym, E::RELOC_UNSIGNED, p2size, false),
+        ]
     }
 
     /// The generic fixups, as either target encodes them.
@@ -586,7 +580,7 @@ impl<E: Target> Synth<'_, E> {
         sym: usize,
         out: &mut Vec<MachRel>,
     ) -> bool {
-        let unsigned = Self::unsigned();
+        let unsigned = E::RELOC_UNSIGNED;
         match f.kind {
             fk::PTR64 | fk::TLV_OFFSET | fk::IMAGE_OFFSET32 => {
                 self.put(sect, off, 8, f.addend as u64);
@@ -804,13 +798,11 @@ impl<E: Target> Synth<'_, E> {
                 fk::PCREL32_TO_GOT | fk::SWIFT_REL32_TO_GOT => {
                     let Some(sym) = self.target_sym(f.target) else { continue };
                     let swift = (f.kind == fk::SWIFT_REL32_TO_GOT) as i64;
-                    let (ty, addend) = if Self::is_arm64() {
-                        (ARM64_RELOC_POINTER_TO_GOT, f.addend + swift)
-                    } else {
-                        (X86_64_RELOC_GOT, f.addend + 4 + swift)
-                    };
-                    self.put(sect, off, 4, addend as u64);
-                    self.sections[sect].relocs.push(Self::reloc(off, sym, ty, 2, true));
+                    // x86-64 counts a PC-relative field's distance from its
+                    // end, arm64 from its start.
+                    let bias = if Self::is_arm64() { 0 } else { 4 };
+                    self.put(sect, off, 4, (f.addend + bias + swift) as u64);
+                    self.sections[sect].relocs.push(Self::reloc(off, sym, E::RELOC_GOTPC, 2, true));
                 }
                 _ => {}
             }

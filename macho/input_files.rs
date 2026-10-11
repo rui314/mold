@@ -2419,15 +2419,11 @@ fn integrate_object<E: Target>(ctx: &mut Context<E>, mut staged: StagedObject) -
     obj_idx
 }
 
-/// Parses one object and adds it to the link immediately.
-pub fn parse_object<E: Target>(
-    ctx: &mut Context<E>,
-    mf: &'static MappedFile,
-    alive: bool,
-) -> usize {
+/// Parses one object and adds it to the link immediately, as a live one.
+pub fn parse_object<E: Target>(ctx: &mut Context<E>, mf: &'static MappedFile) -> usize {
     let priority = ctx.next_priority();
     let kept_fdes = KeptFdes::of(&ctx.args);
-    let staged = stage_object::<E>(mf, alive, false, priority, ctx.args.relocatable, kept_fdes);
+    let staged = stage_object::<E>(mf, true, false, priority, ctx.args.relocatable, kept_fdes);
     integrate_object(ctx, staged)
 }
 
