@@ -1363,8 +1363,8 @@ fn read_filelist(arg: &OsStr) -> (PathBuf, Vec<PathBuf>) {
     (path.to_path_buf(), files)
 }
 
-/// What option parsing needs to know about the target: the driver
-/// parses once per speculated target, as mold does.
+/// What resolving the options needs to know about the target (see
+/// resolve_args).
 pub struct TargetTraits {
     pub name: &'static str,
     pub page_size: u64,
@@ -1394,16 +1394,16 @@ enum OutputKind {
 /// the kind of output (None for one not given), the symbol lists, and
 /// what the checks of the options need.
 #[derive(Default)]
-struct ParseState<'a> {
+struct ParseState {
     kind: OutputKind,
     /// -target's triple, which overrides -arch and -platform_version.
-    target_triple: Option<&'a str>,
+    target_triple: Option<String>,
     /// The first two platforms the options name that cannot go
     /// together (see set_platform).
     incompatible_platforms: Option<(u32, u32)>,
     arch_variant: bool,
     /// -no_allow_dylib_sub_type_mismatches's architectures.
-    dylib_subtype_list: Option<&'a [u8]>,
+    dylib_subtype_list: Option<Vec<u8>>,
     /// Whether -e names the entry point.
     explicit_entry: bool,
     pie: Option<bool>,
@@ -1870,7 +1870,9 @@ fn initial_args() -> Args {
     }
 }
 
-/// Parses all options. `cmdline` includes the program name.
+/// Parses all options, and settles the target they are for. What depends
+/// on the target is left to resolve_args. `cmdline` includes the program
+/// name.
 ///
 /// Options are matched as bytes and their arguments keep the bytes they
 /// were given in: paths, install names and rpaths pass through to the
@@ -1878,7 +1880,7 @@ fn initial_args() -> Args {
 /// symbols, segments and sections are bytes, UTF-8 or not, as the
 /// inputs' are. Arguments that are text by nature (versions, numbers,
 /// the -undefined treatment) must be UTF-8.
-pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
+pub fn parse_args(cmdline: &[Cow<'_, OsStr>]) -> ParsedArgs {
     let mut args = initial_args();
     let mut st = ParseState::default();
 
@@ -1975,7 +1977,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
                         .unwrap_or_else(|| fatal!("unknown -arch name: {arch}")),
                 );
             }
-            b"-target" => st.target_triple = Some(cur.next_text(name)),
+            b"-target" => st.target_triple = Some(cur.next_text(name).to_owned()),
             b"-platform_version" => read_platform_version(&mut cur, &mut args, &mut st, name),
             // The minimum versions of macOS and iOS, under their old
             // names too; ld-prime says the iOS one was renamed.
@@ -2002,7 +2004,7 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
             b"-arch_errors_fatal" => args.arch_errors_fatal = true,
             b"-allow_sub_type_mismatches" => args.allow_sub_type_mismatches = true,
             b"-no_allow_dylib_sub_type_mismatches" => {
-                st.dylib_subtype_list = Some(cur.next_arg(name).as_encoded_bytes());
+                st.dylib_subtype_list = Some(cur.next_arg(name).as_encoded_bytes().to_vec());
             }
             b"-deployment_target_mismatches" => {
                 args.deployment_target_mismatches = parse_treatment(name, cur.next_arg(name), true);
@@ -2629,18 +2631,44 @@ pub fn parse_args(target: &TargetTraits, cmdline: &[Cow<'_, OsStr>]) -> Args {
 
     finish_options(&mut args);
     set_output_kind(&mut args, st.kind);
-    if let Some(triple) = st.target_triple {
+    if let Some(triple) = &st.target_triple {
         apply_target_triple(&mut args, triple);
     }
     if args.inputs.is_empty() {
         exit_without_inputs(&args);
     }
-    // A parse for another target than this one is redone by the driver,
-    // so what depends on the target is left to that parse.
-    if !resolve_target(target, &mut args) {
-        return args;
+    // Without -arch, the first object file names the architecture;
+    // without -platform_version (or the like), the objects name the
+    // platform too.
+    if args.arch.is_none() {
+        args.arch = Some(crate::reader::detect_machine_type(&args));
     }
+    if args.platform == 0 {
+        crate::reader::infer_platform(&mut args);
+    }
+    check_deployment_target(&args);
+    ParsedArgs { args, st }
+}
 
+/// The command line as parse_args reads it: what the options say, with
+/// the target they are for settled, but not yet what depends on the
+/// target (see resolve_args).
+pub struct ParsedArgs {
+    args: Args,
+    st: ParseState,
+}
+
+impl ParsedArgs {
+    /// The target the link is for.
+    pub fn arch(&self) -> &'static str {
+        self.args.arch.unwrap()
+    }
+}
+
+/// Resolves what depends on the target: the defaults of many options, and
+/// the checks of the options against the target and one another.
+pub fn resolve_args(target: &TargetTraits, parsed: ParsedArgs) -> Args {
+    let ParsedArgs { mut args, mut st } = parsed;
     check_arch_options(target, &mut args, &st);
     resolve_defaults(target, &mut args, &st);
     std::mem::take(&mut st.lists).build(&mut args);
@@ -2721,27 +2749,6 @@ fn exit_without_inputs(args: &Args) -> ! {
     fatal!("no object files specified");
 }
 
-/// Settles what the image is linked for, and returns whether that is
-/// `target`. Without -arch, the first object file names the
-/// architecture (see reader::detect_machine_type); without
-/// -platform_version (or the like), the parse for the target looks for
-/// the platform in the objects too (see reader::infer_platform). mold's
-/// driver detects the machine type after the parse, but here the
-/// defaults of many options depend on the target and the platform.
-fn resolve_target(target: &TargetTraits, args: &mut Args) -> bool {
-    if args.arch.is_none() {
-        args.arch = Some(crate::reader::detect_machine_type(args));
-    }
-    if args.arch != Some(target.name) {
-        return false;
-    }
-    if args.platform == 0 {
-        crate::reader::infer_platform(args);
-    }
-    check_deployment_target(args);
-    true
-}
-
 /// Refuses an iOS deployment target older than 4.3, the first iOS to
 /// slide a main executable, whatever the link's options or objects
 /// name it by: ld-prime makes every image position-independent, and
@@ -2767,7 +2774,7 @@ fn check_arch_options(target: &TargetTraits, args: &mut Args, st: &ParseState) {
     }
     let env_subtypes = std::env::var_os("LD_DYLIB_CPU_SUBTYPES_MUST_MATCH");
     let env_subtypes = env_subtypes.as_deref().map(OsStr::as_encoded_bytes);
-    if let Some(list) = st.dylib_subtype_list.or(env_subtypes) {
+    if let Some(list) = st.dylib_subtype_list.as_deref().or(env_subtypes) {
         args.dylib_subtypes_must_match = names_cpu_family(list, target.name);
     }
 }

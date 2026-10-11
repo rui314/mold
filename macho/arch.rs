@@ -316,8 +316,8 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
     fn apply_optimization_hints(_ctx: &Context<Self>, _buf: &mut [u8]) {}
 }
 
-/// The canonical name of a target named on the command line, borrowed
-/// from static storage so that a restart for that target can carry it.
+/// The canonical name of a target named on the command line, if mold
+/// links for it.
 pub fn canonical_name(name: &str) -> Option<&'static str> {
     [Arm64::NAME, X86_64::NAME].into_iter().find(|&canonical| canonical == name)
 }

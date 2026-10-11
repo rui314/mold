@@ -22,10 +22,12 @@ use std::path::Path;
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 type LinkFn = fn(Cmdline) -> LinkResult;
+type MachoLinkFn = fn(mold_macho::driver::ParsedArgs);
 
-// Each target has its own monomorphized link function. Start with the first
-// enabled target and switch to the matching function if the inputs are for
-// another target.
+// Each target has its own monomorphized link function. The ELF linker
+// starts with the first enabled target and switches to the matching
+// function if the inputs are for another target. The Mach-O linker finds
+// the target as it parses the options, and calls its function.
 const ELF_TARGETS: &[(&str, LinkFn)] = &[
     #[cfg(feature = "x86_64")]
     ("x86_64", mold_elf_x86_64::link),
@@ -69,17 +71,17 @@ const ELF_TARGETS: &[(&str, LinkFn)] = &[
     ("loongarch32", mold_elf_loongarch32::link),
 ];
 
-const MACHO_TARGETS: &[(&str, LinkFn)] = &[
+const MACHO_TARGETS: &[(&str, MachoLinkFn)] = &[
     #[cfg(feature = "macho-arm64")]
     ("arm64", mold_macho_arm64::link),
     #[cfg(feature = "macho-x86_64")]
     ("x86_64", mold_macho_x86_64::link),
 ];
 
-fn link_for_target(targets: &[(&str, LinkFn)], target: &str, cmdline: Cmdline) -> LinkResult {
+fn link_fn<F: Copy>(targets: &[(&str, F)], target: &str) -> F {
     for &(name, link) in targets {
         if name == target {
-            return link(cmdline);
+            return link;
         }
     }
     eprintln!(
@@ -97,18 +99,16 @@ fn is_ld64(argv0: &OsStr) -> bool {
 
 fn main() {
     let args: Vec<_> = std::env::args_os().collect();
-    let macho = args.first().is_some_and(|argv0| is_ld64(argv0));
-    let targets = if macho { MACHO_TARGETS } else { ELF_TARGETS };
+    if args.first().is_some_and(|argv0| is_ld64(argv0)) {
+        let link = |target: &str, parsed| link_fn(MACHO_TARGETS, target)(parsed);
+        mold_macho::driver::main(args, link);
+        std::process::exit(0);
+    }
 
-    let Some(&(initial_target, _)) = targets.first() else {
+    let Some(&(initial_target, _)) = ELF_TARGETS.first() else {
         eprintln!("mold: no targets enabled; rebuild mold with the appropriate target support");
         std::process::exit(1);
     };
-    let link = |target: &str, cmdline| link_for_target(targets, target, cmdline);
-    let status = if macho {
-        mold_macho::driver::main(args, initial_target, link)
-    } else {
-        mold_elf::driver::main(args, initial_target, link)
-    };
-    std::process::exit(status);
+    let link = |target: &str, cmdline| link_fn(ELF_TARGETS, target)(cmdline);
+    std::process::exit(mold_elf::driver::main(args, initial_target, link));
 }

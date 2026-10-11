@@ -1,9 +1,7 @@
 //! The linker driver: runs the passes in order.
 
-use std::borrow::Cow;
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsString;
 use std::ops::Range;
-use std::sync::Arc;
 
 use rayon::prelude::*;
 
@@ -19,50 +17,26 @@ use crate::passes;
 use crate::reader;
 use crate::symbol_moves;
 
-/// The fully expanded command line.
-pub type Cmdline = Arc<[Cow<'static, OsStr>]>;
+pub use crate::cmdline::ParsedArgs;
 
-/// The exit status of a link, or the name of the target the inputs are
-/// actually for.
-pub type LinkResult = Result<i32, &'static str>;
-
-/// Runs the linker with the given command line. Returns the exit status.
+/// Runs the linker with the given command line. A link that fails exits
+/// in the middle (see mold_common::error::checkpoint).
 ///
-/// `initial_target` is an enabled target used for the initial argument
-/// parsing. `link_for_target` links for a named target, or reports the
-/// target the inputs are actually for; the executable provides both, as
-/// the targets are instantiated in crates of their own.
-pub fn main(
-    argv: Vec<OsString>,
-    initial_target: &str,
-    link_for_target: impl Fn(&str, Cmdline) -> LinkResult,
-) -> i32 {
-    let cmdline: Cmdline = mold_common::response_file::expand_response_files(argv, true).into();
-
-    // Parse with an enabled target's defaults; if the target turns out to
-    // be different, start over with the right one.
-    let mut target = initial_target;
-    loop {
-        match link_for_target(target, Arc::clone(&cmdline)) {
-            Ok(status) => return status,
-            Err(actual) => target = actual,
-        }
-    }
+/// `link_for_target` links for a named target; the executable provides
+/// it, as the targets are instantiated in crates of their own.
+pub fn main(argv: Vec<OsString>, link_for_target: impl Fn(&str, ParsedArgs)) {
+    let cmdline = mold_common::response_file::expand_response_files(argv, true);
+    let parsed = cmdline::parse_args(&cmdline);
+    link_for_target(parsed.arch(), parsed)
 }
 
 fn target_traits<E: Target>() -> cmdline::TargetTraits {
     cmdline::TargetTraits { name: E::NAME, page_size: E::PAGE_SIZE }
 }
 
-/// Links for the target `E`, or reports the target the inputs are
-/// actually for.
-pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
-    let args = cmdline::parse_args(&target_traits::<E>(), &cmdline);
-
-    // Redo if the target does not match with our speculation.
-    if args.arch != Some(E::NAME) {
-        return Err(args.arch.unwrap());
-    }
+/// Links for the target `E`.
+pub fn link<E: Target>(parsed: ParsedArgs) {
+    let args = cmdline::resolve_args(&target_traits::<E>(), parsed);
 
     // Fork so exit latency (unmapping every input) hides behind the
     // parent's return, as in mold; MOLD_NO_FORK=1 keeps one process
@@ -117,7 +91,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
         mold_common::error::checkpoint();
         mold_common::subprocess::notify_parent();
         drop(t_all);
-        return Ok(0);
+        return;
     }
 
     // If there's a bitcode file, do link-time optimization.
@@ -181,7 +155,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
         mold_common::subprocess::notify_parent();
         drop(t_all);
         passes::show_stats(&ctx);
-        return Ok(0);
+        return;
     }
 
     // Merge the initializers, literals and Objective-C references, and
@@ -375,7 +349,6 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     mold_common::subprocess::notify_parent();
     drop(t_all);
     passes::show_stats(&ctx);
-    Ok(0)
 }
 
 /// Copies all chunks to the output buffer and applies relocations, in
