@@ -147,7 +147,7 @@ Options:
   --print-icf-sections[=FILE] Print, or save in FILE, folded identical sections
     --no-print-icf-sections
   --push-state                Save the state of flags governing input file handling
-  --quick-exit                Use quick_exit to exit (default)
+  --quick-exit                Exit with _exit instead of exit (default)
     --no-quick-exit
   --relax                     Optimize instructions (default)
     --no-relax
@@ -187,7 +187,7 @@ Options:
   --version-script FILE       Read version script
   --warn-common               Warn about common symbols
     --no-warn-common
-  --warn-once                 Only warn once for each undefined symbol
+  --warn-once                 Ignored
   --warn-shared-textrel       Warn if the output .so needs text relocations
   --warn-textrel              Warn if the output file needs text relocations
   --warn-unresolved-symbols   Report unresolved symbols as warnings
