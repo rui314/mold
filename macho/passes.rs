@@ -7,6 +7,8 @@ use std::sync::Mutex;
 use mold_common::bits::align_to;
 use mold_common::bytes::display;
 use mold_common::bytes::split_once;
+use mold_common::concurrent_map::{ConcurrentMap, EntryId, FrozenMap};
+use mold_common::hyperloglog::HyperLogLog;
 use mold_common::path::path_bytes;
 use mold_common::worker_local::WorkerLocal;
 use mold_common::{error, fatal, notice, warn};
@@ -1192,10 +1194,13 @@ fn mark_labeled_literals<E: Target>(ctx: &Context<E>) {
 /// Merges identical literal elements across all live inputs: the most
 /// aligned live copy wins, the first of equals, and the rest redirect
 /// to it. Only the elements ld-prime merges take part (see
-/// is_mergeable_literal); a labeled record stays apart, and so do
+/// has_mergeable_literals); a labeled record stays apart, and so do
 /// copies in sections of different names, as in ld-prime: a class
 /// named "Foo" keeps its name in __objc_classname though __cstring has
-/// a "Foo" too.
+/// a "Foo" too. Nor does an element that carries a relocation merge,
+/// as identical bytes may point at different targets (ld-prime merges
+/// a __literal8 record by its bytes, making every copy point where the
+/// first does).
 ///
 /// A C string keeps its input offset modulo its section's alignment,
 /// as any subsection does (see InputSection::align_offset), and like
@@ -1203,87 +1208,159 @@ fn mark_labeled_literals<E: Target>(ctx: &Context<E>) {
 /// InputSection::p2align_at): Swift pads the strings of its 16-aligned
 /// __objc_methname so that many start at a multiple of 16, and a copy
 /// from Swift then wins over clang's, which has no alignment.
+///
+/// Elements are deduplicated as mold's merged sections deduplicate
+/// theirs: each kind of literal has a concurrent hash table sized for
+/// 2/3 occupancy from an estimate of its distinct elements, and all
+/// copies are inserted in parallel. The copies of an element race for
+/// its entry with an atomic minimum of their ranks, so the winner is
+/// the same whatever order the threads insert them in.
 pub fn merge_literals<E: Target>(ctx: &mut Context<E>) {
+    use std::sync::atomic::Ordering;
     mark_labeled_literals(ctx);
-    // Deduplication follows the symbol table's sharded shape: every
-    // element's content hash is computed in parallel, elements bin by
-    // hash, and the shards resolve independently, each meeting its
-    // copies in input order.
-    let literals: Vec<Literal> = ctx
-        .isecs
+    let kinds = literal_kinds(ctx);
+
+    let isecs = &ctx.isecs;
+    let literals: Vec<Literal> = isecs
         .par_iter()
         .enumerate()
         .filter_map(|(i, isec)| {
-            if !isec.is_emitted() || isec.is_labeled() {
+            if !isec.is_emitted() || isec.is_labeled() || isec.nrels != 0 {
                 return None;
             }
             let hdr = isec.hdr(&ctx.objs[isec.file as usize]);
-            if !input_files::is_mergeable_literal(hdr, isec) {
+            if !input_files::has_mergeable_literals(hdr) {
                 return None;
             }
-            Some((xxhash_rust::xxh3::xxh3_64(isec.contents()), hdr, i as u32))
+            let kind = LiteralKind::of(hdr);
+            Some(Literal {
+                hash: xxhash_rust::xxh3::xxh3_64(isec.contents()),
+                isec: i as u32,
+                kind: kinds.iter().position(|k| *k == kind).unwrap() as u32,
+                p2align: isec.p2align_at(isec.input_addr as u64),
+            })
         })
         .collect();
 
-    const NUM_SHARDS: usize = 64;
-    let mut shards: Vec<Vec<Literal>> = vec![Vec::new(); NUM_SHARDS];
-    for &lit in &literals {
-        shards[(lit.0 % NUM_SHARDS as u64) as usize].push(lit);
-    }
-    let isecs = &ctx.isecs;
-    let folds: Vec<Vec<(u32, u32)>> =
-        shards.into_par_iter().map(|shard| merge_shard(isecs, shard)).collect();
+    // Estimate the number of distinct elements of each kind. We aim for
+    // a 2/3 occupancy ratio. Each chunk fills a 2 KiB sketch of every
+    // kind, so chunks are large.
+    let sketches = literals
+        .par_chunks(1 << 16)
+        .map(|chunk| {
+            let mut sketches = vec![HyperLogLog::default(); kinds.len()];
+            for lit in chunk {
+                sketches[lit.kind as usize].insert(lit.hash);
+            }
+            sketches
+        })
+        .reduce(
+            || vec![HyperLogLog::default(); kinds.len()],
+            |a, b| a.into_iter().zip(&b).map(|(a, b)| a.merged(b)).collect(),
+        );
+    let maps: Vec<ConcurrentMap<AtomicU64>> = sketches
+        .par_iter()
+        .map(|sketch| ConcurrentMap::with_capacity(sketch.cardinality() as usize * 3 / 2))
+        .collect();
 
-    // The winner keeps its own alignment: a loser's is no stricter.
-    for (loser, winner) in folds.into_iter().flatten() {
-        ctx.isecs[loser as usize].replacement = winner;
-    }
+    // The hash tables are typically much larger than the cache, so each
+    // insertion stalls on a cache miss for its first probe. We know all
+    // hashes upfront, so prefetch the bucket a few insertions ahead.
+    const LOOKAHEAD: usize = 8;
+    let entries: Vec<EntryId> = literals
+        .par_iter()
+        .enumerate()
+        .map(|(i, lit)| {
+            if let Some(next) = literals.get(i + LOOKAHEAD) {
+                maps[next.kind as usize].prefetch(next.hash);
+            }
+            let rank = lit.rank();
+            let data = isecs[lit.isec as usize].contents();
+            let (id, best, _) =
+                maps[lit.kind as usize].insert_with(data, lit.hash, || AtomicU64::new(rank));
+            // Most insertions find a better rank there already, so the
+            // rank is only written when it improves: an atomic update on
+            // every insertion would bounce the cache line of a popular
+            // element between cores.
+            if best.load(Ordering::Relaxed) > rank {
+                best.fetch_min(rank, Ordering::Relaxed);
+            }
+            id
+        })
+        .collect();
+    let maps: Vec<FrozenMap<AtomicU64>> = maps.into_iter().map(ConcurrentMap::freeze).collect();
+
+    // Redirect the losers to the winners. The literals are in subsection
+    // order, so each block of subsections finds its own by binary
+    // search. The winner keeps its own alignment: a loser's is no
+    // stricter.
+    const BLOCK: usize = 4096;
+    ctx.isecs.par_chunks_mut(BLOCK).enumerate().for_each(|(i, block)| {
+        let base = (i * BLOCK) as u32;
+        let lo = literals.partition_point(|lit| lit.isec < base);
+        let hi = literals.partition_point(|lit| lit.isec < base + block.len() as u32);
+        for (lit, &id) in literals[lo..hi].iter().zip(&entries[lo..hi]) {
+            let winner = maps[lit.kind as usize].get(id).load(Ordering::Relaxed) as u32;
+            if winner != lit.isec {
+                block[(lit.isec - base) as usize].replacement = winner;
+            }
+        }
+    });
     input_files::redirect_symbols_to_replacements(ctx);
 }
 
-/// A literal element to merge: its content hash, its section's header
-/// and its subsection.
-type Literal<'a> = (u64, &'a MachSection, u32);
+/// A literal element to merge.
+struct Literal {
+    hash: u64,
+    /// The element's subsection.
+    isec: InputSectionId,
+    /// The index of the element's kind in literal_kinds' list.
+    kind: u32,
+    /// The element's alignment, as ld64 sees it (see
+    /// InputSection::p2align_at).
+    p2align: u8,
+}
 
-/// Merges the identical elements of a shard, met in input order: the
-/// same bytes in a section of the same name and type. Of each group the
-/// most aligned copy wins, the first of equals. Returns each losing
-/// copy with the winning one.
-fn merge_shard(isecs: &[InputSection], shard: Vec<Literal>) -> Vec<(u32, u32)> {
-    // Keyed by the content hash already computed, each group's first
-    // copy and its index in `best`, which holds its winner so far.
-    let mut table: hashbrown::HashTable<(u64, &MachSection, u32, u32)> =
-        hashbrown::HashTable::new();
-    let mut best: Vec<u32> = Vec::new();
-    let mut losers: Vec<(u32, u32)> = Vec::new();
-    let p2align = |i: u32| isecs[i as usize].p2align_at(isecs[i as usize].input_addr as u64);
-    for (hash, hdr, i) in shard {
-        let data = isecs[i as usize].contents();
-        let same = |&(h, other, j, _): &(u64, &MachSection, u32, u32)| {
-            h == hash
-                && other.segname == hdr.segname
-                && other.sectname == hdr.sectname
-                && other.section_type() == hdr.section_type()
-                && isecs[j as usize].contents() == data
-        };
-        match table.entry(hash, same, |e| e.0) {
-            hashbrown::hash_table::Entry::Occupied(e) => {
-                let group = e.get().3;
-                let winner = &mut best[group as usize];
-                if p2align(i) > p2align(*winner) {
-                    losers.push((*winner, group));
-                    *winner = i;
-                } else {
-                    losers.push((i, group));
-                }
-            }
-            hashbrown::hash_table::Entry::Vacant(e) => {
-                e.insert((hash, hdr, i, best.len() as u32));
-                best.push(i);
-            }
-        }
+impl Literal {
+    /// This copy's rank in the race for its element's entry, the lowest
+    /// winning: the most aligned copy, and of equals the first in input
+    /// order. The low 32 bits are the subsection.
+    fn rank(&self) -> u64 {
+        (u64::from(u8::MAX - self.p2align) << 32) | u64::from(self.isec)
     }
-    losers.into_iter().map(|(i, group)| (i, best[group as usize])).collect()
+}
+
+/// The segment, section name and type of a section whose literal
+/// elements merge (see has_mergeable_literals): ld-prime merges an
+/// element only with copies in sections of the same kind.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct LiteralKind([u8; 16], [u8; 16], u32);
+
+impl LiteralKind {
+    fn of(hdr: &MachSection) -> Self {
+        Self(hdr.segname, hdr.sectname, hdr.section_type())
+    }
+}
+
+/// The kinds of the sections whose literal elements merge.
+fn literal_kinds<E: Target>(ctx: &Context<E>) -> Vec<LiteralKind> {
+    // There are only a few kinds, so a list beats a hash set.
+    let add = |mut kinds: Vec<LiteralKind>, kind| {
+        if !kinds.contains(&kind) {
+            kinds.push(kind);
+        }
+        kinds
+    };
+    let mut kinds = ctx
+        .objs
+        .par_iter()
+        .flat_map_iter(|obj| obj.sect_hdrs.iter())
+        .filter(|hdr| input_files::has_mergeable_literals(hdr))
+        .map(LiteralKind::of)
+        .fold(Vec::new, add)
+        .reduce(Vec::new, |a, b| b.into_iter().fold(a, add));
+    kinds.sort_unstable();
+    kinds
 }
 
 /// Auto-hides eligible weak definitions. Compilers mark a weak

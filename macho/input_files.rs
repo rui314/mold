@@ -1972,14 +1972,12 @@ pub fn has_merged_subsecs(sect: &MachSection) -> bool {
     is_literal_section(sect) && !(sect.segname() == b"__DATA" && is_pointer_list(sect))
 }
 
-/// Whether ld-prime merges a literal element with identical ones: a C
-/// string of a section of any name, but a fixed-size record only of the
-/// standard pool of its size, __TEXT,__literal4, __literal8 or
-/// __literal16 of that type - its records in a section of another name
-/// or type stay, however many copies there are. Nor does an element
-/// that carries a relocation merge, as identical bytes may point at
-/// different targets (ld-prime merges a __literal8 record by its bytes,
-/// making every copy point where the first does).
+/// Whether ld-prime merges the literal elements of a section with
+/// identical ones: the C strings of a section of any name, but the
+/// fixed-size records only of the standard pool of their size,
+/// __TEXT,__literal4, __literal8 or __literal16 of that type - records
+/// in a section of another name or type stay, however many copies
+/// there are.
 ///
 /// __TEXT,__ustring, which holds the UTF-16 strings of CFString
 /// constants (and C's u"" literals), is a regular section that ld-prime
@@ -1987,10 +1985,7 @@ pub fn has_merged_subsecs(sect: &MachSection) -> bool {
 /// identical ones whatever labels it: every object that spells @"é" has
 /// its own copy, and so its own CFString, which merges only once the
 /// strings have (iTerm2's debug dylib had 67 CFStrings too many).
-pub(crate) fn is_mergeable_literal(hdr: &MachSection, isec: &InputSection) -> bool {
-    if isec.nrels != 0 {
-        return false;
-    }
+pub(crate) fn has_mergeable_literals(hdr: &MachSection) -> bool {
     match hdr.section_type() {
         S_CSTRING_LITERALS => true,
         S_4BYTE_LITERALS => hdr.segname_is(b"__TEXT") && hdr.sectname_is(b"__literal4"),
