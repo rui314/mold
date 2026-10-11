@@ -5420,10 +5420,10 @@ pub fn add_entry_stub<E: Target>(ctx: &mut Context<E>) {
 ///
 /// The build ID is the first 16 bytes of a SHA256 over the page hashes,
 /// so an output with the same contents gets the same ID. Its version
-/// and variant bits are set as in a version-4 UUID. -random_uuid writes
-/// a random UUID instead, before anything is hashed, and -no_uuid
-/// leaves LC_UUID out. The pages are hashed only if the build ID or the
-/// signature needs them.
+/// and variant bits mark it as a version-3 UUID, the kind made by
+/// hashing. -random_uuid writes a random UUID instead, before anything
+/// is hashed, and -no_uuid leaves LC_UUID out. The pages are hashed
+/// only if the build ID or the signature needs them.
 ///
 /// Deriving the build ID from the page hashes reads the contents once.
 /// As the signature covers the header, which holds the build ID, the
@@ -5458,7 +5458,7 @@ pub fn write_build_id<E: Target>(
         flat.extend(hashes.concat());
         let hash = sha2::Sha256::digest(&flat);
         let bytes = hash[..16].try_into().unwrap();
-        set_uuid(uuid::Builder::from_random_bytes(bytes).into_uuid(), buf);
+        set_uuid(uuid::Builder::from_md5_bytes(bytes).into_uuid(), buf);
         let hdr_end = ctx.mach_header.hdr.size as usize;
         chunks::code_signature::rehash_pages(&buf[..sig_start], &mut hashes, 0..hdr_end);
     }
