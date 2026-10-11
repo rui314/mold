@@ -21,21 +21,18 @@ use crate::passes;
 /// that report it.
 pub type Cmdline = Arc<[Cow<'static, OsStr>]>;
 
-/// The exit status of a link, or the name of the target the inputs are
-/// actually for.
-pub type LinkResult = Result<i32, &'static str>;
-
-/// Runs the linker with the given command line. Returns the exit status.
+/// Runs the linker with the given command line. A link that fails exits
+/// in the middle (see mold_common::error::checkpoint).
 ///
 /// `initial_target` is an enabled target used for the initial argument
-/// parsing. `link_for_target` links for a named target, or reports the
+/// parsing. `link_for_target` links for a named target, or returns the
 /// target the inputs are actually for; the executable provides both, as
 /// the targets are instantiated in crates of their own.
 pub fn main(
     argv: Vec<OsString>,
     initial_target: &str,
-    link_for_target: impl Fn(&str, Cmdline) -> LinkResult,
-) -> i32 {
+    link_for_target: impl Fn(&str, Cmdline) -> Option<&'static str>,
+) {
     // A parent's transparent huge page disable flag is inherited. Restore
     // the system's default policy so large links can use huge pages.
     #[cfg(any(target_os = "android", target_os = "linux"))]
@@ -65,8 +62,8 @@ pub fn main(
             let _ = std::env::set_current_dir(cwd);
         }
         match link_for_target(target, Arc::clone(&cmdline)) {
-            Ok(status) => return status,
-            Err(actual) => target = actual,
+            Some(actual) => target = actual,
+            None => return,
         }
     }
 }
@@ -81,9 +78,9 @@ fn thread_count(args: &Args) -> usize {
         .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get()).min(32))
 }
 
-/// Links for the target `E`, or reports the target the inputs are actually
-/// for.
-pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
+/// Links for the target `E`, or returns the target the inputs are
+/// actually for.
+pub fn link<E: Target>(cmdline: Cmdline) -> Option<&'static str> {
     let parsed = cmdline::parse_args(&target_traits::<E>(), &cmdline);
     let cmdline::ParsedArgs { args, jobs, .. } = parsed;
     let mut ctx = Context::<E>::new(args, cmdline);
@@ -95,7 +92,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
 
     // Redo if -m does not match our speculation.
     if ctx.args.emulation != E::NAME {
-        return Err(ctx.args.emulation);
+        return Some(ctx.args.emulation);
     }
 
     let t_all = ctx.timer("all");
@@ -234,7 +231,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
     // in a separate file.
     if ctx.args.relocatable {
         crate::relocatable::combine_objects(&mut ctx);
-        return Ok(0);
+        return None;
     }
 
     // Create .bss sections for common symbols.
@@ -627,7 +624,7 @@ pub fn link<E: Target>(cmdline: Cmdline) -> LinkResult {
         error::exit_after_cleanup(0);
     }
     error::checkpoint();
-    Ok(0)
+    None
 }
 
 /// Opens the output file that the command line names.

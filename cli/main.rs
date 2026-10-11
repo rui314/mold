@@ -11,7 +11,7 @@
 // the speed of unwinding, so we keep rustc from reporting it.
 #![cfg_attr(all(target_vendor = "apple", debug_assertions), allow(linker_messages))]
 
-use mold_elf::driver::{Cmdline, LinkResult};
+use mold_elf::driver::Cmdline;
 use std::ffi::OsStr;
 use std::path::Path;
 
@@ -21,7 +21,7 @@ use std::path::Path;
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-type LinkFn = fn(Cmdline) -> LinkResult;
+type LinkFn = fn(Cmdline) -> Option<&'static str>;
 type MachoLinkFn = fn(mold_macho::driver::ParsedArgs);
 
 // Each target has its own monomorphized link function. The ELF linker
@@ -110,5 +110,6 @@ fn main() {
         std::process::exit(1);
     };
     let link = |target: &str, cmdline| link_fn(ELF_TARGETS, target)(cmdline);
-    std::process::exit(mold_elf::driver::main(args, initial_target, link));
+    mold_elf::driver::main(args, initial_target, link);
+    std::process::exit(0);
 }
