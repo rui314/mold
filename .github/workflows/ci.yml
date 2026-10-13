@@ -78,7 +78,7 @@ jobs:
         else
           export TSAN_OPTIONS='${{ matrix.runtime-options }}'
         fi
-        ${{ matrix.test-prefix }} cargo +nightly test --locked -Zbuild-std --target x86_64-unknown-linux-gnu -p mold --no-default-features --features system-allocator,x86_64 --test integration -- --native --test-threads 1 --timeout ${{ matrix.test-timeout }}
+        ${{ matrix.test-prefix }} cargo +nightly test --locked -Zbuild-std --target x86_64-unknown-linux-gnu -p mold --no-default-features --features system-allocator,x86_64 --test integration -- --native --test-threads 1 --per-test-timeout ${{ matrix.test-timeout }}
     - name: archive test results
       uses: actions/upload-artifact@v7
       if: failure()

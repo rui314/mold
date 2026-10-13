@@ -25,4 +25,4 @@ args=(
   --features mold/system-allocator,mold/x86_64,blake3/pure,zstd/no_asm
   --test integration
 )
-cargo +nightly test "${args[@]}" -- --native --test-threads 1 --timeout 60 "$@"
+cargo +nightly test "${args[@]}" -- --native --test-threads 1 --per-test-timeout 60 "$@"

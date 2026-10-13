@@ -121,7 +121,7 @@ impl Counts {
 fn usage() -> ! {
     eprintln!(
         "Usage: cargo test [pattern] [-- [--test-threads N] \
-         [--native | --all | --triple TRIPLE] [--cpu CPU] [--timeout SECONDS] [--list]]\n\
+         [--native | --all | --triple TRIPLE] [--cpu CPU] [--per-test-timeout SECONDS] [--list]]\n\
          By default the ELF tests run for every target whose cross compiler and QEMU are \
          installed, and the Mach-O tests for macOS (arm64, and x86_64 under Rosetta) and the \
          arm64 iOS simulator; --all adds the other simulators. --native runs the targets the \
@@ -167,7 +167,7 @@ fn parse_options() -> Options {
                 mode_was_set = true;
             }
             "--cpu" => cpu = Some(args.next().unwrap_or_else(|| usage())),
-            "--timeout" => timeout = Duration::from_secs(parse_usize(args.next()) as u64),
+            "--per-test-timeout" => timeout = Duration::from_secs(parse_usize(args.next()) as u64),
             "--list" => list = true,
             "--nocapture" | "--show-output" => {}
             "-h" | "--help" => usage(),
@@ -176,6 +176,11 @@ fn parse_options() -> Options {
             }
             _ if arg.starts_with("--test-threads=") => {
                 jobs = parse_usize(arg.split_once('=').map(|(_, value)| value.to_owned()))
+            }
+            _ if arg.starts_with("--per-test-timeout=") => {
+                timeout = Duration::from_secs(parse_usize(
+                    arg.split_once('=').map(|(_, value)| value.to_owned()),
+                ) as u64)
             }
             _ if arg.starts_with('-') => usage(),
             _ => patterns.push(arg),
