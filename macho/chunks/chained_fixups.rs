@@ -112,12 +112,47 @@ fn import_table(fixups: &[Fixup]) -> (Vec<(SymbolId, u64)>, ImportOrdinals) {
 /// -static image, which no dyld reads, whatever its target; the former
 /// where chains came earlier (iOS 13.4, see cmdline::is_new_os) or when
 /// -fixup_chains forces them on an older OS.
+///
+/// arm64e writes DYLD_CHAINED_PTR_ARM64E: its pointers carry the
+/// authentication bits (see arm64e_chain_word). Only its unauth
+/// targets are vm addresses, not offsets as under _64_OFFSET, so the
+/// formats keep their own encoders below.
 pub(crate) fn pointer_format<E: Target>(ctx: &Context<E>) -> u16 {
+    if E::CPUTYPE == CPU_TYPE_ARM64 && E::CPUSUBTYPE == CPU_SUBTYPE_ARM64E {
+        return DYLD_CHAINED_PTR_ARM64E;
+    }
     if ctx.args.static_link || ctx.args.targets(&crate::cmdline::VERSION_2021_FALL) {
         DYLD_CHAINED_PTR_64_OFFSET
     } else {
         DYLD_CHAINED_PTR_64
     }
+}
+
+/// Encodes one dyld_chained_ptr_arm64e_{rebase,bind,auth_*} fixup word
+/// (see EXTERNAL_HEADERS/mach-o/fixup-chains.h, DYLD_CHAINED_PTR_ARM64E):
+///
+///   bind = 0: rebase,    auth = 0: target:43 | high8:8 | next:11
+///            rebase,    auth = 1: target:32 | diversity:16 | addrDiv:1
+///                                   | key:2 | next:11
+///   bind = 1: bind,       auth = 0: ordinal:16 | zero:16 | addend:19
+///                                   | next:11
+///            bind,       auth = 1: ordinal:16 | zero:16 | diversity:16
+///                                   | addrDiv:1 | key:2 | next:11
+///
+/// `next` is in units of the 8-byte stride; 0 ends the chain. The
+/// auth schema is the documented default for an object's signed
+/// pointers (the object placeholder carries no schema of its own): ASIA
+/// (key 0), no extra diversity, no address diversity.
+fn arm64e_chain_word(next: u64, bind: bool, auth: bool, payload: u64) -> u64 {
+    let mut word = payload & 0x000f_ffff_ffff_ffff;
+    word |= next << 51;
+    if bind {
+        word |= 1 << 62;
+    }
+    if auth {
+        word |= 1 << 63;
+    }
+    word
 }
 
 fn pad(buf: &mut Vec<u8>, align: usize) {
@@ -364,12 +399,20 @@ pub fn section_chain_starts<E: Target>(ctx: &Context<E>) -> Vec<u32> {
 /// the next fixup of its chain, in the same page (or, under
 /// -fixup_chains_section, in its stride's reach; see
 /// section_chain_starts).
+///
+/// arm64e encodes its own word formats (see arm64e_chain_word): an
+/// import ordinal in the low 16 bits, a rebase target in the low 32
+/// (an offset from the mach header, as DYLD_CHAINED_PTR_ARM64E reads
+/// it), the schema bits above them, and an 11-bit `next` in units of
+/// 8.
 pub fn write_fixup_chains<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
+    let arm64e = E::CPUTYPE == CPU_TYPE_ARM64 && E::CPUSUBTYPE == CPU_SUBTYPE_ARM64E;
     let page_shift = chain_page_size(ctx).trailing_zeros();
     // What a rebase target counts from: zero for a VM address, the
     // image's own address for an offset.
     let target_base = match pointer_format(ctx) {
         DYLD_CHAINED_PTR_64_OFFSET => ctx.mach_header.hdr.addr,
+        DYLD_CHAINED_PTR_ARM64E => ctx.mach_header.hdr.addr,
         _ => 0,
     };
 
@@ -395,16 +438,46 @@ pub fn write_fixup_chains<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
             }
 
             let off = (seg.cmd.fileoff.get() + (addr - seg.cmd.vmaddr.get())) as usize;
-            let word = match sym {
-                Some(sym) => {
-                    // dyld_chained_ptr_64_bind
-                    let ordinal = ctx.chained_fixups.ordinals[&(sym, table_addend(addend))] as u64;
-                    let inline_addend = if addend <= MAX_INLINE_ADDEND { addend } else { 0 };
-                    ordinal | (inline_addend << 24) | (next << 51) | (1 << 63)
+            let word = if arm64e {
+                // dyld_chained_ptr_arm64e_{bind,auth_bind,rebase,auth_rebase}
+                match sym {
+                    Some(sym) => {
+                        let ordinal =
+                            ctx.chained_fixups.ordinals[&(sym, table_addend(addend))] as u64;
+                        arm64e_chain_word(next, true, false, ordinal)
+                    }
+                    _ => {
+                        let val = u64::from_le_bytes(buf[off..off + 8].try_into().unwrap());
+                        let target = (val & 0x00ff_ffff_ffff_ffff).wrapping_sub(target_base);
+                        if target >> 32 != 0 {
+                            let sect = ctx
+                                .chunks
+                                .iter()
+                                .map(|&id| ctx.chunk_header(id))
+                                .find(|hdr| hdr.addr <= addr && addr < hdr.addr + hdr.size)
+                                .map(|hdr| [hdr.segname, b",", hdr.sectname].concat())
+                                .unwrap_or_default();
+                            fatal!(
+                                "rebase target unencodable at {addr:#x} in {} (value {val:#x})",
+                                display(&sect)
+                            );
+                        }
+                        arm64e_chain_word(next, false, false, target)
+                    }
                 }
-                None => {
-                    let val = u64::from_le_bytes(buf[off..off + 8].try_into().unwrap());
-                    rebase_word(ctx, addr, val, target_base) | (next << 51)
+            } else {
+                match sym {
+                    Some(sym) => {
+                        // dyld_chained_ptr_64_bind
+                        let ordinal =
+                            ctx.chained_fixups.ordinals[&(sym, table_addend(addend))] as u64;
+                        let inline_addend = if addend <= MAX_INLINE_ADDEND { addend } else { 0 };
+                        ordinal | (inline_addend << 24) | (next << 51) | (1 << 63)
+                    }
+                    None => {
+                        let val = u64::from_le_bytes(buf[off..off + 8].try_into().unwrap());
+                        rebase_word(ctx, addr, val, target_base) | (next << 51)
+                    }
                 }
             };
             buf[off..off + 8].copy_from_slice(&word.to_le_bytes());

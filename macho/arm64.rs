@@ -19,8 +19,14 @@ use crate::input_sections::{InputSection, Reloc, RelocTarget};
 use crate::macho::*;
 use crate::symbol::{NEEDS_GOT, NEEDS_STUB};
 
+/// The arm64 target, and arm64e (PAC = true), its pointer-authentication
+/// variant: the same code and layout, a different CPU subtype in the
+/// image's header (see Arm64 and Arm64e).
 #[derive(Clone, Copy, Default)]
-pub struct Arm64;
+pub struct Arm64Base<const PAC: bool>;
+
+pub type Arm64 = Arm64Base<false>;
+pub type Arm64e = Arm64Base<true>;
 
 // The immediate fields relocations fill: B/BL's imm26, ADRP's
 // immlo:immhi, and the imm12 of ADD, LDR and STR.
@@ -54,7 +60,13 @@ fn adrp_reaches(hi: u64, lo: u64) -> bool {
 
 /// Checks that the ADRP of relocation `r` of subsection `isec`, at `p`,
 /// reaches the page of `t`, its target or the GOT slot it loads.
-fn check_adrp(ctx: &Context<Arm64>, isec: &InputSection, r: &Reloc, p: u64, t: u64) {
+fn check_adrp<const PAC: bool>(
+    ctx: &Context<Arm64Base<PAC>>,
+    isec: &InputSection,
+    r: &Reloc,
+    p: u64,
+    t: u64,
+) {
     if adrp_reaches(t, p) {
         return;
     }
@@ -108,7 +120,12 @@ fn write_add_ldst(loc: &mut [u8], val: u64) -> Result<(), u32> {
 
 /// Reports an LDR or STR, relocation `r` of subsection `isec`, whose
 /// target (or the GOT slot it loads) its access size doesn't divide.
-fn report_ldst_alignment(ctx: &Context<Arm64>, isec: &InputSection, r: &Reloc, size: u32) {
+fn report_ldst_alignment<const PAC: bool>(
+    ctx: &Context<Arm64Base<PAC>>,
+    isec: &InputSection,
+    r: &Reloc,
+    size: u32,
+) {
     let target = r.target_name(ctx, &ctx.objs[isec.file as usize]);
     let target = display(&target);
     let msg = format_args!(
@@ -129,7 +146,11 @@ const NOP: u32 = 0xd503_201f;
 /// What the bl or b of a DTrace probe site becomes, if relocation `r`
 /// is one (see dtrace): a nop, or for an is-enabled test "movz x0, #0",
 /// its result false.
-fn dtrace_site_insn(ctx: &Context<Arm64>, file: &ObjectFile, r: &Reloc) -> Option<u32> {
+fn dtrace_site_insn<const PAC: bool>(
+    ctx: &Context<Arm64Base<PAC>>,
+    file: &ObjectFile,
+    r: &Reloc,
+) -> Option<u32> {
     let id = r.sym(file)?;
     match crate::dtrace::site_kind(ctx, id)? {
         SiteKind::Probe => Some(NOP),
@@ -270,6 +291,11 @@ fn is_supported(r: &MachRel) -> bool {
         | ARM64_RELOC_GOT_LOAD_PAGEOFF12
         | ARM64_RELOC_TLVP_LOAD_PAGEOFF12 => reloc_form(false, 2, true),
         ARM64_RELOC_ADDEND => reloc_form(false, 2, false),
+        // A signed-pointer record: a section-relative one of a 4-byte
+        // field is the assembler's, and none of our inputs has one.
+        ARM64_RELOC_AUTHENTICATED_POINTER => {
+            reloc_form(false, 3, true) | reloc_form(false, 3, false)
+        }
         _ => 0,
     };
     has_reloc_form(r, forms)
@@ -569,8 +595,8 @@ fn loh_adrp_ldr_got_str(h: &mut Hint) {
 /// subsection that made it to the output. Returns the subsection's
 /// range in the output file with the instructions. A copy folded into
 /// another subsection has its hints dropped with it.
-fn hint_insns<'a>(
-    ctx: &'a Context<Arm64>,
+fn hint_insns<'a, const PAC: bool>(
+    ctx: &'a Context<Arm64Base<PAC>>,
     obj: &ObjectFile,
     addrs: &[u64],
 ) -> Option<(std::ops::Range<usize>, [HintInsn<'a>; 3])> {
@@ -596,7 +622,7 @@ fn hint_insns<'a>(
     Some((start..start + isec.size as usize, insns))
 }
 
-fn apply_hints(ctx: &Context<Arm64>, buf: &mut [u8]) {
+fn apply_hints<const PAC: bool>(ctx: &Context<Arm64Base<PAC>>, buf: &mut [u8]) {
     struct BufPtr(*mut u8);
     unsafe impl Sync for BufPtr {}
     let bufp = BufPtr(buf.as_mut_ptr());
@@ -682,7 +708,12 @@ impl HelperInsn {
     /// A load helper's last instruction, instruction k: ret, or in a
     /// site's own helper a branch back past the site's adrp (see
     /// LazyUse::Load).
-    fn ret_or_back(&self, ctx: &Context<Arm64>, k: usize, site: Option<(u32, u32)>) -> u32 {
+    fn ret_or_back<const PAC: bool>(
+        &self,
+        ctx: &Context<Arm64Base<PAC>>,
+        k: usize,
+        site: Option<(u32, u32)>,
+    ) -> u32 {
         match site {
             None => 0xd65f_03c0,
             Some((isec, off)) => self.b(k, ctx.isecs[isec as usize].addr(ctx) + off as u64 + 4),
@@ -742,10 +773,10 @@ const DLOPEN_HELPER: [u32; 40] = [
     0xd65f_03c0, // ret
 ];
 
-impl Target for Arm64 {
-    const NAME: &'static str = "arm64";
+impl<const PAC: bool> Target for Arm64Base<PAC> {
+    const NAME: &'static str = if PAC { "arm64e" } else { "arm64" };
     const CPUTYPE: u32 = CPU_TYPE_ARM64;
-    const CPUSUBTYPE: u32 = CPU_SUBTYPE_ARM64_ALL;
+    const CPUSUBTYPE: u32 = if PAC { CPU_SUBTYPE_ARM64E } else { CPU_SUBTYPE_ARM64_ALL };
     const PAGE_SIZE: u64 = 16384;
     const STUB_SIZE: u64 = 12;
     const STUB_HELPER_HEADER_SIZE: u64 = 24;
@@ -1222,7 +1253,13 @@ impl Target for Arm64 {
 
             let r = &rels[i];
             check_reloc(file_name, hdr, rels, i, loc);
-            if r.ty() == ARM64_RELOC_UNSIGNED {
+            if r.ty() == ARM64_RELOC_AUTHENTICATED_POINTER {
+                // A signed pointer's object placeholder (0x8000… -
+                // auth bit alone) doesn't carry a schema, so strip it
+                // here; the chain records the schema instead (see
+                // chained_fixups::arm64e_chain_word).
+                addend = i64::from_le_bytes(loc[..8].try_into().unwrap()) & 0x0fff_ffff_ffff_ffff;
+            } else if r.ty() == ARM64_RELOC_UNSIGNED {
                 addend = match r.p2size() {
                     2 => i32::from_le_bytes(loc[..4].try_into().unwrap()) as i64,
                     _ => i64::from_le_bytes(loc[..8].try_into().unwrap()),
@@ -1326,7 +1363,7 @@ impl Target for Arm64 {
             let p = base + r.offset as u64;
 
             match r.ty {
-                ARM64_RELOC_UNSIGNED => {
+                ARM64_RELOC_UNSIGNED | ARM64_RELOC_AUTHENTICATED_POINTER => {
                     isec.check_text_reloc(ctx, isec_id, rels, i, p);
                     // An imported symbol's address is written by dyld,
                     // via a bind record (an interposable export's too).
