@@ -31,7 +31,10 @@ impl ChainStartsSection {
         Self { hdr, starts: Vec::new() }
     }
 
-    /// The section's size for `n` chains.
+    /// The section's size for `n` chains: a dyld_chained_starts_offsets
+    /// (a format and a count), or for -threaded_starts_section a 4-byte
+    /// header and the 0xffffffff that ends the list; either way 8 bytes
+    /// and the offsets.
     pub fn size(n: usize) -> u64 {
         8 + n as u64 * 4
     }
@@ -61,6 +64,17 @@ pub fn finish_chain_starts<E: Target>(ctx: &mut Context<E>) -> bool {
 
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     let starts = &ctx.chain_starts.starts;
+    if ctx.args.threaded_starts {
+        // XNU's rebase_threaded_starts: a header whose bit 0 selects an
+        // 8-byte stride (ours is 4), the chains' first fixups as offsets
+        // from the mach header, and 0xffffffff after the last.
+        buf[0..4].copy_from_slice(&0u32.to_le_bytes());
+        for (i, &start) in starts.iter().enumerate() {
+            buf[4 + i * 4..8 + i * 4].copy_from_slice(&start.to_le_bytes());
+        }
+        buf[4 + starts.len() * 4..8 + starts.len() * 4].copy_from_slice(&u32::MAX.to_le_bytes());
+        return;
+    }
     let format = crate::chunks::chained_fixups::pointer_format(ctx) as u32;
     buf[0..4].copy_from_slice(&format.to_le_bytes());
     buf[4..8].copy_from_slice(&(starts.len() as u32).to_le_bytes());

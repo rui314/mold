@@ -200,6 +200,7 @@ pub const ARM64_RELOC_POINTER_TO_GOT: u8 = 7;
 pub const ARM64_RELOC_TLVP_LOAD_PAGE21: u8 = 8;
 pub const ARM64_RELOC_TLVP_LOAD_PAGEOFF12: u8 = 9;
 pub const ARM64_RELOC_ADDEND: u8 = 10;
+pub const ARM64_RELOC_AUTHENTICATED_POINTER: u8 = 11;
 
 // ARM64 linker optimization hint kinds
 pub const LOH_ARM64_ADRP_ADRP: u8 = 1;
@@ -314,6 +315,7 @@ pub const DYLD_CACHE_ADJ_V2_ARM64_BR26: u8 = 0x07;
 pub const DYLD_CACHE_ADJ_V2_IMAGE_OFF_32: u8 = 0x0c;
 
 // Chained fixups (LC_DYLD_CHAINED_FIXUPS)
+pub const DYLD_CHAINED_PTR_ARM64E: u16 = 1;
 pub const DYLD_CHAINED_PTR_64: u16 = 2;
 pub const DYLD_CHAINED_PTR_64_OFFSET: u16 = 6;
 pub const DYLD_CHAINED_PTR_START_NONE: u16 = 0xffff;

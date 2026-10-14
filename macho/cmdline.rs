@@ -803,6 +803,11 @@ pub struct Args {
     /// offsets (-fixup_chains_section), 2 for VM offsets
     /// (-fixup_chains_section_vm). ld-prime writes VM offsets either way.
     pub chain_starts_kind: u32,
+    /// -threaded_starts_section: an arm64e -static image (XNU's static
+    /// kernelcache) chains its rebases through its pointers from a
+    /// __TEXT,__thread_starts list its own startup code walks, in place
+    /// of local relocations.
+    pub threaded_starts: bool,
     /// -remove_swift_reflection_metadata_sections: drop the Swift
     /// reflection metadata (see passes::remove_swift_reflection_metadata).
     pub remove_swift_reflection_metadata_sections: bool,
@@ -1365,6 +1370,18 @@ fn read_filelist(arg: &OsStr) -> (PathBuf, Vec<PathBuf>) {
 pub struct TargetTraits {
     pub name: &'static str,
     pub page_size: u64,
+}
+
+impl TargetTraits {
+    /// Whether the target is arm64 or one of its variants (arm64e).
+    pub fn is_arm64(&self) -> bool {
+        self.family() == "arm64"
+    }
+
+    /// The name of the target's CPU family: arm64 for arm64e.
+    pub fn family(&self) -> &'static str {
+        if self.name.starts_with("arm64") { "arm64" } else { self.name }
+    }
 }
 
 /// What the command line links: ld64's output kinds, which ld-prime
@@ -2772,7 +2789,7 @@ fn check_arch_options(target: &TargetTraits, args: &mut Args, st: &ParseState) {
     let env_subtypes = std::env::var_os("LD_DYLIB_CPU_SUBTYPES_MUST_MATCH");
     let env_subtypes = env_subtypes.as_deref().map(OsStr::as_encoded_bytes);
     if let Some(list) = st.dylib_subtype_list.as_deref().or(env_subtypes) {
-        args.dylib_subtypes_must_match = names_cpu_family(list, target.name);
+        args.dylib_subtypes_must_match = names_cpu_family(list, target.family());
     }
 }
 
@@ -2816,7 +2833,7 @@ fn resolve_defaults(target: &TargetTraits, args: &mut Args, st: &ParseState) {
     // (signed if at all by whoever packages it) and firmware unsigned
     // too.
     args.adhoc_codesign = st.adhoc_codesign.unwrap_or(
-        target.name == "arm64"
+        target.is_arm64()
             && !args.without_dyld()
             && (args.platform == PLATFORM_MACOS || is_simulator(args.platform)),
     );
@@ -2831,7 +2848,7 @@ fn resolve_defaults(target: &TargetTraits, args: &mut Args, st: &ParseState) {
     // reference, see fold_objc_classrefs).
     args.objc_relative_method_lists = !args.without_dyld()
         && st.objc_relative_method_lists.unwrap_or(
-            (target.name == "arm64" || args.output_type != MH_EXECUTE)
+            (target.is_arm64() || args.output_type != MH_EXECUTE)
                 && args.targets(&VERSION_2020_FALL),
         );
     args.objc_category_merging &= !args.without_dyld();
@@ -2937,7 +2954,7 @@ fn resolve_options(target: &TargetTraits, args: &mut Args, st: &mut ParseState) 
     }
     args.objc_stubs_small = st.objc_stubs_small == Some(true);
     resolve_shared_region(target, args);
-    args.objc_stubs_small &= target.name == "arm64";
+    args.objc_stubs_small &= target.is_arm64();
 
     args.encryptable = st.encryptable.unwrap_or_else(|| encryptable_by_default(args, st.kind));
     args.segment_align = resolve_segment_align(target, args, st.segalign);
@@ -3059,11 +3076,20 @@ fn resolve_fixups(target: &TargetTraits, args: &mut Args, st: &ParseState) {
     // kmutil links a kext by its relocations and slides a -kernel
     // image by its local ones: ld-prime takes neither -fixup_chains nor
     // -no_fixup_chains for them.
-    let fixup_chains = if args.is_kext() || args.kernel { None } else { st.fixup_chains };
+    args.threaded_starts = st.threaded_starts;
+    let fixup_chains = if args.threaded_starts {
+        Some(true)
+    } else if args.is_kext() || args.kernel {
+        None
+    } else {
+        st.fixup_chains
+    };
     args.pie = resolve_pie(target, args, st.pie, fixup_chains);
     args.fixup_chains = resolve_fixup_chains(target, args, fixup_chains);
     args.no_fixup_chains = fixup_chains == Some(false);
-    args.fixup_chains_section = st.chain_starts.is_some() && args.static_link && args.fixup_chains;
+    args.fixup_chains_section = (st.chain_starts.is_some() || args.threaded_starts)
+        && args.static_link
+        && args.fixup_chains;
     args.chain_starts_kind = st.chain_starts.unwrap_or(0);
     // ld64 binds lazily below the chained-fixups deployment targets
     // unless -bind_at_load.
@@ -3103,10 +3129,10 @@ fn resolve_pie(
             if is_new_os(target.name, MH_EXECUTE, args.platform, args.platform_minos) {
                 warn!("-no_pie is deprecated when targeting new OS versions");
             }
-            if target.name == "arm64" {
+            if target.is_arm64() {
                 warn!("-no_pie ignored for arm64*");
             }
-            target.name == "arm64"
+            target.is_arm64()
         }
         Some(pie) => pie,
         None => {
@@ -3262,7 +3288,7 @@ fn resolve_shared_region(target: &TargetTraits, args: &mut Args) {
         && !(is_dylib && args.debug_variant)
         && (args.add_split_seg_info
             || args.kernel
-            || (args.is_kext() && target.name == "arm64")
+            || (args.is_kext() && target.is_arm64())
             || args.is_dylinker()
             || (is_dylib && in_shared_cache_path(args.output_install_name(), args.platform)));
     if !args.shared_region {
@@ -3362,7 +3388,7 @@ fn resolve_segprots(
     let mut out: Vec<(Vec<u8>, u8, u8)> = Vec::new();
     for (name, max, init) in segprots {
         if out.iter().all(|(seen, _, _)| *seen != name) {
-            out.push((name, if target.name == "arm64" { init } else { max }, init));
+            out.push((name, if target.is_arm64() { init } else { max }, init));
         }
     }
     out
@@ -3526,7 +3552,7 @@ fn resolve_kext(target: &TargetTraits, args: &mut Args) {
         return;
     }
     args.undefined_dynamic_lookup = true;
-    args.text_exec |= target.name == "arm64";
+    args.text_exec |= target.is_arm64();
 }
 
 /// In an image dyld loads, __DATA_CONST is one of the standard
@@ -3627,7 +3653,7 @@ fn resolve_unaligned_pointers(
     if args.relocatable || args.without_dyld() {
         return Treatment::Suppress;
     }
-    if target.name == "arm64" && (args.fixup_chains || args.shared_region) {
+    if target.is_arm64() && (args.fixup_chains || args.shared_region) {
         if treatment == Some(Treatment::Warning) {
             match args.fixup_chains {
                 true => {
@@ -3665,8 +3691,10 @@ fn check_options(target: &TargetTraits, args: &mut Args, st: &ParseState) {
     }
     // ld64 chained a static arm64e image's rebases through its pointers
     // from a __TEXT,__thread_starts list; ld-prime has chained fixups.
-    if st.threaded_starts {
-        fatal!("-threaded_starts_section is no longer supported");
+    // XNU's static kernelcache still reads that list, so mold writes it
+    // for an arm64e -static image.
+    if st.threaded_starts && (target.name != "arm64e" || !args.static_link) {
+        fatal!("-threaded_starts_section is only supported for an arm64e -static image");
     }
     check_output_kind(args, st.pie);
     // Only a dylib is mergeable, and only a dylib gets the debug hook.
@@ -3681,7 +3709,7 @@ fn check_options(target: &TargetTraits, args: &mut Args, st: &ParseState) {
     if args.relocatable && args.dead_strip {
         fatal!("-r and -dead_strip cannot be used together");
     }
-    if st.x86_64_layout_emulation && target.name != "arm64" {
+    if st.x86_64_layout_emulation && !target.is_arm64() {
         warn!("ignoring -x86_64_layout_emulation option, it can only be used with -arch arm64");
     }
     check_dylib_use(args);
