@@ -3869,6 +3869,9 @@ pub fn create_synthetic_sections<E: Target>(
     chunks::objc_imageinfo::create(ctx);
     if ctx.args.fixup_chains_section {
         ctx.chain_starts.hdr.reserved1 = ctx.args.chain_starts_kind;
+        if ctx.args.threaded_starts {
+            ctx.chain_starts.hdr.sectname = b"__thread_starts";
+        }
         ctx.chunks.push(ChunkId::ChainStarts);
     }
     if ctx.args.unwind_info() && chunks::unwind_info::is_needed(ctx) {

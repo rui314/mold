@@ -101,6 +101,9 @@ pub struct Reloc {
     /// `RelocTarget::pack()`; as a two-word enum it padded the struct
     /// from 24 to 32 bytes, and a debug link holds ~12M of these.
     pub target: u32,
+    /// An arm64e signed pointer's schema (see `auth_schema`), zero for
+    /// any other relocation. Fits in the padding before `addend`.
+    pub auth: u32,
     pub addend: i64,
 }
 
@@ -127,6 +130,18 @@ impl RelocTarget {
             }
         }
     }
+}
+
+/// Packs an arm64e signed pointer's schema as the object file's slot
+/// holds it (ARM64_RELOC_AUTHENTICATED_POINTER: bits 32-47 diversity,
+/// 48 address diversity, 49-50 key, 63 authenticated) into a nonzero
+/// word: diversity in bits 0-15, address diversity in 16, key in
+/// 17-18, and bit 31 set.
+pub fn auth_schema(slot: u64) -> u32 {
+    let diversity = (slot >> 32) as u32 & 0xffff;
+    let addr_div = (slot >> 48) as u32 & 1;
+    let key = (slot >> 49) as u32 & 3;
+    1 << 31 | key << 17 | addr_div << 16 | diversity
 }
 
 impl Reloc {

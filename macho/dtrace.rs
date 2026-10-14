@@ -264,6 +264,7 @@ fn add_dof_section<E: Target>(ctx: &mut Context<E>, name: &[u8], dof: Dof, sites
             is_pcrel: false,
             is_subtracted,
             target: target.pack(),
+            auth: 0,
             addend,
         };
         relocs.push(pair(E::RELOC_SUBTRACTOR, RelocTarget::Section(id), 0, false));

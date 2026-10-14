@@ -803,6 +803,11 @@ pub struct Args {
     /// offsets (-fixup_chains_section), 2 for VM offsets
     /// (-fixup_chains_section_vm). ld-prime writes VM offsets either way.
     pub chain_starts_kind: u32,
+    /// -threaded_starts_section: an arm64e -static image (XNU's static
+    /// kernelcache) chains its rebases through its pointers from a
+    /// __TEXT,__thread_starts list its own startup code walks, in place
+    /// of local relocations.
+    pub threaded_starts: bool,
     /// -remove_swift_reflection_metadata_sections: drop the Swift
     /// reflection metadata (see passes::remove_swift_reflection_metadata).
     pub remove_swift_reflection_metadata_sections: bool,
@@ -3071,11 +3076,20 @@ fn resolve_fixups(target: &TargetTraits, args: &mut Args, st: &ParseState) {
     // kmutil links a kext by its relocations and slides a -kernel
     // image by its local ones: ld-prime takes neither -fixup_chains nor
     // -no_fixup_chains for them.
-    let fixup_chains = if args.is_kext() || args.kernel { None } else { st.fixup_chains };
+    args.threaded_starts = st.threaded_starts;
+    let fixup_chains = if args.threaded_starts {
+        Some(true)
+    } else if args.is_kext() || args.kernel {
+        None
+    } else {
+        st.fixup_chains
+    };
     args.pie = resolve_pie(target, args, st.pie, fixup_chains);
     args.fixup_chains = resolve_fixup_chains(target, args, fixup_chains);
     args.no_fixup_chains = fixup_chains == Some(false);
-    args.fixup_chains_section = st.chain_starts.is_some() && args.static_link && args.fixup_chains;
+    args.fixup_chains_section = (st.chain_starts.is_some() || args.threaded_starts)
+        && args.static_link
+        && args.fixup_chains;
     args.chain_starts_kind = st.chain_starts.unwrap_or(0);
     // ld64 binds lazily below the chained-fixups deployment targets
     // unless -bind_at_load.
@@ -3677,8 +3691,10 @@ fn check_options(target: &TargetTraits, args: &mut Args, st: &ParseState) {
     }
     // ld64 chained a static arm64e image's rebases through its pointers
     // from a __TEXT,__thread_starts list; ld-prime has chained fixups.
-    if st.threaded_starts {
-        fatal!("-threaded_starts_section is no longer supported");
+    // XNU's static kernelcache still reads that list, so mold writes it
+    // for an arm64e -static image.
+    if st.threaded_starts && (target.name != "arm64e" || !args.static_link) {
+        fatal!("-threaded_starts_section is only supported for an arm64e -static image");
     }
     check_output_kind(args, st.pie);
     // Only a dylib is mergeable, and only a dylib gets the debug hook.

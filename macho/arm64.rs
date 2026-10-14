@@ -1253,12 +1253,13 @@ impl<const PAC: bool> Target for Arm64Base<PAC> {
 
             let r = &rels[i];
             check_reloc(file_name, hdr, rels, i, loc);
+            let mut auth = 0;
             if r.ty() == ARM64_RELOC_AUTHENTICATED_POINTER {
-                // A signed pointer's object placeholder (0x8000… -
-                // auth bit alone) doesn't carry a schema, so strip it
-                // here; the chain records the schema instead (see
-                // chained_fixups::arm64e_chain_word).
-                addend = i64::from_le_bytes(loc[..8].try_into().unwrap()) & 0x0fff_ffff_ffff_ffff;
+                // A signed pointer's slot holds its schema above a
+                // 32-bit addend (see input_sections::auth_schema).
+                let slot = u64::from_le_bytes(loc[..8].try_into().unwrap());
+                addend = slot as u32 as i32 as i64;
+                auth = crate::input_sections::auth_schema(slot);
             } else if r.ty() == ARM64_RELOC_UNSIGNED {
                 addend = match r.p2size() {
                     2 => i32::from_le_bytes(loc[..4].try_into().unwrap()) as i64,
@@ -1283,6 +1284,7 @@ impl<const PAC: bool> Target for Arm64Base<PAC> {
                 is_pcrel: r.is_pcrel(),
                 is_subtracted,
                 target: target.pack(),
+                auth,
                 addend,
             });
             i += 1;
