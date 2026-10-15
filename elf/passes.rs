@@ -3975,9 +3975,14 @@ pub fn fix_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
     // the TLS block in the TLSDESC model. I believe GCC and Clang don't
     // create a reference to it, but the Intel compiler seems to use this
     // symbol.
-    if let (Some(sym), Some(first)) = (ctx.syms.tls_module_base, first) {
+    //
+    // It doesn't belong to any section, so we make it absolute as lld
+    // does. Only TLS relocations refer to it, and they compute offsets
+    // within the TLS block, which don't need base relocations.
+    if let Some(sym) = ctx.syms.tls_module_base {
         let dtp = ctx.dtp_addr;
-        let s = ctx.set_symbol_output_chunk(sym, first);
+        let s = &mut ctx.symbols[sym];
+        s.clear_origin();
         s.value = dtp;
     }
 

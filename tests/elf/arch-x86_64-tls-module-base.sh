@@ -35,6 +35,9 @@ EOF
 $CC -B. -o $t/exe1 $t/a.o $t/b.o $t/c.o
 $QEMU $t/exe1 | grep '^20 3$'
 
+# _TLS_MODULE_BASE_ is not in any section, so it is absolute in .symtab
+readelf -sW $t/exe1 | grep -E ' ABS _TLS_MODULE_BASE_$'
+
 $CC -B. -o $t/exe2 $t/a.o $t/b.o $t/c.o -Wl,-no-relax
 $QEMU $t/exe2 | grep '^20 3$'
 
