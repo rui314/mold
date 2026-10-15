@@ -435,18 +435,27 @@ fn create_phdr<E: Target>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
         define(&mut vec, PT_INTERP, PF_R, &osec.shdr);
     }
 
-    // Create a PT_NOTE for SHF_NOTE sections.
+    // Create a PT_NOTE for SHF_NOTE sections. Unlike GNU ld and lld, we
+    // put adjacent notes into one segment even if their alignments differ.
+    // A PT_NOTE's p_align tells whether it contains 4-byte or 8-byte
+    // aligned notes, and tools such as elfutils parse the segment
+    // accordingly, so the segment gets the alignment of its least aligned
+    // note.
     let mut i = 0;
     while i < chunks.len() {
         let first = chunks[i];
         i += 1;
         if is_note(first) {
             let flags = to_phdr_flags(ctx, first);
+            let mut align = ctx.chunk_header(first).shdr.sh_addralign.get();
             define(&mut vec, PT_NOTE, flags, &ctx.chunk_header(first).shdr);
             while i < chunks.len() && is_note(chunks[i]) && to_phdr_flags(ctx, chunks[i]) == flags {
-                append(&mut vec, &ctx.chunk_header(chunks[i]).shdr);
+                let shdr = &ctx.chunk_header(chunks[i]).shdr;
+                append(&mut vec, shdr);
+                align = align.min(shdr.sh_addralign.get());
                 i += 1;
             }
+            vec.last_mut().unwrap().set_p_align(align);
         }
     }
 

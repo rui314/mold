@@ -47,6 +47,10 @@ grep '^__executable_start=0x40000$' $t/log
 grep '^__dso_handle=' $t/log
 grep '^section foo$' $t/log
 
+# The ELF header is not a section, so the symbols are absolute in .symtab
+readelf -sW $t/exe | grep -E ' ABS __ehdr_start$'
+readelf -sW $t/exe | grep -E ' ABS __executable_start$'
+
 # Make sure that synthetic symbols overwrite existing ones
 
 cat <<EOF | $CC -c -o $t/c.o -xc -

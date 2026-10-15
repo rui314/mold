@@ -29,3 +29,12 @@ EOF
 ./mold -o $t/exe $t/a.o $t/b.o $t/c.o $t/d.o
 
 readelf --segments $t/exe | grep -F '01     .note.a .note.c .note.b'
+
+# The segment holds 4-byte aligned .note.b, so it must be 4-byte aligned
+# even though .note.a and .note.c are 8-byte aligned. Tools pick the note
+# format by a PT_NOTE's p_align.
+[ "$(readelf -W --segments $t/exe | awk '$1 == "NOTE" {print $NF}')" = 0x4 ]
+
+# A segment of 8-byte aligned notes alone stays 8-byte aligned.
+./mold -o $t/exe2 $t/a.o $t/c.o
+[ "$(readelf -W --segments $t/exe2 | awk '$1 == "NOTE" {print $NF}')" = 0x8 ]

@@ -275,8 +275,13 @@ pub fn to_output_esym<E: Target>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -
     } else {
         match origin {
             OriginValue::OutputChunk(chunk) => {
-                // Linker-synthesized symbol
-                shndx = Some(ctx.symbol_chunk_header(chunk).shndx);
+                // Linker-synthesized symbol. One that points to an ELF header,
+                // such as __ehdr_start, has no section to be relative to.
+                if ctx.symbol_chunk(chunk).is_header() {
+                    esym.set_st_shndx(SHN_ABS);
+                } else {
+                    shndx = Some(ctx.symbol_chunk_header(chunk).shndx);
+                }
                 esym.set_st_value(sym.addr(ctx));
             }
             OriginValue::Fragment(frag) => {
