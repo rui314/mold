@@ -3890,12 +3890,13 @@ pub fn fix_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
     if let Some(ehdr) = &ctx.ehdr
         && ehdr.is_alloc()
     {
+        // These symbols point to the ELF header, so we associate them with
+        // it rather than with a section. They are written to .symtab as
+        // absolute symbols but stay relative while we create relocations.
         let addr = ehdr.shdr.sh_addr.get();
-        for sym in [ctx.syms.ehdr_start, ctx.syms.executable_start] {
-            if let (Some(sym), Some(first)) = (sym, first) {
-                let s = ctx.set_symbol_output_chunk(sym, first);
-                s.value = addr;
-            }
+        for sym in [ctx.syms.ehdr_start, ctx.syms.executable_start].into_iter().flatten() {
+            let s = ctx.set_symbol_output_chunk(sym, ChunkId::Ehdr);
+            s.value = addr;
         }
     }
 
