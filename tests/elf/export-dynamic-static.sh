@@ -1,17 +1,26 @@
 #!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
-# An executable that doesn't link against any DSO has no .dynamic, so it
-# must not have .dynsym or .dynstr either, even if symbols are exported.
-cat <<EOF | $CC -c -o $t/a.o -xc -
+# A statically-linked executable that exports symbols has .dynamic and
+# .dynsym.
+test_cflags -static || skip
+
+cat <<EOF | $CC -o $t/a.o -c -xc -
+#include <stdio.h>
 void foo() {}
-void _start() {}
+int main() {
+  printf("Hello world\n");
+}
 EOF
 
+$CC -B. -o $t/exe1 $t/a.o -static -Wl,--export-dynamic
+readelf -W --dyn-syms $t/exe1 | grep -w foo
+$QEMU $t/exe1 | grep 'Hello world'
+
 echo '{ foo; };' > $t/dyn
+$CC -B. -o $t/exe2 $t/a.o -static -Wl,--dynamic-list=$t/dyn
+readelf -W --dyn-syms $t/exe2 | grep -w foo
+$QEMU $t/exe2 | grep 'Hello world'
 
-./mold -o $t/exe1 $t/a.o --dynamic-list=$t/dyn
-readelf -SW $t/exe1 | not grep -E '\.dyn(sym|str)'
-
-./mold -o $t/exe2 $t/a.o --export-dynamic
-readelf -SW $t/exe2 | not grep -E '\.dyn(sym|str)'
+$CC -B. -o $t/exe3 $t/a.o -static
+readelf -WS $t/exe3 | not grep -F .dynamic

@@ -160,7 +160,15 @@ pub fn create_synthetic_sections<E: Target>(ctx: &mut Context<E>) {
         chunks.push(ChunkId::GnuDebuglink);
     }
 
-    if ctx.args.shared || !ctx.dsos.is_empty() || ctx.args.pie {
+    // An executable that exports symbols has .dynamic even if it is
+    // statically linked.
+    if ctx.args.shared
+        || !ctx.dsos.is_empty()
+        || ctx.args.pie
+        || ctx.args.export_dynamic
+        || ctx.args.dynamic_list_data
+        || !ctx.dynamic_list_patterns.is_empty()
+    {
         ctx.dynamic = Some(chunks::dynamic::new_header::<E>(&ctx.args));
         chunks.push(ChunkId::Dynamic);
         // If .dynamic exists, .dynsym and .dynstr must exist as well
@@ -2605,7 +2613,7 @@ pub fn scan_relocations<E: Target>(ctx: &mut Context<E>) {
         };
 
         // An executable without .dynamic has no dynamic symbol table even
-        // if --export-dynamic or --dynamic-list exports symbols.
+        // if a version script exports symbols.
         if (is_imported || is_exported) && ctx.dynamic.is_some() {
             ctx.dynsym.add_symbol(&mut ctx.symbols, id);
         }
@@ -3907,8 +3915,7 @@ pub fn fix_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
 
     // __rel_iplt_start and __rel_iplt_end. These symbols need to be
     // defined in a statically-linked non-relocatable executable because
-    // such an executable lacks the .dynamic section and thus there's no way
-    // to find ifunc relocations other than these symbols.
+    // libc's startup code finds ifunc relocations by these symbols.
     if ctx.chunks.contains(&ChunkId::RelDyn) && ctx.args.is_static && !ctx.args.pie {
         let n = num_irelative_relocs(ctx) as i64 * size_of::<ElfRel<E>>() as i64;
         stop(ctx, ctx.syms.rel_iplt_start, Some(ChunkId::RelDyn), -n);

@@ -265,9 +265,6 @@ fn for_each_entry<E: Target>(ctx: &Context<E>, mut define: impl FnMut(u32, u64))
 }
 
 pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
-    if ctx.args.is_static && !ctx.args.pie {
-        return;
-    }
     let mut n = 0;
     for_each_entry(ctx, |_, _| n += 1);
     let size = (n * size_of::<ElfDyn<E>>()) as u64;
