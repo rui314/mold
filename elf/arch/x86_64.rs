@@ -47,6 +47,7 @@ impl Target for X86_64 {
     type Phdr = Elf64Phdr<Self>;
     type Chdr = Elf64Chdr<Self>;
     type Rel = ElfRela<Self>;
+    type DynRel = ElfRela<Self>;
 
     type InputSectionExtra = ();
 

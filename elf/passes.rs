@@ -1402,7 +1402,7 @@ pub fn add_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
     ctx.syms.etext_ = Some(s(ctx, "_etext"));
     ctx.syms.edata_ = Some(s(ctx, "_edata"));
     ctx.syms.executable_start = Some(s(ctx, "__executable_start"));
-    let (start, end) = if E::IS_RELA {
+    let (start, end) = if E::IS_DYN_RELA {
         ("__rela_iplt_start", "__rela_iplt_end")
     } else {
         ("__rel_iplt_start", "__rel_iplt_end")
@@ -3956,7 +3956,7 @@ pub fn fix_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
     // defined in a statically-linked non-relocatable executable because
     // libc's startup code finds ifunc relocations by these symbols.
     if ctx.chunks.contains(&ChunkId::RelDyn) && ctx.args.is_static && !ctx.args.pie {
-        let n = num_irelative_relocs(ctx) as i64 * size_of::<ElfRel<E>>() as i64;
+        let n = num_irelative_relocs(ctx) as i64 * size_of::<DynRel<E>>() as i64;
         stop(ctx, ctx.syms.rel_iplt_start, Some(ChunkId::RelDyn), -n);
         stop(ctx, ctx.syms.rel_iplt_end, Some(ChunkId::RelDyn), 0);
     } else {

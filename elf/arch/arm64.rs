@@ -173,6 +173,7 @@ impl<const LE: bool> Target for Arm64Target<LE> {
     type Phdr = Elf64Phdr<Self>;
     type Chdr = Elf64Chdr<Self>;
     type Rel = ElfRela<Self>;
+    type DynRel = ElfRela<Self>;
 
     type InputSectionExtra = ();
 

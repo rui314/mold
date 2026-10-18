@@ -117,6 +117,7 @@ impl Target for Ppc32 {
     type Phdr = Elf32Phdr<Self>;
     type Chdr = Elf32Chdr<Self>;
     type Rel = ElfRela<Self>;
+    type DynRel = ElfRela<Self>;
 
     type InputSectionExtra = ();
 

@@ -87,6 +87,7 @@ impl Target for S390x {
     type Phdr = Elf64Phdr<Self>;
     type Chdr = Elf64Chdr<Self>;
     type Rel = ElfRela<Self>;
+    type DynRel = ElfRela<Self>;
 
     type InputSectionExtra = ();
 

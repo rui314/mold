@@ -19,12 +19,12 @@ pub struct RelDynSection<E: Target> {
 
 impl<E: Target> RelDynSection<E> {
     pub fn new(args: &crate::cmdline::Args) -> Self {
-        let (name, ty, android_ty) = if E::IS_RELA {
+        let (name, ty, android_ty) = if E::IS_DYN_RELA {
             (".rela.dyn", SHT_RELA, SHT_ANDROID_RELA)
         } else {
             (".rel.dyn", SHT_REL, SHT_ANDROID_REL)
         };
-        let rel_size = size_of::<ElfRel<E>>() as u64;
+        let rel_size = size_of::<DynRel<E>>() as u64;
         let (ty, entsize, align) = if args.pack_dyn_relocs_android {
             (android_ty, 0, 1)
         } else {
@@ -38,7 +38,7 @@ impl<E: Target> RelDynSection<E> {
 }
 
 /// Gathers the dynamic relocations of all chunks.
-pub fn collect_relocs<E: Target>(ctx: &Context<E>) -> Vec<ElfRel<E>> {
+pub fn collect_relocs<E: Target>(ctx: &Context<E>) -> Vec<DynRel<E>> {
     let count: usize = ctx
         .chunks
         .iter()
@@ -47,7 +47,7 @@ pub fn collect_relocs<E: Target>(ctx: &Context<E>) -> Vec<ElfRel<E>> {
             (hdr.num_dynrels - hdr.num_relrs) as usize
         })
         .sum();
-    let mut out = vec![ElfRel::<E>::default(); count];
+    let mut out = vec![DynRel::<E>::default(); count];
     let mut rest = out.as_mut_slice();
     for &id in &ctx.chunks {
         let hdr = ctx.chunk_header(id);
@@ -139,7 +139,7 @@ pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
         }
         reldyn.android_encoded.len() as u64
     } else {
-        (num_relocs - num_relrs) * size_of::<ElfRel<E>>() as u64
+        (num_relocs - num_relrs) * size_of::<DynRel<E>>() as u64
     };
     ctx.reldyn.hdr.shdr.sh_size.set(size);
     ctx.reldyn.hdr.shdr.sh_link.set(ctx.dynsym.hdr.shndx);
@@ -149,14 +149,14 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
     if ctx.args.pack_dyn_relocs_android {
         buf[..ctx.reldyn.android_encoded.len()].copy_from_slice(&ctx.reldyn.android_encoded);
     } else {
-        let size = size_of::<ElfRel<E>>();
+        let size = size_of::<DynRel<E>>();
         let mut rest = buf;
         for &id in &ctx.chunks {
             let hdr = ctx.chunk_header(id);
             let count = (hdr.num_dynrels - hdr.num_relrs) as usize;
             if count != 0 {
                 let slots = rest.split_off_mut(..count * size).unwrap();
-                chunks::write_dynrels(ctx, id, rels_from_bytes_mut::<E>(slots));
+                chunks::write_dynrels(ctx, id, dynrels_from_bytes_mut::<E>(slots));
             }
         }
         debug_assert!(rest.is_empty());
@@ -179,7 +179,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 //   file. This tends to optimize paging and caching when there are two
 //   references from the same page.
 pub fn sort<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
-    // .rela.dyn contains APS2-encoded bytes, not ElfRel entries.
+    // .rela.dyn contains APS2-encoded bytes, not DynRel entries.
     if ctx.args.pack_dyn_relocs_android {
         return;
     }
@@ -196,7 +196,7 @@ pub fn sort<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
             1
         }
     };
-    let relocs = rels_from_bytes_mut::<E>(buf);
+    let relocs = dynrels_from_bytes_mut::<E>(buf);
     relocs.par_sort_unstable_by_key(|r| (rank(r.r_type()), r.r_sym(), r.r_offset()));
 }
 
@@ -207,12 +207,12 @@ pub fn sort<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 // factored out so each per-relocation entry is just the differing fields.
 //
 // See bionic's linker/linker_relocs.cpp for the decoder.
-pub fn encode_android<E: Target>(mut rels: Vec<ElfRel<E>>) -> Vec<u8> {
+pub fn encode_android<E: Target>(mut rels: Vec<DynRel<E>>) -> Vec<u8> {
     const GROUPED_BY_INFO: i64 = 1;
     const GROUPED_BY_OFFSET_DELTA: i64 = 2;
     const GROUP_HAS_ADDEND: i64 = 8;
 
-    let r_info = |r: &ElfRel<E>| -> i64 {
+    let r_info = |r: &DynRel<E>| -> i64 {
         if E::IS_64 {
             (((r.r_sym() as u64) << 32) | r.r_type() as u64) as i64
         } else {
@@ -257,7 +257,7 @@ pub fn encode_android<E: Target>(mut rels: Vec<ElfRel<E>>) -> Vec<u8> {
         if size > 1 {
             flags = GROUPED_BY_INFO | GROUPED_BY_OFFSET_DELTA;
         }
-        if E::IS_RELA {
+        if E::IS_DYN_RELA {
             flags |= GROUP_HAS_ADDEND;
         }
         encode_sleb(&mut buf, size);
@@ -265,7 +265,7 @@ pub fn encode_android<E: Target>(mut rels: Vec<ElfRel<E>>) -> Vec<u8> {
         encode_sleb(&mut buf, offset_delta);
         encode_sleb(&mut buf, cur_info);
 
-        if E::IS_RELA {
+        if E::IS_DYN_RELA {
             for r in &rels[i..j] {
                 encode_sleb(&mut buf, r.r_addend() - prev_addend);
                 prev_addend = r.r_addend();

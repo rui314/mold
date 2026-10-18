@@ -734,7 +734,7 @@ impl Default for Args {
 #[derive(Clone, Copy, Debug)]
 pub struct TargetTraits {
     pub name: &'static str,
-    pub is_rela: bool,
+    pub is_dyn_rela: bool,
     pub family: Family,
     pub page_size: u64,
 }
@@ -2023,7 +2023,7 @@ pub fn parse_args(target: &TargetTraits, raw_cmdline: &[Cow<'_, OsStr>]) -> Pars
     // Even though SH4 is RELA, addends in its relocation records are always
     // zero, and actual addends are written to relocated places. So we need
     // to handle it as an exception.
-    if (!target.is_rela || target.family == Family::Sh4) && !a.apply_dynamic_relocs {
+    if (!target.is_dyn_rela || target.family == Family::Sh4) && !a.apply_dynamic_relocs {
         fatal!("--no-apply-dynamic-relocs may not be used on {}", target.name);
     }
     if target.family == Family::Sparc64 && a.apply_dynamic_relocs {

@@ -358,7 +358,7 @@ pub fn relr_offsets<E: Target>(ctx: &mut Context<E>, id: OutputSectionId) -> Vec
     shards.concat()
 }
 
-pub fn write_dynrels<E: Target>(ctx: &Context<E>, id: OutputSectionId, out: &mut [ElfRel<E>]) {
+pub fn write_dynrels<E: Target>(ctx: &Context<E>, id: OutputSectionId, out: &mut [DynRel<E>]) {
     let osec = &ctx.output_sections[id.index()];
     // A single output section such as .data.rel.ro can account for
     // most of an output's dynamic relocations, so we process its
@@ -393,13 +393,13 @@ pub fn write_dynrels<E: Target>(ctx: &Context<E>, id: OutputSectionId, out: &mut
                 let rel = match r.kind {
                     AbsRelKind::None | AbsRelKind::Relr => None,
                     AbsRelKind::BaseRel => {
-                        Some(ElfRel::<E>::new(p, E::R_RELATIVE, 0, s.wrapping_add(a as u64) as i64))
+                        Some(DynRel::<E>::new(p, E::R_RELATIVE, 0, s.wrapping_add(a as u64) as i64))
                     }
                     AbsRelKind::IFunc => E::R_IRELATIVE.map(|r_type| {
                         let val = sym.addr_with(ctx, AddrFlags::NO_PLT).wrapping_add(a as u64);
-                        ElfRel::<E>::new(p, r_type, 0, val as i64)
+                        DynRel::<E>::new(p, r_type, 0, val as i64)
                     }),
-                    AbsRelKind::DynRel => Some(ElfRel::<E>::new(
+                    AbsRelKind::DynRel => Some(DynRel::<E>::new(
                         p,
                         E::R_ABS,
                         sym.dynsym_idx(&ctx.symbols).unwrap_or(0),

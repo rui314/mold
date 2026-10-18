@@ -52,8 +52,11 @@ fn sym_addr_if_defined<E: Target>(ctx: &Context<E>, id: SymbolId) -> Option<u64>
 fn for_each_entry<E: Target>(ctx: &Context<E>, mut define: impl FnMut(u32, u64)) {
     let dynstr = &ctx.dynstr;
     let plt = &ctx.plt;
-    let (rel, relsz, relent) =
-        if E::IS_RELA { (DT_RELA, DT_RELASZ, DT_RELAENT) } else { (DT_REL, DT_RELSZ, DT_RELENT) };
+    let (rel, relsz, relent) = if E::IS_DYN_RELA {
+        (DT_RELA, DT_RELASZ, DT_RELAENT)
+    } else {
+        (DT_REL, DT_RELSZ, DT_RELENT)
+    };
 
     for dso in &ctx.dsos {
         define(DT_NEEDED, dynstr.find_string(dso.soname));
@@ -80,7 +83,7 @@ fn for_each_entry<E: Target>(ctx: &Context<E>, mut define: impl FnMut(u32, u64))
 
     if ctx.reldyn.hdr.shdr.sh_size.get() != 0 {
         if ctx.args.pack_dyn_relocs_android {
-            let (rel, relsz) = if E::IS_RELA {
+            let (rel, relsz) = if E::IS_DYN_RELA {
                 (DT_ANDROID_RELA, DT_ANDROID_RELASZ)
             } else {
                 (DT_ANDROID_REL, DT_ANDROID_RELSZ)
@@ -90,7 +93,7 @@ fn for_each_entry<E: Target>(ctx: &Context<E>, mut define: impl FnMut(u32, u64))
         } else {
             define(rel, ctx.reldyn.hdr.shdr.sh_addr.get());
             define(relsz, ctx.reldyn.hdr.shdr.sh_size.get());
-            define(relent, size_of::<ElfRel<E>>() as u64);
+            define(relent, size_of::<DynRel<E>>() as u64);
         }
     }
 

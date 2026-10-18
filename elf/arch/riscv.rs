@@ -234,6 +234,7 @@ where
     type Phdr = <Class<IS_64> as ElfClass>::Phdr<Self>;
     type Chdr = <Class<IS_64> as ElfClass>::Chdr<Self>;
     type Rel = ElfRela<Self>;
+    type DynRel = ElfRela<Self>;
 
     type InputSectionExtra = Box<[RelocDelta]>;
 
