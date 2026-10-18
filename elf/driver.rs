@@ -488,6 +488,9 @@ pub fn link<E: Target>(cmdline: Cmdline) -> Option<&'static str> {
     // the addresses of all sections, we can eliminate unnecessary thunks.
     if E::NEEDS_THUNK {
         crate::thunks::remove_redundant_thunks(&mut ctx);
+        if !ctx.args.strip_all {
+            passes::shrink_thunk_symtab(&mut ctx);
+        }
         filesize = passes::set_osec_offsets(&mut ctx);
     }
     if ctx.arm_exidx.is_some() {
