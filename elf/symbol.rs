@@ -425,6 +425,10 @@ const VERSIONED_DEFAULT: u16 = 1 << 8;
 // compute_import_export().
 const SHARES_DYNSYM: u16 = 1 << 9;
 
+// For --gc-sections. True if a live section refers to this DSO or
+// undefined symbol.
+const GC_REFERENCED: u16 = 1 << 9;
+
 // For --gc-sections
 const GC_ROOT: u16 = 1 << 10;
 
@@ -479,6 +483,7 @@ symbol_bits! {
     is_versioned_default, set_versioned_default: VERSIONED_DEFAULT;
     shares_dynsym, set_shares_dynsym: SHARES_DYNSYM;
     gc_root, set_gc_root: GC_ROOT;
+    is_gc_referenced, set_gc_referenced: GC_REFERENCED;
     referenced_by_regular_obj, set_referenced_by_regular_obj: REFERENCED_BY_REGULAR_OBJ;
     comdat_claimed_by_ir, set_comdat_claimed_by_ir: COMDAT_CLAIMED_BY_IR;
     is_fragment_dummy, set_fragment_dummy: FRAGMENT_DUMMY;
@@ -686,6 +691,11 @@ impl Symbol {
     #[inline]
     pub fn set_imported_shared(&self) {
         self.set_bits_shared(IMPORTED);
+    }
+
+    #[inline]
+    pub fn set_gc_referenced_shared(&self) {
+        self.set_bits_shared(GC_REFERENCED);
     }
 
     #[inline]
