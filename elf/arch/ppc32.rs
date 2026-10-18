@@ -360,7 +360,12 @@ impl Target for Ppc32 {
     }
 
     /// On PowerPC, all PLT calls go through range extension thunks.
-    fn always_needs_thunk(ctx: &Context<Self>, sym: &Symbol, _rel: &ElfRel<Self>) -> bool {
+    fn always_needs_thunk(
+        ctx: &Context<Self>,
+        _isec: &InputSection<Self>,
+        sym: &Symbol,
+        _rel: &ElfRel<Self>,
+    ) -> bool {
         sym.has_plt(&ctx.symbols)
     }
 
