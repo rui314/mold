@@ -1016,6 +1016,26 @@ fn output_name<E: Target>(
         }
     }
 
+    // GCC before 4.4 placed vague linkage definitions in .gnu.linkonce.*
+    // sections instead of COMDAT groups.
+    const LINKONCE: &[(&str, &str)] = &[
+        (".gnu.linkonce.t.", ".text"),
+        (".gnu.linkonce.r.", ".rodata"),
+        (".gnu.linkonce.d.rel.ro.", ".data.rel.ro"),
+        (".gnu.linkonce.d.", ".data"),
+        (".gnu.linkonce.b.", ".bss"),
+        (".gnu.linkonce.s.", ".sdata"),
+        (".gnu.linkonce.sb.", ".sbss"),
+        (".gnu.linkonce.td.", ".tdata"),
+        (".gnu.linkonce.tb.", ".tbss"),
+        (".gnu.linkonce.wi.", ".debug_info"),
+    ];
+    for (prefix, stem) in LINKONCE {
+        if name.starts_with(prefix.as_bytes()) {
+            return BStr::new(stem.as_bytes());
+        }
+    }
+
     const PREFIXES: &[&str] = &[
         ".text.",
         ".data.rel.ro.",
