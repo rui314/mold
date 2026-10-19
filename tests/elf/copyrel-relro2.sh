@@ -2,32 +2,22 @@
 . $(dirname $0)/common.inc
 
 cat <<EOF | $CC -o $t/a.o -c -xc -fno-PIE -
-#include <setjmp.h>
-#include <signal.h>
 #include <stdio.h>
+#include <unistd.h>
 
 extern char readonly[100];
 extern char readwrite[100];
 
-static int segv = 0;
-static jmp_buf buf;
-
-void handler(int sig) {
-  segv = 1;
-  longjmp(buf, 1);
+// read(2) into a read-only buffer fails with EFAULT instead of crashing.
+static int is_writable(char *p) {
+  int fd[2];
+  pipe(fd);
+  write(fd[1], "x", 1);
+  return read(fd[0], p, 1) == 1;
 }
 
 int main() {
-  signal(SIGSEGV, handler);
-
-  readwrite[0] = 5;
-  int x = segv;
-
-  if (setjmp(buf) == 0)
-    *(char *)readonly = 5;
-  int y = segv;
-
-  printf("sigsegv %d %d\n", x, y);
+  printf("writable %d %d\n", is_writable(readwrite), is_writable(readonly));
 }
 EOF
 
@@ -37,4 +27,4 @@ char readwrite[100] = "abc";
 EOF
 
 $CC -B. $t/a.o $t/b.so -o $t/exe -no-pie
-$QEMU $t/exe | grep '^sigsegv 0 1$'
+$QEMU $t/exe | grep '^writable 1 0$'
