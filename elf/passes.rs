@@ -1109,6 +1109,7 @@ fn is_relro<E: Target>(osec: &OutputSection<E>) -> bool {
     let ty = osec.hdr.shdr.sh_type.get();
     let flags = osec.hdr.shdr.sh_flags.get();
     name == b".toc"
+        || name == b".openbsd.randomdata"
         || name.ends_with(b".rel.ro")
         || name.ends_with(b".rel.ro.hot")
         || name.ends_with(b".rel.ro.unlikely")
