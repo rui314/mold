@@ -3028,12 +3028,13 @@ fn is_protected<E: Target>(ctx: &Context<E>, sym: &Symbol) -> bool {
     if sym.visibility() == STV_PROTECTED {
         return true;
     }
+    let is_func = matches!(sym.ty(), STT_FUNC | STT_GNU_IFUNC);
     match ctx.args.bsymbolic {
         BsymbolicKind::All => true,
         BsymbolicKind::None => false,
-        BsymbolicKind::Functions => sym.ty() == STT_FUNC,
+        BsymbolicKind::Functions => is_func,
         BsymbolicKind::NonWeak => !sym.is_weak(),
-        BsymbolicKind::NonWeakFunctions => !sym.is_weak() && sym.ty() == STT_FUNC,
+        BsymbolicKind::NonWeakFunctions => !sym.is_weak() && is_func,
     }
 }
 

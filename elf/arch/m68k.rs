@@ -128,7 +128,7 @@ impl Target for M68k {
                 continue;
             }
             let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
-            if sym.is_ifunc() {
+            if sym.ty() == STT_GNU_IFUNC {
                 error!("{sym}: GNU ifunc symbol is not supported on m68k");
             }
 

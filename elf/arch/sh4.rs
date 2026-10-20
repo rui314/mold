@@ -277,7 +277,7 @@ impl<const LE: bool> Target for Sh4Target<LE> {
                 continue;
             }
             let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
-            if sym.is_ifunc() {
+            if sym.ty() == STT_GNU_IFUNC {
                 error!("{sym}: GNU ifunc symbol is not supported on sh4");
             }
 

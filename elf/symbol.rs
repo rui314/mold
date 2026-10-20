@@ -952,9 +952,15 @@ impl Symbol {
         }
     }
 
+    /// Whether the symbol is an IFUNC that the output resolves itself
+    /// with IRELATIVE relocations. An imported IFUNC is resolved by the
+    /// dynamic loader through the symbol like any other imported
+    /// function. That includes an IFUNC that the DSO being created
+    /// exports without binding it locally, so that the DSO's own
+    /// references to it reach a definition that interposes it.
     #[inline]
     pub fn is_ifunc(&self) -> bool {
-        self.ty() == STT_GNU_IFUNC
+        self.ty() == STT_GNU_IFUNC && !self.is_imported()
     }
 
     // A remaining weak undefined symbol is promoted to a dynamic symbol

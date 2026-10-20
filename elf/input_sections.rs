@@ -1179,7 +1179,7 @@ fn sym_type(sym: &Symbol) -> usize {
         0
     } else if !sym.is_imported() {
         1
-    } else if sym.ty() != STT_FUNC {
+    } else if !matches!(sym.ty(), STT_FUNC | STT_GNU_IFUNC) {
         2
     } else {
         3
