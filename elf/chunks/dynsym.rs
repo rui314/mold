@@ -42,6 +42,11 @@ impl<E: Target> DynsymSection<E> {
         if self.symbols.is_empty() {
             self.symbols.push(None);
         }
+        // A symbol that shares another's dynamic symbol gets that one's index
+        // (sort_dynsyms()).
+        if symbols[sym].shares_dynsym() {
+            return;
+        }
         if symbols[sym].dynsym_idx(symbols).is_none() {
             // Mark the symbol as queued before sort_dynsyms assigns its real index.
             *symbols.aux_mut(sym).dynsym_idx.get_mut() = u32::MAX - 1;

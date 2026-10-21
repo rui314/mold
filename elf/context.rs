@@ -261,6 +261,12 @@ pub struct Context<E: Target> {
     pub dynamic_list_patterns: Vec<DynamicPattern>,
     pub default_version: u16,
 
+    // `foo` and `foo@VERSION` that an object file defines as one, with
+    // `.symver foo, foo@VERSION` (see parse_symbol_version()). Once
+    // compute_import_export() has run, only those where `foo` shares
+    // `foo@VERSION`'s dynamic symbol.
+    pub symver_aliases: Vec<(SymbolId, SymbolId)>,
+
     // For thread-local variables
     pub tls_begin: u64,
     pub tp_addr: u64,
@@ -351,6 +357,7 @@ impl<E: Target> Context<E> {
             version_patterns: Vec::new(),
             dynamic_list_patterns: Vec::new(),
             default_version: crate::elf::VER_NDX_UNSPECIFIED as u16,
+            symver_aliases: Vec::new(),
             tls_begin: 0,
             tp_addr: 0,
             dtp_addr: 0,

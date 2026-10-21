@@ -384,6 +384,7 @@ fn clear_symbol<E: Target>(sym: &mut Symbol) {
     sym.set_imported(false);
     sym.set_exported(false);
     sym.set_versioned_default(false);
+    sym.set_shares_dynsym(false);
 }
 
 /// Resets the resolution of every global symbol. Local symbols belong to
@@ -2795,6 +2796,12 @@ pub fn sort_dynsyms<E: Target>(ctx: &mut Context<E>) {
     ctx.dynsym.dynstr_entries = dynstr_entries;
     ctx.dynsym.symbols[1..].par_iter_mut().zip(syms).for_each(|(slot, id)| *slot = Some(id));
 
+    // A symbol that shares another's dynamic symbol takes its index.
+    for &(id, alias) in &ctx.symver_aliases {
+        let idx = ctx.symbols[alias].dynsym_idx(&ctx.symbols).unwrap();
+        *ctx.symbols.aux_mut(id).dynsym_idx.get_mut() = idx;
+    }
+
     // ELF's symbol table sh_info holds the index of the first global symbol.
     ctx.dynsym.hdr.shdr.sh_info.set(num_locals as u32 + 1);
 }
@@ -2916,6 +2923,7 @@ pub fn parse_symbol_version<E: Target>(ctx: &mut Context<E>) {
         return;
     }
     let _t = ctx.timer("parse_symbol_version");
+    ctx.symver_aliases.clear();
 
     let verdefs: HashMap<&[u8], u16> = args
         .version_definitions
@@ -2993,6 +3001,16 @@ pub fn parse_symbol_version<E: Target>(ctx: &mut Context<E>) {
                     || (v2 & !VERSYM_HIDDEN) == (ver_idx as u32 & !VERSYM_HIDDEN)
                 {
                     ctx.symbols[id2].ver_idx = VER_NDX_LOCAL as u16;
+                }
+
+                // If they are one definition, as `.symver foo, foo@VERSION`
+                // makes them, `foo` may be reached through `foo@VERSION` if it
+                // is not exported itself (compute_import_export()).
+                let esyms = &file.base.elf_syms;
+                if file.shndx_at(i) == file.shndx_at(sym2_idx)
+                    && esyms[i].st_value() == esyms[sym2_idx].st_value()
+                {
+                    ctx.symver_aliases.push((id2, id));
                 }
             }
         }
@@ -3163,6 +3181,25 @@ pub fn compute_import_export<E: Target>(ctx: &mut Context<E>) {
             }
         });
     }
+
+    // A `foo` that is not exported may still have its definition exported
+    // as `foo@VERSION` (parse_symbol_version()). References to `foo` must
+    // then be as preemptible as those to `foo@VERSION`, so `foo` shares that
+    // dynamic symbol: the first such one, as in GNU ld and lld. Only the
+    // pairs that share are kept, for sort_dynsyms().
+    ctx.symver_aliases.retain(|&(id, alias)| {
+        let sym = &ctx.symbols[id];
+        let shares = !sym.is_exported()
+            && !sym.shares_dynsym()
+            && sym.visibility() == STV_DEFAULT
+            && ctx.symbols[alias].is_imported();
+        if shares {
+            let sym = &mut ctx.symbols[id];
+            sym.set_imported(true);
+            sym.set_shares_dynsym(true);
+        }
+        shares
+    });
 }
 
 // Compute the "address-taken" bit for each input section.

@@ -420,6 +420,11 @@ const WRAPPED: u16 = 1 << 7; // for --wrap
 // For symbols with a default symbol version, e.g. foo@@VERSION.
 const VERSIONED_DEFAULT: u16 = 1 << 8;
 
+// For `foo` that has no dynamic symbol of its own but shares the one of
+// `foo@VERSION`, the second name `.symver` gives its definition. See
+// compute_import_export().
+const SHARES_DYNSYM: u16 = 1 << 9;
+
 // For --gc-sections
 const GC_ROOT: u16 = 1 << 10;
 
@@ -472,6 +477,7 @@ symbol_bits! {
     is_traced, set_traced: TRACED;
     is_wrapped, set_wrapped: WRAPPED;
     is_versioned_default, set_versioned_default: VERSIONED_DEFAULT;
+    shares_dynsym, set_shares_dynsym: SHARES_DYNSYM;
     gc_root, set_gc_root: GC_ROOT;
     referenced_by_regular_obj, set_referenced_by_regular_obj: REFERENCED_BY_REGULAR_OBJ;
     comdat_claimed_by_ir, set_comdat_claimed_by_ir: COMDAT_CLAIMED_BY_IR;

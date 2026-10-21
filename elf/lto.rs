@@ -508,7 +508,7 @@ unsafe fn get_symbols<E: Target>(
             Some(owner) if owner == this => {
                 if sym.referenced_by_regular_obj() {
                     LDPR_PREVAILING_DEF
-                } else if sym.is_exported() {
+                } else if sym.is_exported() || sym.is_imported() {
                     if is_v2 { LDPR_PREVAILING_DEF } else { LDPR_PREVAILING_DEF_IRONLY_EXP }
                 } else {
                     LDPR_PREVAILING_DEF_IRONLY
