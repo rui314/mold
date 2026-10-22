@@ -6,7 +6,7 @@
 //! relocation handling. The rest of the linker is generic over it. Each
 //! target is instantiated in a crate of its own under arch/.
 
-pub use crate::arm64::Arm64;
+pub use crate::arm64::{Arm64, Arm64e};
 pub use crate::x86_64::X86_64;
 
 use std::path::Path;
@@ -16,7 +16,7 @@ use mold_common::fatal;
 
 use crate::context::Context;
 use crate::input_sections::{InputSection, Reloc};
-use crate::macho::{MachRel, MachSection};
+use crate::macho::{ARM64_RELOC_AUTHENTICATED_POINTER, MachRel, MachSection};
 
 /// How LC_SEGMENT_SPLIT_INFO records a reference a relocation type
 /// makes, when it crosses sections.
@@ -295,9 +295,14 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
 
     /// Whether a relocation has the linker write a pointer, which dyld may
     /// slide or bind: an 8-byte absolute address, not a term of a
-    /// SUBTRACTOR pair's difference.
+    /// SUBTRACTOR pair's difference. arm64e's signed-pointer
+    /// relocations (ARM64_RELOC_AUTHENTICATED_POINTER) point the same
+    /// way; the auth schema is not in the object (see arm64e_chain_word).
     fn is_absrel(rel: &Reloc) -> bool {
-        rel.ty == Self::RELOC_UNSIGNED && rel.size == 8 && !rel.is_pcrel && !rel.is_subtracted
+        (rel.ty == Self::RELOC_UNSIGNED || rel.ty == ARM64_RELOC_AUTHENTICATED_POINTER)
+            && rel.size == 8
+            && !rel.is_pcrel
+            && !rel.is_subtracted
     }
 
     /// Applies the relocations of one input section to `buf`, its bytes
@@ -319,7 +324,7 @@ pub trait Target: Copy + Default + Send + Sync + 'static {
 /// The canonical name of a target named on the command line, if mold
 /// links for it.
 pub fn canonical_name(name: &str) -> Option<&'static str> {
-    [Arm64::NAME, X86_64::NAME].into_iter().find(|&canonical| canonical == name)
+    [Arm64::NAME, Arm64e::NAME, X86_64::NAME].into_iter().find(|&canonical| canonical == name)
 }
 
 /// Returns the target name for a Mach-O CPU type, if we know it.

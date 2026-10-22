@@ -570,6 +570,7 @@ impl Target for X86_64 {
                 is_pcrel: r.is_pcrel(),
                 is_subtracted,
                 target: target.pack(),
+                auth: 0,
                 addend,
             });
         }

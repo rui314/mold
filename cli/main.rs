@@ -74,6 +74,8 @@ const ELF_TARGETS: &[(&str, LinkFn)] = &[
 const MACHO_TARGETS: &[(&str, MachoLinkFn)] = &[
     #[cfg(feature = "macho-arm64")]
     ("arm64", mold_macho_arm64::link),
+    #[cfg(feature = "macho-arm64")]
+    ("arm64e", mold_macho_arm64::link_arm64e),
     #[cfg(feature = "macho-x86_64")]
     ("x86_64", mold_macho_x86_64::link),
 ];

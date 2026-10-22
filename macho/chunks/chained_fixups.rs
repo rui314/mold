@@ -112,11 +112,63 @@ fn import_table(fixups: &[Fixup]) -> (Vec<(SymbolId, u64)>, ImportOrdinals) {
 /// -static image, which no dyld reads, whatever its target; the former
 /// where chains came earlier (iOS 13.4, see cmdline::is_new_os) or when
 /// -fixup_chains forces them on an older OS.
+///
+/// arm64e writes DYLD_CHAINED_PTR_ARM64E: its pointers carry the
+/// authentication bits (see arm64e_chain_word). Only its unauth
+/// targets are vm addresses, not offsets as under _64_OFFSET, so the
+/// formats keep their own encoders below.
 pub(crate) fn pointer_format<E: Target>(ctx: &Context<E>) -> u16 {
+    if E::CPUTYPE == CPU_TYPE_ARM64 && E::CPUSUBTYPE == CPU_SUBTYPE_ARM64E {
+        return DYLD_CHAINED_PTR_ARM64E;
+    }
     if ctx.args.static_link || ctx.args.targets(&crate::cmdline::VERSION_2021_FALL) {
         DYLD_CHAINED_PTR_64_OFFSET
     } else {
         DYLD_CHAINED_PTR_64
+    }
+}
+
+/// The arm64e fixup words (EXTERNAL_HEADERS/mach-o/fixup-chains.h,
+/// DYLD_CHAINED_PTR_ARM64E; XNU's threaded rebase,
+/// osfmk/mach/dyld_kernel_fixups.h, reads the rebases the same way).
+/// Bit 63 is "authenticated", bit 62 "bind", bits 51-61 the distance
+/// to the next fixup in units of the stride:
+///
+///   rebase:      target:43 | high8:8                   (a vm address)
+///   auth rebase: target:32 | diversity:16 | addrDiv:1 | key:2
+///                (an offset from the mach header)
+///   bind:        ordinal:16 | addend:19 << 32
+///   auth bind:   ordinal:16 | diversity:16 << 32 | addrDiv:1 | key:2
+///
+/// `auth` is a Reloc::auth schema, zero for a plain pointer.
+fn arm64e_schema_bits(auth: u32) -> u64 {
+    let diversity = (auth & 0xffff) as u64;
+    let addr_div = (auth >> 16 & 1) as u64;
+    let key = (auth >> 17 & 3) as u64;
+    diversity << 32 | addr_div << 48 | key << 49 | 1 << 63
+}
+
+/// An arm64e rebase word for the pointer `val` (its final value, a vm
+/// address) at `addr`. `base` is the mach header's address. Returns None
+/// if the target can't be encoded.
+fn arm64e_rebase_word(val: u64, auth: u32, next: u64, base: u64) -> Option<u64> {
+    if auth != 0 {
+        let target = (val & 0x00ff_ffff_ffff_ffff).wrapping_sub(base);
+        (target >> 32 == 0).then(|| target | arm64e_schema_bits(auth) | next << 51)
+    } else {
+        // 43 bits sign-extended into the low 56, and the top byte apart.
+        let low = val & ((1 << 43) - 1);
+        let extended = (((low << 21) as i64) >> 21) as u64 & 0x00ff_ffff_ffff_ffff;
+        (extended == val & 0x00ff_ffff_ffff_ffff).then(|| low | (val >> 56) << 43 | next << 51)
+    }
+}
+
+fn arm64e_bind_word(ordinal: u64, addend: u64, auth: u32, next: u64) -> u64 {
+    // An authenticated bind has no inline addend (it is in the import table).
+    if auth != 0 {
+        ordinal | arm64e_schema_bits(auth) | 1 << 62 | next << 51
+    } else {
+        ordinal | (addend & 0x7ffff) << 32 | 1 << 62 | next << 51
     }
 }
 
@@ -332,7 +384,21 @@ fn chain_page_size<E: Target>(ctx: &Context<E>) -> u64 {
 
 /// The farthest a fixup can be from the next one of its chain: the
 /// 12-bit `next` field counts 4-byte strides.
-const MAX_CHAIN_STRIDE: u64 = 0xfff * 4;
+fn max_chain_stride<E: Target>(ctx: &Context<E>) -> u64 {
+    // arm64e's `next` is 11 bits; the others' is 12.
+    (if is_arm64e::<E>() { 0x7ff } else { 0xfff }) * chain_stride::<E>(ctx)
+}
+
+/// What a fixup word's `next` counts in: 4 bytes, but 8 for the pointers
+/// DYLD_CHAINED_PTR_ARM64E dyld reads (a -threaded_starts_section image's
+/// loader steps by 4 or 8 as its section says; we say 4).
+pub(crate) fn chain_stride<E: Target>(ctx: &Context<E>) -> u64 {
+    if is_arm64e::<E>() && !ctx.args.threaded_starts { 8 } else { 4 }
+}
+
+fn is_arm64e<E: Target>() -> bool {
+    E::CPUTYPE == CPU_TYPE_ARM64 && E::CPUSUBTYPE == CPU_SUBTYPE_ARM64E
+}
 
 /// The chains of an image whose starts __TEXT,__chain_starts lists
 /// (-fixup_chains_section): each segment's fixups chain on from the
@@ -341,19 +407,28 @@ const MAX_CHAIN_STRIDE: u64 = 0xfff * 4;
 /// chain's start, an offset from the image's address.
 pub fn section_chain_starts<E: Target>(ctx: &Context<E>) -> Vec<u32> {
     // The first fixups of the chains of those in [start, end).
-    fn chains(addrs: &[u64], start: u64, end: u64) -> impl Iterator<Item = u64> + '_ {
+    fn chains(
+        addrs: &[u64],
+        start: u64,
+        end: u64,
+        max_stride: u64,
+    ) -> impl Iterator<Item = u64> + '_ {
         let lo = addrs.partition_point(|&a| a < start);
         let hi = addrs.partition_point(|&a| a < end);
-        (lo..hi)
-            .filter(move |&i| i == lo || addrs[i] - addrs[i - 1] > MAX_CHAIN_STRIDE)
-            .map(|i| addrs[i])
+        (lo..hi).filter(move |&i| i == lo || addrs[i] - addrs[i - 1] > max_stride).map(|i| addrs[i])
     }
+    let max_stride = max_chain_stride(ctx);
     let (fixups, _) = collect_fixups(ctx);
     let addrs: Vec<u64> = fixups.iter().map(|&(addr, ..)| addr).collect();
     let base = ctx.mach_header.hdr.addr;
     (ctx.segments.iter())
         .flat_map(|seg| {
-            chains(&addrs, seg.cmd.vmaddr.get(), seg.cmd.vmaddr.get() + seg.cmd.vmsize.get())
+            chains(
+                &addrs,
+                seg.cmd.vmaddr.get(),
+                seg.cmd.vmaddr.get() + seg.cmd.vmsize.get(),
+                max_stride,
+            )
         })
         .map(|addr| addr.wrapping_sub(base) as u32)
         .collect()
@@ -364,12 +439,22 @@ pub fn section_chain_starts<E: Target>(ctx: &Context<E>) -> Vec<u32> {
 /// the next fixup of its chain, in the same page (or, under
 /// -fixup_chains_section, in its stride's reach; see
 /// section_chain_starts).
+///
+/// arm64e encodes its own word formats (see arm64e_chain_word): an
+/// import ordinal in the low 16 bits, a rebase target in the low 32
+/// (an offset from the mach header, as DYLD_CHAINED_PTR_ARM64E reads
+/// it), the schema bits above them, and an 11-bit `next` in units of
+/// 8.
 pub fn write_fixup_chains<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
+    let arm64e = E::CPUTYPE == CPU_TYPE_ARM64 && E::CPUSUBTYPE == CPU_SUBTYPE_ARM64E;
     let page_shift = chain_page_size(ctx).trailing_zeros();
+    let stride = chain_stride(ctx);
+    let max_stride = max_chain_stride(ctx);
     // What a rebase target counts from: zero for a VM address, the
     // image's own address for an offset.
     let target_base = match pointer_format(ctx) {
         DYLD_CHAINED_PTR_64_OFFSET => ctx.mach_header.hdr.addr,
+        DYLD_CHAINED_PTR_ARM64E => ctx.mach_header.hdr.addr, // auth targets; plain ones are addresses
         _ => 0,
     };
 
@@ -379,7 +464,7 @@ pub fn write_fixup_chains<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
         let page = |addr: u64| (addr - seg.cmd.vmaddr.get()) >> page_shift;
         let chains_to = |addr: u64, next: u64| {
             if ctx.args.fixup_chains_section {
-                next - addr <= MAX_CHAIN_STRIDE
+                next - addr <= max_stride
             } else {
                 page(next) == page(addr)
             }
@@ -387,24 +472,51 @@ pub fn write_fixup_chains<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
 
         for (i, &(addr, sym, addend)) in fx.iter().enumerate() {
             let next = match fx.get(i + 1) {
-                Some(&(next_addr, _, _)) if chains_to(addr, next_addr) => (next_addr - addr) / 4,
+                Some(&(next_addr, _, _)) if chains_to(addr, next_addr) => {
+                    (next_addr - addr) / stride
+                }
                 _ => 0,
             };
-            if addr % 4 != 0 {
+            if addr % stride != 0 {
                 fatal!("unaligned fixup; re-link with -no_fixup_chains");
             }
 
             let off = (seg.cmd.fileoff.get() + (addr - seg.cmd.vmaddr.get())) as usize;
-            let word = match sym {
-                Some(sym) => {
-                    // dyld_chained_ptr_64_bind
-                    let ordinal = ctx.chained_fixups.ordinals[&(sym, table_addend(addend))] as u64;
-                    let inline_addend = if addend <= MAX_INLINE_ADDEND { addend } else { 0 };
-                    ordinal | (inline_addend << 24) | (next << 51) | (1 << 63)
+            let word = if arm64e {
+                match sym {
+                    Some(sym) => {
+                        if ctx.args.threaded_starts {
+                            fatal!("-threaded_starts_section can't bind a symbol at {addr:#x}");
+                        }
+                        let ordinal =
+                            ctx.chained_fixups.ordinals[&(sym, table_addend(addend))] as u64;
+                        let inline = if addend <= MAX_INLINE_ADDEND { addend } else { 0 };
+                        arm64e_bind_word(ordinal, inline, 0, next)
+                    }
+                    None => {
+                        let val = u64::from_le_bytes(buf[off..off + 8].try_into().unwrap());
+                        let auth = addend as u32;
+                        match arm64e_rebase_word(val, auth, next, target_base) {
+                            Some(word) => word,
+                            None => {
+                                fatal!("rebase target unencodable at {addr:#x} (value {val:#x})")
+                            }
+                        }
+                    }
                 }
-                None => {
-                    let val = u64::from_le_bytes(buf[off..off + 8].try_into().unwrap());
-                    rebase_word(ctx, addr, val, target_base) | (next << 51)
+            } else {
+                match sym {
+                    Some(sym) => {
+                        // dyld_chained_ptr_64_bind
+                        let ordinal =
+                            ctx.chained_fixups.ordinals[&(sym, table_addend(addend))] as u64;
+                        let inline_addend = if addend <= MAX_INLINE_ADDEND { addend } else { 0 };
+                        ordinal | (inline_addend << 24) | (next << 51) | (1 << 63)
+                    }
+                    None => {
+                        let val = u64::from_le_bytes(buf[off..off + 8].try_into().unwrap());
+                        rebase_word(ctx, addr, val, target_base) | (next << 51)
+                    }
                 }
             };
             buf[off..off + 8].copy_from_slice(&word.to_le_bytes());
@@ -479,7 +591,7 @@ fn collect_fixups<E: Target>(ctx: &Context<E>) -> (Vec<Fixup>, Vec<(u32, u64)>) 
                         Some((addr, Some(id), rel.addend as u64))
                     }
                     _ if rel.refers_to_tls(ctx, file) => None,
-                    _ => Some((addr, None, 0)),
+                    _ => Some((addr, None, rel.auth as u64)),
                 };
                 if fixup.is_some() && !addr.is_multiple_of(8) {
                     unaligned.lock().unwrap().push((id as u32, addr));
