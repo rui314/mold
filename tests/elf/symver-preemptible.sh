@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
+# musl's dynamic linker skips non-default versions such as `foo@VER1`,
+# so the executable's reference to `foo` would be left unresolved.
+is_musl && skip
+
 # References to `foo` and to its alias `foo@VER1` bind to the exported
 # `foo@VER1`, so that the executable's copy of `foo` and its `bar`
 # preempt them.
