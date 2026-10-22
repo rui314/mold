@@ -67,6 +67,10 @@ fn collect_root_set<'a, E: Target>(ctx: &'a Context<E>) -> Vec<&'a InputSection<
 
     let enqueue_symbol = |id: SymbolId, out: &mut Vec<&'a InputSection<E>>| {
         let sym = &ctx.symbols[id];
+        if !matches!(sym.file(), Some(FileId::Obj(_))) {
+            sym.set_gc_referenced_shared();
+            return;
+        }
         match sym.origin() {
             OriginValue::Fragment(frag) => ctx.fragment(frag).set_alive(),
             OriginValue::InputSection(section) => {
@@ -158,9 +162,10 @@ fn visit_section<'scope, E: Target>(
     // We want to keep associated .eh_frame records.
     for fde in isec.fdes(file) {
         for rel in fde.rels(file).iter().skip(1) {
-            if let Some(target) =
-                ctx.symbols[file.base.symbols[rel.r_sym() as usize]].input_section_ref(ctx)
-            {
+            let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
+            if !matches!(sym.file(), Some(FileId::Obj(_))) {
+                sym.set_gc_referenced_shared();
+            } else if let Some(target) = sym.input_section_ref(ctx) {
                 mark(target);
             }
         }
@@ -168,9 +173,15 @@ fn visit_section<'scope, E: Target>(
 
     for rel in isec.rels(file) {
         let sym = &ctx.symbols[file.base.symbols[rel.r_sym() as usize]];
-        if let Some(FileId::Dso(dso)) = sym.file() {
-            ctx.dsos[dso.index()].base.mark_reachable();
-            continue;
+        match sym.file() {
+            Some(FileId::Dso(dso)) => {
+                ctx.dsos[dso.index()].base.mark_reachable();
+                sym.set_gc_referenced_shared();
+                continue;
+            }
+            // An undefined symbol. A live reference keeps it in .symtab.
+            None => sym.set_gc_referenced_shared(),
+            _ => {}
         }
         // A symbol can refer to either a section fragment or an input section.
         match sym.origin() {
@@ -298,6 +309,7 @@ pub fn gc_sections<E: Target>(ctx: &mut Context<E>) {
         let id = ctx.symbols.get_or_intern(name);
         if let Some(FileId::Dso(dso)) = ctx.symbols[id].file() {
             ctx.dsos[dso.index()].base.set_reachable(true);
+            ctx.symbols[id].set_gc_referenced_shared();
         }
     }
 
@@ -307,6 +319,14 @@ pub fn gc_sections<E: Target>(ctx: &mut Context<E>) {
     drop(t);
     mark(ctx, &roots, &map);
     sweep(ctx);
+
+    // A DSO symbol that only dead sections refer to doesn't have to be
+    // imported. GNU ld leaves such symbols out of .dynsym, and so do we.
+    ctx.symbols.par_for_each_global_mut(|sym| {
+        if matches!(sym.file(), Some(FileId::Dso(_))) && !sym.is_gc_referenced() {
+            sym.set_imported(false);
+        }
+    });
 
     crate::passes::remove_unreachable_dsos(ctx);
 }
