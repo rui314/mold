@@ -2864,6 +2864,24 @@ impl<'a> SymtabBlock<'a> {
         self.globals.push::<E>(esym, xindex);
     }
 
+    /// Adds a global symbol named `name@version`, or just `name` if
+    /// `version` is empty.
+    pub fn push_versioned_global<E: Target>(
+        &mut self,
+        ctx: &Context<E>,
+        sym: &Symbol,
+        version: &[u8],
+    ) {
+        let name = sym.name().as_ref();
+        let st_name = if version.is_empty() {
+            self.add_string(&[name])
+        } else {
+            self.add_string(&[name, b"@", version])
+        };
+        let (esym, xindex) = crate::chunks::symtab::to_output_esym(ctx, sym, st_name);
+        self.globals.push::<E>(esym, xindex);
+    }
+
     /// Adds a synthesized local symbol with a name built from `name` and
     /// `suffix`.
     pub fn push_synthetic<E: Target>(&mut self, name: &[u8], suffix: &[u8], mut esym: ElfSym<E>) {
@@ -3400,6 +3418,10 @@ impl<E: Target> SharedFile<E> {
                 && (ctx.args.retain_symbols_file.is_none() || sym.write_to_symtab())
             {
                 plan.strtab_size += sym.name().len() as u64 + 1;
+                let version = symtab_version(ctx, sym);
+                if !version.is_empty() {
+                    plan.strtab_size += version.len() as u64 + 1;
+                }
                 plan.output_sym_indices[i] = plan.num_global_symtab as i32;
                 plan.num_global_symtab += 1;
                 sym.set_write_to_symtab();
@@ -3412,10 +3434,17 @@ impl<E: Target> SharedFile<E> {
         for &sym_id in &self.base.symbols {
             let sym = &ctx.symbols[sym_id];
             if sym.file() == Some(FileId::Dso(id)) && sym.write_to_symtab() {
-                block.push_global::<E>(ctx, sym);
+                block.push_versioned_global::<E>(ctx, sym, symtab_version(ctx, sym));
             }
         }
     }
+}
+
+/// The version a DSO symbol is bound to. Like GNU ld, we name such a symbol
+/// `name@version` in .symtab, so that nm and friends show which version the
+/// output uses.
+fn symtab_version<E: Target>(ctx: &Context<E>, sym: &Symbol) -> &'static [u8] {
+    if sym.ver_idx as u32 > VER_NDX_LAST_RESERVED { sym.version(ctx) } else { b"" }
 }
 
 // Symbols with higher priorities overwrite symbols with lower priorities.
