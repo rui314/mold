@@ -454,8 +454,13 @@ impl<E: Target> Context<E> {
         sym
     }
 
+    /// The output chunk a synthetic symbol is associated with.
+    pub(crate) fn symbol_chunk(&self, id: SymbolChunkId) -> ChunkId {
+        self.symbol_chunks[id.0 as usize]
+    }
+
     pub(crate) fn symbol_chunk_header(&self, id: SymbolChunkId) -> &ChunkHeader<E> {
-        self.chunk_header(self.symbol_chunks[id.0 as usize])
+        self.chunk_header(self.symbol_chunk(id))
     }
 
     /// The header of any chunk. Panics if the chunk does not exist.
