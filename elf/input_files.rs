@@ -2832,14 +2832,6 @@ impl<'a> SymtabBlock<'a> {
         SymtabBlock { locals, globals, strtab, strtab_base, strtab_len: 0 }
     }
 
-    /// Zeroes reserved space that was not used by emitted symbols.
-    pub fn zero_unused<E: Target>(&mut self) {
-        let size = size_of::<ElfSym<E>>();
-        self.locals.syms[self.locals.len * size..].fill(0);
-        self.globals.syms[self.globals.len * size..].fill(0);
-        self.strtab[self.strtab_len..].fill(0);
-    }
-
     /// Adds a name made of `parts`, returning its `.strtab` offset.
     fn add_string(&mut self, parts: &[&[u8]]) -> u32 {
         let offset = self.strtab_base + self.strtab_len as u64;

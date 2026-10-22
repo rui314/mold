@@ -2836,6 +2836,19 @@ pub fn create_output_symtab<E: Target>(ctx: &mut Context<E>) {
     }
 }
 
+/// Gives back the .symtab space reserved for the thunk symbols that
+/// remove_redundant_thunks() dropped, which would otherwise remain as null
+/// entries.
+pub fn shrink_thunk_symtab<E: Target>(ctx: &mut Context<E>) {
+    for i in 0..ctx.chunks.len() {
+        if let ChunkId::Output(id) = ctx.chunks[i] {
+            chunks::output_section::compute_symtab_size(ctx, id);
+        }
+    }
+    chunks::symtab::update_shdr(ctx);
+    chunks::strtab::update_shdr(ctx);
+}
+
 pub fn apply_version_script<E: Target>(ctx: &mut Context<E>) {
     let _t = ctx.timer("apply_version_script");
 
