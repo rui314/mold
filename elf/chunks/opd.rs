@@ -73,7 +73,7 @@ pub fn relr_offsets<E: Target>(ctx: &Context<E>) -> Vec<u64> {
         .collect()
 }
 
-pub fn write_dynrels<E: Target>(ctx: &Context<E>, out: &mut [ElfRel<E>]) {
+pub fn write_dynrels<E: Target>(ctx: &Context<E>, out: &mut [DynRel<E>]) {
     if !ctx.args.pic {
         debug_assert!(out.is_empty());
         return;
@@ -87,7 +87,7 @@ pub fn write_dynrels<E: Target>(ctx: &Context<E>, out: &mut [ElfRel<E>]) {
         let entry = ctx.symbols[id].addr_with(ctx, ENTRY_POINT);
         for (addr, val) in [(loc, entry), (loc + 8, toc)] {
             if !relr || addr % 8 != 0 {
-                out[j] = ElfRel::<E>::new(addr, E::R_RELATIVE, 0, val as i64);
+                out[j] = DynRel::<E>::new(addr, E::R_RELATIVE, 0, val as i64);
                 j += 1;
             }
         }

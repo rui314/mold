@@ -118,6 +118,7 @@ impl<const LE: bool> Target for Sh4Target<LE> {
     type Phdr = Elf32Phdr<Self>;
     type Chdr = Elf32Chdr<Self>;
     type Rel = ElfRela<Self>;
+    type DynRel = ElfRela<Self>;
 
     type InputSectionExtra = ();
 
@@ -223,7 +224,7 @@ impl<const LE: bool> Target for Sh4Target<LE> {
         }
         Self::write_u32(
             &mut buf[16..],
-            sym.plt_idx(&ctx.symbols).unwrap() * size_of::<ElfRel<Self>>() as u32,
+            sym.plt_idx(&ctx.symbols).unwrap() * size_of::<DynRel<Self>>() as u32,
         );
     }
 

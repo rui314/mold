@@ -295,13 +295,13 @@ pub fn relr_offsets<E: Target>(ctx: &Context<E>) -> Vec<u64> {
         .collect()
 }
 
-pub fn write_dynrels<E: Target>(ctx: &Context<E>, out: &mut [ElfRel<E>]) {
+pub fn write_dynrels<E: Target>(ctx: &Context<E>, out: &mut [DynRel<E>]) {
     let mut i = 0;
     for_each_entry(ctx, |ent| {
         if ent.r_type == R_NONE {
             return;
         }
-        let rel = ElfRel::<E>::new(
+        let rel = DynRel::<E>::new(
             ctx.got.hdr.shdr.sh_addr.get() + ent.idx as u64 * word::<E>(),
             ent.r_type,
             ent.sym.and_then(|s| ctx.symbols[s].dynsym_idx(&ctx.symbols)).unwrap_or(0),

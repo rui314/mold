@@ -707,7 +707,7 @@ pub fn relr_offsets<E: Target>(ctx: &mut Context<E>, id: ChunkId) -> Vec<u64> {
 }
 
 /// Writes a chunk's dynamic relocations to its assigned output slots.
-pub fn write_dynrels<E: Target>(ctx: &Context<E>, id: ChunkId, out: &mut [ElfRel<E>]) {
+pub fn write_dynrels<E: Target>(ctx: &Context<E>, id: ChunkId, out: &mut [DynRel<E>]) {
     match id {
         ChunkId::Output(id) => output_section::write_dynrels(ctx, id, out),
         ChunkId::Got => got::write_dynrels(ctx, out),

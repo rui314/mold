@@ -120,6 +120,7 @@ impl Target for Sparc64 {
     type Phdr = Elf64Phdr<Self>;
     type Chdr = Elf64Chdr<Self>;
     type Rel = Sparc64Rela;
+    type DynRel = Sparc64Rela;
 
     type InputSectionExtra = ();
 

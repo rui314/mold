@@ -69,7 +69,12 @@ pub fn main(
 }
 
 fn target_traits<E: Target>() -> TargetTraits {
-    TargetTraits { name: E::NAME, is_rela: E::IS_RELA, family: E::FAMILY, page_size: E::PAGE_SIZE }
+    TargetTraits {
+        name: E::NAME,
+        is_dyn_rela: E::IS_DYN_RELA,
+        family: E::FAMILY,
+        page_size: E::PAGE_SIZE,
+    }
 }
 
 fn thread_count(args: &Args) -> usize {

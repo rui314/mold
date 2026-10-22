@@ -58,6 +58,7 @@ impl Target for I386 {
     type Phdr = Elf32Phdr<Self>;
     type Chdr = Elf32Chdr<Self>;
     type Rel = ElfRelNoAddend<Self>;
+    type DynRel = ElfRelNoAddend<Self>;
 
     type InputSectionExtra = ();
 
@@ -119,7 +120,7 @@ impl Target for I386 {
 
     fn write_plt_entry(ctx: &Context<Self>, buf: &mut [u8], sym: &Symbol) {
         let reloc_offset =
-            sym.plt_idx(&ctx.symbols).unwrap() as u64 * size_of::<ElfRel<Self>>() as u64;
+            sym.plt_idx(&ctx.symbols).unwrap() as u64 * size_of::<DynRel<Self>>() as u64;
         if ctx.args.pic {
             const INSN: [u8; 16] = [
                 0xb9, 0, 0, 0, 0, // mov $reloc_offset, %ecx

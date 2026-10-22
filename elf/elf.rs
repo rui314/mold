@@ -653,6 +653,7 @@ impl RelRecord for Sparc64Rela {
 }
 
 pub type ElfRel<E> = <E as Target>::Rel;
+pub type DynRel<E> = <E as Target>::DynRel;
 
 /// Relocation records as they are laid out in a file, read as they are
 /// used rather than copied out. Input files hold tens of millions of
@@ -663,6 +664,11 @@ pub(crate) fn rels_from_bytes<E: Target>(data: &[u8]) -> &[ElfRel<E>] {
 
 /// Mutably views relocation records in their target-dependent file representation.
 pub(crate) fn rels_from_bytes_mut<E: Target>(data: &mut [u8]) -> &mut [ElfRel<E>] {
+    records_from_bytes_mut(data)
+}
+
+/// Mutably views dynamic relocation records in their target-dependent file representation.
+pub(crate) fn dynrels_from_bytes_mut<E: Target>(data: &mut [u8]) -> &mut [DynRel<E>] {
     records_from_bytes_mut(data)
 }
 

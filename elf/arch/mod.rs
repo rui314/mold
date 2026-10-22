@@ -103,15 +103,19 @@ impl ElfClass for Class<true> {
 // Target descriptions
 pub trait Target: Copy + Default + fmt::Debug + Send + Sync + 'static {
     // The file format: byte order, word size, the record forms that differ
-    // between ELF32 and ELF64, and the relocation record form.
+    // between ELF32 and ELF64, and the relocation record forms. `Rel` is
+    // the form of input and relocatable-output relocations; `DynRel` is
+    // the form of dynamic relocations, which may differ.
     const IS_LITTLE: bool;
     type Word: ElfWord;
     type Sym: SymbolRecord;
     type Phdr: PhdrRecord;
     type Chdr: ChdrRecord;
     type Rel: RelRecord;
+    type DynRel: RelRecord;
     const IS_64: bool = size_of::<Self::Word>() == 8;
     const IS_RELA: bool = <Self::Rel as RelRecord>::IS_RELA;
+    const IS_DYN_RELA: bool = <Self::DynRel as RelRecord>::IS_RELA;
     const WORD_SIZE: usize = std::mem::size_of::<Self::Word>();
 
     /// Target-specific members embedded directly in each input section.

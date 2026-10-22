@@ -7,16 +7,16 @@ use crate::elf::*;
 
 // .rel.plt contains relocation information for .plt.
 pub fn new_header<E: Target>() -> ChunkHeader<E> {
-    let (name, ty) = if E::IS_RELA { (".rela.plt", SHT_RELA) } else { (".rel.plt", SHT_REL) };
+    let (name, ty) = if E::IS_DYN_RELA { (".rela.plt", SHT_RELA) } else { (".rel.plt", SHT_REL) };
     let mut hdr = ChunkHeader::<E>::new(name, ty, SHF_ALLOC as u64);
-    let entsize = size_of::<ElfRel<E>>() as u64;
+    let entsize = size_of::<DynRel<E>>() as u64;
     hdr.shdr.sh_entsize.set(entsize);
     hdr.shdr.sh_addralign.set(E::WORD_SIZE as u64);
     hdr
 }
 
 pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
-    let size = ctx.plt.symbols.len() as u64 * size_of::<ElfRel<E>>() as u64;
+    let size = ctx.plt.symbols.len() as u64 * size_of::<DynRel<E>>() as u64;
     ctx.relplt.shdr.sh_size.set(size);
     ctx.relplt.shdr.sh_link.set(ctx.dynsym.hdr.shndx);
     if !E::IS_SPARC {
@@ -25,7 +25,7 @@ pub fn update_shdr<E: Target>(ctx: &mut Context<E>) {
 }
 
 pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
-    let out = rels_from_bytes_mut::<E>(buf);
+    let out = dynrels_from_bytes_mut::<E>(buf);
     debug_assert_eq!(out.len(), ctx.plt.symbols.len());
     for (i, &id) in ctx.plt.symbols.iter().enumerate() {
         let sym = &ctx.symbols[id];
@@ -38,7 +38,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
             // horrible from the security point of view, though.
             let idx = sym.plt_idx(&ctx.symbols).unwrap() as u64;
             if idx < crate::arch::sparc64::SPARC_NUM_SMALL_PLT {
-                ElfRel::<E>::new(
+                DynRel::<E>::new(
                     sym.plt_addr(ctx),
                     E::R_JUMP_SLOT,
                     sym.dynsym_idx(&ctx.symbols).unwrap_or(0),
@@ -52,7 +52,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
                 let call = sym.plt_addr(ctx) + 4;
                 let ptr = ctx.plt.hdr.shdr.sh_addr.get()
                     + crate::arch::sparc64::plt_ptr_offset(ctx.plt.symbols.len(), idx);
-                ElfRel::<E>::new(
+                DynRel::<E>::new(
                     ptr,
                     E::R_JUMP_SLOT,
                     sym.dynsym_idx(&ctx.symbols).unwrap_or(0),
@@ -60,7 +60,7 @@ pub fn copy_buf<E: Target>(ctx: &Context<E>, buf: &mut [u8]) {
                 )
             }
         } else {
-            ElfRel::<E>::new(
+            DynRel::<E>::new(
                 sym.gotplt_addr(ctx),
                 E::R_JUMP_SLOT,
                 sym.dynsym_idx(&ctx.symbols).unwrap_or(0),

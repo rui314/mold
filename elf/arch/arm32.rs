@@ -320,6 +320,7 @@ impl<const LE: bool> Target for Arm32Target<LE> {
     type Phdr = Elf32Phdr<Self>;
     type Chdr = Elf32Chdr<Self>;
     type Rel = ElfRelNoAddend<Self>;
+    type DynRel = ElfRelNoAddend<Self>;
 
     type InputSectionExtra = u32;
 

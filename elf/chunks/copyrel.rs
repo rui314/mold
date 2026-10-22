@@ -82,10 +82,10 @@ pub fn add_symbol<E: Target>(ctx: &mut Context<E>, relro: bool, id: SymbolId) {
     }
 }
 
-pub fn write_dynrels<E: Target>(ctx: &Context<E>, sec: &CopyrelSection<E>, out: &mut [ElfRel<E>]) {
+pub fn write_dynrels<E: Target>(ctx: &Context<E>, sec: &CopyrelSection<E>, out: &mut [DynRel<E>]) {
     for (i, &id) in sec.symbols.iter().enumerate() {
         let sym = &ctx.symbols[id];
-        out[i] = ElfRel::<E>::new(
+        out[i] = DynRel::<E>::new(
             sym.addr(ctx),
             E::R_COPY,
             sym.dynsym_idx(&ctx.symbols).unwrap_or(0),
