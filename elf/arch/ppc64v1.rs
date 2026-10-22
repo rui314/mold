@@ -592,7 +592,12 @@ impl Target for Ppc64V1 {
         }
     }
 
-    fn always_needs_thunk(ctx: &Context<Self>, sym: &Symbol, _rel: &ElfRel<Self>) -> bool {
+    fn always_needs_thunk(
+        ctx: &Context<Self>,
+        _isec: &InputSection<Self>,
+        sym: &Symbol,
+        _rel: &ElfRel<Self>,
+    ) -> bool {
         sym.has_plt(&ctx.symbols)
     }
 

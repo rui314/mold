@@ -126,7 +126,7 @@ fn requires_thunk<E: Target>(
         }
     }
 
-    if E::always_needs_thunk(ctx, sym, rel) {
+    if E::always_needs_thunk(ctx, isec, sym, rel) {
         return true;
     }
 

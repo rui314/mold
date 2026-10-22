@@ -245,9 +245,15 @@ pub trait Target: Copy + Default + fmt::Debug + Send + Sync + 'static {
     /// Applies relocations to a copy of a non-allocated section's contents.
     fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection<Self>, buf: &mut [u8]);
 
-    /// Whether a call must go through a thunk however close its target
-    /// is: a processor mode switch on ARM32, or TOC setup on PowerPC.
-    fn always_needs_thunk(_ctx: &Context<Self>, _sym: &Symbol, _rel: &ElfRel<Self>) -> bool {
+    /// Whether a call from `isec` must go through a thunk however close its
+    /// target is: a processor mode switch on ARM32, or TOC setup on
+    /// PowerPC.
+    fn always_needs_thunk(
+        _ctx: &Context<Self>,
+        _isec: &InputSection<Self>,
+        _sym: &Symbol,
+        _rel: &ElfRel<Self>,
+    ) -> bool {
         false
     }
 

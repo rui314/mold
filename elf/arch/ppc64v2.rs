@@ -526,7 +526,12 @@ impl Target for Ppc64V2 {
     /// Functions compiled for Power9 or earlier assume that r2 points to
     /// GOT+0x8000, while those for Power10 use r2 as a scratch register.
     /// We need a thunk to recompute r2 for interworking.
-    fn always_needs_thunk(ctx: &Context<Self>, sym: &Symbol, rel: &ElfRel<Self>) -> bool {
+    fn always_needs_thunk(
+        ctx: &Context<Self>,
+        _isec: &InputSection<Self>,
+        sym: &Symbol,
+        rel: &ElfRel<Self>,
+    ) -> bool {
         sym.has_plt(&ctx.symbols)
             || (rel.r_type() == R_PPC64_REL24 && !sym.esym(ctx).ppc64_preserves_r2())
             || (rel.r_type() == R_PPC64_REL24_NOTOC && sym.esym(ctx).ppc64_uses_toc())

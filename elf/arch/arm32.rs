@@ -815,7 +815,12 @@ impl<const LE: bool> Target for Arm32Target<LE> {
     /// Thumb and ARM B instructions cannot be converted to BX, so we
     /// always have to make them jump to a thunk to switch processor mode
     /// even if their destinations are reachable.
-    fn always_needs_thunk(ctx: &Context<Self>, sym: &Symbol, rel: &ElfRel<Self>) -> bool {
+    fn always_needs_thunk(
+        ctx: &Context<Self>,
+        _isec: &InputSection<Self>,
+        sym: &Symbol,
+        rel: &ElfRel<Self>,
+    ) -> bool {
         match rel.r_type() {
             R_ARM_JUMP24 | R_ARM_PLT32 => is_thumb_func(ctx, sym),
             R_ARM_THM_JUMP24 => is_arm_func(ctx, sym),
