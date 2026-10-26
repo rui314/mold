@@ -544,8 +544,8 @@ impl EhRec {
     /// The record's bytes as its object has them.
     fn data<E: Target>(self, ctx: &Context<E>) -> &'static [u8] {
         match self {
-            EhRec::Cie(c) => ctx.cies[c].data,
-            EhRec::Fde(f) => ctx.fdes[f].data,
+            Self::Cie(c) => ctx.cies[c].data,
+            Self::Fde(f) => ctx.fdes[f].data,
         }
     }
 }

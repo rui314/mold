@@ -45,8 +45,8 @@ impl InitFunc {
     pub fn new<E: Target>(ctx: &Context<E>, id: SymbolId) -> Self {
         let sym = &ctx.symbols[id];
         match sym.input_section() {
-            Some(isec) => InitFunc::Local(ctx.isecs.resolve(isec as usize), sym.value),
-            None => InitFunc::Imported(id),
+            Some(isec) => Self::Local(ctx.isecs.resolve(isec as usize), sym.value),
+            None => Self::Imported(id),
         }
     }
 }
