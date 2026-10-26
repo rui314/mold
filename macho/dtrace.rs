@@ -503,7 +503,7 @@ struct ProbeTables {
 
 impl ProbeTables {
     fn new(probes: &[Probe], strtab: &mut StringTable) -> Self {
-        let mut t = ProbeTables {
+        let mut t = Self {
             records: Vec::new(),
             prargs: Vec::new(),
             relocs: Vec::new(),

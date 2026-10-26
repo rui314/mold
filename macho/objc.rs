@@ -135,7 +135,7 @@ impl ObjcRef {
     /// The import a reference is to, which dyld binds.
     pub fn import<E: Target>(self, ctx: &Context<E>) -> Option<crate::symbol::SymbolId> {
         match self {
-            ObjcRef::Sym(id, _) if ctx.symbols[id].is_imported() => Some(id),
+            Self::Sym(id, _) if ctx.symbols[id].is_imported() => Some(id),
             _ => None,
         }
     }
@@ -144,10 +144,10 @@ impl ObjcRef {
     /// method list resolves to, once the output is laid out.
     pub fn addr<E: Target>(self, ctx: &Context<E>) -> u64 {
         match self {
-            ObjcRef::Isec(isec, off) => ctx.isecs[isec as usize].addr(ctx) + off,
-            ObjcRef::Sym(id, addend) => (ctx.symbols[id].addr(ctx) as i64 + addend) as u64,
-            ObjcRef::TailSelref(n) => ctx.objc_stubs.selref_addr(ctx, n),
-            ObjcRef::Null => 0,
+            Self::Isec(isec, off) => ctx.isecs[isec as usize].addr(ctx) + off,
+            Self::Sym(id, addend) => (ctx.symbols[id].addr(ctx) as i64 + addend) as u64,
+            Self::TailSelref(n) => ctx.objc_stubs.selref_addr(ctx, n),
+            Self::Null => 0,
         }
     }
 }

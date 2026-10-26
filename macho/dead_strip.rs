@@ -108,11 +108,11 @@ enum Root {
 impl Root {
     fn name(self) -> &'static str {
         match self {
-            Root::Undefined => "root: the entry point, -u or -alias",
-            Root::Export => "root: exported",
-            Root::Kept => "root: never dead-stripped",
-            Root::Initializer => "root: an initializer",
-            Root::LiveSupport => "root: live support of live code",
+            Self::Undefined => "root: the entry point, -u or -alias",
+            Self::Export => "root: exported",
+            Self::Kept => "root: never dead-stripped",
+            Self::Initializer => "root: an initializer",
+            Self::LiveSupport => "root: live support of live code",
         }
     }
 }

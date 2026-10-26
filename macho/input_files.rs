@@ -1494,11 +1494,11 @@ pub enum KeptFdes {
 impl KeptFdes {
     pub fn of(args: &crate::cmdline::Args) -> Self {
         if args.no_dwarf_unwind {
-            KeptFdes::None
+            Self::None
         } else if args.keeps_all_fdes() {
-            KeptFdes::All
+            Self::All
         } else {
-            KeptFdes::Uncovered
+            Self::Uncovered
         }
     }
 }
@@ -3147,7 +3147,7 @@ impl ReexportRef {
         rpaths: &[PathBuf],
         hops: u32,
     ) -> Vec<Self> {
-        let refs = names.into_iter().map(|name| ReexportRef {
+        let refs = names.into_iter().map(|name| Self {
             name,
             loader: loader.to_path_buf(),
             loader_rpaths: rpaths.to_vec(),
