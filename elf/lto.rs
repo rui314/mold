@@ -521,7 +521,16 @@ unsafe fn get_symbols<E: Target>(
                     (true, true) => LDPR_RESOLVED_IR,
                     (true, false) => LDPR_PREEMPTED_IR,
                     (false, true) => LDPR_RESOLVED_EXEC,
-                    (false, false) => LDPR_PREEMPTED_REG,
+                    (false, false) => {
+                        // The backend drops this IR definition and emits a
+                        // reference instead, so the winner must stay in the
+                        // link.
+                        ctx.objs[owner.index()]
+                            .base
+                            .needed_for_lto_def
+                            .store(true, Ordering::Relaxed);
+                        LDPR_PREEMPTED_REG
+                    }
                 }
             }
         };

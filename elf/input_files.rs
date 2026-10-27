@@ -396,6 +396,10 @@ pub struct InputFile<E: Target> {
 
     pub as_needed: bool,
 
+    // Kept after LTO because it provided a definition preempting an IR
+    // definition (LDPR_PREEMPTED_REG).
+    pub needed_for_lto_def: AtomicBool,
+
     // To create an output .symtab
     pub local_symtab_idx: u32,
     pub global_symtab_idx: u32,
@@ -428,6 +432,7 @@ impl<E: Target> InputFile<E> {
             symbols: Vec::new(),
             first_global: 0,
             as_needed: false,
+            needed_for_lto_def: AtomicBool::new(false),
             local_symtab_idx: 0,
             global_symtab_idx: 0,
             num_local_symtab: 0,
