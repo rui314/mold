@@ -33,6 +33,7 @@ pub const SHT_ANDROID_RELA: u32 = 0x60000002;
 pub const SHT_LLVM_ADDRSIG: u32 = 0x6fff4c03;
 pub const SHT_ANDROID_RELR: u32 = 0x6fffff00;
 pub const SHT_GNU_SFRAME: u32 = 0x6ffffff4;
+pub const SHT_GNU_ATTRIBUTES: u32 = 0x6ffffff5;
 pub const SHT_GNU_HASH: u32 = 0x6ffffff6;
 pub const SHT_GNU_VERDEF: u32 = 0x6ffffffd;
 pub const SHT_GNU_VERNEED: u32 = 0x6ffffffe;

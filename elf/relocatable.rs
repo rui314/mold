@@ -212,6 +212,7 @@ fn set_osec_offsets<E: Target>(ctx: &mut Context<E>) -> u64 {
 }
 
 pub fn combine_objects<E: Target>(ctx: &mut Context<E>) {
+    passes::merge_gnu_attributes(ctx);
     passes::create_output_sections(ctx);
     split_link_order_sections(ctx);
     create_synthetic_sections(ctx);

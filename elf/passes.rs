@@ -11,6 +11,7 @@ use mold_common::bits::align_to;
 use mold_common::compress::Compressor;
 use mold_common::error::strerror;
 use mold_common::glob::GlobBuilder;
+use mold_common::leb128::{encode_uleb, read_uleb};
 use mold_common::mem::leak_bytes;
 use mold_common::output_file::OutputFile;
 use mold_common::parallel::stable_partition;
@@ -1860,6 +1861,159 @@ pub fn convert_zero_to_bss<E: Target>(ctx: &mut Context<E>) {
             isec.clear_contents();
         }
     });
+}
+
+/// A "gnu" file attribute value: tags with an odd number have a string
+/// value, Tag_compatibility a ULEB128 and a string, the others a ULEB128.
+#[derive(Clone, Copy, PartialEq)]
+enum GnuAttr {
+    Int(u64),
+    Str(&'static [u8]),
+    IntStr(u64, &'static [u8]),
+}
+
+const TAG_COMPATIBILITY: u64 = 32;
+
+// <format-version>
+// [ <section-length> "vendor-name" [ <file-tag> <size> <attribute>*]+ ]*
+//
+// Returns the "gnu" file attributes, or None if the section is corrupted.
+fn read_gnu_attributes<E: Target>(data: &'static [u8]) -> Option<Vec<(u64, GnuAttr)>> {
+    fn uleb(p: &mut &[u8]) -> Option<u64> {
+        p.iter().any(|&b| b & 0x80 == 0).then(|| read_uleb(p))
+    }
+
+    let mut data = data.strip_prefix(b"A")?;
+    let mut attrs = Vec::new();
+    while !data.is_empty() {
+        let sz = E::read_u32(data.get(..4)?) as usize;
+        let mut sub = data.get(4..sz)?;
+        data = &data[sz..];
+        let Some(rest) = sub.strip_prefix(b"gnu\0") else {
+            continue;
+        };
+        sub = rest;
+        while !sub.is_empty() {
+            let tag = uleb(&mut sub)?;
+            let sz = E::read_u32(sub.get(..4)?) as usize;
+            let mut p = sub.get(4..sz.checked_sub(1)?)?;
+            sub = &sub[sz - 1..];
+            if tag != ELF_TAG_FILE as u64 {
+                continue;
+            }
+            while !p.is_empty() {
+                let tag = uleb(&mut p)?;
+                let int = if tag % 2 == 0 { Some(uleb(&mut p)?) } else { None };
+                let val = match int {
+                    Some(v) if tag != TAG_COMPATIBILITY => GnuAttr::Int(v),
+                    _ => {
+                        let end = p.iter().position(|&b| b == 0)?;
+                        let s = &p[..end];
+                        p = &p[end + 1..];
+                        int.map_or(GnuAttr::Str(s), |v| GnuAttr::IntStr(v, s))
+                    }
+                };
+                attrs.push((tag, val));
+            }
+        }
+    }
+    Some(attrs)
+}
+
+// .gnu.attributes (MIPS, PowerPC, s390x, SPARC) is one record per file,
+// so copies concatenated from the input files are not a valid section.
+// We keep the first input section and give it the union of the input
+// files' and DSOs' attributes, as GNU ld does: a specified value wins over
+// 0, the unspecified one, and SPARC's hardware capability masks are ORed.
+// Where files disagree on another tag, the first file wins.
+// There are no other per-target rules (GNU ld's MIPS FP XX or PowerPC long
+// double merges) and no mismatch warnings; add them to merge() if a target
+// needs them.
+pub fn merge_gnu_attributes<E: Target>(ctx: &mut Context<E>) {
+    const TAG_GNU_SPARC_HWCAPS: u64 = 4;
+    const TAG_GNU_SPARC_HWCAPS2: u64 = 8;
+
+    let mut merged: Vec<(u64, GnuAttr)> = Vec::new();
+    let mut merge = |file: &dyn std::fmt::Display, contents| {
+        let Some(attrs) = read_gnu_attributes::<E>(contents) else {
+            warn!("{file}: corrupted .gnu.attributes section");
+            return false;
+        };
+        for (tag, val) in attrs {
+            let Some((_, old)) = merged.iter_mut().find(|(t, _)| *t == tag) else {
+                merged.push((tag, val));
+                continue;
+            };
+            match (*old, val) {
+                (GnuAttr::Int(a), GnuAttr::Int(b))
+                    if E::FAMILY == Family::Sparc64
+                        && matches!(tag, TAG_GNU_SPARC_HWCAPS | TAG_GNU_SPARC_HWCAPS2) =>
+                {
+                    *old = GnuAttr::Int(a | b)
+                }
+                (GnuAttr::Int(0), _) => *old = val,
+                _ => {}
+            }
+        }
+        true
+    };
+
+    let mut first = None;
+    for (i, file) in ctx.objs.iter().enumerate() {
+        for isec in file.input_sections() {
+            if !isec.is_alive() || isec.sh_type(file) != SHT_GNU_ATTRIBUTES {
+                continue;
+            }
+            if !merge(file, isec.contents()) || first.is_some() {
+                isec.kill();
+            } else {
+                first = Some((i, isec.shndx));
+            }
+        }
+    }
+    for dso in &ctx.dsos {
+        for shdr in dso.base.shdrs {
+            if shdr.sh_type.get() == SHT_GNU_ATTRIBUTES {
+                merge(dso, dso.base.section_contents_from_shdr(shdr));
+            }
+        }
+    }
+    let Some((i, shndx)) = first else { return };
+
+    merged.sort_by_key(|(tag, _)| *tag);
+    let mut attrs = Vec::new();
+    for (tag, val) in merged {
+        encode_uleb(&mut attrs, tag);
+        match val {
+            GnuAttr::Int(v) => encode_uleb(&mut attrs, v),
+            GnuAttr::Str(s) => {
+                attrs.extend_from_slice(s);
+                attrs.push(0);
+            }
+            GnuAttr::IntStr(v, s) => {
+                encode_uleb(&mut attrs, v);
+                attrs.extend_from_slice(s);
+                attrs.push(0);
+            }
+        }
+    }
+    let u32_bytes = |v: usize| {
+        let mut bytes = [0u8; 4];
+        E::write_u32(&mut bytes, v as u32);
+        bytes
+    };
+    let sub_sub_size = 1 + 4 + attrs.len();
+    let mut out = vec![b'A']; // Format version
+    out.extend_from_slice(&u32_bytes(4 + b"gnu\0".len() + sub_sub_size)); // Sub-section length
+    out.extend_from_slice(b"gnu\0"); // Vendor name
+    out.push(ELF_TAG_FILE as u8); // Sub-section tag
+    out.extend_from_slice(&u32_bytes(sub_sub_size)); // Sub-sub-section length
+    out.extend_from_slice(&attrs);
+
+    let file = ctx.objs.iter_mut().nth(i).unwrap();
+    let isec = file.section_mut(shndx as usize).unwrap();
+    isec.sh_size = out.len() as u64;
+    isec.set_contents(leak_bytes(out));
 }
 
 fn has_dso_definition<E: Target>(ctx: &Context<E>, id: SymbolId) -> bool {

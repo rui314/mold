@@ -263,6 +263,8 @@ pub fn link<E: Target>(cmdline: Cmdline) -> Option<&'static str> {
         passes::compute_address_significance(&ctx);
         drop(t);
     }
+    passes::merge_gnu_attributes(&mut ctx);
+
     // Handle PPC64-specific .opd sections.
     E::rewrite_input_sections(&mut ctx);
 
