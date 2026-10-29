@@ -488,6 +488,16 @@ fn create_phdr<E: Target>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
         }
     }
 
+    // Add PT_DYNAMIC. It comes before PT_TLS as with GNU ld: uClibc's
+    // ld.so (0.9.33) stops scanning the executable's program headers at
+    // PT_TLS, so a PT_DYNAMIC after it is never read and ld.so crashes.
+    if let Some(osec) = &ctx.dynamic
+        && osec.shdr.sh_size.get() != 0
+    {
+        let flags = to_phdr_flags(ctx, ChunkId::Dynamic);
+        define(&mut vec, PT_DYNAMIC, flags, &osec.shdr);
+    }
+
     // Create a PT_TLS.
     let is_tls = |id: ChunkId| ctx.chunk_header(id).shdr.sh_flags.get() & SHF_TLS as u64 != 0;
     let mut i = 0;
@@ -501,14 +511,6 @@ fn create_phdr<E: Target>(ctx: &Context<E>) -> Vec<ElfPhdr<E>> {
                 i += 1;
             }
         }
-    }
-
-    // Add PT_DYNAMIC
-    if let Some(osec) = &ctx.dynamic
-        && osec.shdr.sh_size.get() != 0
-    {
-        let flags = to_phdr_flags(ctx, ChunkId::Dynamic);
-        define(&mut vec, PT_DYNAMIC, flags, &osec.shdr);
     }
 
     // Add PT_GNU_EH_FRAME
