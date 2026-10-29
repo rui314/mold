@@ -2005,14 +2005,17 @@ impl<E: Target> ObjectFile<E> {
 
             let shndx = (!esym.is_abs()).then(|| self.shndx_from(i, esym.st_shndx()));
 
-            let name: &'static [u8] = if esym.st_type() == STT_SECTION {
-                let shndx = shndx.unwrap();
+            // A section symbol can be in SHN_ABS, in which case it has
+            // no section to take a name from.
+            let name: &'static [u8] = if esym.st_type() != STT_SECTION {
+                self.base.symbol_name_in(i)
+            } else if let Some(shndx) = shndx {
                 match self.section(shndx) {
                     Some(isec) => isec.name(self),
                     None => self.base.section_name(shndx),
                 }
             } else {
-                self.base.symbol_name_in(i)
+                b""
             };
 
             let mut sym = Symbol::new(BStr::new(name));

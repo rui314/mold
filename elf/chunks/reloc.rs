@@ -65,7 +65,10 @@ pub fn output_symidx_addend<E: Target>(
     let isec = sym.input_section_ref(ctx);
     let leader = isec.and_then(|isec| isec.icf_leader()).map(|leader| ctx.section(leader));
     if sym.st_type() == STT_SECTION || leader.is_some() {
-        let target = leader.or(isec)?;
+        let Some(target) = leader.or(isec) else {
+            // A section symbol in SHN_ABS stands for its own value.
+            return sym.esym(ctx).is_abs().then(|| (0, addend() + sym.value as i64));
+        };
         Some((
             ctx.output_section(target.output_section?).hdr.shndx,
             addend() + target.offset() as i64 + sym.value as i64,
