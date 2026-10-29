@@ -2675,13 +2675,14 @@ impl<E: Target> ObjectFile<E> {
                 && is_alive(sym)
                 && (ctx.args.retain_symbols_file.is_none() || sym.write_to_symtab())
             {
-                plan.strtab_size += sym.name().len() as u64 + 1;
                 // Global symbols can be demoted to local symbols based on visibility,
                 // version scripts etc.
                 if sym.is_local(ctx) {
+                    plan.strtab_size += sym.name().len() as u64 + 1;
                     plan.output_sym_indices[i] = plan.num_local_symtab as i32;
                     plan.num_local_symtab += 1;
                 } else {
+                    plan.strtab_size += self.global_symtab_name(ctx, sym, i).len() as u64 + 1;
                     plan.output_sym_indices[i] = plan.num_global_symtab as i32;
                     plan.num_global_symtab += 1;
                 }
@@ -2689,6 +2690,14 @@ impl<E: Target> ObjectFile<E> {
             }
         }
         plan
+    }
+
+    /// The name global symbol `i` gets in the output .symtab. A -r output
+    /// keeps the version in a name like `foo@VERSION` or `foo@@VERSION`,
+    /// or a later link could not see what `.symver` set.
+    fn global_symtab_name(&self, ctx: &Context<E>, sym: &Symbol, i: usize) -> &'static [u8] {
+        let name = self.base.symbol_name_in(i);
+        if ctx.args.relocatable && name.contains(&b'@') { name } else { sym.name() }
     }
 
     // Returns true if any of the file's .debug_info sections contains a
@@ -2761,7 +2770,7 @@ impl<E: Target> ObjectFile<E> {
                 if sym.is_local(ctx) {
                     block.push_local::<E>(ctx, sym);
                 } else {
-                    block.push_global::<E>(ctx, sym);
+                    block.push_global::<E>(ctx, sym, self.global_symtab_name(ctx, sym, i));
                 }
             }
         }
@@ -2858,8 +2867,8 @@ impl<'a> SymtabBlock<'a> {
         self.locals.push::<E>(esym, xindex);
     }
 
-    pub fn push_global<E: Target>(&mut self, ctx: &Context<E>, sym: &Symbol) {
-        let st_name = self.add_string(&[sym.name().as_ref()]);
+    pub fn push_global<E: Target>(&mut self, ctx: &Context<E>, sym: &Symbol, name: &[u8]) {
+        let st_name = self.add_string(&[name]);
         let (esym, xindex) = crate::chunks::symtab::to_output_esym(ctx, sym, st_name);
         self.globals.push::<E>(esym, xindex);
     }
@@ -3412,7 +3421,7 @@ impl<E: Target> SharedFile<E> {
         for &sym_id in &self.base.symbols {
             let sym = &ctx.symbols[sym_id];
             if sym.file() == Some(FileId::Dso(id)) && sym.write_to_symtab() {
-                block.push_global::<E>(ctx, sym);
+                block.push_global::<E>(ctx, sym, sym.name());
             }
         }
     }
