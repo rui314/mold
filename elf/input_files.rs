@@ -2673,6 +2673,7 @@ impl<E: Target> ObjectFile<E> {
             let sym = &ctx.symbols[sym_id];
             if sym.file() == Some(file_id)
                 && is_alive(sym)
+                && !is_dead_undef(ctx, sym)
                 && (ctx.args.retain_symbols_file.is_none() || sym.write_to_symtab())
             {
                 plan.strtab_size += sym.name().len() as u64 + 1;
@@ -3416,6 +3417,12 @@ impl<E: Target> SharedFile<E> {
             }
         }
     }
+}
+
+/// An undefined symbol that only sections --gc-sections removed refer to.
+/// GNU ld leaves such symbols out of .symtab, and so do we.
+fn is_dead_undef<E: Target>(ctx: &Context<E>, sym: &Symbol) -> bool {
+    ctx.args.gc_sections && sym.is_undef() && !sym.is_imported() && !sym.is_gc_referenced()
 }
 
 // Symbols with higher priorities overwrite symbols with lower priorities.
