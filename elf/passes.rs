@@ -780,9 +780,13 @@ pub fn do_lto<E: Target>(ctx: &mut Context<E>) {
     // Archive members that were extracted pre-LTO to satisfy references from
     // IR objects may no longer be needed now that LTO output provides those
     // symbols. Reset their reachability so that resolve_symbols() below can
-    // re-derive which archive members are actually needed.
+    // re-derive which archive members are actually needed, except members
+    // kept for preempted IR definitions.
+
     for file in &ctx.objs {
-        if file.is_lto_input() || file.base.as_needed {
+        if file.is_lto_input()
+            || (file.base.as_needed && !file.base.needed_for_lto_def.load(Ordering::Relaxed))
+        {
             file.base.set_reachable(false);
         }
     }
