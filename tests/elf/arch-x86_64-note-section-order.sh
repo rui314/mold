@@ -8,6 +8,9 @@
 # --section-order doesn't mention EHDR and PHDR, and each note then got
 # its own PT_NOTE.
 
+# Disable .note.package generation if the system assigns it
+export ELF_PACKAGE_METADATA=""
+
 # Binutils 2.32 injects their own .note.gnu.property section interfering with the tests
 test_cflags -Xassembler -mx86-used-note=no && CFLAGS="-Xassembler -mx86-used-note=no" || CFLAGS=""
 
