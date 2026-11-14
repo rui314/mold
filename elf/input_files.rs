@@ -2639,12 +2639,14 @@ impl<E: Target> ObjectFile<E> {
         // Symbols in dead sections and fragments are dropped along with them.
         // A mergeable section dies when it is split into fragments, but its
         // symbols live on; their values are computed from the fragments.
+        // Likewise, symbols of a section folded by ICF point to its leader.
         let is_alive = |sym: &Symbol| -> bool {
             match sym.origin() {
                 OriginValue::Fragment(frag) => ctx.fragment(frag).is_alive(),
                 OriginValue::InputSection(section) => {
                     let isec = ctx.input_section(section);
-                    isec.is_alive() || self.merge_info(isec.shndx as usize).is_some()
+                    let is_merged = self.merge_info(isec.shndx as usize).is_some();
+                    isec.is_alive() || isec.is_icf_removed() || is_merged
                 }
                 _ => true,
             }
