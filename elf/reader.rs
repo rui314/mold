@@ -11,7 +11,7 @@
 use std::path::Path;
 
 use mold_common::archive_file;
-use mold_common::mapped_file::{MappedFile, must_open_file, open_file};
+use mold_common::mapped_file::{FileOrigin, MappedFile, apply_chroot, must_open_file, open_file};
 use mold_common::perf::Counter;
 use mold_common::worker_local::WorkerLocal;
 use mold_common::{fatal, out, warn};
@@ -234,9 +234,10 @@ pub fn detect_machine_type<E: Target>(ctx: &Context<E>, jobs: &[ReaderJob]) -> &
 fn open_library<E: Target>(
     ctx: &Context<E>,
     rctx: &ReaderContext,
-    path: &std::path::Path,
+    path: &Path,
+    origin: FileOrigin,
 ) -> Option<&'static MappedFile> {
-    let mf = open_file(&ctx.args.chroot, path)?;
+    let mf = MappedFile::open_with_origin(apply_chroot(&ctx.args.chroot, path), origin)?;
     if let Some(target) = get_machine_type(ctx, rctx, mf)
         && target != E::NAME
     {
@@ -255,12 +256,13 @@ pub fn find_library<E: Target>(
     ctx: &Context<E>,
     rctx: &ReaderContext,
     name: &std::ffi::OsStr,
+    origin: FileOrigin,
 ) -> &'static MappedFile {
     if let Some(exact) = name.as_encoded_bytes().strip_prefix(b":") {
         let exact = std::path::Path::new(mold_common::bytes::os_str(exact));
         let exact = exact.strip_prefix("/").unwrap_or(exact);
         for dir in &ctx.args.library_paths {
-            if let Some(mf) = open_library(ctx, rctx, &dir.join(exact)) {
+            if let Some(mf) = open_library(ctx, rctx, &dir.join(exact), origin) {
                 return mf;
             }
         }
@@ -276,7 +278,7 @@ pub fn find_library<E: Target>(
         archive.push(".a");
         for dir in &ctx.args.library_paths {
             for filename in shared.iter().chain(std::iter::once(&archive)) {
-                if let Some(mf) = open_library(ctx, rctx, &dir.join(filename)) {
+                if let Some(mf) = open_library(ctx, rctx, &dir.join(filename), origin) {
                     return mf;
                 }
             }
@@ -338,15 +340,7 @@ pub fn read_input_files<E: Target>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
 
             // Open the input named by this command line argument.
             let mf = if job.is_lib {
-                let mf = find_library(ctx_ref, &rctx, job.name.as_os_str());
-                mold_common::mem::leak(MappedFile {
-                    name: mf.name.clone(),
-                    data: mf.data,
-                    given_fullpath: false,
-                    parent: mf.parent,
-                    thin_parent: mf.thin_parent,
-                    is_dependency: std::sync::atomic::AtomicBool::new(true),
-                })
+                find_library(ctx_ref, &rctx, job.name.as_os_str(), FileOrigin::CommandLineLibrary)
             } else {
                 must_open_file(&ctx_ref.args.chroot, &job.name)
             };

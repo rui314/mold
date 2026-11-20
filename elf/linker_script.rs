@@ -6,10 +6,11 @@
 //! The supported subset also includes `OUTPUT_FORMAT`, symbol assignments,
 //! version scripts and dynamic lists.
 
+use std::cell::OnceCell;
 use std::path::{Path, PathBuf};
 
 use mold_common::bytes::{display, os_str};
-use mold_common::mapped_file::{MappedFile, apply_chroot, must_open_file};
+use mold_common::mapped_file::{FileOrigin, MappedFile, apply_chroot, must_open_file};
 use mold_common::mem::leak_bytes;
 use mold_common::path::clean_path;
 use mold_common::{fatal, warn};
@@ -42,6 +43,7 @@ pub struct Script<'a, E: Target> {
     ctx: &'a mut Context<E>,
     rctx: &'a mut ReaderContext,
     mf: &'static MappedFile,
+    in_sysroot: OnceCell<bool>,
 }
 
 fn get_line(input: &[u8], pos: usize) -> (usize, &[u8]) {
@@ -144,16 +146,23 @@ fn tokenize(mf: &'static MappedFile) -> Vec<&'static [u8]> {
     tokens
 }
 
-fn is_in_sysroot<E: Target>(ctx: &Context<E>, path: &Path) -> bool {
+fn is_in_sysroot<E: Target>(ctx: &Context<E>, mf: &MappedFile) -> bool {
     // An empty sysroot stands for the root directory, which contains every file.
     if ctx.args.sysroot.as_os_str().is_empty() {
         return true;
     }
-    let sysroot = apply_chroot(&ctx.args.chroot, &ctx.args.sysroot);
-    let (Ok(path), Ok(sysroot)) = (path.canonicalize(), sysroot.canonicalize()) else {
+    let Ok(sysroot) = apply_chroot(&ctx.args.chroot, &ctx.args.sysroot).canonicalize() else {
         return false;
     };
-    path != sysroot && path.starts_with(&sysroot)
+    if mf.origin != FileOrigin::Explicit {
+        // The script may be a staging symlink out of the sysroot. Use the
+        // directory that supplied it, which may be the sysroot itself.
+        let dir = mf.name.parent().filter(|dir| !dir.as_os_str().is_empty());
+        if dir.unwrap_or(Path::new(".")).canonicalize().is_ok_and(|dir| dir.starts_with(&sysroot)) {
+            return true;
+        }
+    }
+    mf.name.canonicalize().is_ok_and(|path| path != sysroot && path.starts_with(&sysroot))
 }
 
 /// Opens a file named by a script, retaining the pathname's original bytes.
@@ -163,13 +172,14 @@ fn resolve_path<E: Target>(
     mf: &'static MappedFile,
     tok: &'static [u8],
     check_target: bool,
+    in_sysroot: &OnceCell<bool>,
 ) -> &'static MappedFile {
     let s = unquote(tok);
     let name = Path::new(os_str(s));
     let chroot = &ctx.args.chroot;
     // Opens `path`, to which --chroot has already been applied.
-    let open = |path: &Path| -> Option<&'static MappedFile> {
-        let mf = MappedFile::open(path)?;
+    let open = |path: &Path, origin| -> Option<&'static MappedFile> {
+        let mf = MappedFile::open_with_origin(path, origin)?;
         if check_target
             && let Some(target) = reader::get_machine_type(ctx, rctx, mf)
             && target != E::NAME
@@ -183,34 +193,36 @@ fn resolve_path<E: Target>(
         }
         Some(mf)
     };
-    let in_sysroot = |suffix: &[u8]| {
+    let sysroot_path = |suffix: &[u8]| {
         let mut path = ctx.args.sysroot.as_os_str().to_os_string();
         path.push(os_str(suffix));
         PathBuf::from(path)
     };
 
     // Absolute names in a script within the sysroot are relative to that root.
-    if name.is_absolute() && is_in_sysroot(ctx, &mf.name) {
-        return must_open_file(chroot, in_sysroot(s));
+    if name.is_absolute() && *in_sysroot.get_or_init(|| is_in_sysroot(ctx, mf)) {
+        return must_open_file(chroot, sysroot_path(s));
     }
     if let Some(rest) = s.strip_prefix(b"=") {
-        return must_open_file(chroot, in_sysroot(rest));
+        return must_open_file(chroot, sysroot_path(rest));
     }
     if let Some(lib) = s.strip_prefix(b"-l") {
-        return reader::find_library(ctx, rctx, os_str(lib));
+        return reader::find_library(ctx, rctx, os_str(lib), FileOrigin::ScriptSearch);
     }
     if !name.is_absolute() {
         let path = clean_path(&mf.name.parent().unwrap_or(Path::new(".")).join(name));
-        if let Some(mf) = open(&path) {
+        // A nested script found here has its own search origin, even if the
+        // containing script was opened by an explicit path.
+        if let Some(mf) = open(&path, FileOrigin::ScriptSearch) {
             return mf;
         }
     }
-    if let Some(mf) = open(&apply_chroot(chroot, name)) {
+    if let Some(mf) = open(&apply_chroot(chroot, name), FileOrigin::Explicit) {
         return mf;
     }
     for dir in &ctx.args.library_paths {
         let path = dir.join(name.strip_prefix("/").unwrap_or(name));
-        if let Some(mf) = open(&apply_chroot(chroot, &path)) {
+        if let Some(mf) = open(&apply_chroot(chroot, &path), FileOrigin::ScriptSearch) {
             return mf;
         }
     }
@@ -240,7 +252,7 @@ pub fn output_target<E: Target>(
             [b"AS_NEEDED", b"(", path, ..] | [path, ..] => *path,
             [] => return None,
         };
-        let named = resolve_path(ctx, rctx, mf, path, false);
+        let named = resolve_path(ctx, rctx, mf, path, false, &OnceCell::new());
         return reader::get_machine_type(ctx, rctx, named);
     }
     None
@@ -252,7 +264,7 @@ impl<'a, E: Target> Script<'a, E> {
         rctx: &'a mut ReaderContext,
         mf: &'static MappedFile,
     ) -> Self {
-        Script { ctx, rctx, mf }
+        Script { ctx, rctx, mf, in_sysroot: OnceCell::new() }
     }
 
     fn error(&self, tok: &[u8], msg: &str) -> ! {
@@ -290,7 +302,7 @@ impl<'a, E: Target> Script<'a, E> {
                 continue;
             }
 
-            let mf = resolve_path(self.ctx, self.rctx, self.mf, t, true);
+            let mf = resolve_path(self.ctx, self.rctx, self.mf, t, true, &self.in_sysroot);
             let mut child = self.rctx.next_child();
             reader::read_file(self.ctx, &mut child, mf);
             tok = &tok[1..];
