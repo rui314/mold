@@ -16,7 +16,7 @@ use std::sync::{OnceLock, RwLock};
 use mold_common::bits::{align_to, bits};
 use mold_common::bytes::{cstr_at, display};
 use mold_common::leb128::{read_sleb, read_uleb};
-use mold_common::mapped_file::MappedFile;
+use mold_common::mapped_file::{FileOrigin, MappedFile};
 use mold_common::mem::leak_bytes;
 use mold_common::parallel::SyncUnsafeCell;
 use mold_common::path::path_clean;
@@ -3085,10 +3085,10 @@ impl<E: Target> SharedFile<E> {
             return soname;
         }
         let mf = self.base.mf.expect("a shared object is backed by an input mapping");
-        let name = if mf.given_fullpath {
-            mf.name.as_os_str()
-        } else {
+        let name = if mf.origin == FileOrigin::CommandLineLibrary {
             mf.name.file_name().unwrap_or_default()
+        } else {
+            mf.name.as_os_str()
         };
         name.as_encoded_bytes()
     }

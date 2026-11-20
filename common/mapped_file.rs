@@ -98,6 +98,16 @@ pub fn is_mmapped(_path: &Path) -> bool {
 // costs more than the mmap calls did. mimalloc does that by default.
 const READ_THRESHOLD: u64 = 32 * 1024;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FileOrigin {
+    /// An explicitly opened file or an archive member.
+    Explicit,
+    /// A command line `-l` uses the basename when the library has no SONAME.
+    CommandLineLibrary,
+    /// A file found using a directory search in a linker script.
+    ScriptSearch,
+}
+
 // MappedFile represents an input file that is either mmap'ed or read into
 // memory. Either way, its contents are accessible through `data`.
 #[derive(Debug)]
@@ -110,9 +120,8 @@ pub struct MappedFile {
     /// relocation records in place, as C++ mold does.
     pub data: &'static [SyncUnsafeCell<u8>],
 
-    /// False if the file was found by searching library paths (`-l`),
-    /// which affects how a shared library's soname defaults.
-    pub given_fullpath: bool,
+    /// Controls sysroot script lookup and the DT_NEEDED name when SONAME is absent.
+    pub origin: FileOrigin,
 
     /// The archive this file is a member of.
     pub parent: Option<&'static Self>,
@@ -125,7 +134,7 @@ pub struct MappedFile {
 }
 
 impl MappedFile {
-    fn open_impl(path: &Path) -> io::Result<&'static Self> {
+    fn open_impl(path: &Path, origin: FileOrigin) -> io::Result<&'static Self> {
         let file = File::open(path)?;
 
         let display = path.display();
@@ -167,7 +176,7 @@ impl MappedFile {
         let mf = leak(Self {
             name: path.to_path_buf(),
             data,
-            given_fullpath: true,
+            origin,
             parent: None,
             thin_parent: None,
             is_dependency: AtomicBool::new(true),
@@ -183,8 +192,13 @@ impl MappedFile {
 
     /// Opens a file, returning `None` if it doesn't exist.
     pub fn open(path: impl AsRef<Path>) -> Option<&'static Self> {
+        Self::open_with_origin(path, FileOrigin::Explicit)
+    }
+
+    /// Opens a file and records how its path was found.
+    pub fn open_with_origin(path: impl AsRef<Path>, origin: FileOrigin) -> Option<&'static Self> {
         let path = path.as_ref();
-        match Self::open_impl(path) {
+        match Self::open_impl(path, origin) {
             Ok(mf) => Some(mf),
             Err(e) if e.kind() == io::ErrorKind::NotFound => None,
             Err(e) => fatal!("opening {} failed: {}", path.display(), strerror(&e)),
@@ -194,7 +208,7 @@ impl MappedFile {
     /// Opens a file that must exist.
     pub fn must_open(path: impl AsRef<Path>) -> &'static Self {
         let path = path.as_ref();
-        Self::open_impl(path)
+        Self::open_impl(path, FileOrigin::Explicit)
             .unwrap_or_else(|e| fatal!("cannot open {}: {}", path.display(), strerror(&e)))
     }
 
@@ -203,7 +217,7 @@ impl MappedFile {
         let mf = leak(Self {
             name,
             data: &self.data[start..start + size],
-            given_fullpath: true,
+            origin: FileOrigin::Explicit,
             parent: Some(self),
             thin_parent: None,
             is_dependency: AtomicBool::new(true),
@@ -218,7 +232,7 @@ impl MappedFile {
         leak(Self {
             name: member.name.clone(),
             data: member.data,
-            given_fullpath: true,
+            origin: FileOrigin::Explicit,
             parent: None,
             thin_parent: Some(self),
             is_dependency: AtomicBool::new(true),
@@ -303,6 +317,6 @@ pub fn open_file(chroot: &Path, path: impl AsRef<Path>) -> Option<&'static Mappe
 /// Opens an input file that must exist, applying `--chroot` to absolute paths.
 pub fn must_open_file(chroot: &Path, path: impl AsRef<Path>) -> &'static MappedFile {
     let path = path.as_ref();
-    MappedFile::open_impl(&apply_chroot(chroot, path))
+    MappedFile::open_impl(&apply_chroot(chroot, path), FileOrigin::Explicit)
         .unwrap_or_else(|e| fatal!("cannot open {}: {}", path.display(), strerror(&e)))
 }
