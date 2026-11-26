@@ -221,6 +221,8 @@ pub fn combine_objects<E: Target>(ctx: &mut Context<E>) {
     }
     passes::compute_section_sizes(ctx);
     passes::sort_output_sections(ctx);
+    passes::add_defsym_symbols(ctx);
+    passes::fix_defsym_symbols(ctx);
     passes::create_output_symtab(ctx);
     chunks::eh_frame::construct(ctx);
     chunks::sframe::construct(ctx);

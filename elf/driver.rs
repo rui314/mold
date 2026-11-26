@@ -178,12 +178,11 @@ pub fn link<E: Target>(cmdline: Cmdline) -> Option<&'static str> {
     // Apply -exclude-libs
     passes::apply_exclude_libs(&mut ctx);
 
-    // Create a dummy file containing linker-synthesized symbols.
-    if !ctx.args.relocatable {
-        let t = ctx.timer("create_internal_file");
-        passes::create_internal_file(&mut ctx);
-        drop(t);
-    }
+    // Create a dummy file containing linker-synthesized symbols. A
+    // relocatable link needs it for --defsym symbols.
+    let t = ctx.timer("create_internal_file");
+    passes::create_internal_file(&mut ctx);
+    drop(t);
 
     // Resolve symbols by choosing the most appropriate file for each
     // symbol. This pass also removes redundant comdat sections (e.g.
