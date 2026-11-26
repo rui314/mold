@@ -1481,8 +1481,15 @@ pub fn add_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
 
     resolve_internal_symbols(ctx);
 
-    // Make all synthetic symbols relative ones by associating them with
-    // a dummy output section.
+    // Handle --defsym symbols.
+    add_defsym_symbols(ctx);
+}
+
+pub fn add_defsym_symbols<E: Target>(ctx: &mut Context<E>) {
+    let Some(obj_id) = ctx.internal_obj else { return };
+
+    // Associate the --defsym symbols with a dummy output section so that
+    // they are emitted with the value they are given below.
     for i in 0..ctx.objs[obj_id.index()].base.symbols.len() {
         let id = ctx.objs[obj_id.index()].base.symbols[i];
         if ctx.symbols[id].file() == Some(FileId::Obj(obj_id)) {
@@ -1490,7 +1497,6 @@ pub fn add_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
         }
     }
 
-    // Handle --defsym symbols.
     for (i, (name, value)) in ctx.args.defsyms.iter().enumerate() {
         let sym1 = ctx.symbols.get_or_intern(name);
         match value {
@@ -4088,6 +4094,24 @@ pub fn fix_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
     }
 
     // --defsym=sym=value symbols
+    fix_defsym_symbols(ctx);
+
+    // --section-order symbols
+    for i in 0..ctx.args.section_order.len() {
+        let ord = &ctx.args.section_order[i];
+        if let SectionOrder::Symbol(name) = ord {
+            let sym = ctx.symbols.get_or_intern(name);
+            if let Some(first) = first {
+                let _ = ctx.set_symbol_output_chunk(sym, first);
+            }
+        }
+    }
+}
+
+/// Give the --defsym symbols their final value. This is done separately
+/// from `fix_synthetic_symbols` because the relocatable link needs it
+/// without the rest of the linker-synthesized symbols.
+pub fn fix_defsym_symbols<E: Target>(ctx: &mut Context<E>) {
     for (name, value) in &ctx.args.defsyms {
         let sym = ctx.symbols.get_or_intern(name);
         match value {
@@ -4106,17 +4130,6 @@ pub fn fix_synthetic_symbols<E: Target>(ctx: &mut Context<E>) {
                 s.value = value;
                 s.set_origin_state(origin);
                 s.set_visibility(vis);
-            }
-        }
-    }
-
-    // --section-order symbols
-    for i in 0..ctx.args.section_order.len() {
-        let ord = &ctx.args.section_order[i];
-        if let SectionOrder::Symbol(name) = ord {
-            let sym = ctx.symbols.get_or_intern(name);
-            if let Some(first) = first {
-                let _ = ctx.set_symbol_output_chunk(sym, first);
             }
         }
     }
